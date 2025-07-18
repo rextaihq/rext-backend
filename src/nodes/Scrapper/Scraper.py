@@ -1,5 +1,5 @@
 from crawl4ai import AsyncWebCrawler
-from crawl4ai.async_configs import BrowserConfig, CrawlerRunConfig
+from crawl4ai.async_configs import BrowserConfig, CrawlerRunConfig, CacheMode
 from src.utils.helper import GetBrowserConfig
 from src.states.State import AgentState
 import pandas as pd
@@ -24,7 +24,7 @@ async def scrape_full_content(state: AgentState) -> AgentState:
     print("Scraping full content...")
 
     browser_config = GetBrowserConfig()
-    run_config = CrawlerRunConfig()
+    run_config = CrawlerRunConfig(cache_mode=CacheMode.ENABLED)
 
     # Extract list of URLs from your DataFrame or list of dicts
     articles = state.get("combine_articles", [])
@@ -37,10 +37,11 @@ async def scrape_full_content(state: AgentState) -> AgentState:
     # Pair each result back to the corresponding article
     for article, result in zip(articles, results):
         if result.success:
-            article["Raw Blog Content"] = result.markdown.raw_markdown
+            article["Raw Blog Content"] = result.markdown
+            article['full_links'] = [data['href'] for data in result.links.get('internal', [])][:10]
         else:
             article["Raw Blog Content"] = ""
-
+            article['full_links'] = []
 
     print("Scraping completed.")
     df = pd.DataFrame(state['combine_articles'])

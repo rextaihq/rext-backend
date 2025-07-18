@@ -50,8 +50,8 @@ def CreateWorkflow()-> RunnableLambda[AgentState, AgentState]:
         workflow.add_node("UniquenessScore",RunnableLambda(score_uniqueness))
         workflow.add_node("SeoScore",RunnableLambda(score_seo_potential))
         workflow.add_node("ReRanking",RunnableLambda(re_ranking))
-        # workflow.add_node("TopicSelection",RunnableLambda(TopicSelection))
-        # workflow.add_node("GetRelevantArticles",RunnableLambda(get_relevant_articles))
+        workflow.add_node("TopicSelection",RunnableLambda(TopicSelection))
+        workflow.add_node("GetRelevantArticles",RunnableLambda(get_relevant_articles))
 
 
 
@@ -85,8 +85,8 @@ def CreateWorkflow()-> RunnableLambda[AgentState, AgentState]:
         workflow.add_edge("SeoScore", "ReRanking")
 
         # Human in loop
-        # workflow.add_edge("ReRanking", "TopicSelection")
-        # workflow.add_edge("TopicSelection", "GetRelevantArticles")
+        workflow.add_edge("ReRanking", "TopicSelection")
+        workflow.add_edge("TopicSelection", "GetRelevantArticles")
 
         # Compile the workflow into a runnable
         # checkpointer = CreateCheckpointer()
