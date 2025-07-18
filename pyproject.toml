@@ -1,0 +1,19 @@
+[project]
+name = "postautomaion"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "aiosqlite>=0.21.0",
+    "crawl4ai>=0.7.1",
+    "feedparser>=6.0.11",
+    "langchain[groq,openai]>=0.3.26",
+    "langgraph>=0.5.3",
+    "langgraph-checkpoint-sqlite>=2.0.10",
+    "langgraph-cli[inmem]>=0.3.4",
+    "nest-asyncio>=1.6.0",
+    "numpy>=2.3.1",
+    "pandas>=2.3.1",
+    "python-dotenv>=1.1.1",
+]

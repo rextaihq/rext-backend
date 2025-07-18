@@ -1,0 +1,16 @@
+langchain 
+langchain[openai] 
+langchain[groq] 
+langgraph  
+feedparser
+langgraph
+crawl4ai
+langgraph-checkpoint-sqlite
+langgraph-cli[inmem]
+aiosqlite
+python-dotenv
+pyyaml
+pandas
+requests
+numpy
+nest_asyncio

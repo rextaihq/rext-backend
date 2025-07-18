@@ -1,0 +1,52 @@
+from src.states.State import AgentState
+from src.model.model import StructuredModel
+from src.prompts.prompt import create_brand_alignment_score_prompt
+
+def score_brand_alignment(state: AgentState) -> dict:
+    """
+    Evaluate how well each topic aligns with your brand’s goals and content style.
+
+    Loops through all articles and evaluates alignment using an LLM.
+
+    Returns:
+        dict:
+            - article_rating (List[List[int]]): Nested list of ratings (1–10).
+            - article_weight (List[List[int]]): Nested list of fixed weights (1).
+    """
+    try:
+        print("Scoring brand alignment...")
+
+        ratings = []
+        weights = []
+
+        for article in state.get("combine_articles", []):
+            title = article.get("title", "")
+            description = article.get("summary", "")
+            blog_data = article.get("scraped_markdown", "")
+
+            if not title and not blog_data:
+                continue  
+
+            prompt_template = create_brand_alignment_score_prompt()
+            prompt = prompt_template.format_messages(
+                topic=title,
+                description=description,
+                raw_blog=blog_data
+            )
+
+            # Model call
+            model_with_parser = StructuredModel()
+            response = model_with_parser.invoke(prompt)
+
+            ratings.append(response.rating)
+            weights.append(response.weight)
+
+        return {
+            'brand_rating': ratings,
+            'brand_weight': weights
+        }
+
+    except Exception as e:
+        print("Brand alignment scoring failed:", e)
+        state["error"] = str(e)
+        return str(e)
