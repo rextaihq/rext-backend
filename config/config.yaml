@@ -1,0 +1,9 @@
+GNews:
+  url: https://gnews.io/api/v4/top-headlines
+  category: 'technology'
+  country: 'pk'
+
+rss_sources:
+  WP Tavern: https://wptavern.com/feed
+  WordPress.org: https://wordpress.org/news/feed
+  WPBeginner: https://www.wpbeginner.com/feed
