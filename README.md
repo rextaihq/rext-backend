@@ -106,7 +106,7 @@ pip install -r requirements.txt
 Run the main application:
 
 ```bash
-python main.py
+langgraph dev --allow-blocking 
 ```
 
 ## Data Storage
@@ -120,21 +120,6 @@ The project uses both CSV and database storage:
 
 Python version: See `.python-version` file
 Package management: Using `uv` (lock file: `uv.lock`)
-
----
-
-## 🚀 Getting Started
-
-1. Clone this repo or download the notebook
-2. Install the required packages:
-   ```bash
-   pip install -r requirements.txt
-   ```
-3. Run the notebook in **Jupyter Notebook** or **Google Colab**
-4. Provide human feedback when prompted
-5. Get your final blog articles in minutes!
-
-> ⚠️ This notebook is designed for experimentation and can be deployed in production via FastAPI or Streamlit.
 
 ---
 
