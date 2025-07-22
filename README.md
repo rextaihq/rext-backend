@@ -30,16 +30,22 @@ Welcome to the **Full Blog Automation System**, a powerful notebook that automat
 
 ## 🧩 Workflow Overview
 
+## 🧩 Workflow Overview
+
 ```mermaid
 graph LR
-    A[📰 Fetch Articles] --> B[📊 Score Relevance & Trends]
-    B --> C[📚 Scrape Full Content]
-    C --> D[🧠 Generate Outline with LLM]
-    D --> E[👤 Human Approval]
-    E -->|✅ Approved| F[📝 Generate Final Blog]
-    E -->|❌ Rejected| D
-```
-
+    A[📰 Step 1: Fetch Trending Topics (RSS Scraping)] 
+        --> B[📊 Step 2: Score & Rank Topics]
+    B --> C[👤 Step 3: Human Approval of Top 3 Topics]
+    C --> D[📚 Step 4: Scrape Reference Content]
+    D --> E[🧠 Step 5: Generate Outline with LLM]
+    E --> F[👤 Human Approval of Outline]
+    F --> G[📝 Step 6: Generate Full Blog Draft (1000-1500 words)]
+    G --> H[👤 Step 7: Human Review (Plagiarism, SEO, AI Check)]
+    H -->|✅ Approved| I[🌐 Step 8: Publish Draft to WordPress]
+    I --> J[🔔 Step 9: Notify Marketing Team on Slack]
+    J --> K[📂 Step 10: Save Final Approved Article for RAG]
+    H -->|❌ Rejected| E
 ---
 
 ## 📂 Project Structure
@@ -100,7 +106,7 @@ pip install -r requirements.txt
 Run the main application:
 
 ```bash
-python main.py
+langgraph dev --allow-blocking 
 ```
 
 ## Data Storage
@@ -114,21 +120,6 @@ The project uses both CSV and database storage:
 
 Python version: See `.python-version` file
 Package management: Using `uv` (lock file: `uv.lock`)
-
----
-
-## 🚀 Getting Started
-
-1. Clone this repo or download the notebook
-2. Install the required packages:
-   ```bash
-   pip install -r requirements.txt
-   ```
-3. Run the notebook in **Jupyter Notebook** or **Google Colab**
-4. Provide human feedback when prompted
-5. Get your final blog articles in minutes!
-
-> ⚠️ This notebook is designed for experimentation and can be deployed in production via FastAPI or Streamlit.
 
 ---
 
