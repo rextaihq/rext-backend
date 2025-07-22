@@ -254,3 +254,84 @@ def score_seo_potential_prompt() -> ChatPromptTemplate:
             **Raw Blog Content:**  
             {raw_blog}
             """)
+
+
+def outline_prompt_template()-> ChatPromptTemplate:
+    """
+    Creates a prompt template for outline genertion
+
+    Returns:
+        ChatPromptTemplate: A template for generating prompts to generate outline.
+    """
+    return ChatPromptTemplate.from_template("""
+        You are an expert content strategist and technical writer.
+
+        Your task is to generate a clear, logical, and comprehensive **article outline** based on the given article's raw content and summary.
+
+        User Feedback {feedback}
+
+        ---
+        ### Article Title:
+        **Title**: {title}
+
+        ---
+        ### Summary:
+        {summary}
+
+        ---
+        ### Raw Content:
+        {raw_content}
+
+        ---
+        ### Instructions:
+        1. Generate a detailed outline that includes:
+        - Introduction
+        - Key sections with sub-points (3–5 main sections recommended)
+        - Conclusion or CTA if applicable
+        2. Use markdown format with numbered or bulleted structure.
+        3. Focus on capturing the **core message**, **key arguments**, and **logical flow** of the article.
+        4. Be concise but informative—each bullet should represent a paragraph-level idea.
+
+        ---
+        """)
+
+
+def blog_post_prompt_template()-> ChatPromptTemplate:
+    """
+    Creates a prompt template for blog post generation
+
+    Returns:
+        ChatPromptTemplate: A template for generating prompts to generate blog post.
+    """
+    return ChatPromptTemplate.from_template("""
+    You are an expert WordPress blogger and SEO writer.
+    Write a detailed blog article based on the following inputs:
+
+    **Topic Title:**
+    {topic_title}
+
+
+    **Approved Outline:**
+    {approved_outline}
+
+    **Summary**
+    {summary}
+
+    **Key Reference Points:**
+    {reference_content}
+
+    ---
+
+    ### Writing Guidelines:
+    - Word count: **1000–1500 words**
+    - Tone: **Conversational yet professional**
+    - Follow the approved outline strictly
+    - Add **3–5 image placeholders** in the format: `[Image: alt text for SEO]`
+    - Include **hyperlinks** to reference sources where appropriate
+    - Use **H2/H3 headings** for structure
+    - End with a **short meta description (max 160 characters)** for SEO
+
+    ---
+
+    Now generate the full blog article in Markdown format.
+    """)
