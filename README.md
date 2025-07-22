@@ -30,22 +30,22 @@ Welcome to the **Full Blog Automation System**, a powerful notebook that automat
 
 ## 🧩 Workflow Overview
 
-## 🧩 Workflow Overview
-
 ```mermaid
 graph LR
-    A[📰 Step 1: Fetch Trending Topics (RSS Scraping)] 
-        --> B[📊 Step 2: Score & Rank Topics]
-    B --> C[👤 Step 3: Human Approval of Top 3 Topics]
-    C --> D[📚 Step 4: Scrape Reference Content]
-    D --> E[🧠 Step 5: Generate Outline with LLM]
+    A[📰 Step 1 Fetch Trending Topics RSS Scraping] 
+        --> B[📊 Step 2 Score and Rank Topics]
+    B --> C[👤 Step 3 Human Approval of Top 3 Topics]
+    C --> D[📚 Step 4 Scrape Reference Content]
+    D --> E[🧠 Step 5 Generate Outline with LLM]
     E --> F[👤 Human Approval of Outline]
-    F --> G[📝 Step 6: Generate Full Blog Draft (1000-1500 words)]
-    G --> H[👤 Step 7: Human Review (Plagiarism, SEO, AI Check)]
-    H -->|✅ Approved| I[🌐 Step 8: Publish Draft to WordPress]
-    I --> J[🔔 Step 9: Notify Marketing Team on Slack]
-    J --> K[📂 Step 10: Save Final Approved Article for RAG]
+    F --> G[📝 Step 6 Generate Full Blog Draft 1000-1500 words]
+    G --> H[👤 Step 7 Human Review Plagiarism SEO AI Check]
+    H -->|✅ Approved| I[🌐 Step 8 Publish Draft to WordPress]
+    I --> J[🔔 Step 9 Notify Marketing Team on Slack]
+    J --> K[📂 Step 10 Save Final Approved Article for RAG]
     H -->|❌ Rejected| E
+
+```
 ---
 
 ## 📂 Project Structure
