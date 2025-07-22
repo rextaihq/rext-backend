@@ -35,20 +35,34 @@ def outline_generator(state: AgentState):
     print("🧠 Generating outline with model...")
     result = LoadModel().with_structured_output(ArticleOutline).invoke(prompt)
 
+    # Format sections for display
+    section_texts = ""
+    for i, section in enumerate(result.sections, 1):
+        section_texts += f"\n\n🔹 **Section {i}: {section.heading}**\n"
+        for bullet in section.bullet_points:
+            section_texts += f"   - {bullet}\n"
+
     print("🛑 Awaiting human approval...")
     decision = interrupt(f"""
-        title: {title},
-        intro: {result.introduction},
-        sections: {result.sections},
-        conclusion: {result.conclusion},
-        feedback: {feedback or ""}
-    Approve? (yes/no)
+    📄 **Title:** {result.title}
+
+    📝 **Introduction:**
+    {result.introduction}
+
+    📚 **Sections:** {section_texts}
+
+    🧾 **Conclusion:**
+    {result.conclusion}
+
+    🗣️ **Previous Feedback:** {feedback or "None"}
+
+    ✅ Approve this outline? (yes/no)
     """)
 
     if decision.strip().lower() == "yes":
         print("✅ Outline approved.")
         approved.append({
-            "title": title,
+            "title": result.title,
             "Intro": result.introduction,
             "Sections": result.sections,
             "Conclusion": result.conclusion,
@@ -67,7 +81,7 @@ def outline_generator(state: AgentState):
     else:
         print("❌ Outline rejected.")
         # get user feedback
-        user_fb = interrupt("📝 What feedback do you have?")
+        user_fb = interrupt("📝 Provide the feedback for improving the outline?")
         print(f"User feedback: {user_fb}")
 
         return Command(

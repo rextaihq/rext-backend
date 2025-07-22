@@ -294,3 +294,44 @@ def outline_prompt_template()-> ChatPromptTemplate:
 
         ---
         """)
+
+
+def blog_post_prompt_template()-> ChatPromptTemplate:
+    """
+    Creates a prompt template for blog post generation
+
+    Returns:
+        ChatPromptTemplate: A template for generating prompts to generate blog post.
+    """
+    return ChatPromptTemplate.from_template("""
+    You are an expert WordPress blogger and SEO writer.
+    Write a detailed blog article based on the following inputs:
+
+    **Topic Title:**
+    {topic_title}
+
+
+    **Approved Outline:**
+    {approved_outline}
+
+    **Summary**
+    {summary}
+
+    **Key Reference Points:**
+    {reference_content}
+
+    ---
+
+    ### Writing Guidelines:
+    - Word count: **1000–1500 words**
+    - Tone: **Conversational yet professional**
+    - Follow the approved outline strictly
+    - Add **3–5 image placeholders** in the format: `[Image: alt text for SEO]`
+    - Include **hyperlinks** to reference sources where appropriate
+    - Use **H2/H3 headings** for structure
+    - End with a **short meta description (max 160 characters)** for SEO
+
+    ---
+
+    Now generate the full blog article in Markdown format.
+    """)

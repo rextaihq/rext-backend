@@ -17,6 +17,7 @@ from src.nodes.Interrupt.interrupt import TopicSelection
 from src.nodes.Scrapper.GetRelevant import get_relevant_articles
 from src.nodes.generation.outline_generation import outline_generator
 from src.nodes.generation.blogGeneraion import blog_generation
+from src.nodes.draft.draft_blog import draft_blog
 
 from src.states.State import AgentState
 from langgraph.graph import StateGraph,START, END
@@ -58,7 +59,8 @@ def CreateWorkflow()-> RunnableLambda[AgentState, AgentState]:
         workflow.add_node("OutineGeneration",RunnableLambda(outline_generator))
         # add human approval node
         workflow.add_node("BlogGeneration",RunnableLambda(blog_generation))
-                
+        # add draft blog node
+        workflow.add_node("DraftBlog",RunnableLambda(draft_blog))
 
 
 
@@ -105,6 +107,16 @@ def CreateWorkflow()-> RunnableLambda[AgentState, AgentState]:
             {
                 "continue": "OutineGeneration",
                 "done": "BlogGeneration"
+            }
+        )
+
+        # Add a conditional edge b/etween blog generation and draft blog
+        workflow.add_conditional_edges(
+            "BlogGeneration",
+            lambda state: "continue" if state.get("current_blog_index", 0) < len(state.get("selected_articles", [])) else "done",
+            {
+                "continue": "BlogGeneration",
+                "done": "DraftBlog"
             }
         )
 
