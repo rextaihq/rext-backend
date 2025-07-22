@@ -254,3 +254,43 @@ def score_seo_potential_prompt() -> ChatPromptTemplate:
             **Raw Blog Content:**  
             {raw_blog}
             """)
+
+
+def outline_prompt_template()-> ChatPromptTemplate:
+    """
+    Creates a prompt template for outline genertion
+
+    Returns:
+        ChatPromptTemplate: A template for generating prompts to generate outline.
+    """
+    return ChatPromptTemplate.from_template("""
+        You are an expert content strategist and technical writer.
+
+        Your task is to generate a clear, logical, and comprehensive **article outline** based on the given article's raw content and summary.
+
+        User Feedback {feedback}
+
+        ---
+        ### Article Title:
+        **Title**: {title}
+
+        ---
+        ### Summary:
+        {summary}
+
+        ---
+        ### Raw Content:
+        {raw_content}
+
+        ---
+        ### Instructions:
+        1. Generate a detailed outline that includes:
+        - Introduction
+        - Key sections with sub-points (3–5 main sections recommended)
+        - Conclusion or CTA if applicable
+        2. Use markdown format with numbered or bulleted structure.
+        3. Focus on capturing the **core message**, **key arguments**, and **logical flow** of the article.
+        4. Be concise but informative—each bullet should represent a paragraph-level idea.
+
+        ---
+        """)

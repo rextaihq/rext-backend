@@ -44,12 +44,29 @@ class AgentState(TypedDict, total=False):
     total_rating: List[int]
     total_weight: List[int]
 
+    # Articles Outlines
+    current_outline : List[Dict]
+    approved_outlines : List[Dict]
+    approval_feedback : str
+
+    current_approval_index: int
+
     # Human feedback or error
     error: str
-
 
 
 class Evaluation(BaseModel):
     # feedback: str = Field(..., description="Detailed feedback of the blog")
     rating: int = Field(..., ge=0, le=10, description="Rating of the blog on a scale of 0 to 10")
     weight: int = Field(..., ge=0, le=10, description="Weight/importance of this criterion (0 to 10)")
+
+
+# 1. Define the output schema for outline
+class Section(BaseModel):
+    heading: str = Field(..., description="Title of the section")
+    bullet_points: List[str] = Field(..., description="List of sub-points under this section")
+
+class ArticleOutline(BaseModel):
+    introduction: str
+    sections: List[Section]
+    conclusion: str
