@@ -5,18 +5,30 @@ from src.states.State import ArticleOutline
 from src.model.model import LoadModel
 
 def outline_generator(state: AgentState):
+    """
+    Generates an outline for the currently selected article using a language model.
+    This function retrieves the current article based on the approval index from the agent state,
+    constructs a prompt using the article's title, summary, raw content, and any approval feedback,
+    and then invokes a model to generate a structured outline. If all articles have been processed,
+    it returns a command to proceed to the next node. Otherwise, it updates the state with the
+    generated outline and moves to the outline approval step.
+    Args:
+        state (AgentState): The current state of the agent, containing selected articles,
+                            approval index, and feedback.
+    Returns:
+        Command: A command to either proceed to the next node or update the state with the
+                 generated outline and move to outline approval.
+    """
+    
     print("🔄 Running OutlineGenerator Node...")
 
     selected = state.get("selected_articles", [])
     idx = state.get("current_approval_index", 0)
-    approved = state.get("approved_outlines", [])
     feedback = state.get("approval_feedback", "")
 
     if idx >= len(selected):
         print("✅ All articles processed. Proceeding to BlogGeneration.")
-        return Command(update={
-                "approved_outlines": approved,
-            }, goto="BlogGeneration")
+        return Command(goto="BlogGeneration")
 
     article = selected[idx]
     title = article.get("title", "")
@@ -35,56 +47,7 @@ def outline_generator(state: AgentState):
     print("🧠 Generating outline with model...")
     result = LoadModel().with_structured_output(ArticleOutline).invoke(prompt)
 
-    # Format sections for display
-    section_texts = ""
-    for i, section in enumerate(result.sections, 1):
-        section_texts += f"\n\n🔹 **Section {i}: {section.heading}**\n"
-        for bullet in section.bullet_points:
-            section_texts += f"   - {bullet}\n"
-
-    print("🛑 Awaiting human approval...")
-    decision = interrupt(f"""
-    📄 **Title:** {result.title}
-
-    📝 **Introduction:**
-    {result.introduction}
-
-    📚 **Sections:** {section_texts}
-
-    🧾 **Conclusion:**
-    {result.conclusion}
-
-    🗣️ **Previous Feedback:** {feedback or "None"}
-
-    ✅ Approve this outline? (yes/no)
-    """)
-
-    if decision.strip().lower() == "yes":
-        print("✅ Outline approved.")
-        approved.append({
-            "title": result.title,
-            "Intro": result.introduction,
-            "Sections": result.sections,
-            "Conclusion": result.conclusion,
-            "approved": True
-        })
-
-        return Command(
-            update={
-                "approved_outlines": approved,
-                "current_approval_index": idx + 1,
-                "approval_feedback": ""
-            },
-            goto="OutlineGenerator"
-        )
-
-    else:
-        print("❌ Outline rejected.")
-        # get user feedback
-        user_fb = interrupt("📝 Provide the feedback for improving the outline?")
-        print(f"User feedback: {user_fb}")
-
-        return Command(
-            update={"approval_feedback": user_fb},
-            goto="OutlineGenerator"
-        )
+    return Command(
+        goto='OutlineApproval',
+        update={"generated_outline": result}
+    )

@@ -44,16 +44,18 @@ class AgentState(TypedDict, total=False):
     total_rating: List[int]
     total_weight: List[int]
 
-    # Articles Outlines
+   # Articles Outlines
     approved_outlines : List[Dict]
     approval_feedback : str
     current_approval_index: int
+    generated_outline:str
+
 
     # Blog generation states
     current_blog_index: int
     approved_blogs : List[Dict]
     blog_feedback : str
-
+    generated_blog: str
 
     # Human feedback or error
     error: str
