@@ -78,6 +78,7 @@ A Python-based blog post automation system that processes and generates content 
 ```bash
 pip install -r requirements.txt
 ```
+
 - Run this command to enable the crawl4ai
 ```python
 crawl4ai-setup
