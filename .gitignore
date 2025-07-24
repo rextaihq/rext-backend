@@ -9,6 +9,5 @@ wheels/
 # Virtual environments
 .venv
 .langgraph_api
-data/
 .env
 note.txt
