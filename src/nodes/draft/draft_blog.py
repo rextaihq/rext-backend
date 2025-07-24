@@ -1,6 +1,11 @@
 from src.states.State import AgentState
 import requests
 from requests.structures import CaseInsensitiveDict
+import markdown  
+from dotenv import load_dotenv
+import os
+
+load_dotenv()
 
 def draft_blog(state: AgentState):
     approved_blogs = state.get("approved_blogs", [])
@@ -10,41 +15,59 @@ def draft_blog(state: AgentState):
         print("⚠️ No approved blogs found in state.")
         return state
 
-    wp_url = "https://staging.wpaegis.com/wp-json/wp/v2/posts"
-    jwt_token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOjEsIm5hbWUiOiJzdGFnaW5nX3dwYWVnaXMiLCJpYXQiOjE3NTMyNzk2MzEsImV4cCI6MTkxMDk1OTYzMX0.OWcNYsPd_C4xw_L6qBTdxe8m_W4mWAeD3lzwNFccLr4"  # replace with your full token
+    wp_url = os.getenv("WP_URL")
+    jwt_token = os.getenv("WP_TOKEN")
 
     for idx, blog_result in enumerate(approved_blogs):
         print(f"\n📝 Posting blog {idx + 1}: {blog_result['title']}")
 
         try:
-            # --- Format Body Content ---
-            formatted_sections = "\n\n".join(
-                [f"<h2>{s['heading']}</h2>\n<p>{s['content']}</p>" for s in blog_result["sections"]]
-            )
+            # --- Format sections ---
+            formatted_sections = ""
+            for section in blog_result["sections"]:
+                heading_html = f"<h2>{markdown.markdown(section['heading'])}</h2>"
+                content_html = markdown.markdown(section["content"])
+                formatted_sections += f"{heading_html}\n{content_html}\n\n"
 
+            # --- References Section ---
             references_html = ""
             if blog_result["references"]:
                 references_html = "<h3>References</h3>\n<ul>" + "\n".join(
-                    [f'<li><a href="{r}" target="_blank" rel="noopener noreferrer">{r}</a></li>' for r in blog_result["references"]]
+                    [f'<li><a href="{r}" target="_blank" rel="noopener noreferrer">{r}</a></li>'
+                     for r in blog_result["references"]]
                 ) + "</ul>"
 
+            # --- Final Image Placeholder Section ---
+            image_note = ""
+            final_img = blog_result.get("final_image")
+            if final_img:
+                image_note = f"""
+            <hr>
+            <h3>📌 Final Image Placeholder</h3>
+            <p><strong>Alt Text:</strong> {final_img.alt_text}</p>
+            <p><strong>Design Prompt:</strong> {getattr(final_img, 'suggested_prompt', 'N/A')}</p>
+            """
+
+
+            # --- Combine Everything ---
             full_content = f"""
-<p>{blog_result['introduction']}</p>
+{markdown.markdown(blog_result['introduction'])}
 {formatted_sections}
-<p>{blog_result['conclusion']}</p>
+{markdown.markdown(blog_result['conclusion'])}
 {references_html}
+{image_note}
 """
 
-            # --- Prepare POST data with SEO info ---
+            # --- Prepare POST data ---
             post_data = {
                 "title": blog_result["title"],
                 "content": full_content,
-                "status": "draft",  # Change to "publish" if you want to publish immediately
+                "status": "draft",  # or "publish"
                 "excerpt": blog_result["meta_description"],
-                "tags": blog_result["keywords"]  # We'll handle this next
+                "tags": blog_result["keywords"]
             }
 
-            # --- Create Headers ---
+            # --- Headers ---
             headers = CaseInsensitiveDict()
             headers["Authorization"] = f"Bearer {jwt_token}"
             headers["Content-Type"] = "application/json"
@@ -70,7 +93,7 @@ def draft_blog(state: AgentState):
             if tag_ids:
                 post_data["tags"] = tag_ids
 
-            # --- POST blog to WordPress ---
+            # --- POST to WordPress ---
             response = requests.post(
                 wp_url,
                 headers=headers,

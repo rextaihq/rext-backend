@@ -14,3 +14,4 @@ pandas
 requests
 numpy
 nest_asyncio
+markdown

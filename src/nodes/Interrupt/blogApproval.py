@@ -72,6 +72,7 @@ def blog_approval(state:AgentState):
             "sections": [s.model_dump() for s in blog_result.sections],
             "conclusion": blog_result.conclusion,
             "references": blog_result.references,
+            'final_image':blog_result.final_image,
             "approved": True
         }
 
