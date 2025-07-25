@@ -3,10 +3,8 @@ from crawl4ai.async_configs import BrowserConfig, CrawlerRunConfig, CacheMode
 from src.utils.helper import GetBrowserConfig
 from src.states.State import AgentState
 import pandas as pd
-import nest_asyncio
 import asyncio
 import os
-nest_asyncio.apply()  # Required for async inside Jupyter/Colab
 
 async def scrape_full_content(state: AgentState) -> AgentState:
     """

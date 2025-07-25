@@ -29,7 +29,8 @@ def wordpress_articles(state:AgentState) -> AgentState:
     """
     print("Fetching wordpress articles...")
     rss_sources = loadYamlConfig().get("rss_sources", {})
-
+    
+    print("RSS Sources:", rss_sources)
     all_articles = []
 
     for source_name, url in rss_sources.items():
@@ -51,11 +52,14 @@ def wordpress_articles(state:AgentState) -> AgentState:
 
                 all_articles.append(article)
                 break
-
+            print("Articles Fetched from", source_name, ":", len(all_articles))
+             # Add fetched articles to state
+            print("Total articles fetched:", len(all_articles))
+            state['wordpress_articles'] = all_articles
+            return state
         except Exception as e:
             print(f"[ERROR] Failed to fetch from {source_name}: {e}")
             state['error'] = str(e)
             return str(e)
 
-    # return all_articles
-    return {'wordpress_articles':all_articles}
+   

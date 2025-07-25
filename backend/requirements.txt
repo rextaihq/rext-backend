@@ -15,3 +15,4 @@ requests
 numpy
 nest_asyncio
 markdown
+fastapi[standard]
