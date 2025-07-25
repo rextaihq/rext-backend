@@ -1,0 +1,252 @@
+title,link,source,published,summary,Raw Blog Content,full_links,rating,weight,total_score
+"New Defense Strategy for Federated Learning, Capping Accuracy Loss at 0.47%",https://www.newswise.com/articles/new-defense-strategy-for-federated-learning-capping-accuracy-loss-at-0-47,Newswise,2025-07-25 14:55:00,"Beihang University researchers unveil a new federated learning poisoning-attack mitigation strategy to cap accuracy losses under 1% on MNIST and under 4% on CIFAR-10, bolstering AI security and privacy in healthcare, autonomous vehicles, and finance.",881dc1a9c6e4fd56,"['https://wptavern.com/podcast/178-adam-silverstein-explores-transformative-browser-features-impacting-wordpress-sites', 'https://wptavern.com/', 'https://wptavern.com/category/news', 'https://wptavern.com/category/opinion', 'https://wptavern.com/category/plugins', 'https://wptavern.com/category/themes', 'https://wptavern.com/category/wordcamps-meetups', 'https://wptavern.com/forums', 'https://wptavern.com/podcast', 'https://wptavern.com/contact']",28,64,1792
+#178 – Adam Silverstein Explores Transformative Browser Features Impacting WordPress Sites,https://wptavern.com/podcast/178-adam-silverstein-explores-transformative-browser-features-impacting-wordpress-sites,WP Tavern,2025-07-23 14:00:00,"On the podcast today we have Adam Silverstein. He's here to discuss how new browser APIs and web technologies are transforming the WordPress experience. Adam explains advancements like the Popover API, Scroll Animations, CSS carousels, customisable selects, view transitions, and speculative loading, many of which reduce reliance on heavy JavaScript and improve accessibility, performance, and user experience. He also touches upon modern image formats, browser-based image processing, and running AI directly in the browser. Adam highlights the growing collaboration among browser vendors and encourages developers to engage in shaping browser standards for the open web. Whether you’re a theme designer, plugin developer, or site owner simply curious about what’s next, this episode is for you.","[ ![](https://www.newswise.com/assets/newTheme/img/logo-newSkin.png) ](https://www.newswise.com/ ""Newswise logo"") _☰_
+  * [About](https://www.newswise.com/articles/new-defense-strategy-for-federated-learning-capping-accuracy-loss-at-0-47)
+    * About
+    * [Curious by Nature Podcast](https://www.newswise.com/curious-by-nature)
+    * [Member Services](https://www.newswise.com/memberservices)
+    * [Pricing](https://www.newswise.com/pricing)
+    * [Accessibility Statement](https://www.newswise.com/accessibility)
+    * [Newswise Live](https://memberservices.newswise.com/fast-pitch/)
+    * [Invoice Lookup](https://payments.newswise.com/invoicelookup)
+    * [Archived Wires](https://www.newswise.com/archive/wires/)
+    * [Media Subscribers](https://www.newswise.com/media)
+    * [Services for Journalists](https://www.newswise.com/journalists)
+    * [Sample Effectiveness Reports](https://www.newswise.com/reports/demo)
+    * [Terms of Service](https://www.newswise.com/terms-of-service)
+    * [Privacy Policy](https://www.newswise.com/privacy)
+    * [Our Staff](https://www.newswise.com/newswise-staff)
+    * [Contact Us](https://www.newswise.com/home/contact)
+    * [Blog](https://www.newswise.com/ee/list/)
+    * [FAQ](https://www.newswise.com/home/faq/)
+    * [Help](https://www.newswise.com/home/contact)
+  * [News](https://www.newswise.com/articles/new-defense-strategy-for-federated-learning-capping-accuracy-loss-at-0-47)
+    * [Latest News](https://www.newswise.com/articles/list/latest-news)
+    * [Coronavirus News](https://www.newswise.com/coronavirus)
+    * [Currently Embargoed](https://www.newswise.com/articles/list/embargoed-news)
+    * [Research News Releases](https://www.newswise.com/articles/list/research-news)
+    * [Google Fact Check](https://www.newswise.com/articles/list/fact-check-news)
+    * [Research Alert](https://www.newswise.com/articles/list/research-alert)
+    * [Preprints](https://www.newswise.com/preprints)
+    * [Marketplace](https://www.newswise.com/articles/list/marketplace-news)
+    * [News With Video/Audio](https://www.newswise.com/articles/list/audiovideo)
+    * [RSS](https://www.newswise.com/libraries/rss)
+[Channels](https://www.newswise.com/channels)
+    * Medicine 
+    * Science 
+    * Life 
+    * Business 
+    * Journal News 
+    * By Location 
+    * Meeting, Grants & Events 
+    * [Biotech](https://www.newswise.com/articles/channels?channel=6240)
+    * [Cancer](https://www.newswise.com/articles/channels?channel=9)
+    * [Coronavirus/COVID-19](https://www.newswise.com/articles/channels?channel=6546)
+    * [Clinical Trials](https://www.newswise.com/articles/channels?channel=6502)
+    * [Diabetes](https://www.newswise.com/articles/channels?channel=97)
+    * [Genetics](https://www.newswise.com/articles/channels?channel=106)
+    * [Infectious Disease](https://www.newswise.com/articles/channels?channel=43)
+    * [Neuro](https://www.newswise.com/articles/channels?channel=104)
+    * [Obesity](https://www.newswise.com/articles/channels?channel=5)
+    * [Women's Health](https://www.newswise.com/articles/channels?channel=143)
+[View all Medicine Channels _➤_](https://www.newswise.com/channels/medical-news/1)
+    * [Chemistry](https://www.newswise.com/articles/channels?channel=144)
+    * [Climate Science](https://www.newswise.com/articles/channels?channel=59)
+    * [Dinosaurs](https://www.newswise.com/articles/channels?channel=112)
+    * [DOE Science News](https://www.newswise.com/articles/channels?channel=57)
+    * [Engineering](https://www.newswise.com/articles/channels?channel=6269)
+    * [Materials Science](https://www.newswise.com/articles/channels?channel=142)
+    * [Physics](https://www.newswise.com/articles/channels?channel=128)
+    * [Space](https://www.newswise.com/articles/channels?channel=17)
+[View all Science Channels _➤_](https://www.newswise.com/channels/science-news/2)
+    * [Behavioral Science](https://www.newswise.com/articles/channels?channel=109)
+    * [Education](https://www.newswise.com/articles/channels?channel=15)
+    * [Government](https://www.newswise.com/articles/channels?channel=16)
+    * [History](https://www.newswise.com/articles/channels?channel=6248)
+    * [Politics](https://www.newswise.com/articles/channels?channel=22)
+    * [Social Media](https://www.newswise.com/articles/channels?channel=6308)
+[View all Life Channels _➤_](https://www.newswise.com/channels/life-news/3)
+    * [Economics](https://www.newswise.com/articles/channels?channel=79)
+    * [Wall Street](https://www.newswise.com/articles/channels?channel=6252)
+    * [In the Workplace](https://www.newswise.com/articles/channels?channel=136)
+    * [Women in Business](https://www.newswise.com/articles/channels?channel=6280)
+[View all Business Channels _➤_](https://www.newswise.com/channels/business-news/4)
+    * [Cell (journal)](https://www.newswise.com/articles/channels?channel=6452)
+    * [JAMA](https://www.newswise.com/articles/channels?channel=6335)
+    * [Journal of Experimental Medicine](https://www.newswise.com/articles/channels?channel=6454)
+    * [Nature (journal)](https://www.newswise.com/articles/channels?channel=6337)
+    * [NEJM](https://www.newswise.com/articles/channels?channel=6424)
+    * [Neurology (journal)](https://www.newswise.com/articles/channels?channel=6455)
+    * [PLoS](https://www.newswise.com/articles/channels?channel=6334)
+[View all Journal Channels _➤_](https://www.newswise.com/channels/journal-news/5)
+    * [Afghanistan News](https://www.newswise.com/articles/channels?channel=6292)
+    * [African News](https://www.newswise.com/articles/channels?channel=6324)
+    * [China News](https://www.newswise.com/articles/channels?channel=81)
+    * [Cuba News](https://www.newswise.com/articles/channels?channel=86)
+    * [Europe News](https://www.newswise.com/articles/channels?channel=6322)
+    * [Germany News](https://www.newswise.com/articles/channels?channel=6486)
+    * [Gulf of Mexico](https://www.newswise.com/articles/channels?channel=6441)
+    * [India/Pakistan News](https://www.newswise.com/articles/channels?channel=6496)
+    * [Iraq News](https://www.newswise.com/articles/channels?channel=19)
+[View all by Location Channels _➤_](https://www.newswise.com/channels/by-location-news/7)
+    * [Grant Funded News](https://www.newswise.com/articles/channels?channel=6296)
+    * [Medical Meetings](https://www.newswise.com/articles/channels?channel=6297)
+    * [Newswise Live - Event in Progress](https://www.newswise.com/articles/channels?channel=6331)
+    * [Newswise Live - Expert Spotlight](https://www.newswise.com/articles/channels?channel=6407)
+    * [Newswise Live - Events](https://www.newswise.com/articles/channels?channel=6323)
+    * [Scientific Meetings](https://www.newswise.com/articles/channels?channel=6298)
+[View all Meeting, Grants & Events Channels _➤_](https://www.newswise.com/channels/meeting-grants-events/8)
+Sign up for the wires and see archived wires 
+    * [Sign Up Now](https://www.newswise.com/users/register)
+  * [Experts](https://www.newswise.com/articles/new-defense-strategy-for-federated-learning-capping-accuracy-loss-at-0-47)
+    * ###### [Expert Pitch Browse experts available to comment on breaking news ](https://www.newswise.com/articles/list?category=expert-pitch)
+    * ###### [Expert Query Request an expert contact, get responses directly to your inbox ](https://www.newswise.com/resources/expert-query)
+    * ###### [Expert Directory Find an expert by topic in a comprehensive database ](https://www.newswise.com/users/expert-list/)
+  * [Journalists](https://www.newswise.com/journalists)
+  * [Pricing](https://www.newswise.com/pricing)
+
+
+  * _⌕_
+  * [Request a Demo](https://memberservices.newswise.com/request-a-demo-campaign)
+  * [Login](https://www.newswise.com/users/login/?ret=%2Farticles%2Fnew-defense-strategy-for-federated-learning-capping-accuracy-loss-at-0-47)
+  * [Register](https://www.newswise.com/users/register?ret=%2Farticles%2Fnew-defense-strategy-for-federated-learning-capping-accuracy-loss-at-0-47)
+
+
+# New Defense Strategy for Federated Learning, Capping Accuracy Loss at 0.47%
+###### _Delivers low-overhead protection for healthcare, finance, and autonomous-vehicle AI without sharing raw data_
+25-Jul-2025 11:10 AM EDT, by [Higher Education Press ](https://www.newswise.com/institutions/newsroom/24220/)
+[_♡_](https://www.newswise.com/users/login/?ret=%2Farticles%2Fnew-defense-strategy-for-federated-learning-capping-accuracy-loss-at-0-47%2F%3Fad2f%3D1%26aid%3D832384 ""Add to Favorites"")
+[ ![Newswise: New Defense Strategy for Federated Learning, Capping Accuracy Loss at 0.47%](https://www.newswise.com/legacy/image.php?image=%2Fimages%2Fuploads%2F2025%2F07%2F25%2F68839d52c1101_AIsecurity1.png&width=502&height=334) ](https://www.newswise.com/articles/media-article/832384 ""View full image"")
+Credit: Cong WANG
+Model accuracy under LF attacks, LIE attacks and Min-Max attacks on MNIST (left) and CIFAR-10 (right). (a) LF attack, MNIST; (b) LF attack, CIFAR-10; (c) LIE attack, MNIST; (d) LIE attack, CIFAR-10; (e) Min-Max attack, MNIST; (f) Min-Max attack, CIFAR-10
+[ ![Newswise: New Defense Strategy for Federated Learning, Capping Accuracy Loss at 0.47%](https://www.newswise.com/legacy/image.php?image=%2Fimages%2Fuploads%2F2025%2F07%2F25%2F68839d73f0e07_AIsecurity2.png&width=502&height=334) ](https://www.newswise.com/articles/media-article/832384 ""View full image"")
+Credit: Cong WANG
+Performance comparison of ablations across communication rounds under LIE attack on MNIST (top) and CIFAR-10 (bottom). (a) Ablation study of ACC under IID setting; (b) ablation study of loss under IID setting; (c) ablation study of ACC under Non-IID setting; (d) ablation study of loss under Non-IID setting
+[ Previous ](https://www.newswise.com/articles/new-defense-strategy-for-federated-learning-capping-accuracy-loss-at-0-47#carouselExampleControls) [ Next ](https://www.newswise.com/articles/new-defense-strategy-for-federated-learning-capping-accuracy-loss-at-0-47#carouselExampleControls)
+Newswise — Researchers at Beihang University, in collaboration with the Beijing Zhongguancun Laboratory, have developed a new defense strategy called Long-Short Historical Gradient Federated Learning (LSH-FL), which maintains accuracy losses from attacks below 1% on key benchmarks. This approach directly tackles the risk of malicious clients hijacking decentralized model training.
+## New Defense Shields Federated Learning from Poisoning Threats in Healthcare, Autonomous Vehicles & Finance
+Federated learning enables devices—such as smartphones or medical sensors—to train models collaboratively without sharing raw data; however, it is vulnerable to “poisoning” attacks that send malicious updates to the server. Such attacks pose a threat to applications in healthcare diagnostics, autonomous vehicles, and finance. By making federated learning more robust, LSH-FL can help ensure safer, more trustworthy AI for both industry and consumers.
+## New Model Caps MNIST Accuracy Drop at 0.47% and Keeps CIFAR-10 Loss Under 4% Even with 50% Attackers
+The experiments produced the following clear outcomes:
+  * On the MNIST handwriting dataset, LSH-FL limited the drop in model accuracy to just 0.47% under label-flip attacks, compared to a loss of over 3% with prior defenses (e.g., Multi-Krum, Trim, FABA).
+  * For the CIFAR-10 image set, even when half of all participants attempted to corrupt the model, LSH-FL maintained accuracy losses under 4%, outperforming methods that failed when the attacker numbers exceeded 40% (e.g., Krum and Multi-Krum).
+  * Across four popular benchmarks, including CIFAR-100 and Fashion-MNIST, LSH-FL consistently reduced the impact of five common poisoning strategies more effectively than six state-of-the-art defenses.
+
+
+## Novel Two-Pronged Approach Uses Randomized Tweaks and Gradient History to Sniff Out Malicious Updates
+To develop LSH-FL, the researchers combined two complementary strategies that work together to defend against poisoning while preserving privacy. First, they introduced short-term perturbations by adding minor, randomized adjustments to each client’s latest model updates; this makes it difficult for attackers to blend malicious changes with legitimate contributions. Second, they implemented long-term detection by maintaining a lightweight history of past updates and identifying patterns that deviate from normal behavior, allowing the system to flag and discard suspicious inputs. All experiments were conducted in standard federated learning environments, without accessing raw data, and tested under realistic network conditions to ensure the approach remains practical and efficient.
+“By combining short-term perturbations with long-term gradient history, we’ve found a practical way to keep federated learning both accurate and secure—even when half the participants turn malicious,” said Prof. Zhilong Mi.
+## Potential Solution Delivers <1% Accuracy Loss and Privacy-Preserving Security for Distributed AI
+LSH-FL provides a practical, low-overhead approach to hardening federated learning against malicious participants without compromising accuracy or privacy. As industries increasingly rely on decentralized AI, this approach could become a key component in deploying safe and reliable distributed learning systems. The full research article was published in _Frontiers of Computer Science_ in May 2025 (https://doi.org/10.1007/s11704-025-40924-1).
+_Frontiers of Computer Science (FCS) is a leading peer-reviewed international journal co-published by HEP and**Springer Nature**. FCS publishes papers in **all major branches of computer science** including (not limited to): Architecture, Software, Artificial intelligence, Theoretical computer science, Networks and communication, Information systems, Image and graphics, Information security, Interdisciplinary. Papers published in FCS include research articles, review articles, letters. FCS is indexed by**SCI(E), EI, Scopus** , et al. The Latest IF will be 4.8, Q1. It is also class B journal in the CCF recommended journals directory._
+**[Journal Link: Front. Comput. Sci. 19, 1912371 (2025)](https://link.springer.com/article/10.1007/s11704-025-40924-1)**
+Request an Expert
+##### MEDIA CONTACT
+[Register for reporter access to contact details](https://www.newswise.com/users/register)
+#### Article Multimedia
+Images
+[ ![Newswise: New Defense Strategy for Federated Learning, Capping Accuracy Loss at 0.47%](https://www.newswise.com/legacy/image.php?image=%2Fimages%2Fuploads%2F2025%2F07%2F25%2F68839d52c1101_AIsecurity1.png) Credit: Cong WANG Caption: Model accuracy under LF attacks, LIE attacks and Min-Max attacks on MNIST (left) and CIFAR-10 (right). (a) LF attack, MNIST; (b) LF attack, CIFAR-10; (c) LIE attack, MNIST; (d) LIE attack, CIFAR-10; (e) Min-Max attack, MNIST; (f) Min-Max attack, CIFAR-10  ](https://www.newswise.com/legacy/image.php?image=%2Fimages%2Fuploads%2F2025%2F07%2F25%2F68839d52c1101_AIsecurity1.png&width=1000&height=1000) [ ![Newswise: New Defense Strategy for Federated Learning, Capping Accuracy Loss at 0.47%](https://www.newswise.com/legacy/image.php?image=%2Fimages%2Fuploads%2F2025%2F07%2F25%2F68839d73f0e07_AIsecurity2.png) Credit: Cong WANG Caption: Performance comparison of ablations across communication rounds under LIE attack on MNIST (top) and CIFAR-10 (bottom). (a) Ablation study of ACC under IID setting; (b) ablation study of loss under IID setting; (c) ablation study of ACC under Non-IID setting; (d) ablation study of loss under Non-IID setting  ](https://www.newswise.com/legacy/image.php?image=%2Fimages%2Fuploads%2F2025%2F07%2F25%2F68839d73f0e07_AIsecurity2.png&width=1000&height=1000)
+##### CITATIONS
+_[Front. Comput. Sci. 19, 1912371 (2025)](https://link.springer.com/article/10.1007/s11704-025-40924-1)  
+Method of research: Computational simulation/modeling  
+Subject of research: Not applicable_
+##### TYPE OF ARTICLE
+[Research Results](https://www.newswise.com/articles/list?category=latest&search\[article_type\]=100 ""Research Results"")
+##### SECTION
+[SCIENCE](https://www.newswise.com/articles/list?category=science ""Show all articles in this channel"")
+###### CHANNELS
+[All Journal News](https://www.newswise.com/articles/channels?channel=6295 ""Show all articles in this channel"") [Artificial Intelligence](https://www.newswise.com/articles/channels?channel=6492 ""Show all articles in this channel"") [Automotive](https://www.newswise.com/articles/channels?channel=118 ""Show all articles in this channel"") [Engineering](https://www.newswise.com/articles/channels?channel=6269 ""Show all articles in this channel"") [Technology](https://www.newswise.com/articles/channels?channel=41 ""Show all articles in this channel"") [Cybersecurity](https://www.newswise.com/articles/channels?channel=117 ""Show all articles in this channel"")
+###### KEYWORDS
+[AI security](https://www.newswise.com/search/advanced/?search\[tag\]=AI%20security ""Search for articles tagged with this keyword or phrase"") [Machine Learning](https://www.newswise.com/search/advanced/?search\[tag\]=Machine%20Learning ""Search for articles tagged with this keyword or phrase"") [Cybersecurity](https://www.newswise.com/search/advanced/?search\[tag\]=Cybersecurity ""Search for articles tagged with this keyword or phrase"") [Data Privacy](https://www.newswise.com/search/advanced/?search\[tag\]=Data%20Privacy ""Search for articles tagged with this keyword or phrase"") [Distributed Computing](https://www.newswise.com/search/advanced/?search\[tag\]=Distributed%20Computing ""Search for articles tagged with this keyword or phrase"") [Collaborative intelligence](https://www.newswise.com/search/advanced/?search\[tag\]=Collaborative%20intelligence ""Search for articles tagged with this keyword or phrase"")
+[COMMENTS](https://www.newswise.com/home/contact/?topic=Article%20Comment&subject=Comment%20for%20Article%20%23832384&article=832384 ""Leave a comment..."") | [COMMENTING POLICY](https://www.newswise.com/ee/commentpolicy/ ""Newswise commenting policy"")
+×
+[![Newswise](https://www.newswise.com/assets/img/logo-inv.png)](https://www.newswise.com/)
+  
+
+9 AM Daily Wire (click to select custom wire) 0:00 Eastern Standard Time 1:00 Eastern Standard Time 2:00 Eastern Standard Time 3:00 Eastern Standard Time 4:00 Eastern Standard Time 5:00 Eastern Standard Time 6:00 Eastern Standard Time 7:00 Eastern Standard Time 8:00 Eastern Standard Time 9:00 Eastern Standard Time 10:00 Eastern Standard Time 11:00 Eastern Standard Time 12:00 Eastern Standard Time 13:00 Eastern Standard Time 14:00 Eastern Standard Time 15:00 Eastern Standard Time 16:00 Eastern Standard Time 17:00 Eastern Standard Time 18:00 Eastern Standard Time 19:00 Eastern Standard Time 20:00 Eastern Standard Time 21:00 Eastern Standard Time 22:00 Eastern Standard Time 23:00 Eastern Standard Time
+Name:
+Email:
+Media Outlet:
+Accept →
+![](https://www.newswise.com/assets/new/img/2.gif)
+[View All Latest News](https://www.newswise.com/articles/list?category=latest)
+###### Forms
+  * [Media Press Pass](https://www.newswise.com/presspass)
+  * [User Registration](https://www.newswise.com/users/register)
+  * [Find My Account](https://www.newswise.com/forgotusername)
+  * [Pay an Invoice](https://payments.newswise.com/)
+  * [Contact Us](https://www.newswise.com/contact)
+
+
+###### Experts
+  * [Request an Expert](https://www.newswise.com/resources/expert-query)
+  * [Expert Directory](https://www.newswise.com/users/expert-list/)
+  * [Embargoed News](https://www.newswise.com/articles/list/embargoed-news)
+  * [Search Sources](https://www.newswise.com/institutions/list)
+
+
+###### Newswise
+  * [Services for Journalists](https://www.newswise.com/journalists)
+  * [Services for Communicators](https://memberservices.newswise.com/)
+  * [Get Email Alerts](https://www.newswise.com/libraries/rss)
+  * [Daily Wires](https://www.newswise.com/archive/wires/)
+  * [Latest News](https://www.newswise.com/articles/list/latest-news)
+  * [Channel Index](https://www.newswise.com/channels)
+  * [Advanced Search](https://www.newswise.com/search/advanced)
+  * [Select Media Database](https://select.newswise.com/)
+  * [Live Events](https://memberservices.newswise.com/live-events)
+  * [Get a Demo](https://memberservices.newswise.com/request-a-demo-campaign/)
+  * [Pricing](https://www.newswise.com/pricing)
+  * [FAQ](https://www.newswise.com/home/faq/)
+
+
+###### About Newswise
+Journalists use Newswise as a source for research news, experts, ready-to-use content and story ideas. Media relations professionals can connect with reporters and share their organization's news with a wider audience. Public readers discover the latest research news in science, medicine, social sciences, environment, technology, factchecks and business news from the world's most credible universities and research organizations. More than 7,000 email wires go to journalists from more than 2,400 media outlets around the globe. 
+###### Contact Us
+  * [](tel:4342969417)
+  *   * [](https://www.instagram.com/newswise_inc/)
+  * [](https://www.linkedin.com/company/newswise)
+  * [](https://twitter.com/newswise)
+  * [](https://www.facebook.com/Newswise)
+  * [](https://www.google.co.in/search?q=Newswise&ludocid=15420899234105999127&lsig=AB86z5V0SQYZf1KTMkFaB2PQzPaA#fpstate=lie)
+
+
+###### Signup
+[Subscribe to Newswise](https://www.newswise.com/users/register) [For Journalists](https://www.newswise.com/journalists) [Receive a Demo](https://memberservices.newswise.com/request-a-demo-campaign/)
+[![Newswise Logo](https://www.newswise.com/assets/newTheme/img/logo-newSkin.png)](https://www.newswise.com/ ""Newswise Logo"")
+  * [Privacy Notice](https://www.newswise.com/privacy)
+  * [Terms of Service](https://www.newswise.com/terms-of-service)
+
+
+2025 **Newswise** , Inc
+[_close_](javascript:void\(0\))
+_search_
+
+
+  * [Login](https://www.newswise.com/users/login/?ret=%2Farticles%2Fnew-defense-strategy-for-federated-learning-capping-accuracy-loss-at-0-47)
+  * [News _➤_](https://www.newswise.com/libraries)
+[Latest News](https://www.newswise.com/articles/list/latest-news) [Coronavirus News](https://www.newswise.com/coronavirus) [Currently Embargoed News](https://www.newswise.com/articles/list/embargoed-news) [Research News Releases](https://www.newswise.com/articles/list/research-news) [Google Fact Check](https://www.newswise.com/articles/list/fact-check-news) [Research Alert](https://www.newswise.com/articles/list/research-alert) [Preprints](https://www.newswise.com/preprints) [Marketplace](https://www.newswise.com/articles/list/marketplace-news) [News with Video/Audio](https://www.newswise.com/articles/list/audiovideo) [![RSS Icon](https://www.newswise.com/assets/new/img/rss-icon-logo.webp)RSS](https://www.newswise.com/libraries/rss) [Medicine _➤_](javascript:void\(0\))
+[Biotech](https://www.newswise.com/articles/channels?channel=6240) [Cancer](https://www.newswise.com/articles/channels?channel=9) [Coronavirus/COVID-19](https://www.newswise.com/articles/channels?channel=6546) [Clinical Trials](https://www.newswise.com/articles/channels?channel=6502) [Diabetes](https://www.newswise.com/articles/channels?channel=97) [Genetics](https://www.newswise.com/articles/channels?channel=106) [Infectious Disease](https://www.newswise.com/articles/channels?channel=43) [Neuro](https://www.newswise.com/articles/channels?channel=104) [Obesity](https://www.newswise.com/articles/channels?channel=5) [Women?s Health](https://www.newswise.com/articles/channels?channel=143) [View all Medicine Channels _arrow_right_alt_](https://www.newswise.com/channels/medical-news/1)
+[Science _➤_](javascript:void\(0\))
+[Chemistry](https://www.newswise.com/articles/channels?channel=144) [Climate Science](https://www.newswise.com/articles/channels?channel=59) [Dinosaurs](https://www.newswise.com/articles/channels?channel=112) [DOE Science News](https://www.newswise.com/articles/channels?channel=57) [Engineering](https://www.newswise.com/articles/channels?channel=6269) [Materials Science](https://www.newswise.com/articles/channels?channel=142) [Physics](https://www.newswise.com/articles/channels?channel=128) [Space](https://www.newswise.com/articles/channels?channel=17) [View all Science Channels _arrow_right_alt_](https://www.newswise.com/channels/science-news/2)
+[Life _➤_](javascript:void\(0\))
+[Behavioral Science](https://www.newswise.com/articles/channels?channel=109) [Education](https://www.newswise.com/articles/channels?channel=15) [Government](https://www.newswise.com/articles/channels?channel=16) [History](https://www.newswise.com/articles/channels?channel=6248) [Politics](https://www.newswise.com/articles/channels?channel=22) [Social Media](https://www.newswise.com/articles/channels?channel=6308) [View all Life Channels _arrow_right_alt_](https://www.newswise.com/channels/life-news/3)
+[Business _➤_](javascript:void\(0\))
+[Economics](https://www.newswise.com/articles/channels?channel=79) [Wall Street](https://www.newswise.com/articles/channels?channel=6252) [In the Workplace](https://www.newswise.com/articles/channels?channel=136) [Women in Business](https://www.newswise.com/articles/channels?channel=6280) [View all Business Channels _arrow_right_alt_](https://www.newswise.com/channels/business-news/4)
+[Journal News _➤_](javascript:void\(0\))
+[Cell (journal)](https://www.newswise.com/articles/channels?channel=6452) [JAMA](https://www.newswise.com/articles/channels?channel=6335) [Journal of Experimental Medicine](https://www.newswise.com/articles/channels?channel=6454) [Nature (journal)](https://www.newswise.com/articles/channels?channel=6337) [NEJM](https://www.newswise.com/articles/channels?channel=6424) [Neurology (journal)](https://www.newswise.com/articles/channels?channel=6455) [PLoS](https://www.newswise.com/articles/channels?channel=6334) [View all Journal Channels _arrow_right_alt_](https://www.newswise.com/channels/journal-news/5)
+[By Location _➤_](javascript:void\(0\))
+[Afghanistan News](https://www.newswise.com/articles/channels?channel=6292) [African News](https://www.newswise.com/articles/channels?channel=6324) [China News](https://www.newswise.com/articles/channels?channel=81) [Cuba News](https://www.newswise.com/articles/channels?channel=86) [Europe News](https://www.newswise.com/articles/channels?channel=6322) [Germany News](https://www.newswise.com/articles/channels?channel=6486) [Gulf of Mexico](https://www.newswise.com/articles/channels?channel=6441) [India/Pakistan News](https://www.newswise.com/articles/channels?channel=6496) [Iraq News](https://www.newswise.com/articles/channels?channel=19) [View all by Location Channels _arrow_right_alt_](https://www.newswise.com/channels/by-location-news/7)
+[Meetings, Grants, and Events _➤_](javascript:void\(0\))
+[Grant Funded News](https://www.newswise.com/articles/channels?channel=6296) [Medical Meetings](https://www.newswise.com/articles/channels?channel=6297) [Newswise Live - Event in Progress](https://www.newswise.com/articles/channels?channel=6331) [Newswise Live - Expert Spotlight](https://www.newswise.com/articles/channels?channel=6407) [Newswise Live - Events](https://www.newswise.com/articles/channels?channel=6323) [Scientific Meetings](https://www.newswise.com/articles/channels?channel=6298) [View all Meeting, Grants & Events Channels _arrow_right_alt_](https://www.newswise.com/channels/meeting-grants-events/8)
+  * [Experts _➤_](https://www.newswise.com/experts)
+[Expert Pitch](https://www.newswise.com/articles/list/expert-pitch) [Expert Query](https://www.newswise.com/resources/expert-query) [Expert Directory](https://www.newswise.com/users/expert-list/)
+  * [Journalists](https://www.newswise.com/journalists)
+  * [Pricing](https://www.newswise.com/pricing)
+  * [About _➤_](https://www.newswise.com/about)
+[Member Services](https://www.newswise.com/memberservices) [Accessibility Statement](https://www.newswise.com/accessibility) [Newswise Live](https://memberservices.newswise.com/fast-pitch/) [Invoice Lookup](https://payments.newswise.com/invoicelookup) [Services for Journalists](https://www.newswise.com/journalists) [Archived Wires](https://www.newswise.com/archive/wires/) [Participating Institutions](https://www.newswise.com/institutions/list) [Media Subscribers](https://www.newswise.com/media) [Sample Effectiveness Reports](https://www.newswise.com/reports/demo) [Terms of Service](https://www.newswise.com/terms-of-service) [Privacy Policy](https://www.newswise.com/privacy) [Our Staff](https://www.newswise.com/newswise-staff) [Contact Newswise](https://www.newswise.com/home/contact)
+  * [Blog](https://www.newswise.com/ee/list/) [FAQ](https://www.newswise.com/ee/faq/C1) [Help](https://www.newswise.com/home/contact)
+
+
+0.40307
+","['https://www.newswise.com/', 'https://www.newswise.com/articles/new-defense-strategy-for-federated-learning-capping-accuracy-loss-at-0-47', 'https://www.newswise.com/curious-by-nature', 'https://www.newswise.com/memberservices', 'https://www.newswise.com/pricing', 'https://www.newswise.com/accessibility', 'https://memberservices.newswise.com/fast-pitch', 'https://payments.newswise.com/invoicelookup', 'https://www.newswise.com/archive/wires', 'https://www.newswise.com/media']",56,62,3472

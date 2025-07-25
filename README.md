@@ -103,6 +103,10 @@ Run the main application:
 langgraph dev --allow-blocking 
 ```
 
+We can access the api doc on this url
+```bash
+http://127.0.0.1:2024/docs
+```
 ## Data Storage
 
 The project uses both CSV and database storage:
