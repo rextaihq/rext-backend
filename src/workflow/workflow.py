@@ -1,4 +1,3 @@
-import asyncio
 from src.nodes.data.GNewsArticles import gnews_articles
 from src.nodes.data.WordpressArticles import wordpress_articles
 from src.nodes.MergeArticles import merge_articles
@@ -129,9 +128,9 @@ def CreateWorkflow()-> RunnableLambda[AgentState, AgentState]:
         )
 
         # Compile the workflow into a runnable
-        # checkpointer = CreateCheckpointer()
-        runnable = workflow.compile(checkpointer=checkpointer)
-        return runnable
+        # checkpointer = await CreateCheckpointer()
+        # runnable = workflow.compile(checkpointer=checkpointer)
+        return workflow.compile()
     # except Exception as e:
     #     print(f"An error occurred while creating the workflow: {e}")
     #     return AgentState(error=str(e))
