@@ -2,6 +2,7 @@ from fastapi import APIRouter, HTTPException
 from src.workflow.workflow import CreateWorkflow
 from src.api.schema.schema import TopicSelectionSchema
 from langgraph.types import Command
+from src.utils.checkpoiner import init_checkpointer
 import uuid
 
 router = APIRouter(
@@ -19,7 +20,15 @@ def get_workflow_status():
 @router.post("/execute")
 async def execute_workflow():
     try:
-        graph = CreateWorkflow()
+        checkpointer = await init_checkpointer()  # Ensure checkpointer is initialized
+        if checkpointer is None:
+            raise HTTPException(status_code=500, detail="Checkpointer initialization failed")
+        
+        print("Checkpointer initialized successfully")
+        workflow  = CreateWorkflow()
+
+
+        graph = workflow.compile(checkpointer=checkpointer)
         # ✅ Generate a unique thread ID for this execution
         thread_id = str(uuid.uuid4())  # uuid4 is more standard for random IDs
 
@@ -55,8 +64,18 @@ async def resume_workflow(thread_id: str,topic_selection: TopicSelectionSchema):
         user_input = ",".join(topic_selection.topic) 
 
         config = {"configurable": {"thread_id": thread_id}}
+        print("Resuming Workflow with thread ID:", thread_id, "and user input:", user_input)
 
-        graph = CreateWorkflow()
+        checkpointer = await init_checkpointer()  # Ensure checkpointer is initialized
+        if checkpointer is None:
+            raise HTTPException(status_code=500, detail="Checkpointer initialization failed")
+
+        workflow  = CreateWorkflow()
+
+
+        graph = workflow.compile(checkpointer=checkpointer)
+
+
         results = await graph.ainvoke(
             input=Command(resume=user_input),
             config=config
@@ -74,5 +93,10 @@ async def resume_workflow(thread_id: str,topic_selection: TopicSelectionSchema):
             "results": results,
             "thread_id": thread_id
         }
+        # return {
+        #     "success": True,
+        #     "message": f"Workflow resumed with thread ID: {thread_id} and user input: {user_input}",
+        #     "thread_id": thread_id
+        # }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

@@ -89,9 +89,30 @@ crawl4ai-setup
 crawl4ai-doctor
 ```
 
+# Setup Postgress DB
+- Run this command in `docker`
+```bash
+docker run --name langgraph-postgres   -e POSTGRES_USER=YourUserName  -e POSTGRES_PASSWORD=YourPassword  -e POSTGRES_DB=dbName   -p 5432:5432   -d postgres:15D
+```
+
+
 2. Configure environment variables:
 - Copy `.env.example` to `.env`
 - Update the variables as needed
+```bash
+OPENAI_API_KEY = OPENAI_API_KEY
+
+GNEWS_API_KEY = GNEWS_API_KEY
+
+LANGSMITH_API_KEY = LANGSMITH URI
+
+WP_URL = BaseURL/wp-json/wp/v2/posts
+WP_TOKEN = WORDPRESS_TOKEN
+
+
+POSTGRES_URL = POSTGRESS URI
+
+```
 
 3. Update configuration in `config/config.yaml`
 

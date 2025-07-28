@@ -1,18 +1,30 @@
-langchain 
-langchain[openai] 
-langchain[groq] 
-langgraph  
-feedparser
+# Core LangChain + LangGraph
+langchain
+langchain[openai]
+langchain[groq]
 langgraph
-crawl4ai
 langgraph-checkpoint-sqlite
+langgraph-checkpoint-postgres
 langgraph-cli[inmem]
+
+# Crawling & Parsing
+crawl4ai
+feedparser
+
+# Database & Persistence
 aiosqlite
+psycopg2-binary
+psycopg[binary,pool]
+
+# Utilities
 python-dotenv
 pyyaml
 pandas
-requests
 numpy
+requests
 nest_asyncio
 markdown
+
+# APIs / UI
 fastapi[standard]
+streamlit

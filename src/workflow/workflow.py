@@ -19,15 +19,12 @@ from src.nodes.Scrapper.GetRelevant import get_relevant_articles
 from src.nodes.generation.outline_generation import outline_generator
 from src.nodes.generation.blogGeneraion import blog_generation
 from src.nodes.draft.draft_blog import draft_blog
-
 from src.states.State import AgentState
 from langgraph.graph import StateGraph,START, END
 from langchain_core.runnables import RunnableLambda
-from src.model.model import LoadModel, StructuredModel
-from src.utils.helper import CreateCheckpointer
+# from src.utils.checkpoiner import checkpointer
 from langgraph.checkpoint.memory import MemorySaver
 
-checkpointer = CreateCheckpointer()
 
 def CreateWorkflow()-> RunnableLambda[AgentState, AgentState]:
         """
@@ -126,11 +123,11 @@ def CreateWorkflow()-> RunnableLambda[AgentState, AgentState]:
                 "done": "DraftBlog"
             }
         )
-
-        # Compile the workflow into a runnable
-        # checkpointer = await CreateCheckpointer()
-        # runnable = workflow.compile(checkpointer=checkpointer)
-        return workflow.compile()
-    # except Exception as e:
-    #     print(f"An error occurred while creating the workflow: {e}")
-    #     return AgentState(error=str(e))
+        return workflow
+        
+        # if(checkpointer is not None):
+        #     print("Checkpointer Setup Successfully")
+        #     return workflow.compile(checkpointer=checkpointer)
+        # else:
+        #     print("Checkpointer is None, run without checkpointing")
+        #     return workflow.compile()

@@ -11,3 +11,4 @@ wheels/
 .langgraph_api
 .env
 note.txt
+full_blog.csv
