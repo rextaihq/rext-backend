@@ -1,252 +1,97 @@
 title,link,source,published,summary,Raw Blog Content,full_links
-"New Defense Strategy for Federated Learning, Capping Accuracy Loss at 0.47%",https://www.newswise.com/articles/new-defense-strategy-for-federated-learning-capping-accuracy-loss-at-0-47,Newswise,2025-07-25 14:55:00,"Beihang University researchers unveil a new federated learning poisoning-attack mitigation strategy to cap accuracy losses under 1% on MNIST and under 4% on CIFAR-10, bolstering AI security and privacy in healthcare, autonomous vehicles, and finance.",881dc1a9c6e4fd56,"['https://wptavern.com/podcast/178-adam-silverstein-explores-transformative-browser-features-impacting-wordpress-sites', 'https://wptavern.com/', 'https://wptavern.com/category/news', 'https://wptavern.com/category/opinion', 'https://wptavern.com/category/plugins', 'https://wptavern.com/category/themes', 'https://wptavern.com/category/wordcamps-meetups', 'https://wptavern.com/forums', 'https://wptavern.com/podcast', 'https://wptavern.com/contact']"
-#178 – Adam Silverstein Explores Transformative Browser Features Impacting WordPress Sites,https://wptavern.com/podcast/178-adam-silverstein-explores-transformative-browser-features-impacting-wordpress-sites,WP Tavern,2025-07-23 14:00:00,"On the podcast today we have Adam Silverstein. He's here to discuss how new browser APIs and web technologies are transforming the WordPress experience. Adam explains advancements like the Popover API, Scroll Animations, CSS carousels, customisable selects, view transitions, and speculative loading, many of which reduce reliance on heavy JavaScript and improve accessibility, performance, and user experience. He also touches upon modern image formats, browser-based image processing, and running AI directly in the browser. Adam highlights the growing collaboration among browser vendors and encourages developers to engage in shaping browser standards for the open web. Whether you’re a theme designer, plugin developer, or site owner simply curious about what’s next, this episode is for you.","[ ![](https://www.newswise.com/assets/newTheme/img/logo-newSkin.png) ](https://www.newswise.com/ ""Newswise logo"") _☰_
-  * [About](https://www.newswise.com/articles/new-defense-strategy-for-federated-learning-capping-accuracy-loss-at-0-47)
-    * About
-    * [Curious by Nature Podcast](https://www.newswise.com/curious-by-nature)
-    * [Member Services](https://www.newswise.com/memberservices)
-    * [Pricing](https://www.newswise.com/pricing)
-    * [Accessibility Statement](https://www.newswise.com/accessibility)
-    * [Newswise Live](https://memberservices.newswise.com/fast-pitch/)
-    * [Invoice Lookup](https://payments.newswise.com/invoicelookup)
-    * [Archived Wires](https://www.newswise.com/archive/wires/)
-    * [Media Subscribers](https://www.newswise.com/media)
-    * [Services for Journalists](https://www.newswise.com/journalists)
-    * [Sample Effectiveness Reports](https://www.newswise.com/reports/demo)
-    * [Terms of Service](https://www.newswise.com/terms-of-service)
-    * [Privacy Policy](https://www.newswise.com/privacy)
-    * [Our Staff](https://www.newswise.com/newswise-staff)
-    * [Contact Us](https://www.newswise.com/home/contact)
-    * [Blog](https://www.newswise.com/ee/list/)
-    * [FAQ](https://www.newswise.com/home/faq/)
-    * [Help](https://www.newswise.com/home/contact)
-  * [News](https://www.newswise.com/articles/new-defense-strategy-for-federated-learning-capping-accuracy-loss-at-0-47)
-    * [Latest News](https://www.newswise.com/articles/list/latest-news)
-    * [Coronavirus News](https://www.newswise.com/coronavirus)
-    * [Currently Embargoed](https://www.newswise.com/articles/list/embargoed-news)
-    * [Research News Releases](https://www.newswise.com/articles/list/research-news)
-    * [Google Fact Check](https://www.newswise.com/articles/list/fact-check-news)
-    * [Research Alert](https://www.newswise.com/articles/list/research-alert)
-    * [Preprints](https://www.newswise.com/preprints)
-    * [Marketplace](https://www.newswise.com/articles/list/marketplace-news)
-    * [News With Video/Audio](https://www.newswise.com/articles/list/audiovideo)
-    * [RSS](https://www.newswise.com/libraries/rss)
-[Channels](https://www.newswise.com/channels)
-    * Medicine 
-    * Science 
-    * Life 
-    * Business 
-    * Journal News 
-    * By Location 
-    * Meeting, Grants & Events 
-    * [Biotech](https://www.newswise.com/articles/channels?channel=6240)
-    * [Cancer](https://www.newswise.com/articles/channels?channel=9)
-    * [Coronavirus/COVID-19](https://www.newswise.com/articles/channels?channel=6546)
-    * [Clinical Trials](https://www.newswise.com/articles/channels?channel=6502)
-    * [Diabetes](https://www.newswise.com/articles/channels?channel=97)
-    * [Genetics](https://www.newswise.com/articles/channels?channel=106)
-    * [Infectious Disease](https://www.newswise.com/articles/channels?channel=43)
-    * [Neuro](https://www.newswise.com/articles/channels?channel=104)
-    * [Obesity](https://www.newswise.com/articles/channels?channel=5)
-    * [Women's Health](https://www.newswise.com/articles/channels?channel=143)
-[View all Medicine Channels _➤_](https://www.newswise.com/channels/medical-news/1)
-    * [Chemistry](https://www.newswise.com/articles/channels?channel=144)
-    * [Climate Science](https://www.newswise.com/articles/channels?channel=59)
-    * [Dinosaurs](https://www.newswise.com/articles/channels?channel=112)
-    * [DOE Science News](https://www.newswise.com/articles/channels?channel=57)
-    * [Engineering](https://www.newswise.com/articles/channels?channel=6269)
-    * [Materials Science](https://www.newswise.com/articles/channels?channel=142)
-    * [Physics](https://www.newswise.com/articles/channels?channel=128)
-    * [Space](https://www.newswise.com/articles/channels?channel=17)
-[View all Science Channels _➤_](https://www.newswise.com/channels/science-news/2)
-    * [Behavioral Science](https://www.newswise.com/articles/channels?channel=109)
-    * [Education](https://www.newswise.com/articles/channels?channel=15)
-    * [Government](https://www.newswise.com/articles/channels?channel=16)
-    * [History](https://www.newswise.com/articles/channels?channel=6248)
-    * [Politics](https://www.newswise.com/articles/channels?channel=22)
-    * [Social Media](https://www.newswise.com/articles/channels?channel=6308)
-[View all Life Channels _➤_](https://www.newswise.com/channels/life-news/3)
-    * [Economics](https://www.newswise.com/articles/channels?channel=79)
-    * [Wall Street](https://www.newswise.com/articles/channels?channel=6252)
-    * [In the Workplace](https://www.newswise.com/articles/channels?channel=136)
-    * [Women in Business](https://www.newswise.com/articles/channels?channel=6280)
-[View all Business Channels _➤_](https://www.newswise.com/channels/business-news/4)
-    * [Cell (journal)](https://www.newswise.com/articles/channels?channel=6452)
-    * [JAMA](https://www.newswise.com/articles/channels?channel=6335)
-    * [Journal of Experimental Medicine](https://www.newswise.com/articles/channels?channel=6454)
-    * [Nature (journal)](https://www.newswise.com/articles/channels?channel=6337)
-    * [NEJM](https://www.newswise.com/articles/channels?channel=6424)
-    * [Neurology (journal)](https://www.newswise.com/articles/channels?channel=6455)
-    * [PLoS](https://www.newswise.com/articles/channels?channel=6334)
-[View all Journal Channels _➤_](https://www.newswise.com/channels/journal-news/5)
-    * [Afghanistan News](https://www.newswise.com/articles/channels?channel=6292)
-    * [African News](https://www.newswise.com/articles/channels?channel=6324)
-    * [China News](https://www.newswise.com/articles/channels?channel=81)
-    * [Cuba News](https://www.newswise.com/articles/channels?channel=86)
-    * [Europe News](https://www.newswise.com/articles/channels?channel=6322)
-    * [Germany News](https://www.newswise.com/articles/channels?channel=6486)
-    * [Gulf of Mexico](https://www.newswise.com/articles/channels?channel=6441)
-    * [India/Pakistan News](https://www.newswise.com/articles/channels?channel=6496)
-    * [Iraq News](https://www.newswise.com/articles/channels?channel=19)
-[View all by Location Channels _➤_](https://www.newswise.com/channels/by-location-news/7)
-    * [Grant Funded News](https://www.newswise.com/articles/channels?channel=6296)
-    * [Medical Meetings](https://www.newswise.com/articles/channels?channel=6297)
-    * [Newswise Live - Event in Progress](https://www.newswise.com/articles/channels?channel=6331)
-    * [Newswise Live - Expert Spotlight](https://www.newswise.com/articles/channels?channel=6407)
-    * [Newswise Live - Events](https://www.newswise.com/articles/channels?channel=6323)
-    * [Scientific Meetings](https://www.newswise.com/articles/channels?channel=6298)
-[View all Meeting, Grants & Events Channels _➤_](https://www.newswise.com/channels/meeting-grants-events/8)
-Sign up for the wires and see archived wires 
-    * [Sign Up Now](https://www.newswise.com/users/register)
-  * [Experts](https://www.newswise.com/articles/new-defense-strategy-for-federated-learning-capping-accuracy-loss-at-0-47)
-    * ###### [Expert Pitch Browse experts available to comment on breaking news ](https://www.newswise.com/articles/list?category=expert-pitch)
-    * ###### [Expert Query Request an expert contact, get responses directly to your inbox ](https://www.newswise.com/resources/expert-query)
-    * ###### [Expert Directory Find an expert by topic in a comprehensive database ](https://www.newswise.com/users/expert-list/)
-  * [Journalists](https://www.newswise.com/journalists)
-  * [Pricing](https://www.newswise.com/pricing)
+Steam beta update brings revamped Store menus and much more,https://www.kitguru.net/desktop-pc/mustafa-mahmoud/steam-beta-update-brings-revamped-store-menus-and-much-more/,KitGuru,2025-07-28 08:00:23,"Valve is continuing to improve Steam, with the latest beta update bringing a revamped store menu alongside enhanced search capabilities and more.",881dc1a9c6e4fd56,"['https://wptavern.com/podcast/178-adam-silverstein-explores-transformative-browser-features-impacting-wordpress-sites', 'https://wptavern.com/', 'https://wptavern.com/category/news', 'https://wptavern.com/category/opinion', 'https://wptavern.com/category/plugins', 'https://wptavern.com/category/themes', 'https://wptavern.com/category/wordcamps-meetups', 'https://wptavern.com/forums', 'https://wptavern.com/podcast', 'https://wptavern.com/contact']"
+#178 – Adam Silverstein Explores Transformative Browser Features Impacting WordPress Sites,https://wptavern.com/podcast/178-adam-silverstein-explores-transformative-browser-features-impacting-wordpress-sites,WP Tavern,2025-07-23 14:00:00,"On the podcast today we have Adam Silverstein. He's here to discuss how new browser APIs and web technologies are transforming the WordPress experience. Adam explains advancements like the Popover API, Scroll Animations, CSS carousels, customisable selects, view transitions, and speculative loading, many of which reduce reliance on heavy JavaScript and improve accessibility, performance, and user experience. He also touches upon modern image formats, browser-based image processing, and running AI directly in the browser. Adam highlights the growing collaboration among browser vendors and encourages developers to engage in shaping browser standards for the open web. Whether you’re a theme designer, plugin developer, or site owner simply curious about what’s next, this episode is for you.","[](https://www.amazon.co.uk/stores/page/1D11E484-C571-4992-8F39-0BD55D8B66E4)
+[](https://www.kitguru.net/feed/ ""Rss"")[](https://www.facebook.com/pages/KitGuru/162236020510911?fref=ts ""Facebook"")[](http://twitter.com/kitgurupress ""Twitter"")[](https://bit.ly/3B5CAAs ""Youtube"")[](https://www.instagram.com/kitguru_tech/?hl=en ""instagram"")
+  * [](http://www.kitguru.net)
+  * [News](http://www.kitguru.net/tag/news/)
+  * [Reviews](https://www.kitguru.net/reviews/)
+  * [Gaming](https://www.kitguru.net/category/gaming/)
+  * [Mobile](https://www.kitguru.net/category/lifestyle/mobile/)
+  * [Best Hardware Guide](https://www.kitguru.net/news/best-pc-hardware/)
+  * [KG YouTube](https://www.kitguru.net/kitguru-latest-from-youtube/)
 
 
-  * _⌕_
-  * [Request a Demo](https://memberservices.newswise.com/request-a-demo-campaign)
-  * [Login](https://www.newswise.com/users/login/?ret=%2Farticles%2Fnew-defense-strategy-for-federated-learning-capping-accuracy-loss-at-0-47)
-  * [Register](https://www.newswise.com/users/register?ret=%2Farticles%2Fnew-defense-strategy-for-federated-learning-capping-accuracy-loss-at-0-47)
+[](https://www.kitguru.net/desktop-pc/mustafa-mahmoud/steam-beta-update-brings-revamped-store-menus-and-much-more/)
+##  [ ![KitGuru](https://www.kitguru.net/wp-content/uploads/2017/01/kg_logo3.png)**KitGuru KitGuru.net – Tech News | Hardware News | Hardware Reviews | IOS | Mobile | Gaming | Graphics Cards** ](https://www.kitguru.net/ ""KitGuru"")
+[![](https://www.kitguru.net/wp-content/uploads/2025/06/2-Core-II-728x90-1.jpg)](https://www.coolermaster.com/en-gb/products/masterliquid-core-ii-series)
+  * [](http://www.kitguru.net)
+  * [News](http://www.kitguru.net/tag/news/)
+  * [Reviews](https://www.kitguru.net/reviews/)
+  * [Gaming](https://www.kitguru.net/category/gaming/)
+  * [Mobile](https://www.kitguru.net/category/lifestyle/mobile/)
+  * [Best Hardware Guide](https://www.kitguru.net/news/best-pc-hardware/)
+  * [KG YouTube](https://www.kitguru.net/kitguru-latest-from-youtube/)
 
 
-# New Defense Strategy for Federated Learning, Capping Accuracy Loss at 0.47%
-###### _Delivers low-overhead protection for healthcare, finance, and autonomous-vehicle AI without sharing raw data_
-25-Jul-2025 11:10 AM EDT, by [Higher Education Press ](https://www.newswise.com/institutions/newsroom/24220/)
-[_♡_](https://www.newswise.com/users/login/?ret=%2Farticles%2Fnew-defense-strategy-for-federated-learning-capping-accuracy-loss-at-0-47%2F%3Fad2f%3D1%26aid%3D832384 ""Add to Favorites"")
-[ ![Newswise: New Defense Strategy for Federated Learning, Capping Accuracy Loss at 0.47%](https://www.newswise.com/legacy/image.php?image=%2Fimages%2Fuploads%2F2025%2F07%2F25%2F68839d52c1101_AIsecurity1.png&width=502&height=334) ](https://www.newswise.com/articles/media-article/832384 ""View full image"")
-Credit: Cong WANG
-Model accuracy under LF attacks, LIE attacks and Min-Max attacks on MNIST (left) and CIFAR-10 (right). (a) LF attack, MNIST; (b) LF attack, CIFAR-10; (c) LIE attack, MNIST; (d) LIE attack, CIFAR-10; (e) Min-Max attack, MNIST; (f) Min-Max attack, CIFAR-10
-[ ![Newswise: New Defense Strategy for Federated Learning, Capping Accuracy Loss at 0.47%](https://www.newswise.com/legacy/image.php?image=%2Fimages%2Fuploads%2F2025%2F07%2F25%2F68839d73f0e07_AIsecurity2.png&width=502&height=334) ](https://www.newswise.com/articles/media-article/832384 ""View full image"")
-Credit: Cong WANG
-Performance comparison of ablations across communication rounds under LIE attack on MNIST (top) and CIFAR-10 (bottom). (a) Ablation study of ACC under IID setting; (b) ablation study of loss under IID setting; (c) ablation study of ACC under Non-IID setting; (d) ablation study of loss under Non-IID setting
-[ Previous ](https://www.newswise.com/articles/new-defense-strategy-for-federated-learning-capping-accuracy-loss-at-0-47#carouselExampleControls) [ Next ](https://www.newswise.com/articles/new-defense-strategy-for-federated-learning-capping-accuracy-loss-at-0-47#carouselExampleControls)
-Newswise — Researchers at Beihang University, in collaboration with the Beijing Zhongguancun Laboratory, have developed a new defense strategy called Long-Short Historical Gradient Federated Learning (LSH-FL), which maintains accuracy losses from attacks below 1% on key benchmarks. This approach directly tackles the risk of malicious clients hijacking decentralized model training.
-## New Defense Shields Federated Learning from Poisoning Threats in Healthcare, Autonomous Vehicles & Finance
-Federated learning enables devices—such as smartphones or medical sensors—to train models collaboratively without sharing raw data; however, it is vulnerable to “poisoning” attacks that send malicious updates to the server. Such attacks pose a threat to applications in healthcare diagnostics, autonomous vehicles, and finance. By making federated learning more robust, LSH-FL can help ensure safer, more trustworthy AI for both industry and consumers.
-## New Model Caps MNIST Accuracy Drop at 0.47% and Keeps CIFAR-10 Loss Under 4% Even with 50% Attackers
-The experiments produced the following clear outcomes:
-  * On the MNIST handwriting dataset, LSH-FL limited the drop in model accuracy to just 0.47% under label-flip attacks, compared to a loss of over 3% with prior defenses (e.g., Multi-Krum, Trim, FABA).
-  * For the CIFAR-10 image set, even when half of all participants attempted to corrupt the model, LSH-FL maintained accuracy losses under 4%, outperforming methods that failed when the attacker numbers exceeded 40% (e.g., Krum and Multi-Krum).
-  * Across four popular benchmarks, including CIFAR-100 and Fashion-MNIST, LSH-FL consistently reduced the impact of five common poisoning strategies more effectively than six state-of-the-art defenses.
+[![#](https://www.kitguru.net/wp-content/themes/sahifa/images/fb_logo.png)](https://www.facebook.com/KitGuru.net/ ""Facebook"") [![#](https://www.kitguru.net/wp-content/themes/sahifa/images/twittericon.png)](http://twitter.com/kitgurupress ""Twitter"") [![#](https://www.kitguru.net/wp-content/themes/sahifa/images/youtube_logo.png)](https://bit.ly/3B5CAAs ""Youtube"") [![Google+](https://www.kitguru.net/wp-content/uploads/2018/11/kg_instagram.jpg)](https://www.instagram.com/kitguru_tech/?hl=en ""Instagram"")
+[![](https://www.kitguru.net/wp-content/uploads/2025/07/coolDown-buildUp-kitguru-1100x50-1.jpg)](https://www.kitguru.net/6s2l)
+[Home](https://www.kitguru.net) / [Tech News](https://www.kitguru.net/category/tech-news/) / [Featured Announcement](https://www.kitguru.net/category/tech-news/featured-announcement/) / Steam beta update brings revamped Store menus and much more
+# Steam beta update brings revamped Store menus and much more
+[Mustafa Mahmoud ](https://www.kitguru.net/author/mustafa-mahmoud/) [Featured Announcement](https://www.kitguru.net/category/tech-news/featured-announcement/), [PC](https://www.kitguru.net/category/desktop-pc/), [Software & Gaming](https://www.kitguru.net/category/gaming/)
+**_Over the past couple of years, Valve has put a particular amount of focus on improving Steam across the board – from_**[** _library sharing revamps_**](https://www.kitguru.net/gaming/joao-silva/valve-brings-major-upgrades-to-steam-family-sharing/)** _to_**[** _visual tweaks_**](https://www.kitguru.net/gaming/joao-silva/steams-latest-update-refreshes-ui-and-introduces-new-features/)** _and_**[** _much more_**](https://www.kitguru.net/gaming/matthew-wilson/you-can-now-filter-the-steam-store-by-accessibility-feature/)** _. In alignment with this, those on Steam’s beta channel can now check out the brand new ‘Store Menu’._**
+[Taking to their blog to detail this latest beta](https://steamcommunity.com/games/593110/announcements/detail/500579345320904591), Valve announced and unveiled their brand new redesigned ‘Store Menu’ – meaning the tabs at the top and side of the store page.
+Alongside the rather slick visual upgrade, this new menu comes with a number of functional Quality of Life improvements, [including](https://steamcommunity.com/games/593110/announcements/detail/500579345320904591):
+  * Combined left column and blue bar for greater cohesion and reduce redundancy
+  * New browse tab for added discoverability
+  * Reorganised Recommendations page/tab
+  * Personalised categories tab
+  * Search bar can now be accessed in more places
 
 
-## Novel Two-Pronged Approach Uses Randomized Tweaks and Gradient History to Sniff Out Malicious Updates
-To develop LSH-FL, the researchers combined two complementary strategies that work together to defend against poisoning while preserving privacy. First, they introduced short-term perturbations by adding minor, randomized adjustments to each client’s latest model updates; this makes it difficult for attackers to blend malicious changes with legitimate contributions. Second, they implemented long-term detection by maintaining a lightweight history of past updates and identifying patterns that deviate from normal behavior, allowing the system to flag and discard suspicious inputs. All experiments were conducted in standard federated learning environments, without accessing raw data, and tested under realistic network conditions to ensure the approach remains practical and efficient.
-“By combining short-term perturbations with long-term gradient history, we’ve found a practical way to keep federated learning both accurate and secure—even when half the participants turn malicious,” said Prof. Zhilong Mi.
-## Potential Solution Delivers <1% Accuracy Loss and Privacy-Preserving Security for Distributed AI
-LSH-FL provides a practical, low-overhead approach to hardening federated learning against malicious participants without compromising accuracy or privacy. As industries increasingly rely on decentralized AI, this approach could become a key component in deploying safe and reliable distributed learning systems. The full research article was published in _Frontiers of Computer Science_ in May 2025 (https://doi.org/10.1007/s11704-025-40924-1).
-_Frontiers of Computer Science (FCS) is a leading peer-reviewed international journal co-published by HEP and**Springer Nature**. FCS publishes papers in **all major branches of computer science** including (not limited to): Architecture, Software, Artificial intelligence, Theoretical computer science, Networks and communication, Information systems, Image and graphics, Information security, Interdisciplinary. Papers published in FCS include research articles, review articles, letters. FCS is indexed by**SCI(E), EI, Scopus** , et al. The Latest IF will be 4.8, Q1. It is also class B journal in the CCF recommended journals directory._
-**[Journal Link: Front. Comput. Sci. 19, 1912371 (2025)](https://link.springer.com/article/10.1007/s11704-025-40924-1)**
-Request an Expert
-##### MEDIA CONTACT
-[Register for reporter access to contact details](https://www.newswise.com/users/register)
-#### Article Multimedia
-Images
-[ ![Newswise: New Defense Strategy for Federated Learning, Capping Accuracy Loss at 0.47%](https://www.newswise.com/legacy/image.php?image=%2Fimages%2Fuploads%2F2025%2F07%2F25%2F68839d52c1101_AIsecurity1.png) Credit: Cong WANG Caption: Model accuracy under LF attacks, LIE attacks and Min-Max attacks on MNIST (left) and CIFAR-10 (right). (a) LF attack, MNIST; (b) LF attack, CIFAR-10; (c) LIE attack, MNIST; (d) LIE attack, CIFAR-10; (e) Min-Max attack, MNIST; (f) Min-Max attack, CIFAR-10  ](https://www.newswise.com/legacy/image.php?image=%2Fimages%2Fuploads%2F2025%2F07%2F25%2F68839d52c1101_AIsecurity1.png&width=1000&height=1000) [ ![Newswise: New Defense Strategy for Federated Learning, Capping Accuracy Loss at 0.47%](https://www.newswise.com/legacy/image.php?image=%2Fimages%2Fuploads%2F2025%2F07%2F25%2F68839d73f0e07_AIsecurity2.png) Credit: Cong WANG Caption: Performance comparison of ablations across communication rounds under LIE attack on MNIST (top) and CIFAR-10 (bottom). (a) Ablation study of ACC under IID setting; (b) ablation study of loss under IID setting; (c) ablation study of ACC under Non-IID setting; (d) ablation study of loss under Non-IID setting  ](https://www.newswise.com/legacy/image.php?image=%2Fimages%2Fuploads%2F2025%2F07%2F25%2F68839d73f0e07_AIsecurity2.png&width=1000&height=1000)
-##### CITATIONS
-_[Front. Comput. Sci. 19, 1912371 (2025)](https://link.springer.com/article/10.1007/s11704-025-40924-1)  
-Method of research: Computational simulation/modeling  
-Subject of research: Not applicable_
-##### TYPE OF ARTICLE
-[Research Results](https://www.newswise.com/articles/list?category=latest&search\[article_type\]=100 ""Research Results"")
-##### SECTION
-[SCIENCE](https://www.newswise.com/articles/list?category=science ""Show all articles in this channel"")
-###### CHANNELS
-[All Journal News](https://www.newswise.com/articles/channels?channel=6295 ""Show all articles in this channel"") [Artificial Intelligence](https://www.newswise.com/articles/channels?channel=6492 ""Show all articles in this channel"") [Automotive](https://www.newswise.com/articles/channels?channel=118 ""Show all articles in this channel"") [Engineering](https://www.newswise.com/articles/channels?channel=6269 ""Show all articles in this channel"") [Technology](https://www.newswise.com/articles/channels?channel=41 ""Show all articles in this channel"") [Cybersecurity](https://www.newswise.com/articles/channels?channel=117 ""Show all articles in this channel"")
-###### KEYWORDS
-[AI security](https://www.newswise.com/search/advanced/?search\[tag\]=AI%20security ""Search for articles tagged with this keyword or phrase"") [Machine Learning](https://www.newswise.com/search/advanced/?search\[tag\]=Machine%20Learning ""Search for articles tagged with this keyword or phrase"") [Cybersecurity](https://www.newswise.com/search/advanced/?search\[tag\]=Cybersecurity ""Search for articles tagged with this keyword or phrase"") [Data Privacy](https://www.newswise.com/search/advanced/?search\[tag\]=Data%20Privacy ""Search for articles tagged with this keyword or phrase"") [Distributed Computing](https://www.newswise.com/search/advanced/?search\[tag\]=Distributed%20Computing ""Search for articles tagged with this keyword or phrase"") [Collaborative intelligence](https://www.newswise.com/search/advanced/?search\[tag\]=Collaborative%20intelligence ""Search for articles tagged with this keyword or phrase"")
-[COMMENTS](https://www.newswise.com/home/contact/?topic=Article%20Comment&subject=Comment%20for%20Article%20%23832384&article=832384 ""Leave a comment..."") | [COMMENTING POLICY](https://www.newswise.com/ee/commentpolicy/ ""Newswise commenting policy"")
-×
-[![Newswise](https://www.newswise.com/assets/img/logo-inv.png)](https://www.newswise.com/)
-  
-
-9 AM Daily Wire (click to select custom wire) 0:00 Eastern Standard Time 1:00 Eastern Standard Time 2:00 Eastern Standard Time 3:00 Eastern Standard Time 4:00 Eastern Standard Time 5:00 Eastern Standard Time 6:00 Eastern Standard Time 7:00 Eastern Standard Time 8:00 Eastern Standard Time 9:00 Eastern Standard Time 10:00 Eastern Standard Time 11:00 Eastern Standard Time 12:00 Eastern Standard Time 13:00 Eastern Standard Time 14:00 Eastern Standard Time 15:00 Eastern Standard Time 16:00 Eastern Standard Time 17:00 Eastern Standard Time 18:00 Eastern Standard Time 19:00 Eastern Standard Time 20:00 Eastern Standard Time 21:00 Eastern Standard Time 22:00 Eastern Standard Time 23:00 Eastern Standard Time
-Name:
-Email:
-Media Outlet:
-Accept →
-![](https://www.newswise.com/assets/new/img/2.gif)
-[View All Latest News](https://www.newswise.com/articles/list?category=latest)
-###### Forms
-  * [Media Press Pass](https://www.newswise.com/presspass)
-  * [User Registration](https://www.newswise.com/users/register)
-  * [Find My Account](https://www.newswise.com/forgotusername)
-  * [Pay an Invoice](https://payments.newswise.com/)
-  * [Contact Us](https://www.newswise.com/contact)
+[![Steam Store](https://www.kitguru.net/wp-content/uploads/2025/07/videoframe_6515-1024x576.jpg)](https://www.kitguru.net/wp-content/uploads/2025/07/videoframe_6515.jpg)
+Speaking of the search bar, trying to find exactly what you’re looking for should become much simpler thanks to a revamp of how the system works – now adding;
+  * Popular searches
+  * Recently viewed
+  * Categories/tags
+  * Publishers
+  * New filters
 
 
-###### Experts
-  * [Request an Expert](https://www.newswise.com/resources/expert-query)
-  * [Expert Directory](https://www.newswise.com/users/expert-list/)
-  * [Embargoed News](https://www.newswise.com/articles/list/embargoed-news)
-  * [Search Sources](https://www.newswise.com/institutions/list)
+All in all, this seems to be a rather welcome addition. That said, it may take some time for users to get used to all this reorganisation. It will be interesting to see whether any further alterations are made between now and the public release.
+**_KitGuru says: What do you think of the redesign? Do you welcome it? What other visual elements would you like to see Valve modernise next? Let us know down below._**
+Share
+  * [Facebook](https://www.facebook.com/sharer.php?u=https://www.kitguru.net/?p=707320)
+  * [Twitter](https://twitter.com/intent/tweet?text=Steam+beta+update+brings+revamped+Store+menus+and+much+more&url=https://www.kitguru.net/?p=707320)
+  * [Google +](https://plusone.google.com/_/+1/confirm?hl=en&url=https://www.kitguru.net/?p=707320&name=Steam+beta+update+brings+revamped+Store+menus+and+much+more)
+  * [Stumbleupon](https://www.stumbleupon.com/submit?url=https://www.kitguru.net/?p=707320&title=Steam+beta+update+brings+revamped+Store+menus+and+much+more)
+  * [Whatsapp](whatsapp://send?text=Steam%20beta%20update%20brings%20revamped%20Store%20menus%20and%20much%20more%20https%3A%2F%2Fwww.kitguru.net%2Fdesktop-pc%2Fmustafa-mahmoud%2Fsteam-beta-update-brings-revamped-store-menus-and-much-more%2F)
+  * [Reddit](https://reddit.com/submit?url=https://www.kitguru.net/?p=707320&title=Steam+beta+update+brings+revamped+Store+menus+and+much+more)
 
 
-###### Newswise
-  * [Services for Journalists](https://www.newswise.com/journalists)
-  * [Services for Communicators](https://memberservices.newswise.com/)
-  * [Get Email Alerts](https://www.newswise.com/libraries/rss)
-  * [Daily Wires](https://www.newswise.com/archive/wires/)
-  * [Latest News](https://www.newswise.com/articles/list/latest-news)
-  * [Channel Index](https://www.newswise.com/channels)
-  * [Advanced Search](https://www.newswise.com/search/advanced)
-  * [Select Media Database](https://select.newswise.com/)
-  * [Live Events](https://memberservices.newswise.com/live-events)
-  * [Get a Demo](https://memberservices.newswise.com/request-a-demo-campaign/)
-  * [Pricing](https://www.newswise.com/pricing)
-  * [FAQ](https://www.newswise.com/home/faq/)
+Tags [beta](https://www.kitguru.net/tag/beta/) [Client](https://www.kitguru.net/tag/client/) [news](https://www.kitguru.net/tag/news/) [PC](https://www.kitguru.net/tag/desktop-pc/) [steam](https://www.kitguru.net/tag/steam/) [update](https://www.kitguru.net/tag/update/) [valve](https://www.kitguru.net/tag/valve/)
+[Previous Elden Ring Nightreign patch adds long-awaited Duos mode](https://www.kitguru.net/gaming/matthew-wilson/elden-ring-nightreign-patch-adds-long-awaited-duos-mode/)
+[](https://www.kitguru.net/desktop-pc/mustafa-mahmoud/steam-beta-update-brings-revamped-store-menus-and-much-more/)
+### Check Also
+[ ![](https://www.kitguru.net/wp-content/uploads/2024/12/elden-ring-nightreign-310x165.jpg) ](https://www.kitguru.net/gaming/matthew-wilson/elden-ring-nightreign-patch-adds-long-awaited-duos-mode/)
+## [Elden Ring Nightreign patch adds long-awaited Duos mode](https://www.kitguru.net/gaming/matthew-wilson/elden-ring-nightreign-patch-adds-long-awaited-duos-mode/)
+Elden Ring Nightreign has been off to a good start sales wise, despite being the …
+[![](https://www.kitguru.net/wp-content/uploads/2025/02/Boulies-Feb-Offer-70-on-KitGuru.gif)](https://boulies.co.uk/collections/all?sort=price_ascending)
+I’m in the market for a new… Case Coolers Desktop Gaming Furniture Graphics Card HDD Headset Keyboards Laptop Memory Monitors Motherboard Mouse Power Supply Processor Router SSD
+[![](https://www.kitguru.net/wp-content/uploads/2025/06/2-Core-II-300x250-1.jpg)](https://www.coolermaster.com/en-gb/products/masterliquid-core-ii-series)
+[![](https://www.kitguru.net/wp-content/uploads/2025/07/05-May-Gigabyte-PermaSpot-PSU-on-KitGuru.jpg)](https://www.kitguru.net/tz4g)
+[![](https://www.kitguru.net/wp-content/uploads/2025/01/ASRock-Jan-70.jpg)](https://www.asrock.com)
+[![](https://www.kitguru.net/wp-content/uploads/2025/07/07-Jul-Montech-X5-70.jpg)](https://www.scan.co.uk/search?q=Montech+X5)
+[![](https://www.kitguru.net/wp-content/uploads/2025/07/07-Jul-Seagate-Exos-150.jpg)](https://www.broadbandbuyer.com/products/54058-seagate-st30000nm004k)
+[![](https://www.kitguru.net/wp-content/uploads/2025/07/Baner_KITGURU_300x250px_MARVO_Niro60W.png)](https://marvo.pro/product/niro-60-black-wireless-gaming-mouse/)
+#### Polls
+**AI for your Workplace?**
+  * All cloud based
+  * All local AI models
+  * Combined cloud and local
+  * Don't get involved in AI for work
 
 
-###### About Newswise
-Journalists use Newswise as a source for research news, experts, ready-to-use content and story ideas. Media relations professionals can connect with reporters and share their organization's news with a wider audience. Public readers discover the latest research news in science, medicine, social sciences, environment, technology, factchecks and business news from the world's most credible universities and research organizations. More than 7,000 email wires go to journalists from more than 2,400 media outlets around the globe. 
-###### Contact Us
-  * [](tel:4342969417)
-  *   * [](https://www.instagram.com/newswise_inc/)
-  * [](https://www.linkedin.com/company/newswise)
-  * [](https://twitter.com/newswise)
-  * [](https://www.facebook.com/Newswise)
-  * [](https://www.google.co.in/search?q=Newswise&ludocid=15420899234105999127&lsig=AB86z5V0SQYZf1KTMkFaB2PQzPaA#fpstate=lie)
-
-
-###### Signup
-[Subscribe to Newswise](https://www.newswise.com/users/register) [For Journalists](https://www.newswise.com/journalists) [Receive a Demo](https://memberservices.newswise.com/request-a-demo-campaign/)
-[![Newswise Logo](https://www.newswise.com/assets/newTheme/img/logo-newSkin.png)](https://www.newswise.com/ ""Newswise Logo"")
-  * [Privacy Notice](https://www.newswise.com/privacy)
-  * [Terms of Service](https://www.newswise.com/terms-of-service)
-
-
-2025 **Newswise** , Inc
-[_close_](javascript:void\(0\))
-_search_
-
-
-  * [Login](https://www.newswise.com/users/login/?ret=%2Farticles%2Fnew-defense-strategy-for-federated-learning-capping-accuracy-loss-at-0-47)
-  * [News _➤_](https://www.newswise.com/libraries)
-[Latest News](https://www.newswise.com/articles/list/latest-news) [Coronavirus News](https://www.newswise.com/coronavirus) [Currently Embargoed News](https://www.newswise.com/articles/list/embargoed-news) [Research News Releases](https://www.newswise.com/articles/list/research-news) [Google Fact Check](https://www.newswise.com/articles/list/fact-check-news) [Research Alert](https://www.newswise.com/articles/list/research-alert) [Preprints](https://www.newswise.com/preprints) [Marketplace](https://www.newswise.com/articles/list/marketplace-news) [News with Video/Audio](https://www.newswise.com/articles/list/audiovideo) [![RSS Icon](https://www.newswise.com/assets/new/img/rss-icon-logo.webp)RSS](https://www.newswise.com/libraries/rss) [Medicine _➤_](javascript:void\(0\))
-[Biotech](https://www.newswise.com/articles/channels?channel=6240) [Cancer](https://www.newswise.com/articles/channels?channel=9) [Coronavirus/COVID-19](https://www.newswise.com/articles/channels?channel=6546) [Clinical Trials](https://www.newswise.com/articles/channels?channel=6502) [Diabetes](https://www.newswise.com/articles/channels?channel=97) [Genetics](https://www.newswise.com/articles/channels?channel=106) [Infectious Disease](https://www.newswise.com/articles/channels?channel=43) [Neuro](https://www.newswise.com/articles/channels?channel=104) [Obesity](https://www.newswise.com/articles/channels?channel=5) [Women?s Health](https://www.newswise.com/articles/channels?channel=143) [View all Medicine Channels _arrow_right_alt_](https://www.newswise.com/channels/medical-news/1)
-[Science _➤_](javascript:void\(0\))
-[Chemistry](https://www.newswise.com/articles/channels?channel=144) [Climate Science](https://www.newswise.com/articles/channels?channel=59) [Dinosaurs](https://www.newswise.com/articles/channels?channel=112) [DOE Science News](https://www.newswise.com/articles/channels?channel=57) [Engineering](https://www.newswise.com/articles/channels?channel=6269) [Materials Science](https://www.newswise.com/articles/channels?channel=142) [Physics](https://www.newswise.com/articles/channels?channel=128) [Space](https://www.newswise.com/articles/channels?channel=17) [View all Science Channels _arrow_right_alt_](https://www.newswise.com/channels/science-news/2)
-[Life _➤_](javascript:void\(0\))
-[Behavioral Science](https://www.newswise.com/articles/channels?channel=109) [Education](https://www.newswise.com/articles/channels?channel=15) [Government](https://www.newswise.com/articles/channels?channel=16) [History](https://www.newswise.com/articles/channels?channel=6248) [Politics](https://www.newswise.com/articles/channels?channel=22) [Social Media](https://www.newswise.com/articles/channels?channel=6308) [View all Life Channels _arrow_right_alt_](https://www.newswise.com/channels/life-news/3)
-[Business _➤_](javascript:void\(0\))
-[Economics](https://www.newswise.com/articles/channels?channel=79) [Wall Street](https://www.newswise.com/articles/channels?channel=6252) [In the Workplace](https://www.newswise.com/articles/channels?channel=136) [Women in Business](https://www.newswise.com/articles/channels?channel=6280) [View all Business Channels _arrow_right_alt_](https://www.newswise.com/channels/business-news/4)
-[Journal News _➤_](javascript:void\(0\))
-[Cell (journal)](https://www.newswise.com/articles/channels?channel=6452) [JAMA](https://www.newswise.com/articles/channels?channel=6335) [Journal of Experimental Medicine](https://www.newswise.com/articles/channels?channel=6454) [Nature (journal)](https://www.newswise.com/articles/channels?channel=6337) [NEJM](https://www.newswise.com/articles/channels?channel=6424) [Neurology (journal)](https://www.newswise.com/articles/channels?channel=6455) [PLoS](https://www.newswise.com/articles/channels?channel=6334) [View all Journal Channels _arrow_right_alt_](https://www.newswise.com/channels/journal-news/5)
-[By Location _➤_](javascript:void\(0\))
-[Afghanistan News](https://www.newswise.com/articles/channels?channel=6292) [African News](https://www.newswise.com/articles/channels?channel=6324) [China News](https://www.newswise.com/articles/channels?channel=81) [Cuba News](https://www.newswise.com/articles/channels?channel=86) [Europe News](https://www.newswise.com/articles/channels?channel=6322) [Germany News](https://www.newswise.com/articles/channels?channel=6486) [Gulf of Mexico](https://www.newswise.com/articles/channels?channel=6441) [India/Pakistan News](https://www.newswise.com/articles/channels?channel=6496) [Iraq News](https://www.newswise.com/articles/channels?channel=19) [View all by Location Channels _arrow_right_alt_](https://www.newswise.com/channels/by-location-news/7)
-[Meetings, Grants, and Events _➤_](javascript:void\(0\))
-[Grant Funded News](https://www.newswise.com/articles/channels?channel=6296) [Medical Meetings](https://www.newswise.com/articles/channels?channel=6297) [Newswise Live - Event in Progress](https://www.newswise.com/articles/channels?channel=6331) [Newswise Live - Expert Spotlight](https://www.newswise.com/articles/channels?channel=6407) [Newswise Live - Events](https://www.newswise.com/articles/channels?channel=6323) [Scientific Meetings](https://www.newswise.com/articles/channels?channel=6298) [View all Meeting, Grants & Events Channels _arrow_right_alt_](https://www.newswise.com/channels/meeting-grants-events/8)
-  * [Experts _➤_](https://www.newswise.com/experts)
-[Expert Pitch](https://www.newswise.com/articles/list/expert-pitch) [Expert Query](https://www.newswise.com/resources/expert-query) [Expert Directory](https://www.newswise.com/users/expert-list/)
-  * [Journalists](https://www.newswise.com/journalists)
-  * [Pricing](https://www.newswise.com/pricing)
-  * [About _➤_](https://www.newswise.com/about)
-[Member Services](https://www.newswise.com/memberservices) [Accessibility Statement](https://www.newswise.com/accessibility) [Newswise Live](https://memberservices.newswise.com/fast-pitch/) [Invoice Lookup](https://payments.newswise.com/invoicelookup) [Services for Journalists](https://www.newswise.com/journalists) [Archived Wires](https://www.newswise.com/archive/wires/) [Participating Institutions](https://www.newswise.com/institutions/list) [Media Subscribers](https://www.newswise.com/media) [Sample Effectiveness Reports](https://www.newswise.com/reports/demo) [Terms of Service](https://www.newswise.com/terms-of-service) [Privacy Policy](https://www.newswise.com/privacy) [Our Staff](https://www.newswise.com/newswise-staff) [Contact Newswise](https://www.newswise.com/home/contact)
-  * [Blog](https://www.newswise.com/ee/list/) [FAQ](https://www.newswise.com/ee/faq/C1) [Help](https://www.newswise.com/home/contact)
-
-
-0.40307
-","['https://www.newswise.com/', 'https://www.newswise.com/articles/new-defense-strategy-for-federated-learning-capping-accuracy-loss-at-0-47', 'https://www.newswise.com/curious-by-nature', 'https://www.newswise.com/memberservices', 'https://www.newswise.com/pricing', 'https://www.newswise.com/accessibility', 'https://memberservices.newswise.com/fast-pitch', 'https://payments.newswise.com/invoicelookup', 'https://www.newswise.com/archive/wires', 'https://www.newswise.com/media']"
+[View Results](https://www.kitguru.net/desktop-pc/mustafa-mahmoud/steam-beta-update-brings-revamped-store-menus-and-much-more/#ViewPollResults ""View Results Of This Poll"")
+![Loading ...](https://www.kitguru.net/wp-content/plugins/wp-polls/images/loading.gif) Loading ...
+[![](https://www.kitguru.net/wp-content/uploads/2025/05/U27G4R_300X250.jpg)](https://aoc.com/uk/gaming/products/monitors/u27g4r)
+[![](https://www.kitguru.net/wp-content/uploads/2025/06/RX-9060-XT-Series_300x250.jpg)](https://www.asrock.com/Graphics-Card/AMD/Radeon%20RX%209060%20XT%20Steel%20Legend%2016GB%20OC/)
+[![](https://www.kitguru.net/wp-content/uploads/2025/07/LC-POWER_KITGURU-Takeover_July-2025_MPU-300x250-1.jpg)](https://www.lc-power.com/en/)
+#### Archives
+Archives Select Month July 2025  June 2025  May 2025  April 2025  March 2025  February 2025  January 2025  December 2024  November 2024  October 2024  September 2024  August 2024  July 2024  June 2024  May 2024  April 2024  March 2024  February 2024  January 2024  December 2023  November 2023  October 2023  September 2023  August 2023  July 2023  June 2023  May 2023  April 2023  March 2023  February 2023  January 2023  December 2022  November 2022  October 2022  September 2022  August 2022  July 2022  June 2022  May 2022  April 2022  March 2022  February 2022  January 2022  December 2021  November 2021  October 2021  September 2021  August 2021  July 2021  June 2021  May 2021  April 2021  March 2021  February 2021  January 2021  December 2020  November 2020  October 2020  September 2020  August 2020  July 2020  June 2020  May 2020  April 2020  March 2020  February 2020  January 2020  December 2019  November 2019  October 2019  September 2019  August 2019  July 2019  June 2019  May 2019  April 2019  March 2019  February 2019  January 2019  December 2018  November 2018  October 2018  September 2018  August 2018  July 2018  June 2018  May 2018  April 2018  March 2018  February 2018  January 2018  December 2017  November 2017  October 2017  September 2017  August 2017  July 2017  June 2017  May 2017  April 2017  March 2017  February 2017  January 2017  December 2016  November 2016  October 2016  September 2016  August 2016  July 2016  June 2016  May 2016  April 2016  March 2016  February 2016  January 2016  December 2015  November 2015  October 2015  September 2015  August 2015  July 2015  June 2015  May 2015  April 2015  March 2015  February 2015  January 2015  December 2014  November 2014  October 2014  September 2014  August 2014  July 2014  June 2014  May 2014  April 2014  March 2014  February 2014  January 2014  December 2013  November 2013  October 2013  September 2013  August 2013  July 2013  June 2013  May 2013  April 2013  March 2013  February 2013  January 2013  December 2012  November 2012  October 2012  September 2012  August 2012  July 2012  June 2012  May 2012  April 2012  March 2012  February 2012  January 2012  December 2011  November 2011  October 2011  September 2011  August 2011  July 2011  June 2011  May 2011  April 2011  March 2011  February 2011  January 2011  December 2010  November 2010  October 2010  September 2010  August 2010  July 2010  June 2010  May 2010  April 2010  March 2010 
+[![](https://www.kitguru.net/wp-content/uploads/2025/06/2-Core-II-300x250-1.jpg)](https://www.coolermaster.com/en-gb/products/masterliquid-core-ii-series)
+[![](https://www.kitguru.net/wp-content/uploads/2025/07/256GB-300x250-1.jpg)](https://www.newegg.com/p/pl?N=100007611%20601318766)
+[![](https://www.kitguru.net/wp-content/uploads/2025/06/Palit-Pandora-300x250-1.jpg)](https://www.amazon.co.uk/Palit-Pandora-Nvidia-Jetson-Super/dp/B0F1YQ32CJ)
+[Contact Us](https://www.kitguru.net/contact) [Privacy](https://www.kitguru.net/privacy)
+[](https://www.kitguru.net/feed/ ""Rss"")[](https://www.facebook.com/pages/KitGuru/162236020510911?fref=ts ""Facebook"")[](http://twitter.com/kitgurupress ""Twitter"")[](https://bit.ly/3B5CAAs ""Youtube"")[](https://www.instagram.com/kitguru_tech/?hl=en ""instagram"")
+© Copyright 2025, Kitguru.net All Rights Reserved [ Standard Terms](https://www.kitguru.net/standardterms/)
+","['https://www.kitguru.net/feed', 'http://www.kitguru.net', 'http://www.kitguru.net/tag/news', 'https://www.kitguru.net/reviews', 'https://www.kitguru.net/category/gaming', 'https://www.kitguru.net/category/lifestyle/mobile', 'https://www.kitguru.net/news/best-pc-hardware', 'https://www.kitguru.net/kitguru-latest-from-youtube', 'https://www.kitguru.net/desktop-pc/mustafa-mahmoud/steam-beta-update-brings-revamped-store-menus-and-much-more', 'https://www.kitguru.net/']"

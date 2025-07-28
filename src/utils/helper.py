@@ -1,8 +1,6 @@
 import yaml
 from crawl4ai.async_configs import BrowserConfig, CrawlerRunConfig
-from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
-import asyncio
-import aiosqlite
+
 
 def loadYamlConfig(file_path="config/config.yaml"):
     """
@@ -56,10 +54,3 @@ def GetCrawlerRunConfig():
     except Exception as e:
         print(f"[ERROR] Failed to load crawler run configuration: {e}")
         return None
-
-
-
-async def CreateCheckpointer():
-    sqlite_conn = await aiosqlite.connect("langgraph.db")
-    checkpointer = AsyncSqliteSaver(sqlite_conn)
-    return checkpointer

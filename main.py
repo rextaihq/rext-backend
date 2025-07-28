@@ -1,6 +1,7 @@
 from src.workflow.workflow import CreateWorkflow
 
-graph = CreateWorkflow()
+workflow = CreateWorkflow()
+graph = workflow.compile()
 if __name__ == "__main__":
     # results = runable.invoke(initial_state())
     # try:

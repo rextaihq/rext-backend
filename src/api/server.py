@@ -1,8 +1,24 @@
 from typing import Union
+
+from distro import name
 from src.api.routes.workflowRoutes import router as workflow_router
 from fastapi import FastAPI
+# from src.utils.checkpoiner import init_checkpointer
+# from contextlib import asynccontextmanager  
 
-app = FastAPI()
+# @asynccontextmanager
+# async def lifespan(app: FastAPI):
+#     await init_checkpointer()  # this sets the global variable
+#     yield
+
+
+app = FastAPI(
+    name="Content Automation API",
+    version="1.0.0",
+    description="API for managing content automation workflows",
+    # lifespan=lifespan,
+)
+
 app.include_router(workflow_router, prefix="/api", tags=["workflow"])
 
 
