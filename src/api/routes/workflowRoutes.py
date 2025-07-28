@@ -1,8 +1,9 @@
 from fastapi import APIRouter, HTTPException
 from src.workflow.workflow import CreateWorkflow
-from src.api.schema.schema import TopicSelectionSchema
+from src.api.schema.schema import TopicSelectionSchema,WorkflowConfigSchema
 from langgraph.types import Command
 from src.utils.checkpoiner import init_checkpointer
+import yaml
 import uuid
 
 router = APIRouter(
@@ -11,11 +12,43 @@ router = APIRouter(
 )
 
 # ✅ Instantiate the LangGraph workflow once at startup
+CONFIG_PATH = "config/config.yaml"
 
 @router.get("/status")
 def get_workflow_status():
     # ✅ Could be expanded to track graph health or queue status
     return {"status": "running"}
+
+
+# se the workflow configuration
+@router.post("/configure")
+def configure_workflow(config_data: WorkflowConfigSchema):
+    """
+    Configure the workflow with user-defined parameters.
+    Saves the configuration as a YAML file.
+    """
+    config = {
+        "GNews": {
+            "url": "https://gnews.io/api/v4/top-headlines",
+            "category": config_data.category or "technology",
+            "country": config_data.country or "pk",
+            "language": config_data.language or "en"
+        },
+        "rss_sources": {}
+    }
+
+    if config_data.rss_sources:
+        for feed in config_data.rss_sources:
+            config["rss_sources"][feed.title] = str(feed.url)
+
+    with open(CONFIG_PATH, 'w') as f:
+        yaml.dump(config, f)
+
+    return {
+        "message": "✅ Workflow configured and saved successfully.",
+        "config": config
+    }
+
 
 @router.post("/execute")
 async def execute_workflow():
@@ -93,10 +126,5 @@ async def resume_workflow(thread_id: str,topic_selection: TopicSelectionSchema):
             "results": results,
             "thread_id": thread_id
         }
-        # return {
-        #     "success": True,
-        #     "message": f"Workflow resumed with thread ID: {thread_id} and user input: {user_input}",
-        #     "thread_id": thread_id
-        # }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
