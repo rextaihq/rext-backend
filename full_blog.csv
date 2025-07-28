@@ -1,87 +1,3080 @@
 title,link,source,published,summary,Raw Blog Content,full_links,rating,weight,total_score
-"Nvidia N1X chip test confirms 20 CPU cores alongside 6,144 CUDA GPU cores",https://www.club386.com/nvidia-n1x-chip-test-confirms-20-cpu-cores-alongside-6144-cuda-gpu-cores/,Club386,2025-07-28 12:09:11,"Nvidia N1X SoC leak shows similar specs to the GB10 Superchip, offering 6,144 CUDA cores like the brand’s RTX 5070 desktop GPU.",881dc1a9c6e4fd56,"['https://wptavern.com/podcast/178-adam-silverstein-explores-transformative-browser-features-impacting-wordpress-sites', 'https://wptavern.com/', 'https://wptavern.com/category/news', 'https://wptavern.com/category/opinion', 'https://wptavern.com/category/plugins', 'https://wptavern.com/category/themes', 'https://wptavern.com/category/wordcamps-meetups', 'https://wptavern.com/forums', 'https://wptavern.com/podcast', 'https://wptavern.com/contact']",28,61,1708
-#178 – Adam Silverstein Explores Transformative Browser Features Impacting WordPress Sites,https://wptavern.com/podcast/178-adam-silverstein-explores-transformative-browser-features-impacting-wordpress-sites,WP Tavern,2025-07-23 14:00:00,"On the podcast today we have Adam Silverstein. He's here to discuss how new browser APIs and web technologies are transforming the WordPress experience. Adam explains advancements like the Popover API, Scroll Animations, CSS carousels, customisable selects, view transitions, and speculative loading, many of which reduce reliance on heavy JavaScript and improve accessibility, performance, and user experience. He also touches upon modern image formats, browser-based image processing, and running AI directly in the browser. Adam highlights the growing collaboration among browser vendors and encourages developers to engage in shaping browser standards for the open web. Whether you’re a theme designer, plugin developer, or site owner simply curious about what’s next, this episode is for you.","Looking for something?
-#### Browse
-  * [News](https://www.club386.com/news/)
-  * [Reviews](https://www.club386.com/reviews/)
-  * [Features](https://www.club386.com/features/)
-  * [Guides](https://www.club386.com/guides/)
-  * [Deals](https://www.club386.com/deals/)
-  * [Competitions](https://www.club386.com/competitions/)
+“内置RTX 5070” ！NVIDIA首款N1X笔记本处理器跑分曝光：真正挑战x86的ARM SoC,https://news.mydrivers.com/1/1064/1064784.htm,驱动之家,2025-07-28 11:25:00,“内置RTX 5070” ！NVIDIA首款N1X笔记本处理器跑分曝光：真正挑战x86的ARM SoC,881dc1a9c6e4fd56,"['https://wptavern.com/podcast/178-adam-silverstein-explores-transformative-browser-features-impacting-wordpress-sites', 'https://wptavern.com/', 'https://wptavern.com/category/news', 'https://wptavern.com/category/opinion', 'https://wptavern.com/category/plugins', 'https://wptavern.com/category/themes', 'https://wptavern.com/category/wordcamps-meetups', 'https://wptavern.com/forums', 'https://wptavern.com/podcast', 'https://wptavern.com/contact']",27,58,1566
+骁龙X Plus处理器加持！微软Surface Laptop 13图赏,https://news.mydrivers.com/1/1064/1064745.htm,驱动之家,2025-07-28 09:52:00,骁龙X Plus处理器加持！微软Surface Laptop 13图赏,"[](https://sina.cn?vt=4 ""手机新浪网"")
+##  [新浪新闻](https://news.sina.cn/?vt=4 ""新浪新闻"") [国内](https://news.sina.cn/gn/?vt=4 ""国内"")
+[](https://sina.cn/Index/nav?vt=4 ""网站导航"") [ ![](https://news.sina.cn/gn/2025-07-28/detail-infhziev5597351.d.html?vt=4&cid=56261&node_id=56261) ](https://my.sina.cn/?vt=4)
+# 三星晶圆代工，签下1183亿元大单
+_![](https://n.sinaimg.cn/sinakd10200/360/w180h180/20221208/5488-f44788ac472043e856889cad813b4a5a.jpg)_
+## 新浪新闻
+新浪新闻官方账号 07.2815:00 
+[](javascript:void\(0\))
+![](https://k.sinaimg.cn/n/news/crawl/798/w864h734/20250728/c83b-81bc3da30ff21c28e5a54178e7837b19.png/w300h300z1l10t10q100aba.jpg)
+来源：半导体行业观察
+三星电子的芯片制造设备解决方案 （DS） 部门将采用更精细的制造工艺，以实现更快、更强大的计算能力，旨在获得全球大型科技公司的订单，这提高了人们对其从长期盈利低迷中反弹的预期。
+据业内官员本月初透露，三星电子副董事长兼 DS 部门负责人全永铉此前访问了美国，并会见了包括英伟达在内的全球大型科技公司的同行。
+他的会议细节尚不清楚，但据报道，他讨论了三星为人工智能 （AI） 处理器提供高带宽内存 （HBM） 的潜在供应以及该公司的代工能力。
+此次会议召开之际，该公司近期获得了采用10纳米1c级工艺生产的DRAM的生产准备批准。该批准适用于已准备好量产的产品。
+1c 制程指的是 10 纳米级的第六代制造工艺，分为六个阶段：1x、1y、1z、1a、1b 和 1c。这一进步体现了更精细的节点尺寸，从而带来了更强大的计算能力和更高的能效。1c 制程大约相当于 11 纳米。
+据悉，三星计划采用其1c工艺生产的DRAM作为HBM4的核心芯片，HBM4是三星、SK海力士和美光正在准备在今年下半年量产的最新、最先进的HBM芯片。
+SK海力士和美光已将其下一代HBM4芯片样品发送给主要客户进行认证测试，但据报道，已发送的芯片采用1b工艺制造。三星计划通过使用1c工艺来突出其HBM4的差异化特性。
+作为该计划的一部分，该公司将恢复位于京畿道平泽市的4号工厂的扩建。4号工厂最初计划为其代工业务增加生产线，但该公司已决定安装1c工艺的生产线。
+该公司亏损的代工业务也在寻求反弹。
+三星代工厂目前正在采用其 8 纳米工艺生产英伟达的 T239 芯片组。T239 是任天堂 Switch 2 的主处理器，这款游戏机是任天堂有史以来销售最快的游戏机，上市四天全球销量就达 350 万台。科技媒体预计，这款游戏机将为三星带来超过 12 亿美元的销售额。
+据三星电子28日发布的消息，公司近日与一家国际巨头签订了半导体代工（晶圆代工）生产合同，合同金额达22.7648万亿韩元（约合人民币1183亿元），合同期截至2033年12月31日。三星电子称，遵从商业保密原则，无法公开合同方以及合同详情。
+**三星晶圆代工， 一季度表现不佳**
+根据TrendForce的报告，三星晶圆代工在2025年第一季度的营收为28.9亿美元，较上一季度下降11.3%。该公司在全球晶圆代工市场的份额也从2024年第四季度的8.1%小幅下降至7.7%。这表明三星未能获得大客户，原因可能是尖端节点良率低、与系统大规模集成电路（LSI）部门存在数据共享风险以及其他原因。
+[ ![](https://news.sina.cn/gn/2025-07-28/detail-infhziev5597351.d.html?vt=4&cid=56261&node_id=56261) ![](https://news.sina.cn/gn/2025-07-28/detail-infhziev5597351.d.html?vt=4&cid=56261&node_id=56261) ](JavaScript:void\(0\))
+TrendForce的研究结果指出，2025年前三个月三星晶圆代工业务下滑的主要原因有两个。第一，该公司对中国消费者补贴计划的敞口有限；第二，美国对先进节点的限制。
+不出所料，台湾的台积电在2025年第一季度以67.6%的市场份额和255亿美元的营收领跑全球晶圆代工市场。同样，中国大陆的中芯国际营收增长了1.8%，达到22.5亿美元，市场份额从上一季度的5.5%增长至6%。这些数据巩固了中芯国际在晶圆代工市场第三名的位置。
+更重要的是，这对三星来说是一个警示，因为它一直在探索不同的策略，以在晶圆代工领域站稳脚跟。如果这家韩国公司在未来几个月内未能改善其晶圆代工业务，中芯国际很有可能超越它。理想情况下，三星希望赶上台积电，但现在它面临着被中芯国际夺走第二名的风险。
+然而，三星仍然乐观地认为，随着 2nm 制程时代的到来，其市场地位将有所回升。该公司计划将其 2nm Exynos 2600 芯片集成到即将推出的 Galaxy S26 系列中。如果成功，这将有助于重拾高通和英伟达等主要代工客户的信任。
+**三星芯片业务有望通过新工艺反弹**
+三星电子的芯片制造设备解决方案 （DS） 部门将采用更精细的制造工艺，以实现更快、更强大的计算能力，旨在获得全球大型科技公司的订单，这提高了人们对其从长期盈利低迷中反弹的预期。
+据业内官员本月初透露，三星电子副董事长兼 DS 部门负责人全永铉此前访问了美国，并会见了包括英伟达在内的全球大型科技公司的同行。
+他的会议细节尚不清楚，但据报道，他讨论了三星为人工智能 （AI） 处理器提供高带宽内存 （HBM） 的潜在供应以及该公司的代工能力。
+此次会议召开之际，该公司近期获得了采用10纳米1c级工艺生产的DRAM的生产准备批准。该批准适用于已准备好量产的产品。
+1c 制程指的是 10 纳米级的第六代制造工艺，分为六个阶段：1x、1y、1z、1a、1b 和 1c。这一进步体现了更精细的节点尺寸，从而带来了更强大的计算能力和更高的能效。1c 制程大约相当于 11 纳米。
+据悉，三星计划采用其1c工艺生产的DRAM作为HBM4的核心芯片，HBM4是三星、SK海力士和美光正在准备在今年下半年量产的最新、最先进的HBM芯片。
+SK海力士和美光已将其下一代HBM4芯片样品发送给主要客户进行认证测试，但据报道，已发送的芯片采用1b工艺制造。三星计划通过使用1c工艺来突出其HBM4的差异化特性。
+作为该计划的一部分，该公司将恢复位于京畿道平泽市的4号工厂的扩建。4号工厂最初计划为其代工业务增加生产线，但该公司已决定安装1c工艺的生产线。
+该公司亏损的代工业务也在寻求反弹。
+三星代工厂目前正在采用其 8 纳米工艺生产英伟达的 T239 芯片组。T239 是任天堂 Switch 2 的主处理器，这款游戏机是任天堂有史以来销售最快的游戏机，上市四天全球销量就达 350 万台。科技媒体预计，这款游戏机将为三星带来超过 12 亿美元的销售额。
+人们对三星更精细的制造工艺的期望也越来越高。三星代工厂已开始采用其 3 纳米工艺为 Galaxy Z Flip 7 量产 Exynos 2500 应用处理器，该处理器将于 7 月 9 日的发布会上亮相。
+由于 Exynos 2500 未被三星旗舰产品 Galaxy S25 系列采用，因此人们对该处理器产生了怀疑，但该公司最近提高了其生产良率，并在其网站上宣布该处理器现已“量产”。
+今年下半年，该公司还将为 Galaxy S26 系列生产采用 2 纳米工艺的 Exynos 2600。
+据悉，三星晶圆代工厂还正利用2纳米级和Gate-All-Around技术，争取高通下一代应用处理器和Nvidia图形处理器的订单。
+因此，分析师对三星第三季度盈利前景的预测更加乐观。IM证券分析师宋明燮（Song Myung-sub）预计，三星DS部门今年第三季度的营业利润将达到4.61万亿韩元，同比增长19.43%。
+宋先生表示：“三星最近已开始全面生产其1b DDR5，并正在提高其1c工艺的良率。这些进展表明其在传统DRAM领域的竞争力可能有所恢复。然而，其针对Nvidia的12位高HBM3E的认证似乎被推迟了，而其基于1c工艺的HBM4能否成功仍存在不确定性。”
+![](https://n.sinaimg.cn/default/2fb77759/20151125/320X320.png)
+## 相关视频
+[ ![](https://z0.sinaimg.cn/auto/crop?img=https://n.sinaimg.cn/sinakd20110/200/w640h360/20250715/2529-e2ba418c41af09399dfaf324b14570b2.jpg&size=370_207&bgf=1&bgc=%23000000) **三星86年打造全球科技巨头，坚持要做就做第一** 129次播放
+> 00:29 ](JavaScript:void\(0\))
+[ ![](https://z0.sinaimg.cn/auto/crop?img=https://n.sinaimg.cn/sinakd20116/533/w480h853/20250619/8261-9a31922e19198f44853592e57896ce67.jpg&size=370_207&bgf=1&bgc=%23000000) **突破2纳米光刻技术，芯片霸权彻底崩塌！** 1249729次播放
+> 01:20 ](JavaScript:void\(0\))
+[ ![](https://z0.sinaimg.cn/auto/crop?img=https://n.sinaimg.cn/vmsri/orj480/006WAXimly1i3mn8wdyowj31hc0u076x.jpg&size=370_207&bgf=1&bgc=%23000000) **首款印度制造芯片将问世** 903次播放
+> 00:23 ](JavaScript:void\(0\))
+大家都在看[](javascript:void\(0\);)
+[![](https://z0.sinaimg.cn/auto/crop?img=https://n.sinaimg.cn/spider20250728/100/w1600h900/20250728/b804-3b6b36e473e760d3494fd865f4640c64.jpg&size=370_207&bgf=1&bgc=%23000000)苹果原创电影《F1：狂飙飞车》全球票房破 5 亿美元，成公司最高票房院线电影](javascript:void\(0\);)
+加载中... [视频](https://video.sina.cn/?vt=4 ""视频"") [直播](https://bn.sina.cn/?vt=4 ""直播"") [美图](https://photo.sina.cn/?vt=4 ""美图"") [博客](https://blog.sina.cn/?vt=4 ""博客"") [看点](https://k.sina.cn/?vt=4 ""看点"") [政务](http://gov.sina.cn/?vt=4 ""政务"") [搞笑](https://joke.sina.cn/?vt=4 ""搞笑"") [八卦](https://ent.sina.cn/star/index.d.html?vt=4 ""八卦"") [情感](https://eladies.sina.cn/feel?vt=4 ""情感"") [旅游](https://travel.sina.cn/?vt=4 ""旅游"") [佛学](https://fo.sina.cn/?vt=4 ""佛学"") [众测](https://zhongce.sina.cn/?vt=4 ""众测"") [首页](https://sina.cn?vt=4) [导航](https://sina.cn/Index/nav?vt=4 ""导航"") [反馈](https://lives.sina.cn/live/live?vt=4&id=314&live_mg=sports) [登录](https://my.sina.cn?vt=4) [Sina.cn(京ICP证000007)](https://beian.miit.gov.cn) 2025-07-28 23:50 请输入评论内容 [取消](javascript:void\(0\))[发布](javascript:void\(0\)) [ ](javascript:void\(0\);) 同时转发到微博
+  * 0
+  * 1
+  * 2
+  * 3
+  * 4
+  * 5
 
 
-#### The Club
-  * [About Us](https://www.club386.com/about/)
-  * [Contact](https://www.club386.com/contact/)
-  * [Newsletter](https://www.club386.com/newsletter/)
-  * [Advertise](https://www.club386.com/advertise/)
-  * [How We Test](https://www.club386.com/how-we-test/)
-  * [Editorial Policies](https://www.club386.com/editorial-policy/)
-  * [Privacy](https://www.club386.com/privacy/)
+打开新浪新闻 阅读精彩内容
+取消前往
+![新浪新闻](https://n.sinaimg.cn/default/80905340/20200331/sinalogo.png)
+新浪新闻官方
+热点资讯 精彩视频抢先看 5.0分好评
+免费 / 绿色应用 / 优质 
+安装
+举报成功
+## 举报
+请您选择举报的原因 [违法涉政](javascript:;) [淫秽色情](javascript:;) [网络赌博](javascript:;) [诈 骗](javascript:;) [营销广告](javascript:;) [言论攻击](javascript:;) [其他理由](javascript:;) [涉未成年人举报](javascript:;) [取消](javascript:;) [确定](javascript:;) ![](https://news.sina.cn/gn/2025-07-28/detail-infhziev5597351.d.html?vt=4&cid=56261&node_id=56261)
+扫一扫
+查看更多热点资讯
+[](javascript:void\(0\))
+[](javascript:void\(0\))
+转发至微博
+![](https://news.sina.cn/gn/2025-07-28/detail-infhziev5597351.d.html?vt=4&cid=56261&node_id=56261)
+88字
+立即转发
+","['https://sina.cn?vt=4', 'https://news.sina.cn/?vt=4', 'https://news.sina.cn/gn?vt=4', 'https://sina.cn/Index/nav?vt=4', 'https://my.sina.cn/?vt=4', 'https://video.sina.cn/?vt=4', 'https://bn.sina.cn/?vt=4', 'https://photo.sina.cn/?vt=4', 'https://blog.sina.cn/?vt=4', 'https://k.sina.cn/?vt=4']",24,56,1344
+曝小鹏汽车产品线整合：或在L4阶段重新用上激光雷达（已更新）,https://news.mydrivers.com/1/1064/1064687.htm,驱动之家,2025-07-28 07:45:00,曝小鹏汽车产品线整合：或在L4阶段重新用上激光雷达（已更新）,"  * [](https://www.mydrivers.com ""科技改变未来"")
+  * [手机版](https://m.mydrivers.com ""快科技手机版"")
+  * [安卓版](http://app.kkj.cn/)
+  * [苹果端](http://app.kkj.cn/)
+  * [博客版](https://blog.mydrivers.com/)
 
 
-[Facebook](https://www.facebook.com/theclub386 ""Facebook"")
-[Instagram](https://www.instagram.com/theclub386/ ""Instagram"")
-[Twitter](https://twitter.com/theclub386 ""Twitter"")
-[![Club386](http://club386.com/wp-content/uploads/logos/logo-272-90.png)Club386By Enthusiasts For Enthusiasts](https://www.club386.com/)
-[](https://www.club386.com/nvidia-n1x-chip-test-confirms-20-cpu-cores-alongside-6144-cuda-gpu-cores/)
-[ ![Club386](http://club386.com/wp-content/uploads/logos/logo-272-90.png)Club386By Enthusiasts For Enthusiasts](https://www.club386.com/)
-  * [News](https://www.club386.com/news/)
-  * [Reviews](https://www.club386.com/reviews/)
-  * [Features](https://www.club386.com/features/)
-  * [Guides](https://www.club386.com/guides/)
-  * [Deals](https://www.club386.com/deals/)
-  * [Competitions](https://www.club386.com/competitions/)
+  * [登录](javascript:;)
+  * [注册](https://passport.mydrivers.com/reg.htm)
+  * 浅色模式深色模式
+默认主题
+橙色主题
+红色主题
 
 
-Search
-[](https://www.club386.com/nvidia-n1x-chip-test-confirms-20-cpu-cores-alongside-6144-cuda-gpu-cores/)
-[](https://www.club386.com/news/)[](https://www.club386.com/news/nvidia/)
-# Nvidia N1X chip test confirms 20 CPU cores alongside 6,144 CUDA GPU cores
-Early benchmarks show a strong GPU held back by its lower frequency and power target.
-By [Fahd Temsamani](https://www.club386.com/author/fahd/)
-Jul 28, 2025, 13:09 BST
-![Nvidia GB10.](https://www.club386.com/wp-content/uploads/2025/07/Nvidia-GB10-696x393.jpg)
-Share
-[Twitter](https://twitter.com/intent/tweet?text=Nvidia+N1X+chip+test+confirms+20+CPU+cores+alongside+6%2C144+CUDA+GPU+cores&url=https%3A%2F%2Fwww.club386.com%2Fnvidia-n1x-chip-test-confirms-20-cpu-cores-alongside-6144-cuda-gpu-cores%2F&via=theclub386 ""Twitter"")[Facebook](https://www.facebook.com/sharer.php?u=https%3A%2F%2Fwww.club386.com%2Fnvidia-n1x-chip-test-confirms-20-cpu-cores-alongside-6144-cuda-gpu-cores%2F ""Facebook"")[ReddIt](https://reddit.com/submit?url=https://www.club386.com/nvidia-n1x-chip-test-confirms-20-cpu-cores-alongside-6144-cuda-gpu-cores/&title=Nvidia+N1X+chip+test+confirms+20+CPU+cores+alongside+6%2C144+CUDA+GPU+cores ""ReddIt"")[WhatsApp](https://api.whatsapp.com/send?text=Nvidia+N1X+chip+test+confirms+20+CPU+cores+alongside+6%2C144+CUDA+GPU+cores%20%0A%0A%20https://www.club386.com/nvidia-n1x-chip-test-confirms-20-cpu-cores-alongside-6144-cuda-gpu-cores/ ""WhatsApp"")Email
-[ ](https://www.club386.com/nvidia-n1x-chip-test-confirms-20-cpu-cores-alongside-6144-cuda-gpu-cores/ ""More"")
-Nvidia’s N1X SoC has resurfaced in a new Geekbench test, showing the chip’s CPU and GPU configurations alongside early performance results. The brand’s first high-end consumer SoC is set to offer much higher performance than previous Tegra chips, targeting demanding tasks and gaming. Though the silicon has been rumoured to be facing some manufacturing hurdles, it seems that early samples are already being tested.
-Said to be targeting desktops and laptops, the [N1X ](https://www.club386.com/nvidia-arm-cpu-performance-leaks-closely-mirror-amd-ryzen-7-9800x3d/)is a custom in-house solution made by Nvidia, featuring 10 Cortex X925 plus 10 Cortex A725 CPU cores alongside 48 GPU compute units – i.e. 6,144 CUDA cores, based on the ARM v9.2 and Blackwell architectures. If this rings a bell, it’s because it matches the specs of the GB10 Superchip found on the brand’s DGX Spark. 
-Assuming Nvidia doesn’t change the design compared to its GB10 Superchip, the N1X could be paired with up to 128GB of LPDDR5X memory on a 256-bit bus, sharing 170W on the SoC. That said, contrary to GB10, N1X is expected to run on Linux and Windows on ARM instead of Nvidia’s DGX OS. The latter is an optimised version of Ubuntu Linux designed for Nvidia’s DGX systems, focusing on machine learning and analytics.
-[![Nvidia N1X benchmark.](https://www.club386.com/wp-content/uploads/2025/07/Nvidia-N1X-benchmark.jpg)](https://www.club386.com/wp-content/uploads/2025/07/Nvidia-N1X-benchmark.jpg)
-Though not representative of the final product, this result indicates the N1X’s GPU delivers RTX 2050-levels of performance. While surprising considering its CUDA core count is equivalent to a [desktop RTX 5070](https://www.club386.com/nvidia-geforce-rtx-5070-review/), we must keep in mind that the N1X is highly constrained both by frequency and power, and perhaps even cooling. According to Geekbench’s report, the N1X’s GPU is clocked at 1,048MHz, which is 58% lower than the RTX 5070. Furthermore, while the desktop RTX 5070 gets to enjoy 250W alone, the N1X’s 20 ARM cores and GPU must share power, likely the same 120W as GB10.
-This also appears to be early silicon running on unoptimsed software. Given enough power and cooling to spread its wings, this chip could perhaps reach performance akin to the RTX 5070 mobile, which gets a maximum of 100W TGP. Overall, N1X should perform like the GB10, at least in AI tasks, again assuming Nvidia doesn’t change the design.
-Regarding availability, Nvidia has yet to share any date. If we had to guess, we would bet on next year’s CES where brands tend to show their latest products, some of which may be powered by the N1X SoC.
-[![Fahd Temsamani](https://www.club386.com/wp-content/uploads/2024/10/fahd-avatar.jpg)](https://www.club386.com/author/fahd/ ""Fahd Temsamani"")
-[Fahd Temsamani](https://www.club386.com/author/fahd/)
-Senior Writer at Club386, his love for computers began with an IBM running MS-DOS, and he’s been pushing the limits of technology ever since. Known for his overclocking prowess, Fahd once unlocked an extra 1.1GHz from a humble Pentium E5300 - a feat that cemented his reputation as a master tinkerer. Fluent in English, Arabic, and French, his motto when building a new rig is ‘il ne faut rien laisser au hasard.’
-[](https://www.linkedin.com/in/fahd-temsamani-78150b21b/ ""Linkedin"")[](https://twitter.com/Fahd_Temsamani ""Twitter"")
-  * Tags
-  * [Arm](https://www.club386.com/tag/arm/)
-  * [Nvidia](https://www.club386.com/tag/nvidia/)
+  * [](https://www.mydrivers.com/)
+  * [](https://news.mydrivers.com/)
+  * [](https://hardware.mydrivers.com/)
+  * [](https://rank.kkj.cn/)
+  * [](https://news.mydrivers.com/zhibo/)
+  * [](https://news.mydrivers.com/zixun/haowu/)
+  * [](https://yjgg.mydrivers.com/)
+  * [](https://dcgg.kkj.cn/)
+  * [](https://drivers.mydrivers.com/)
 
 
-Source[Geekbench](https://browser.geekbench.com/v6/compute/4511635)
-Via[Videocardz](https://videocardz.com/newz/leak-confirms-nvidia-n1x-pc-chip-features-20-cpu-cores-and-6144-cuda-cores)
-#### Deal of the Day
-[](https://www.club386.com/deal-of-the-day-amds-12-core-ryzen-9-9900x-processor-drops-to-best-ever-price/ ""Deal of the day: AMD’s 12-core Ryzen 9 9900X processor drops to best-ever price"")
-### [Deal of the day: AMD’s 12-core Ryzen 9 9900X processor drops to best-ever price](https://www.club386.com/deal-of-the-day-amds-12-core-ryzen-9-9900x-processor-drops-to-best-ever-price/ ""Deal of the day: AMD’s 12-core Ryzen 9 9900X processor drops to best-ever price"")
-#### Hot Reviews
-[PC systems](https://www.club386.com/reviews/systems/)
-### [CyberPowerPC Ultra R87 Pro review: great value for under a grand](https://www.club386.com/cyberpowerpc-ultra-r87-pro-review/ ""CyberPowerPC Ultra R87 Pro review: great value for under a grand"")
-[Monitors](https://www.club386.com/reviews/monitors/)
-### [iiyama ProLite XCB3497WQSNPH-B1 review: feature-rich office upgrade](https://www.club386.com/iiyama-prolite-xcb3497wqsnph-b1-review/ ""iiyama ProLite XCB3497WQSNPH-B1 review: feature-rich office upgrade"")
-[Monitors](https://www.club386.com/reviews/monitors/)
-### [MSI MAG 272QP QD-OLED X50 review: a brighter, smoother future](https://www.club386.com/msi-mag-272qp-qd-oled-x50-review/ ""MSI MAG 272QP QD-OLED X50 review: a brighter, smoother future"")
-#### Preferred Partners
-[![Philips Evnia 27M2N3501PA - Broaden your gaming horizon](https://www.club386.com/wp-content/uploads/2025/07/philips_27M2N3501PA_sidebar.jpg)](https://www.philips.co.uk/c-p/27M2N3501PA_00/fast-ips-gaming-monitor-quad-hd-gaming-monitor) [![Sapphire Nitro+ AMD Radeon RX 9000 Series](https://www.club386.com/wp-content/uploads/2025/03/sapphire-9000-series-nitro-banner.jpg)](https://www.overclockers.co.uk/pc-components/graphics-cards/amd-graphics-cards/amd-radeon-rx-9070-xt-graphics-cards?manufacturer%5B0%5D=Sapphire) [![iiyama Gold Phoenix - Control The Game](https://www.club386.com/wp-content/uploads/2025/03/iiyama-gold-phoenix-banner.jpg)](https://geni.us/gb2790qsub5) [![Enjoy PC games on Aero X16 with 3 months of Game Pass](https://www.club386.com/wp-content/uploads/2025/05/gigabyte-aero-x16.jpg)](https://bit.ly/4mcmmMZ) [![Pure Power 13 M - Better Than Ever!](https://www.club386.com/wp-content/uploads/2025/06/be-quiet-pure-power-13m.jpg)](https://www.bequiet.com/en/powersupply/pure-power-13/5929) [![ASRock AMD Radeon RX 9060 XT Series](https://www.club386.com/wp-content/uploads/2025/06/asrock-achieving-classics.jpg)](https://www.asrock.com/Graphics-Card/AMD/Radeon%20RX%209060%20XT%20Steel%20Legend%2016GB%20OC/) [![PCSpecialist - Your Games Everywhere](https://www.club386.com/wp-content/uploads/2025/05/pcspecialist-your-games-everywhere.jpg)](https://www.pcspecialist.co.uk/tracking/thVhM!rGqt/) [![MSI - grab Wuchang: Fallen Feathers](https://www.club386.com/wp-content/uploads/2025/07/msi-wuchang.jpg)](https://msi.gm/S511868F)
-#### Related Reading
-[](https://www.club386.com/nvidia-reportedly-wont-launch-n1x-soc-this-year-as-the-chip-faces-challenges-on-multiple-fronts/ ""Nvidia reportedly won’t launch N1X SoC this year as the chip faces challenges on multiple fronts"")
-### [Nvidia reportedly won’t launch N1X SoC this year as the chip faces challenges on multiple fronts](https://www.club386.com/nvidia-reportedly-wont-launch-n1x-soc-this-year-as-the-chip-faces-challenges-on-multiple-fronts/ ""Nvidia reportedly won’t launch N1X SoC this year as the chip faces challenges on multiple fronts"")
-[](https://www.club386.com/8gb-gpu-vram-may-be-enough-in-the-future-thanks-to-nvidia-neural-texture-compression/ ""8GB GPU VRAM may be enough in the future thanks to Nvidia Neural Texture Compression"")
-### [8GB GPU VRAM may be enough in the future thanks to Nvidia Neural Texture Compression](https://www.club386.com/8gb-gpu-vram-may-be-enough-in-the-future-thanks-to-nvidia-neural-texture-compression/ ""8GB GPU VRAM may be enough in the future thanks to Nvidia Neural Texture Compression"")
-[](https://www.club386.com/nvidia-geforce-rtx-5050-review/ ""Gigabyte GeForce RTX 5050 Windforce OC review: lean machine"")
-### [Gigabyte GeForce RTX 5050 Windforce OC review: lean machine](https://www.club386.com/nvidia-geforce-rtx-5050-review/ ""Gigabyte GeForce RTX 5050 Windforce OC review: lean machine"")
-[](https://www.club386.com/nvidia-brings-driver-level-frame-generation-to-rtx-40-gpus/ ""Nvidia brings driver-level frame generation to RTX 40 GPUs"")
-### [Nvidia brings driver-level frame generation to RTX 40 GPUs](https://www.club386.com/nvidia-brings-driver-level-frame-generation-to-rtx-40-gpus/ ""Nvidia brings driver-level frame generation to RTX 40 GPUs"")
-","['https://www.club386.com/news', 'https://www.club386.com/reviews', 'https://www.club386.com/features', 'https://www.club386.com/guides', 'https://www.club386.com/deals', 'https://www.club386.com/competitions', 'https://www.club386.com/about', 'https://www.club386.com/contact', 'https://www.club386.com/newsletter', 'https://www.club386.com/advertise']",58,64,3712
+热门推荐
+  * [一图](https://news.mydrivers.com/yitu.html)|[好文](https://news.mydrivers.com/haowen.html)|[人物](https://news.mydrivers.com/renwu.html)|[数据](https://news.mydrivers.com/shuju.html)|[智能手机](https://news.mydrivers.com/shouji.html)|[IT圈](https://news.mydrivers.com/it.shtml)|[CPU](https://news.mydrivers.com/cpu.html)|[显卡](https://news.mydrivers.com/xianka.html)|[安卓](https://news.mydrivers.com/anzhuoshouji.html)|[iPhone](https://news.mydrivers.com/pingguoshouji.html)|[Windows](https://news.mydrivers.com/windows.html)|[微信](https://news.mydrivers.com/weixin.html)
+  * [华为](https://news.mydrivers.com/huawei.html)|[小米](https://news.mydrivers.com/xiaomi.html)|[苹果](https://news.mydrivers.com/pingguo.html)|[英特尔](https://news.mydrivers.com/yingteer.html)|[AMD](https://news.mydrivers.com/amd.html)|[英伟达](https://news.mydrivers.com/yingweida.html)[特斯拉](https://news.mydrivers.com/tesila.html)|[索尼](https://news.mydrivers.com/suoni.html)|[OPPO](https://news.mydrivers.com/oppo.html)|[vivo](https://news.mydrivers.com/vivo.html)[荣耀](https://news.mydrivers.com/rongyao.html)
+  * [京东](https://news.mydrivers.com/jingdong.html)|[美团](https://news.mydrivers.com/meituan.html)|[字节跳动](https://news.mydrivers.com/zijietiaodong.html)|[阿里巴巴](https://news.mydrivers.com/alibaba.html)|[腾讯](https://news.mydrivers.com/tengxun.html)|[百度](https://news.mydrivers.com/baidu.html)|[谷歌](https://news.mydrivers.com/guge.html)|[评论分析](https://news.mydrivers.com/reping.html)|[游戏](https://news.mydrivers.com/youxi.html)|[全部资讯>>](https://news.mydrivers.com/technewsall.html)
+
+
+  * [![桌面CPU性能天梯图](https://icons.mydrivers.com/news2022/pc-cpu-phb@2x.png)桌面CPU性能天梯图](https://www.mydrivers.com/zhuanti/tianti/cpu/index.html)
+  * [![桌面显卡性能天梯图](https://icons.mydrivers.com/news2022/pc-xk-phb@2x.png)桌面显卡性能天梯图](https://www.mydrivers.com/zhuanti/tianti/gpu/index.html)
+  * [![手机CPU性能天梯图](https://icons.mydrivers.com/news2022/tel-cpu-phb@2x.png)手机CPU性能天梯图](https://www.mydrivers.com/zhuanti/tianti/01/index.html)
+  * [![笔记本显卡性能天梯图](https://icons.mydrivers.com/news2022/notebook-xk-phb@2x.png)笔记本显卡性能天梯图](https://www.mydrivers.com/zhuanti/tianti/gpum/index.html)
+  * [![数码相机性能天梯图](https://icons.mydrivers.com/news2022/camera-phb@2x.png)数码相机性能天梯图](https://www.mydrivers.com/zhuanti/tianti/camera/index.html)
+
+
+  * [手机CPU](https://rank.kkj.cn/Phone74.shtml)|[手机拍照](https://rank.kkj.cn/Phone79.shtml)|[手机视频](https://rank.kkj.cn/Phone81.shtml)|[手机电池容量](https://rank.kkj.cn/battery.shtml)|[手机AI算力](https://rank.kkj.cn/ai.shtml)|[手机充电](https://rank.kkj.cn/charge.shtml)|[手机音频](https://rank.kkj.cn/Phone21.shtml)|[手机重量](https://rank.kkj.cn/phoneweight.shtml)|[手机CMOS](https://rank.kkj.cn/Phone57.shtml)|[数码相机](https://rank.kkj.cn/shuma69.shtml)
+  * [桌面显卡](https://rank.kkj.cn/Computer73.shtml)|[桌面CPU](https://rank.kkj.cn/Computer76.shtml)|[桌面CPU游戏](https://rank.kkj.cn/Computer147.shtml)|[笔记本CPU](https://rank.kkj.cn/Computer77.shtml)|[笔记本显卡](https://rank.kkj.cn/Computer75.shtml)|[桌面显卡功耗](https://rank.kkj.cn/Computer61.shtml)|[桌面处理器功耗](https://rank.kkj.cn/Computer62.shtml)|[全球超算](https://rank.kkj.cn/Computer72.shtml)
+  * [电动汽车续航里程](https://rank.kkj.cn/Car78.shtml)|[电动汽车电池容量](https://rank.kkj.cn/carbattery.shtml)|[新能源汽车销量](https://rank.kkj.cn/Car9.shtml)|[汽车销量](https://rank.kkj.cn/Car52.shtml)|[汽车保值率](https://rank.kkj.cn/Car22.shtml)
+
+
+  * [显卡评测](https://hardware.mydrivers.com/xiankapingce.html)|[CPU评测](https://hardware.mydrivers.com/cpupingce.html)|[笔记本评测](https://hardware.mydrivers.com/bijibenpingce.html)|[硬盘评测](https://hardware.mydrivers.com/yingpanpingce.html)|[内存评测](https://hardware.mydrivers.com/neicunpingce.html)|[显示器评测](https://hardware.mydrivers.com/xianshiqipingce.html)|[主板评测](https://hardware.mydrivers.com/zhubanpingce.html)|[手机评测](https://hardware.mydrivers.com/shoujipingce.html)|[投影仪评测](https://hardware.mydrivers.com/touyingyipingce.html)|[智能穿戴](https://hardware.mydrivers.com/zhinengchuandaipingce.html)
+  * [平板评测](https://hardware.mydrivers.com/pingbanpingce.html%20)|[电视评测](https://hardware.mydrivers.com/dianshipingce.html)|[电动车评测](https://hardware.mydrivers.com/diandongchepingce.html)|[更多评测](https://hardware.mydrivers.com/)
+
+
+![](https://icons.mydrivers.com/common/icon_warning@2x.png)
+作者私密文章，无浏览权限
+[返回](https://news.mydrivers.com/)
+因版权限制，过往内容只提供给老鸟级别及以上用户访问
+[登录](javascript:;)
+因版权限制，过往内容只提供给老鸟级别及以上用户访问
+[返回](https://news.mydrivers.com/)
+  * 当前位置：[首页](https://www.mydrivers.com) > [资讯中心](https://news.mydrivers.com/) > [电脑办公](https://news.mydrivers.com/diannao.html) > [CPU](https://news.mydrivers.com/cpu.html) > 文章详情
+  * [![榜单](https://icons.mydrivers.com/2021/news/bangdan_pc.svg)](https://rank.kkj.cn/) [![招聘](https://icons.mydrivers.com/2021/news/zhaopin_pc.svg)](https://news.mydrivers.com/1/758/758016.htm)
+
+
+### 
+  * 今日视点
+
+
+  * · [女车主称遭货车逼停 被骂开个破小米：怨谁](https://news.mydrivers.com/1/1064/1064637.htm)
+  * · [网友吐槽8小时高铁乘客打电话7小时：只能忍](https://news.mydrivers.com/1/1064/1064532.htm)
+  * · [博世高管呼吁车企向特斯拉学习 智驾不免费](https://news.mydrivers.com/1/1064/1064539.htm)
+  * · [1.2mm全球最窄物理四等边！魅族22官宣](https://news.mydrivers.com/1/1064/1064569.htm)
+
+
+####  [正文内容](javascript:;) [评论（88）](javascript:;)
+100％自主龙芯2P0500处理器！得力打印机拿下中央机关最大规模集采
+[![](https://img1.kkeji.com/img/2005/20250728/115853492.gif)](https://jd.dangbei.com/f7pro.html?kkj)
+2025-07-28 12:33:28 出处：快科技 作者：[上方文Q](https://passport.mydrivers.com/author/278470.html ""上方文Q的主页"") 编辑：上方文Q  人气： 3156 次 评论[(88)](https://comment8.mydrivers.com/review/1064631-1.htm)[![点击可以复制本篇文章的标题和链接](https://icons.mydrivers.com/news/2013/copy_linkv2.png?id=1)复制](javascript:copyNewsUrl\(\); ""点击可以复制本篇文章的标题和链接"")[![对文章内容进行纠错](https://icons.mydrivers.com/news/2013/icon_jiucuo.png?id=1)纠错](javascript:; ""对文章内容进行纠错"")
+[_#_ CPU处理器](https://news.mydrivers.com/tag/cpuchuliqi.htm)[ _#_ 龙芯](https://news.mydrivers.com/tag/longxin.htm)
+  * [0](javascript:;)
+  * [0](javascript:;)
+![](https://icons.mydrivers.com/2020/www/top.png)
+[](javascript:;)
+[](javascript:;)
+[](javascript:;)
+[](javascript:;)
+[](javascript:copyNewsUrl\(\);)
+  * [0](javascript:;)
+  * [88](javascript:;)
+
+
+快科技7月28日消息，近日，中央政府采购网发布“中央国家机关2025年打印机批量集中采购项目-7月”中标公告。
+**得力集团凭借搭载龙芯2P0500处理器的打印机产品DP31DNL，勇夺中标量第一包，超过二三四包中标量的总和，规模创历次集采之最，同时其价格也是最低的。**
+可以说，这标志着国产自主打印机正式迎来“龙芯路线”。
+[![100％自主龙芯2P0500处理器！得力打印机拿下中央机关最大规模集采](https://img1.mydrivers.com/img/20250728/s_af8e605c18b34c2c8fc78b318f2895c6.jpg)](https://img1.mydrivers.com/img/20250728/af8e605c18b34c2c8fc78b318f2895c6.jpg)
+本次集采，**得力中标的是A4激光黑白双面打印机DP31DNL，单价650元，采购数量2751台，总价约178.8万元。**
+第二包是京瓷A4激光彩色双面打印机ECOSYS PA2100cx，单价1560元，采购数量538台，总价约83.9万元。
+第三包是京瓷A3激光黑白双面打印机ECOSYS P4135dn，单价7490元，采购数量137台，总价约102.6万元。
+第四包是联想A3激光彩色双面打印机联想2510，单价高达12500元，不过采购数量只有170台，总价212.5万元。
+[![100％自主龙芯2P0500处理器！得力打印机拿下中央机关最大规模集采](https://img1.mydrivers.com/img/20250728/s_f2aec45924834cdc998f21cd0852e0b7.png)](https://img1.mydrivers.com/img/20250728/f2aec45924834cdc998f21cd0852e0b7.png)
+得力此次中标的打印机产品，核心搭载龙芯中科自主研发的龙芯2P0500处理器。
+**它基于LoongArch龙架构设计，完全摆脱对国外技术授权的依赖，实现CPU核心、内存控制器、IO接口等关键模块的100％国产化。**
+集成国密SM2/SM3/SM4加密算法，支持可信启动与动态安全防护，满足《信息安全技术 打印机安全技术要求》等国家标准。
+针对政企办公场景优化，支持高并发打印任务、低功耗待机，可与统信UOS、麒麟OS等国产操作系统无缝兼容，平均无故障工作时间（MTBF）达5万小时。
+得力集团始创于1981年，打印机研发团队组建于2013年，如今已成为中国唯一一家同时拥有激光、喷墨、热敏、针打等全系列打印产品的厂商，而打印产业也成为得力集团有史以来投入最大的单体产业。
+[![100％自主龙芯2P0500处理器！得力打印机拿下中央机关最大规模集采](https://img1.mydrivers.com/img/20250728/s_9410ccc7af3e41d58b711e700adf7667.png)](https://img1.mydrivers.com/img/20250728/9410ccc7af3e41d58b711e700adf7667.png)
+【本文结束】如需转载请务必注明出处：快科技
+责任编辑：上方文Q
+文章内容举报
+###### 相关资讯
+  * [64核只要4万元太良心！AMD Zen5撕裂者9000X国行价格公布](https://news.mydrivers.com/1/1064/1064626.htm)
+  * [入门处理器选哪家：同款笔记本酷睿Ultra 5 225H与锐龙AI 7 350实测对比](https://news.mydrivers.com/1/1064/1064567.htm)
+  * [反击AMD Zen6！Intel新一代高端移动处理器Nova Lake-AX曝光：将重新定义高性能笔电](https://news.mydrivers.com/1/1064/1064477.htm)
+  * [尼龙笔头更耐磨 得力12色水彩笔限时优惠 到手6.8元](https://news.mydrivers.com/1/1064/1064252.htm)
+  * [数字大屏 渐增闹铃不惊人：得力电子闹钟到手16.9元](https://news.mydrivers.com/1/1064/1064106.htm)
+
+
+  * 支持打赏
+  * 支持0人
+  * 反对
+  * [](javascript:;)
+打赏
+
+
+###### 文章价值打分
+[](javascript:;) [](javascript:;) [](javascript:;) [](javascript:;) [](javascript:;)
+当前文章打分0 分，共有0人打分
+  * [0](javascript:;)
+  * [0](javascript:;)
+  * [88](javascript:;)
+  * [打赏](javascript:;)
+![](https://icons.mydrivers.com/news/play.png)
+  * | 
+
+
+  * 分享好友:
+  * [](javascript:;)
+分享至QQ
+  * [](javascript:;)
+分享至微博
+  * [](javascript:;)
+  * [](javascript:;)
+分享至QQ空间
+  * | 
+
+
+  * [生成海报](javascript:;)
+
+
+![](https://icons.mydrivers.com/news/haibao_close.png)
+  * [](javascript:;)保存图片
+  * [](javascript:;)QQ好友
+  * [](javascript:;)微博
+  * [](javascript:;)微信好友 
+  * [](javascript:;)QQ空间
+
+
+[](javascript:;)
+给作者大大一些小奖励 ![](https://icons.mydrivers.com/news/play.png)
+###### 本文收录在
+[_#_ CPU处理器](https://news.mydrivers.com/tag/cpuchuliqi.htm)[ _#_ 龙芯](https://news.mydrivers.com/tag/longxin.htm)[ _#_ 龙芯2P0500](https://news.mydrivers.com/tag/longxin2p0500.htm)[ _#_ 打印机](https://news.mydrivers.com/tag/dayinji.htm)[ _#_ 得力](https://news.mydrivers.com/tag/deli_34352.htm)
+### 
+  * 本文作者
+
+
+  * [![上方文Q](https://passport.mydrivers.com/comments/getusertouxiang.aspx?uid=278470&size=medium)](https://passport.mydrivers.com/home/278470.html)
+### [上方文Q](https://passport.mydrivers.com/home/278470.html)
+皓月初圆 暮云飘散 分明夜色如晴昼[关注](javascript:;)
+
+
+  * [![上方文Q](https://passport.mydrivers.com/comments/getusertouxiang.aspx?uid=278470&size=medium)](https://passport.mydrivers.com/home/278470.html)
+### [上方文Q](https://passport.mydrivers.com/home/278470.html)
+皓月初圆 暮云飘散 分明夜色如晴昼 [瞅一瞅](https://passport.mydrivers.com/home/278470.html)
+
+
+  * [![地表温度超70℃！卫星俯瞰国内“火炉”城市：有你家吗](https://img1.mydrivers.com/img/20250728/2da90a5e69674ee38bba385998521688.png)](https://news.mydrivers.com/1/1064/1064763.htm)
+[地表温度超70℃！卫星俯瞰国内“火炉”城市：有你家吗](https://news.mydrivers.com/1/1064/1064763.htm)
+  * [![惊喜首发价13599元！AMD Zen5超级AI主机发布：128GB内存](https://img1.mydrivers.com/img/20250728/e6896154eacb4af990d037f5d4f0201f.png)](https://news.mydrivers.com/1/1064/1064695.htm)
+[惊喜首发价13599元！AMD Zen5超级AI主机发布：128GB内存](https://news.mydrivers.com/1/1064/1064695.htm)
+  * [![18天217次！此地近期有大量蛇出没 小心](https://img1.mydrivers.com/img/20250728/12b5a2ac9f7e48a6a2cb5bfa5555fcc0.png)](https://news.mydrivers.com/1/1064/1064688.htm)
+[18天217次！此地近期有大量蛇出没 小心](https://news.mydrivers.com/1/1064/1064688.htm)
+
+
+  * [100％自主！龙芯CPU打印机拿下中央机关最大规模集采](https://news.mydrivers.com/1/1064/1064631.htm)2025-07-28
+  * [64核只要4万元太良心！AMD Zen5撕裂者9000X国行价格公布](https://news.mydrivers.com/1/1064/1064626.htm)2025-07-28
+  * [像极了长江存储！铠侠/闪迪9代闪存出货：DDR6.0高速接口](https://news.mydrivers.com/1/1064/1064590.htm)2025-07-28
+  * [特朗普又赢了！全球第二富豪 绝对掌控美国媒体巨头](https://news.mydrivers.com/1/1064/1064560.htm)2025-07-28
+  * [96核心99995元！AMD Zen5撕裂者国行价格震撼公布](https://news.mydrivers.com/1/1062/1062825.htm)2025-07-18
+
+
+#####  _![](https://icons.mydrivers.com/news2023/author_twicon@2x.png)_向作者提问
+### 
+  * 热门文章
+  * 换一波
+
+
+  * [_1_ 国补回来了！第三批资金已下达](https://news.mydrivers.com/1/1064/1064342.htm)
+  * [_2_ 饿了么前CEO确认被抓！巨额现金赃款曝光 审讯画面公开](https://news.mydrivers.com/1/1064/1064467.htm)
+  * [_3_ IP非授权！中国首款6nm自研显卡发布 老外惊叹：真赶上4060](https://news.mydrivers.com/1/1064/1064445.htm)
+  * [_4_ 女车主称遭货车逼停 被骂开个破小米：双方都晒视频 谁错了](https://news.mydrivers.com/1/1064/1064637.htm)
+  * [_5_ 网友吐槽8小时高铁乘客打电话7小时：官方回应只能忍受！](https://news.mydrivers.com/1/1064/1064532.htm)
+  * [_6_ 性能确超RTX 4060！国产自研6nm显卡被冠以奇迹一代：买吗](https://news.mydrivers.com/1/1064/1064551.htm)
+  * [_7_ 1.2mm全球最窄物理四等边！魅族22官宣](https://news.mydrivers.com/1/1064/1064569.htm)
+  * [_8_ iPhone在华跌落神坛！苹果首次在中国关停直营店](https://news.mydrivers.com/1/1064/1064662.htm)
+  * [_9_ 你达标没！中国手机电池容量完虐iPhone：明年迈入10000mAh](https://news.mydrivers.com/1/1064/1064345.htm)
+  * [_10_ 博世高管呼吁车企向特斯拉学习：智驾绝对不要免费](https://news.mydrivers.com/1/1064/1064539.htm)
+
+
+  * [_1_ 李楠：没确切证据前说懂车帝测试故意黑某品牌不是君子所为](https://news.mydrivers.com/1/1064/1064358.htm)
+  * [_2_ 小米16 Ultra提档年前发布：徕卡更深度合作、回归直屏](https://news.mydrivers.com/1/1064/1064351.htm)
+  * [_3_ 我国首款自主架构6nm GPU今天发！性能抢先看 媲美RTX 5060](https://news.mydrivers.com/1/1064/1064333.htm)
+  * [_4_ 博主复刻懂车帝消失前车：华为ADS完美变道刹停 一次都没撞](https://news.mydrivers.com/1/1064/1064435.htm)
+  * [_5_ 配宁德时代电池 续航100km！全国首艘纯电海上客船投运](https://news.mydrivers.com/1/1064/1064326.htm)
+  * [_6_ AMD最强发烧级桌面CPU售价公布！1499美元起 完爆Intel至强](https://news.mydrivers.com/1/1064/1064460.htm)
+  * [_7_ 印度1岁男童咬死眼镜蛇奇迹生还 网友质疑造神](https://news.mydrivers.com/1/1064/1064479.htm)
+  * [_8_ 演唱会CEO出轨事件最大赢家出现了：拍摄者一夜爆红](https://news.mydrivers.com/1/1064/1064423.htm)
+  * [_9_ 泰国一男子一个月不吃饭 仅靠“液体面包”度日：家中暴毙](https://news.mydrivers.com/1/1064/1064321.htm)
+  * [_10_ 161元大额券 蓝帽认证21金维他维生素C片60粒：到手9.9元](https://news.mydrivers.com/1/1064/1064136.htm)
+
+
+  * [_1_ 来了！国产真自研高性能GPU正式发布：性能对标英伟达/AMD](https://news.mydrivers.com/1/1064/1064415.htm)
+  * [_2_ 果粉一眼认出是新款！iPhone 17机模紫色版开箱上手](https://news.mydrivers.com/1/1064/1064424.htm)
+  * [_3_ 中国首位MBA学位方丈释永信被查 天龙八部鸠摩智回应热梗](https://news.mydrivers.com/1/1064/1064587.htm)
+  * [_4_ 三千万辆中国车利润竟不如丰田！官媒发文反击：理由如下](https://news.mydrivers.com/1/1064/1064377.htm)
+  * [_5_ “朱雀玄武敕令”自曝被家人送入精神病院：改名为周景明](https://news.mydrivers.com/1/1064/1064483.htm)
+  * [_6_ 小米16 Ultra来袭！徕卡送给卢伟冰最好的礼物](https://news.mydrivers.com/1/1064/1064428.htm)
+  * [_7_ 夏天出汗补充电解质！外星人电解质饮料大促：60元到手](https://news.mydrivers.com/1/1064/1064446.htm)
+  * [_8_ DeepSeek真的“凉”了吗 业内人士：分明是飞入寻常百姓家](https://news.mydrivers.com/1/1064/1064400.htm)
+  * [_9_ 反击AMD！Intel确认Nova Lake将缩小高端桌面CPU差距](https://news.mydrivers.com/1/1064/1064502.htm)
+  * [_10_ Intel新一代高端移动CPU Nova Lake-AX曝光！反击AMD Zen6](https://news.mydrivers.com/1/1064/1064477.htm)
+
+
+[![](https://img1.kkeji.com/img/2005/20250701/103651508.png)](https://click.aliyun.com/m/1000404584/)
+### 
+  * 好物推荐
+  * 换一波
+
+
+  * [![](https://icons.mydrivers.com/news/2018/load.gif)](https://news.mydrivers.com/1/1063/1063389.htm)
+###### [钙尔奇官旗限时大促：钙尔奇液体钙113元到手4瓶](https://news.mydrivers.com/1/1063/1063389.htm)
+_2025-07-23_ _[0](https://comment8.mydrivers.com/review/1063389-1.htm)_
+  * [![](https://icons.mydrivers.com/news/2018/load.gif)](https://news.mydrivers.com/1/1062/1062911.htm)
+###### [999官旗大促！1%二硫化硒洗发水19.1元大差价（京东49元）](https://news.mydrivers.com/1/1062/1062911.htm)
+_2025-07-20_ _[3](https://comment8.mydrivers.com/review/1062911-1.htm)_
+  * [![](https://icons.mydrivers.com/news/2018/load.gif)](https://news.mydrivers.com/1/1062/1062901.htm)
+###### [送货上门！超能洗衣液跌破五折：39.9元买11斤](https://news.mydrivers.com/1/1062/1062901.htm)
+_2025-07-21_ _[0](https://comment8.mydrivers.com/review/1062901-1.htm)_
+
+
+  * [![](https://icons.mydrivers.com/news/2018/load.gif)](https://news.mydrivers.com/1/1062/1062876.htm)
+###### [国标品质：五稻田东北五常大米10斤37.9元大促（减72元）](https://news.mydrivers.com/1/1062/1062876.htm)
+_2025-07-20_ _[0](https://comment8.mydrivers.com/review/1062876-1.htm)_
+  * [![](https://icons.mydrivers.com/news/2018/load.gif)](https://news.mydrivers.com/1/1062/1062874.htm)
+###### [旗舰店发车：霸王新升级洗发水日常59 现券后仅29元](https://news.mydrivers.com/1/1062/1062874.htm)
+_2025-07-19_ _[0](https://comment8.mydrivers.com/review/1062874-1.htm)_
+  * [![](https://icons.mydrivers.com/news/2018/load.gif)](https://news.mydrivers.com/1/1062/1062873.htm)
+###### [52%鸡蛋+12%生牛乳：巴氏鲜奶戚风蛋糕1.2元/袋](https://news.mydrivers.com/1/1062/1062873.htm)
+_2025-07-19_ _[0](https://comment8.mydrivers.com/review/1062873-1.htm)_
+
+
+### 
+  * 关注我们
+
+
+  * ![微博](https://icons.mydrivers.com/2020/www/weibo1.png)
+### 微博：快科技官方
+快科技官方微博
+![微博](https://icons.mydrivers.com/2020/www/WeiBoJump.png)
+  * ![今日头条](https://icons.mydrivers.com/2020/www/toutiao1.png)
+### 今日头条：快科技
+带来硬件软件、手机数码最快资讯！
+![今日头条](https://icons.mydrivers.com/2020/www/TouTiaoJump.png)
+  * ![抖音](https://icons.mydrivers.com/2020/www/douyin1.png)
+### 抖音：kkjcn
+科技快讯、手机开箱、产品体验、应用推荐...
+![抖音](https://icons.mydrivers.com/2020/www/DouYinJump.png)
+
+     关于我们  
+
+[关于我们](https://www.mydrivers.com/contact/Company.html) 
+
+
+[隐私权说明 ](https://www.mydrivers.com/contact/privacy.html) 
+     交流合作  
+
+[加入我们](https://www.mydrivers.com/contact/jobs.html) 
+
+
+[意见反馈](javascript:;) 
+
+
+[广告刊例](https://www.mydrivers.com/contact/advertising.html) 
+     关注我们  
+
+微信公众号：![快科技微信公众号](https://icons.mydrivers.com/2018/common/erwm_small.png)
+![](https://icons.mydrivers.com/icon/kkjwx.png)
+![](https://icons.mydrivers.com/2018/common/ewmar.png)
+
+
+
+微博号：[快科技官方](https://weibo.com/mydrivers ""快科技官方微博"") 
+
+
+QQ群：53467377 
+
+  * ![安卓客户端下载](https://icons.mydrivers.com/2018/common/kkj_android.png)安卓客户端下载 
+  * ![IOS客户端下载](https://icons.mydrivers.com/2018/common/kkj_ios.png)IOS客户端下载 
+
+
+快科技·1997-2025 版权所有
+Copyright(C)Mydrivers.com, All Rights Reserved.
+[豫ICP备2023031922号-1](https://beian.miit.gov.cn/)[![](https://icons.mydrivers.com/2018/news/batb.png)豫公网安备 41010502003949号](http://www.beian.gov.cn/portal/registerSystemInfo?recordcode=41010502003949)   
+  
+
+[](javascript:void\(0\))
+### 热点推荐
+  * [女车主称遭货车逼停 被骂开个破小米：双方都晒视频 谁错了](https://news.mydrivers.com/1/1064/1064637.htm) 14642
+  * [性能确超RTX 4060！国产自研6nm显卡被冠以奇迹一代：买吗](https://news.mydrivers.com/1/1064/1064551.htm) 13021
+  * [1.2mm全球最窄物理四等边！魅族22官宣](https://news.mydrivers.com/1/1064/1064569.htm) 12639
+  * [iPhone在华跌落神坛！苹果首次在中国关停直营店](https://news.mydrivers.com/1/1064/1064662.htm) 12577
+  * [中国首位MBA学位方丈释永信被查 天龙八部鸠摩智回应热梗](https://news.mydrivers.com/1/1064/1064587.htm) 7826
+  * [日本知名品牌：狮王齿力佳牙膏官方2折起秒杀](https://news.mydrivers.com/1/1064/1064572.htm) 6583
+  * [韩国男扮女装印度旅行为验证“女性旅行危险论”：结果尴尬](https://news.mydrivers.com/1/1064/1064549.htm) 6156
+  * [HIV要被终结了吗！艾滋病预防神药落地海南：近100%有效](https://news.mydrivers.com/1/1064/1064554.htm) 5591
+
+
+### 好物推荐
+  * [![](https://haohuo.mydrivers.com/img/20241119/title_193540674.jpg)](https://news.mydrivers.com/1/1014/1014729.htm)
+[361° 运动长裤62元官方大促](https://news.mydrivers.com/1/1014/1014729.htm)
+￥62 券后价
+￥179
+  * [![](https://haohuo.mydrivers.com/img/20241119/title_193611081.jpg)](https://news.mydrivers.com/1/1014/1014505.htm)
+[森马集团旗下GSON撞色棉衣到手59元](https://news.mydrivers.com/1/1014/1014505.htm)
+￥59 券后价
+￥199
+  * [![](https://haohuo.mydrivers.com/img/20241119/title_193636020.jpg)](https://news.mydrivers.com/1/1014/1014549.htm)
+[JEEP工装冲锋裤79元大促](https://news.mydrivers.com/1/1014/1014549.htm)
+￥79 券后价
+￥119
+  * [![](https://haohuo.mydrivers.com/img/20241119/title_193656974.jpg)](https://news.mydrivers.com/1/1014/1014685.htm)
+[0反式脂肪酸 后谷咖啡30条18元](https://news.mydrivers.com/1/1014/1014685.htm)
+￥18 券后价
+￥36.9
+  * [![](https://haohuo.mydrivers.com/img/20241119/title_193717756.jpg)](https://news.mydrivers.com/1/1014/1014296.htm)
+[徽春堂金丝皇菊约50朵 到手5.9元](https://news.mydrivers.com/1/1014/1014296.htm)
+￥5.9 券后价
+￥25.9
+
+
+  * [](https://app.kkj.cn/)
+_![](https://icons.mydrivers.com/2020/www/left.png)_
+手机扫码下载
+支持Android/iOS/iPad
+![快科技APP](https://icons.mydrivers.com/2020/news/8/app_ewm.png)
+  *   * 纠错
+
+
+  * _![](https://icons.mydrivers.com/news2022/right.png)_
+爆料群
+爆料1群![爆料群](https://icons.mydrivers.com/tab/wxbaoliao.png)
+打开微信扫一扫   
+扫描入群，加入爆料
+  *   *   * 
+
+[](javascript:;) 100%  [](javascript:;) [](javascript:;) [](javascript:;) [](javascript:;) [ ](javascript:;)
+[](javascript:;) [](javascript:;)
+![](https://news.mydrivers.com/1/1064/1064631.htm)  
+---  
+###### 图片信息
+  * 图片描述:
+  * 图片格式：
+  * 图片尺寸：
+  * 上传时间：
+
+
+_[](javascript:;)_ _[](javascript:;)_
+","['https://www.mydrivers.com', 'https://m.mydrivers.com', 'https://blog.mydrivers.com/', 'https://passport.mydrivers.com/reg.htm', 'https://www.mydrivers.com/', 'https://news.mydrivers.com/', 'https://hardware.mydrivers.com/', 'https://news.mydrivers.com/zhibo', 'https://news.mydrivers.com/zixun/haowu', 'https://yjgg.mydrivers.com/']",22,57,1254
+电脑中的“黑话”盘点：别被商家骗了,https://news.mydrivers.com/1/1064/1064677.htm,驱动之家,2025-07-28 07:22:00,电脑中的“黑话”盘点：别被商家骗了,"  * [](https://www.mydrivers.com ""科技改变未来"")
+  * [手机版](https://m.mydrivers.com ""快科技手机版"")
+  * [安卓版](http://app.kkj.cn/)
+  * [苹果端](http://app.kkj.cn/)
+  * [博客版](https://blog.mydrivers.com/)
+
+
+  * [登录](javascript:;)
+  * [注册](https://passport.mydrivers.com/reg.htm)
+  * 浅色模式深色模式
+默认主题
+橙色主题
+红色主题
+
+
+  * [](https://www.mydrivers.com/)
+  * [](https://news.mydrivers.com/)
+  * [](https://hardware.mydrivers.com/)
+  * [](https://rank.kkj.cn/)
+  * [](https://news.mydrivers.com/zhibo/)
+  * [](https://news.mydrivers.com/zixun/haowu/)
+  * [](https://yjgg.mydrivers.com/)
+  * [](https://dcgg.kkj.cn/)
+  * [](https://drivers.mydrivers.com/)
+
+
+热门推荐
+  * [一图](https://news.mydrivers.com/yitu.html)|[好文](https://news.mydrivers.com/haowen.html)|[人物](https://news.mydrivers.com/renwu.html)|[数据](https://news.mydrivers.com/shuju.html)|[智能手机](https://news.mydrivers.com/shouji.html)|[IT圈](https://news.mydrivers.com/it.shtml)|[CPU](https://news.mydrivers.com/cpu.html)|[显卡](https://news.mydrivers.com/xianka.html)|[安卓](https://news.mydrivers.com/anzhuoshouji.html)|[iPhone](https://news.mydrivers.com/pingguoshouji.html)|[Windows](https://news.mydrivers.com/windows.html)|[微信](https://news.mydrivers.com/weixin.html)
+  * [华为](https://news.mydrivers.com/huawei.html)|[小米](https://news.mydrivers.com/xiaomi.html)|[苹果](https://news.mydrivers.com/pingguo.html)|[英特尔](https://news.mydrivers.com/yingteer.html)|[AMD](https://news.mydrivers.com/amd.html)|[英伟达](https://news.mydrivers.com/yingweida.html)[特斯拉](https://news.mydrivers.com/tesila.html)|[索尼](https://news.mydrivers.com/suoni.html)|[OPPO](https://news.mydrivers.com/oppo.html)|[vivo](https://news.mydrivers.com/vivo.html)[荣耀](https://news.mydrivers.com/rongyao.html)
+  * [京东](https://news.mydrivers.com/jingdong.html)|[美团](https://news.mydrivers.com/meituan.html)|[字节跳动](https://news.mydrivers.com/zijietiaodong.html)|[阿里巴巴](https://news.mydrivers.com/alibaba.html)|[腾讯](https://news.mydrivers.com/tengxun.html)|[百度](https://news.mydrivers.com/baidu.html)|[谷歌](https://news.mydrivers.com/guge.html)|[评论分析](https://news.mydrivers.com/reping.html)|[游戏](https://news.mydrivers.com/youxi.html)|[全部资讯>>](https://news.mydrivers.com/technewsall.html)
+
+
+  * [![桌面CPU性能天梯图](https://icons.mydrivers.com/news2022/pc-cpu-phb@2x.png)桌面CPU性能天梯图](https://www.mydrivers.com/zhuanti/tianti/cpu/index.html)
+  * [![桌面显卡性能天梯图](https://icons.mydrivers.com/news2022/pc-xk-phb@2x.png)桌面显卡性能天梯图](https://www.mydrivers.com/zhuanti/tianti/gpu/index.html)
+  * [![手机CPU性能天梯图](https://icons.mydrivers.com/news2022/tel-cpu-phb@2x.png)手机CPU性能天梯图](https://www.mydrivers.com/zhuanti/tianti/01/index.html)
+  * [![笔记本显卡性能天梯图](https://icons.mydrivers.com/news2022/notebook-xk-phb@2x.png)笔记本显卡性能天梯图](https://www.mydrivers.com/zhuanti/tianti/gpum/index.html)
+  * [![数码相机性能天梯图](https://icons.mydrivers.com/news2022/camera-phb@2x.png)数码相机性能天梯图](https://www.mydrivers.com/zhuanti/tianti/camera/index.html)
+
+
+  * [手机CPU](https://rank.kkj.cn/Phone74.shtml)|[手机拍照](https://rank.kkj.cn/Phone79.shtml)|[手机视频](https://rank.kkj.cn/Phone81.shtml)|[手机电池容量](https://rank.kkj.cn/battery.shtml)|[手机AI算力](https://rank.kkj.cn/ai.shtml)|[手机充电](https://rank.kkj.cn/charge.shtml)|[手机音频](https://rank.kkj.cn/Phone21.shtml)|[手机重量](https://rank.kkj.cn/phoneweight.shtml)|[手机CMOS](https://rank.kkj.cn/Phone57.shtml)|[数码相机](https://rank.kkj.cn/shuma69.shtml)
+  * [桌面显卡](https://rank.kkj.cn/Computer73.shtml)|[桌面CPU](https://rank.kkj.cn/Computer76.shtml)|[桌面CPU游戏](https://rank.kkj.cn/Computer147.shtml)|[笔记本CPU](https://rank.kkj.cn/Computer77.shtml)|[笔记本显卡](https://rank.kkj.cn/Computer75.shtml)|[桌面显卡功耗](https://rank.kkj.cn/Computer61.shtml)|[桌面处理器功耗](https://rank.kkj.cn/Computer62.shtml)|[全球超算](https://rank.kkj.cn/Computer72.shtml)
+  * [电动汽车续航里程](https://rank.kkj.cn/Car78.shtml)|[电动汽车电池容量](https://rank.kkj.cn/carbattery.shtml)|[新能源汽车销量](https://rank.kkj.cn/Car9.shtml)|[汽车销量](https://rank.kkj.cn/Car52.shtml)|[汽车保值率](https://rank.kkj.cn/Car22.shtml)
+
+
+  * [显卡评测](https://hardware.mydrivers.com/xiankapingce.html)|[CPU评测](https://hardware.mydrivers.com/cpupingce.html)|[笔记本评测](https://hardware.mydrivers.com/bijibenpingce.html)|[硬盘评测](https://hardware.mydrivers.com/yingpanpingce.html)|[内存评测](https://hardware.mydrivers.com/neicunpingce.html)|[显示器评测](https://hardware.mydrivers.com/xianshiqipingce.html)|[主板评测](https://hardware.mydrivers.com/zhubanpingce.html)|[手机评测](https://hardware.mydrivers.com/shoujipingce.html)|[投影仪评测](https://hardware.mydrivers.com/touyingyipingce.html)|[智能穿戴](https://hardware.mydrivers.com/zhinengchuandaipingce.html)
+  * [平板评测](https://hardware.mydrivers.com/pingbanpingce.html%20)|[电视评测](https://hardware.mydrivers.com/dianshipingce.html)|[电动车评测](https://hardware.mydrivers.com/diandongchepingce.html)|[更多评测](https://hardware.mydrivers.com/)
+
+
+![](https://icons.mydrivers.com/common/icon_warning@2x.png)
+作者私密文章，无浏览权限
+[返回](https://news.mydrivers.com/)
+因版权限制，过往内容只提供给老鸟级别及以上用户访问
+[登录](javascript:;)
+因版权限制，过往内容只提供给老鸟级别及以上用户访问
+[返回](https://news.mydrivers.com/)
+  * 当前位置：[首页](https://www.mydrivers.com) > [资讯中心](https://news.mydrivers.com/) > [电脑办公](https://news.mydrivers.com/diannao.html) > [台式机](https://news.mydrivers.com/taishiji.html) > 文章详情
+  * [![榜单](https://icons.mydrivers.com/2021/news/bangdan_pc.svg)](https://rank.kkj.cn/) [![招聘](https://icons.mydrivers.com/2021/news/zhaopin_pc.svg)](https://news.mydrivers.com/1/758/758016.htm)
+
+
+### 
+  * 今日视点
+
+
+  * · [女车主称遭货车逼停 被骂开个破小米：怨谁](https://news.mydrivers.com/1/1064/1064637.htm)
+  * · [网友吐槽8小时高铁乘客打电话7小时：只能忍](https://news.mydrivers.com/1/1064/1064532.htm)
+  * · [博世高管呼吁车企向特斯拉学习 智驾不免费](https://news.mydrivers.com/1/1064/1064539.htm)
+  * · [1.2mm全球最窄物理四等边！魅族22官宣](https://news.mydrivers.com/1/1064/1064569.htm)
+
+
+####  [正文内容](javascript:;) [评论（0）](javascript:;)
+电脑中的“黑话”盘点：别被商家骗了
+[![](https://img1.kkeji.com/img/2005/20250728/115853492.gif)](https://jd.dangbei.com/f7pro.html?kkj)
+2025-07-28 15:22:22 出处：[中关村在线](https://diy.zol.com.cn/1019/10192206.html) 作者：巨龙传说 编辑：振亭  人气： 2244 次 评论[(0)](https://comment8.mydrivers.com/review/1064677-1.htm)[![点击可以复制本篇文章的标题和链接](https://icons.mydrivers.com/news/2013/copy_linkv2.png?id=1)复制](javascript:copyNewsUrl\(\); ""点击可以复制本篇文章的标题和链接"")[![对文章内容进行纠错](https://icons.mydrivers.com/news/2013/icon_jiucuo.png?id=1)纠错](javascript:; ""对文章内容进行纠错"")
+[_#_ 电脑](https://news.mydrivers.com/tag/diannao.htm)[ _#_ PC电脑](https://news.mydrivers.com/tag/pcdiannao.htm)
+  * [0](javascript:;)
+  * [0](javascript:;)
+![](https://icons.mydrivers.com/2020/www/top.png)
+[](javascript:;)
+[](javascript:;)
+[](javascript:;)
+[](javascript:;)
+[](javascript:copyNewsUrl\(\);)
+  * [0](javascript:;)
+  * [0](javascript:;)
+
+
+在电商平台搜索“游戏主机”或“高配电脑”，我们往往会看到大量价格诱人、配置“豪华”的整机产品。
+这些产品通常标榜“i9级性能”、“一线品牌”、“流畅运行3A大作”等吸引眼球的宣传语，但如果你不懂这些“黑话”，很容易就会陷入商家的圈套，而且还可能加钱降配置，让你亏了钱都不知道。
+在电商整机的“黑话”中，关于CPU的误导性宣传最为普遍，最常见的套路莫过于“i9级性能”“10核20线程”，听起来高端专业，实则是英特尔至强系列的老旧服务器CPU，也就是我们说的“洋垃圾”，如至强E5-2600 v2。
+这类CPU虽然核心数和线程数非常多，**在商家展示的鲁大师跑分中也看起来不错，但单核性能偏低，** 主流游戏和应用根本没有为那么多的核心线程做优化，在实际应用和游戏表现中非常一般，而且因为制程老，功耗和发热量都很高，并不适合当前的环境。
+[![电脑中的“黑话”盘点：别被商家骗了](https://img1.mydrivers.com/img/20250728/S490a54a7-d2cb-47df-9347-45abacdb26ff.jpg)](https://img1.mydrivers.com/img/20250728/490a54a7-d2cb-47df-9347-45abacdb26ff.jpg)
+显卡这里则是“流畅运行”，各种3A大作包括黑神话，CS，赛博朋克，都给你写上流畅运行，但是没说到底多少帧，商家觉得30帧就算流畅，毕竟这也没个标准不是吗？
+好不容易来了一个写明帧数的，但是分辨率画质都没写，你设置1024 x 768分辨率，最低画质下跑到120帧，但是对玩家来说却没有参考价值，只能说文字游戏还是玩得6。
+“豪华大板”、“军工级用料”是主板的常见描述，听起来高端，实则指的是最入门的主板，甚至是电商专供的缩水版本。电商专供版主板与零售版本型号相似，但在做工用料上完全不同，包括但不限于供电、内存插槽数量、SATA接口等缩水，所以不能当成普通主板来对待。
+[![电脑中的“黑话”盘点：别被商家骗了](https://img1.mydrivers.com/img/20250728/Sf2668d99-a8a8-4638-a9b6-46568749f33b.jpg)](https://img1.mydrivers.com/img/20250728/f2668d99-a8a8-4638-a9b6-46568749f33b.jpg)
+内存套路很简单，要么杂牌，要么是服务器的洋垃圾，尤其是DDR4内存，如果只写着“高速”，“大容量”，而没有具体的型号，那大概率就是坑了。
+电源这里则是“大功率稳定供电”，或者“650W电源”，你不知道的是，电源的型号叫做650W，实际的额定功率只有400W，你以为要400块钱的电源实际上可能连200块钱都不到，至于1年以后电源坏了，商家可就不管了。
+除了上面说的这些之外，电商整机还普遍滥用“一线品牌”。一般我们将华硕、技嘉、微星的板卡称为一线，但是电商整机这里，不管主板显卡，还是内存硬盘，任何有品牌的都能叫一线，包括那些名不见经传的小厂，或者是大品牌掺杂着杂牌，说是随机发货，但实际上你能收到的肯定是杂牌。想要指定品牌？加钱吧亲。
+[![电脑中的“黑话”盘点：别被商家骗了](https://img1.mydrivers.com/img/20250728/S6ae2a6f7-895f-4da0-b70c-5a41345d5143.jpg)](https://img1.mydrivers.com/img/20250728/6ae2a6f7-895f-4da0-b70c-5a41345d5143.jpg)
+面对电商整机中五花八门的“黑话”和营销套路，大家还是要谨慎为先，一定不要看到直降满减就激动，别看到好评返现就急着下单，配置中的所有硬件应该明确标注品牌和型号，老旧配置可以直接当做二手的价格对待，千万别被商家的花言巧语迷惑了。
+[![电脑中的“黑话”盘点：别被商家骗了](https://img1.mydrivers.com/img/20250728/s_8384e190cbf64c7397b0b6a1b9df8c34.jpg)](https://img1.mydrivers.com/img/20250728/8384e190cbf64c7397b0b6a1b9df8c34.jpg)
+责任编辑：振亭
+文章内容举报
+###### 相关资讯
+  * [华为发布新款鸿蒙旗舰平板电脑！将生产力与创作力完美融合](https://news.mydrivers.com/1/1063/1063933.htm)
+  * [梦回90年代！Maingear推限量版复古整机：外观怀旧、配置强大](https://news.mydrivers.com/1/1063/1063866.htm)
+  * [玩游戏经常黑屏、重启 有可能是电源没选对](https://news.mydrivers.com/1/1063/1063445.htm)
+  * [韩国脑洞大开！带粘液的“人类鼻毛仿生过滤器” 可有效解决电脑灰尘问题](https://news.mydrivers.com/1/1062/1062066.htm)
+  * [驻联合国外国记者被中国折叠电脑惊到：“哇哦”声一片](https://news.mydrivers.com/1/1061/1061995.htm)
+
+
+  * 支持打赏
+  * 支持0人
+  * 反对
+  * [](javascript:;)
+打赏
+
+
+###### 文章价值打分
+[](javascript:;) [](javascript:;) [](javascript:;) [](javascript:;) [](javascript:;)
+当前文章打分0 分，共有0人打分
+  * [0](javascript:;)
+  * [0](javascript:;)
+  * [0](javascript:;)
+  * [打赏](javascript:;)
+![](https://icons.mydrivers.com/news/play.png)
+  * | 
+
+
+  * 分享好友:
+  * [](javascript:;)
+分享至QQ
+  * [](javascript:;)
+分享至微博
+  * [](javascript:;)
+  * [](javascript:;)
+分享至QQ空间
+  * | 
+
+
+  * [生成海报](javascript:;)
+
+
+![](https://icons.mydrivers.com/news/haibao_close.png)
+  * [](javascript:;)保存图片
+  * [](javascript:;)QQ好友
+  * [](javascript:;)微博
+  * [](javascript:;)微信好友 
+  * [](javascript:;)QQ空间
+
+
+[](javascript:;)
+给作者大大一些小奖励 ![](https://icons.mydrivers.com/news/play.png)
+###### 本文收录在
+[_#_ 电脑](https://news.mydrivers.com/tag/diannao.htm)[ _#_ PC电脑](https://news.mydrivers.com/tag/pcdiannao.htm)[ _#_ 电脑城](https://news.mydrivers.com/tag/diannaocheng.htm)
+### 
+  * 本文作者
+
+
+  * [![露华浓](https://passport.mydrivers.com/comments/getusertouxiang.aspx?uid=1219816&size=medium)](https://passport.mydrivers.com/home/1219816.html)
+### [露华浓](https://passport.mydrivers.com/home/1219816.html)
+[关注](javascript:;)
+
+
+  * [![露华浓](https://passport.mydrivers.com/comments/getusertouxiang.aspx?uid=1219816&size=medium)](https://passport.mydrivers.com/home/1219816.html)
+### [露华浓](https://passport.mydrivers.com/home/1219816.html)
+[瞅一瞅](https://passport.mydrivers.com/home/1219816.html)
+
+
+  * [![女子休息日回工作消息获赔9万：下班后微信干活算加班](https://img1.mydrivers.com/img/20250728/bf1ddf414d7c46aea2f99dd5f68d52f3.jpg)](https://news.mydrivers.com/1/1064/1064721.htm)
+[女子休息日回工作消息获赔9万：下班后微信干活算加班](https://news.mydrivers.com/1/1064/1064721.htm)
+  * [![吃西瓜吃进医院：夏天警惕这些“家电杀手”](https://img1.mydrivers.com/img/20250728/52d930155ab848309dc4af5d3598856a.png)](https://news.mydrivers.com/1/1064/1064710.htm)
+[吃西瓜吃进医院：夏天警惕这些“家电杀手”](https://news.mydrivers.com/1/1064/1064710.htm)
+  * [![16岁男孩通宵游戏突然倒地：心脏不堪重负](https://img1.mydrivers.com/img/20250728/1c3ac239019544e9a091fbf4bb78a1f0.jpg)](https://news.mydrivers.com/1/1064/1064706.htm)
+[16岁男孩通宵游戏突然倒地：心脏不堪重负](https://news.mydrivers.com/1/1064/1064706.htm)
+
+
+  * [内裤袜子一起洗到底脏不脏：讲究卫生的人该怎么用洗衣机](https://news.mydrivers.com/1/1064/1064703.htm)2025-07-28
+  * [小米16首发！曝澎湃OS 3动画效果升级 更流畅](https://news.mydrivers.com/1/1064/1064696.htm)2025-07-28
+  * [电脑中的“黑话”盘点：别被商家骗了](https://news.mydrivers.com/1/1064/1064677.htm)2025-07-28
+  * [除了M.2接口 PCIe固态硬盘还有两个“亲兄弟”](https://news.mydrivers.com/1/1064/1064668.htm)2025-07-28
+  * [魅族22率先做到1.2mm最窄边：领先友商8E 2/天玑9500旗舰](https://news.mydrivers.com/1/1064/1064665.htm)2025-07-28
+
+
+#####  _![](https://icons.mydrivers.com/news2023/author_twicon@2x.png)_向作者提问
+### 
+  * 热门文章
+  * 换一波
+
+
+  * [_1_ 国补回来了！第三批资金已下达](https://news.mydrivers.com/1/1064/1064342.htm)
+  * [_2_ 饿了么前CEO确认被抓！巨额现金赃款曝光 审讯画面公开](https://news.mydrivers.com/1/1064/1064467.htm)
+  * [_3_ IP非授权！中国首款6nm自研显卡发布 老外惊叹：真赶上4060](https://news.mydrivers.com/1/1064/1064445.htm)
+  * [_4_ 女车主称遭货车逼停 被骂开个破小米：双方都晒视频 谁错了](https://news.mydrivers.com/1/1064/1064637.htm)
+  * [_5_ 网友吐槽8小时高铁乘客打电话7小时：官方回应只能忍受！](https://news.mydrivers.com/1/1064/1064532.htm)
+  * [_6_ 性能确超RTX 4060！国产自研6nm显卡被冠以奇迹一代：买吗](https://news.mydrivers.com/1/1064/1064551.htm)
+  * [_7_ 1.2mm全球最窄物理四等边！魅族22官宣](https://news.mydrivers.com/1/1064/1064569.htm)
+  * [_8_ iPhone在华跌落神坛！苹果首次在中国关停直营店](https://news.mydrivers.com/1/1064/1064662.htm)
+  * [_9_ 你达标没！中国手机电池容量完虐iPhone：明年迈入10000mAh](https://news.mydrivers.com/1/1064/1064345.htm)
+  * [_10_ 博世高管呼吁车企向特斯拉学习：智驾绝对不要免费](https://news.mydrivers.com/1/1064/1064539.htm)
+
+
+  * [_1_ 李楠：没确切证据前说懂车帝测试故意黑某品牌不是君子所为](https://news.mydrivers.com/1/1064/1064358.htm)
+  * [_2_ 小米16 Ultra提档年前发布：徕卡更深度合作、回归直屏](https://news.mydrivers.com/1/1064/1064351.htm)
+  * [_3_ 我国首款自主架构6nm GPU今天发！性能抢先看 媲美RTX 5060](https://news.mydrivers.com/1/1064/1064333.htm)
+  * [_4_ 博主复刻懂车帝消失前车：华为ADS完美变道刹停 一次都没撞](https://news.mydrivers.com/1/1064/1064435.htm)
+  * [_5_ 配宁德时代电池 续航100km！全国首艘纯电海上客船投运](https://news.mydrivers.com/1/1064/1064326.htm)
+  * [_6_ AMD最强发烧级桌面CPU售价公布！1499美元起 完爆Intel至强](https://news.mydrivers.com/1/1064/1064460.htm)
+  * [_7_ 印度1岁男童咬死眼镜蛇奇迹生还 网友质疑造神](https://news.mydrivers.com/1/1064/1064479.htm)
+  * [_8_ 演唱会CEO出轨事件最大赢家出现了：拍摄者一夜爆红](https://news.mydrivers.com/1/1064/1064423.htm)
+  * [_9_ 泰国一男子一个月不吃饭 仅靠“液体面包”度日：家中暴毙](https://news.mydrivers.com/1/1064/1064321.htm)
+  * [_10_ 161元大额券 蓝帽认证21金维他维生素C片60粒：到手9.9元](https://news.mydrivers.com/1/1064/1064136.htm)
+
+
+  * [_1_ 来了！国产真自研高性能GPU正式发布：性能对标英伟达/AMD](https://news.mydrivers.com/1/1064/1064415.htm)
+  * [_2_ 果粉一眼认出是新款！iPhone 17机模紫色版开箱上手](https://news.mydrivers.com/1/1064/1064424.htm)
+  * [_3_ 中国首位MBA学位方丈释永信被查 天龙八部鸠摩智回应热梗](https://news.mydrivers.com/1/1064/1064587.htm)
+  * [_4_ 三千万辆中国车利润竟不如丰田！官媒发文反击：理由如下](https://news.mydrivers.com/1/1064/1064377.htm)
+  * [_5_ “朱雀玄武敕令”自曝被家人送入精神病院：改名为周景明](https://news.mydrivers.com/1/1064/1064483.htm)
+  * [_6_ 小米16 Ultra来袭！徕卡送给卢伟冰最好的礼物](https://news.mydrivers.com/1/1064/1064428.htm)
+  * [_7_ 夏天出汗补充电解质！外星人电解质饮料大促：60元到手](https://news.mydrivers.com/1/1064/1064446.htm)
+  * [_8_ DeepSeek真的“凉”了吗 业内人士：分明是飞入寻常百姓家](https://news.mydrivers.com/1/1064/1064400.htm)
+  * [_9_ 反击AMD！Intel确认Nova Lake将缩小高端桌面CPU差距](https://news.mydrivers.com/1/1064/1064502.htm)
+  * [_10_ Intel新一代高端移动CPU Nova Lake-AX曝光！反击AMD Zen6](https://news.mydrivers.com/1/1064/1064477.htm)
+
+
+[![](https://img1.kkeji.com/img/2005/20250701/103651508.png)](https://click.aliyun.com/m/1000404584/)
+### 
+  * 好物推荐
+  * 换一波
+
+
+  * [![](https://icons.mydrivers.com/news/2018/load.gif)](https://news.mydrivers.com/1/1063/1063389.htm)
+###### [钙尔奇官旗限时大促：钙尔奇液体钙113元到手4瓶](https://news.mydrivers.com/1/1063/1063389.htm)
+_2025-07-23_ _[0](https://comment8.mydrivers.com/review/1063389-1.htm)_
+  * [![](https://icons.mydrivers.com/news/2018/load.gif)](https://news.mydrivers.com/1/1062/1062911.htm)
+###### [999官旗大促！1%二硫化硒洗发水19.1元大差价（京东49元）](https://news.mydrivers.com/1/1062/1062911.htm)
+_2025-07-20_ _[3](https://comment8.mydrivers.com/review/1062911-1.htm)_
+  * [![](https://icons.mydrivers.com/news/2018/load.gif)](https://news.mydrivers.com/1/1062/1062901.htm)
+###### [送货上门！超能洗衣液跌破五折：39.9元买11斤](https://news.mydrivers.com/1/1062/1062901.htm)
+_2025-07-21_ _[0](https://comment8.mydrivers.com/review/1062901-1.htm)_
+
+
+  * [![](https://icons.mydrivers.com/news/2018/load.gif)](https://news.mydrivers.com/1/1062/1062876.htm)
+###### [国标品质：五稻田东北五常大米10斤37.9元大促（减72元）](https://news.mydrivers.com/1/1062/1062876.htm)
+_2025-07-20_ _[0](https://comment8.mydrivers.com/review/1062876-1.htm)_
+  * [![](https://icons.mydrivers.com/news/2018/load.gif)](https://news.mydrivers.com/1/1062/1062874.htm)
+###### [旗舰店发车：霸王新升级洗发水日常59 现券后仅29元](https://news.mydrivers.com/1/1062/1062874.htm)
+_2025-07-19_ _[0](https://comment8.mydrivers.com/review/1062874-1.htm)_
+  * [![](https://icons.mydrivers.com/news/2018/load.gif)](https://news.mydrivers.com/1/1062/1062873.htm)
+###### [52%鸡蛋+12%生牛乳：巴氏鲜奶戚风蛋糕1.2元/袋](https://news.mydrivers.com/1/1062/1062873.htm)
+_2025-07-19_ _[0](https://comment8.mydrivers.com/review/1062873-1.htm)_
+
+
+### 
+  * 关注我们
+
+
+  * ![微博](https://icons.mydrivers.com/2020/www/weibo1.png)
+### 微博：快科技官方
+快科技官方微博
+![微博](https://icons.mydrivers.com/2020/www/WeiBoJump.png)
+  * ![今日头条](https://icons.mydrivers.com/2020/www/toutiao1.png)
+### 今日头条：快科技
+带来硬件软件、手机数码最快资讯！
+![今日头条](https://icons.mydrivers.com/2020/www/TouTiaoJump.png)
+  * ![抖音](https://icons.mydrivers.com/2020/www/douyin1.png)
+### 抖音：kkjcn
+科技快讯、手机开箱、产品体验、应用推荐...
+![抖音](https://icons.mydrivers.com/2020/www/DouYinJump.png)
+
+     关于我们  
+
+[关于我们](https://www.mydrivers.com/contact/Company.html) 
+
+
+[隐私权说明 ](https://www.mydrivers.com/contact/privacy.html) 
+     交流合作  
+
+[加入我们](https://www.mydrivers.com/contact/jobs.html) 
+
+
+[意见反馈](javascript:;) 
+
+
+[广告刊例](https://www.mydrivers.com/contact/advertising.html) 
+     关注我们  
+
+微信公众号：![快科技微信公众号](https://icons.mydrivers.com/2018/common/erwm_small.png)
+![](https://icons.mydrivers.com/icon/kkjwx.png)
+![](https://icons.mydrivers.com/2018/common/ewmar.png)
+
+
+
+微博号：[快科技官方](https://weibo.com/mydrivers ""快科技官方微博"") 
+
+
+QQ群：53467377 
+
+  * ![安卓客户端下载](https://icons.mydrivers.com/2018/common/kkj_android.png)安卓客户端下载 
+  * ![IOS客户端下载](https://icons.mydrivers.com/2018/common/kkj_ios.png)IOS客户端下载 
+
+
+快科技·1997-2025 版权所有
+Copyright(C)Mydrivers.com, All Rights Reserved.
+[豫ICP备2023031922号-1](https://beian.miit.gov.cn/)[![](https://icons.mydrivers.com/2018/news/batb.png)豫公网安备 41010502003949号](http://www.beian.gov.cn/portal/registerSystemInfo?recordcode=41010502003949)   
+  
+
+[](javascript:void\(0\))
+### 热点推荐
+  * [女车主称遭货车逼停 被骂开个破小米：双方都晒视频 谁错了](https://news.mydrivers.com/1/1064/1064637.htm) 14642
+  * [性能确超RTX 4060！国产自研6nm显卡被冠以奇迹一代：买吗](https://news.mydrivers.com/1/1064/1064551.htm) 13021
+  * [1.2mm全球最窄物理四等边！魅族22官宣](https://news.mydrivers.com/1/1064/1064569.htm) 12639
+  * [iPhone在华跌落神坛！苹果首次在中国关停直营店](https://news.mydrivers.com/1/1064/1064662.htm) 12577
+  * [中国首位MBA学位方丈释永信被查 天龙八部鸠摩智回应热梗](https://news.mydrivers.com/1/1064/1064587.htm) 7826
+  * [日本知名品牌：狮王齿力佳牙膏官方2折起秒杀](https://news.mydrivers.com/1/1064/1064572.htm) 6583
+  * [韩国男扮女装印度旅行为验证“女性旅行危险论”：结果尴尬](https://news.mydrivers.com/1/1064/1064549.htm) 6156
+  * [HIV要被终结了吗！艾滋病预防神药落地海南：近100%有效](https://news.mydrivers.com/1/1064/1064554.htm) 5591
+
+
+### 好物推荐
+  * [![](https://haohuo.mydrivers.com/img/20241119/title_193540674.jpg)](https://news.mydrivers.com/1/1014/1014729.htm)
+[361° 运动长裤62元官方大促](https://news.mydrivers.com/1/1014/1014729.htm)
+￥62 券后价
+￥179
+  * [![](https://haohuo.mydrivers.com/img/20241119/title_193611081.jpg)](https://news.mydrivers.com/1/1014/1014505.htm)
+[森马集团旗下GSON撞色棉衣到手59元](https://news.mydrivers.com/1/1014/1014505.htm)
+￥59 券后价
+￥199
+  * [![](https://haohuo.mydrivers.com/img/20241119/title_193636020.jpg)](https://news.mydrivers.com/1/1014/1014549.htm)
+[JEEP工装冲锋裤79元大促](https://news.mydrivers.com/1/1014/1014549.htm)
+￥79 券后价
+￥119
+  * [![](https://haohuo.mydrivers.com/img/20241119/title_193656974.jpg)](https://news.mydrivers.com/1/1014/1014685.htm)
+[0反式脂肪酸 后谷咖啡30条18元](https://news.mydrivers.com/1/1014/1014685.htm)
+￥18 券后价
+￥36.9
+  * [![](https://haohuo.mydrivers.com/img/20241119/title_193717756.jpg)](https://news.mydrivers.com/1/1014/1014296.htm)
+[徽春堂金丝皇菊约50朵 到手5.9元](https://news.mydrivers.com/1/1014/1014296.htm)
+￥5.9 券后价
+￥25.9
+
+
+  * [](https://app.kkj.cn/)
+_![](https://icons.mydrivers.com/2020/www/left.png)_
+手机扫码下载
+支持Android/iOS/iPad
+![快科技APP](https://icons.mydrivers.com/2020/news/8/app_ewm.png)
+  *   * 纠错
+
+
+  * _![](https://icons.mydrivers.com/news2022/right.png)_
+爆料群
+爆料1群![爆料群](https://icons.mydrivers.com/tab/wxbaoliao.png)
+打开微信扫一扫   
+扫描入群，加入爆料
+  *   *   * 
+
+[](javascript:;) 100%  [](javascript:;) [](javascript:;) [](javascript:;) [](javascript:;) [ ](javascript:;)
+[](javascript:;) [](javascript:;)
+![](https://news.mydrivers.com/1/1064/1064677.htm)  
+---  
+###### 图片信息
+  * 图片描述:
+  * 图片格式：
+  * 图片尺寸：
+  * 上传时间：
+
+
+_[](javascript:;)_ _[](javascript:;)_
+","['https://www.mydrivers.com', 'https://m.mydrivers.com', 'https://blog.mydrivers.com/', 'https://passport.mydrivers.com/reg.htm', 'https://www.mydrivers.com/', 'https://news.mydrivers.com/', 'https://hardware.mydrivers.com/', 'https://news.mydrivers.com/zhibo', 'https://news.mydrivers.com/zixun/haowu', 'https://yjgg.mydrivers.com/']",29,57,1653
+4TB版本36999元！丽台开售NVIDIA AI超算DGX Spark,https://news.mydrivers.com/1/1064/1064676.htm,驱动之家,2025-07-28 07:15:00,4TB版本36999元！丽台开售NVIDIA AI超算DGX Spark,"  * [](https://www.mydrivers.com ""科技改变未来"")
+  * [手机版](https://m.mydrivers.com ""快科技手机版"")
+  * [安卓版](http://app.kkj.cn/)
+  * [苹果端](http://app.kkj.cn/)
+  * [博客版](https://blog.mydrivers.com/)
+
+
+  * [登录](javascript:;)
+  * [注册](https://passport.mydrivers.com/reg.htm)
+  * 浅色模式深色模式
+默认主题
+橙色主题
+红色主题
+
+
+  * [](https://www.mydrivers.com/)
+  * [](https://news.mydrivers.com/)
+  * [](https://hardware.mydrivers.com/)
+  * [](https://rank.kkj.cn/)
+  * [](https://news.mydrivers.com/zhibo/)
+  * [](https://news.mydrivers.com/zixun/haowu/)
+  * [](https://yjgg.mydrivers.com/)
+  * [](https://dcgg.kkj.cn/)
+  * [](https://drivers.mydrivers.com/)
+
+
+热门推荐
+  * [一图](https://news.mydrivers.com/yitu.html)|[好文](https://news.mydrivers.com/haowen.html)|[人物](https://news.mydrivers.com/renwu.html)|[数据](https://news.mydrivers.com/shuju.html)|[智能手机](https://news.mydrivers.com/shouji.html)|[IT圈](https://news.mydrivers.com/it.shtml)|[CPU](https://news.mydrivers.com/cpu.html)|[显卡](https://news.mydrivers.com/xianka.html)|[安卓](https://news.mydrivers.com/anzhuoshouji.html)|[iPhone](https://news.mydrivers.com/pingguoshouji.html)|[Windows](https://news.mydrivers.com/windows.html)|[微信](https://news.mydrivers.com/weixin.html)
+  * [华为](https://news.mydrivers.com/huawei.html)|[小米](https://news.mydrivers.com/xiaomi.html)|[苹果](https://news.mydrivers.com/pingguo.html)|[英特尔](https://news.mydrivers.com/yingteer.html)|[AMD](https://news.mydrivers.com/amd.html)|[英伟达](https://news.mydrivers.com/yingweida.html)[特斯拉](https://news.mydrivers.com/tesila.html)|[索尼](https://news.mydrivers.com/suoni.html)|[OPPO](https://news.mydrivers.com/oppo.html)|[vivo](https://news.mydrivers.com/vivo.html)[荣耀](https://news.mydrivers.com/rongyao.html)
+  * [京东](https://news.mydrivers.com/jingdong.html)|[美团](https://news.mydrivers.com/meituan.html)|[字节跳动](https://news.mydrivers.com/zijietiaodong.html)|[阿里巴巴](https://news.mydrivers.com/alibaba.html)|[腾讯](https://news.mydrivers.com/tengxun.html)|[百度](https://news.mydrivers.com/baidu.html)|[谷歌](https://news.mydrivers.com/guge.html)|[评论分析](https://news.mydrivers.com/reping.html)|[游戏](https://news.mydrivers.com/youxi.html)|[全部资讯>>](https://news.mydrivers.com/technewsall.html)
+
+
+  * [![桌面CPU性能天梯图](https://icons.mydrivers.com/news2022/pc-cpu-phb@2x.png)桌面CPU性能天梯图](https://www.mydrivers.com/zhuanti/tianti/cpu/index.html)
+  * [![桌面显卡性能天梯图](https://icons.mydrivers.com/news2022/pc-xk-phb@2x.png)桌面显卡性能天梯图](https://www.mydrivers.com/zhuanti/tianti/gpu/index.html)
+  * [![手机CPU性能天梯图](https://icons.mydrivers.com/news2022/tel-cpu-phb@2x.png)手机CPU性能天梯图](https://www.mydrivers.com/zhuanti/tianti/01/index.html)
+  * [![笔记本显卡性能天梯图](https://icons.mydrivers.com/news2022/notebook-xk-phb@2x.png)笔记本显卡性能天梯图](https://www.mydrivers.com/zhuanti/tianti/gpum/index.html)
+  * [![数码相机性能天梯图](https://icons.mydrivers.com/news2022/camera-phb@2x.png)数码相机性能天梯图](https://www.mydrivers.com/zhuanti/tianti/camera/index.html)
+
+
+  * [手机CPU](https://rank.kkj.cn/Phone74.shtml)|[手机拍照](https://rank.kkj.cn/Phone79.shtml)|[手机视频](https://rank.kkj.cn/Phone81.shtml)|[手机电池容量](https://rank.kkj.cn/battery.shtml)|[手机AI算力](https://rank.kkj.cn/ai.shtml)|[手机充电](https://rank.kkj.cn/charge.shtml)|[手机音频](https://rank.kkj.cn/Phone21.shtml)|[手机重量](https://rank.kkj.cn/phoneweight.shtml)|[手机CMOS](https://rank.kkj.cn/Phone57.shtml)|[数码相机](https://rank.kkj.cn/shuma69.shtml)
+  * [桌面显卡](https://rank.kkj.cn/Computer73.shtml)|[桌面CPU](https://rank.kkj.cn/Computer76.shtml)|[桌面CPU游戏](https://rank.kkj.cn/Computer147.shtml)|[笔记本CPU](https://rank.kkj.cn/Computer77.shtml)|[笔记本显卡](https://rank.kkj.cn/Computer75.shtml)|[桌面显卡功耗](https://rank.kkj.cn/Computer61.shtml)|[桌面处理器功耗](https://rank.kkj.cn/Computer62.shtml)|[全球超算](https://rank.kkj.cn/Computer72.shtml)
+  * [电动汽车续航里程](https://rank.kkj.cn/Car78.shtml)|[电动汽车电池容量](https://rank.kkj.cn/carbattery.shtml)|[新能源汽车销量](https://rank.kkj.cn/Car9.shtml)|[汽车销量](https://rank.kkj.cn/Car52.shtml)|[汽车保值率](https://rank.kkj.cn/Car22.shtml)
+
+
+  * [显卡评测](https://hardware.mydrivers.com/xiankapingce.html)|[CPU评测](https://hardware.mydrivers.com/cpupingce.html)|[笔记本评测](https://hardware.mydrivers.com/bijibenpingce.html)|[硬盘评测](https://hardware.mydrivers.com/yingpanpingce.html)|[内存评测](https://hardware.mydrivers.com/neicunpingce.html)|[显示器评测](https://hardware.mydrivers.com/xianshiqipingce.html)|[主板评测](https://hardware.mydrivers.com/zhubanpingce.html)|[手机评测](https://hardware.mydrivers.com/shoujipingce.html)|[投影仪评测](https://hardware.mydrivers.com/touyingyipingce.html)|[智能穿戴](https://hardware.mydrivers.com/zhinengchuandaipingce.html)
+  * [平板评测](https://hardware.mydrivers.com/pingbanpingce.html%20)|[电视评测](https://hardware.mydrivers.com/dianshipingce.html)|[电动车评测](https://hardware.mydrivers.com/diandongchepingce.html)|[更多评测](https://hardware.mydrivers.com/)
+
+
+![](https://icons.mydrivers.com/common/icon_warning@2x.png)
+作者私密文章，无浏览权限
+[返回](https://news.mydrivers.com/)
+因版权限制，过往内容只提供给老鸟级别及以上用户访问
+[登录](javascript:;)
+因版权限制，过往内容只提供给老鸟级别及以上用户访问
+[返回](https://news.mydrivers.com/)
+  * 当前位置：[首页](https://www.mydrivers.com) > [资讯中心](https://news.mydrivers.com/) > [电脑办公](https://news.mydrivers.com/diannao.html) > [台式机](https://news.mydrivers.com/taishiji.html) > 文章详情
+  * [![榜单](https://icons.mydrivers.com/2021/news/bangdan_pc.svg)](https://rank.kkj.cn/) [![招聘](https://icons.mydrivers.com/2021/news/zhaopin_pc.svg)](https://news.mydrivers.com/1/758/758016.htm)
+
+
+### 
+  * 今日视点
+
+
+  * · [女车主称遭货车逼停 被骂开个破小米：怨谁](https://news.mydrivers.com/1/1064/1064637.htm)
+  * · [网友吐槽8小时高铁乘客打电话7小时：只能忍](https://news.mydrivers.com/1/1064/1064532.htm)
+  * · [博世高管呼吁车企向特斯拉学习 智驾不免费](https://news.mydrivers.com/1/1064/1064539.htm)
+  * · [1.2mm全球最窄物理四等边！魅族22官宣](https://news.mydrivers.com/1/1064/1064569.htm)
+
+
+####  [正文内容](javascript:;) [评论（6）](javascript:;)
+4TB版本36999元！丽台开售NVIDIA AI超算DGX Spark
+[![](https://img1.kkeji.com/img/2005/20250728/115853492.gif)](https://jd.dangbei.com/f7pro.html?kkj)
+2025-07-28 15:15:48 出处：快科技 作者：[黑白](https://passport.mydrivers.com/author/1599980.html ""黑白的主页"") 编辑：黑白  人气： 2161 次 评论[(6)](https://comment8.mydrivers.com/review/1064676-1.htm)[![点击可以复制本篇文章的标题和链接](https://icons.mydrivers.com/news/2013/copy_linkv2.png?id=1)复制](javascript:copyNewsUrl\(\); ""点击可以复制本篇文章的标题和链接"")[![对文章内容进行纠错](https://icons.mydrivers.com/news/2013/icon_jiucuo.png?id=1)纠错](javascript:; ""对文章内容进行纠错"")
+[_#_ 丽台](https://news.mydrivers.com/tag/litai.htm)[ _#_ NVIDIA](https://news.mydrivers.com/tag/nvidia.htm)
+  * [0](javascript:;)
+  * [0](javascript:;)
+![](https://icons.mydrivers.com/2020/www/top.png)
+[](javascript:;)
+[](javascript:;)
+[](javascript:;)
+[](javascript:;)
+[](javascript:copyNewsUrl\(\);)
+  * [0](javascript:;)
+  * [6](javascript:;)
+
+
+快科技7月28日消息，在今年初的CES上发布NVIDIA发布了AI迷你超算DGX Spark，如今，丽台（Leadtek）在电商平台上架了这款AI超算。
+**此次预售的DGX Spark提供1TB SSD和4TB SSD两种版本，售价分别为29500元和36999元，预计将在八月中旬至九月陆续到货。**
+[![4TB版本36999元！丽台开售NVIDIA AI超算DGX Spark](https://img1.mydrivers.com/img/20250728/S28649f11-817f-49d1-88db-71d5920b86a9.png)](https://img1.mydrivers.com/img/20250728/28649f11-817f-49d1-88db-71d5920b86a9.png)
+丽台上架的是NVIDIA的官方版本，外观上与联想ThinkStation PGX、华硕Ascent GX10等第三方版本有所区别。
+DGX Spark采用了金黄色的外观设计，尺寸为150mm长×150mm宽×50.5mm高，重量仅1.2千克，与普通家用小盒子电脑相似，便于携带和放置。
+[![4TB版本36999元！丽台开售NVIDIA AI超算DGX Spark](https://img1.mydrivers.com/img/20250728/Sfb279a5b-6f88-4e2a-a8b2-2a7e2d020689.png)](https://img1.mydrivers.com/img/20250728/fb279a5b-6f88-4e2a-a8b2-2a7e2d020689.png)
+**不过DGX Spark的性能十分强大，它搭载了Blackwell GPU和20核心Arm CPU（10核Cortex-X925 + 10核Cortex-A725），Tensor性能达到1000 AI TOPS，配备128GB LPDDR5x内存。**
+[![4TB版本36999元！丽台开售NVIDIA AI超算DGX Spark](https://img1.mydrivers.com/img/20250728/S80c0cd6f-8924-4d90-b0a3-55076b551a69.png)](https://img1.mydrivers.com/img/20250728/80c0cd6f-8924-4d90-b0a3-55076b551a69.png)
+接口方面，DGX Spark提供了4个USB 4 Type-C接口（支持最高40Gb/s传输速度）、1个RJ-45 10GbE网口和1个HDMI 2.1a视频接口，同时支持Wi-Fi 7和蓝牙5.3。
+用户可以在DGX Spark上本地开发和测试AI模型，并通过Nvidia AI Enterprise软件平台与云服务无缝集成，从而根据需要部署云加速模型。
+[广告 ![](https://img14.360buyimg.com/pop/jfs/t1/321140/31/16175/60990/6874df18F4d9644a9/17afdd02d293ed3f.jpg) 京东丽台NVDIA DGX Spark桌面大模型一体机 Grace Blackwell AI 超级计算机Deepseek深度学习工作站服务器 DGX Spark/128GB内存 4TB 36499元 领500元券 ](https://dt.mydrivers.com/mv.ashx?txt=OEMdX%0A)
+【本文结束】如需转载请务必注明出处：快科技
+责任编辑：黑白
+文章内容举报
+###### 相关资讯
+  * [要有客户了！曝苹果M系列考虑Intel 14A工艺：NVIDIA也有兴趣](https://news.mydrivers.com/1/1064/1064514.htm)
+  * [NVIDIA N1X处理器GPU规格、跑分曝光：核心数与RTX 5070相同！](https://news.mydrivers.com/1/1064/1064497.htm)
+  * [宇树科技王兴兴：我经常偷懒 很多代码都是让AI帮忙写好](https://news.mydrivers.com/1/1064/1064484.htm)
+  * [抖音粉丝掉到2000万 网红旺仔小乔道歉信AI生成 被曝查重率97.18%](https://news.mydrivers.com/1/1064/1064466.htm)
+  * [腾讯高管称内部30%代码都由AI在写 700多项业务接入AI](https://news.mydrivers.com/1/1064/1064452.htm)
+
+
+  * 支持打赏
+  * 支持0人
+  * 反对
+  * [](javascript:;)
+打赏
+
+
+###### 文章价值打分
+[](javascript:;) [](javascript:;) [](javascript:;) [](javascript:;) [](javascript:;)
+当前文章打分0 分，共有0人打分
+  * [0](javascript:;)
+  * [0](javascript:;)
+  * [6](javascript:;)
+  * [打赏](javascript:;)
+![](https://icons.mydrivers.com/news/play.png)
+  * | 
+
+
+  * 分享好友:
+  * [](javascript:;)
+分享至QQ
+  * [](javascript:;)
+分享至微博
+  * [](javascript:;)
+  * [](javascript:;)
+分享至QQ空间
+  * | 
+
+
+  * [生成海报](javascript:;)
+
+
+![](https://icons.mydrivers.com/news/haibao_close.png)
+  * [](javascript:;)保存图片
+  * [](javascript:;)QQ好友
+  * [](javascript:;)微博
+  * [](javascript:;)微信好友 
+  * [](javascript:;)QQ空间
+
+
+[](javascript:;)
+给作者大大一些小奖励 ![](https://icons.mydrivers.com/news/play.png)
+###### 本文收录在
+[_#_ 丽台](https://news.mydrivers.com/tag/litai.htm)[ _#_ NVIDIA](https://news.mydrivers.com/tag/nvidia.htm)[ _#_ AI](https://news.mydrivers.com/tag/ai.htm)
+### 
+  * 本文作者
+
+
+  * [![糖葫芦](https://passport.mydrivers.com/comments/getusertouxiang.aspx?uid=1599980&size=medium)](https://passport.mydrivers.com/home/1599980.html)
+### [糖葫芦](https://passport.mydrivers.com/home/1599980.html)
+[关注](javascript:;)
+
+
+  * [![糖葫芦](https://passport.mydrivers.com/comments/getusertouxiang.aspx?uid=1599980&size=medium)](https://passport.mydrivers.com/home/1599980.html)
+### [糖葫芦](https://passport.mydrivers.com/home/1599980.html)
+[瞅一瞅](https://passport.mydrivers.com/home/1599980.html)
+
+
+  * [![沐曦发布国产旗舰GPU曦云C600！全面对标国际旗舰](https://img1.mydrivers.com/img/20250728/0bd41e6178374c6eb99d851a5b073f6f.png)](https://news.mydrivers.com/1/1064/1064764.htm)
+[沐曦发布国产旗舰GPU曦云C600！全面对标国际旗舰](https://news.mydrivers.com/1/1064/1064764.htm)
+  * [![同德推出首批白色RTX 50显卡：一共四款、出厂即超频](https://img1.mydrivers.com/img/20250728/3d3c91344a764e83ab14787f474bffc5.png)](https://news.mydrivers.com/1/1064/1064748.htm)
+[同德推出首批白色RTX 50显卡：一共四款、出厂即超频](https://news.mydrivers.com/1/1064/1064748.htm)
+  * [![跟随便猜差不太多！微软：人类分辨AI图像成功率仅62%](https://img1.mydrivers.com/img/20250728/bec87b7de0f848669548b3449f69a56a.jpg)](https://news.mydrivers.com/1/1064/1064733.htm)
+[跟随便猜差不太多！微软：人类分辨AI图像成功率仅62%](https://news.mydrivers.com/1/1064/1064733.htm)
+
+
+  * [阿里云创始人王坚：目前90%的AI将在十年内消失](https://news.mydrivers.com/1/1064/1064705.htm)2025-07-28
+  * [微软赋予Copilot全新可爱面孔！互动更加人性化](https://news.mydrivers.com/1/1064/1064689.htm)2025-07-28
+  * [4TB版本36999元！丽台开售NVIDIA AI超算DGX Spark](https://news.mydrivers.com/1/1064/1064676.htm)2025-07-28
+  * [电脑变慢不是错觉！微软确认Win11 24H2稳定性问题](https://news.mydrivers.com/1/1064/1064658.htm)2025-07-28
+  * [历时10个月！微软终于移除Win11 24H2一拦路虎：可以升级了](https://news.mydrivers.com/1/1064/1064625.htm)2025-07-28
+
+
+#####  _![](https://icons.mydrivers.com/news2023/author_twicon@2x.png)_向作者提问
+### 
+  * 热门文章
+  * 换一波
+
+
+  * [_1_ 国补回来了！第三批资金已下达](https://news.mydrivers.com/1/1064/1064342.htm)
+  * [_2_ 饿了么前CEO确认被抓！巨额现金赃款曝光 审讯画面公开](https://news.mydrivers.com/1/1064/1064467.htm)
+  * [_3_ IP非授权！中国首款6nm自研显卡发布 老外惊叹：真赶上4060](https://news.mydrivers.com/1/1064/1064445.htm)
+  * [_4_ 女车主称遭货车逼停 被骂开个破小米：双方都晒视频 谁错了](https://news.mydrivers.com/1/1064/1064637.htm)
+  * [_5_ 网友吐槽8小时高铁乘客打电话7小时：官方回应只能忍受！](https://news.mydrivers.com/1/1064/1064532.htm)
+  * [_6_ 性能确超RTX 4060！国产自研6nm显卡被冠以奇迹一代：买吗](https://news.mydrivers.com/1/1064/1064551.htm)
+  * [_7_ 1.2mm全球最窄物理四等边！魅族22官宣](https://news.mydrivers.com/1/1064/1064569.htm)
+  * [_8_ iPhone在华跌落神坛！苹果首次在中国关停直营店](https://news.mydrivers.com/1/1064/1064662.htm)
+  * [_9_ 你达标没！中国手机电池容量完虐iPhone：明年迈入10000mAh](https://news.mydrivers.com/1/1064/1064345.htm)
+  * [_10_ 博世高管呼吁车企向特斯拉学习：智驾绝对不要免费](https://news.mydrivers.com/1/1064/1064539.htm)
+
+
+  * [_1_ 李楠：没确切证据前说懂车帝测试故意黑某品牌不是君子所为](https://news.mydrivers.com/1/1064/1064358.htm)
+  * [_2_ 小米16 Ultra提档年前发布：徕卡更深度合作、回归直屏](https://news.mydrivers.com/1/1064/1064351.htm)
+  * [_3_ 我国首款自主架构6nm GPU今天发！性能抢先看 媲美RTX 5060](https://news.mydrivers.com/1/1064/1064333.htm)
+  * [_4_ 博主复刻懂车帝消失前车：华为ADS完美变道刹停 一次都没撞](https://news.mydrivers.com/1/1064/1064435.htm)
+  * [_5_ 配宁德时代电池 续航100km！全国首艘纯电海上客船投运](https://news.mydrivers.com/1/1064/1064326.htm)
+  * [_6_ AMD最强发烧级桌面CPU售价公布！1499美元起 完爆Intel至强](https://news.mydrivers.com/1/1064/1064460.htm)
+  * [_7_ 印度1岁男童咬死眼镜蛇奇迹生还 网友质疑造神](https://news.mydrivers.com/1/1064/1064479.htm)
+  * [_8_ 演唱会CEO出轨事件最大赢家出现了：拍摄者一夜爆红](https://news.mydrivers.com/1/1064/1064423.htm)
+  * [_9_ 泰国一男子一个月不吃饭 仅靠“液体面包”度日：家中暴毙](https://news.mydrivers.com/1/1064/1064321.htm)
+  * [_10_ 161元大额券 蓝帽认证21金维他维生素C片60粒：到手9.9元](https://news.mydrivers.com/1/1064/1064136.htm)
+
+
+  * [_1_ 来了！国产真自研高性能GPU正式发布：性能对标英伟达/AMD](https://news.mydrivers.com/1/1064/1064415.htm)
+  * [_2_ 果粉一眼认出是新款！iPhone 17机模紫色版开箱上手](https://news.mydrivers.com/1/1064/1064424.htm)
+  * [_3_ 中国首位MBA学位方丈释永信被查 天龙八部鸠摩智回应热梗](https://news.mydrivers.com/1/1064/1064587.htm)
+  * [_4_ 三千万辆中国车利润竟不如丰田！官媒发文反击：理由如下](https://news.mydrivers.com/1/1064/1064377.htm)
+  * [_5_ “朱雀玄武敕令”自曝被家人送入精神病院：改名为周景明](https://news.mydrivers.com/1/1064/1064483.htm)
+  * [_6_ 小米16 Ultra来袭！徕卡送给卢伟冰最好的礼物](https://news.mydrivers.com/1/1064/1064428.htm)
+  * [_7_ 夏天出汗补充电解质！外星人电解质饮料大促：60元到手](https://news.mydrivers.com/1/1064/1064446.htm)
+  * [_8_ DeepSeek真的“凉”了吗 业内人士：分明是飞入寻常百姓家](https://news.mydrivers.com/1/1064/1064400.htm)
+  * [_9_ 反击AMD！Intel确认Nova Lake将缩小高端桌面CPU差距](https://news.mydrivers.com/1/1064/1064502.htm)
+  * [_10_ Intel新一代高端移动CPU Nova Lake-AX曝光！反击AMD Zen6](https://news.mydrivers.com/1/1064/1064477.htm)
+
+
+[![](https://img1.kkeji.com/img/2005/20250701/103651508.png)](https://click.aliyun.com/m/1000404584/)
+### 
+  * 好物推荐
+  * 换一波
+
+
+  * [![](https://icons.mydrivers.com/news/2018/load.gif)](https://news.mydrivers.com/1/1063/1063389.htm)
+###### [钙尔奇官旗限时大促：钙尔奇液体钙113元到手4瓶](https://news.mydrivers.com/1/1063/1063389.htm)
+_2025-07-23_ _[0](https://comment8.mydrivers.com/review/1063389-1.htm)_
+  * [![](https://icons.mydrivers.com/news/2018/load.gif)](https://news.mydrivers.com/1/1062/1062911.htm)
+###### [999官旗大促！1%二硫化硒洗发水19.1元大差价（京东49元）](https://news.mydrivers.com/1/1062/1062911.htm)
+_2025-07-20_ _[3](https://comment8.mydrivers.com/review/1062911-1.htm)_
+  * [![](https://icons.mydrivers.com/news/2018/load.gif)](https://news.mydrivers.com/1/1062/1062901.htm)
+###### [送货上门！超能洗衣液跌破五折：39.9元买11斤](https://news.mydrivers.com/1/1062/1062901.htm)
+_2025-07-21_ _[0](https://comment8.mydrivers.com/review/1062901-1.htm)_
+
+
+  * [![](https://icons.mydrivers.com/news/2018/load.gif)](https://news.mydrivers.com/1/1062/1062876.htm)
+###### [国标品质：五稻田东北五常大米10斤37.9元大促（减72元）](https://news.mydrivers.com/1/1062/1062876.htm)
+_2025-07-20_ _[0](https://comment8.mydrivers.com/review/1062876-1.htm)_
+  * [![](https://icons.mydrivers.com/news/2018/load.gif)](https://news.mydrivers.com/1/1062/1062874.htm)
+###### [旗舰店发车：霸王新升级洗发水日常59 现券后仅29元](https://news.mydrivers.com/1/1062/1062874.htm)
+_2025-07-19_ _[0](https://comment8.mydrivers.com/review/1062874-1.htm)_
+  * [![](https://icons.mydrivers.com/news/2018/load.gif)](https://news.mydrivers.com/1/1062/1062873.htm)
+###### [52%鸡蛋+12%生牛乳：巴氏鲜奶戚风蛋糕1.2元/袋](https://news.mydrivers.com/1/1062/1062873.htm)
+_2025-07-19_ _[0](https://comment8.mydrivers.com/review/1062873-1.htm)_
+
+
+### 
+  * 关注我们
+
+
+  * ![微博](https://icons.mydrivers.com/2020/www/weibo1.png)
+### 微博：快科技官方
+快科技官方微博
+![微博](https://icons.mydrivers.com/2020/www/WeiBoJump.png)
+  * ![今日头条](https://icons.mydrivers.com/2020/www/toutiao1.png)
+### 今日头条：快科技
+带来硬件软件、手机数码最快资讯！
+![今日头条](https://icons.mydrivers.com/2020/www/TouTiaoJump.png)
+  * ![抖音](https://icons.mydrivers.com/2020/www/douyin1.png)
+### 抖音：kkjcn
+科技快讯、手机开箱、产品体验、应用推荐...
+![抖音](https://icons.mydrivers.com/2020/www/DouYinJump.png)
+
+     关于我们  
+
+[关于我们](https://www.mydrivers.com/contact/Company.html) 
+
+
+[隐私权说明 ](https://www.mydrivers.com/contact/privacy.html) 
+     交流合作  
+
+[加入我们](https://www.mydrivers.com/contact/jobs.html) 
+
+
+[意见反馈](javascript:;) 
+
+
+[广告刊例](https://www.mydrivers.com/contact/advertising.html) 
+     关注我们  
+
+微信公众号：![快科技微信公众号](https://icons.mydrivers.com/2018/common/erwm_small.png)
+![](https://icons.mydrivers.com/icon/kkjwx.png)
+![](https://icons.mydrivers.com/2018/common/ewmar.png)
+
+
+
+微博号：[快科技官方](https://weibo.com/mydrivers ""快科技官方微博"") 
+
+
+QQ群：53467377 
+
+  * ![安卓客户端下载](https://icons.mydrivers.com/2018/common/kkj_android.png)安卓客户端下载 
+  * ![IOS客户端下载](https://icons.mydrivers.com/2018/common/kkj_ios.png)IOS客户端下载 
+
+
+快科技·1997-2025 版权所有
+Copyright(C)Mydrivers.com, All Rights Reserved.
+[豫ICP备2023031922号-1](https://beian.miit.gov.cn/)[![](https://icons.mydrivers.com/2018/news/batb.png)豫公网安备 41010502003949号](http://www.beian.gov.cn/portal/registerSystemInfo?recordcode=41010502003949)   
+  
+
+[](javascript:void\(0\))
+### 热点推荐
+  * [女车主称遭货车逼停 被骂开个破小米：双方都晒视频 谁错了](https://news.mydrivers.com/1/1064/1064637.htm) 14642
+  * [性能确超RTX 4060！国产自研6nm显卡被冠以奇迹一代：买吗](https://news.mydrivers.com/1/1064/1064551.htm) 13021
+  * [1.2mm全球最窄物理四等边！魅族22官宣](https://news.mydrivers.com/1/1064/1064569.htm) 12639
+  * [iPhone在华跌落神坛！苹果首次在中国关停直营店](https://news.mydrivers.com/1/1064/1064662.htm) 12577
+  * [中国首位MBA学位方丈释永信被查 天龙八部鸠摩智回应热梗](https://news.mydrivers.com/1/1064/1064587.htm) 7826
+  * [日本知名品牌：狮王齿力佳牙膏官方2折起秒杀](https://news.mydrivers.com/1/1064/1064572.htm) 6583
+  * [韩国男扮女装印度旅行为验证“女性旅行危险论”：结果尴尬](https://news.mydrivers.com/1/1064/1064549.htm) 6156
+  * [HIV要被终结了吗！艾滋病预防神药落地海南：近100%有效](https://news.mydrivers.com/1/1064/1064554.htm) 5591
+
+
+### 好物推荐
+  * [![](https://haohuo.mydrivers.com/img/20241119/title_193540674.jpg)](https://news.mydrivers.com/1/1014/1014729.htm)
+[361° 运动长裤62元官方大促](https://news.mydrivers.com/1/1014/1014729.htm)
+￥62 券后价
+￥179
+  * [![](https://haohuo.mydrivers.com/img/20241119/title_193611081.jpg)](https://news.mydrivers.com/1/1014/1014505.htm)
+[森马集团旗下GSON撞色棉衣到手59元](https://news.mydrivers.com/1/1014/1014505.htm)
+￥59 券后价
+￥199
+  * [![](https://haohuo.mydrivers.com/img/20241119/title_193636020.jpg)](https://news.mydrivers.com/1/1014/1014549.htm)
+[JEEP工装冲锋裤79元大促](https://news.mydrivers.com/1/1014/1014549.htm)
+￥79 券后价
+￥119
+  * [![](https://haohuo.mydrivers.com/img/20241119/title_193656974.jpg)](https://news.mydrivers.com/1/1014/1014685.htm)
+[0反式脂肪酸 后谷咖啡30条18元](https://news.mydrivers.com/1/1014/1014685.htm)
+￥18 券后价
+￥36.9
+  * [![](https://haohuo.mydrivers.com/img/20241119/title_193717756.jpg)](https://news.mydrivers.com/1/1014/1014296.htm)
+[徽春堂金丝皇菊约50朵 到手5.9元](https://news.mydrivers.com/1/1014/1014296.htm)
+￥5.9 券后价
+￥25.9
+
+
+  * [](https://app.kkj.cn/)
+_![](https://icons.mydrivers.com/2020/www/left.png)_
+手机扫码下载
+支持Android/iOS/iPad
+![快科技APP](https://icons.mydrivers.com/2020/news/8/app_ewm.png)
+  *   * 纠错
+
+
+  * _![](https://icons.mydrivers.com/news2022/right.png)_
+爆料群
+爆料1群![爆料群](https://icons.mydrivers.com/tab/wxbaoliao.png)
+打开微信扫一扫   
+扫描入群，加入爆料
+  *   *   * 
+
+[](javascript:;) 100%  [](javascript:;) [](javascript:;) [](javascript:;) [](javascript:;) [ ](javascript:;)
+[](javascript:;) [](javascript:;)
+![](https://news.mydrivers.com/1/1064/1064676.htm)  
+---  
+###### 图片信息
+  * 图片描述:
+  * 图片格式：
+  * 图片尺寸：
+  * 上传时间：
+
+
+_[](javascript:;)_ _[](javascript:;)_
+","['https://www.mydrivers.com', 'https://m.mydrivers.com', 'https://blog.mydrivers.com/', 'https://passport.mydrivers.com/reg.htm', 'https://www.mydrivers.com/', 'https://news.mydrivers.com/', 'https://hardware.mydrivers.com/', 'https://news.mydrivers.com/zhibo', 'https://news.mydrivers.com/zixun/haowu', 'https://yjgg.mydrivers.com/']",20,60,1200
+三星晶圆代工，签下1183亿元大单,https://news.sina.cn/gn/2025-07-28/detail-infhziev5597351.d.html?vt=4&cid=56261&node_id=56261,新浪新闻_手机新浪网,2025-07-28 07:04:14,来源：半导体行业观察 　　三星电子的芯片制造设备解决方案 （DS） 部门将采用更精细的制造工艺，以实现更快、更强大的计算能力，旨在获得全球大型科技公司的订单...,"  * [](https://www.mydrivers.com ""科技改变未来"")
+  * [手机版](https://m.mydrivers.com ""快科技手机版"")
+  * [安卓版](http://app.kkj.cn/)
+  * [苹果端](http://app.kkj.cn/)
+  * [博客版](https://blog.mydrivers.com/)
+
+
+  * [登录](javascript:;)
+  * [注册](https://passport.mydrivers.com/reg.htm)
+  * 浅色模式深色模式
+默认主题
+橙色主题
+红色主题
+
+
+  * [](https://www.mydrivers.com/)
+  * [](https://news.mydrivers.com/)
+  * [](https://hardware.mydrivers.com/)
+  * [](https://rank.kkj.cn/)
+  * [](https://news.mydrivers.com/zhibo/)
+  * [](https://news.mydrivers.com/zixun/haowu/)
+  * [](https://yjgg.mydrivers.com/)
+  * [](https://dcgg.kkj.cn/)
+  * [](https://drivers.mydrivers.com/)
+
+
+热门推荐
+  * [一图](https://news.mydrivers.com/yitu.html)|[好文](https://news.mydrivers.com/haowen.html)|[人物](https://news.mydrivers.com/renwu.html)|[数据](https://news.mydrivers.com/shuju.html)|[智能手机](https://news.mydrivers.com/shouji.html)|[IT圈](https://news.mydrivers.com/it.shtml)|[CPU](https://news.mydrivers.com/cpu.html)|[显卡](https://news.mydrivers.com/xianka.html)|[安卓](https://news.mydrivers.com/anzhuoshouji.html)|[iPhone](https://news.mydrivers.com/pingguoshouji.html)|[Windows](https://news.mydrivers.com/windows.html)|[微信](https://news.mydrivers.com/weixin.html)
+  * [华为](https://news.mydrivers.com/huawei.html)|[小米](https://news.mydrivers.com/xiaomi.html)|[苹果](https://news.mydrivers.com/pingguo.html)|[英特尔](https://news.mydrivers.com/yingteer.html)|[AMD](https://news.mydrivers.com/amd.html)|[英伟达](https://news.mydrivers.com/yingweida.html)[特斯拉](https://news.mydrivers.com/tesila.html)|[索尼](https://news.mydrivers.com/suoni.html)|[OPPO](https://news.mydrivers.com/oppo.html)|[vivo](https://news.mydrivers.com/vivo.html)[荣耀](https://news.mydrivers.com/rongyao.html)
+  * [京东](https://news.mydrivers.com/jingdong.html)|[美团](https://news.mydrivers.com/meituan.html)|[字节跳动](https://news.mydrivers.com/zijietiaodong.html)|[阿里巴巴](https://news.mydrivers.com/alibaba.html)|[腾讯](https://news.mydrivers.com/tengxun.html)|[百度](https://news.mydrivers.com/baidu.html)|[谷歌](https://news.mydrivers.com/guge.html)|[评论分析](https://news.mydrivers.com/reping.html)|[游戏](https://news.mydrivers.com/youxi.html)|[全部资讯>>](https://news.mydrivers.com/technewsall.html)
+
+
+  * [![桌面CPU性能天梯图](https://icons.mydrivers.com/news2022/pc-cpu-phb@2x.png)桌面CPU性能天梯图](https://www.mydrivers.com/zhuanti/tianti/cpu/index.html)
+  * [![桌面显卡性能天梯图](https://icons.mydrivers.com/news2022/pc-xk-phb@2x.png)桌面显卡性能天梯图](https://www.mydrivers.com/zhuanti/tianti/gpu/index.html)
+  * [![手机CPU性能天梯图](https://icons.mydrivers.com/news2022/tel-cpu-phb@2x.png)手机CPU性能天梯图](https://www.mydrivers.com/zhuanti/tianti/01/index.html)
+  * [![笔记本显卡性能天梯图](https://icons.mydrivers.com/news2022/notebook-xk-phb@2x.png)笔记本显卡性能天梯图](https://www.mydrivers.com/zhuanti/tianti/gpum/index.html)
+  * [![数码相机性能天梯图](https://icons.mydrivers.com/news2022/camera-phb@2x.png)数码相机性能天梯图](https://www.mydrivers.com/zhuanti/tianti/camera/index.html)
+
+
+  * [手机CPU](https://rank.kkj.cn/Phone74.shtml)|[手机拍照](https://rank.kkj.cn/Phone79.shtml)|[手机视频](https://rank.kkj.cn/Phone81.shtml)|[手机电池容量](https://rank.kkj.cn/battery.shtml)|[手机AI算力](https://rank.kkj.cn/ai.shtml)|[手机充电](https://rank.kkj.cn/charge.shtml)|[手机音频](https://rank.kkj.cn/Phone21.shtml)|[手机重量](https://rank.kkj.cn/phoneweight.shtml)|[手机CMOS](https://rank.kkj.cn/Phone57.shtml)|[数码相机](https://rank.kkj.cn/shuma69.shtml)
+  * [桌面显卡](https://rank.kkj.cn/Computer73.shtml)|[桌面CPU](https://rank.kkj.cn/Computer76.shtml)|[桌面CPU游戏](https://rank.kkj.cn/Computer147.shtml)|[笔记本CPU](https://rank.kkj.cn/Computer77.shtml)|[笔记本显卡](https://rank.kkj.cn/Computer75.shtml)|[桌面显卡功耗](https://rank.kkj.cn/Computer61.shtml)|[桌面处理器功耗](https://rank.kkj.cn/Computer62.shtml)|[全球超算](https://rank.kkj.cn/Computer72.shtml)
+  * [电动汽车续航里程](https://rank.kkj.cn/Car78.shtml)|[电动汽车电池容量](https://rank.kkj.cn/carbattery.shtml)|[新能源汽车销量](https://rank.kkj.cn/Car9.shtml)|[汽车销量](https://rank.kkj.cn/Car52.shtml)|[汽车保值率](https://rank.kkj.cn/Car22.shtml)
+
+
+  * [显卡评测](https://hardware.mydrivers.com/xiankapingce.html)|[CPU评测](https://hardware.mydrivers.com/cpupingce.html)|[笔记本评测](https://hardware.mydrivers.com/bijibenpingce.html)|[硬盘评测](https://hardware.mydrivers.com/yingpanpingce.html)|[内存评测](https://hardware.mydrivers.com/neicunpingce.html)|[显示器评测](https://hardware.mydrivers.com/xianshiqipingce.html)|[主板评测](https://hardware.mydrivers.com/zhubanpingce.html)|[手机评测](https://hardware.mydrivers.com/shoujipingce.html)|[投影仪评测](https://hardware.mydrivers.com/touyingyipingce.html)|[智能穿戴](https://hardware.mydrivers.com/zhinengchuandaipingce.html)
+  * [平板评测](https://hardware.mydrivers.com/pingbanpingce.html%20)|[电视评测](https://hardware.mydrivers.com/dianshipingce.html)|[电动车评测](https://hardware.mydrivers.com/diandongchepingce.html)|[更多评测](https://hardware.mydrivers.com/)
+
+
+![](https://icons.mydrivers.com/common/icon_warning@2x.png)
+作者私密文章，无浏览权限
+[返回](https://news.mydrivers.com/)
+因版权限制，过往内容只提供给老鸟级别及以上用户访问
+[登录](javascript:;)
+因版权限制，过往内容只提供给老鸟级别及以上用户访问
+[返回](https://news.mydrivers.com/)
+  * 当前位置：[首页](https://www.mydrivers.com) > [资讯中心](https://news.mydrivers.com/) > [电脑办公](https://news.mydrivers.com/diannao.html) > [CPU](https://news.mydrivers.com/cpu.html) > 文章详情
+  * [![榜单](https://icons.mydrivers.com/2021/news/bangdan_pc.svg)](https://rank.kkj.cn/) [![招聘](https://icons.mydrivers.com/2021/news/zhaopin_pc.svg)](https://news.mydrivers.com/1/758/758016.htm)
+
+
+### 
+  * 今日视点
+
+
+  * · [女车主称遭货车逼停 被骂开个破小米：怨谁](https://news.mydrivers.com/1/1064/1064637.htm)
+  * · [网友吐槽8小时高铁乘客打电话7小时：只能忍](https://news.mydrivers.com/1/1064/1064532.htm)
+  * · [博世高管呼吁车企向特斯拉学习 智驾不免费](https://news.mydrivers.com/1/1064/1064539.htm)
+  * · [1.2mm全球最窄物理四等边！魅族22官宣](https://news.mydrivers.com/1/1064/1064569.htm)
+
+
+####  [正文内容](javascript:;) [评论（41）](javascript:;)
+“内置RTX 5070” ！NVIDIA首款N1X笔记本处理器跑分曝光：真正挑战x86的ARM SoC
+[![](https://img1.kkeji.com/img/2005/20250728/115853492.gif)](https://jd.dangbei.com/f7pro.html?kkj)
+2025-07-28 19:25:25 出处：快科技 作者：[朝晖](https://passport.mydrivers.com/author/801442.html ""朝晖的主页"") 编辑：朝晖  人气： 2643 次 评论[(41)](https://comment8.mydrivers.com/review/1064784-1.htm)[![点击可以复制本篇文章的标题和链接](https://icons.mydrivers.com/news/2013/copy_linkv2.png?id=1)复制](javascript:copyNewsUrl\(\); ""点击可以复制本篇文章的标题和链接"")[![对文章内容进行纠错](https://icons.mydrivers.com/news/2013/icon_jiucuo.png?id=1)纠错](javascript:; ""对文章内容进行纠错"")
+[_#_ NVIDIA](https://news.mydrivers.com/tag/nvidia.htm)[ _#_ CPU处理器](https://news.mydrivers.com/tag/cpuchuliqi.htm)
+  * [0](javascript:;)
+  * [0](javascript:;)
+![](https://icons.mydrivers.com/2020/www/top.png)
+[](javascript:;)
+[](javascript:;)
+[](javascript:;)
+[](javascript:;)
+[](javascript:copyNewsUrl\(\);)
+  * [0](javascript:;)
+  * [41](javascript:;)
+
+
+快科技7月28日，果然，NVIDIA做的CPU，集成的GPU还是最强。
+据最新消息，NVIDIA与联发科共同开发的首款PC处理器N1X（Windows on Arm），上市时间延后至2026年第一季度，该芯片Geekbench OpenCL跑分已经率先曝光。
+数据显示，N1X采用20核心CPU设计，分为两组10核心丛集，采用NVIDIA Grace架构。
+同时，**搭载48个SM（Streaming Multiprocessor），内建6144颗CUDA核心，与桌面版RTX 5070完全相同** 。
+[![“内置RTX 5070” ！NVIDIA首款N1X笔记本处理器跑分曝光！首款真正挑战x86的ARM SoC](https://img1.mydrivers.com/img/20250728/s_5c0391160f6348c48d2084bbf56a1ff1.jpg)](https://img1.mydrivers.com/img/20250728/5c0391160f6348c48d2084bbf56a1ff1.jpg)
+由于这次是测试早期工程样品，功耗与频率会受限，且尚未搭配专属GDDR内存，仅采用共享式LPDDR5X，因此集显性能仍处于保守状态，如频率仅1.05 GHz，OpenCL测试分数为46361，约等同于RTX 2050级别。
+不过即便如此，**N1X的内置显卡（iGPU）仍领先当前所有集成显示核心，包括苹果M3 Max与AMD 890M。** 以架构潜力来看，仍有明显的上升空间。
+如果N1X按照预期在2026年第一季度问世，有机会与新一波AI笔电同步推出。
+目前N1X虽处于原型阶段，但其内置集显性能已与中高端独显看齐，**若NVIDIA提供足够的功耗与带宽支持，N1X有可能成为首款真正挑战x86阵营高性能笔电市场的ARM SoC，甚至撼动苹果在AI高端笔电市场的地位。**
+[![“内置RTX 5070” ！NVIDIA首款N1X笔记本处理器跑分曝光！首款真正挑战x86的ARM SoC](https://img1.mydrivers.com/img/20250728/s_994898ed193d493f95d46f0294f6ca4a.png)](https://img1.mydrivers.com/img/20250728/994898ed193d493f95d46f0294f6ca4a.png)
+【本文结束】如需转载请务必注明出处：快科技
+责任编辑：朝晖
+文章内容举报
+###### 相关资讯
+  * [惊喜首发价13599元！玲珑星核超级AI主机发布：锐龙AI Max+ 395配128GB内存](https://news.mydrivers.com/1/1064/1064695.htm)
+  * [4TB版本36999元！丽台开售NVIDIA AI超算DGX Spark](https://news.mydrivers.com/1/1064/1064676.htm)
+  * [2025年全球纯半导体代工收入将达1650亿美元：同比增长17%](https://news.mydrivers.com/1/1064/1064660.htm)
+  * [100％自主龙芯2P0500处理器！得力打印机拿下中央机关最大规模集采](https://news.mydrivers.com/1/1064/1064631.htm)
+  * [64核只要4万元太良心！AMD Zen5撕裂者9000X国行价格公布](https://news.mydrivers.com/1/1064/1064626.htm)
+
+
+  * 支持打赏
+  * 支持0人
+  * 反对
+  * [](javascript:;)
+打赏
+
+
+###### 文章价值打分
+[](javascript:;) [](javascript:;) [](javascript:;) [](javascript:;) [](javascript:;)
+当前文章打分0 分，共有0人打分
+  * [0](javascript:;)
+  * [0](javascript:;)
+  * [41](javascript:;)
+  * [打赏](javascript:;)
+![](https://icons.mydrivers.com/news/play.png)
+  * | 
+
+
+  * 分享好友:
+  * [](javascript:;)
+分享至QQ
+  * [](javascript:;)
+分享至微博
+  * [](javascript:;)
+  * [](javascript:;)
+分享至QQ空间
+  * | 
+
+
+  * [生成海报](javascript:;)
+
+
+![](https://icons.mydrivers.com/news/haibao_close.png)
+  * [](javascript:;)保存图片
+  * [](javascript:;)QQ好友
+  * [](javascript:;)微博
+  * [](javascript:;)微信好友 
+  * [](javascript:;)QQ空间
+
+
+[](javascript:;)
+给作者大大一些小奖励 ![](https://icons.mydrivers.com/news/play.png)
+###### 本文收录在
+[_#_ NVIDIA](https://news.mydrivers.com/tag/nvidia.htm)[ _#_ CPU处理器](https://news.mydrivers.com/tag/cpuchuliqi.htm)[ _#_ 跑分](https://news.mydrivers.com/tag/paofen.htm)
+### 
+  * 本文作者
+
+
+  * [![朝一小晖](https://passport.mydrivers.com/comments/getusertouxiang.aspx?uid=801442&size=medium)](https://passport.mydrivers.com/home/801442.html)
+### [朝一小晖](https://passport.mydrivers.com/home/801442.html)
+[关注](javascript:;)
+
+
+  * [![朝一小晖](https://passport.mydrivers.com/comments/getusertouxiang.aspx?uid=801442&size=medium)](https://passport.mydrivers.com/home/801442.html)
+### [朝一小晖](https://passport.mydrivers.com/home/801442.html)
+[瞅一瞅](https://passport.mydrivers.com/home/801442.html)
+
+
+  * [![内置5070！NV首笔记本CPU跑分曝光：望成史上最强ARM SoC](https://img1.mydrivers.com/img/20250728/f17bcc4163374fda9ca4c5497d89e51c.png)](https://news.mydrivers.com/1/1064/1064784.htm)
+[内置5070！NV首笔记本CPU跑分曝光：望成史上最强ARM SoC](https://news.mydrivers.com/1/1064/1064784.htm)
+  * [![离职大龄程序员称无故被取消期权 抖音：该员工涉嫌诈骗！](https://img1.mydrivers.com/img/20250728/531ecf63c8df4fb2b64dcdae6999cd26.png)](https://news.mydrivers.com/1/1064/1064757.htm)
+[离职大龄程序员称无故被取消期权 抖音：该员工涉嫌诈骗！](https://news.mydrivers.com/1/1064/1064757.htm)
+  * [![国家育儿补贴来了！3岁前每娃每年3600元 申领程序公布](https://img1.mydrivers.com/img/20250728/33ea471279d74434997af419d4bd9f92.png)](https://news.mydrivers.com/1/1064/1064740.htm)
+[国家育儿补贴来了！3岁前每娃每年3600元 申领程序公布](https://news.mydrivers.com/1/1064/1064740.htm)
+
+
+  * [华为Linux笔记本怎么选最合适](https://news.mydrivers.com/1/1064/1064701.htm)2025-07-28
+  * [中国高端GPU站起来了！砺算7G100、摩尔线程S90双杀RTX4060](https://news.mydrivers.com/1/1064/1064632.htm)2025-07-28
+  * [全球首次亮相！特朗普装甲版高尔夫球车曝光：高尔夫一号](https://news.mydrivers.com/1/1064/1064617.htm)2025-07-28
+  * [比人类安全10倍的辅助驾驶已实现！特斯拉：欢迎全国体验](https://news.mydrivers.com/1/1064/1064584.htm)2025-07-28
+  * [岚图高管称懂车帝测试如同镜子后改口：华为是中国品牌代表](https://news.mydrivers.com/1/1064/1064492.htm)2025-07-27
+
+
+#####  _![](https://icons.mydrivers.com/news2023/author_twicon@2x.png)_向作者提问
+### 
+  * 热门文章
+  * 换一波
+
+
+  * [_1_ 国补回来了！第三批资金已下达](https://news.mydrivers.com/1/1064/1064342.htm)
+  * [_2_ 饿了么前CEO确认被抓！巨额现金赃款曝光 审讯画面公开](https://news.mydrivers.com/1/1064/1064467.htm)
+  * [_3_ IP非授权！中国首款6nm自研显卡发布 老外惊叹：真赶上4060](https://news.mydrivers.com/1/1064/1064445.htm)
+  * [_4_ 女车主称遭货车逼停 被骂开个破小米：双方都晒视频 谁错了](https://news.mydrivers.com/1/1064/1064637.htm)
+  * [_5_ 网友吐槽8小时高铁乘客打电话7小时：官方回应只能忍受！](https://news.mydrivers.com/1/1064/1064532.htm)
+  * [_6_ 性能确超RTX 4060！国产自研6nm显卡被冠以奇迹一代：买吗](https://news.mydrivers.com/1/1064/1064551.htm)
+  * [_7_ 1.2mm全球最窄物理四等边！魅族22官宣](https://news.mydrivers.com/1/1064/1064569.htm)
+  * [_8_ iPhone在华跌落神坛！苹果首次在中国关停直营店](https://news.mydrivers.com/1/1064/1064662.htm)
+  * [_9_ 你达标没！中国手机电池容量完虐iPhone：明年迈入10000mAh](https://news.mydrivers.com/1/1064/1064345.htm)
+  * [_10_ 博世高管呼吁车企向特斯拉学习：智驾绝对不要免费](https://news.mydrivers.com/1/1064/1064539.htm)
+
+
+  * [_1_ 李楠：没确切证据前说懂车帝测试故意黑某品牌不是君子所为](https://news.mydrivers.com/1/1064/1064358.htm)
+  * [_2_ 小米16 Ultra提档年前发布：徕卡更深度合作、回归直屏](https://news.mydrivers.com/1/1064/1064351.htm)
+  * [_3_ 我国首款自主架构6nm GPU今天发！性能抢先看 媲美RTX 5060](https://news.mydrivers.com/1/1064/1064333.htm)
+  * [_4_ 博主复刻懂车帝消失前车：华为ADS完美变道刹停 一次都没撞](https://news.mydrivers.com/1/1064/1064435.htm)
+  * [_5_ 配宁德时代电池 续航100km！全国首艘纯电海上客船投运](https://news.mydrivers.com/1/1064/1064326.htm)
+  * [_6_ AMD最强发烧级桌面CPU售价公布！1499美元起 完爆Intel至强](https://news.mydrivers.com/1/1064/1064460.htm)
+  * [_7_ 印度1岁男童咬死眼镜蛇奇迹生还 网友质疑造神](https://news.mydrivers.com/1/1064/1064479.htm)
+  * [_8_ 演唱会CEO出轨事件最大赢家出现了：拍摄者一夜爆红](https://news.mydrivers.com/1/1064/1064423.htm)
+  * [_9_ 泰国一男子一个月不吃饭 仅靠“液体面包”度日：家中暴毙](https://news.mydrivers.com/1/1064/1064321.htm)
+  * [_10_ 161元大额券 蓝帽认证21金维他维生素C片60粒：到手9.9元](https://news.mydrivers.com/1/1064/1064136.htm)
+
+
+  * [_1_ 来了！国产真自研高性能GPU正式发布：性能对标英伟达/AMD](https://news.mydrivers.com/1/1064/1064415.htm)
+  * [_2_ 果粉一眼认出是新款！iPhone 17机模紫色版开箱上手](https://news.mydrivers.com/1/1064/1064424.htm)
+  * [_3_ 中国首位MBA学位方丈释永信被查 天龙八部鸠摩智回应热梗](https://news.mydrivers.com/1/1064/1064587.htm)
+  * [_4_ 三千万辆中国车利润竟不如丰田！官媒发文反击：理由如下](https://news.mydrivers.com/1/1064/1064377.htm)
+  * [_5_ “朱雀玄武敕令”自曝被家人送入精神病院：改名为周景明](https://news.mydrivers.com/1/1064/1064483.htm)
+  * [_6_ 小米16 Ultra来袭！徕卡送给卢伟冰最好的礼物](https://news.mydrivers.com/1/1064/1064428.htm)
+  * [_7_ 夏天出汗补充电解质！外星人电解质饮料大促：60元到手](https://news.mydrivers.com/1/1064/1064446.htm)
+  * [_8_ DeepSeek真的“凉”了吗 业内人士：分明是飞入寻常百姓家](https://news.mydrivers.com/1/1064/1064400.htm)
+  * [_9_ 反击AMD！Intel确认Nova Lake将缩小高端桌面CPU差距](https://news.mydrivers.com/1/1064/1064502.htm)
+  * [_10_ Intel新一代高端移动CPU Nova Lake-AX曝光！反击AMD Zen6](https://news.mydrivers.com/1/1064/1064477.htm)
+
+
+[![](https://img1.kkeji.com/img/2005/20250701/103651508.png)](https://click.aliyun.com/m/1000404584/)
+### 
+  * 好物推荐
+  * 换一波
+
+
+  * [![](https://icons.mydrivers.com/news/2018/load.gif)](https://news.mydrivers.com/1/1063/1063389.htm)
+###### [钙尔奇官旗限时大促：钙尔奇液体钙113元到手4瓶](https://news.mydrivers.com/1/1063/1063389.htm)
+_2025-07-23_ _[0](https://comment8.mydrivers.com/review/1063389-1.htm)_
+  * [![](https://icons.mydrivers.com/news/2018/load.gif)](https://news.mydrivers.com/1/1062/1062911.htm)
+###### [999官旗大促！1%二硫化硒洗发水19.1元大差价（京东49元）](https://news.mydrivers.com/1/1062/1062911.htm)
+_2025-07-20_ _[3](https://comment8.mydrivers.com/review/1062911-1.htm)_
+  * [![](https://icons.mydrivers.com/news/2018/load.gif)](https://news.mydrivers.com/1/1062/1062901.htm)
+###### [送货上门！超能洗衣液跌破五折：39.9元买11斤](https://news.mydrivers.com/1/1062/1062901.htm)
+_2025-07-21_ _[0](https://comment8.mydrivers.com/review/1062901-1.htm)_
+
+
+  * [![](https://icons.mydrivers.com/news/2018/load.gif)](https://news.mydrivers.com/1/1062/1062876.htm)
+###### [国标品质：五稻田东北五常大米10斤37.9元大促（减72元）](https://news.mydrivers.com/1/1062/1062876.htm)
+_2025-07-20_ _[0](https://comment8.mydrivers.com/review/1062876-1.htm)_
+  * [![](https://icons.mydrivers.com/news/2018/load.gif)](https://news.mydrivers.com/1/1062/1062874.htm)
+###### [旗舰店发车：霸王新升级洗发水日常59 现券后仅29元](https://news.mydrivers.com/1/1062/1062874.htm)
+_2025-07-19_ _[0](https://comment8.mydrivers.com/review/1062874-1.htm)_
+  * [![](https://icons.mydrivers.com/news/2018/load.gif)](https://news.mydrivers.com/1/1062/1062873.htm)
+###### [52%鸡蛋+12%生牛乳：巴氏鲜奶戚风蛋糕1.2元/袋](https://news.mydrivers.com/1/1062/1062873.htm)
+_2025-07-19_ _[0](https://comment8.mydrivers.com/review/1062873-1.htm)_
+
+
+### 
+  * 关注我们
+
+
+  * ![微博](https://icons.mydrivers.com/2020/www/weibo1.png)
+### 微博：快科技官方
+快科技官方微博
+![微博](https://icons.mydrivers.com/2020/www/WeiBoJump.png)
+  * ![今日头条](https://icons.mydrivers.com/2020/www/toutiao1.png)
+### 今日头条：快科技
+带来硬件软件、手机数码最快资讯！
+![今日头条](https://icons.mydrivers.com/2020/www/TouTiaoJump.png)
+  * ![抖音](https://icons.mydrivers.com/2020/www/douyin1.png)
+### 抖音：kkjcn
+科技快讯、手机开箱、产品体验、应用推荐...
+![抖音](https://icons.mydrivers.com/2020/www/DouYinJump.png)
+
+     关于我们  
+
+[关于我们](https://www.mydrivers.com/contact/Company.html) 
+
+
+[隐私权说明 ](https://www.mydrivers.com/contact/privacy.html) 
+     交流合作  
+
+[加入我们](https://www.mydrivers.com/contact/jobs.html) 
+
+
+[意见反馈](javascript:;) 
+
+
+[广告刊例](https://www.mydrivers.com/contact/advertising.html) 
+     关注我们  
+
+微信公众号：![快科技微信公众号](https://icons.mydrivers.com/2018/common/erwm_small.png)
+![](https://icons.mydrivers.com/icon/kkjwx.png)
+![](https://icons.mydrivers.com/2018/common/ewmar.png)
+
+
+
+微博号：[快科技官方](https://weibo.com/mydrivers ""快科技官方微博"") 
+
+
+QQ群：53467377 
+
+  * ![安卓客户端下载](https://icons.mydrivers.com/2018/common/kkj_android.png)安卓客户端下载 
+  * ![IOS客户端下载](https://icons.mydrivers.com/2018/common/kkj_ios.png)IOS客户端下载 
+
+
+快科技·1997-2025 版权所有
+Copyright(C)Mydrivers.com, All Rights Reserved.
+[豫ICP备2023031922号-1](https://beian.miit.gov.cn/)[![](https://icons.mydrivers.com/2018/news/batb.png)豫公网安备 41010502003949号](http://www.beian.gov.cn/portal/registerSystemInfo?recordcode=41010502003949)   
+  
+
+[](javascript:void\(0\))
+### 热点推荐
+  * [女车主称遭货车逼停 被骂开个破小米：双方都晒视频 谁错了](https://news.mydrivers.com/1/1064/1064637.htm) 14642
+  * [性能确超RTX 4060！国产自研6nm显卡被冠以奇迹一代：买吗](https://news.mydrivers.com/1/1064/1064551.htm) 13021
+  * [1.2mm全球最窄物理四等边！魅族22官宣](https://news.mydrivers.com/1/1064/1064569.htm) 12639
+  * [iPhone在华跌落神坛！苹果首次在中国关停直营店](https://news.mydrivers.com/1/1064/1064662.htm) 12577
+  * [中国首位MBA学位方丈释永信被查 天龙八部鸠摩智回应热梗](https://news.mydrivers.com/1/1064/1064587.htm) 7826
+  * [日本知名品牌：狮王齿力佳牙膏官方2折起秒杀](https://news.mydrivers.com/1/1064/1064572.htm) 6583
+  * [韩国男扮女装印度旅行为验证“女性旅行危险论”：结果尴尬](https://news.mydrivers.com/1/1064/1064549.htm) 6156
+  * [HIV要被终结了吗！艾滋病预防神药落地海南：近100%有效](https://news.mydrivers.com/1/1064/1064554.htm) 5591
+
+
+### 好物推荐
+  * [![](https://haohuo.mydrivers.com/img/20241119/title_193540674.jpg)](https://news.mydrivers.com/1/1014/1014729.htm)
+[361° 运动长裤62元官方大促](https://news.mydrivers.com/1/1014/1014729.htm)
+￥62 券后价
+￥179
+  * [![](https://haohuo.mydrivers.com/img/20241119/title_193611081.jpg)](https://news.mydrivers.com/1/1014/1014505.htm)
+[森马集团旗下GSON撞色棉衣到手59元](https://news.mydrivers.com/1/1014/1014505.htm)
+￥59 券后价
+￥199
+  * [![](https://haohuo.mydrivers.com/img/20241119/title_193636020.jpg)](https://news.mydrivers.com/1/1014/1014549.htm)
+[JEEP工装冲锋裤79元大促](https://news.mydrivers.com/1/1014/1014549.htm)
+￥79 券后价
+￥119
+  * [![](https://haohuo.mydrivers.com/img/20241119/title_193656974.jpg)](https://news.mydrivers.com/1/1014/1014685.htm)
+[0反式脂肪酸 后谷咖啡30条18元](https://news.mydrivers.com/1/1014/1014685.htm)
+￥18 券后价
+￥36.9
+  * [![](https://haohuo.mydrivers.com/img/20241119/title_193717756.jpg)](https://news.mydrivers.com/1/1014/1014296.htm)
+[徽春堂金丝皇菊约50朵 到手5.9元](https://news.mydrivers.com/1/1014/1014296.htm)
+￥5.9 券后价
+￥25.9
+
+
+  * [](https://app.kkj.cn/)
+_![](https://icons.mydrivers.com/2020/www/left.png)_
+手机扫码下载
+支持Android/iOS/iPad
+![快科技APP](https://icons.mydrivers.com/2020/news/8/app_ewm.png)
+  *   * 纠错
+
+
+  * _![](https://icons.mydrivers.com/news2022/right.png)_
+爆料群
+爆料1群![爆料群](https://icons.mydrivers.com/tab/wxbaoliao.png)
+打开微信扫一扫   
+扫描入群，加入爆料
+  *   *   * 
+
+[](javascript:;) 100%  [](javascript:;) [](javascript:;) [](javascript:;) [](javascript:;) [ ](javascript:;)
+[](javascript:;) [](javascript:;)
+![](https://news.mydrivers.com/1/1064/1064784.htm)  
+---  
+###### 图片信息
+  * 图片描述:
+  * 图片格式：
+  * 图片尺寸：
+  * 上传时间：
+
+
+_[](javascript:;)_ _[](javascript:;)_
+","['https://www.mydrivers.com', 'https://m.mydrivers.com', 'https://blog.mydrivers.com/', 'https://passport.mydrivers.com/reg.htm', 'https://www.mydrivers.com/', 'https://news.mydrivers.com/', 'https://hardware.mydrivers.com/', 'https://news.mydrivers.com/zhibo', 'https://news.mydrivers.com/zixun/haowu', 'https://yjgg.mydrivers.com/']",27,57,1539
+中国高端GPU站起来了！砺算科技7G100、摩尔线程MTT S90双杀：性能逆袭RTX 4060,https://news.mydrivers.com/1/1064/1064632.htm,驱动之家,2025-07-28 04:33:00,中国高端GPU站起来了！砺算科技7G100、摩尔线程MTT S90双杀：性能逆袭RTX 4060,"  * [](https://www.mydrivers.com ""科技改变未来"")
+  * [手机版](https://m.mydrivers.com ""快科技手机版"")
+  * [安卓版](http://app.kkj.cn/)
+  * [苹果端](http://app.kkj.cn/)
+  * [博客版](https://blog.mydrivers.com/)
+
+
+  * [登录](javascript:;)
+  * [注册](https://passport.mydrivers.com/reg.htm)
+  * 浅色模式深色模式
+默认主题
+橙色主题
+红色主题
+
+
+  * [](https://www.mydrivers.com/)
+  * [](https://news.mydrivers.com/)
+  * [](https://hardware.mydrivers.com/)
+  * [](https://rank.kkj.cn/)
+  * [](https://news.mydrivers.com/zhibo/)
+  * [](https://news.mydrivers.com/zixun/haowu/)
+  * [](https://yjgg.mydrivers.com/)
+  * [](https://dcgg.kkj.cn/)
+  * [](https://drivers.mydrivers.com/)
+
+
+热门推荐
+  * [一图](https://news.mydrivers.com/yitu.html)|[好文](https://news.mydrivers.com/haowen.html)|[人物](https://news.mydrivers.com/renwu.html)|[数据](https://news.mydrivers.com/shuju.html)|[智能手机](https://news.mydrivers.com/shouji.html)|[IT圈](https://news.mydrivers.com/it.shtml)|[CPU](https://news.mydrivers.com/cpu.html)|[显卡](https://news.mydrivers.com/xianka.html)|[安卓](https://news.mydrivers.com/anzhuoshouji.html)|[iPhone](https://news.mydrivers.com/pingguoshouji.html)|[Windows](https://news.mydrivers.com/windows.html)|[微信](https://news.mydrivers.com/weixin.html)
+  * [华为](https://news.mydrivers.com/huawei.html)|[小米](https://news.mydrivers.com/xiaomi.html)|[苹果](https://news.mydrivers.com/pingguo.html)|[英特尔](https://news.mydrivers.com/yingteer.html)|[AMD](https://news.mydrivers.com/amd.html)|[英伟达](https://news.mydrivers.com/yingweida.html)[特斯拉](https://news.mydrivers.com/tesila.html)|[索尼](https://news.mydrivers.com/suoni.html)|[OPPO](https://news.mydrivers.com/oppo.html)|[vivo](https://news.mydrivers.com/vivo.html)[荣耀](https://news.mydrivers.com/rongyao.html)
+  * [京东](https://news.mydrivers.com/jingdong.html)|[美团](https://news.mydrivers.com/meituan.html)|[字节跳动](https://news.mydrivers.com/zijietiaodong.html)|[阿里巴巴](https://news.mydrivers.com/alibaba.html)|[腾讯](https://news.mydrivers.com/tengxun.html)|[百度](https://news.mydrivers.com/baidu.html)|[谷歌](https://news.mydrivers.com/guge.html)|[评论分析](https://news.mydrivers.com/reping.html)|[游戏](https://news.mydrivers.com/youxi.html)|[全部资讯>>](https://news.mydrivers.com/technewsall.html)
+
+
+  * [![桌面CPU性能天梯图](https://icons.mydrivers.com/news2022/pc-cpu-phb@2x.png)桌面CPU性能天梯图](https://www.mydrivers.com/zhuanti/tianti/cpu/index.html)
+  * [![桌面显卡性能天梯图](https://icons.mydrivers.com/news2022/pc-xk-phb@2x.png)桌面显卡性能天梯图](https://www.mydrivers.com/zhuanti/tianti/gpu/index.html)
+  * [![手机CPU性能天梯图](https://icons.mydrivers.com/news2022/tel-cpu-phb@2x.png)手机CPU性能天梯图](https://www.mydrivers.com/zhuanti/tianti/01/index.html)
+  * [![笔记本显卡性能天梯图](https://icons.mydrivers.com/news2022/notebook-xk-phb@2x.png)笔记本显卡性能天梯图](https://www.mydrivers.com/zhuanti/tianti/gpum/index.html)
+  * [![数码相机性能天梯图](https://icons.mydrivers.com/news2022/camera-phb@2x.png)数码相机性能天梯图](https://www.mydrivers.com/zhuanti/tianti/camera/index.html)
+
+
+  * [手机CPU](https://rank.kkj.cn/Phone74.shtml)|[手机拍照](https://rank.kkj.cn/Phone79.shtml)|[手机视频](https://rank.kkj.cn/Phone81.shtml)|[手机电池容量](https://rank.kkj.cn/battery.shtml)|[手机AI算力](https://rank.kkj.cn/ai.shtml)|[手机充电](https://rank.kkj.cn/charge.shtml)|[手机音频](https://rank.kkj.cn/Phone21.shtml)|[手机重量](https://rank.kkj.cn/phoneweight.shtml)|[手机CMOS](https://rank.kkj.cn/Phone57.shtml)|[数码相机](https://rank.kkj.cn/shuma69.shtml)
+  * [桌面显卡](https://rank.kkj.cn/Computer73.shtml)|[桌面CPU](https://rank.kkj.cn/Computer76.shtml)|[桌面CPU游戏](https://rank.kkj.cn/Computer147.shtml)|[笔记本CPU](https://rank.kkj.cn/Computer77.shtml)|[笔记本显卡](https://rank.kkj.cn/Computer75.shtml)|[桌面显卡功耗](https://rank.kkj.cn/Computer61.shtml)|[桌面处理器功耗](https://rank.kkj.cn/Computer62.shtml)|[全球超算](https://rank.kkj.cn/Computer72.shtml)
+  * [电动汽车续航里程](https://rank.kkj.cn/Car78.shtml)|[电动汽车电池容量](https://rank.kkj.cn/carbattery.shtml)|[新能源汽车销量](https://rank.kkj.cn/Car9.shtml)|[汽车销量](https://rank.kkj.cn/Car52.shtml)|[汽车保值率](https://rank.kkj.cn/Car22.shtml)
+
+
+  * [显卡评测](https://hardware.mydrivers.com/xiankapingce.html)|[CPU评测](https://hardware.mydrivers.com/cpupingce.html)|[笔记本评测](https://hardware.mydrivers.com/bijibenpingce.html)|[硬盘评测](https://hardware.mydrivers.com/yingpanpingce.html)|[内存评测](https://hardware.mydrivers.com/neicunpingce.html)|[显示器评测](https://hardware.mydrivers.com/xianshiqipingce.html)|[主板评测](https://hardware.mydrivers.com/zhubanpingce.html)|[手机评测](https://hardware.mydrivers.com/shoujipingce.html)|[投影仪评测](https://hardware.mydrivers.com/touyingyipingce.html)|[智能穿戴](https://hardware.mydrivers.com/zhinengchuandaipingce.html)
+  * [平板评测](https://hardware.mydrivers.com/pingbanpingce.html%20)|[电视评测](https://hardware.mydrivers.com/dianshipingce.html)|[电动车评测](https://hardware.mydrivers.com/diandongchepingce.html)|[更多评测](https://hardware.mydrivers.com/)
+
+
+![](https://icons.mydrivers.com/common/icon_warning@2x.png)
+作者私密文章，无浏览权限
+[返回](https://news.mydrivers.com/)
+因版权限制，过往内容只提供给老鸟级别及以上用户访问
+[登录](javascript:;)
+因版权限制，过往内容只提供给老鸟级别及以上用户访问
+[返回](https://news.mydrivers.com/)
+  * 当前位置：[首页](https://www.mydrivers.com) > [资讯中心](https://news.mydrivers.com/) > [电脑办公](https://news.mydrivers.com/diannao.html) > [CPU](https://news.mydrivers.com/cpu.html) > 文章详情
+  * [![榜单](https://icons.mydrivers.com/2021/news/bangdan_pc.svg)](https://rank.kkj.cn/) [![招聘](https://icons.mydrivers.com/2021/news/zhaopin_pc.svg)](https://news.mydrivers.com/1/758/758016.htm)
+
+
+### 
+  * 今日视点
+
+
+  * · [女车主称遭货车逼停 被骂开个破小米：怨谁](https://news.mydrivers.com/1/1064/1064637.htm)
+  * · [网友吐槽8小时高铁乘客打电话7小时：只能忍](https://news.mydrivers.com/1/1064/1064532.htm)
+  * · [博世高管呼吁车企向特斯拉学习 智驾不免费](https://news.mydrivers.com/1/1064/1064539.htm)
+  * · [1.2mm全球最窄物理四等边！魅族22官宣](https://news.mydrivers.com/1/1064/1064569.htm)
+
+
+####  [正文内容](javascript:;) [评论（104）](javascript:;)
+64核只要4万元太良心！AMD Zen5撕裂者9000X国行价格公布
+[![](https://img1.kkeji.com/img/2005/20250728/115853492.gif)](https://jd.dangbei.com/f7pro.html?kkj)
+2025-07-28 12:12:06 出处：快科技 作者：[上方文Q](https://passport.mydrivers.com/author/278470.html ""上方文Q的主页"") 编辑：上方文Q  人气： 3143 次 评论[(104)](https://comment8.mydrivers.com/review/1064626-1.htm)[![点击可以复制本篇文章的标题和链接](https://icons.mydrivers.com/news/2013/copy_linkv2.png?id=1)复制](javascript:copyNewsUrl\(\); ""点击可以复制本篇文章的标题和链接"")[![对文章内容进行纠错](https://icons.mydrivers.com/news/2013/icon_jiucuo.png?id=1)纠错](javascript:; ""对文章内容进行纠错"")
+[_#_ AMD](https://news.mydrivers.com/tag/amd.htm)[ _#_ CPU处理器](https://news.mydrivers.com/tag/cpuchuliqi.htm)
+  * [0](javascript:;)
+  * [0](javascript:;)
+![](https://icons.mydrivers.com/2020/www/top.png)
+[](javascript:;)
+[](javascript:;)
+[](javascript:;)
+[](javascript:;)
+[](javascript:copyNewsUrl\(\);)
+  * [0](javascript:;)
+  * [104](javascript:;)
+
+
+快科技7月28日消息，日前，AMD公布了[Zen5架构锐龙线程撕裂者PRO 9000WX系列处理器的价格](https://news.mydrivers.com/1/1062/1062825.htm)，面向工作站，其中顶级的96核心撕裂者PRO 9995WX要价达99995元，而16核心撕裂者PRO 9955WX也要13955元。
+现在，面向发烧级桌面的撕裂者9000X系列的国行价格也公布了！
+**64核心撕裂者9980X：40980元**
+**32核心撕裂者9970X：20970元**
+**24核心撕裂者9960X：12960元**
+一如PRO 9000WX系列，**它们的定价也是挺有意思，价格和编号的后三位数字完全一样。**
+![64核只要4万元太良心！AMD Zen5撕裂者9000X国行价格公布](https://img1.mydrivers.com/img/20250728/b7b97688-0e32-4996-a30f-9c202468adda.jpg)
+**对比上代对应型号，分别便宜了5019元、5029元、3039元，换算成比例就是大约11％、19％、19％。**
+完全没对手的情况下，不但不涨价，反而还大幅降价，不得不说很良心啊！
+同时，比同等核心数的PRO系列也便宜不少，比如64核心的低了足足2.6万元，也就是接近39％。
+撕裂者PRO 9000WX系列现已上市，**撕裂者9000X系列将于7月30日晚上市** ，快科技的首发评测也将同步奉上！
+[广告 ![](https://img14.360buyimg.com/pop/jfs/t1/306366/37/20913/47569/6882f394F00866e90/26d34c04c36d050d.jpg) 京东AMD Threadr线程撕裂者PRO 9000系列处理器盒装CPU 9995WX/9985/9975/9965/9955工作站台式机sTR5 AI 9995WX【盒装质保三年含13%专票】 99995元 直接购买 ](https://dt.mydrivers.com/mv.ashx?txt=L594w%0A)
+[广告 ![](https://img14.360buyimg.com/pop/jfs/t1/312097/5/18688/32844/687df6a2F1501467f/9fbac9f9973cf439.png) 京东AMD锐龙 Threadripper PRO(线程撕裂者) 9955WX处理器 4nm 16核32线程 加速频率至高5.4GHz 盒装CPU 13955元 直接购买 ](https://dt.mydrivers.com/mv.ashx?txt=AZvzJ%0A)
+![64核只要4万元太良心！AMD Zen5撕裂者9000X国行价格公布](https://img1.mydrivers.com/img/20250728/38378ec1-3c10-4cc2-a80a-46633d9f0f14.jpg)
+【本文结束】如需转载请务必注明出处：快科技
+责任编辑：上方文Q
+文章内容举报
+###### 相关资讯
+  * [现在买显卡你会选什么：万人投票结果超半数选择RX 9060 XT 16GB！](https://news.mydrivers.com/1/1064/1064582.htm)
+  * [英特尔前中国区总裁加入AMD：曾被冠以“AMD杀手”之名！](https://news.mydrivers.com/1/1064/1064574.htm)
+  * [入门处理器选哪家：同款笔记本酷睿Ultra 5 225H与锐龙AI 7 350实测对比](https://news.mydrivers.com/1/1064/1064567.htm)
+  * [反击AMD Zen6！Intel新一代高端移动处理器Nova Lake-AX曝光：将重新定义高性能笔电](https://news.mydrivers.com/1/1064/1064477.htm)
+  * [1499美元起步 完爆Intel至强！AMD线程撕裂者9000系列发烧级桌面CPU售价公布：7月31日上市](https://news.mydrivers.com/1/1064/1064460.htm)
+
+
+  * 支持打赏
+  * 支持0人
+  * 反对
+  * [](javascript:;)
+打赏
+
+
+###### 文章价值打分
+[](javascript:;) [](javascript:;) [](javascript:;) [](javascript:;) [](javascript:;)
+当前文章打分0 分，共有0人打分
+  * [0](javascript:;)
+  * [0](javascript:;)
+  * [104](javascript:;)
+  * [打赏](javascript:;)
+![](https://icons.mydrivers.com/news/play.png)
+  * | 
+
+
+  * 分享好友:
+  * [](javascript:;)
+分享至QQ
+  * [](javascript:;)
+分享至微博
+  * [](javascript:;)
+  * [](javascript:;)
+分享至QQ空间
+  * | 
+
+
+  * [生成海报](javascript:;)
+
+
+![](https://icons.mydrivers.com/news/haibao_close.png)
+  * [](javascript:;)保存图片
+  * [](javascript:;)QQ好友
+  * [](javascript:;)微博
+  * [](javascript:;)微信好友 
+  * [](javascript:;)QQ空间
+
+
+[](javascript:;)
+给作者大大一些小奖励 ![](https://icons.mydrivers.com/news/play.png)
+###### 本文收录在
+[_#_ AMD](https://news.mydrivers.com/tag/amd.htm)[ _#_ CPU处理器](https://news.mydrivers.com/tag/cpuchuliqi.htm)[ _#_ 线程撕裂者](https://news.mydrivers.com/tag/xianchengsiliezhe.htm)[ _#_ 线程撕裂者9980X](https://news.mydrivers.com/tag/xianchengsiliezhe9980x.htm)[ _#_ 国行](https://news.mydrivers.com/tag/guoxing.htm)
+### 
+  * 本文作者
+
+
+  * [![上方文Q](https://passport.mydrivers.com/comments/getusertouxiang.aspx?uid=278470&size=medium)](https://passport.mydrivers.com/home/278470.html)
+### [上方文Q](https://passport.mydrivers.com/home/278470.html)
+皓月初圆 暮云飘散 分明夜色如晴昼[关注](javascript:;)
+
+
+  * [![上方文Q](https://passport.mydrivers.com/comments/getusertouxiang.aspx?uid=278470&size=medium)](https://passport.mydrivers.com/home/278470.html)
+### [上方文Q](https://passport.mydrivers.com/home/278470.html)
+皓月初圆 暮云飘散 分明夜色如晴昼 [瞅一瞅](https://passport.mydrivers.com/home/278470.html)
+
+
+  * [![地表温度超70℃！卫星俯瞰国内“火炉”城市：有你家吗](https://img1.mydrivers.com/img/20250728/2da90a5e69674ee38bba385998521688.png)](https://news.mydrivers.com/1/1064/1064763.htm)
+[地表温度超70℃！卫星俯瞰国内“火炉”城市：有你家吗](https://news.mydrivers.com/1/1064/1064763.htm)
+  * [![惊喜首发价13599元！AMD Zen5超级AI主机发布：128GB内存](https://img1.mydrivers.com/img/20250728/e6896154eacb4af990d037f5d4f0201f.png)](https://news.mydrivers.com/1/1064/1064695.htm)
+[惊喜首发价13599元！AMD Zen5超级AI主机发布：128GB内存](https://news.mydrivers.com/1/1064/1064695.htm)
+  * [![18天217次！此地近期有大量蛇出没 小心](https://img1.mydrivers.com/img/20250728/12b5a2ac9f7e48a6a2cb5bfa5555fcc0.png)](https://news.mydrivers.com/1/1064/1064688.htm)
+[18天217次！此地近期有大量蛇出没 小心](https://news.mydrivers.com/1/1064/1064688.htm)
+
+
+  * [100％自主！龙芯CPU打印机拿下中央机关最大规模集采](https://news.mydrivers.com/1/1064/1064631.htm)2025-07-28
+  * [64核只要4万元太良心！AMD Zen5撕裂者9000X国行价格公布](https://news.mydrivers.com/1/1064/1064626.htm)2025-07-28
+  * [像极了长江存储！铠侠/闪迪9代闪存出货：DDR6.0高速接口](https://news.mydrivers.com/1/1064/1064590.htm)2025-07-28
+  * [特朗普又赢了！全球第二富豪 绝对掌控美国媒体巨头](https://news.mydrivers.com/1/1064/1064560.htm)2025-07-28
+  * [96核心99995元！AMD Zen5撕裂者国行价格震撼公布](https://news.mydrivers.com/1/1062/1062825.htm)2025-07-18
+
+
+#####  _![](https://icons.mydrivers.com/news2023/author_twicon@2x.png)_向作者提问
+### 
+  * 热门文章
+  * 换一波
+
+
+  * [_1_ 国补回来了！第三批资金已下达](https://news.mydrivers.com/1/1064/1064342.htm)
+  * [_2_ 饿了么前CEO确认被抓！巨额现金赃款曝光 审讯画面公开](https://news.mydrivers.com/1/1064/1064467.htm)
+  * [_3_ IP非授权！中国首款6nm自研显卡发布 老外惊叹：真赶上4060](https://news.mydrivers.com/1/1064/1064445.htm)
+  * [_4_ 女车主称遭货车逼停 被骂开个破小米：双方都晒视频 谁错了](https://news.mydrivers.com/1/1064/1064637.htm)
+  * [_5_ 网友吐槽8小时高铁乘客打电话7小时：官方回应只能忍受！](https://news.mydrivers.com/1/1064/1064532.htm)
+  * [_6_ 性能确超RTX 4060！国产自研6nm显卡被冠以奇迹一代：买吗](https://news.mydrivers.com/1/1064/1064551.htm)
+  * [_7_ 1.2mm全球最窄物理四等边！魅族22官宣](https://news.mydrivers.com/1/1064/1064569.htm)
+  * [_8_ iPhone在华跌落神坛！苹果首次在中国关停直营店](https://news.mydrivers.com/1/1064/1064662.htm)
+  * [_9_ 你达标没！中国手机电池容量完虐iPhone：明年迈入10000mAh](https://news.mydrivers.com/1/1064/1064345.htm)
+  * [_10_ 博世高管呼吁车企向特斯拉学习：智驾绝对不要免费](https://news.mydrivers.com/1/1064/1064539.htm)
+
+
+  * [_1_ 李楠：没确切证据前说懂车帝测试故意黑某品牌不是君子所为](https://news.mydrivers.com/1/1064/1064358.htm)
+  * [_2_ 小米16 Ultra提档年前发布：徕卡更深度合作、回归直屏](https://news.mydrivers.com/1/1064/1064351.htm)
+  * [_3_ 我国首款自主架构6nm GPU今天发！性能抢先看 媲美RTX 5060](https://news.mydrivers.com/1/1064/1064333.htm)
+  * [_4_ 博主复刻懂车帝消失前车：华为ADS完美变道刹停 一次都没撞](https://news.mydrivers.com/1/1064/1064435.htm)
+  * [_5_ 配宁德时代电池 续航100km！全国首艘纯电海上客船投运](https://news.mydrivers.com/1/1064/1064326.htm)
+  * [_6_ AMD最强发烧级桌面CPU售价公布！1499美元起 完爆Intel至强](https://news.mydrivers.com/1/1064/1064460.htm)
+  * [_7_ 印度1岁男童咬死眼镜蛇奇迹生还 网友质疑造神](https://news.mydrivers.com/1/1064/1064479.htm)
+  * [_8_ 演唱会CEO出轨事件最大赢家出现了：拍摄者一夜爆红](https://news.mydrivers.com/1/1064/1064423.htm)
+  * [_9_ 泰国一男子一个月不吃饭 仅靠“液体面包”度日：家中暴毙](https://news.mydrivers.com/1/1064/1064321.htm)
+  * [_10_ 161元大额券 蓝帽认证21金维他维生素C片60粒：到手9.9元](https://news.mydrivers.com/1/1064/1064136.htm)
+
+
+  * [_1_ 来了！国产真自研高性能GPU正式发布：性能对标英伟达/AMD](https://news.mydrivers.com/1/1064/1064415.htm)
+  * [_2_ 果粉一眼认出是新款！iPhone 17机模紫色版开箱上手](https://news.mydrivers.com/1/1064/1064424.htm)
+  * [_3_ 中国首位MBA学位方丈释永信被查 天龙八部鸠摩智回应热梗](https://news.mydrivers.com/1/1064/1064587.htm)
+  * [_4_ 三千万辆中国车利润竟不如丰田！官媒发文反击：理由如下](https://news.mydrivers.com/1/1064/1064377.htm)
+  * [_5_ “朱雀玄武敕令”自曝被家人送入精神病院：改名为周景明](https://news.mydrivers.com/1/1064/1064483.htm)
+  * [_6_ 小米16 Ultra来袭！徕卡送给卢伟冰最好的礼物](https://news.mydrivers.com/1/1064/1064428.htm)
+  * [_7_ 夏天出汗补充电解质！外星人电解质饮料大促：60元到手](https://news.mydrivers.com/1/1064/1064446.htm)
+  * [_8_ DeepSeek真的“凉”了吗 业内人士：分明是飞入寻常百姓家](https://news.mydrivers.com/1/1064/1064400.htm)
+  * [_9_ 反击AMD！Intel确认Nova Lake将缩小高端桌面CPU差距](https://news.mydrivers.com/1/1064/1064502.htm)
+  * [_10_ Intel新一代高端移动CPU Nova Lake-AX曝光！反击AMD Zen6](https://news.mydrivers.com/1/1064/1064477.htm)
+
+
+[![](https://img1.kkeji.com/img/2005/20250701/103651508.png)](https://click.aliyun.com/m/1000404584/)
+### 
+  * 好物推荐
+  * 换一波
+
+
+  * [![](https://icons.mydrivers.com/news/2018/load.gif)](https://news.mydrivers.com/1/1063/1063389.htm)
+###### [钙尔奇官旗限时大促：钙尔奇液体钙113元到手4瓶](https://news.mydrivers.com/1/1063/1063389.htm)
+_2025-07-23_ _[0](https://comment8.mydrivers.com/review/1063389-1.htm)_
+  * [![](https://icons.mydrivers.com/news/2018/load.gif)](https://news.mydrivers.com/1/1062/1062911.htm)
+###### [999官旗大促！1%二硫化硒洗发水19.1元大差价（京东49元）](https://news.mydrivers.com/1/1062/1062911.htm)
+_2025-07-20_ _[3](https://comment8.mydrivers.com/review/1062911-1.htm)_
+  * [![](https://icons.mydrivers.com/news/2018/load.gif)](https://news.mydrivers.com/1/1062/1062901.htm)
+###### [送货上门！超能洗衣液跌破五折：39.9元买11斤](https://news.mydrivers.com/1/1062/1062901.htm)
+_2025-07-21_ _[0](https://comment8.mydrivers.com/review/1062901-1.htm)_
+
+
+  * [![](https://icons.mydrivers.com/news/2018/load.gif)](https://news.mydrivers.com/1/1062/1062876.htm)
+###### [国标品质：五稻田东北五常大米10斤37.9元大促（减72元）](https://news.mydrivers.com/1/1062/1062876.htm)
+_2025-07-20_ _[0](https://comment8.mydrivers.com/review/1062876-1.htm)_
+  * [![](https://icons.mydrivers.com/news/2018/load.gif)](https://news.mydrivers.com/1/1062/1062874.htm)
+###### [旗舰店发车：霸王新升级洗发水日常59 现券后仅29元](https://news.mydrivers.com/1/1062/1062874.htm)
+_2025-07-19_ _[0](https://comment8.mydrivers.com/review/1062874-1.htm)_
+  * [![](https://icons.mydrivers.com/news/2018/load.gif)](https://news.mydrivers.com/1/1062/1062873.htm)
+###### [52%鸡蛋+12%生牛乳：巴氏鲜奶戚风蛋糕1.2元/袋](https://news.mydrivers.com/1/1062/1062873.htm)
+_2025-07-19_ _[0](https://comment8.mydrivers.com/review/1062873-1.htm)_
+
+
+### 
+  * 关注我们
+
+
+  * ![微博](https://icons.mydrivers.com/2020/www/weibo1.png)
+### 微博：快科技官方
+快科技官方微博
+![微博](https://icons.mydrivers.com/2020/www/WeiBoJump.png)
+  * ![今日头条](https://icons.mydrivers.com/2020/www/toutiao1.png)
+### 今日头条：快科技
+带来硬件软件、手机数码最快资讯！
+![今日头条](https://icons.mydrivers.com/2020/www/TouTiaoJump.png)
+  * ![抖音](https://icons.mydrivers.com/2020/www/douyin1.png)
+### 抖音：kkjcn
+科技快讯、手机开箱、产品体验、应用推荐...
+![抖音](https://icons.mydrivers.com/2020/www/DouYinJump.png)
+
+     关于我们  
+
+[关于我们](https://www.mydrivers.com/contact/Company.html) 
+
+
+[隐私权说明 ](https://www.mydrivers.com/contact/privacy.html) 
+     交流合作  
+
+[加入我们](https://www.mydrivers.com/contact/jobs.html) 
+
+
+[意见反馈](javascript:;) 
+
+
+[广告刊例](https://www.mydrivers.com/contact/advertising.html) 
+     关注我们  
+
+微信公众号：![快科技微信公众号](https://icons.mydrivers.com/2018/common/erwm_small.png)
+![](https://icons.mydrivers.com/icon/kkjwx.png)
+![](https://icons.mydrivers.com/2018/common/ewmar.png)
+
+
+
+微博号：[快科技官方](https://weibo.com/mydrivers ""快科技官方微博"") 
+
+
+QQ群：53467377 
+
+  * ![安卓客户端下载](https://icons.mydrivers.com/2018/common/kkj_android.png)安卓客户端下载 
+  * ![IOS客户端下载](https://icons.mydrivers.com/2018/common/kkj_ios.png)IOS客户端下载 
+
+
+快科技·1997-2025 版权所有
+Copyright(C)Mydrivers.com, All Rights Reserved.
+[豫ICP备2023031922号-1](https://beian.miit.gov.cn/)[![](https://icons.mydrivers.com/2018/news/batb.png)豫公网安备 41010502003949号](http://www.beian.gov.cn/portal/registerSystemInfo?recordcode=41010502003949)   
+  
+
+[](javascript:void\(0\))
+### 热点推荐
+  * [女车主称遭货车逼停 被骂开个破小米：双方都晒视频 谁错了](https://news.mydrivers.com/1/1064/1064637.htm) 14642
+  * [性能确超RTX 4060！国产自研6nm显卡被冠以奇迹一代：买吗](https://news.mydrivers.com/1/1064/1064551.htm) 13021
+  * [1.2mm全球最窄物理四等边！魅族22官宣](https://news.mydrivers.com/1/1064/1064569.htm) 12639
+  * [iPhone在华跌落神坛！苹果首次在中国关停直营店](https://news.mydrivers.com/1/1064/1064662.htm) 12577
+  * [中国首位MBA学位方丈释永信被查 天龙八部鸠摩智回应热梗](https://news.mydrivers.com/1/1064/1064587.htm) 7826
+  * [日本知名品牌：狮王齿力佳牙膏官方2折起秒杀](https://news.mydrivers.com/1/1064/1064572.htm) 6583
+  * [韩国男扮女装印度旅行为验证“女性旅行危险论”：结果尴尬](https://news.mydrivers.com/1/1064/1064549.htm) 6156
+  * [HIV要被终结了吗！艾滋病预防神药落地海南：近100%有效](https://news.mydrivers.com/1/1064/1064554.htm) 5591
+
+
+### 好物推荐
+  * [![](https://haohuo.mydrivers.com/img/20241119/title_193540674.jpg)](https://news.mydrivers.com/1/1014/1014729.htm)
+[361° 运动长裤62元官方大促](https://news.mydrivers.com/1/1014/1014729.htm)
+￥62 券后价
+￥179
+  * [![](https://haohuo.mydrivers.com/img/20241119/title_193611081.jpg)](https://news.mydrivers.com/1/1014/1014505.htm)
+[森马集团旗下GSON撞色棉衣到手59元](https://news.mydrivers.com/1/1014/1014505.htm)
+￥59 券后价
+￥199
+  * [![](https://haohuo.mydrivers.com/img/20241119/title_193636020.jpg)](https://news.mydrivers.com/1/1014/1014549.htm)
+[JEEP工装冲锋裤79元大促](https://news.mydrivers.com/1/1014/1014549.htm)
+￥79 券后价
+￥119
+  * [![](https://haohuo.mydrivers.com/img/20241119/title_193656974.jpg)](https://news.mydrivers.com/1/1014/1014685.htm)
+[0反式脂肪酸 后谷咖啡30条18元](https://news.mydrivers.com/1/1014/1014685.htm)
+￥18 券后价
+￥36.9
+  * [![](https://haohuo.mydrivers.com/img/20241119/title_193717756.jpg)](https://news.mydrivers.com/1/1014/1014296.htm)
+[徽春堂金丝皇菊约50朵 到手5.9元](https://news.mydrivers.com/1/1014/1014296.htm)
+￥5.9 券后价
+￥25.9
+
+
+  * [](https://app.kkj.cn/)
+_![](https://icons.mydrivers.com/2020/www/left.png)_
+手机扫码下载
+支持Android/iOS/iPad
+![快科技APP](https://icons.mydrivers.com/2020/news/8/app_ewm.png)
+  *   * 纠错
+
+
+  * _![](https://icons.mydrivers.com/news2022/right.png)_
+爆料群
+爆料1群![爆料群](https://icons.mydrivers.com/tab/wxbaoliao.png)
+打开微信扫一扫   
+扫描入群，加入爆料
+  *   *   * 
+
+[](javascript:;) 100%  [](javascript:;) [](javascript:;) [](javascript:;) [](javascript:;) [ ](javascript:;)
+[](javascript:;) [](javascript:;)
+![](https://news.mydrivers.com/1/1064/1064626.htm)  
+---  
+###### 图片信息
+  * 图片描述:
+  * 图片格式：
+  * 图片尺寸：
+  * 上传时间：
+
+
+_[](javascript:;)_ _[](javascript:;)_
+","['https://www.mydrivers.com', 'https://m.mydrivers.com', 'https://blog.mydrivers.com/', 'https://passport.mydrivers.com/reg.htm', 'https://www.mydrivers.com/', 'https://news.mydrivers.com/', 'https://hardware.mydrivers.com/', 'https://news.mydrivers.com/zhibo', 'https://news.mydrivers.com/zixun/haowu', 'https://yjgg.mydrivers.com/']",34,60,2040
+100％自主龙芯2P0500处理器！得力打印机拿下中央机关最大规模集采,https://news.mydrivers.com/1/1064/1064631.htm,驱动之家,2025-07-28 04:33:00,100％自主龙芯2P0500处理器！得力打印机拿下中央机关最大规模集采,"  * [](https://www.mydrivers.com ""科技改变未来"")
+  * [手机版](https://m.mydrivers.com ""快科技手机版"")
+  * [安卓版](http://app.kkj.cn/)
+  * [苹果端](http://app.kkj.cn/)
+  * [博客版](https://blog.mydrivers.com/)
+
+
+  * [登录](javascript:;)
+  * [注册](https://passport.mydrivers.com/reg.htm)
+  * 浅色模式深色模式
+默认主题
+橙色主题
+红色主题
+
+
+  * [](https://www.mydrivers.com/)
+  * [](https://news.mydrivers.com/)
+  * [](https://hardware.mydrivers.com/)
+  * [](https://rank.kkj.cn/)
+  * [](https://news.mydrivers.com/zhibo/)
+  * [](https://news.mydrivers.com/zixun/haowu/)
+  * [](https://yjgg.mydrivers.com/)
+  * [](https://dcgg.kkj.cn/)
+  * [](https://drivers.mydrivers.com/)
+
+
+热门推荐
+  * [一图](https://news.mydrivers.com/yitu.html)|[好文](https://news.mydrivers.com/haowen.html)|[人物](https://news.mydrivers.com/renwu.html)|[数据](https://news.mydrivers.com/shuju.html)|[智能手机](https://news.mydrivers.com/shouji.html)|[IT圈](https://news.mydrivers.com/it.shtml)|[CPU](https://news.mydrivers.com/cpu.html)|[显卡](https://news.mydrivers.com/xianka.html)|[安卓](https://news.mydrivers.com/anzhuoshouji.html)|[iPhone](https://news.mydrivers.com/pingguoshouji.html)|[Windows](https://news.mydrivers.com/windows.html)|[微信](https://news.mydrivers.com/weixin.html)
+  * [华为](https://news.mydrivers.com/huawei.html)|[小米](https://news.mydrivers.com/xiaomi.html)|[苹果](https://news.mydrivers.com/pingguo.html)|[英特尔](https://news.mydrivers.com/yingteer.html)|[AMD](https://news.mydrivers.com/amd.html)|[英伟达](https://news.mydrivers.com/yingweida.html)[特斯拉](https://news.mydrivers.com/tesila.html)|[索尼](https://news.mydrivers.com/suoni.html)|[OPPO](https://news.mydrivers.com/oppo.html)|[vivo](https://news.mydrivers.com/vivo.html)[荣耀](https://news.mydrivers.com/rongyao.html)
+  * [京东](https://news.mydrivers.com/jingdong.html)|[美团](https://news.mydrivers.com/meituan.html)|[字节跳动](https://news.mydrivers.com/zijietiaodong.html)|[阿里巴巴](https://news.mydrivers.com/alibaba.html)|[腾讯](https://news.mydrivers.com/tengxun.html)|[百度](https://news.mydrivers.com/baidu.html)|[谷歌](https://news.mydrivers.com/guge.html)|[评论分析](https://news.mydrivers.com/reping.html)|[游戏](https://news.mydrivers.com/youxi.html)|[全部资讯>>](https://news.mydrivers.com/technewsall.html)
+
+
+  * [![桌面CPU性能天梯图](https://icons.mydrivers.com/news2022/pc-cpu-phb@2x.png)桌面CPU性能天梯图](https://www.mydrivers.com/zhuanti/tianti/cpu/index.html)
+  * [![桌面显卡性能天梯图](https://icons.mydrivers.com/news2022/pc-xk-phb@2x.png)桌面显卡性能天梯图](https://www.mydrivers.com/zhuanti/tianti/gpu/index.html)
+  * [![手机CPU性能天梯图](https://icons.mydrivers.com/news2022/tel-cpu-phb@2x.png)手机CPU性能天梯图](https://www.mydrivers.com/zhuanti/tianti/01/index.html)
+  * [![笔记本显卡性能天梯图](https://icons.mydrivers.com/news2022/notebook-xk-phb@2x.png)笔记本显卡性能天梯图](https://www.mydrivers.com/zhuanti/tianti/gpum/index.html)
+  * [![数码相机性能天梯图](https://icons.mydrivers.com/news2022/camera-phb@2x.png)数码相机性能天梯图](https://www.mydrivers.com/zhuanti/tianti/camera/index.html)
+
+
+  * [手机CPU](https://rank.kkj.cn/Phone74.shtml)|[手机拍照](https://rank.kkj.cn/Phone79.shtml)|[手机视频](https://rank.kkj.cn/Phone81.shtml)|[手机电池容量](https://rank.kkj.cn/battery.shtml)|[手机AI算力](https://rank.kkj.cn/ai.shtml)|[手机充电](https://rank.kkj.cn/charge.shtml)|[手机音频](https://rank.kkj.cn/Phone21.shtml)|[手机重量](https://rank.kkj.cn/phoneweight.shtml)|[手机CMOS](https://rank.kkj.cn/Phone57.shtml)|[数码相机](https://rank.kkj.cn/shuma69.shtml)
+  * [桌面显卡](https://rank.kkj.cn/Computer73.shtml)|[桌面CPU](https://rank.kkj.cn/Computer76.shtml)|[桌面CPU游戏](https://rank.kkj.cn/Computer147.shtml)|[笔记本CPU](https://rank.kkj.cn/Computer77.shtml)|[笔记本显卡](https://rank.kkj.cn/Computer75.shtml)|[桌面显卡功耗](https://rank.kkj.cn/Computer61.shtml)|[桌面处理器功耗](https://rank.kkj.cn/Computer62.shtml)|[全球超算](https://rank.kkj.cn/Computer72.shtml)
+  * [电动汽车续航里程](https://rank.kkj.cn/Car78.shtml)|[电动汽车电池容量](https://rank.kkj.cn/carbattery.shtml)|[新能源汽车销量](https://rank.kkj.cn/Car9.shtml)|[汽车销量](https://rank.kkj.cn/Car52.shtml)|[汽车保值率](https://rank.kkj.cn/Car22.shtml)
+
+
+  * [显卡评测](https://hardware.mydrivers.com/xiankapingce.html)|[CPU评测](https://hardware.mydrivers.com/cpupingce.html)|[笔记本评测](https://hardware.mydrivers.com/bijibenpingce.html)|[硬盘评测](https://hardware.mydrivers.com/yingpanpingce.html)|[内存评测](https://hardware.mydrivers.com/neicunpingce.html)|[显示器评测](https://hardware.mydrivers.com/xianshiqipingce.html)|[主板评测](https://hardware.mydrivers.com/zhubanpingce.html)|[手机评测](https://hardware.mydrivers.com/shoujipingce.html)|[投影仪评测](https://hardware.mydrivers.com/touyingyipingce.html)|[智能穿戴](https://hardware.mydrivers.com/zhinengchuandaipingce.html)
+  * [平板评测](https://hardware.mydrivers.com/pingbanpingce.html%20)|[电视评测](https://hardware.mydrivers.com/dianshipingce.html)|[电动车评测](https://hardware.mydrivers.com/diandongchepingce.html)|[更多评测](https://hardware.mydrivers.com/)
+
+
+![](https://icons.mydrivers.com/common/icon_warning@2x.png)
+作者私密文章，无浏览权限
+[返回](https://news.mydrivers.com/)
+因版权限制，过往内容只提供给老鸟级别及以上用户访问
+[登录](javascript:;)
+因版权限制，过往内容只提供给老鸟级别及以上用户访问
+[返回](https://news.mydrivers.com/)
+  * 当前位置：[首页](https://www.mydrivers.com) > [资讯中心](https://news.mydrivers.com/) > [电脑办公](https://news.mydrivers.com/diannao.html) > [显卡](https://news.mydrivers.com/xianka.html) > 文章详情
+  * [![榜单](https://icons.mydrivers.com/2021/news/bangdan_pc.svg)](https://rank.kkj.cn/) [![招聘](https://icons.mydrivers.com/2021/news/zhaopin_pc.svg)](https://news.mydrivers.com/1/758/758016.htm)
+
+
+### 
+  * 今日视点
+
+
+  * · [女车主称遭货车逼停 被骂开个破小米：怨谁](https://news.mydrivers.com/1/1064/1064637.htm)
+  * · [网友吐槽8小时高铁乘客打电话7小时：只能忍](https://news.mydrivers.com/1/1064/1064532.htm)
+  * · [博世高管呼吁车企向特斯拉学习 智驾不免费](https://news.mydrivers.com/1/1064/1064539.htm)
+  * · [1.2mm全球最窄物理四等边！魅族22官宣](https://news.mydrivers.com/1/1064/1064569.htm)
+
+
+####  [正文内容](javascript:;) [评论（180）](javascript:;)
+中国高端GPU站起来了！砺算科技7G100、摩尔线程MTT S90双杀：性能逆袭RTX 4060
+[![](https://img1.kkeji.com/img/2005/20250728/115853492.gif)](https://jd.dangbei.com/f7pro.html?kkj)
+2025-07-28 12:33:52 出处：快科技 作者：[朝晖](https://passport.mydrivers.com/author/801442.html ""朝晖的主页"") 编辑：朝晖  人气： 3607 次 评论[(180)](https://comment8.mydrivers.com/review/1064632-1.htm)[![点击可以复制本篇文章的标题和链接](https://icons.mydrivers.com/news/2013/copy_linkv2.png?id=1)复制](javascript:copyNewsUrl\(\); ""点击可以复制本篇文章的标题和链接"")[![对文章内容进行纠错](https://icons.mydrivers.com/news/2013/icon_jiucuo.png?id=1)纠错](javascript:; ""对文章内容进行纠错"")
+[_#_ 显卡](https://news.mydrivers.com/tag/xianka.htm)[ _#_ GPU](https://news.mydrivers.com/tag/gpu.htm)
+  * [0](javascript:;)
+  * [0](javascript:;)
+![](https://icons.mydrivers.com/2020/www/top.png)
+[](javascript:;)
+[](javascript:;)
+[](javascript:;)
+[](javascript:;)
+[](javascript:copyNewsUrl\(\);)
+  * [0](javascript:;)
+  * [180](javascript:;)
+
+
+快科技7月28日消息，最近，两款国产高端GPU引发极大关注，**一款是摩尔线程MTT S9，另一款则是号称真自研的砺算科技7G100系列。两款显卡在性能上都实现了巨大飞跃，在多个测试项目中逆袭RTX 4060。**
+**首先是摩尔线程新一代显卡MTT S90游戏GPU，实测性能展现出与NVIDIA主流产品RTX 4060相当的水平。**
+据了解，MTT S90是摩尔线程在两年前就计划推出的产品，与其AI智算卡MTT S4000采用同一芯片架构。知名博主“差评”对摩尔线程S4000的图形性能进行了实测跑分，考虑它与S90同宗同源，基本可以拿来参照。
+![中国高端GPU站起来了！砺算科技7G100、摩尔线程MTT S90双杀：性能逆袭RTX 4060](https://img1.mydrivers.com/img/20250728/ed837adc-c510-4ae3-9894-75218f15f271.png)
+![中国高端GPU站起来了！砺算科技7G100、摩尔线程MTT S90双杀：性能逆袭RTX 4060](https://img1.mydrivers.com/img/20250728/2512ea65-bd41-4081-b602-81f1d3bf20dd.png)
+![中国高端GPU站起来了！砺算科技7G100、摩尔线程MTT S90双杀：性能逆袭RTX 4060](https://img1.mydrivers.com/img/20250728/9e64dc57-43e8-4a54-a8f2-ea043dca2e83.png)
+![中国高端GPU站起来了！砺算科技7G100、摩尔线程MTT S90双杀：性能逆袭RTX 4060](https://img1.mydrivers.com/img/20250728/ac3893e5-8094-4845-9e43-ce35c77a2b05.png)
+实测结果显示，**摩尔线程S4000的鲁大师、3DMark Steel Nomad和Unigine Valley得分均超过RTX4060，只在Fire Strike Ultra中稍逊一筹** 。
+不仅是Benchmark，该卡在实际游戏测试中尤为亮眼，4K极高画质设定下的《永劫无间》平均帧率达到了43fps，同样略高于RTX 4060（42fps）。
+**据悉，测试版驱动并未针对S4000进行过专门的优化，如果能像S80一样持续深度优化，S4000很可能在图形性能上实现对RTX 4060的大幅超越。**
+摩尔线程S4000于2023年9月正式发布，与RTX 4060基本属于同时期发布，可以说已经追上了同时期NVIDIA主流型号的性能水平。
+依照“差评”的测试数据，对比S80在最新驱动下的性能，其跨代性能提升达到了80%以上。考虑到S4000只比S80晚发布不到一年，这个跨代提升幅度可谓惊人。
+另一款是7月26日砺算科技发布的首款GPU芯片7G100系列。据官方介绍，砺算7G100系列作为一款全自研高性能图形GPU，从指令集到计算核心完全由自主设计，基于自研TrueGPU天图架构，并自研指令集、自研软件栈（非市场中常见的通过采购Imagination等现成IP授权），多重性能优势达到国际主流、国内领先水平，完全掌握着GPU架构的自主权。
+此外，砺算GPU支持NRSS动态优化渲染画质，可对标NVIDIA DLSS和AMD FSR技术。
+其中，7G106主打消费级显卡，搭配12GB GDDR6显存，支持4x DP 1.4a接口，支持8K60Hz HDR FreeSync显示分辨率，API方面支持的DX12、Vulkan 1.3、OpenGL 4.6、OpenCL 3.0等。
+![中国高端GPU站起来了！砺算科技7G100、摩尔线程MTT S90双杀：性能逆袭RTX 4060](https://img1.mydrivers.com/img/20250728/933ed713-b70a-47c9-90f4-238c555d0e01.jpg)
+![中国高端GPU站起来了！砺算科技7G100、摩尔线程MTT S90双杀：性能逆袭RTX 4060](https://img1.mydrivers.com/img/20250728/a72166f5-06d1-45d1-9f11-cd5f934253ca.jpg)
+![中国高端GPU站起来了！砺算科技7G100、摩尔线程MTT S90双杀：性能逆袭RTX 4060](https://img1.mydrivers.com/img/20250728/96b84e55-5eae-4210-b2f9-d07cd5cd7563.jpg)
+从3DMarK Fire Strike、Steel Nomand基准测试来看，7G106略低于RTX 4060，但二者基本处于同一水平。Geekbench OpenCL基准测试中，7G106表现抢眼，不仅压了RTX 4060一头，甚至直逼RTX 5060。
+游戏性能方面，《黑神话 悟空》平均FPS＞70（分辨率：1080p 画质：高）。最新测试显示，7月24日正式上线的国产第二款3A大作《明末：渊虚之羽》同样能流畅运行。
+![中国高端GPU站起来了！砺算科技7G100、摩尔线程MTT S90双杀：性能逆袭RTX 4060](https://img1.mydrivers.com/img/20250728/803959c7-f6c5-47f8-84bf-9a5506f53e86.jpg)
+![中国高端GPU站起来了！砺算科技7G100、摩尔线程MTT S90双杀：性能逆袭RTX 4060](https://img1.mydrivers.com/img/20250728/a0a8a08b-8c86-4025-a60e-955f0486898a.jpg)
+虽然两款国产GPU和NVIDIA高端产品仍有很大差距，但性能已经媲美其主流产品，更意味着国产显卡从可用变成了好用。
+以上也充分说明，国产GPU企业通过技术研发和产品创新，部分产品性能已接近或超越国际同类产品，在市场上具备了一定竞争力，能够与国际大厂竞争，打破国外企业的垄断局面，促使全球GPU市场竞争更加充分。
+对于国内游戏玩家，意味着未来将有更多选择，且国产芯片在价格上可能更具优势，可降低硬件购置成本。同时，游戏开发者能更有针对性地对国产GPU进行优化，开发出更贴合国内玩家需求的游戏。
+![中国高端GPU站起来了！砺算科技7G100、摩尔线程MTT S90双杀：性能逆袭RTX 4060](https://img1.mydrivers.com/img/20250728/d147661c-2bd8-43ab-a84d-238d6a19a420.jpg)
+【本文结束】如需转载请务必注明出处：快科技
+责任编辑：朝晖
+文章内容举报
+###### 相关资讯
+  * [现在买显卡你会选什么：万人投票结果超半数选择RX 9060 XT 16GB！](https://news.mydrivers.com/1/1064/1064582.htm)
+  * [国产真自研GPU！砺算科技显卡“奇迹”一代发售时间来了 性能测试超RTX 4060](https://news.mydrivers.com/1/1064/1064551.htm)
+  * [一觉醒来，国产显卡开始追着老黄的4060打了](https://news.mydrivers.com/1/1064/1064526.htm)
+  * [又一款RTX 50旗舰！华硕将于8月19推出三十周年纪念版显卡](https://news.mydrivers.com/1/1064/1064516.htm)
+  * [NVIDIA N1X处理器GPU规格、跑分曝光：核心数与RTX 5070相同！](https://news.mydrivers.com/1/1064/1064497.htm)
+
+
+  * 支持打赏
+  * 支持0人
+  * 反对
+  * [](javascript:;)
+打赏
+
+
+###### 文章价值打分
+[](javascript:;) [](javascript:;) [](javascript:;) [](javascript:;) [](javascript:;)
+当前文章打分0 分，共有0人打分
+  * [0](javascript:;)
+  * [0](javascript:;)
+  * [180](javascript:;)
+  * [打赏](javascript:;)
+![](https://icons.mydrivers.com/news/play.png)
+  * | 
+
+
+  * 分享好友:
+  * [](javascript:;)
+分享至QQ
+  * [](javascript:;)
+分享至微博
+  * [](javascript:;)
+  * [](javascript:;)
+分享至QQ空间
+  * | 
+
+
+  * [生成海报](javascript:;)
+
+
+![](https://icons.mydrivers.com/news/haibao_close.png)
+  * [](javascript:;)保存图片
+  * [](javascript:;)QQ好友
+  * [](javascript:;)微博
+  * [](javascript:;)微信好友 
+  * [](javascript:;)QQ空间
+
+
+[](javascript:;)
+给作者大大一些小奖励 ![](https://icons.mydrivers.com/news/play.png)
+###### 本文收录在
+[_#_ 显卡](https://news.mydrivers.com/tag/xianka.htm)[ _#_ GPU](https://news.mydrivers.com/tag/gpu.htm)[ _#_ 国产](https://news.mydrivers.com/tag/guochan.htm)
+### 
+  * 本文作者
+
+
+  * [![朝一小晖](https://passport.mydrivers.com/comments/getusertouxiang.aspx?uid=801442&size=medium)](https://passport.mydrivers.com/home/801442.html)
+### [朝一小晖](https://passport.mydrivers.com/home/801442.html)
+[关注](javascript:;)
+
+
+  * [![朝一小晖](https://passport.mydrivers.com/comments/getusertouxiang.aspx?uid=801442&size=medium)](https://passport.mydrivers.com/home/801442.html)
+### [朝一小晖](https://passport.mydrivers.com/home/801442.html)
+[瞅一瞅](https://passport.mydrivers.com/home/801442.html)
+
+
+  * [![内置5070！NV首笔记本CPU跑分曝光：望成史上最强ARM SoC](https://img1.mydrivers.com/img/20250728/f17bcc4163374fda9ca4c5497d89e51c.png)](https://news.mydrivers.com/1/1064/1064784.htm)
+[内置5070！NV首笔记本CPU跑分曝光：望成史上最强ARM SoC](https://news.mydrivers.com/1/1064/1064784.htm)
+  * [![离职大龄程序员称无故被取消期权 抖音：该员工涉嫌诈骗！](https://img1.mydrivers.com/img/20250728/531ecf63c8df4fb2b64dcdae6999cd26.png)](https://news.mydrivers.com/1/1064/1064757.htm)
+[离职大龄程序员称无故被取消期权 抖音：该员工涉嫌诈骗！](https://news.mydrivers.com/1/1064/1064757.htm)
+  * [![国家育儿补贴来了！3岁前每娃每年3600元 申领程序公布](https://img1.mydrivers.com/img/20250728/33ea471279d74434997af419d4bd9f92.png)](https://news.mydrivers.com/1/1064/1064740.htm)
+[国家育儿补贴来了！3岁前每娃每年3600元 申领程序公布](https://news.mydrivers.com/1/1064/1064740.htm)
+
+
+  * [华为Linux笔记本怎么选最合适](https://news.mydrivers.com/1/1064/1064701.htm)2025-07-28
+  * [中国高端GPU站起来了！砺算7G100、摩尔线程S90双杀RTX4060](https://news.mydrivers.com/1/1064/1064632.htm)2025-07-28
+  * [全球首次亮相！特朗普装甲版高尔夫球车曝光：高尔夫一号](https://news.mydrivers.com/1/1064/1064617.htm)2025-07-28
+  * [比人类安全10倍的辅助驾驶已实现！特斯拉：欢迎全国体验](https://news.mydrivers.com/1/1064/1064584.htm)2025-07-28
+  * [岚图高管称懂车帝测试如同镜子后改口：华为是中国品牌代表](https://news.mydrivers.com/1/1064/1064492.htm)2025-07-27
+
+
+#####  _![](https://icons.mydrivers.com/news2023/author_twicon@2x.png)_向作者提问
+### 
+  * 热门文章
+  * 换一波
+
+
+  * [_1_ 国补回来了！第三批资金已下达](https://news.mydrivers.com/1/1064/1064342.htm)
+  * [_2_ 饿了么前CEO确认被抓！巨额现金赃款曝光 审讯画面公开](https://news.mydrivers.com/1/1064/1064467.htm)
+  * [_3_ IP非授权！中国首款6nm自研显卡发布 老外惊叹：真赶上4060](https://news.mydrivers.com/1/1064/1064445.htm)
+  * [_4_ 女车主称遭货车逼停 被骂开个破小米：双方都晒视频 谁错了](https://news.mydrivers.com/1/1064/1064637.htm)
+  * [_5_ 网友吐槽8小时高铁乘客打电话7小时：官方回应只能忍受！](https://news.mydrivers.com/1/1064/1064532.htm)
+  * [_6_ 性能确超RTX 4060！国产自研6nm显卡被冠以奇迹一代：买吗](https://news.mydrivers.com/1/1064/1064551.htm)
+  * [_7_ 1.2mm全球最窄物理四等边！魅族22官宣](https://news.mydrivers.com/1/1064/1064569.htm)
+  * [_8_ iPhone在华跌落神坛！苹果首次在中国关停直营店](https://news.mydrivers.com/1/1064/1064662.htm)
+  * [_9_ 你达标没！中国手机电池容量完虐iPhone：明年迈入10000mAh](https://news.mydrivers.com/1/1064/1064345.htm)
+  * [_10_ 博世高管呼吁车企向特斯拉学习：智驾绝对不要免费](https://news.mydrivers.com/1/1064/1064539.htm)
+
+
+  * [_1_ 李楠：没确切证据前说懂车帝测试故意黑某品牌不是君子所为](https://news.mydrivers.com/1/1064/1064358.htm)
+  * [_2_ 小米16 Ultra提档年前发布：徕卡更深度合作、回归直屏](https://news.mydrivers.com/1/1064/1064351.htm)
+  * [_3_ 我国首款自主架构6nm GPU今天发！性能抢先看 媲美RTX 5060](https://news.mydrivers.com/1/1064/1064333.htm)
+  * [_4_ 博主复刻懂车帝消失前车：华为ADS完美变道刹停 一次都没撞](https://news.mydrivers.com/1/1064/1064435.htm)
+  * [_5_ 配宁德时代电池 续航100km！全国首艘纯电海上客船投运](https://news.mydrivers.com/1/1064/1064326.htm)
+  * [_6_ AMD最强发烧级桌面CPU售价公布！1499美元起 完爆Intel至强](https://news.mydrivers.com/1/1064/1064460.htm)
+  * [_7_ 印度1岁男童咬死眼镜蛇奇迹生还 网友质疑造神](https://news.mydrivers.com/1/1064/1064479.htm)
+  * [_8_ 演唱会CEO出轨事件最大赢家出现了：拍摄者一夜爆红](https://news.mydrivers.com/1/1064/1064423.htm)
+  * [_9_ 泰国一男子一个月不吃饭 仅靠“液体面包”度日：家中暴毙](https://news.mydrivers.com/1/1064/1064321.htm)
+  * [_10_ 161元大额券 蓝帽认证21金维他维生素C片60粒：到手9.9元](https://news.mydrivers.com/1/1064/1064136.htm)
+
+
+  * [_1_ 来了！国产真自研高性能GPU正式发布：性能对标英伟达/AMD](https://news.mydrivers.com/1/1064/1064415.htm)
+  * [_2_ 果粉一眼认出是新款！iPhone 17机模紫色版开箱上手](https://news.mydrivers.com/1/1064/1064424.htm)
+  * [_3_ 中国首位MBA学位方丈释永信被查 天龙八部鸠摩智回应热梗](https://news.mydrivers.com/1/1064/1064587.htm)
+  * [_4_ 三千万辆中国车利润竟不如丰田！官媒发文反击：理由如下](https://news.mydrivers.com/1/1064/1064377.htm)
+  * [_5_ “朱雀玄武敕令”自曝被家人送入精神病院：改名为周景明](https://news.mydrivers.com/1/1064/1064483.htm)
+  * [_6_ 小米16 Ultra来袭！徕卡送给卢伟冰最好的礼物](https://news.mydrivers.com/1/1064/1064428.htm)
+  * [_7_ 夏天出汗补充电解质！外星人电解质饮料大促：60元到手](https://news.mydrivers.com/1/1064/1064446.htm)
+  * [_8_ DeepSeek真的“凉”了吗 业内人士：分明是飞入寻常百姓家](https://news.mydrivers.com/1/1064/1064400.htm)
+  * [_9_ 反击AMD！Intel确认Nova Lake将缩小高端桌面CPU差距](https://news.mydrivers.com/1/1064/1064502.htm)
+  * [_10_ Intel新一代高端移动CPU Nova Lake-AX曝光！反击AMD Zen6](https://news.mydrivers.com/1/1064/1064477.htm)
+
+
+[![](https://img1.kkeji.com/img/2005/20250701/103651508.png)](https://click.aliyun.com/m/1000404584/)
+### 
+  * 好物推荐
+  * 换一波
+
+
+  * [![](https://icons.mydrivers.com/news/2018/load.gif)](https://news.mydrivers.com/1/1063/1063389.htm)
+###### [钙尔奇官旗限时大促：钙尔奇液体钙113元到手4瓶](https://news.mydrivers.com/1/1063/1063389.htm)
+_2025-07-23_ _[0](https://comment8.mydrivers.com/review/1063389-1.htm)_
+  * [![](https://icons.mydrivers.com/news/2018/load.gif)](https://news.mydrivers.com/1/1062/1062911.htm)
+###### [999官旗大促！1%二硫化硒洗发水19.1元大差价（京东49元）](https://news.mydrivers.com/1/1062/1062911.htm)
+_2025-07-20_ _[3](https://comment8.mydrivers.com/review/1062911-1.htm)_
+  * [![](https://icons.mydrivers.com/news/2018/load.gif)](https://news.mydrivers.com/1/1062/1062901.htm)
+###### [送货上门！超能洗衣液跌破五折：39.9元买11斤](https://news.mydrivers.com/1/1062/1062901.htm)
+_2025-07-21_ _[0](https://comment8.mydrivers.com/review/1062901-1.htm)_
+
+
+  * [![](https://icons.mydrivers.com/news/2018/load.gif)](https://news.mydrivers.com/1/1062/1062876.htm)
+###### [国标品质：五稻田东北五常大米10斤37.9元大促（减72元）](https://news.mydrivers.com/1/1062/1062876.htm)
+_2025-07-20_ _[0](https://comment8.mydrivers.com/review/1062876-1.htm)_
+  * [![](https://icons.mydrivers.com/news/2018/load.gif)](https://news.mydrivers.com/1/1062/1062874.htm)
+###### [旗舰店发车：霸王新升级洗发水日常59 现券后仅29元](https://news.mydrivers.com/1/1062/1062874.htm)
+_2025-07-19_ _[0](https://comment8.mydrivers.com/review/1062874-1.htm)_
+  * [![](https://icons.mydrivers.com/news/2018/load.gif)](https://news.mydrivers.com/1/1062/1062873.htm)
+###### [52%鸡蛋+12%生牛乳：巴氏鲜奶戚风蛋糕1.2元/袋](https://news.mydrivers.com/1/1062/1062873.htm)
+_2025-07-19_ _[0](https://comment8.mydrivers.com/review/1062873-1.htm)_
+
+
+### 
+  * 关注我们
+
+
+  * ![微博](https://icons.mydrivers.com/2020/www/weibo1.png)
+### 微博：快科技官方
+快科技官方微博
+![微博](https://icons.mydrivers.com/2020/www/WeiBoJump.png)
+  * ![今日头条](https://icons.mydrivers.com/2020/www/toutiao1.png)
+### 今日头条：快科技
+带来硬件软件、手机数码最快资讯！
+![今日头条](https://icons.mydrivers.com/2020/www/TouTiaoJump.png)
+  * ![抖音](https://icons.mydrivers.com/2020/www/douyin1.png)
+### 抖音：kkjcn
+科技快讯、手机开箱、产品体验、应用推荐...
+![抖音](https://icons.mydrivers.com/2020/www/DouYinJump.png)
+
+     关于我们  
+
+[关于我们](https://www.mydrivers.com/contact/Company.html) 
+
+
+[隐私权说明 ](https://www.mydrivers.com/contact/privacy.html) 
+     交流合作  
+
+[加入我们](https://www.mydrivers.com/contact/jobs.html) 
+
+
+[意见反馈](javascript:;) 
+
+
+[广告刊例](https://www.mydrivers.com/contact/advertising.html) 
+     关注我们  
+
+微信公众号：![快科技微信公众号](https://icons.mydrivers.com/2018/common/erwm_small.png)
+![](https://icons.mydrivers.com/icon/kkjwx.png)
+![](https://icons.mydrivers.com/2018/common/ewmar.png)
+
+
+
+微博号：[快科技官方](https://weibo.com/mydrivers ""快科技官方微博"") 
+
+
+QQ群：53467377 
+
+  * ![安卓客户端下载](https://icons.mydrivers.com/2018/common/kkj_android.png)安卓客户端下载 
+  * ![IOS客户端下载](https://icons.mydrivers.com/2018/common/kkj_ios.png)IOS客户端下载 
+
+
+快科技·1997-2025 版权所有
+Copyright(C)Mydrivers.com, All Rights Reserved.
+[豫ICP备2023031922号-1](https://beian.miit.gov.cn/)[![](https://icons.mydrivers.com/2018/news/batb.png)豫公网安备 41010502003949号](http://www.beian.gov.cn/portal/registerSystemInfo?recordcode=41010502003949)   
+  
+
+[](javascript:void\(0\))
+### 热点推荐
+  * [女车主称遭货车逼停 被骂开个破小米：双方都晒视频 谁错了](https://news.mydrivers.com/1/1064/1064637.htm) 14642
+  * [性能确超RTX 4060！国产自研6nm显卡被冠以奇迹一代：买吗](https://news.mydrivers.com/1/1064/1064551.htm) 13021
+  * [1.2mm全球最窄物理四等边！魅族22官宣](https://news.mydrivers.com/1/1064/1064569.htm) 12639
+  * [iPhone在华跌落神坛！苹果首次在中国关停直营店](https://news.mydrivers.com/1/1064/1064662.htm) 12577
+  * [中国首位MBA学位方丈释永信被查 天龙八部鸠摩智回应热梗](https://news.mydrivers.com/1/1064/1064587.htm) 7826
+  * [日本知名品牌：狮王齿力佳牙膏官方2折起秒杀](https://news.mydrivers.com/1/1064/1064572.htm) 6583
+  * [韩国男扮女装印度旅行为验证“女性旅行危险论”：结果尴尬](https://news.mydrivers.com/1/1064/1064549.htm) 6156
+  * [HIV要被终结了吗！艾滋病预防神药落地海南：近100%有效](https://news.mydrivers.com/1/1064/1064554.htm) 5591
+
+
+### 好物推荐
+  * [![](https://haohuo.mydrivers.com/img/20241119/title_193540674.jpg)](https://news.mydrivers.com/1/1014/1014729.htm)
+[361° 运动长裤62元官方大促](https://news.mydrivers.com/1/1014/1014729.htm)
+￥62 券后价
+￥179
+  * [![](https://haohuo.mydrivers.com/img/20241119/title_193611081.jpg)](https://news.mydrivers.com/1/1014/1014505.htm)
+[森马集团旗下GSON撞色棉衣到手59元](https://news.mydrivers.com/1/1014/1014505.htm)
+￥59 券后价
+￥199
+  * [![](https://haohuo.mydrivers.com/img/20241119/title_193636020.jpg)](https://news.mydrivers.com/1/1014/1014549.htm)
+[JEEP工装冲锋裤79元大促](https://news.mydrivers.com/1/1014/1014549.htm)
+￥79 券后价
+￥119
+  * [![](https://haohuo.mydrivers.com/img/20241119/title_193656974.jpg)](https://news.mydrivers.com/1/1014/1014685.htm)
+[0反式脂肪酸 后谷咖啡30条18元](https://news.mydrivers.com/1/1014/1014685.htm)
+￥18 券后价
+￥36.9
+  * [![](https://haohuo.mydrivers.com/img/20241119/title_193717756.jpg)](https://news.mydrivers.com/1/1014/1014296.htm)
+[徽春堂金丝皇菊约50朵 到手5.9元](https://news.mydrivers.com/1/1014/1014296.htm)
+￥5.9 券后价
+￥25.9
+
+
+  * [](https://app.kkj.cn/)
+_![](https://icons.mydrivers.com/2020/www/left.png)_
+手机扫码下载
+支持Android/iOS/iPad
+![快科技APP](https://icons.mydrivers.com/2020/news/8/app_ewm.png)
+  *   * 纠错
+
+
+  * _![](https://icons.mydrivers.com/news2022/right.png)_
+爆料群
+爆料1群![爆料群](https://icons.mydrivers.com/tab/wxbaoliao.png)
+打开微信扫一扫   
+扫描入群，加入爆料
+  *   *   * 
+
+[](javascript:;) 100%  [](javascript:;) [](javascript:;) [](javascript:;) [](javascript:;) [ ](javascript:;)
+[](javascript:;) [](javascript:;)
+![](https://news.mydrivers.com/1/1064/1064632.htm)  
+---  
+###### 图片信息
+  * 图片描述:
+  * 图片格式：
+  * 图片尺寸：
+  * 上传时间：
+
+
+_[](javascript:;)_ _[](javascript:;)_
+","['https://www.mydrivers.com', 'https://m.mydrivers.com', 'https://blog.mydrivers.com/', 'https://passport.mydrivers.com/reg.htm', 'https://www.mydrivers.com/', 'https://news.mydrivers.com/', 'https://hardware.mydrivers.com/', 'https://news.mydrivers.com/zhibo', 'https://news.mydrivers.com/zixun/haowu', 'https://yjgg.mydrivers.com/']",27,60,1620
+64核只要4万元太良心！AMD Zen5撕裂者9000X国行价格公布,https://news.mydrivers.com/1/1064/1064626.htm,驱动之家,2025-07-28 04:12:00,64核只要4万元太良心！AMD Zen5撕裂者9000X国行价格公布,"  * [](https://www.mydrivers.com ""科技改变未来"")
+  * [手机版](https://m.mydrivers.com ""快科技手机版"")
+  * [安卓版](http://app.kkj.cn/)
+  * [苹果端](http://app.kkj.cn/)
+  * [博客版](https://blog.mydrivers.com/)
+
+
+  * [登录](javascript:;)
+  * [注册](https://passport.mydrivers.com/reg.htm)
+  * 浅色模式深色模式
+默认主题
+橙色主题
+红色主题
+
+
+  * [](https://www.mydrivers.com/)
+  * [](https://news.mydrivers.com/)
+  * [](https://hardware.mydrivers.com/)
+  * [](https://rank.kkj.cn/)
+  * [](https://news.mydrivers.com/zhibo/)
+  * [](https://news.mydrivers.com/zixun/haowu/)
+  * [](https://yjgg.mydrivers.com/)
+  * [](https://dcgg.kkj.cn/)
+  * [](https://drivers.mydrivers.com/)
+
+
+热门推荐
+  * [一图](https://news.mydrivers.com/yitu.html)|[好文](https://news.mydrivers.com/haowen.html)|[人物](https://news.mydrivers.com/renwu.html)|[数据](https://news.mydrivers.com/shuju.html)|[智能手机](https://news.mydrivers.com/shouji.html)|[IT圈](https://news.mydrivers.com/it.shtml)|[CPU](https://news.mydrivers.com/cpu.html)|[显卡](https://news.mydrivers.com/xianka.html)|[安卓](https://news.mydrivers.com/anzhuoshouji.html)|[iPhone](https://news.mydrivers.com/pingguoshouji.html)|[Windows](https://news.mydrivers.com/windows.html)|[微信](https://news.mydrivers.com/weixin.html)
+  * [华为](https://news.mydrivers.com/huawei.html)|[小米](https://news.mydrivers.com/xiaomi.html)|[苹果](https://news.mydrivers.com/pingguo.html)|[英特尔](https://news.mydrivers.com/yingteer.html)|[AMD](https://news.mydrivers.com/amd.html)|[英伟达](https://news.mydrivers.com/yingweida.html)[特斯拉](https://news.mydrivers.com/tesila.html)|[索尼](https://news.mydrivers.com/suoni.html)|[OPPO](https://news.mydrivers.com/oppo.html)|[vivo](https://news.mydrivers.com/vivo.html)[荣耀](https://news.mydrivers.com/rongyao.html)
+  * [京东](https://news.mydrivers.com/jingdong.html)|[美团](https://news.mydrivers.com/meituan.html)|[字节跳动](https://news.mydrivers.com/zijietiaodong.html)|[阿里巴巴](https://news.mydrivers.com/alibaba.html)|[腾讯](https://news.mydrivers.com/tengxun.html)|[百度](https://news.mydrivers.com/baidu.html)|[谷歌](https://news.mydrivers.com/guge.html)|[评论分析](https://news.mydrivers.com/reping.html)|[游戏](https://news.mydrivers.com/youxi.html)|[全部资讯>>](https://news.mydrivers.com/technewsall.html)
+
+
+  * [![桌面CPU性能天梯图](https://icons.mydrivers.com/news2022/pc-cpu-phb@2x.png)桌面CPU性能天梯图](https://www.mydrivers.com/zhuanti/tianti/cpu/index.html)
+  * [![桌面显卡性能天梯图](https://icons.mydrivers.com/news2022/pc-xk-phb@2x.png)桌面显卡性能天梯图](https://www.mydrivers.com/zhuanti/tianti/gpu/index.html)
+  * [![手机CPU性能天梯图](https://icons.mydrivers.com/news2022/tel-cpu-phb@2x.png)手机CPU性能天梯图](https://www.mydrivers.com/zhuanti/tianti/01/index.html)
+  * [![笔记本显卡性能天梯图](https://icons.mydrivers.com/news2022/notebook-xk-phb@2x.png)笔记本显卡性能天梯图](https://www.mydrivers.com/zhuanti/tianti/gpum/index.html)
+  * [![数码相机性能天梯图](https://icons.mydrivers.com/news2022/camera-phb@2x.png)数码相机性能天梯图](https://www.mydrivers.com/zhuanti/tianti/camera/index.html)
+
+
+  * [手机CPU](https://rank.kkj.cn/Phone74.shtml)|[手机拍照](https://rank.kkj.cn/Phone79.shtml)|[手机视频](https://rank.kkj.cn/Phone81.shtml)|[手机电池容量](https://rank.kkj.cn/battery.shtml)|[手机AI算力](https://rank.kkj.cn/ai.shtml)|[手机充电](https://rank.kkj.cn/charge.shtml)|[手机音频](https://rank.kkj.cn/Phone21.shtml)|[手机重量](https://rank.kkj.cn/phoneweight.shtml)|[手机CMOS](https://rank.kkj.cn/Phone57.shtml)|[数码相机](https://rank.kkj.cn/shuma69.shtml)
+  * [桌面显卡](https://rank.kkj.cn/Computer73.shtml)|[桌面CPU](https://rank.kkj.cn/Computer76.shtml)|[桌面CPU游戏](https://rank.kkj.cn/Computer147.shtml)|[笔记本CPU](https://rank.kkj.cn/Computer77.shtml)|[笔记本显卡](https://rank.kkj.cn/Computer75.shtml)|[桌面显卡功耗](https://rank.kkj.cn/Computer61.shtml)|[桌面处理器功耗](https://rank.kkj.cn/Computer62.shtml)|[全球超算](https://rank.kkj.cn/Computer72.shtml)
+  * [电动汽车续航里程](https://rank.kkj.cn/Car78.shtml)|[电动汽车电池容量](https://rank.kkj.cn/carbattery.shtml)|[新能源汽车销量](https://rank.kkj.cn/Car9.shtml)|[汽车销量](https://rank.kkj.cn/Car52.shtml)|[汽车保值率](https://rank.kkj.cn/Car22.shtml)
+
+
+  * [显卡评测](https://hardware.mydrivers.com/xiankapingce.html)|[CPU评测](https://hardware.mydrivers.com/cpupingce.html)|[笔记本评测](https://hardware.mydrivers.com/bijibenpingce.html)|[硬盘评测](https://hardware.mydrivers.com/yingpanpingce.html)|[内存评测](https://hardware.mydrivers.com/neicunpingce.html)|[显示器评测](https://hardware.mydrivers.com/xianshiqipingce.html)|[主板评测](https://hardware.mydrivers.com/zhubanpingce.html)|[手机评测](https://hardware.mydrivers.com/shoujipingce.html)|[投影仪评测](https://hardware.mydrivers.com/touyingyipingce.html)|[智能穿戴](https://hardware.mydrivers.com/zhinengchuandaipingce.html)
+  * [平板评测](https://hardware.mydrivers.com/pingbanpingce.html%20)|[电视评测](https://hardware.mydrivers.com/dianshipingce.html)|[电动车评测](https://hardware.mydrivers.com/diandongchepingce.html)|[更多评测](https://hardware.mydrivers.com/)
+
+
+![](https://icons.mydrivers.com/common/icon_warning@2x.png)
+作者私密文章，无浏览权限
+[返回](https://news.mydrivers.com/)
+因版权限制，过往内容只提供给老鸟级别及以上用户访问
+[登录](javascript:;)
+因版权限制，过往内容只提供给老鸟级别及以上用户访问
+[返回](https://news.mydrivers.com/)
+  * 当前位置：[首页](https://www.mydrivers.com) > [资讯中心](https://news.mydrivers.com/) > [爱车一族](https://news.mydrivers.com/qiche.html) > [汽车厂商](https://news.mydrivers.com/qichechangshang.html) > 文章详情
+  * [![榜单](https://icons.mydrivers.com/2021/news/bangdan_pc.svg)](https://rank.kkj.cn/) [![招聘](https://icons.mydrivers.com/2021/news/zhaopin_pc.svg)](https://news.mydrivers.com/1/758/758016.htm)
+
+
+### 
+  * 今日视点
+
+
+  * · [女车主称遭货车逼停 被骂开个破小米：怨谁](https://news.mydrivers.com/1/1064/1064637.htm)
+  * · [网友吐槽8小时高铁乘客打电话7小时：只能忍](https://news.mydrivers.com/1/1064/1064532.htm)
+  * · [博世高管呼吁车企向特斯拉学习 智驾不免费](https://news.mydrivers.com/1/1064/1064539.htm)
+  * · [1.2mm全球最窄物理四等边！魅族22官宣](https://news.mydrivers.com/1/1064/1064569.htm)
+
+
+####  [正文内容](javascript:;) [评论（16）](javascript:;)
+曝小鹏汽车产品线整合：或在L4阶段重新用上激光雷达（已更新）
+[![](https://img1.kkeji.com/img/2005/20250728/115853492.gif)](https://jd.dangbei.com/f7pro.html?kkj)
+2025-07-28 15:45:43 出处：快科技 作者：[落木](https://passport.mydrivers.com/author/1461185.html ""落木的主页"") 编辑：落木  人气： 2121 次 评论[(16)](https://comment8.mydrivers.com/review/1064687-1.htm)[![点击可以复制本篇文章的标题和链接](https://icons.mydrivers.com/news/2013/copy_linkv2.png?id=1)复制](javascript:copyNewsUrl\(\); ""点击可以复制本篇文章的标题和链接"")[![对文章内容进行纠错](https://icons.mydrivers.com/news/2013/icon_jiucuo.png?id=1)纠错](javascript:; ""对文章内容进行纠错"")
+[_#_ 小鹏汽车](https://news.mydrivers.com/tag/xiaopengqiche.htm)[ _#_ 何小鹏](https://news.mydrivers.com/tag/hexiaopeng.htm)
+  * [0](javascript:;)
+  * [0](javascript:;)
+![](https://icons.mydrivers.com/2020/www/top.png)
+[](javascript:;)
+[](javascript:;)
+[](javascript:;)
+[](javascript:;)
+[](javascript:copyNewsUrl\(\);)
+  * [0](javascript:;)
+  * [16](javascript:;)
+
+
+**更新：**
+**小鹏汽车副总裁回应，相关报道纯属造谣，后续都是直接由法务部和政府部门来严肃处理。**
+[![曝小鹏汽车产品线整合：或在L4阶段重新用上激光雷达（已更新）](https://img1.mydrivers.com/img/20250728/S4504f10e-83f1-44de-8a3a-643f81ea9014.png)](https://img1.mydrivers.com/img/20250728/4504f10e-83f1-44de-8a3a-643f81ea9014.png)
+以下为原报道：
+7月28日消息，据媒体“知危”[最新报道](https://mp.weixin.qq.com/s/ghl_3mQnLvcO6l77RiacOg)，接近小鹏汽车的知情人士透露，**目前小鹏汽车对市场预估没那么乐观，正考虑在下半年进行产品线整合，并存在减产的可能** 。
+小鹏汽车目前产品矩阵“大且全”，涵盖了轿车、SUV与MPV 三大品类，以及小型、紧凑、中型与中大型四个尺寸，每个尺寸都存在不同的配置版本。
+报道还提到，接近激光雷达公司速腾聚创公司的知情人员透露，**虽然目前小鹏汽车走纯视觉路线，但是由于实际驾驶中Corner case（极端情况）太多，后续小鹏汽车可能会重新上车激光雷达** 。
+小鹏汽车内部员工也向知危证实了这个消息，**在L3阶段，小鹏汽车将走纯视觉智驾路线，L4级别的无人驾驶将会有激光雷达冗余** 。
+好消息是，由于激光雷达制造在国内已非常成熟，即便小鹏汽车重新拥抱激光雷达，也不会承担显著的增量成本。
+**截至目前，小鹏并未就以上报道进行回应，我们也将关注后续进展。**
+据悉，凭借MONA M03和P7+的畅销，小鹏汽车在去年下半年逆转了销量颓势，尤其是前者，性价比非常高，交付破10万辆用时仅216天，刷新新势力纯电最快纪录。
+数据显示，**小鹏汽车在上个月交付 34611辆新车，同比增长224%，连续第八个月交付量超过3万辆** ，上半年累计交付新车197189辆，超过2024年全年交付量。
+![曝小鹏汽车产品线整合：或在L4阶段重新用上激光雷达](https://img1.mydrivers.com/img/20250728/8cdf75f9-983d-4535-9fdd-dad3062f8845.png)
+【本文结束】如需转载请务必注明出处：快科技
+责任编辑：落木
+文章内容举报
+###### 相关资讯
+  * [纯视觉、激光雷达你支持哪种！小鹏汽车重新上车激光雷达：公司副总裁辟谣 胡说八道](https://news.mydrivers.com/1/1064/1064698.htm)
+  * [短剧女王徐艺真成小鹏G7车主 何小鹏亲自交付超“有料”](https://news.mydrivers.com/1/1064/1064657.htm)
+  * [4.77米的纯电轿车只卖8.98万！零跑B01上市72小时锁单破万台](https://news.mydrivers.com/1/1064/1064542.htm)
+  * [电动车没电了就地停高速应急车道被查 司机：我是为了安全](https://news.mydrivers.com/1/1064/1064533.htm)
+  * [特斯拉是赢了 但不是真相的全部](https://news.mydrivers.com/1/1064/1064474.htm)
+
+
+  * 支持打赏
+  * 支持0人
+  * 反对
+  * [](javascript:;)
+打赏
+
+
+###### 文章价值打分
+[](javascript:;) [](javascript:;) [](javascript:;) [](javascript:;) [](javascript:;)
+当前文章打分0 分，共有0人打分
+  * [0](javascript:;)
+  * [0](javascript:;)
+  * [16](javascript:;)
+  * [打赏](javascript:;)
+![](https://icons.mydrivers.com/news/play.png)
+  * | 
+
+
+  * 分享好友:
+  * [](javascript:;)
+分享至QQ
+  * [](javascript:;)
+分享至微博
+  * [](javascript:;)
+  * [](javascript:;)
+分享至QQ空间
+  * | 
+
+
+  * [生成海报](javascript:;)
+
+
+![](https://icons.mydrivers.com/news/haibao_close.png)
+  * [](javascript:;)保存图片
+  * [](javascript:;)QQ好友
+  * [](javascript:;)微博
+  * [](javascript:;)微信好友 
+  * [](javascript:;)QQ空间
+
+
+[](javascript:;)
+给作者大大一些小奖励 ![](https://icons.mydrivers.com/news/play.png)
+###### 本文收录在
+[_#_ 小鹏汽车](https://news.mydrivers.com/tag/xiaopengqiche.htm)[ _#_ 何小鹏](https://news.mydrivers.com/tag/hexiaopeng.htm)[ _#_ 电动车](https://news.mydrivers.com/tag/diandongche.htm)
+### 
+  * 本文作者
+
+
+  * [![玩水的蕉太狼](https://passport.mydrivers.com/comments/getusertouxiang.aspx?uid=1461185&size=medium)](https://passport.mydrivers.com/home/1461185.html)
+### [玩水的蕉太狼](https://passport.mydrivers.com/home/1461185.html)
+无边落木萧萧下，不尽长江滚滚来[关注](javascript:;)
+
+
+  * [![玩水的蕉太狼](https://passport.mydrivers.com/comments/getusertouxiang.aspx?uid=1461185&size=medium)](https://passport.mydrivers.com/home/1461185.html)
+### [玩水的蕉太狼](https://passport.mydrivers.com/home/1461185.html)
+无边落木萧萧下，不尽长江滚滚来 [瞅一瞅](https://passport.mydrivers.com/home/1461185.html)
+
+
+  * [![日本多人被熊活活咬死！有人带起头套开始了演戏](https://img1.mydrivers.com/img/20250728/569dc17c29d24378bbe52954be4cf336.png)](https://news.mydrivers.com/1/1064/1064808.htm)
+[日本多人被熊活活咬死！有人带起头套开始了演戏](https://news.mydrivers.com/1/1064/1064808.htm)
+  * [![日本北海道一棕熊国道上猎杀活鹿：致交通瘫痪](https://img1.mydrivers.com/img/20250728/71e3a024c7ab468898eb55e518ca7a7c.png)](https://news.mydrivers.com/1/1064/1064806.htm)
+[日本北海道一棕熊国道上猎杀活鹿：致交通瘫痪](https://news.mydrivers.com/1/1064/1064806.htm)
+  * [![锂电池烧起来有多猛！监控拍下全过程：如同近防炮剧烈开火](https://img1.mydrivers.com/img/20250728/edbaa54fe04a449e9224c4a5d597e07d.png)](https://news.mydrivers.com/1/1064/1064802.htm)
+[锂电池烧起来有多猛！监控拍下全过程：如同近防炮剧烈开火](https://news.mydrivers.com/1/1064/1064802.htm)
+
+
+  * [呼啦圈发明者去世：享年101岁](https://news.mydrivers.com/1/1064/1064799.htm)2025-07-28
+  * [因花园太丑！一华人女子被罚2000美元：申诉4次暂时和解](https://news.mydrivers.com/1/1064/1064790.htm)2025-07-28
+  * [男子骑电动车横穿马路形成“鬼探头”：万幸遇到了华为AEB](https://news.mydrivers.com/1/1064/1064787.htm)2025-07-28
+  * [中石化“科普”电车跑高速后不能立即充电 博主：胡说八道](https://news.mydrivers.com/1/1064/1064768.htm)2025-07-28
+  * [37.8万起的问界M8纯电小订破1.5万台 ！余承东透露车主喜好](https://news.mydrivers.com/1/1064/1064747.htm)2025-07-28
+
+
+#####  _![](https://icons.mydrivers.com/news2023/author_twicon@2x.png)_向作者提问
+### 
+  * 热门文章
+  * 换一波
+
+
+  * [_1_ 国补回来了！第三批资金已下达](https://news.mydrivers.com/1/1064/1064342.htm)
+  * [_2_ 饿了么前CEO确认被抓！巨额现金赃款曝光 审讯画面公开](https://news.mydrivers.com/1/1064/1064467.htm)
+  * [_3_ IP非授权！中国首款6nm自研显卡发布 老外惊叹：真赶上4060](https://news.mydrivers.com/1/1064/1064445.htm)
+  * [_4_ 女车主称遭货车逼停 被骂开个破小米：双方都晒视频 谁错了](https://news.mydrivers.com/1/1064/1064637.htm)
+  * [_5_ 网友吐槽8小时高铁乘客打电话7小时：官方回应只能忍受！](https://news.mydrivers.com/1/1064/1064532.htm)
+  * [_6_ 性能确超RTX 4060！国产自研6nm显卡被冠以奇迹一代：买吗](https://news.mydrivers.com/1/1064/1064551.htm)
+  * [_7_ 1.2mm全球最窄物理四等边！魅族22官宣](https://news.mydrivers.com/1/1064/1064569.htm)
+  * [_8_ iPhone在华跌落神坛！苹果首次在中国关停直营店](https://news.mydrivers.com/1/1064/1064662.htm)
+  * [_9_ 你达标没！中国手机电池容量完虐iPhone：明年迈入10000mAh](https://news.mydrivers.com/1/1064/1064345.htm)
+  * [_10_ 博世高管呼吁车企向特斯拉学习：智驾绝对不要免费](https://news.mydrivers.com/1/1064/1064539.htm)
+
+
+  * [_1_ 李楠：没确切证据前说懂车帝测试故意黑某品牌不是君子所为](https://news.mydrivers.com/1/1064/1064358.htm)
+  * [_2_ 小米16 Ultra提档年前发布：徕卡更深度合作、回归直屏](https://news.mydrivers.com/1/1064/1064351.htm)
+  * [_3_ 我国首款自主架构6nm GPU今天发！性能抢先看 媲美RTX 5060](https://news.mydrivers.com/1/1064/1064333.htm)
+  * [_4_ 博主复刻懂车帝消失前车：华为ADS完美变道刹停 一次都没撞](https://news.mydrivers.com/1/1064/1064435.htm)
+  * [_5_ 配宁德时代电池 续航100km！全国首艘纯电海上客船投运](https://news.mydrivers.com/1/1064/1064326.htm)
+  * [_6_ AMD最强发烧级桌面CPU售价公布！1499美元起 完爆Intel至强](https://news.mydrivers.com/1/1064/1064460.htm)
+  * [_7_ 印度1岁男童咬死眼镜蛇奇迹生还 网友质疑造神](https://news.mydrivers.com/1/1064/1064479.htm)
+  * [_8_ 演唱会CEO出轨事件最大赢家出现了：拍摄者一夜爆红](https://news.mydrivers.com/1/1064/1064423.htm)
+  * [_9_ 泰国一男子一个月不吃饭 仅靠“液体面包”度日：家中暴毙](https://news.mydrivers.com/1/1064/1064321.htm)
+  * [_10_ 161元大额券 蓝帽认证21金维他维生素C片60粒：到手9.9元](https://news.mydrivers.com/1/1064/1064136.htm)
+
+
+  * [_1_ 来了！国产真自研高性能GPU正式发布：性能对标英伟达/AMD](https://news.mydrivers.com/1/1064/1064415.htm)
+  * [_2_ 果粉一眼认出是新款！iPhone 17机模紫色版开箱上手](https://news.mydrivers.com/1/1064/1064424.htm)
+  * [_3_ 中国首位MBA学位方丈释永信被查 天龙八部鸠摩智回应热梗](https://news.mydrivers.com/1/1064/1064587.htm)
+  * [_4_ 三千万辆中国车利润竟不如丰田！官媒发文反击：理由如下](https://news.mydrivers.com/1/1064/1064377.htm)
+  * [_5_ “朱雀玄武敕令”自曝被家人送入精神病院：改名为周景明](https://news.mydrivers.com/1/1064/1064483.htm)
+  * [_6_ 小米16 Ultra来袭！徕卡送给卢伟冰最好的礼物](https://news.mydrivers.com/1/1064/1064428.htm)
+  * [_7_ 夏天出汗补充电解质！外星人电解质饮料大促：60元到手](https://news.mydrivers.com/1/1064/1064446.htm)
+  * [_8_ DeepSeek真的“凉”了吗 业内人士：分明是飞入寻常百姓家](https://news.mydrivers.com/1/1064/1064400.htm)
+  * [_9_ 反击AMD！Intel确认Nova Lake将缩小高端桌面CPU差距](https://news.mydrivers.com/1/1064/1064502.htm)
+  * [_10_ Intel新一代高端移动CPU Nova Lake-AX曝光！反击AMD Zen6](https://news.mydrivers.com/1/1064/1064477.htm)
+
+
+[![](https://img1.kkeji.com/img/2005/20250701/103651508.png)](https://click.aliyun.com/m/1000404584/)
+### 
+  * 好物推荐
+  * 换一波
+
+
+  * [![](https://icons.mydrivers.com/news/2018/load.gif)](https://news.mydrivers.com/1/1063/1063389.htm)
+###### [钙尔奇官旗限时大促：钙尔奇液体钙113元到手4瓶](https://news.mydrivers.com/1/1063/1063389.htm)
+_2025-07-23_ _[0](https://comment8.mydrivers.com/review/1063389-1.htm)_
+  * [![](https://icons.mydrivers.com/news/2018/load.gif)](https://news.mydrivers.com/1/1062/1062911.htm)
+###### [999官旗大促！1%二硫化硒洗发水19.1元大差价（京东49元）](https://news.mydrivers.com/1/1062/1062911.htm)
+_2025-07-20_ _[3](https://comment8.mydrivers.com/review/1062911-1.htm)_
+  * [![](https://icons.mydrivers.com/news/2018/load.gif)](https://news.mydrivers.com/1/1062/1062901.htm)
+###### [送货上门！超能洗衣液跌破五折：39.9元买11斤](https://news.mydrivers.com/1/1062/1062901.htm)
+_2025-07-21_ _[0](https://comment8.mydrivers.com/review/1062901-1.htm)_
+
+
+  * [![](https://icons.mydrivers.com/news/2018/load.gif)](https://news.mydrivers.com/1/1062/1062876.htm)
+###### [国标品质：五稻田东北五常大米10斤37.9元大促（减72元）](https://news.mydrivers.com/1/1062/1062876.htm)
+_2025-07-20_ _[0](https://comment8.mydrivers.com/review/1062876-1.htm)_
+  * [![](https://icons.mydrivers.com/news/2018/load.gif)](https://news.mydrivers.com/1/1062/1062874.htm)
+###### [旗舰店发车：霸王新升级洗发水日常59 现券后仅29元](https://news.mydrivers.com/1/1062/1062874.htm)
+_2025-07-19_ _[0](https://comment8.mydrivers.com/review/1062874-1.htm)_
+  * [![](https://icons.mydrivers.com/news/2018/load.gif)](https://news.mydrivers.com/1/1062/1062873.htm)
+###### [52%鸡蛋+12%生牛乳：巴氏鲜奶戚风蛋糕1.2元/袋](https://news.mydrivers.com/1/1062/1062873.htm)
+_2025-07-19_ _[0](https://comment8.mydrivers.com/review/1062873-1.htm)_
+
+
+### 
+  * 关注我们
+
+
+  * ![微博](https://icons.mydrivers.com/2020/www/weibo1.png)
+### 微博：快科技官方
+快科技官方微博
+![微博](https://icons.mydrivers.com/2020/www/WeiBoJump.png)
+  * ![今日头条](https://icons.mydrivers.com/2020/www/toutiao1.png)
+### 今日头条：快科技
+带来硬件软件、手机数码最快资讯！
+![今日头条](https://icons.mydrivers.com/2020/www/TouTiaoJump.png)
+  * ![抖音](https://icons.mydrivers.com/2020/www/douyin1.png)
+### 抖音：kkjcn
+科技快讯、手机开箱、产品体验、应用推荐...
+![抖音](https://icons.mydrivers.com/2020/www/DouYinJump.png)
+
+     关于我们  
+
+[关于我们](https://www.mydrivers.com/contact/Company.html) 
+
+
+[隐私权说明 ](https://www.mydrivers.com/contact/privacy.html) 
+     交流合作  
+
+[加入我们](https://www.mydrivers.com/contact/jobs.html) 
+
+
+[意见反馈](javascript:;) 
+
+
+[广告刊例](https://www.mydrivers.com/contact/advertising.html) 
+     关注我们  
+
+微信公众号：![快科技微信公众号](https://icons.mydrivers.com/2018/common/erwm_small.png)
+![](https://icons.mydrivers.com/icon/kkjwx.png)
+![](https://icons.mydrivers.com/2018/common/ewmar.png)
+
+
+
+微博号：[快科技官方](https://weibo.com/mydrivers ""快科技官方微博"") 
+
+
+QQ群：53467377 
+
+  * ![安卓客户端下载](https://icons.mydrivers.com/2018/common/kkj_android.png)安卓客户端下载 
+  * ![IOS客户端下载](https://icons.mydrivers.com/2018/common/kkj_ios.png)IOS客户端下载 
+
+
+快科技·1997-2025 版权所有
+Copyright(C)Mydrivers.com, All Rights Reserved.
+[豫ICP备2023031922号-1](https://beian.miit.gov.cn/)[![](https://icons.mydrivers.com/2018/news/batb.png)豫公网安备 41010502003949号](http://www.beian.gov.cn/portal/registerSystemInfo?recordcode=41010502003949)   
+  
+
+[](javascript:void\(0\))
+### 热点推荐
+  * [女车主称遭货车逼停 被骂开个破小米：双方都晒视频 谁错了](https://news.mydrivers.com/1/1064/1064637.htm) 14642
+  * [性能确超RTX 4060！国产自研6nm显卡被冠以奇迹一代：买吗](https://news.mydrivers.com/1/1064/1064551.htm) 13021
+  * [1.2mm全球最窄物理四等边！魅族22官宣](https://news.mydrivers.com/1/1064/1064569.htm) 12639
+  * [iPhone在华跌落神坛！苹果首次在中国关停直营店](https://news.mydrivers.com/1/1064/1064662.htm) 12577
+  * [中国首位MBA学位方丈释永信被查 天龙八部鸠摩智回应热梗](https://news.mydrivers.com/1/1064/1064587.htm) 7826
+  * [日本知名品牌：狮王齿力佳牙膏官方2折起秒杀](https://news.mydrivers.com/1/1064/1064572.htm) 6583
+  * [韩国男扮女装印度旅行为验证“女性旅行危险论”：结果尴尬](https://news.mydrivers.com/1/1064/1064549.htm) 6156
+  * [HIV要被终结了吗！艾滋病预防神药落地海南：近100%有效](https://news.mydrivers.com/1/1064/1064554.htm) 5591
+
+
+### 好物推荐
+  * [![](https://haohuo.mydrivers.com/img/20241119/title_193540674.jpg)](https://news.mydrivers.com/1/1014/1014729.htm)
+[361° 运动长裤62元官方大促](https://news.mydrivers.com/1/1014/1014729.htm)
+￥62 券后价
+￥179
+  * [![](https://haohuo.mydrivers.com/img/20241119/title_193611081.jpg)](https://news.mydrivers.com/1/1014/1014505.htm)
+[森马集团旗下GSON撞色棉衣到手59元](https://news.mydrivers.com/1/1014/1014505.htm)
+￥59 券后价
+￥199
+  * [![](https://haohuo.mydrivers.com/img/20241119/title_193636020.jpg)](https://news.mydrivers.com/1/1014/1014549.htm)
+[JEEP工装冲锋裤79元大促](https://news.mydrivers.com/1/1014/1014549.htm)
+￥79 券后价
+￥119
+  * [![](https://haohuo.mydrivers.com/img/20241119/title_193656974.jpg)](https://news.mydrivers.com/1/1014/1014685.htm)
+[0反式脂肪酸 后谷咖啡30条18元](https://news.mydrivers.com/1/1014/1014685.htm)
+￥18 券后价
+￥36.9
+  * [![](https://haohuo.mydrivers.com/img/20241119/title_193717756.jpg)](https://news.mydrivers.com/1/1014/1014296.htm)
+[徽春堂金丝皇菊约50朵 到手5.9元](https://news.mydrivers.com/1/1014/1014296.htm)
+￥5.9 券后价
+￥25.9
+
+
+  * [](https://app.kkj.cn/)
+_![](https://icons.mydrivers.com/2020/www/left.png)_
+手机扫码下载
+支持Android/iOS/iPad
+![快科技APP](https://icons.mydrivers.com/2020/news/8/app_ewm.png)
+  *   * 纠错
+
+
+  * _![](https://icons.mydrivers.com/news2022/right.png)_
+爆料群
+爆料1群![爆料群](https://icons.mydrivers.com/tab/wxbaoliao.png)
+打开微信扫一扫   
+扫描入群，加入爆料
+  *   *   * 
+
+[](javascript:;) 100%  [](javascript:;) [](javascript:;) [](javascript:;) [](javascript:;) [ ](javascript:;)
+[](javascript:;) [](javascript:;)
+![](https://news.mydrivers.com/1/1064/1064687.htm)  
+---  
+###### 图片信息
+  * 图片描述:
+  * 图片格式：
+  * 图片尺寸：
+  * 上传时间：
+
+
+_[](javascript:;)_ _[](javascript:;)_
+","['https://www.mydrivers.com', 'https://m.mydrivers.com', 'https://blog.mydrivers.com/', 'https://passport.mydrivers.com/reg.htm', 'https://www.mydrivers.com/', 'https://news.mydrivers.com/', 'https://hardware.mydrivers.com/', 'https://news.mydrivers.com/zhibo', 'https://news.mydrivers.com/zixun/haowu', 'https://yjgg.mydrivers.com/']",22,58,1276
+历时10个月！微软终于移除Win11 24H2一拦路虎：更多人可以升级,https://news.mydrivers.com/1/1064/1064625.htm,驱动之家,2025-07-28 04:10:00,历时10个月！微软终于移除Win11 24H2一拦路虎：更多人可以升级,"  * [](https://www.mydrivers.com ""科技改变未来"")
+  * [手机版](https://m.mydrivers.com ""快科技手机版"")
+  * [安卓版](http://app.kkj.cn/)
+  * [苹果端](http://app.kkj.cn/)
+  * [博客版](https://blog.mydrivers.com/)
+
+
+  * [登录](javascript:;)
+  * [注册](https://passport.mydrivers.com/reg.htm)
+  * 浅色模式深色模式
+默认主题
+橙色主题
+红色主题
+
+
+  * [](https://www.mydrivers.com/)
+  * [](https://news.mydrivers.com/)
+  * [](https://hardware.mydrivers.com/)
+  * [](https://rank.kkj.cn/)
+  * [](https://news.mydrivers.com/zhibo/)
+  * [](https://news.mydrivers.com/zixun/haowu/)
+  * [](https://yjgg.mydrivers.com/)
+  * [](https://dcgg.kkj.cn/)
+  * [](https://drivers.mydrivers.com/)
+
+
+热门推荐
+  * [一图](https://news.mydrivers.com/yitu.html)|[好文](https://news.mydrivers.com/haowen.html)|[人物](https://news.mydrivers.com/renwu.html)|[数据](https://news.mydrivers.com/shuju.html)|[智能手机](https://news.mydrivers.com/shouji.html)|[IT圈](https://news.mydrivers.com/it.shtml)|[CPU](https://news.mydrivers.com/cpu.html)|[显卡](https://news.mydrivers.com/xianka.html)|[安卓](https://news.mydrivers.com/anzhuoshouji.html)|[iPhone](https://news.mydrivers.com/pingguoshouji.html)|[Windows](https://news.mydrivers.com/windows.html)|[微信](https://news.mydrivers.com/weixin.html)
+  * [华为](https://news.mydrivers.com/huawei.html)|[小米](https://news.mydrivers.com/xiaomi.html)|[苹果](https://news.mydrivers.com/pingguo.html)|[英特尔](https://news.mydrivers.com/yingteer.html)|[AMD](https://news.mydrivers.com/amd.html)|[英伟达](https://news.mydrivers.com/yingweida.html)[特斯拉](https://news.mydrivers.com/tesila.html)|[索尼](https://news.mydrivers.com/suoni.html)|[OPPO](https://news.mydrivers.com/oppo.html)|[vivo](https://news.mydrivers.com/vivo.html)[荣耀](https://news.mydrivers.com/rongyao.html)
+  * [京东](https://news.mydrivers.com/jingdong.html)|[美团](https://news.mydrivers.com/meituan.html)|[字节跳动](https://news.mydrivers.com/zijietiaodong.html)|[阿里巴巴](https://news.mydrivers.com/alibaba.html)|[腾讯](https://news.mydrivers.com/tengxun.html)|[百度](https://news.mydrivers.com/baidu.html)|[谷歌](https://news.mydrivers.com/guge.html)|[评论分析](https://news.mydrivers.com/reping.html)|[游戏](https://news.mydrivers.com/youxi.html)|[全部资讯>>](https://news.mydrivers.com/technewsall.html)
+
+
+  * [![桌面CPU性能天梯图](https://icons.mydrivers.com/news2022/pc-cpu-phb@2x.png)桌面CPU性能天梯图](https://www.mydrivers.com/zhuanti/tianti/cpu/index.html)
+  * [![桌面显卡性能天梯图](https://icons.mydrivers.com/news2022/pc-xk-phb@2x.png)桌面显卡性能天梯图](https://www.mydrivers.com/zhuanti/tianti/gpu/index.html)
+  * [![手机CPU性能天梯图](https://icons.mydrivers.com/news2022/tel-cpu-phb@2x.png)手机CPU性能天梯图](https://www.mydrivers.com/zhuanti/tianti/01/index.html)
+  * [![笔记本显卡性能天梯图](https://icons.mydrivers.com/news2022/notebook-xk-phb@2x.png)笔记本显卡性能天梯图](https://www.mydrivers.com/zhuanti/tianti/gpum/index.html)
+  * [![数码相机性能天梯图](https://icons.mydrivers.com/news2022/camera-phb@2x.png)数码相机性能天梯图](https://www.mydrivers.com/zhuanti/tianti/camera/index.html)
+
+
+  * [手机CPU](https://rank.kkj.cn/Phone74.shtml)|[手机拍照](https://rank.kkj.cn/Phone79.shtml)|[手机视频](https://rank.kkj.cn/Phone81.shtml)|[手机电池容量](https://rank.kkj.cn/battery.shtml)|[手机AI算力](https://rank.kkj.cn/ai.shtml)|[手机充电](https://rank.kkj.cn/charge.shtml)|[手机音频](https://rank.kkj.cn/Phone21.shtml)|[手机重量](https://rank.kkj.cn/phoneweight.shtml)|[手机CMOS](https://rank.kkj.cn/Phone57.shtml)|[数码相机](https://rank.kkj.cn/shuma69.shtml)
+  * [桌面显卡](https://rank.kkj.cn/Computer73.shtml)|[桌面CPU](https://rank.kkj.cn/Computer76.shtml)|[桌面CPU游戏](https://rank.kkj.cn/Computer147.shtml)|[笔记本CPU](https://rank.kkj.cn/Computer77.shtml)|[笔记本显卡](https://rank.kkj.cn/Computer75.shtml)|[桌面显卡功耗](https://rank.kkj.cn/Computer61.shtml)|[桌面处理器功耗](https://rank.kkj.cn/Computer62.shtml)|[全球超算](https://rank.kkj.cn/Computer72.shtml)
+  * [电动汽车续航里程](https://rank.kkj.cn/Car78.shtml)|[电动汽车电池容量](https://rank.kkj.cn/carbattery.shtml)|[新能源汽车销量](https://rank.kkj.cn/Car9.shtml)|[汽车销量](https://rank.kkj.cn/Car52.shtml)|[汽车保值率](https://rank.kkj.cn/Car22.shtml)
+
+
+  * [显卡评测](https://hardware.mydrivers.com/xiankapingce.html)|[CPU评测](https://hardware.mydrivers.com/cpupingce.html)|[笔记本评测](https://hardware.mydrivers.com/bijibenpingce.html)|[硬盘评测](https://hardware.mydrivers.com/yingpanpingce.html)|[内存评测](https://hardware.mydrivers.com/neicunpingce.html)|[显示器评测](https://hardware.mydrivers.com/xianshiqipingce.html)|[主板评测](https://hardware.mydrivers.com/zhubanpingce.html)|[手机评测](https://hardware.mydrivers.com/shoujipingce.html)|[投影仪评测](https://hardware.mydrivers.com/touyingyipingce.html)|[智能穿戴](https://hardware.mydrivers.com/zhinengchuandaipingce.html)
+  * [平板评测](https://hardware.mydrivers.com/pingbanpingce.html%20)|[电视评测](https://hardware.mydrivers.com/dianshipingce.html)|[电动车评测](https://hardware.mydrivers.com/diandongchepingce.html)|[更多评测](https://hardware.mydrivers.com/)
+
+
+![](https://icons.mydrivers.com/common/icon_warning@2x.png)
+作者私密文章，无浏览权限
+[返回](https://news.mydrivers.com/)
+因版权限制，过往内容只提供给老鸟级别及以上用户访问
+[登录](javascript:;)
+因版权限制，过往内容只提供给老鸟级别及以上用户访问
+[返回](https://news.mydrivers.com/)
+  * 当前位置：[首页](https://www.mydrivers.com) > [资讯中心](https://news.mydrivers.com/) > [电脑办公](https://news.mydrivers.com/diannao.html) > [笔记本](https://news.mydrivers.com/bijiben.html) > 文章详情
+  * [![榜单](https://icons.mydrivers.com/2021/news/bangdan_pc.svg)](https://rank.kkj.cn/) [![招聘](https://icons.mydrivers.com/2021/news/zhaopin_pc.svg)](https://news.mydrivers.com/1/758/758016.htm)
+
+
+### 
+  * 今日视点
+
+
+  * · [女车主称遭货车逼停 被骂开个破小米：怨谁](https://news.mydrivers.com/1/1064/1064637.htm)
+  * · [网友吐槽8小时高铁乘客打电话7小时：只能忍](https://news.mydrivers.com/1/1064/1064532.htm)
+  * · [博世高管呼吁车企向特斯拉学习 智驾不免费](https://news.mydrivers.com/1/1064/1064539.htm)
+  * · [1.2mm全球最窄物理四等边！魅族22官宣](https://news.mydrivers.com/1/1064/1064569.htm)
+
+
+####  [正文内容](javascript:;) [评论（10）](javascript:;)
+骁龙X Plus处理器加持！微软Surface Laptop 13图赏
+[![](https://img1.kkeji.com/img/2005/20250728/115853492.gif)](https://jd.dangbei.com/f7pro.html?kkj)
+2025-07-28 17:52:16 出处：快科技 作者：[随心](https://passport.mydrivers.com/author/994982.html ""随心的主页"") 编辑：随心  人气： 1509 次 评论[(10)](https://comment8.mydrivers.com/review/1064745-1.htm)[![点击可以复制本篇文章的标题和链接](https://icons.mydrivers.com/news/2013/copy_linkv2.png?id=1)复制](javascript:copyNewsUrl\(\); ""点击可以复制本篇文章的标题和链接"")[![对文章内容进行纠错](https://icons.mydrivers.com/news/2013/icon_jiucuo.png?id=1)纠错](javascript:; ""对文章内容进行纠错"")
+[_#_ 微软](https://news.mydrivers.com/tag/weiruan.htm)[ _#_ Surface Laptop 13](https://news.mydrivers.com/tag/surface_laptop_13.htm)
+  * [0](javascript:;)
+  * [0](javascript:;)
+![](https://icons.mydrivers.com/2020/www/top.png)
+[](javascript:;)
+[](javascript:;)
+[](javascript:;)
+[](javascript:;)
+[](javascript:copyNewsUrl\(\);)
+  * [0](javascript:;)
+  * [10](javascript:;)
+
+
+快科技7月28日消息，近日，微软宣布推出两款全新Windows 11 AI+ PC——Surface Laptop 13英寸与Surface Pro 12英寸，起售价格分别为7888元和6888元。
+现在微软Surface Laptop 13已经来到我们评测室，下面为大家带来图赏。
+**Surface Laptop 13支持最新Windows 11 AI功能，集性能、轻薄便携和超长续航于一身。**
+它专为职场人士打造，适合经常出差及有移动办公需求的职场人，提供碧海青、罗兰紫和亮铂金三种配色选择。
+核心配置方面，**Surface Laptop 13搭载了骁龙X Plus处理器，集成45 TOPS NPU** ，性能较Surface Laptop 5提升高达50%，提供16GB+256GB和16GB+512GB存储，售价分别为7888元和8888元。
+借助回顾、单击以执行等本地AI功能，用户可以快速查找资料、自动获取操作建议，大幅提升工作效率。
+**Surface Laptop 13英寸拥有最长可支持23小时视频播放或16小时网页浏览的超长电池续航** ，还配备了静音键盘、自适应触控板与内置指纹识别的电源键。
+[![骁龙X Plus处理器加持！微软Surface Laptop 13图赏](https://img1.mydrivers.com/img/20250728/Sc42e725c-dd80-456e-9435-0ac601fdc943.jpg)](https://img1.mydrivers.com/img/20250728/c42e725c-dd80-456e-9435-0ac601fdc943.jpg)
+[![骁龙X Plus处理器加持！微软Surface Laptop 13图赏](https://img1.mydrivers.com/img/20250728/S1891a2d4-a9a3-46e4-a288-4f6f9010c472.jpg)](https://img1.mydrivers.com/img/20250728/1891a2d4-a9a3-46e4-a288-4f6f9010c472.jpg)
+[![骁龙X Plus处理器加持！微软Surface Laptop 13图赏](https://img1.mydrivers.com/img/20250728/Se825d1eb-1349-40b5-ae0e-96618095bf1b.jpg)](https://img1.mydrivers.com/img/20250728/e825d1eb-1349-40b5-ae0e-96618095bf1b.jpg)
+[![骁龙X Plus处理器加持！微软Surface Laptop 13图赏](https://img1.mydrivers.com/img/20250728/S47bba889-01b6-4f5e-a40e-d0fe279d0ad5.jpg)](https://img1.mydrivers.com/img/20250728/47bba889-01b6-4f5e-a40e-d0fe279d0ad5.jpg)
+[![骁龙X Plus处理器加持！微软Surface Laptop 13图赏](https://img1.mydrivers.com/img/20250728/S03dc8989-8e0d-4eec-ac07-13d5120b482f.jpg)](https://img1.mydrivers.com/img/20250728/03dc8989-8e0d-4eec-ac07-13d5120b482f.jpg)
+[![骁龙X Plus处理器加持！微软Surface Laptop 13图赏](https://img1.mydrivers.com/img/20250728/Sb03797dc-396c-4abc-9c1f-5f99ab63b12f.jpg)](https://img1.mydrivers.com/img/20250728/b03797dc-396c-4abc-9c1f-5f99ab63b12f.jpg)
+[![骁龙X Plus处理器加持！微软Surface Laptop 13图赏](https://img1.mydrivers.com/img/20250728/S86908c90-2d44-43fc-b8ff-67f6c087be30.jpg)](https://img1.mydrivers.com/img/20250728/86908c90-2d44-43fc-b8ff-67f6c087be30.jpg)
+[![骁龙X Plus处理器加持！微软Surface Laptop 13图赏](https://img1.mydrivers.com/img/20250728/S91295348-2c24-4ce7-809a-aafccb795ffd.jpg)](https://img1.mydrivers.com/img/20250728/91295348-2c24-4ce7-809a-aafccb795ffd.jpg)
+[![骁龙X Plus处理器加持！微软Surface Laptop 13图赏](https://img1.mydrivers.com/img/20250728/S7c6b8ae4-7537-4b02-a9e3-47a27a8c21c7.jpg)](https://img1.mydrivers.com/img/20250728/7c6b8ae4-7537-4b02-a9e3-47a27a8c21c7.jpg)
+[![骁龙X Plus处理器加持！微软Surface Laptop 13图赏](https://img1.mydrivers.com/img/20250728/Se07d9270-a3e4-4316-baef-5ef6d973d681.jpg)](https://img1.mydrivers.com/img/20250728/e07d9270-a3e4-4316-baef-5ef6d973d681.jpg)
+[![骁龙X Plus处理器加持！微软Surface Laptop 13图赏](https://img1.mydrivers.com/img/20250728/Sb9bf7b31-a4cd-4bda-bde3-e60338e92569.jpg)](https://img1.mydrivers.com/img/20250728/b9bf7b31-a4cd-4bda-bde3-e60338e92569.jpg)
+[![骁龙X Plus处理器加持！微软Surface Laptop 13图赏](https://img1.mydrivers.com/img/20250728/S47e92897-05f8-42e4-960d-a8d78d5d3202.jpg)](https://img1.mydrivers.com/img/20250728/47e92897-05f8-42e4-960d-a8d78d5d3202.jpg)
+[![骁龙X Plus处理器加持！微软Surface Laptop 13图赏](https://img1.mydrivers.com/img/20250728/S5358bcfe-4c02-4256-b942-ca571cc2e665.jpg)](https://img1.mydrivers.com/img/20250728/5358bcfe-4c02-4256-b942-ca571cc2e665.jpg)
+[![骁龙X Plus处理器加持！微软Surface Laptop 13图赏](https://img1.mydrivers.com/img/20250728/S6c9b3cf9-a3a3-4a3e-8031-dc4bf42a6f69.jpg)](https://img1.mydrivers.com/img/20250728/6c9b3cf9-a3a3-4a3e-8031-dc4bf42a6f69.jpg)
+[![骁龙X Plus处理器加持！微软Surface Laptop 13图赏](https://img1.mydrivers.com/img/20250728/S4cc9cb89-c452-424b-a98b-69ff4a4e6f5a.jpg)](https://img1.mydrivers.com/img/20250728/4cc9cb89-c452-424b-a98b-69ff4a4e6f5a.jpg)
+[![骁龙X Plus处理器加持！微软Surface Laptop 13图赏](https://img1.mydrivers.com/img/20250728/Sb6558fc8-8f41-40b4-9209-4d291534091e.jpg)](https://img1.mydrivers.com/img/20250728/b6558fc8-8f41-40b4-9209-4d291534091e.jpg)
+[![骁龙X Plus处理器加持！微软Surface Laptop 13图赏](https://img1.mydrivers.com/img/20250728/S846c4807-f37b-4591-86cc-bac831019a06.jpg)](https://img1.mydrivers.com/img/20250728/846c4807-f37b-4591-86cc-bac831019a06.jpg)
+[![骁龙X Plus处理器加持！微软Surface Laptop 13图赏](https://img1.mydrivers.com/img/20250728/S55f18bcc-77a4-4045-9ee2-741bb7351279.jpg)](https://img1.mydrivers.com/img/20250728/55f18bcc-77a4-4045-9ee2-741bb7351279.jpg)
+[![骁龙X Plus处理器加持！微软Surface Laptop 13图赏](https://img1.mydrivers.com/img/20250728/S616755f8-f3d4-4c6e-8ab1-ee920efa6646.jpg)](https://img1.mydrivers.com/img/20250728/616755f8-f3d4-4c6e-8ab1-ee920efa6646.jpg)
+[![骁龙X Plus处理器加持！微软Surface Laptop 13图赏](https://img1.mydrivers.com/img/20250728/S6cf5003a-bbae-4bf8-a167-1ae3acd419c6.jpg)](https://img1.mydrivers.com/img/20250728/6cf5003a-bbae-4bf8-a167-1ae3acd419c6.jpg)
+[![骁龙X Plus处理器加持！微软Surface Laptop 13图赏](https://img1.mydrivers.com/img/20250728/Sf07b35b3-a52c-44a4-b494-36aa03947a17.jpg)](https://img1.mydrivers.com/img/20250728/f07b35b3-a52c-44a4-b494-36aa03947a17.jpg)
+[![骁龙X Plus处理器加持！微软Surface Laptop 13图赏](https://img1.mydrivers.com/img/20250728/S08f35770-8098-4a11-9ec9-786c152ea0d3.jpg)](https://img1.mydrivers.com/img/20250728/08f35770-8098-4a11-9ec9-786c152ea0d3.jpg)
+[![骁龙X Plus处理器加持！微软Surface Laptop 13图赏](https://img1.mydrivers.com/img/20250728/S0ceeb8ed-00c0-4eeb-8007-5e6520b92680.jpg)](https://img1.mydrivers.com/img/20250728/0ceeb8ed-00c0-4eeb-8007-5e6520b92680.jpg)
+[![骁龙X Plus处理器加持！微软Surface Laptop 13图赏](https://img1.mydrivers.com/img/20250728/S52da10f8-923b-4162-bee6-b3b726e09b6e.jpg)](https://img1.mydrivers.com/img/20250728/52da10f8-923b-4162-bee6-b3b726e09b6e.jpg)
+[![骁龙X Plus处理器加持！微软Surface Laptop 13图赏](https://img1.mydrivers.com/img/20250728/S0b6cebc8-4318-4bdf-8143-e8076888e689.jpg)](https://img1.mydrivers.com/img/20250728/0b6cebc8-4318-4bdf-8143-e8076888e689.jpg)
+[![骁龙X Plus处理器加持！微软Surface Laptop 13图赏](https://img1.mydrivers.com/img/20250728/Sddc2d876-fb9c-4b7d-99b8-a856d5491ffb.jpg)](https://img1.mydrivers.com/img/20250728/ddc2d876-fb9c-4b7d-99b8-a856d5491ffb.jpg)
+[![骁龙X Plus处理器加持！微软Surface Laptop 13图赏](https://img1.mydrivers.com/img/20250728/Sd512eecf-f472-4e5d-b0a2-0b9881a29813.jpg)](https://img1.mydrivers.com/img/20250728/d512eecf-f472-4e5d-b0a2-0b9881a29813.jpg)
+[![骁龙X Plus处理器加持！微软Surface Laptop 13图赏](https://img1.mydrivers.com/img/20250728/S27b69d85-6da3-425b-82e4-8a59d3479f61.jpg)](https://img1.mydrivers.com/img/20250728/27b69d85-6da3-425b-82e4-8a59d3479f61.jpg)
+【本文结束】如需转载请务必注明出处：快科技
+责任编辑：随心
+文章内容举报
+###### 相关资讯
+  * [跟随便猜差不太多！微软最新研究：人类分辨AI图像成功率仅62%](https://news.mydrivers.com/1/1064/1064733.htm)
+  * [太萌了！微软赋予Copilot全新可爱面孔：互动更加人性化](https://news.mydrivers.com/1/1064/1064689.htm)
+  * [电脑变慢不是错觉！微软确认Win11 24H2稳定性问题：影响游戏与跑分](https://news.mydrivers.com/1/1064/1064658.htm)
+  * [微软第一方重回70美元价位](https://news.mydrivers.com/1/1063/1063835.htm)
+  * [Windows 10从未流行的十项功能盘点：看你用过哪些](https://news.mydrivers.com/1/1063/1063772.htm)
+
+
+  * 支持打赏
+  * 支持0人
+  * 反对
+  * [](javascript:;)
+打赏
+
+
+###### 文章价值打分
+[](javascript:;) [](javascript:;) [](javascript:;) [](javascript:;) [](javascript:;)
+当前文章打分0 分，共有0人打分
+  * [0](javascript:;)
+  * [0](javascript:;)
+  * [10](javascript:;)
+  * [打赏](javascript:;)
+![](https://icons.mydrivers.com/news/play.png)
+  * | 
+
+
+  * 分享好友:
+  * [](javascript:;)
+分享至QQ
+  * [](javascript:;)
+分享至微博
+  * [](javascript:;)
+  * [](javascript:;)
+分享至QQ空间
+  * | 
+
+
+  * [生成海报](javascript:;)
+
+
+![](https://icons.mydrivers.com/news/haibao_close.png)
+  * [](javascript:;)保存图片
+  * [](javascript:;)QQ好友
+  * [](javascript:;)微博
+  * [](javascript:;)微信好友 
+  * [](javascript:;)QQ空间
+
+
+[](javascript:;)
+给作者大大一些小奖励 ![](https://icons.mydrivers.com/news/play.png)
+###### 本文收录在
+[_#_ 微软](https://news.mydrivers.com/tag/weiruan.htm)[ _#_ Surface Laptop 13](https://news.mydrivers.com/tag/surface_laptop_13.htm)[ _#_ Surface Laptop](https://news.mydrivers.com/tag/surface_laptop.htm)
+### 
+  * 本文作者
+
+
+  * [![御剑随心](https://passport.mydrivers.com/comments/getusertouxiang.aspx?uid=994982&size=medium)](https://passport.mydrivers.com/home/994982.html)
+### [御剑随心](https://passport.mydrivers.com/home/994982.html)
+当时远，年少好轻狂[关注](javascript:;)
+
+
+  * [![御剑随心](https://passport.mydrivers.com/comments/getusertouxiang.aspx?uid=994982&size=medium)](https://passport.mydrivers.com/home/994982.html)
+### [御剑随心](https://passport.mydrivers.com/home/994982.html)
+当时远，年少好轻狂 [瞅一瞅](https://passport.mydrivers.com/home/994982.html)
+
+
+  * [![佳能EOS 5系诞生20周年 全8款经典相机一览](https://img1.mydrivers.com/img/20250728/33e266dd61fc46a89b270575dee9ab9c.png)](https://news.mydrivers.com/1/1064/1064810.htm)
+[佳能EOS 5系诞生20周年 全8款经典相机一览](https://news.mydrivers.com/1/1064/1064810.htm)
+  * [![全球首家机器人6S店在深圳开业：外观造型可定制](https://img1.mydrivers.com/img/20250728/aa6e8e5da97f4122a684391754f6f492.png)](https://news.mydrivers.com/1/1064/1064809.htm)
+[全球首家机器人6S店在深圳开业：外观造型可定制](https://news.mydrivers.com/1/1064/1064809.htm)
+  * [![北京发布今年首个暴雨红色预警 关闭全市所有景区](https://img1.mydrivers.com/img/20250728/d0d172201c6d45a1a2cf0b7e7519658a.jpg)](https://news.mydrivers.com/1/1064/1064803.htm)
+[北京发布今年首个暴雨红色预警 关闭全市所有景区](https://news.mydrivers.com/1/1064/1064803.htm)
+
+
+  * [高管首次下赛道就跑第一 雷军点赞：懂车、爱车才能造好车](https://news.mydrivers.com/1/1064/1064801.htm)2025-07-28
+  * [中国AI硬件市场今年将首破万亿元](https://news.mydrivers.com/1/1064/1064800.htm)2025-07-28
+  * [阿里开源通义万相2.2：可生成电影级高清视频](https://news.mydrivers.com/1/1064/1064797.htm)2025-07-28
+  * [《王者荣耀》3款平行世界皮肤来了：灵感来自《山海经》](https://news.mydrivers.com/1/1064/1064795.htm)2025-07-28
+  * [RTX 5090+4K MiniLED屏！微星绝影18 AI+锐龙版2025图赏](https://news.mydrivers.com/1/1064/1064793.htm)2025-07-28
+
+
+#####  _![](https://icons.mydrivers.com/news2023/author_twicon@2x.png)_向作者提问
+### 
+  * 热门文章
+  * 换一波
+
+
+  * [_1_ 国补回来了！第三批资金已下达](https://news.mydrivers.com/1/1064/1064342.htm)
+  * [_2_ 饿了么前CEO确认被抓！巨额现金赃款曝光 审讯画面公开](https://news.mydrivers.com/1/1064/1064467.htm)
+  * [_3_ IP非授权！中国首款6nm自研显卡发布 老外惊叹：真赶上4060](https://news.mydrivers.com/1/1064/1064445.htm)
+  * [_4_ 女车主称遭货车逼停 被骂开个破小米：双方都晒视频 谁错了](https://news.mydrivers.com/1/1064/1064637.htm)
+  * [_5_ 网友吐槽8小时高铁乘客打电话7小时：官方回应只能忍受！](https://news.mydrivers.com/1/1064/1064532.htm)
+  * [_6_ 性能确超RTX 4060！国产自研6nm显卡被冠以奇迹一代：买吗](https://news.mydrivers.com/1/1064/1064551.htm)
+  * [_7_ 1.2mm全球最窄物理四等边！魅族22官宣](https://news.mydrivers.com/1/1064/1064569.htm)
+  * [_8_ iPhone在华跌落神坛！苹果首次在中国关停直营店](https://news.mydrivers.com/1/1064/1064662.htm)
+  * [_9_ 你达标没！中国手机电池容量完虐iPhone：明年迈入10000mAh](https://news.mydrivers.com/1/1064/1064345.htm)
+  * [_10_ 博世高管呼吁车企向特斯拉学习：智驾绝对不要免费](https://news.mydrivers.com/1/1064/1064539.htm)
+
+
+  * [_1_ 李楠：没确切证据前说懂车帝测试故意黑某品牌不是君子所为](https://news.mydrivers.com/1/1064/1064358.htm)
+  * [_2_ 小米16 Ultra提档年前发布：徕卡更深度合作、回归直屏](https://news.mydrivers.com/1/1064/1064351.htm)
+  * [_3_ 我国首款自主架构6nm GPU今天发！性能抢先看 媲美RTX 5060](https://news.mydrivers.com/1/1064/1064333.htm)
+  * [_4_ 博主复刻懂车帝消失前车：华为ADS完美变道刹停 一次都没撞](https://news.mydrivers.com/1/1064/1064435.htm)
+  * [_5_ 配宁德时代电池 续航100km！全国首艘纯电海上客船投运](https://news.mydrivers.com/1/1064/1064326.htm)
+  * [_6_ AMD最强发烧级桌面CPU售价公布！1499美元起 完爆Intel至强](https://news.mydrivers.com/1/1064/1064460.htm)
+  * [_7_ 印度1岁男童咬死眼镜蛇奇迹生还 网友质疑造神](https://news.mydrivers.com/1/1064/1064479.htm)
+  * [_8_ 演唱会CEO出轨事件最大赢家出现了：拍摄者一夜爆红](https://news.mydrivers.com/1/1064/1064423.htm)
+  * [_9_ 泰国一男子一个月不吃饭 仅靠“液体面包”度日：家中暴毙](https://news.mydrivers.com/1/1064/1064321.htm)
+  * [_10_ 161元大额券 蓝帽认证21金维他维生素C片60粒：到手9.9元](https://news.mydrivers.com/1/1064/1064136.htm)
+
+
+  * [_1_ 来了！国产真自研高性能GPU正式发布：性能对标英伟达/AMD](https://news.mydrivers.com/1/1064/1064415.htm)
+  * [_2_ 果粉一眼认出是新款！iPhone 17机模紫色版开箱上手](https://news.mydrivers.com/1/1064/1064424.htm)
+  * [_3_ 中国首位MBA学位方丈释永信被查 天龙八部鸠摩智回应热梗](https://news.mydrivers.com/1/1064/1064587.htm)
+  * [_4_ 三千万辆中国车利润竟不如丰田！官媒发文反击：理由如下](https://news.mydrivers.com/1/1064/1064377.htm)
+  * [_5_ “朱雀玄武敕令”自曝被家人送入精神病院：改名为周景明](https://news.mydrivers.com/1/1064/1064483.htm)
+  * [_6_ 小米16 Ultra来袭！徕卡送给卢伟冰最好的礼物](https://news.mydrivers.com/1/1064/1064428.htm)
+  * [_7_ 夏天出汗补充电解质！外星人电解质饮料大促：60元到手](https://news.mydrivers.com/1/1064/1064446.htm)
+  * [_8_ DeepSeek真的“凉”了吗 业内人士：分明是飞入寻常百姓家](https://news.mydrivers.com/1/1064/1064400.htm)
+  * [_9_ 反击AMD！Intel确认Nova Lake将缩小高端桌面CPU差距](https://news.mydrivers.com/1/1064/1064502.htm)
+  * [_10_ Intel新一代高端移动CPU Nova Lake-AX曝光！反击AMD Zen6](https://news.mydrivers.com/1/1064/1064477.htm)
+
+
+[![](https://img1.kkeji.com/img/2005/20250701/103651508.png)](https://click.aliyun.com/m/1000404584/)
+### 
+  * 好物推荐
+  * 换一波
+
+
+  * [![](https://icons.mydrivers.com/news/2018/load.gif)](https://news.mydrivers.com/1/1063/1063389.htm)
+###### [钙尔奇官旗限时大促：钙尔奇液体钙113元到手4瓶](https://news.mydrivers.com/1/1063/1063389.htm)
+_2025-07-23_ _[0](https://comment8.mydrivers.com/review/1063389-1.htm)_
+  * [![](https://icons.mydrivers.com/news/2018/load.gif)](https://news.mydrivers.com/1/1062/1062911.htm)
+###### [999官旗大促！1%二硫化硒洗发水19.1元大差价（京东49元）](https://news.mydrivers.com/1/1062/1062911.htm)
+_2025-07-20_ _[3](https://comment8.mydrivers.com/review/1062911-1.htm)_
+  * [![](https://icons.mydrivers.com/news/2018/load.gif)](https://news.mydrivers.com/1/1062/1062901.htm)
+###### [送货上门！超能洗衣液跌破五折：39.9元买11斤](https://news.mydrivers.com/1/1062/1062901.htm)
+_2025-07-21_ _[0](https://comment8.mydrivers.com/review/1062901-1.htm)_
+
+
+  * [![](https://icons.mydrivers.com/news/2018/load.gif)](https://news.mydrivers.com/1/1062/1062876.htm)
+###### [国标品质：五稻田东北五常大米10斤37.9元大促（减72元）](https://news.mydrivers.com/1/1062/1062876.htm)
+_2025-07-20_ _[0](https://comment8.mydrivers.com/review/1062876-1.htm)_
+  * [![](https://icons.mydrivers.com/news/2018/load.gif)](https://news.mydrivers.com/1/1062/1062874.htm)
+###### [旗舰店发车：霸王新升级洗发水日常59 现券后仅29元](https://news.mydrivers.com/1/1062/1062874.htm)
+_2025-07-19_ _[0](https://comment8.mydrivers.com/review/1062874-1.htm)_
+  * [![](https://icons.mydrivers.com/news/2018/load.gif)](https://news.mydrivers.com/1/1062/1062873.htm)
+###### [52%鸡蛋+12%生牛乳：巴氏鲜奶戚风蛋糕1.2元/袋](https://news.mydrivers.com/1/1062/1062873.htm)
+_2025-07-19_ _[0](https://comment8.mydrivers.com/review/1062873-1.htm)_
+
+
+### 
+  * 关注我们
+
+
+  * ![微博](https://icons.mydrivers.com/2020/www/weibo1.png)
+### 微博：快科技官方
+快科技官方微博
+![微博](https://icons.mydrivers.com/2020/www/WeiBoJump.png)
+  * ![今日头条](https://icons.mydrivers.com/2020/www/toutiao1.png)
+### 今日头条：快科技
+带来硬件软件、手机数码最快资讯！
+![今日头条](https://icons.mydrivers.com/2020/www/TouTiaoJump.png)
+  * ![抖音](https://icons.mydrivers.com/2020/www/douyin1.png)
+### 抖音：kkjcn
+科技快讯、手机开箱、产品体验、应用推荐...
+![抖音](https://icons.mydrivers.com/2020/www/DouYinJump.png)
+
+     关于我们  
+
+[关于我们](https://www.mydrivers.com/contact/Company.html) 
+
+
+[隐私权说明 ](https://www.mydrivers.com/contact/privacy.html) 
+     交流合作  
+
+[加入我们](https://www.mydrivers.com/contact/jobs.html) 
+
+
+[意见反馈](javascript:;) 
+
+
+[广告刊例](https://www.mydrivers.com/contact/advertising.html) 
+     关注我们  
+
+微信公众号：![快科技微信公众号](https://icons.mydrivers.com/2018/common/erwm_small.png)
+![](https://icons.mydrivers.com/icon/kkjwx.png)
+![](https://icons.mydrivers.com/2018/common/ewmar.png)
+
+
+
+微博号：[快科技官方](https://weibo.com/mydrivers ""快科技官方微博"") 
+
+
+QQ群：53467377 
+
+  * ![安卓客户端下载](https://icons.mydrivers.com/2018/common/kkj_android.png)安卓客户端下载 
+  * ![IOS客户端下载](https://icons.mydrivers.com/2018/common/kkj_ios.png)IOS客户端下载 
+
+
+快科技·1997-2025 版权所有
+Copyright(C)Mydrivers.com, All Rights Reserved.
+[豫ICP备2023031922号-1](https://beian.miit.gov.cn/)[![](https://icons.mydrivers.com/2018/news/batb.png)豫公网安备 41010502003949号](http://www.beian.gov.cn/portal/registerSystemInfo?recordcode=41010502003949)   
+  
+
+[](javascript:void\(0\))
+### 热点推荐
+  * [女车主称遭货车逼停 被骂开个破小米：双方都晒视频 谁错了](https://news.mydrivers.com/1/1064/1064637.htm) 14642
+  * [性能确超RTX 4060！国产自研6nm显卡被冠以奇迹一代：买吗](https://news.mydrivers.com/1/1064/1064551.htm) 13021
+  * [1.2mm全球最窄物理四等边！魅族22官宣](https://news.mydrivers.com/1/1064/1064569.htm) 12639
+  * [iPhone在华跌落神坛！苹果首次在中国关停直营店](https://news.mydrivers.com/1/1064/1064662.htm) 12577
+  * [中国首位MBA学位方丈释永信被查 天龙八部鸠摩智回应热梗](https://news.mydrivers.com/1/1064/1064587.htm) 7826
+  * [日本知名品牌：狮王齿力佳牙膏官方2折起秒杀](https://news.mydrivers.com/1/1064/1064572.htm) 6583
+  * [韩国男扮女装印度旅行为验证“女性旅行危险论”：结果尴尬](https://news.mydrivers.com/1/1064/1064549.htm) 6156
+  * [HIV要被终结了吗！艾滋病预防神药落地海南：近100%有效](https://news.mydrivers.com/1/1064/1064554.htm) 5591
+
+
+### 好物推荐
+  * [![](https://haohuo.mydrivers.com/img/20241119/title_193540674.jpg)](https://news.mydrivers.com/1/1014/1014729.htm)
+[361° 运动长裤62元官方大促](https://news.mydrivers.com/1/1014/1014729.htm)
+￥62 券后价
+￥179
+  * [![](https://haohuo.mydrivers.com/img/20241119/title_193611081.jpg)](https://news.mydrivers.com/1/1014/1014505.htm)
+[森马集团旗下GSON撞色棉衣到手59元](https://news.mydrivers.com/1/1014/1014505.htm)
+￥59 券后价
+￥199
+  * [![](https://haohuo.mydrivers.com/img/20241119/title_193636020.jpg)](https://news.mydrivers.com/1/1014/1014549.htm)
+[JEEP工装冲锋裤79元大促](https://news.mydrivers.com/1/1014/1014549.htm)
+￥79 券后价
+￥119
+  * [![](https://haohuo.mydrivers.com/img/20241119/title_193656974.jpg)](https://news.mydrivers.com/1/1014/1014685.htm)
+[0反式脂肪酸 后谷咖啡30条18元](https://news.mydrivers.com/1/1014/1014685.htm)
+￥18 券后价
+￥36.9
+  * [![](https://haohuo.mydrivers.com/img/20241119/title_193717756.jpg)](https://news.mydrivers.com/1/1014/1014296.htm)
+[徽春堂金丝皇菊约50朵 到手5.9元](https://news.mydrivers.com/1/1014/1014296.htm)
+￥5.9 券后价
+￥25.9
+
+
+  * [](https://app.kkj.cn/)
+_![](https://icons.mydrivers.com/2020/www/left.png)_
+手机扫码下载
+支持Android/iOS/iPad
+![快科技APP](https://icons.mydrivers.com/2020/news/8/app_ewm.png)
+  *   * 纠错
+
+
+  * _![](https://icons.mydrivers.com/news2022/right.png)_
+爆料群
+爆料1群![爆料群](https://icons.mydrivers.com/tab/wxbaoliao.png)
+打开微信扫一扫   
+扫描入群，加入爆料
+  *   *   * 
+
+[](javascript:;) 100%  [](javascript:;) [](javascript:;) [](javascript:;) [](javascript:;) [ ](javascript:;)
+[](javascript:;) [](javascript:;)
+![](https://news.mydrivers.com/1/1064/1064745.htm)  
+---  
+###### 图片信息
+  * 图片描述:
+  * 图片格式：
+  * 图片尺寸：
+  * 上传时间：
+
+
+_[](javascript:;)_ _[](javascript:;)_
+","['https://www.mydrivers.com', 'https://m.mydrivers.com', 'https://blog.mydrivers.com/', 'https://passport.mydrivers.com/reg.htm', 'https://www.mydrivers.com/', 'https://news.mydrivers.com/', 'https://hardware.mydrivers.com/', 'https://news.mydrivers.com/zhibo', 'https://news.mydrivers.com/zixun/haowu', 'https://yjgg.mydrivers.com/']",28,57,1596
+#178 – Adam Silverstein Explores Transformative Browser Features Impacting WordPress Sites,https://wptavern.com/podcast/178-adam-silverstein-explores-transformative-browser-features-impacting-wordpress-sites,UserFeed1,2025-07-23 14:00:00,"On the podcast today we have Adam Silverstein. He's here to discuss how new browser APIs and web technologies are transforming the WordPress experience. Adam explains advancements like the Popover API, Scroll Animations, CSS carousels, customisable selects, view transitions, and speculative loading, many of which reduce reliance on heavy JavaScript and improve accessibility, performance, and user experience. He also touches upon modern image formats, browser-based image processing, and running AI directly in the browser. Adam highlights the growing collaboration among browser vendors and encourages developers to engage in shaping browser standards for the open web. Whether you’re a theme designer, plugin developer, or site owner simply curious about what’s next, this episode is for you.",,[],56,66,3696

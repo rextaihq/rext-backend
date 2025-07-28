@@ -128,6 +128,15 @@ We can access the api doc on this url
 ```bash
 http://127.0.0.1:2024/docs
 ```
+
+**Run the streamlit app**
+```bash
+streamlit run app.py
+```
+
+- In steamlit app set the configration for the blog **(done)**.
+- Afer Seting the config working on blog generation part.
+- `Note` Make sure that before running the streamit app first run the backend api by running this command `http://127.0.0.1:2024/docs`
 ## Data Storage
 
 The project uses both CSV and database storage:

@@ -2,42 +2,51 @@ import requests
 from datetime import datetime
 from src.states.State import AgentState
 from src.utils.helper import loadYamlConfig
+from datetime import datetime, timedelta
 from dotenv import load_dotenv
 import os
 load_dotenv()
 
-def gnews_articles(state:AgentState)->AgentState:
+def gnews_articles(state: AgentState) -> AgentState:
     """
     GNewsArticles
 
-    Fetches technology-related news articles from the GNews API for Pakistan.
+    Fetches technology-related news articles from the GNews API published in the last 48 hours.
 
     Returns:
-        List[dict]: A list of articles where each article is a dictionary with the following fields:
-            - title (str): The article title
-            - link (str): The article URL
-            - source (str): The source name (e.g., 'GNews')
-            - published (datetime): The publication datetime
-            - summary (str): A short description of the article
-
-        Returns an empty list if the request fails or no articles are found.
-        If an exception occurs, returns a string with the error message.
-
-    Example:
-        articles = FetchArticles()
-        for article in articles:
-            print(article['title'], article['link'])
+        AgentState: Updated state with 'articles' (list of dicts) or 'error' key.
     """
     try:
-        print("Fetching local articles...")
+        print("Fetching local articles from last 48 hours...")
+
+        # Load API config
         config = loadYamlConfig()
         api_url = config.get("GNews", {}).get("url", "https://gnews.io/api/v4/top-headlines")
+        category = config.get("GNews", {}).get("category", "technology")
+        language = config.get("GNews", {}).get("language", "en")
+        country = config.get("GNews", {}).get("country", "pk")
+        api_key = os.getenv("GNEWS_API_KEY", "YOUR_GNEWS_API_KEY")
+
+        # Calculate time range for last 48 hours in ISO 8601 format
+        print("Country: ",country)
+        print("Country: ",language)
+        print("Country: ",category)
+
+        now = datetime.utcnow()
+        past_48_hours = now - timedelta(hours=48)
+        now_str = now.isoformat() + "Z"
+        past_str = past_48_hours.isoformat() + "Z"
+
+        # Prepare API query params
         params = {
-            "category": config.get("GNews", {}).get("category", "technology"),
-            "country": config.get("GNews", {}).get("country", "pk"),
-            "apikey": os.getenv("GNEWS_API_KEY", "YOUR_GNEWS_API_KEY")
+            "category": category,
+            "country": country,
+            "from": past_str,
+            "to": now_str,
+            "apikey": api_key
         }
 
+        # Make the API request
         response = requests.get(api_url, params=params)
 
         if response.status_code == 200:
@@ -59,13 +68,15 @@ def gnews_articles(state:AgentState)->AgentState:
                     "published": published,
                     "summary": item.get("description", "")
                 })
-                break
 
+            state['articles'] = articles
+            print("Total Articles: ",len(articles))
+            return state
 
-            # return articles
-            return {'articles':articles}
         else:
-            return []
+            state['error'] = f"GNews API returned status code {response.status_code}"
+            return state
+
     except Exception as e:
         state['error'] = str(e)
-        return str(e)
+        return state
