@@ -1,8 +1,0 @@
-GNews:
-  category: technology
-  country: cn
-  language: en
-  url: https://gnews.io/api/v4/top-headlines
-rss_sources:
-  UserFeed1: https://wptavern.com/feed
-  UserFeed2: https://wordpress.org/news/feed

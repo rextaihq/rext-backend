@@ -24,8 +24,10 @@ def TopicSelection(state: AgentState) -> Command | AgentState:
         message += "\nEnter your selection as comma-separated indexes (e.g., 0,2,5):"
 
         # Interrupt and wait for user input
-        response = interrupt(message)
-
+        response = interrupt({
+            "name":"TopicSelection",
+            "value":message
+        })
         # Assume response contains: "Title 1, Title 2, Title 3"
         selected_titles = [t.strip() for t in response.split(',')]
 
