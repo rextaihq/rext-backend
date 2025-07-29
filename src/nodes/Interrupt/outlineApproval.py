@@ -73,7 +73,7 @@ def outline_approval(state:AgentState):
         print("❌ Outline rejected.")
         # get user feedback
         user_fb = interrupt(
-            {"name": "OutlineFeedback", "value": "📝 Provide feedback for improving the outline:"}
+            {"name": "Feedback", "value": "📝 Provide feedback for improving the outline:"}
         )
         print(f"User feedback: {user_fb}")
 
