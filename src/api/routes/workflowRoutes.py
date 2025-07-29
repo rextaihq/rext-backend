@@ -16,16 +16,17 @@ router = APIRouter(
     prefix="/workflow",
     tags=["workflow"]
 )
+@router.get("/test")
+def test_route():
+    return {"message": "Workflow API is working!"}
 
-# ✅ Instantiate the LangGraph workflow once at startup
-CONFIG_PATH = "config/config.yaml"
 
-
-@router.get("/status/{thread_id}")
-def get_workflow_status(thread_id: str, db: Session = Depends(get_db)):
+@router.get("/status/{workflow_id}")
+def get_workflow_status(workflow_id: str, db: Session = Depends(get_db)):
     # ✅ Could be expanded to track graph health or queue status
     try:
-        workflow = db.query(Workflow).filter_by(thread_id=thread_id).first()
+
+        workflow = db.query(Workflow).filter_by(id=workflow_id).first()
         if not workflow:
             raise HTTPException(status_code=404, detail="Workflow not found.")
         
@@ -41,37 +42,8 @@ def get_workflow_status(thread_id: str, db: Session = Depends(get_db)):
         raise HTTPException(status_code=500, detail=f"Error fetching workflow status: {str(e)}")
 
 
-# set the workflow configuration
-@router.post("/configure")
-def configure_workflow(config_data: WorkflowConfigSchema):
-    """
-    Configure the workflow with user-defined parameters.
-    Saves the configuration as a YAML file.
-    """
-    config = {
-        "GNews": {
-            "url": "https://gnews.io/api/v4/top-headlines",
-            "category": config_data.category or "technology",
-            "country": config_data.country or "pk",
-            "language": config_data.language or "en"
-        },
-        "rss_sources": {}
-    }
 
-    if config_data.rss_sources:
-        for feed in config_data.rss_sources:
-            config["rss_sources"][feed.title] = str(feed.url)
-
-    with open(CONFIG_PATH, 'w') as f:
-        yaml.dump(config, f)
-
-    return {
-        "message": "✅ Workflow configured and saved successfully.",
-        "config": config
-    }
-
-
-@router.post("/execute")
+@router.post("/create")
 async def execute_workflow(data: WorkflowSchema, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
     try:
         checkpointer = await init_checkpointer()  # Ensure checkpointer is initialized
@@ -79,22 +51,9 @@ async def execute_workflow(data: WorkflowSchema, background_tasks: BackgroundTas
             raise HTTPException(status_code=500, detail="Checkpointer initialization failed")
         
         # check if the workflow already exists
-        existing_workflow = db.query(Workflow).filter_by(thread_id=data.thread_id).first()
+        existing_workflow = db.query(Workflow).filter_by(name=data.name).first()
         if existing_workflow:
-            raise HTTPException(status_code=400, detail="Workflow with this thread_id already exists.")
-        
-        # create a new workflow entry in the database
-        new_workflow = Workflow(
-            thread_id=data.thread_id,
-            name=data.name,
-            description=data.description,
-            is_active=data.is_active,
-            status=data.status
-        )
-
-        db.add(new_workflow)
-        db.commit()
-        db.refresh(new_workflow)
+            raise HTTPException(status_code=400, detail="Workflow with this name already exists.")
 
         print("Checkpointer initialized successfully")
         workflow  = CreateWorkflow()
@@ -104,7 +63,26 @@ async def execute_workflow(data: WorkflowSchema, background_tasks: BackgroundTas
 
         background_tasks.add_task(execute_workflow_task, graph, thread_id)
 
+        # create a new workflow entry in the database
+        new_workflow = Workflow(
+            id=uuid.uuid4(),
+            name=data.name,
+            description=data.description,
+            thread_id=thread_id,
+            is_active=data.is_active,
+            status=data.status
+        )
+
+        db.add(new_workflow)
+        db.commit()
+        db.refresh(new_workflow)
+
+
         return {
+            "id": new_workflow.id,
+            "name": new_workflow.name,
+            "description": new_workflow.description,
+            "is_active": new_workflow.is_active,
             "status": new_workflow.status,
             "thread_id": new_workflow.thread_id,
             "message": "Workflow execution started in the background."
@@ -119,7 +97,6 @@ async def execute_workflow(data: WorkflowSchema, background_tasks: BackgroundTas
 async def resume_workflow(thread_id: str,topic_selection: TopicSelectionSchema):
     try:
         # used the  thread id for resume the  execution
-
         user_input = ",".join(topic_selection.topic) 
 
         config = {"configurable": {"thread_id": thread_id}}

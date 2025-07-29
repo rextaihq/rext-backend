@@ -90,7 +90,7 @@ def blog_approval(state:AgentState):
 
     else:
         print("❌ Human rejected the blog.")
-        feedback = interrupt({"name": "BlogFeedback", "value":"📝 Provide feedback for improving the blog:"})
+        feedback = interrupt({"name": "Feedback", "value":"📝 Provide feedback for improving the blog:"})
         print(f"🗣️ Feedback collected: {feedback}")
 
         return Command(
