@@ -32,7 +32,8 @@ def outline_approval(state:AgentState):
             section_texts += f"   - {bullet}\n"
 
     print("🛑 Awaiting human approval...")
-    decision = interrupt(f"""
+    decision = interrupt(
+        {"name": "OutlineApproval", "value": f"""
     📄 **Title:** {result.title}
 
     📝 **Introduction:**
@@ -46,7 +47,8 @@ def outline_approval(state:AgentState):
     🗣️ **Previous Feedback:** {feedback or "None"}
 
     ✅ Approve this outline? (yes/no)
-    """)
+    """}
+    )
 
     if decision.strip().lower() == "yes":
         print("✅ Outline approved.")
@@ -70,7 +72,9 @@ def outline_approval(state:AgentState):
     else:
         print("❌ Outline rejected.")
         # get user feedback
-        user_fb = interrupt("📝 Provide the feedback for improving the outline?")
+        user_fb = interrupt(
+            {"name": "OutlineFeedback", "value": "📝 Provide feedback for improving the outline:"}
+        )
         print(f"User feedback: {user_fb}")
 
         return Command(

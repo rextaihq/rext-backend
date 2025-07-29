@@ -1,8 +1,14 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from src.workflow.workflow import CreateWorkflow
-from src.api.schema.schema import TopicSelectionSchema,WorkflowConfigSchema
+from src.api.schema.configSchema import TopicSelectionSchema,WorkflowConfigSchema
+from src.api.schema.workflowSchema import WorkflowSchema
+from src.api.database.database import get_db
+from sqlalchemy.orm import Session
+from src.api.models.models import Workflow
 from langgraph.types import Command
+from fastapi import BackgroundTasks
 from src.utils.checkpoiner import init_checkpointer
+from src.api.backgroundTasks.workflowTask import execute_workflow_task
 import yaml
 import uuid
 
@@ -14,13 +20,28 @@ router = APIRouter(
 # ✅ Instantiate the LangGraph workflow once at startup
 CONFIG_PATH = "config/config.yaml"
 
-@router.get("/status")
-def get_workflow_status():
+
+@router.get("/status/{thread_id}")
+def get_workflow_status(thread_id: str, db: Session = Depends(get_db)):
     # ✅ Could be expanded to track graph health or queue status
-    return {"status": "running"}
+    try:
+        workflow = db.query(Workflow).filter_by(thread_id=thread_id).first()
+        if not workflow:
+            raise HTTPException(status_code=404, detail="Workflow not found.")
+        
+        return {
+            "id": workflow.id,
+            "name": workflow.name,
+            "description": workflow.description,
+            "thread_id": workflow.thread_id,
+            "status": workflow.status,
+            "is_active": workflow.is_active
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error fetching workflow status: {str(e)}")
 
 
-# se the workflow configuration
+# set the workflow configuration
 @router.post("/configure")
 def configure_workflow(config_data: WorkflowConfigSchema):
     """
@@ -51,37 +72,42 @@ def configure_workflow(config_data: WorkflowConfigSchema):
 
 
 @router.post("/execute")
-async def execute_workflow():
+async def execute_workflow(data: WorkflowSchema, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
     try:
         checkpointer = await init_checkpointer()  # Ensure checkpointer is initialized
         if checkpointer is None:
             raise HTTPException(status_code=500, detail="Checkpointer initialization failed")
         
+        # check if the workflow already exists
+        existing_workflow = db.query(Workflow).filter_by(thread_id=data.thread_id).first()
+        if existing_workflow:
+            raise HTTPException(status_code=400, detail="Workflow with this thread_id already exists.")
+        
+        # create a new workflow entry in the database
+        new_workflow = Workflow(
+            thread_id=data.thread_id,
+            name=data.name,
+            description=data.description,
+            is_active=data.is_active,
+            status=data.status
+        )
+
+        db.add(new_workflow)
+        db.commit()
+        db.refresh(new_workflow)
+
         print("Checkpointer initialized successfully")
         workflow  = CreateWorkflow()
 
-
         graph = workflow.compile(checkpointer=checkpointer)
-        # ✅ Generate a unique thread ID for this execution
-        thread_id = str(uuid.uuid4())  # uuid4 is more standard for random IDs
+        thread_id = str(uuid.uuid4())  # Generate a unique thread ID
 
-        config = {"configurable": {"thread_id": thread_id}}
-        print("Running Workflow with thread ID:", thread_id)
-        # ✅ Run the graph with empty initial state
-        results = await graph.ainvoke({}, config)
-
-        print("Run successfully;WW")
-        # ✅ Check for interrupt result
-        interrupt = results.get('__interrupt__')
-        if interrupt and interrupt[0].value:
-            return {
-                "results": interrupt[0].value,
-                "thread_id": thread_id
-            }
+        background_tasks.add_task(execute_workflow_task, graph, thread_id)
 
         return {
-            "results": results,
-            "thread_id": thread_id
+            "status": new_workflow.status,
+            "thread_id": new_workflow.thread_id,
+            "message": "Workflow execution started in the background."
         }
 
     except Exception as e:

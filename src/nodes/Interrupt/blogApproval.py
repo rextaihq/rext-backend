@@ -35,7 +35,7 @@ def blog_approval(state:AgentState):
 
     print("🛑 Awaiting human approval for the generated blog...")
 
-    decision = interrupt(
+    decision = interrupt({"name": "BlogApproval" ,"value":
         f"""
 📄 **Blog Title:** {blog_result.title}
 
@@ -57,7 +57,7 @@ def blog_approval(state:AgentState):
 🗣️ **Previous Feedback:** {blog_feedback or "None"}
 
 ✅ Approve this blog post? (yes/no)
-"""
+"""}
     )
 
     # ✅ Handle human decision
@@ -90,7 +90,7 @@ def blog_approval(state:AgentState):
 
     else:
         print("❌ Human rejected the blog.")
-        feedback = interrupt("📝 Provide feedback for improving the blog:")
+        feedback = interrupt({"name": "BlogFeedback", "value":"📝 Provide feedback for improving the blog:"})
         print(f"🗣️ Feedback collected: {feedback}")
 
         return Command(
