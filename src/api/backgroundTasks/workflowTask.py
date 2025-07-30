@@ -1,4 +1,6 @@
-from fastapi import HTTPException
+from fastapi import HTTPException,Depends
+from src.api.database.database import get_db
+from sqlalchemy.orm import Session
 
 async def execute_workflow_task(graph ,thread_id=None):
     """
@@ -14,13 +16,10 @@ async def execute_workflow_task(graph ,thread_id=None):
         # ✅ Check for interrupt result
         interrupt = results.get('__interrupt__')
         if interrupt and interrupt[0].value['name']== 'TopicSelection':
-            # Handle TopicSelection interrupt
-
             return {
                 "Topics": interrupt[0].value['value'],
                 "thread_id": thread_id
             }
-
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Workflow execution failed: {str(e)}")
