@@ -20,6 +20,18 @@ router = APIRouter(
 def test_route():
     return {"message": "Workflow API is working!"}
 
+@router.get("/get_all")
+def get_all_workflows(db: Session = Depends(get_db)):
+    """
+    Endpoint to retrieve all workflows.
+    """
+    try:
+        workflows = db.query(Workflow).all()
+        return {"workflows": [workflow.__dict__ for workflow in workflows]}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error fetching workflows: {str(e)}")
+    
+    
 
 @router.get("/status/{workflow_id}")
 def get_workflow_status(workflow_id: str, db: Session = Depends(get_db)):
