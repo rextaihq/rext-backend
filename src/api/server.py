@@ -11,17 +11,15 @@ from src.api.models.models import User
 Base.metadata.create_all(bind=engine)
 
 
-
-
 app = FastAPI(
     name="Content Automation API",
     version="1.0.0",
     description="API for managing content automation workflows",
     # lifespan=lifespan,
 )
-
+# Fixing he issue async issue only in workflow routes
 app.include_router(workflow_router, prefix="/api", tags=["workflow"])
-app.include_router(user_router, prefix="/api", tags=["user"])
+# app.include_router(user_router, prefix="/api", tags=["user"])
 
 @app.get("/")
 def read_root():

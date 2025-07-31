@@ -1,5 +1,5 @@
 import yaml
-from crawl4ai.async_configs import BrowserConfig, CrawlerRunConfig
+from crawl4ai.async_configs import BrowserConfig, CrawlerRunConfig, CacheMode
 
 
 def loadYamlConfig(file_path="config/config.yaml"):
@@ -43,13 +43,15 @@ def GetCrawlerRunConfig():
     """
     try:
         config = CrawlerRunConfig(
-            word_count_threshold=10,        # Minimum words per content block
-        exclude_external_links=True,    # Remove external links
-        remove_overlay_elements=True,   # Remove popups/modals
-        process_iframes=True,
-        exclude_external_images=True,
+        cache_mode=CacheMode.ENABLED,
+            word_count_threshold=100,        # Minimum words per content block
+            exclude_external_links=True,    # Remove external links
+            remove_overlay_elements=True,   # Remove popups/modals
+            process_iframes=True,
+            exclude_external_images=True,
         exclude_social_media_domains=True,
         only_text=True,           # Only text content
+        # verbose=False,
         )
         return config
     except Exception as e:

@@ -3,6 +3,7 @@ from streamlit_option_menu import option_menu
 from langgraph_sdk import get_sync_client
 from app.assisant import assistant_tab
 from app.blogGenerator import blog_generator_tab
+from app.threads import thread_tab
 
 # Set full-width layout
 st.set_page_config(layout="wide")
@@ -14,7 +15,7 @@ client = get_sync_client(
 )
 
 # Main horizontal menu
-selected = option_menu("Main Menu", ["Assistant", 'BlogPost Generator', 'Configuration'], 
+selected = option_menu("Main Menu", ["Assistant", 'BlogPost Generator',"Threads" ,'Configuration'], 
             icons=['robot', 'pencil', 'gear'],
             menu_icon="cast", default_index=0, orientation="horizontal")
 
@@ -24,9 +25,11 @@ if selected == "Assistant":
 
 # BlogPost Generator Tab
 elif selected == "BlogPost Generator":
-    # client.threads.delete(thread_id='71fb8a2b-c0ba-4487-8cde-25297fd72a26')
     blog_generator_tab(client)
 
+elif selected == "Threads":
+    # client.threads.delete(thread_id='40d6a455-4960-4d2f-97cf-a8dbfd40dfc7')
+    thread_tab(client)
 # Configuration Tab
 elif selected == "Configuration":
     st.title("⚙️ Configuration")

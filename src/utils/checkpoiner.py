@@ -6,7 +6,7 @@ import os
 # Load environment variables
 load_dotenv()
 
-DB_URI = os.getenv("POSTGRES_URL", "postgresql://sami:12345@localhost:5432/langgraph_db")
+DB_URI = os.getenv("POSTGRES_URI", "postgresql://sami:12345@localhost:5432/langgraph_db")
 
 # Global checkpointer variable
 checkpointer = None

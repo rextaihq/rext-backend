@@ -1,6 +1,6 @@
 GNews:
   category: technology
-  country: cn
+  country: us
   language: en
   url: https://gnews.io/api/v4/top-headlines
 rss_sources:

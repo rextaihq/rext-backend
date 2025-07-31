@@ -68,6 +68,7 @@ def gnews_articles(state: AgentState) -> AgentState:
                     "published": published,
                     "summary": item.get("description", "")
                 })
+                break
 
             state['articles'] = articles
             print("Total Articles: ",len(articles))
