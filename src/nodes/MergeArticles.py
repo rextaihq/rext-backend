@@ -19,8 +19,15 @@ def merge_articles(state:AgentState)->AgentState:
 
     """
     print("Combining articles...")
-    combined_articles = state['articles'] + state['wordpress_articles']
+
+    articles = state.get('articles', [])
+    wordpress_articles = state.get('wordpress_articles', [])
+
+    combined_articles = articles + wordpress_articles
     state['combine_articles'] = combined_articles
+
     print(f"Combined {len(combined_articles)} articles.")
 
-    return state
+    return {
+        'combine_articles': combined_articles
+    }
