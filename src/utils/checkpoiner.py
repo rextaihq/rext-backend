@@ -1,12 +1,14 @@
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from psycopg_pool import AsyncConnectionPool
+from langgraph.checkpoint.postgres import PostgresSaver
 from dotenv import load_dotenv
 import os
 
 # Load environment variables
 load_dotenv()
 
-DB_URI = os.getenv("POSTGRES_URI", "postgresql://sami:12345@localhost:5432/langgraph_db")
+DATABASE_URI = os.getenv('DATABASE_URI')
+
 
 # Global checkpointer variable
 checkpointer = None
@@ -17,7 +19,7 @@ async def init_checkpointer():
     if checkpointer is None:
         try:
             # ✅ create a persistent connection pool
-            pool = AsyncConnectionPool(conninfo=DB_URI, max_size=10, kwargs={"autocommit": True})
+            pool = AsyncConnectionPool(conninfo=DATABASE_URI, max_size=10, kwargs={"autocommit": True})
             
             # ✅ create a saver using the pool
             saver = AsyncPostgresSaver(pool)

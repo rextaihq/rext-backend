@@ -1,150 +1,72 @@
-import streamlit as st
-import yaml
-import os
-import requests
-import json
-
-
-CONFIG_PATH = "config.yaml"
-
-# Load existing config
-def load_config(path=CONFIG_PATH):
-    if os.path.exists(path):
-        with open(path, 'r') as file:
-            return yaml.safe_load(file)
-    return {}
-
-# Save config
-def save_config(data, path=CONFIG_PATH):
-    with open(path, 'w') as file:
-        yaml.dump(data, file)
-
-st.title("Blog Post Automation")
-
-user_input = st.selectbox("Do you want to add WordPress feed or use default feed? (yes/no)", ["no", "yes"])
-if user_input == 'yes':
-    # Language codes
-    language_dict = {
-        "Arabic": "ar", "Chinese": "zh", "Dutch": "nl", "English": "en", "French": "fr",
-        "German": "de", "Greek": "el", "Hindi": "hi", "Italian": "it", "Japanese": "ja",
-        "Malayalam": "ml", "Marathi": "mr", "Norwegian": "no", "Portuguese": "pt",
-        "Romanian": "ro", "Russian": "ru", "Spanish": "es", "Swedish": "sv",
-        "Tamil": "ta", "Telugu": "te", "Ukrainian": "uk"
-    }
-
-    # Country codes
-    country_dict = {
-        "Australia": "au", "Brazil": "br", "Canada": "ca", "China": "cn", "Egypt": "eg",
-        "France": "fr", "Germany": "de", "Greece": "gr", "Hong Kong": "hk", "India": "in",
-        "Ireland": "ie", "Italy": "it", "Japan": "jp", "Netherlands": "nl", "Norway": "no",
-        "Pakistan": "pk", "Peru": "pe", "Philippines": "ph", "Portugal": "pt", "Romania": "ro",
-        "Russian Federation": "ru", "Singapore": "sg", "Spain": "es", "Sweden": "se",
-        "Switzerland": "ch", "Taiwan": "tw", "Ukraine": "ua", "United Kingdom": "gb",
-        "United States": "us"
-    }
-
-    st.header("Set the Parameters")
-
-    # Category Selection
-    categories = st.selectbox(
-        "Select Category", 
-        ["general", "world", "nation", "business", "technology", "entertainment", "sports", "science", "health"]
-    )
-
-    # Country Selection
-    selected_country = st.selectbox("Select Country", list(country_dict.keys()))
-    country_code = country_dict[selected_country]
-
-    # Language Selection
-    selected_language = st.selectbox("Select Language", list(language_dict.keys()))
-    language_code = language_dict[selected_language]
-
-    # RSS Feed Control
-    user_choice = st.selectbox(
-        "Do you want to add WordPress feed or use default feed?",
-        ['yes', 'no']
-    )
-
-    feed_urls = []
-    rss_dict = {}
-
-    if user_choice == 'yes':
-        feed_input = st.text_input("Enter the Feed URLs (comma-separated)")
-        if feed_input:
-            feed_urls = [url.strip() for url in feed_input.split(',')]
-            for i, url in enumerate(feed_urls):
-                rss_dict[f"UserFeed{i+1}"] = url
-
-    # Submit button
-    if st.button("Set Configuration"):
-        config_data = load_config()
-
-        # Update GNews section
-        config_data['GNews'] = {
-            'url': "https://gnews.io/api/v4/top-headlines",
-            'category': categories,
-            'country': country_code,
-            'language': language_code
-        }
-
-        # Update RSS feeds
-        if feed_urls:
-            config_data['rss_sources'] = rss_dict
-
-        # Save locally as YAML
-        save_config(config_data)
-
-        # Prepare payload for API (excluding URL for GNews)
-        api_payload = {
-            "category": categories,
-            "country": country_code,
-            "language": language_code,
-            "rss_sources": [
-                {"title": name, "url": url}
-                for name, url in rss_dict.items()
-            ] if rss_dict else None
-        }
-
-        try:
-            response = requests.post(
-                "http://127.0.0.1:2024/api/workflow/configure",
-                headers={"Content-Type": "application/json"},
-                data=json.dumps(api_payload)
-            )
-            if response.status_code == 200:
-                st.success("✅ Configuration sent to API and saved locally!")
-                st.write("API Response:")
-                st.json(response.json())
-            else:
-                st.error(f"❌ API returned status code {response.status_code}")
-                st.text(response.text)
-
-
-        except Exception as e:
-            st.error(f"❌ Failed to send data to API: {str(e)}")
-        st.write(api_payload)
-
-else:
-    st.write("You chose not to add a WordPress feed. Using default feed settings.")
-
-generate_blog = st.selectbox("Do you want to generate a blog post? (yes/no)", ["no", "yes"])
-if generate_blog == 'yes':
-    if(st.button("Generate Blog Post")):
-        try:
-            response = requests.post(
-                "http://127.0.0.1:2024/api/workflow/execute",
-                headers={"Content-Type": "application/json"},
-                json={"topic": "blog"}
-            )
-            if response.status_code == 200:
-                st.success("✅ Blog post generated successfully!")
-                st.write("API Response:")
-                st.json(response.json())
-            else:
-                st.error(f"❌ API returned status code {response.status_code}")
-                st.text(response.text)
-
-        except Exception as e:
-            st.error(f"❌ Error generating blog post: {str(e)}")
-else:
-    st.write("You chose not to generate a blog post.")
+# (content-automation) mobeen@mobeen:~/Applications/Revnix/Automation/content-automation$ docker compose config
+# name: content-automation
+# services:
+#   langgraph-api:
+#     depends_on:
+#       langgraph-postgres:
+#         condition: service_healthy
+#         required: true
+#       langgraph-redis:
+#         condition: service_healthy
+#         required: true
+#     environment:
+#       DATABASE_URI: postgresql://sami:12345@langgraph-postgres:5432/langgraph_db
+#       GNEWS_API_KEY: e135b8574311c5c84aad0386b9aca3fc
+#       LANGSMITH_API_KEY: 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
+#       OPENAI_API_KEY: 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
+#       REDIS_URI: redis://langgraph-redis:6379
+#       WP_TOKEN: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOjEsIm5hbWUiOiJzdGFnaW5nX3dwYWVnaXMiLCJpYXQiOjE3NTMyNzk2MzEsImV4cCI6MTkxMDk1OTYzMX0.OWcNYsPd_C4xw_L6qBTdxe8m_W4mWAeD3lzwNFccLr4
+#       WP_URL: https://staging.wpaegis.com/wp-json/wp/v2/posts
+#     image: test
+#     networks:
+#       default: null
+#     ports:
+#       - mode: ingress
+#         target: 8000
+#         published: "8123"
+#         protocol: tcp
+#   langgraph-postgres:
+#     environment:
+#       POSTGRES_DB: langgraph_db
+#       POSTGRES_PASSWORD: "12345"
+#       POSTGRES_USER: sami
+#     healthcheck:
+#       test:
+#         - CMD-SHELL
+#         - pg_isready -U sami
+#       timeout: 1s
+#       interval: 5s
+#       retries: 5
+#       start_period: 10s
+#     image: postgres:16
+#     networks:
+#       default: null
+#     ports:
+#       - mode: ingress
+#         target: 5432
+#         published: "5433"
+#         protocol: tcp
+#     volumes:
+#       - type: volume
+#         source: langgraph-data
+#         target: /var/lib/postgresql/data
+#         volume: {}
+#   langgraph-redis:
+#     healthcheck:
+#       test:
+#         - CMD-SHELL
+#         - redis-cli ping
+#       timeout: 1s
+#       interval: 5s
+#       retries: 5
+#     image: redis:6
+#     networks:
+#       default: null
+# networks:
+#   default:
+#     name: content-automation_default
+# volumes:
+#   langgraph-data:
+#     name: content-automation_langgraph-data
+#     driver: local
+# (content-automation) mobeen@mobeen:~/Applications/Revnix/Automation/content-automation$ 

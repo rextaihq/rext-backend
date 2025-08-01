@@ -101,7 +101,7 @@ def blog_generator_tab(client):
         except Exception as e:
             st.error(f"Failed to load assistants: {str(e)}")
     elif option=='Resume':
-        st.write("Resue the workflow")
+        st.write("Resue your workflow")
 
         assistants = client.assistants.search()
         if assistants:
@@ -114,11 +114,12 @@ def blog_generator_tab(client):
 
         thread_data = client.threads.get(thread_id)
 
-        st.json(thread_data['interrupts']['2e7fcc73-5559-9146-e712-f6755a0a1c69'][0]['value'])
+        st.json(thread_data['interrupts']['11f77531-3996-e386-51bf-a1722c1ec121'][0]['value'])
+        st.write(thread_data['interrupts'].keys())
         if (thread_data['status']=="interrupted"):
             st.write("Intrrrputed")
 
-            data = thread_data['interrupts']['2e7fcc73-5559-9146-e712-f6755a0a1c69'][0]['ns'][0]
+            data = thread_data['interrupts']['11f77531-3996-e386-51bf-a1722c1ec121'][0]['ns'][0]
             st.write("Checkpoiner id: ",data.split(":")[1])
             st.write("Checkpoiner Node: ",data.split(":")[0])
             # enter the checkpointer id
