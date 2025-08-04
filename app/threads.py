@@ -19,31 +19,10 @@ def thread_tab(client):
         if st.button("Create Thread"):
             try:
                 thread = client.threads.create()
-                st.success(f"Thread created! ID: {thread.id}")
+                st.success(f"Thread created! ID: {thread.thread_id}")
                 st.json(thread)
             except Exception as e:
                 st.error(f"Failed to create thread: {str(e)}")
-
-    elif thread_action == "Start Run on Thread":
-        st.subheader("🏃‍♂️ Start a Run on Existing Thread")
-        thread = client.threads.search()
-        thread_id = st.selectbox("Select Existing Thread", options=[t['thread_id'] for t in thread], key="existing_thread_select")
-
-        assistant_id = st.text_input("Assistant ID")
-
-        if st.button("Start Run") and thread_id and assistant_id:
-            try:
-                run = client.runs.create(
-                    thread_id=thread_id,
-                    assistant_id=assistant_id,
-                    input={},
-                    metadata={"name": "manual_run"},
-                    on_completion="delete"
-                )
-                st.success(f"Run started: ID = {run.id}")
-                st.json(run)
-            except Exception as e:
-                st.error(f"Run start failed: {str(e)}")
 
     elif thread_action == "Stream Run (with Interrupt Handling)":
         st.subheader("📡 Stream Run with Interrupt Support")

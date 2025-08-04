@@ -22,7 +22,7 @@ def outline_approval(state:AgentState):
     idx = state.get("current_approval_index", 0)
     approved = state.get("approved_outlines", [])
     feedback = state.get("approval_feedback", "")
-    result = state['generated_outline']
+    result = state.get('generated_outline',"No Outline")
 
     # Format sections for display
     section_texts = ""

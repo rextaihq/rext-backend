@@ -22,7 +22,7 @@ def blog_approval(state:AgentState):
     current_index = state.get("current_blog_index", 0)
     approved_blogs = state.get("approved_blogs", [])
     blog_feedback = state.get("blog_feedback", "")
-    blog_result  = state['generated_blog']
+    blog_result  = state.get('generated_blog',"No Blog")
     if "generated_blog" not in state:
         print("❌ Error: 'generated_blog' missing from state. Redirecting to BlogGeneration.")
         return Command(goto="BlogGeneration")

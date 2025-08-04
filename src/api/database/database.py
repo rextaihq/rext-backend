@@ -6,7 +6,7 @@ import os
 # Load environment variables
 load_dotenv()
 
-SQLALCHEMY_DATABASE_URL = os.getenv("POSTGRES_URI")
+SQLALCHEMY_DATABASE_URL = os.getenv("POSTGRES_URI_CUSTOM")
 
 engine = create_engine(SQLALCHEMY_DATABASE_URL)
 
