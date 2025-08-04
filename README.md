@@ -110,7 +110,8 @@ WP_URL = BaseURL/wp-json/wp/v2/posts
 WP_TOKEN = WORDPRESS_TOKEN
 
 
-DATABASE_URI = POSTGRESS URI
+POSTGRES_URI_CUSTOM = POSTGRESS URI
+REDIS_URI = redis://langgraph-redis:6379
 
 ```
 
@@ -121,12 +122,13 @@ DATABASE_URI = POSTGRESS URI
 Run the main application:
 
 ```bash
-langgraph dev --allow-blocking 
+langgraph up
 ```
+- It can build a docker image and run the application in the containr.
 
 We can access the api doc on this url
 ```bash
-http://127.0.0.1:2024/docs
+http://localhost:8123/docs
 ```
 
 **Run the streamlit app**
@@ -136,7 +138,7 @@ streamlit run app.py
 
 - In steamlit app set the configration for the blog **(done)**.
 - Afer Seting the config working on blog generation part.
-- `Note` Make sure that before running the streamit app first run the backend api by running this command `http://127.0.0.1:2024/docs`
+- `Note` Make sure that before running the streamit app first run the backend api by running this command `http://localhost:8123/docs`
 ## Data Storage
 
 The project uses both CSV and database storage:

@@ -7,7 +7,7 @@ import os
 # Load environment variables
 load_dotenv()
 
-DATABASE_URI = os.getenv('DATABASE_URI')
+DATABASE_URI = os.getenv('POSTGRES_URI_CUSTOM')
 
 
 # Global checkpointer variable

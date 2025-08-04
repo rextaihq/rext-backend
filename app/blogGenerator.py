@@ -5,193 +5,148 @@ def blog_generator_tab(client):
     st.title("📝 BlogPost Generator")
     st.info("Select an assistant to generate blog posts.")
 
-    option = st.selectbox("Select Option: ",["New","Resume"])
-    if option=='New':
-        # list down all the assistants
-        try:
-            assistants = client.assistants.search()
-            if assistants:
-                user_sel_assistent = st.selectbox("Select Assistant", options=[a['name'] for a in assistants], key="assistant_select")
+    option = st.selectbox("Select Option:", ["New", "Resume"])
 
-                assistent_id = ([a for a in assistants if a['name'] == user_sel_assistent][0]['assistant_id'])
-
-                if user_sel_assistent:
-                    thread_choice = st.selectbox("Select Thread", options=["Existing Threads","New Thread"], key="thread_choice")
-
-                    if thread_choice == "New Thread":
-                        if st.button("Create New Thread"):
-                            thread = client.threads.create()
-                            st.success(f"New thread created with ID: {thread['thread_id']}")
-                            thread_id = thread['thread_id']
-                    else:
-                        thread = client.threads.search()
-                        thread_id = st.selectbox("Select Existing Thread", options=[t['thread_id'] for t in thread], key="existing_thread_select")
-
-                if user_sel_assistent and thread_id:
-                    st.subheader("Generate Blog Post")
-
-
-                    if st.button("Generate Blog Post"):
-                        try:
-                            node_containers = {}  # For dynamically displaying each node
-                            processed_nodes = set()  # Track already seen nodes
-
-                            for mode, chunk in client.runs.stream(
-                                thread_id=thread_id,
-                                assistant_id=assistent_id,
-                                input={},
-                                stream_mode=["updates", "messages"],
-                                metadata={"name": "my_run"},
-                                on_completion='delete',
-                                stream_resumable=True,
-                                checkpoint_during=True
-                                
-                            ):
-                                if mode == "updates" and "__interrupt__" in chunk:
-                                    interrupt_data = chunk["__interrupt__"]
-                                    st.warning(f"⚠️ Interrupt:")
-                                    if interrupt_data[0]['value']:                    
-                                        st.header(interrupt_data[0]['value']['name'])
-                                        st.write(interrupt_data[0]['value']['value'])
-                                        # Ask your user via Streamlit UI for a response
-                                        resume_value = st.text_input("Select Articles", key="resume_input")
-
-                                        if len(resume_value)>0:
-                                            # Now resume the run with the user's input
-                                            for mode2, chunk2 in client.runs.stream(
-                                                thread_id=thread_id,
-                                                assistant_id=assistent_id,
-                                                input=Command(resume=resume_value),
-                                                stream_mode=["updates", "messages"],
-                                                stream_resumable=True,
-                                                checkpoint_during=True
-                                            ):
-                                                if mode2=="messages":
-                                                    for node_id, msg in chunk2.data.items():
-                                                        st.json(msg)
-                                                elif mode2=="updates":
-                                                    if node_id not in processed_nodes:
-                                                        processed_nodes.add(node_id)
-                                                        with st.expander(f"✅ Node Completed: {node_id}"):
-                                                            st.json(chunk2.data[node_id])
-                                        break  # Exit this primary loop so resumed run starts fresh
-                                elif mode=='updates':
-                                    for node in chunk:
-                                        if node not in processed_nodes:
-                                            processed_nodes.add(node)
-
-                                            if node == 'interrupt':
-                                                st.warning("❗️Interrupt Occur")
-                                                st.write(chunk[node])
-                                            else:
-                                                with st.expander(f"🔄 Processing Node: {node}", expanded=True):
-                                                        st.write("Processing...")
-                                                
-                                            node_containers[node] = st.expander(f"✅ Node Completed: {node}", expanded=False)
-                                            with node_containers[node]:
-                                                st.json(chunk[node])
-
-                        except Exception as e:
-                            st.error(f"❌ Failed to generate blog post: {str(e)}")
-
-                        # finally:
-                        #     client.threads.delete(thread_id=thread_id)
-            else:
-                st.warning("No assistants found.")
-        except Exception as e:
-            st.error(f"Failed to load assistants: {str(e)}")
-    elif option=='Resume':
-        st.write("Resue your workflow")
-
+    def select_assistant():
         assistants = client.assistants.search()
-        if assistants:
-                user_sel_assistent = st.selectbox("Select Assistant", options=[a['name'] for a in assistants], key="assistant_select")
+        if not assistants:
+            st.warning("No assistants found.")
+            return None, None
+        names = [a['name'] for a in assistants]
+        selected_name = st.selectbox("Select Assistant", names)
+        selected_id = next((a['assistant_id'] for a in assistants if a['name'] == selected_name), None)
+        return selected_name, selected_id
 
-                assistent_id = ([a for a in assistants if a['name'] == user_sel_assistent][0]['assistant_id'])
+    def select_thread():
+        threads = client.threads.search()
+        return st.selectbox("Select Thread", [t['thread_id'] for t in threads])
 
-        thread = client.threads.search()
-        thread_id = st.selectbox("Select Thread", options=[t['thread_id'] for t in thread], key="existing_thread_select")
+    def handle_interrupt(thread_data):
+        interrupt_key = list(thread_data['interrupts'].keys())[0]
+        data_list = thread_data['interrupts'][interrupt_key]
+        latest = data_list[0]
 
+        checkpoint_id = latest['id']
+        checkpoint_ns = latest['value']['name']
+        node_output = latest['value']['value']
+
+        st.write("Checkpoint ID:", checkpoint_id)
+        st.write("Checkpoint Namespace:", checkpoint_ns)
+        st.write("Node Output Message:", node_output)
+
+        user_checkpoint_id = st.text_input("Enter Checkpoint ID:", value=checkpoint_id)
+        user_checkpoint_ns = st.text_input("Enter Node Name (namespace):", value=checkpoint_ns)
+        resume_input = st.text_input("Enter Your Response")
+        return user_checkpoint_id, user_checkpoint_ns, resume_input
+
+
+    def stream_run(thread_id, assistant_id, checkpoint=None, resume_value=None):
+        processed_nodes = set()
+        node_containers = {}
+
+        for mode, chunk in client.runs.stream(
+            thread_id=thread_id,
+            assistant_id=assistant_id,
+            checkpoint=checkpoint,
+            input={},
+            command={"resume": resume_value},
+            stream_mode=["updates", "messages"],
+            stream_resumable=True,
+            checkpoint_during=True,
+        ):
+            # st.write("Mode",mode)
+
+            # ==============Streaming the respone tring=============
+
+            # if mode.startswith("messages/"):
+            #     stream_type = mode.split("/", 1)[1]
+            #     if stream_type == "metadata":
+            #         st.write("Meta Data")
+            #         # st.write(chunk)
+            #         # msg_id = chunk.get("message_id")
+            #         # node = chunk.get("langgraph_node")
+            #         # set up a new chat bubble, store metadata, etc.
+            #     elif stream_type == "partial":
+            #         # with st.chat_message("assistant"):
+            #         # st.write_stream(stream_respone(chunk))
+            #         for chunk_data in chunk:
+            #             # st.write(chunk_data.get("content")[-1])
+            #             print(chunk_data.get("content"),end="|",flush=True)
+
+            # ==============Streaming the respone tring=============
+            
+            
+            if mode == "updates" and "__interrupt__" in chunk:
+                interrupt_data = chunk["__interrupt__"]
+                st.warning("⚠️ Interrupt")
+                st.write(chunk)
+                # if interrupt_data[0]['value']:
+                #     st.write_stream(chunk)
+                    # st.header(interrupt_data[0]['value']['name'])
+                    # st.write(interrupt_data[0]['value']['value'])
+                    # user_input = st.text_input("Select Articles", key="resume_input")
+                    # if st.button("Resume"):
+                    #     if user_input:
+                    #         stream_run(thread_id, assistant_id, resume_value=user_input)
+                    #         break
+            elif mode == "messages":
+                for node in chunk:
+                    if node not in processed_nodes:
+                        processed_nodes.add(node)
+                        with st.expander(f"📩 Message from Node: {node}"):
+                            st.json(chunk[node])
+                            # st.write_stream(node)
+
+            elif mode == "updates":
+                for node in chunk:
+                    if node not in processed_nodes:
+                        processed_nodes.add(node)
+                        with st.expander(f"✅ Node Completed: {node}"):
+                            st.json(chunk[node])
+
+    # Option: New
+    if option == 'New':
+        name, assistent_id = select_assistant()
+        if assistent_id:
+            thread_choice = st.selectbox("Select Thread", ["New Thread", "Existing Threads"])
+            thread_id = None
+
+            if thread_choice == "New Thread":
+                if st.button("Create New Thread"):
+                    thread = client.threads.create()
+                    st.success(f"New thread created with ID: {thread['thread_id']}")
+                    thread_id = thread['thread_id']
+            else:
+                thread_id = select_thread()
+
+            if thread_id and st.button("Generate Blog Post"):
+                try:
+                    stream_run(thread_id, assistent_id)
+                except Exception as e:
+                    st.error(f"❌ Failed to generate blog post: {str(e)}")
+
+    # Option: Resume
+    elif option == 'Resume':
+        st.write("Resume your workflow")
+        name, assistent_id = select_assistant()
+        thread_id = select_thread()
         thread_data = client.threads.get(thread_id)
 
-        st.json(thread_data['interrupts']['11f77531-3996-e386-51bf-a1722c1ec121'][0]['value'])
-        st.write(thread_data['interrupts'].keys())
-        if (thread_data['status']=="interrupted"):
-            st.write("Intrrrputed")
+        if thread_data['status'] == "interrupted":
+            st.success("Thread is interrupted, ready to resume.")
+            checkpoint_id, checkpoint_ns, resume_input = handle_interrupt(thread_data)
 
-            data = thread_data['interrupts']['11f77531-3996-e386-51bf-a1722c1ec121'][0]['ns'][0]
-            st.write("Checkpoiner id: ",data.split(":")[1])
-            st.write("Checkpoiner Node: ",data.split(":")[0])
-            # enter the checkpointer id
-
-            checkpointer_id = st.text_input("Enter Checkpoint Id: ")
-            checkpoint_ns = st.text_input("Enter Node Name: ")
-            
-            resume_input = st.text_input("Enter Your Response")
-            if st.button("Resume"):
-                node_containers = {}  # For dynamically displaying each node
-                processed_nodes = set()  # Track already seen nodes
-                for mode, chunk in client.runs.stream(
-                                    thread_id=thread_id,
-                                    assistant_id=assistent_id,
-                                    checkpoint = {
-                                        "thread_id":thread_id,
-                                        "checkpoint_ns":checkpoint_ns,
-                                        "checkpoint_id":checkpointer_id
-                                    },
-                                    input={},
-                                    command={
-                                         "resume": resume_input
-                                         },
-                                    
-                                    stream_mode=["updates", "messages"],
-                                    metadata={"name": "my_run"},
-                                    # on_completion='delete',
-                                    stream_resumable=True,
-                                    checkpoint_during=True,   
-                                ):
-                                    if mode == "updates" and "__interrupt__" in chunk:
-                                        interrupt_data = chunk["__interrupt__"]
-                                        st.warning(f"⚠️ Interrupt:")
-                                        if interrupt_data[0]['value']:                    
-                                            st.header(interrupt_data[0]['value']['name'])
-                                            st.write(interrupt_data[0]['value']['value'])
-                                            # Ask your user via Streamlit UI for a response
-                                            resume_value = st.text_input("Select Articles", key="resume_input")
-
-                                            if len(resume_value)>0:
-                                                # Now resume the run with the user's input
-                                                for mode2, chunk2 in client.runs.stream(
-                                                    thread_id=thread_id,
-                                                    assistant_id=assistent_id,
-                                                    input=Command(resume=resume_value),
-                                                    stream_mode=["updates", "messages"],
-                                                    stream_resumable=True,
-                                                    checkpoint_during=True
-                                                ):
-                                                    if mode2=="messages":
-                                                        for node_id, msg in chunk2.data.items():
-                                                            st.json(msg)
-                                                    elif mode2=="updates":
-                                                        if node_id not in processed_nodes:
-                                                            processed_nodes.add(node_id)
-                                                            with st.expander(f"✅ Node Completed: {node_id}"):
-                                                                st.json(chunk2.data[node_id])
-                                            break  # Exit this primary loop so resumed run starts fresh
-                                    elif mode=='updates':
-                                        for node in chunk:
-                                            if node not in processed_nodes:
-                                                processed_nodes.add(node)
-
-                                                if node == 'interrupt':
-                                                    st.warning("❗️Interrupt Occur")
-                                                    st.write(chunk[node])
-                                                else:
-                                                    with st.expander(f"🔄 Processing Node: {node}", expanded=True):
-                                                            st.write("Processing...")
-                                                    
-                                                node_containers[node] = st.expander(f"✅ Node Completed: {node}", expanded=False)
-                                                with node_containers[node]:
-                                                    st.json(chunk[node])
-
-        
+            if st.button("Submit"):
+                try:
+                    stream_run(
+                        thread_id,
+                        assistent_id,
+                        checkpoint={
+                            "thread_id": thread_id,
+                            "checkpoint_ns": checkpoint_ns,
+                            "checkpoint_id": checkpoint_id
+                        },
+                        resume_value=resume_input
+                    )
+                except Exception as e:
+                    st.error(f"❌ Failed to resume run: {str(e)}")
