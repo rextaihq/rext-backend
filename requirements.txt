@@ -3,7 +3,6 @@ langchain
 langchain[openai]
 langchain[groq]
 langgraph
-langgraph-checkpoint-sqlite
 langgraph-checkpoint-postgres
 langgraph-cli[inmem]
 
@@ -22,7 +21,6 @@ pyyaml
 pandas
 numpy
 requests
-nest_asyncio
 markdown
 
 # APIs / UI

@@ -446,11 +446,9 @@ dependencies = [
     { name = "langchain", extra = ["groq", "openai"] },
     { name = "langgraph" },
     { name = "langgraph-checkpoint-postgres" },
-    { name = "langgraph-checkpoint-sqlite" },
     { name = "langgraph-cli", extra = ["inmem"] },
     { name = "langgraph-sdk" },
     { name = "markdown" },
-    { name = "nest-asyncio" },
     { name = "numpy" },
     { name = "pandas" },
     { name = "psycopg", extra = ["binary", "pool"] },
@@ -471,11 +469,9 @@ requires-dist = [
     { name = "langchain", extras = ["groq", "openai"], specifier = ">=0.3.27" },
     { name = "langgraph", specifier = ">=0.5.4" },
     { name = "langgraph-checkpoint-postgres", specifier = ">=2.0.23" },
-    { name = "langgraph-checkpoint-sqlite", specifier = ">=2.0.11" },
     { name = "langgraph-cli", extras = ["inmem"], specifier = ">=0.3.6" },
     { name = "langgraph-sdk", specifier = ">=0.1.74" },
     { name = "markdown", specifier = ">=3.8.2" },
-    { name = "nest-asyncio", specifier = ">=1.6.0" },
     { name = "numpy", specifier = ">=2.3.2" },
     { name = "pandas", specifier = ">=2.3.1" },
     { name = "psycopg", extras = ["binary", "pool"], specifier = ">=3.2.9" },
@@ -1368,20 +1364,6 @@ wheels = [
 ]
 
 [[package]]
-name = "langgraph-checkpoint-sqlite"
-version = "2.0.11"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "aiosqlite" },
-    { name = "langgraph-checkpoint" },
-    { name = "sqlite-vec" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/d2/aa/5f9e9de74a6d0a9b77c703db0068d0f0cdc8dbc2e9b292ae95f4de115a44/langgraph_checkpoint_sqlite-2.0.11.tar.gz", hash = "sha256:e9337204c27b01a29edff65c1ecb7da0ca8ac7f1bd66b405617459043ac6c3ed", size = 109749, upload-time = "2025-07-25T17:32:07.773Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/3d/d4/c56f6b0e8c8211791c9954bef0edaef3dc2e118cf33800be44c7b90432bd/langgraph_checkpoint_sqlite-2.0.11-py3-none-any.whl", hash = "sha256:11c40d93225ce99fa2800332c97b16280addf9f15274def32c4d547955290d3f", size = 31191, upload-time = "2025-07-25T17:32:06.355Z" },
-]
-
-[[package]]
 name = "langgraph-cli"
 version = "0.3.6"
 source = { registry = "https://pypi.org/simple" }
@@ -1718,15 +1700,6 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/d9/58/0fbbfb13662297c8447d1872670da79f3f2a63fb68ae9aac9965cdc2d428/narwhals-2.0.0.tar.gz", hash = "sha256:d967bea54dfb6cd787abf3865ab4d72b8259d8f798c1c12c4eb693d5e9cebb24", size = 525527, upload-time = "2025-07-28T08:12:43.407Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/93/9d/9e2afb7d3d43bfa1a1f80d2da291064753305f9871851f1cd5a60d870893/narwhals-2.0.0-py3-none-any.whl", hash = "sha256:9c9fe8a969b090d783edbcb3b58e1d0d15f5100fdf85b53f5e76d38f4ce7f19a", size = 385206, upload-time = "2025-07-28T08:12:39.545Z" },
-]
-
-[[package]]
-name = "nest-asyncio"
-version = "1.6.0"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/83/f8/51569ac65d696c8ecbee95938f89d4abf00f47d58d48f6fbabfe8f0baefe/nest_asyncio-1.6.0.tar.gz", hash = "sha256:6f172d5449aca15afd6c646851f4e31e02c598d553a667e38cafa997cfec55fe", size = 7418, upload-time = "2024-01-21T14:25:19.227Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/a0/c4/c2971a3ba4c6103a3d10c4b0f24f461ddc027f0f09763220cf35ca1401b3/nest_asyncio-1.6.0-py3-none-any.whl", hash = "sha256:87af6efd6b5e897c81050477ef65c62e2b2f35d51703cae01aff2905b1852e1c", size = 5195, upload-time = "2024-01-21T14:25:17.223Z" },
 ]
 
 [[package]]
@@ -3123,18 +3096,6 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/fa/2e/677c17c5d6a004c3c45334ab1dbe7b7deb834430b282b8a0f75ae220c8eb/sqlalchemy-2.0.41-cp313-cp313-win32.whl", hash = "sha256:bfc9064f6658a3d1cadeaa0ba07570b83ce6801a1314985bf98ec9b95d74e15f", size = 2082420, upload-time = "2025-05-14T17:55:52.69Z" },
     { url = "https://files.pythonhosted.org/packages/e9/61/e8c1b9b6307c57157d328dd8b8348ddc4c47ffdf1279365a13b2b98b8049/sqlalchemy-2.0.41-cp313-cp313-win_amd64.whl", hash = "sha256:82ca366a844eb551daff9d2e6e7a9e5e76d2612c8564f58db6c19a726869c1df", size = 2108329, upload-time = "2025-05-14T17:55:54.495Z" },
     { url = "https://files.pythonhosted.org/packages/1c/fc/9ba22f01b5cdacc8f5ed0d22304718d2c758fce3fd49a5372b886a86f37c/sqlalchemy-2.0.41-py3-none-any.whl", hash = "sha256:57df5dc6fdb5ed1a88a1ed2195fd31927e705cad62dedd86b46972752a80f576", size = 1911224, upload-time = "2025-05-14T17:39:42.154Z" },
-]
-
-[[package]]
-name = "sqlite-vec"
-version = "0.1.6"
-source = { registry = "https://pypi.org/simple" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/88/ed/aabc328f29ee6814033d008ec43e44f2c595447d9cccd5f2aabe60df2933/sqlite_vec-0.1.6-py3-none-macosx_10_6_x86_64.whl", hash = "sha256:77491bcaa6d496f2acb5cc0d0ff0b8964434f141523c121e313f9a7d8088dee3", size = 164075, upload-time = "2024-11-20T16:40:29.847Z" },
-    { url = "https://files.pythonhosted.org/packages/a7/57/05604e509a129b22e303758bfa062c19afb020557d5e19b008c64016704e/sqlite_vec-0.1.6-py3-none-macosx_11_0_arm64.whl", hash = "sha256:fdca35f7ee3243668a055255d4dee4dea7eed5a06da8cad409f89facf4595361", size = 165242, upload-time = "2024-11-20T16:40:31.206Z" },
-    { url = "https://files.pythonhosted.org/packages/f2/48/dbb2cc4e5bad88c89c7bb296e2d0a8df58aab9edc75853728c361eefc24f/sqlite_vec-0.1.6-py3-none-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:7b0519d9cd96164cd2e08e8eed225197f9cd2f0be82cb04567692a0a4be02da3", size = 103704, upload-time = "2024-11-20T16:40:33.729Z" },
-    { url = "https://files.pythonhosted.org/packages/80/76/97f33b1a2446f6ae55e59b33869bed4eafaf59b7f4c662c8d9491b6a714a/sqlite_vec-0.1.6-py3-none-manylinux_2_17_x86_64.manylinux2014_x86_64.manylinux1_x86_64.whl", hash = "sha256:823b0493add80d7fe82ab0fe25df7c0703f4752941aee1c7b2b02cec9656cb24", size = 151556, upload-time = "2024-11-20T16:40:35.387Z" },
-    { url = "https://files.pythonhosted.org/packages/6a/98/e8bc58b178266eae2fcf4c9c7a8303a8d41164d781b32d71097924a6bebe/sqlite_vec-0.1.6-py3-none-win_amd64.whl", hash = "sha256:c65bcfd90fa2f41f9000052bcb8bb75d38240b2dae49225389eca6c3136d3f0c", size = 281540, upload-time = "2024-11-20T16:40:37.296Z" },
 ]
 
 [[package]]

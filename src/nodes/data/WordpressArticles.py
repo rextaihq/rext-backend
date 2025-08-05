@@ -2,7 +2,7 @@ import feedparser
 import time
 from datetime import datetime
 from typing import List, Dict
-from src.states.State import AgentState
+from src.states.State import AgentState,URLCONFIF
 from src.utils.helper import loadYamlConfig
 
 def wordpress_articles(state:AgentState) -> AgentState:
@@ -28,7 +28,13 @@ def wordpress_articles(state:AgentState) -> AgentState:
             print(article['title'], article['link'])
     """
     print("Fetching wordpress articles...")
-    rss_sources = loadYamlConfig().get("rss_sources", {})
+    config_instance = state['config']
+    print("Config: ",config_instance)
+    if not isinstance(config_instance, URLCONFIF):
+        return {
+            "error":"Configuration not found or is not a URLCONFIF object in FetchWordpressArticles."
+        }
+    rss_sources = config_instance.WP_URL
     
     print("RSS Sources:", rss_sources)
     all_articles = []
@@ -55,11 +61,14 @@ def wordpress_articles(state:AgentState) -> AgentState:
             print("Articles Fetched from", source_name, ":", len(all_articles))
              # Add fetched articles to state
             print("Total articles fetched:", len(all_articles))
-            state['wordpress_articles'] = all_articles
-            return state
+
+            return {
+                "wordpress_articles":all_articles
+            }
         except Exception as e:
             print(f"[ERROR] Failed to fetch from {source_name}: {e}")
-            state['error'] = str(e)
-            return str(e)
+            return {
+                "error":str(e)
+            }
 
    

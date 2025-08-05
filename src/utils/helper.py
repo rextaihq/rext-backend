@@ -1,5 +1,9 @@
 import yaml
 from crawl4ai.async_configs import BrowserConfig, CrawlerRunConfig, CacheMode
+from langgraph_sdk import get_sync_client
+from dotenv import load_dotenv
+import os
+load_dotenv()
 
 
 def loadYamlConfig(file_path="config/config.yaml"):
@@ -57,3 +61,12 @@ def GetCrawlerRunConfig():
     except Exception as e:
         print(f"[ERROR] Failed to load crawler run configuration: {e}")
         return None
+
+
+def get_client():
+    # Initialize LangGraph client
+    client = get_sync_client(
+        url="http://localhost:8123/",
+        api_key=os.getenv('LANGSMITH_API_KEY')
+    )
+    return client

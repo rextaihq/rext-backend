@@ -5,8 +5,15 @@ from pydantic import BaseModel, Field
 from typing import List
 
 import operator
+class URLCONFIF(BaseModel):
+    category:str = "Technology"
+    language:str = 'en'
+    country:str='pk'
+    WP_URL: Dict[str, str]
 
 class AgentState(TypedDict, total=False):
+    # Set the congigration for each 
+    config: URLCONFIF
     # Basic article data
     articles: List[Dict]
     wordpress_articles: List[Dict]
