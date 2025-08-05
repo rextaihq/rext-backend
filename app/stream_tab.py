@@ -41,6 +41,8 @@ def blog_generator_tab(client):
 
 
     def stream_run(thread_id, assistant_id, checkpoint=None, resume_value=None):
+        assisant = client.assistants.get(assistant_id=assistant_id)
+        assinstant_config = assisant['config']
         processed_nodes = set()
         node_containers = {}
 
@@ -48,8 +50,8 @@ def blog_generator_tab(client):
             thread_id=thread_id,
             assistant_id=assistant_id,
             checkpoint=checkpoint,
-            input={},
-            command={"resume": resume_value},
+            input={"config":assinstant_config},
+            command={"resume": resume_value} if resume_value else {},
             stream_mode=["updates", "messages"],
             stream_resumable=True,
             checkpoint_during=True,
@@ -77,18 +79,19 @@ def blog_generator_tab(client):
             
             
             if mode == "updates" and "__interrupt__" in chunk:
-                interrupt_data = chunk["__interrupt__"]
+                interrupt_data = chunk["__interrupt__"][0]
                 st.warning("⚠️ Interrupt")
-                st.write(chunk)
-                # if interrupt_data[0]['value']:
-                #     st.write_stream(chunk)
-                    # st.header(interrupt_data[0]['value']['name'])
-                    # st.write(interrupt_data[0]['value']['value'])
-                    # user_input = st.text_input("Select Articles", key="resume_input")
-                    # if st.button("Resume"):
-                    #     if user_input:
-                    #         stream_run(thread_id, assistant_id, resume_value=user_input)
-                    #         break
+                # Extract interrupt data
+                interrupt_id = interrupt_data["id"]
+                name = interrupt_data["value"]["name"]
+                message = interrupt_data["value"]["value"]
+
+                    # Show to user
+                st.subheader("🛑 Interrupt Triggered")
+                st.markdown(f"**Checkpoint Name:** `{name}`")
+                st.markdown(f"**Checkpoint Message:**")
+                st.code(message)
+
             elif mode == "messages":
                 for node in chunk:
                     if node not in processed_nodes:

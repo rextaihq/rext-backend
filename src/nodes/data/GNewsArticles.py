@@ -20,11 +20,11 @@ def gnews_articles(state: AgentState) -> AgentState:
         print("Fetching local articles from last 48 hours...")
 
         # Load API config
-        config = loadYamlConfig()
-        api_url = config.get("GNews", {}).get("url", "https://gnews.io/api/v4/top-headlines")
-        category = config.get("GNews", {}).get("category", "technology")
-        language = config.get("GNews", {}).get("language", "en")
-        country = config.get("GNews", {}).get("country", "pk")
+        config = state['config']
+        api_url =  "https://gnews.io/api/v4/top-headlines"
+        category = config.category
+        language = config.language
+        country = config.country
         api_key = os.getenv("GNEWS_API_KEY", "YOUR_GNEWS_API_KEY")
 
         # Calculate time range for last 48 hours in ISO 8601 format
@@ -70,14 +70,18 @@ def gnews_articles(state: AgentState) -> AgentState:
                 })
                 break
 
-            state['articles'] = articles
             print("Total Articles: ",len(articles))
-            return state
+            return {
+                "articles":articles
+            }
 
         else:
-            state['error'] = f"GNews API returned status code {response.status_code}"
-            return state
+            return {
+                "error":f"GNews API returned status code {response.status_code}"
+            }
 
     except Exception as e:
-        state['error'] = str(e)
-        return state
+        
+        return {
+            "error":str(e)
+        }

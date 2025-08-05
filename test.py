@@ -70,3 +70,7 @@
 #     name: content-automation_langgraph-data
 #     driver: local
 # (content-automation) mobeen@mobeen:~/Applications/Revnix/Automation/content-automation$ 
+
+
+from importlib.metadata import version
+print(version("langgraph"))
