@@ -20,11 +20,12 @@ def gnews_articles(state: AgentState) -> AgentState:
         print("Fetching local articles from last 48 hours...")
 
         # Load API config
-        config = state['config']
+        config_instance = state['config']
         api_url =  "https://gnews.io/api/v4/top-headlines"
-        category = config.category
-        language = config.language
-        country = config.country
+        print("GNew API URL: ",api_url)
+        category = config_instance['category']
+        language = config_instance['language']
+        country = config_instance['country']
         api_key = os.getenv("GNEWS_API_KEY", "YOUR_GNEWS_API_KEY")
 
         # Calculate time range for last 48 hours in ISO 8601 format

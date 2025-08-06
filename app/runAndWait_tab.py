@@ -1,4 +1,5 @@
 import streamlit as st
+from src.states.State import URLCONFIF
 
 def run_wait_tab(client):
     st.title("📝 BlogPost Generator (Wait for Execution)")
@@ -40,11 +41,20 @@ def run_wait_tab(client):
         with st.spinner("Running the workflow... Please wait."):
             assisant = client.assistants.get(assistant_id=assistant_id)
             assinstant_config = assisant['config']
+
+            config = URLCONFIF(
+                category=assisant['config']['category'],
+                country=assisant['config']['country'],
+                language=assisant['config']['language'],
+                WP_URL=assisant['config']['WP_URL']
+
+            )
+            st.write(config.dict())
             try:
                 result = client.runs.wait(
                     thread_id=thread_id,
                     assistant_id=assistant_id,
-                    input={"config":assinstant_config},
+                    input={"config":config.model_dump() },
                     checkpoint=checkpoint,
                     metadata={"source": "run_wait_tab"},
                     command={"resume": resume_value} if resume_value else {},

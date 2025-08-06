@@ -29,17 +29,17 @@ def wordpress_articles(state:AgentState) -> AgentState:
     """
     print("Fetching wordpress articles...")
     config_instance = state['config']
-    print("Config: ",config_instance)
-    if not isinstance(config_instance, URLCONFIF):
-        return {
-            "error":"Configuration not found or is not a URLCONFIF object in FetchWordpressArticles."
-        }
-    rss_sources = config_instance.WP_URL
+
+    rss_sources = config_instance['WP_URL']
     
     print("RSS Sources:", rss_sources)
+    print("RSS Type:", type(rss_sources))
     all_articles = []
 
     for source_name, url in rss_sources.items():
+        print("Loop Start...")
+        print("Source Name: ",source_name)
+        print("Source URL: ",url)
         try:
             feed = feedparser.parse(url)
 
