@@ -1,5 +1,7 @@
 import streamlit as st
 from langgraph.types import Command
+from src.states.State import URLCONFIF
+
 
 def blog_generator_tab(client):
     st.title("📝 BlogPost Generator")
@@ -43,6 +45,15 @@ def blog_generator_tab(client):
     def stream_run(thread_id, assistant_id, checkpoint=None, resume_value=None):
         assisant = client.assistants.get(assistant_id=assistant_id)
         assinstant_config = assisant['config']
+
+        config = URLCONFIF(
+            category=assisant['config']['category'],
+            country=assisant['config']['country'],
+            language=assisant['config']['language'],
+            WP_URL=assisant['config']['WP_URL']
+        )
+
+        st.write(config.dict())
         processed_nodes = set()
         node_containers = {}
 
@@ -50,7 +61,7 @@ def blog_generator_tab(client):
             thread_id=thread_id,
             assistant_id=assistant_id,
             checkpoint=checkpoint,
-            input={"config":assinstant_config},
+            input={"config":config.model_dump()},
             command={"resume": resume_value} if resume_value else {},
             stream_mode=["updates", "messages"],
             stream_resumable=True,

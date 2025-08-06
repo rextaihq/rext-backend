@@ -23,7 +23,7 @@ def run_background_tab(client):
     def background_run(thread_id, assistant_id):
         with st.spinner("Starting background run..."):
             assisant = client.assistants.get(assistant_id=assistant_id)
-            # assinstant_config = assisant['config']
+
             config = URLCONFIF(
                 category=assisant['config']['category'],
                 country=assisant['config']['country'],
@@ -31,25 +31,25 @@ def run_background_tab(client):
                 WP_URL=assisant['config']['WP_URL']
 
             )
-            st.write(config)
-            # try:
-            #     assisant = client.assistants.get(assistant_id=assistant_id)
-            #     run_data = client.runs.create(
-            #         thread_id=thread_id,
-            #         assistant_id=assistant_id,
-            #         input={"config":config},
-            #         metadata={"name": "blog_generation_run"},
-            #         webhook=None,  # Optional: Set your webhook URL
-            #         multitask_strategy="interrupt",
-            #         stream_resumable=True,
-            #         checkpoint_during=True
-            #     )
-            #     run_id = run_data["run_id"]
-            #     st.success(f"✅ Background run started. Run ID: `{run_id}`")
-            #     st.success(run_data)
-            #     st.session_state["run_id"] = run_id
-            # except Exception as e:
-            #     st.error(f"❌ Failed to start background run: {e}")
+            st.write(config.dict())
+            try:
+                assisant = client.assistants.get(assistant_id=assistant_id)
+                run_data = client.runs.create(
+                    thread_id=thread_id,
+                    assistant_id=assistant_id,
+                    input={"config":config.model_dump()},
+                    metadata={"name": "blog_generation_run"},
+                    webhook=None,  # Optional: Set your webhook URL
+                    multitask_strategy="interrupt",
+                    stream_resumable=True,
+                    checkpoint_during=True
+                )
+                run_id = run_data["run_id"]
+                st.success(f"✅ Background run started. Run ID: `{run_id}`")
+                st.success(run_data)
+                st.session_state["run_id"] = run_id
+            except Exception as e:
+                st.error(f"❌ Failed to start background run: {e}")
 
     def show_run_metadata(thread_id, run_id):
         try:

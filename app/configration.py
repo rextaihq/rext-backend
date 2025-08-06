@@ -17,17 +17,16 @@ def set_configuration(client):
     assisant = client.assistants.get(assistant_id=assistant_id)
     # st.json(assisant)
 
-    st.write(assisant['config'])
+    if assisant['config']:
+        config = URLCONFIF(
+            category=assisant['config']['category'],
+            country=assisant['config']['country'],
+            language=assisant['config']['language'],
+            WP_URL=assisant['config']['WP_URL']
 
-    config = URLCONFIF(
-        category=assisant['config']['category'],
-        country=assisant['config']['country'],
-        language=assisant['config']['language'],
-        WP_URL=assisant['config']['WP_URL']
+        )
 
-    )
-
-    st.json(config)
+        st.json(config)
     if assistant_id:
         st.header(f"{assistant_name} Configuration Settings")
 

@@ -72,5 +72,7 @@
 # (content-automation) mobeen@mobeen:~/Applications/Revnix/Automation/content-automation$ 
 
 
-from importlib.metadata import version
-print(version("langgraph"))
+data= {'UserFeed1:': 'https://wptavern.com/feed',
+       'UserFeed2:': 'https://wptavern.com/feed'}
+for source_name, url in data.items():
+    print(source_name,url)
