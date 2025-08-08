@@ -19,7 +19,7 @@ async def get_relevant_articles(state: AgentState) -> AgentState:
 
         # Extract list of URLs from your DataFrame or list of dicts
         articles = state.get("combine_articles", [])
-        urls_list = [a["full_links"] for a in articles]
+        urls_list = [a["full_links"] for a in selected_arrticles]
         
         result_content = []
         for urls in urls_list:

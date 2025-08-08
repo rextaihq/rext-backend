@@ -37,10 +37,8 @@ async def scrape_full_content(state: AgentState) -> AgentState:
     for article, result in zip(articles, results):
         if result.success:
             article["Raw Blog Content"] = result.markdown
-            article['full_links'] = [data['href'] for data in result.links.get('internal', [])][:10]
         else:
             article["Raw Blog Content"] = ""
-            article['full_links'] = []
 
     print("Scraping completed.")
     df = pd.DataFrame(state['combine_articles'])

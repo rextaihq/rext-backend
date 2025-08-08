@@ -19,6 +19,7 @@ from src.nodes.Scrapper.GetRelevant import get_relevant_articles
 from src.nodes.generation.outline_generation import outline_generator
 from src.nodes.generation.blogGeneraion import blog_generation
 from src.nodes.draft.draft_blog import draft_blog
+from src.subgraphs.getSubgraph import get_subgraph
 from src.states.State import AgentState
 from langgraph.graph import StateGraph,START, END
 from langchain_core.runnables import RunnableLambda
@@ -50,17 +51,18 @@ def CreateWorkflow()-> RunnableLambda[AgentState, AgentState]:
         workflow.add_node("SeoScore",RunnableLambda(score_seo_potential))
         workflow.add_node("ReRanking",RunnableLambda(re_ranking))
         workflow.add_node("TopicSelection",RunnableLambda(TopicSelection))
+        workflow.add_node("WebSearch",get_subgraph())
         workflow.add_node("GetRelevantArticles",RunnableLambda(get_relevant_articles))
-        # generate outline
-        workflow.add_node("OutineGeneration",RunnableLambda(outline_generator))
-        workflow.add_node("OutlineApproval",RunnableLambda(outline_approval))
+        # # generate outline
+        # workflow.add_node("OutineGeneration",RunnableLambda(outline_generator))
+        # workflow.add_node("OutlineApproval",RunnableLambda(outline_approval))
 
-        # add human approval node
-        workflow.add_node("BlogGeneration",RunnableLambda(blog_generation))
-        workflow.add_node("BlogApproval",RunnableLambda(blog_approval))
+        # # add human approval node
+        # workflow.add_node("BlogGeneration",RunnableLambda(blog_generation))
+        # workflow.add_node("BlogApproval",RunnableLambda(blog_approval))
 
-        # add draft blog node
-        workflow.add_node("DraftBlog",RunnableLambda(draft_blog))
+        # # add draft blog node
+        # workflow.add_node("DraftBlog",RunnableLambda(draft_blog))
 
 
 
@@ -95,30 +97,33 @@ def CreateWorkflow()-> RunnableLambda[AgentState, AgentState]:
 
         # # Human in loop
         workflow.add_edge("ReRanking", "TopicSelection")
-        workflow.add_edge("TopicSelection", "GetRelevantArticles")
+        workflow.add_edge("TopicSelection","WebSearch")
+        workflow.add_edge("WebSearch", "GetRelevantArticles")
 
-        # draw b/w outline generation
-        workflow.add_edge("GetRelevantArticles",'OutineGeneration')
-        workflow.add_edge("OutineGeneration", "OutlineApproval")
+        # # draw b/w outline generation
+        # workflow.add_edge("GetRelevantArticles",'OutineGeneration')
+        # workflow.add_edge("OutineGeneration", "OutlineApproval")
 
-        # Add conditional edge for looping
-        workflow.add_conditional_edges(
-            "OutlineApproval",
-            lambda state: "continue" if state.get("current_approval_index", 0) < len(state.get("selected_articles", [])) else "done",
-            {
-                "continue": "OutineGeneration",
-                "done": 'BlogGeneration'
-            }
-        )
+        # # Add conditional edge for looping
+        # workflow.add_conditional_edges(
+        #     "OutlineApproval",
+        #     lambda state: "continue" if state.get("current_approval_index", 0) < len(state.get("selected_articles", [])) else "done",
+        #     {
+        #         "continue": "OutineGeneration",
+        #         "done": 'BlogGeneration'
+        #     }
+        # )
 
-        # Add a conditional edge b/etween blog generation and draft blog
-        workflow.add_edge("BlogGeneration",'BlogApproval')
-        workflow.add_conditional_edges(
-            "BlogApproval",
-            lambda state: "continue" if state.get("current_blog_index", 0) < len(state.get("selected_articles", [])) else "done",
-            {
-                "continue": "BlogGeneration",
-                "done": "DraftBlog"
-            }
-        )
+        # # Add a conditional edge b/etween blog generation and draft blog
+        # workflow.add_edge("BlogGeneration",'BlogApproval')
+        # workflow.add_conditional_edges(
+        #     "BlogApproval",
+        #     lambda state: "continue" if state.get("current_blog_index", 0) < len(state.get("selected_articles", [])) else "done",
+        #     {
+        #         "continue": "BlogGeneration",
+        #         "done": "DraftBlog"
+        #     }
+        # )
+
+        # workflow.add_edge("DraftBlog",END)
         return workflow

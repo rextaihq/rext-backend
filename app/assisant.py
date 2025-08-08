@@ -18,7 +18,7 @@ def assistant_tab(client):
         st.subheader("🔧 Create a New Assistant")
         name = st.text_input("Assistant Name")
         description = st.text_area("Assistant Description")
-        graph_id = st.text_input("Graph ID", value="aagent")
+        graph_id = st.text_input("Graph ID", value="agent")
         submit = st.button("Create Assistant")
 
         if submit and name:

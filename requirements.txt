@@ -5,6 +5,7 @@ langchain[groq]
 langgraph
 langgraph-checkpoint-postgres
 langgraph-cli[inmem]
+langchain_tavily
 
 # Crawling & Parsing
 crawl4ai
