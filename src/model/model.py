@@ -28,3 +28,16 @@ def StructuredModel():
     model = LoadModel()
     model_with_parser = model.with_structured_output(Evaluation)
     return model_with_parser
+
+
+def searchModel():
+    """
+    Initializes and returns a chat model using LangChain's `init_chat_model`.
+
+    This function loads the `gpt-4o-mini` model from the OpenAI provider.
+
+    Returns:
+        BaseChatModel: An instance of the initialized chat model.
+    """
+    model = init_chat_model("gpt-4o-mini", model_provider="openai")
+    return model

@@ -111,35 +111,33 @@ def run_wait_tab(client):
     # === UI Flow ===
     option = st.selectbox("Select Option", ["New", "Resume"])
 
-    name, assistant_id = select_assistant(key=1)
+    name, assistant_id = select_assistant(key=1)  # Keep only this one
     resume_data = None
 
     if assistant_id:
         thread_id = None
 
         if option == "New":
-            name, assistent_id = select_assistant(key=2)
-            if assistent_id:
-                thread_choice = st.selectbox("Select Thread", ["New Thread", "Existing Threads"])
-                thread_id = None
+            thread_choice = st.selectbox("Select Thread", ["New Thread", "Existing Threads"])
+            thread_id = None
 
-                if thread_choice == "New Thread":
-                    if st.button("Create New Thread"):
-                        thread = client.threads.create()
-                        st.success(f"New thread created with ID: {thread['thread_id']}")
-                        thread_id = thread['thread_id']
-                else:
-                    thread_id = select_thread()
+            if thread_choice == "New Thread":
+                if st.button("Create New Thread"):
+                    thread = client.threads.create()
+                    st.success(f"New thread created with ID: {thread['thread_id']}")
+                    thread_id = thread['thread_id']
+            else:
+                thread_id = select_thread()
 
-                if thread_id and st.button("Generate Blog Post"):
-                    try:
-                        run_and_wait(thread_id, assistent_id)
-                    except Exception as e:
-                        st.error(f"❌ Failed to generate blog post: {str(e)}")
+            if thread_id and st.button("Generate Blog Post"):
+                try:
+                    run_and_wait(thread_id, assistant_id)  # Use the same variable here
+                except Exception as e:
+                    st.error(f"❌ Failed to generate blog post: {str(e)}")
 
         elif option == 'Resume':
             st.write("Resume your workflow")
-            name, assistent_id = select_assistant(key=3)
+            # Removed duplicate select_assistant here
             thread_id = select_thread()
             thread_data = client.threads.get(thread_id)
 
@@ -151,7 +149,7 @@ def run_wait_tab(client):
                     try:
                         run_and_wait(
                             thread_id,
-                            assistent_id,
+                            assistant_id,  # Reuse original assistant_id
                             checkpoint={
                                 "thread_id": thread_id,
                                 "checkpoint_ns": checkpoint_ns,
@@ -160,7 +158,8 @@ def run_wait_tab(client):
                             resume_value=resume_input
                         )
                     except Exception as e:
-                        st.error(f"❌ Failed to resume run: {str(e)}")
+                        st.error(f"❌ Failed to resume workflow: {str(e)}")
+
 
         # else:
         #     thread_id = select_thread()

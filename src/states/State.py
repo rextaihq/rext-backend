@@ -14,6 +14,10 @@ class URLCONFIF(BaseModel):
 class AgentState(TypedDict, total=False):
     # Set the congigration for each 
     config: URLCONFIF
+
+    # Message state for tools calling
+    messages: Annotated[list, add_messages]
+    
     # Basic article data
     articles: List[Dict]
     wordpress_articles: List[Dict]

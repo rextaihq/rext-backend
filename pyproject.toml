@@ -9,6 +9,7 @@ dependencies = [
     "crawl4ai>=0.7.2",
     "fastapi[standard]>=0.116.1",
     "feedparser>=6.0.11",
+    "langchain-tavily>=0.2.11",
     "langchain[groq,openai]>=0.3.27",
     "langgraph>=0.5.4",
     "langgraph-checkpoint-postgres>=2.0.23",
