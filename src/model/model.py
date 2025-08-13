@@ -1,5 +1,6 @@
 from langchain.chat_models import init_chat_model
 from src.states.State import Evaluation
+from sentence_transformers import SentenceTransformer
 
 def LoadModel():
     """
@@ -41,3 +42,8 @@ def searchModel():
     """
     model = init_chat_model("gpt-4o-mini", model_provider="openai")
     return model
+
+
+def load_embedder():
+    embedder = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')
+    return embedder
