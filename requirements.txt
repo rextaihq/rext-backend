@@ -6,6 +6,7 @@ langgraph
 langgraph-checkpoint-postgres
 langgraph-cli[inmem]
 langchain_tavily
+sentence-transformers
 
 # Crawling & Parsing
 crawl4ai
