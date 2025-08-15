@@ -2,10 +2,10 @@ from langgraph.types import Command, interrupt
 from src.states.State import AgentState
 import pandas as pd
 
-def TopicSelection(state: AgentState) -> Command | AgentState:
+def topic_selection(state: AgentState) -> Command | AgentState:
         print("Human In Loop...")
         # Extract combined article data
-        articles = state.get('combine_articles', [])
+        articles = state.get('filter_articles', [])
         if not articles:
             raise ValueError("No articles found in state['combine_articles'].")
 

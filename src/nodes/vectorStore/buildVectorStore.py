@@ -1,0 +1,59 @@
+from src.states.State import AgentState
+from src.utils.helper import get_hf_embedding
+from tqdm import tqdm
+from uuid import uuid4
+import os, faiss
+from langchain_community.docstore.in_memory import InMemoryDocstore
+from langchain_community.vectorstores import FAISS
+
+def build_vector_store(state: AgentState)->AgentState:
+    blog_context = state['blog_content']
+    batch_size = 32
+    vector_store_path = "my_faiss_index3"
+
+    # if not blog_context:
+    #     raise ValueError("❌ Blog Context is empty")
+
+    # Determine embedding dimension
+    test_embedding = get_hf_embedding().embed_query("hello world")
+    dimension = len(test_embedding)
+
+
+    if os.path.exists(vector_store_path):
+        print(">> Loading existing FAISS index <<")
+        vector_store = FAISS.load_local(
+            vector_store_path,
+            get_hf_embedding(),
+            allow_dangerous_deserialization=True
+        )
+    else:
+        print(">> Creating new FAISS index <<")
+        index = faiss.IndexFlatL2(dimension)
+        vector_store = FAISS(
+            embedding_function=get_hf_embedding(),
+            index=index,
+            docstore=InMemoryDocstore(),
+            index_to_docstore_id={},
+        )
+
+    # Convert blog_context into LangChain Document objects
+    # documents = [Document(page_content=text) for text in blog_context]
+    uuids = [str(uuid4()) for _ in blog_context]
+
+    print(f"\n📦 Preparing to insert {len(blog_context)} documents into FAISS...\n")
+
+    for i in tqdm(range(0, len(blog_context), batch_size), desc="🔍 Embedding & Inserting", unit="batch"):
+        try:
+            batch_docs = blog_context[i:i+batch_size]
+            batch_ids = uuids[i:i+batch_size]
+            vector_store.add_documents(documents=batch_docs, ids=batch_ids)
+        except Exception as e:
+            print(f"⚠️ Error during batch insertion: {str(e)}")
+
+    print("✅ Documents successfully inserted into FAISS")
+
+    # Save index
+    vector_store.save_local(vector_store_path)
+    print(f"💾 Vector store saved at {vector_store_path}")
+
+    return state

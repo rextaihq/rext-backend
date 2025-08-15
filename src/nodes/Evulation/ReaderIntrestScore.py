@@ -19,7 +19,7 @@ def score_reader_interest(state: AgentState) -> dict:
         ratings = []
         weights = []
 
-        for article in state.get("combine_articles", []):
+        for article in state.get("filter_articles", []):
             title = article.get("title", "")
             description = article.get("summary", "")
             blog_data = article.get("scraped_markdown", "")
@@ -44,11 +44,13 @@ def score_reader_interest(state: AgentState) -> dict:
             weights.append(response.weight)
 
         return {
+            "evaluations":{
             'reader_rating': ratings,
             'reader_weight': weights
         }
+        }
+
 
     except Exception as e:
         print("Reader interest scoring failed:", e)
-        state["error"] = str(e)
-        return str(e)
+        return {"error": [{"Reader interest scoring failed": str(e)}]}

@@ -1,8 +1,20 @@
+# Standard library imports
+import os
+import re
+from typing import Dict, List, Tuple
+
+# Third-party imports
 import yaml
+from bs4 import BeautifulSoup
+from dotenv import load_dotenv
+from sentence_transformers import SentenceTransformer
+
+# Project-specific / local imports
 from crawl4ai.async_configs import BrowserConfig, CrawlerRunConfig, CacheMode
 from langgraph_sdk import get_sync_client
-from dotenv import load_dotenv
-import os
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+from langchain_community.embeddings import HuggingFaceEmbeddings
+
 load_dotenv()
 
 
@@ -72,3 +84,95 @@ def get_client():
         api_key=os.getenv('LANGSMITH_API_KEY')
     )
     return client
+
+def merge_evaluations(a: Dict[str, List[int]], b: Dict[str, List[int]]) -> Dict[str, List[int]]:
+    """
+    Merges two dictionaries containing lists of evaluation results.
+    Assumes keys are evaluation names (e.g., 'relevance_rating') and values are lists of scores/weights.
+    """
+    merged = dict(a)  # start with first dict
+    for key, val_list in b.items():
+        if key in merged:
+            # Extend the existing list with the new list
+            merged[key].extend(val_list)
+        else:
+            merged[key] = val_list
+    return merged
+
+
+
+def get_embedder():
+    """Return a lightweight SentenceTransformer embedder."""
+    return SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')
+
+def get_hf_embedding():
+    """Return a HuggingFace embedding model for retrieval tasks."""
+    return HuggingFaceEmbeddings(model_name="BAAI/bge-small-en")
+
+
+# Content Cleaning
+def clean_blog_content_with_urls(raw_html: str) -> Tuple[str, List[str]]:
+    """
+    Cleans raw HTML/markdown content by:
+    - Converting escaped newlines to real newlines
+    - Extracting and returning unique non-media URLs from markdown and HTML anchors
+    - Removing markdown link syntax but keeping anchor text
+    - Stripping HTML tags
+    - Removing excessive whitespace
+
+    Args:
+        raw_html (str): Raw content containing HTML and markdown.
+
+    Returns:
+        Tuple[str, List[str]]: Cleaned text and list of unique URLs (excluding media).
+    """
+    print("Text Cleaning.....")
+    # Convert escaped '\n' sequences into actual newlines
+    text = raw_html.replace("\\n", "\n")
+
+    # Extract URLs from markdown links: (https://...)
+    urls = re.findall(r'\((https?://[^\)]+)\)', text)
+
+    # Extract URLs from HTML anchor tags: href="https://..."
+    urls += re.findall(r'href=[\'"]?([^\'" >]+)', text)
+
+    # Remove markdown link syntax but keep anchor text only: [text](url) -> text
+    text = re.sub(r'\[(.*?)\]\((.*?)\)', r'\1', text)
+
+    # Parse HTML and extract text only
+    soup = BeautifulSoup(text, "html.parser")
+    clean_text = soup.get_text(separator="\n")
+
+    # Remove excessive blank lines and trim
+    clean_text = re.sub(r'\n\s*\n+', '\n\n', clean_text).strip()
+
+    # Filter out URLs ending with common media file extensions
+    media_extensions = (
+        '.jpg', '.jpeg', '.png', '.gif', '.svg', '.webp',
+        '.mp4', '.mp3', '.wav', '.avi', '.mov', '.wmv',
+        '.m4a', '.flac', '.ogg', '.webm'
+    )
+    urls = [u for u in urls if not u.lower().endswith(media_extensions)]
+
+    # Deduplicate URLs while preserving order
+    seen = set()
+    unique_urls = []
+    for u in urls:
+        if u not in seen:
+            seen.add(u)
+            unique_urls.append(u)
+
+    print("Data Clean Successfully...")
+    return clean_text, unique_urls
+
+def Splitting(text,chunk_size=5000,chunk_overlap=200):
+    print("Splitting.....")
+    text_splitter = RecursiveCharacterTextSplitter(
+        chunk_size=chunk_size,
+        chunk_overlap=chunk_overlap,
+        length_function=len,
+        is_separator_regex=False,
+    )
+    chunks_text = text_splitter.create_documents([text])
+    print("Spltting Done")
+    return chunks_text

@@ -10,7 +10,7 @@ async def get_relevant_articles(state: AgentState) -> AgentState:
     """
     try:
         print("Process Selectd Articles..")
-        selected_arrticles = state.get('selected_articles', [])
+        # selected_arrticles = state.get('selected_articles', [])
         
 
         print("Scraping full content…")
@@ -18,8 +18,8 @@ async def get_relevant_articles(state: AgentState) -> AgentState:
         run_config = CrawlerRunConfig(cache_mode=CacheMode.ENABLED)
 
         # Extract list of URLs from your DataFrame or list of dicts
-        articles = state.get("combine_articles", [])
-        urls_list = [a["full_links"] for a in selected_arrticles]
+        articles = state.get("selected_articles", [])
+        urls_list = [a["full_links"] for a in articles]
         
         result_content = []
         for urls in urls_list:
@@ -37,7 +37,7 @@ async def get_relevant_articles(state: AgentState) -> AgentState:
             
 
         # Update the state
-        state["combine_articles"] = articles
+        state["selected_articles"] = articles
         return state
     except Exception as e:
         state["error"] = str(e)

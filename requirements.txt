@@ -30,3 +30,5 @@ fastapi[standard]
 streamlit
 streamlit-option-menu
 langgraph-sdk
+langchain-community 
+faiss-cpu

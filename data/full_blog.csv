@@ -1,456 +1,824 @@
-title,link,source,published,summary,Raw Blog Content
-Nanophotonics - Ultrafast Light Switch,https://www.miragenews.com/nanophotonics-ultrafast-light-switch-1511887/,Mirage News,2025-08-08 11:34:00,LMU researchers have developed an ultrafast method for fundamentally controlling the interaction between light and a material.Using targeted laser,"[ ![](https://www.miragenews.com/images/mirage.news-logo.png) ](https://www.miragenews.com/ ""Mirage News"")
-  * [National](https://www.miragenews.com/category/national/)
-  * [World](https://www.miragenews.com/category/world/)
-    * [Canada](https://www.miragenews.com/tag/canada/)
-    * [New Zealand](https://www.miragenews.com/tag/new-zealand/)
-    * [UK](https://www.miragenews.com/tag/uk/)
-  * [Local](https://www.miragenews.com/category/national/local/)
-    * [Australia](https://www.miragenews.com/tag/australia/)
-    * [Government](https://www.miragenews.com/tag/government/)
-    * [Local Council](https://www.miragenews.com/tag/local-council/)
-    * [Police News](https://www.miragenews.com/tag/police/)
-  * [Business](https://www.miragenews.com/category/business/)
-  * [Technology](https://www.miragenews.com/category/technology/)
-  * [Science](https://www.miragenews.com/category/science/)
-    * [Education](https://www.miragenews.com/category/science/education/)
-  * [Life](https://www.miragenews.com/category/life/)
-    * [Health](https://www.miragenews.com/category/life/health/)
-    * [Social](https://www.miragenews.com/category/life/social/)
-    * [Travel](https://www.miragenews.com/category/life/travel/)
-    * [Sport](https://www.miragenews.com/category/sport/)
-    * [University News](https://www.miragenews.com/tag/university/)
-  * [Timeline](https://www.miragenews.com/archives/)
-
-Menu ☰ National World – Canada – New Zealand – UK Local – Australia – Government – Local Council – Police News Business Technology Science – Education Life – Health – Social – Travel – Sport – University News Timeline
-Latest
-  * [Police Charge Three Men After Stabbing - Campsie](https://www.miragenews.com/police-charge-three-men-after-stabbing-campsie-1511920/)
-  * [Preventing Workplace Injuries](https://www.miragenews.com/preventing-workplace-injuries-1511918/)
-  * [Fatal Single-Vehicle Crash in New England](https://www.miragenews.com/fatal-single-vehicle-crash-in-new-england-1511917/)
-  * [Police Appeal To Locate Teenage Boy At Albury](https://www.miragenews.com/police-appeal-to-locate-teenage-boy-at-albury-1511916/)
-  * [Police Are Responding To Fatal Crash - Moree](https://www.miragenews.com/police-are-responding-to-fatal-crash-moree-1511915/)
-  * [Dana-Farber Launches Pioneering Myeloma Blood Test](https://www.miragenews.com/dana-farber-launches-pioneering-myeloma-blood-1511914/)
-  * [Rare Cycad's Wax Crystals Create Blue Sans Pigment](https://www.miragenews.com/rare-cycads-wax-crystals-create-blue-sans-1511912/)
-  * [Kenya Declares Victory Over Sleeping Sickness](https://www.miragenews.com/kenya-declares-victory-over-sleeping-sickness-1511910/)
-  * [Under-Skin Electrode Enables Real-World Epilepsy Tracking](https://www.miragenews.com/under-skin-electrode-enables-real-world-1511908/)
-  * [Pouched Baby Food Lacks Nutrients, New Options Emerging](https://www.miragenews.com/pouched-baby-food-lacks-nutrients-new-options-1511906/)
+title,link,source,published,summary,matched_keyword,similarity,Raw Blog Content
+WordPress 6.8.2 Maintenance Release,https://wordpress.org/news/2025/07/wordpress-6-8-2-maintenance-release/,dafafaf,2025-07-15 15:41:50,"WordPress 6.8.2 is now available! This minor release includes fixes for 20 Core tickets and 15 Block Editor issues. For a full list of bug fixes, please refer to the release candidate announcement. WordPress 6.8.2 is a short-cycle maintenance release. More maintenance releases may be made available throughout 2025. If you have sites that support [&#8230;]",Wordpress,0.3110194802284241,"[Skip to content](https://wordpress.org/news/2025/05/announcing-the-formation-of-the-wordpress-ai-team/#wp--skip-link--target)
+[ WordPress.org ](https://wordpress.org/)
+  * [News](https://wordpress.org/news/)
+  * [Showcase](https://wordpress.org/showcase/)
+  * [Hosting](https://wordpress.org/hosting/)
+  * Extend
+    * [Themes](https://wordpress.org/themes/)
+    * [Plugins](https://wordpress.org/plugins/)
+    * [Patterns](https://wordpress.org/patterns/)
+    * [Blocks](https://wordpress.org/blocks/)
+  * Learn
+    * [Learn WordPress](https://learn.wordpress.org/)
+    * [Documentation](https://wordpress.org/documentation/)
+    * [Forums](https://wordpress.org/support/forums/)
+    * [Developers](https://developer.wordpress.org/)
+  * Community
+    * [Make WordPress](https://make.wordpress.org/)
+    * [Photo Directory](https://wordpress.org/photos/)
+    * [Five for the Future](https://wordpress.org/five-for-the-future/)
+    * [Events](https://events.wordpress.org/)
+  * About
+    * [About WordPress](https://wordpress.org/about/)
+    * [Enterprise](https://wordpress.org/enterprise/)
+    * [Gutenberg ↗︎](https://wordpress.org/gutenberg/)
+    * [Swag Store ↗︎](https://mercantile.wordpress.org/)
+  * [Get WordPress](https://wordpress.org/download/)
 
 
-  * [Police Charge Three Men After Stabbing - Campsie](https://www.miragenews.com/police-charge-three-men-after-stabbing-campsie-1511920/)
-  * [Preventing Workplace Injuries](https://www.miragenews.com/preventing-workplace-injuries-1511918/)
-  * [Fatal Single-Vehicle Crash in New England](https://www.miragenews.com/fatal-single-vehicle-crash-in-new-england-1511917/)
-  * [Police Appeal To Locate Teenage Boy At Albury](https://www.miragenews.com/police-appeal-to-locate-teenage-boy-at-albury-1511916/)
-  * [Police Are Responding To Fatal Crash - Moree](https://www.miragenews.com/police-are-responding-to-fatal-crash-moree-1511915/)
-  * [Dana-Farber Launches Pioneering Myeloma Blood Test](https://www.miragenews.com/dana-farber-launches-pioneering-myeloma-blood-1511914/)
-  * [Rare Cycad's Wax Crystals Create Blue Sans Pigment](https://www.miragenews.com/rare-cycads-wax-crystals-create-blue-sans-1511912/)
-  * [Kenya Declares Victory Over Sleeping Sickness](https://www.miragenews.com/kenya-declares-victory-over-sleeping-sickness-1511910/)
-  * [Under-Skin Electrode Enables Real-World Epilepsy Tracking](https://www.miragenews.com/under-skin-electrode-enables-real-world-1511908/)
-  * [Pouched Baby Food Lacks Nutrients, New Options Emerging](https://www.miragenews.com/pouched-baby-food-lacks-nutrients-new-options-1511906/)
+Search in WordPress.org
+[ Get WordPress ](https://wordpress.org/download/)
+[ WordPress.org ](https://wordpress.org/)
+[News](https://wordpress.org/news)
+Announcing the Formation of the WordPress AI Team
+All posts
+Search results
+  * Categories
+    * [All Posts](https://wordpress.org/news/all-posts/)
+    * [Awards](https://wordpress.org/news/category/awards/)
+    * [Community](https://wordpress.org/news/category/community/)
+    * [Design](https://wordpress.org/news/category/design/)
+    * [Development](https://wordpress.org/news/category/development/)
+    * [Documentation](https://wordpress.org/news/category/documentation/)
+    * [Events](https://wordpress.org/news/category/events/)
+    * [Features](https://wordpress.org/news/category/features/)
+    * [General](https://wordpress.org/news/category/general/)
+    * [Interviews](https://wordpress.org/news/category/interviews/)
+    * [Meta](https://wordpress.org/news/category/meta/)
+    * [Month in WordPress](https://wordpress.org/news/category/month-in-wordpress/)
+    * [Performance](https://wordpress.org/news/category/performance/)
+    * [Podcast](https://wordpress.org/news/podcast/)
+    * [Releases](https://wordpress.org/news/category/releases/)
+    * [Security](https://wordpress.org/news/category/security/)
+    * [Store](https://wordpress.org/news/category/store/)
+    * [Testing](https://wordpress.org/news/category/testing/)
+    * [Updates](https://wordpress.org/news/category/updates/)
+    * [WordCamp](https://wordpress.org/news/category/wordcamp/)
 
 
-[Mirage News](https://www.miragenews.com)
-Mirage News 
-Mirage News  Science 08 Aug 2025 9:34 pm AESTDate Time
-Share 
-# Nanophotonics - Ultrafast Light Switch
-LMU München
-  * LMU researchers have developed an ultrafast method for fundamentally controlling the interaction between light and a material.
-  * Using targeted laser pulses, the researchers can generate optical resonances - the vibration of the material with the light - completely quench them, or precisely adjust their characteristics.
-  * This opens up new paths for faster optical computers, hack-proof quantum communication, and novel photonic circuits.
+  * Categories
+    * [All Posts](https://wordpress.org/news/all-posts/)
+    * [Awards](https://wordpress.org/news/category/awards/)
+    * [Community](https://wordpress.org/news/category/community/)
+    * [Design](https://wordpress.org/news/category/design/)
+    * [Development](https://wordpress.org/news/category/development/)
+    * [Documentation](https://wordpress.org/news/category/documentation/)
+    * [Events](https://wordpress.org/news/category/events/)
+    * [Features](https://wordpress.org/news/category/features/)
+    * [General](https://wordpress.org/news/category/general/)
+    * [Interviews](https://wordpress.org/news/category/interviews/)
+    * [Meta](https://wordpress.org/news/category/meta/)
+    * [Month in WordPress](https://wordpress.org/news/category/month-in-wordpress/)
+    * [Performance](https://wordpress.org/news/category/performance/)
+    * [Podcast](https://wordpress.org/news/podcast/)
+    * [Releases](https://wordpress.org/news/category/releases/)
+    * [Security](https://wordpress.org/news/category/security/)
+    * [Store](https://wordpress.org/news/category/store/)
+    * [Testing](https://wordpress.org/news/category/testing/)
+    * [Updates](https://wordpress.org/news/category/updates/)
+    * [WordCamp](https://wordpress.org/news/category/wordcamp/)
 
 
-In nanophotonics, tiny structures are used to control light at the nanoscale and render it useful for technological applications. A key element here is optical resonators, which trap and amplify light of a certain color (wavelength). Previous methods of controlling these resonances were more like a dimmer switch: You could weaken the resonance or slightly shift its color. However, genuine on-and-off switching was not possible, as the resonators always remain fundamentally coupled with the light.
-A team led by 
-/Courtesy of LMU München. This material from the originating organization/author(s) might be of the point-in-time nature, and edited for clarity, style and length. Mirage.News does not take institutional positions or sides, and all views, positions, and conclusions expressed herein are solely those of the author(s). 
-Why?
-Well, unlike many news organisations, we have no sponsors, no corporate or ideological interests. We don't put up a paywall – we believe in free access to information of public interest.   
-Media ownership in Australia is one of the most concentrated in the world ([Learn more](https://www.miragenews.com/about-us/)). Since the trend of consolidation is and has historically been upward, fewer and fewer individuals or organizations control increasing shares of the mass media in our country. According to independent assessment, about 98% of the media sector is held by three conglomerates. This tendency is not only totally unacceptable, but also to a degree frightening). [Learn more here](https://www.miragenews.com/about-us/)   
-We endeavour to provide the community with real-time access to true unfiltered news firsthand from primary sources. It is a bumpy road with all sorties of difficulties.   
-We can only achieve this goal together. Our website is open to any citizen journalists and organizations who want to contribute, publish high-quality insights or send media releases to improve public access to impartial information. You and we have the right to know, learn, read, hear what and how we deem appropriate.   
-Your support is greatly appreciated.   
-All donations are kept completely private and confidential.  
-Thank you in advance!
-Tags:[Australia](https://www.miragenews.com/tag/australia/) , [university](https://www.miragenews.com/tag/university/) , [hacking](https://www.miragenews.com/tag/hacking/) , [Journal](https://www.miragenews.com/tag/journal/) , [breakthrough](https://www.miragenews.com/tag/breakthrough/) , [Professor](https://www.miragenews.com/tag/professor/) , [quantum](https://www.miragenews.com/tag/quantum/) , [Monash](https://www.miragenews.com/tag/monash/) , [Monash University](https://www.miragenews.com/tag/monash-university/) , [University of Munich](https://www.miragenews.com/tag/university-of-munich/) , [LMU Munich](https://www.miragenews.com/tag/lmu-munich/) , [laser](https://www.miragenews.com/tag/laser/) , [physics](https://www.miragenews.com/tag/physics/)
-### You might also like
-[ ![](https://cdn1.miragenews.com/tmp_cache?cdn=cdn.pixabay.com%2Fphoto%2F2013%2F02%2F15%2F10%2F58%2Fwave-81840_640.jpg) ](https://www.miragenews.com/twisted-light-the-next-dimension-of-data-1043218/)
-[ ](https://www.miragenews.com/twisted-light-the-next-dimension-of-data-1043218/)
-#####  [](https://www.miragenews.com/twisted-light-the-next-dimension-of-data-1043218/)[Twisted Light: The Next Dimension of Data Transmission](https://www.miragenews.com/twisted-light-the-next-dimension-of-data-1043218/)
-[ ![](https://cdn1.miragenews.com/tmp_cache?cdn=cdn.pixabay.com%2Fphoto%2F2016%2F10%2F12%2F03%2F01%2Fgirl-1733361_640.jpg) ](https://www.miragenews.com/friluftsliv-concept-of-outdoor-living-for-well-1054180/)
-[ ](https://www.miragenews.com/friluftsliv-concept-of-outdoor-living-for-well-1054180/)
-#####  [](https://www.miragenews.com/friluftsliv-concept-of-outdoor-living-for-well-1054180/)[Friluftsliv: Concept of Outdoor Living for Well-being](https://www.miragenews.com/friluftsliv-concept-of-outdoor-living-for-well-1054180/)
-[ ![](https://cdn1.miragenews.com/tmp_cache?cdn=cdn.pixabay.com%2Fphoto%2F2018%2F06%2F10%2F17%2F39%2Fmarket-3466906_640.jpg) ](https://www.miragenews.com/spice-routes-hidden-history-of-favorite-cooking-1013732/)
-[ ](https://www.miragenews.com/spice-routes-hidden-history-of-favorite-cooking-1013732/)
-#####  [](https://www.miragenews.com/spice-routes-hidden-history-of-favorite-cooking-1013732/)[Spice Routes: Hidden History of Favorite Cooking Spices](https://www.miragenews.com/spice-routes-hidden-history-of-favorite-cooking-1013732/)
-[ ](https://www.miragenews.com/pando-unearthed-a-singular-wonder-posing-as-a-1040300/)
-[ ](https://www.miragenews.com/pando-unearthed-a-singular-wonder-posing-as-a-1040300/)
-#####  [](https://www.miragenews.com/pando-unearthed-a-singular-wonder-posing-as-a-1040300/)[Pando Unearthed: A Singular Wonder Posing as a Forest](https://www.miragenews.com/pando-unearthed-a-singular-wonder-posing-as-a-1040300/)
-[ ![](https://cdn1.miragenews.com/tmp_cache?cdn=cdn.pixabay.com%2Fphoto%2F2014%2F08%2F02%2F13%2F55%2Fastronomical-clock-408306_640.jpg) ](https://www.miragenews.com/celestial-bodies-and-human-behavior-science-or-1024579/)
-[ ](https://www.miragenews.com/celestial-bodies-and-human-behavior-science-or-1024579/)
-#####  [](https://www.miragenews.com/celestial-bodies-and-human-behavior-science-or-1024579/)[Celestial Bodies and Human Behavior: Science or Superstition](https://www.miragenews.com/celestial-bodies-and-human-behavior-science-or-1024579/)
-[ ![](https://cdn1.miragenews.com/tmp_cache?cdn=cdn.pixabay.com%2Fphoto%2F2017%2F01%2F07%2F17%2F48%2Finterior-1961070_1280.jpg) ](https://www.miragenews.com/the-art-of-feng-shui-how-to-harmonize-your-home-1005748/)
-[ ](https://www.miragenews.com/the-art-of-feng-shui-how-to-harmonize-your-home-1005748/)
-#####  [](https://www.miragenews.com/the-art-of-feng-shui-how-to-harmonize-your-home-1005748/)[The Art of Feng Shui: How to Harmonize Your Home](https://www.miragenews.com/the-art-of-feng-shui-how-to-harmonize-your-home-1005748/)
-  * [Timeline](https://www.miragenews.com/archives/)
+May 27, 2025
+By 
+[Mary Hubbard](https://profiles.wordpress.org/4thhubbard/)
+in 
+[General](https://wordpress.org/news/category/general/)
+# Announcing the Formation of the WordPress AI Team
+* * *
+Today, I’m pleased to announce the formation of a new WordPress AI Team,
+AI is already transforming how people create and manage content online. As this technology evolves, it’s essential that WordPress remains at the forefront, ensuring innovation happens in the open, guided by community values, and built to core standards.
+## Why This Matters
+  * Strategic focus
+  * Shared innovation
+  * Rapid iteration[Canonical Plugins](https://make.wordpress.org/core/2022/09/11/canonical-plugins-revisited/) will allow us to move quickly, gather feedback, and deliver real value without waiting on the Core release cycle.
 
 
-##### [Police Charge Three Men After Stabbing - Campsie](https://www.miragenews.com/police-charge-three-men-after-stabbing-campsie-1511920/)
-08 Aug 2025 11:40 pm AEST
-##### [Preventing Workplace Injuries](https://www.miragenews.com/preventing-workplace-injuries-1511918/)
-08 Aug 2025 11:34 pm AEST
-##### [Fatal Single-Vehicle Crash in New England](https://www.miragenews.com/fatal-single-vehicle-crash-in-new-england-1511917/)
-08 Aug 2025 11:32 pm AEST
-##### [Police Appeal To Locate Teenage Boy At Albury](https://www.miragenews.com/police-appeal-to-locate-teenage-boy-at-albury-1511916/)
-08 Aug 2025 11:26 pm AEST
-##### [Police Are Responding To Fatal Crash - Moree](https://www.miragenews.com/police-are-responding-to-fatal-crash-moree-1511915/)
-08 Aug 2025 11:18 pm AEST
-##### [Dana-Farber Launches Pioneering Myeloma Blood Test](https://www.miragenews.com/dana-farber-launches-pioneering-myeloma-blood-1511914/)
-08 Aug 2025 11:12 pm AEST
-##### [Rare Cycad's Wax Crystals Create Blue Sans Pigment](https://www.miragenews.com/rare-cycads-wax-crystals-create-blue-sans-1511912/)
-08 Aug 2025 11:12 pm AEST
-##### [Kenya Declares Victory Over Sleeping Sickness](https://www.miragenews.com/kenya-declares-victory-over-sleeping-sickness-1511910/)
-08 Aug 2025 10:58 pm AEST
-##### [Under-Skin Electrode Enables Real-World Epilepsy Tracking](https://www.miragenews.com/under-skin-electrode-enables-real-world-1511908/)
-08 Aug 2025 10:54 pm AEST
-##### [Pouched Baby Food Lacks Nutrients, New Options Emerging](https://www.miragenews.com/pouched-baby-food-lacks-nutrients-new-options-1511906/)
-08 Aug 2025 10:54 pm AEST
-##### [UK Statements at WTO General Council, July 2025](https://www.miragenews.com/uk-statements-at-wto-general-council-july-2025-1511904/)
-08 Aug 2025 10:42 pm AEST
-##### [UCL Scientist To Lead UK Health Security Agency](https://www.miragenews.com/ucl-scientist-to-lead-uk-health-security-agency-1511902/)
-08 Aug 2025 10:42 pm AEST
-##### [Air Force: Deployment Jobs, Sentinel Milestone, Sleeker Skies](https://www.miragenews.com/air-force-deployment-jobs-sentinel-milestone-1511900/)
-08 Aug 2025 10:22 pm AEST
-##### [UK Research Center Marks 100 Years of Impact](https://www.miragenews.com/uk-research-center-marks-100-years-of-impact-1511898/)
-08 Aug 2025 10:00 pm AEST
-##### [UGA Analyzes, Names New Meteorite](https://www.miragenews.com/uga-analyzes-names-new-meteorite-1511896/)
-08 Aug 2025 9:54 pm AEST
-##### [Police Continue To Investigate Lara Carjacking](https://www.miragenews.com/police-continue-to-investigate-lara-carjacking-1511895/)
-08 Aug 2025 9:52 pm AEST
-##### [Woman Dies In Westmeadows Collision](https://www.miragenews.com/woman-dies-in-westmeadows-collision-1511894/)
-08 Aug 2025 9:52 pm AEST
-##### [UN: Empower Girls Now to Forge Equal Zimbabwe Future](https://www.miragenews.com/un-empower-girls-now-to-forge-equal-zimbabwe-1511893/)
-08 Aug 2025 9:44 pm AEST
-##### [Thailand-Cambodia Ceasefire: ICRC Ready for Detainee Visits](https://www.miragenews.com/thailand-cambodia-ceasefire-icrc-ready-for-1511891/)
-08 Aug 2025 9:36 pm AEST
-##### [Researcher Creates Mock Mouth for Dental Studies](https://www.miragenews.com/researcher-creates-mock-mouth-for-dental-studies-1511889/)
-08 Aug 2025 9:34 pm AEST
-##### [Nanophotonics - Ultrafast Light Switch](https://www.miragenews.com/nanophotonics-ultrafast-light-switch-1511887/)
-08 Aug 2025 9:34 pm AEST
-##### [Sri Lanka Advances in Cervical Cancer Prevention](https://www.miragenews.com/sri-lanka-advances-in-cervical-cancer-prevention-1511885/)
-08 Aug 2025 9:26 pm AEST
-##### [Serious Crash Western Flat](https://www.miragenews.com/serious-crash-western-flat-1511884/)
-08 Aug 2025 9:24 pm AEST
-##### [Hubble Captures Tarantula](https://www.miragenews.com/hubble-captures-tarantula-1511882/)
-08 Aug 2025 9:22 pm AEST
-##### [Measles Virus Detected In Returned Overseas Traveller](https://www.miragenews.com/measles-virus-detected-in-returned-overseas-1511881/)
-08 Aug 2025 9:18 pm AEST
-##### [Researcher Joins EU Board to Boost Climate Insight](https://www.miragenews.com/researcher-joins-eu-board-to-boost-climate-1511880/)
-08 Aug 2025 9:16 pm AEST
-##### [Alzheimer's Research Hits Critical Tipping Point](https://www.miragenews.com/alzheimers-research-hits-critical-tipping-point-1511878/)
-08 Aug 2025 9:06 pm AEST
-##### [UNESCO: 85% of Journalist Killings Unpunished](https://www.miragenews.com/unesco-85-of-journalist-killings-unpunished-1511877/)
-08 Aug 2025 9:06 pm AEST
-[More News](https://www.miragenews.com/archives/)
-#### Popular
-[](https://www.miragenews.com/tag/australia/ ""View all posts in Australia"")[](https://www.miragenews.com/tag/government/ ""View all posts in Government"")[](https://www.miragenews.com/tag/university/ ""View all posts in university"")[](https://www.miragenews.com/tag/community/ ""View all posts in community"")[](https://www.miragenews.com/tag/police/ ""View all posts in police"")[](https://www.miragenews.com/tag/australian/ ""View all posts in Australian"")[](https://www.miragenews.com/tag/research/ ""View all posts in research"")[](https://www.miragenews.com/tag/nsw/ ""View all posts in NSW"")[](https://www.miragenews.com/tag/victoria/ ""View all posts in Victoria"")[](https://www.miragenews.com/tag/professor/ ""View all posts in Professor"")[](https://www.miragenews.com/tag/health/ ""View all posts in health"")[](https://www.miragenews.com/tag/environment/ ""View all posts in environment"")[](https://www.miragenews.com/tag/minister/ ""View all posts in Minister"")[](https://www.miragenews.com/tag/queensland/ ""View all posts in Queensland"")[](https://www.miragenews.com/tag/business/ ""View all posts in business"")[](https://www.miragenews.com/tag/council/ ""View all posts in council"")[](https://www.miragenews.com/tag/uk/ ""View all posts in UK"")[](https://www.miragenews.com/tag/covid-19/ ""View all posts in covid-19"")[](https://www.miragenews.com/tag/local-council/ ""View all posts in local council"")[](https://www.miragenews.com/tag/new-south-wales/ ""View all posts in New South Wales"")[](https://www.miragenews.com/tag/infrastructure/ ""View all posts in infrastructure"")[](https://www.miragenews.com/tag/investment/ ""View all posts in Investment"")[](https://www.miragenews.com/tag/education/ ""View all posts in education"")[](https://www.miragenews.com/tag/technology/ ""View all posts in technology"")[](https://www.miragenews.com/tag/industry/ ""View all posts in industry"")[](https://www.miragenews.com/tag/investigation/ ""View all posts in investigation"")[](https://www.miragenews.com/tag/auspol/ ""View all posts in AusPol"")[](https://www.miragenews.com/tag/united-states/ ""View all posts in United States"")[](https://www.miragenews.com/tag/project/ ""View all posts in project"")[](https://www.miragenews.com/tag/crime/ ""View all posts in crime"")[](https://www.miragenews.com/tag/emergency/ ""View all posts in Emergency"")[](https://www.miragenews.com/tag/sustainable/ ""View all posts in sustainable"")[](https://www.miragenews.com/tag/new-zealand/ ""View all posts in New Zealand"")[](https://www.miragenews.com/tag/uk-government/ ""View all posts in UK Government"")[](https://www.miragenews.com/tag/qld/ ""View all posts in QLD"")[](https://www.miragenews.com/tag/scientists/ ""View all posts in Scientists"")[](https://www.miragenews.com/tag/future/ ""View all posts in future"")[](https://www.miragenews.com/tag/sydney/ ""View all posts in Sydney"")[](https://www.miragenews.com/tag/president/ ""View all posts in President"")[](https://www.miragenews.com/tag/climate-change/ ""View all posts in climate change"")[](https://www.miragenews.com/tag/america/ ""View all posts in america"")[](https://www.miragenews.com/tag/impact/ ""View all posts in Impact"")[](https://www.miragenews.com/tag/court/ ""View all posts in court"")[](https://www.miragenews.com/tag/internet/ ""View all posts in Internet"")[](https://www.miragenews.com/tag/incident/ ""View all posts in incident"")
-  * [Latest News Updates](https://www.miragenews.com/archives/)
-  * [Privacy Policy](https://www.miragenews.com/privacy-policy/)
-  * [Disclaimer](https://www.miragenews.com/disclaimer/)
-  * [Code of Ethics](https://www.miragenews.com/code-of-ethics/)
-  * [Contact Us](https://www.miragenews.com/contact/)
-  * [About Us](https://www.miragenews.com/about-us/)
-  * [Complaints](https://www.miragenews.com/complaints/)
+## What to Expect
+The AI Team will:
+  * Coordinate cross-team efforts to explore AI-powered features responsibly and inclusively.
+  * Publish and maintain a public roadmap of AI initiatives and Canonical Plugins.
+  * Collaborate closely with Core, Design, Accessibility, and other teams to ensure strong integration and shared standards.
 
 
-Mirage.News real-time media portal. We acknowledge the traditional owners of country throughout Australia.  
-All timestamps on this site are AEST/AEDT and all times in the articles are local times unless indicated otherwise.
-All trademarks and rights are owned by their respective owners.  
-All content is used for news reporting purposes. For news reporting purposes, we rely on fair use (fair dealing) [contact us](https://www.miragenews.com/contact/). See [our disclaimer page](https://www.miragenews.com/disclaimer/).
-× Search Now
+## Meet the Team
+The WordPress AI Team brings deep experience in open-source, performance, and product development and a strong commitment to building AI features the WordPress way. The team will launch with the following team contributors:
+  * James LePage
+  * Felix Arntz
+  * Pascal Birchler
+  * Jeff Paul
+
+
+To help get things started, James and Felix will serve as the initial [Team Reps](https://make.wordpress.org/updates/team-reps/) in supporting team organization, communication, and coordination with other Make WordPress teams.
+This is an exciting and important step in WordPress’s evolution. I look forward to seeing what we’ll create together and in the open.
+If you’re interested in contributing or following along, please join the conversations in <https://make.wordpress.org/ai/>.
+Share this:
+  * [Click to share on Threads (Opens in new window)Threads](https://wordpress.org/news/2025/05/announcing-the-formation-of-the-wordpress-ai-team/?share=threads&nb=1)
+  * [Click to share on Mastodon (Opens in new window)Mastodon](https://wordpress.org/news/2025/05/announcing-the-formation-of-the-wordpress-ai-team/?share=mastodon&nb=1)
+  * [Click to share on Bluesky (Opens in new window)Bluesky](https://wordpress.org/news/2025/05/announcing-the-formation-of-the-wordpress-ai-team/?share=bluesky&nb=1)
+  * [Click to share on X (Opens in new window)X](https://wordpress.org/news/2025/05/announcing-the-formation-of-the-wordpress-ai-team/?share=x&nb=1)
+  * [Click to share on Facebook (Opens in new window)Facebook](https://wordpress.org/news/2025/05/announcing-the-formation-of-the-wordpress-ai-team/?share=facebook&nb=1)
+  * [Click to share on LinkedIn (Opens in new window)LinkedIn](https://wordpress.org/news/2025/05/announcing-the-formation-of-the-wordpress-ai-team/?share=linkedin&nb=1)
+
+
+* * *
+[PreviousWordPress Campus Connect Expands](https://wordpress.org/news/2025/05/wordpress-campus-connect-expands/)
+[NextWCEU 2025: A Community Celebration in the Swiss Sun](https://wordpress.org/news/2025/06/wceu-2025-a-community-celebration-in-the-swiss-sun/)
+## Get the Latest Updates
+### Subscribe to WordPress News
+Email Address 
+Subscribe 
+Join 19.8K other subscribers 
+### WP Briefing — The WordPress Podcast
+Learn about where WordPress is going and how you can get involved.
+  * [RSS](https://wordpress.org/news/feed/podcast)
+
+
+[Listen to all episodes](https://wordpress.org/news/podcast/)
+  * [About](https://wordpress.org/about/)
+  * [News](https://wordpress.org/news/)
+  * [Hosting](https://wordpress.org/hosting/)
+  * [Privacy](https://wordpress.org/about/privacy/)
+
+
+  * [Showcase](https://wordpress.org/showcase/)
+  * [Themes](https://wordpress.org/themes/)
+  * [Plugins](https://wordpress.org/plugins/)
+  * [Patterns](https://wordpress.org/patterns/)
+
+
+  * [Learn](https://learn.wordpress.org/)
+  * [Documentation](https://wordpress.org/documentation/)
+  * [Developers](https://developer.wordpress.org/)
+
+
+  * [Get Involved](https://make.wordpress.org/)
+  * [Events](https://events.wordpress.org/)
+  * [Five for the Future](https://wordpress.org/five-for-the-future/)
+
+
+[ WordPress.org ](https://wordpress.org/) [ WordPress.org ](https://wordpress.org/)
 "
-#180 – Karla Campos on organising WordCamp US,https://wptavern.com/podcast/180-karla-campos-on-organising-wordcamp-us,UserFeed1:,2025-08-06 14:00:00,"In this episode, Nathan Wrigley talks with Karla Campos, a lead organiser for WordCamp US 2025 in Portland. Karla shares her journey into organising the flagship event, describing the volunteer-driven, time-intensive process, and how her background in marketing and large-scale event planning helps. They discuss event logistics, the role of production teams, community involvement, challenges faced, efforts to engage students, and some new event features like a hackathon and remote collaboration. Karla emphasises the welcoming community spirit of WordCamp and encourages everyone, especially newcomers and students, to attend. If you’ve ever wondered what goes on behind the scenes of WordCamp US, how it’s organised, how volunteers are supported, and what motivates people like Karla to invest their own time and resources, this episode is for you.","[Skip to content](https://wptavern.com/podcast/180-karla-campos-on-organising-wordcamp-us#wp--skip-link--target)
-[![WP Tavern](https://wptavern.com/wp-content/uploads/2021/12/WPTLogo.svg)](https://wptavern.com/)
-  * [News](https://wptavern.com/category/news)
-    * [Opinion](https://wptavern.com/category/opinion)
-    * [Plugins](https://wptavern.com/category/plugins)
-    * [Themes](https://wptavern.com/category/themes)
-    * [Events](https://wptavern.com/category/wordcamps-meetups)
-  * [Forums](https://wptavern.com/forums)
-  * [Podcast](https://wptavern.com/podcast)
-  * [Contact](https://wptavern.com/contact)
-  * [Search](https://wptavern.com/podcast/180-karla-campos-on-organising-wordcamp-us)
+Introducing WordPress Credits: A New Contribution Internship Program for University Students,https://wordpress.org/news/2025/07/introducing-wordpress-credits-a-new-contribution-internship-program-for-university-students/,dafafaf,2025-07-10 16:56:52,"The WordPress Foundation is proud to launch WordPress Credits, a contribution-focused internship program that brings university students into the heart of the WordPress open source project. While WordPress thrives on contributions from a global volunteer community, many students and newcomers face barriers to entry, such as a lack of structured guidance or real-world experience in [&#8230;]",Wordpress,0.47033435106277466,"[Skip to content](https://wordpress.org/news/2025/05/wordpress-campus-connect-expands/#wp--skip-link--target)
+[ WordPress.org ](https://wordpress.org/)
+  * [News](https://wordpress.org/news/)
+  * [Showcase](https://wordpress.org/showcase/)
+  * [Hosting](https://wordpress.org/hosting/)
+  * Extend
+    * [Themes](https://wordpress.org/themes/)
+    * [Plugins](https://wordpress.org/plugins/)
+    * [Patterns](https://wordpress.org/patterns/)
+    * [Blocks](https://wordpress.org/blocks/)
+  * Learn
+    * [Learn WordPress](https://learn.wordpress.org/)
+    * [Documentation](https://wordpress.org/documentation/)
+    * [Forums](https://wordpress.org/support/forums/)
+    * [Developers](https://developer.wordpress.org/)
+  * Community
+    * [Make WordPress](https://make.wordpress.org/)
+    * [Photo Directory](https://wordpress.org/photos/)
+    * [Five for the Future](https://wordpress.org/five-for-the-future/)
+    * [Events](https://events.wordpress.org/)
+  * About
+    * [About WordPress](https://wordpress.org/about/)
+    * [Enterprise](https://wordpress.org/enterprise/)
+    * [Gutenberg ↗︎](https://wordpress.org/gutenberg/)
+    * [Swag Store ↗︎](https://mercantile.wordpress.org/)
+  * [Get WordPress](https://wordpress.org/download/)
 
-Search
-Search
-[Cancel](https://wptavern.com/podcast/180-karla-campos-on-organising-wordcamp-us)
-August 6, 2025
-Nathan Wrigley
-# #180 – Karla Campos on organising WordCamp US
-![Jukebox](https://wptavern.com/wp-content/uploads/2021/02/1045657e-7764-4ccf-8fa2-0f38b64f4fd8-150x150.jpg)
-Jukebox 
-#180 – Karla Campos on organising WordCamp US
-Play Episode Pause Episode ![Loading](https://wptavern.com/wp-content/plugins/seriously-simple-podcasting/assets/css/images/player/images/icon-loader.svg)
-Mute/Unmute Episode Rewind 10 Seconds 1x Fast Forward 30 seconds
-00:00/ 00:36:53
-Subscribe Share
-RSS Feed
-Share 
-Link 
-Embed 
-[Download file](https://wptavern.com/podcast-download/198673/180-karla-campos-on-organising-wordcamp-us?ref=download ""#180 – Karla Campos on organising WordCamp US "") | [Play in new window](https://wptavern.com/podcast-download/198673/180-karla-campos-on-organising-wordcamp-us?ref=new_window ""#180 – Karla Campos on organising WordCamp US "") | Duration: 00:36:53Recorded on August 6, 2025
-Subscribe: 
-Transcript
-[00:00:19] Nathan Wrigley:
-Jukebox is a podcast which is dedicated to all things WordPress, the people, the events, the plugins, the blocks, the themes, and in this case, what goes into organizing a flagship WordCamp.
-If you’d like to subscribe to the podcast, you can do that by searching for WP Tavern in your podcast player of choice, or by going to wptavern.com/feed/podcast, and you can copy that URL into most podcast players.
-If you have a topic that you’d like us to feature on the podcast, I’m keen to hear from you and hopefully get you, or your idea, featured on the show. Head to wptavern.com/contact/jukebox, and use the form there.
-So on the podcast today we have Karla Campos. Karla has been involved in the WordPress community for over 10 years. Starting out in Miami, and taking part in meetups and word camps before stepping into larger organizational roles. With a background in media and marketing, Karla brings plenty of experience in both web and events to the world of WordPress.
-Karla joins us today as a lead organizer for the upcoming WordCamp US 2025, which will take place in Portland at the end of August. Remarkably, this is her first flagship WordCamp, and she’s organizing before ever attending.
-We discuss what motivated Karla to take on this major responsibility, how she balances the volunteer work with her professional life, and the challenges, expected and unexpected, along the way.
-We discuss the organization of such a huge event from working with a professional production company to handling the logistics, communications, accessibility requests, visas, and more, for a thousand plus attendees. Karla shares how the community side of the event is managed, the late night worries, and what it really takes, both in time and personal commitment, to make a WordCamp US happen, especially as a volunteer.
-She also highlights some of the initiatives for this year’s event, renewed efforts to welcome students and first time attendees, including student ticket pricing and the WP Trail Buddies Program to help newcomers feel at home. She also teases the introduction of a hackathon style contributor today, and new remote collaboration options.
-If you’ve ever wondered what goes on behind the scenes of a WordCamp US, how it’s organized, how volunteers are supported, and what motivates people like Karla to invest their own time and resources, this episode is for you.
-If you’re interested in finding out more, you can find all of the links in the show notes by heading to wptavern.com/podcast, where you’ll find all the other episodes as well.
-And so without further delay, I bring you Karla Campos.
-I am joined on the podcast by Karla Campos. Hello, Karla.
-[00:03:21] Karla Campos:
-[00:03:23] Nathan Wrigley:
-But before we get into that, Karla, will you just give us your little potted bio. Tell us who you are, what you do in the WordPress space, and maybe very quickly just tell us how the heck you came to be organising a WordCamp, one of these flagship WordCamps.
-[00:03:56] Karla Campos:
-I actually have about more than 10 years with the WordPress community in Miami. When I first moved to Florida, I started going to meetup groups and then I met the WordPress Miami organisers and started really getting involved with them.
-My ex-colleague and coworker, her name was Jackie Jimenez, she unfortunately passed away, but we had a lot of great moments building things together in the WordPress Miami community. And when I saw the announcement online, I said, you know, she would’ve loved to do this with me. Let me check it out. And then that’s how I kind of just decided to join the organizer group.
-So I’ve been with WordPress for over 10 years. I’ve been working in marketing. I used to work for Telemundo here in the Florida area. I used to work for iHeartRadio. So I have a lot of the media marketing background as well as the working on websites and copy. So I’ve been around for a while, just I’m more of like a quiet, in the background type of person.
-[00:05:09] Nathan Wrigley:
-[00:05:18] Karla Campos:
-[00:05:21] Nathan Wrigley:
-[00:05:22] Karla Campos:
-[00:05:23] Nathan Wrigley:
-[00:05:38] Karla Campos:
-[00:05:53] Nathan Wrigley:
-[00:06:04] Karla Campos:
-So we have a production company working on the backend helping us with the production to make sure everything is smooth. But still, with that going on, I still feel like at 2:00 AM I’m thinking WordCamp US, WordCamp US. I know there’s something I have to do. So yeah.
-[00:06:34] Nathan Wrigley:
-[00:06:59] Karla Campos:
-[00:07:27] Nathan Wrigley:
-[00:07:57] Karla Campos:
-[00:08:25] Nathan Wrigley:
-[00:08:36] Karla Campos:
-A lot of traffic, of course, right now, I told you we had about 730 attendees already registered, so that email traffic is coming into our teams. So I’m just like, I saw an email and I know my team handled it, and I know they’re prompt but, you know, I wake up at 2:00 AM. Did I answer that email? Was that a nightmare? Did I miss something?
-That’s how it’s been in my life, you know, like I’m having these nightmares that I didn’t do something, but I did, because I’m a very responsible individual. But it just feels like that. It’s become so intertwined in my life that I’m having nightmares that I didn’t do a task.
-[00:09:33] Nathan Wrigley:
-But mostly, there’s never that calendar moment where everything’s got to be finished. But you very, very much are faced with a ticking clock, aren’t you? Because come the date that the first people are arriving, the attendees are arriving, and presumably, before that the production team need to get in, and set up all the sponsor booths and make sure all of that’s taken care of and what have you.
-That’s a curious thing. So the stress, I guess, does pile up a little bit. And it would behoove all of us who attend events like this, just to pause for a moment and remember that it is done by a bunch of volunteers who have this ticking time bomb, if you know what I mean, in the back, where everything’s got to be finished by a certain date. And so I would just like to express my gratitude for the fact that you’ve stepped up basically and tried to fulfill that role. Appreciate it.
-[00:10:40] Karla Campos:
-[00:10:48] Nathan Wrigley:
-[00:11:00] Karla Campos:
-[00:11:22] Nathan Wrigley:
-[00:11:50] Karla Campos:
-[00:12:16] Nathan Wrigley:
-[00:12:51] Karla Campos:
-[00:13:12] Nathan Wrigley:
-Any intuitions now of regret? That’s probably not something that we want to get into too much, but do you know what I mean? If you could rewind the clock to, let’s say April during 2025, did you get into this with your eyes wide open, or has it ended up being much more of a task than you imagined? What I’m basically trying to ask is, are there any bits of this that you think, gosh, I didn’t really anticipate that was going to be involved? This is way more than I was imagining biting off.
-[00:13:54] Karla Campos:
-But I’ve adapted and I’m good now. It’s been a rollercoaster ride, but it’s fun for me because I’m that type of person who enjoys the challenge.
-Yeah, it’s been fun, it’s been unexpected for sure. So we’ve had ups and downs, but we’re getting through it, you know, and that’s the fun of a rollercoaster ride, so yeah.
-[00:14:31] Nathan Wrigley:
-[00:14:44] Karla Campos:
-Oh my gosh, you know, like I just didn’t anticipate for that. So it’s been kind of, like we talked about before, merging with my normal life where I’m just like, oh wait, my to-do list for my regular projects, and my family and everything is now part of WordCamp, if that makes sense.
-[00:15:19] Nathan Wrigley:
-[00:15:43] Karla Campos:
-We have mentors like Kevin Christiano and Aaron Campbell from hosting.com, who also worked with WordCamps in the past. And there are mentors who we can always contact on Slack. So we do a lot of work on Slack, and we can always message them back and forth with any information any, hey, we need help with this. They’re always there to just say, hey, this would be a better practice from our experience last year. So we do have mentors there that help us, and that’s been a big relief.
-[00:16:37] Nathan Wrigley:
-[00:16:53] Karla Campos:
-[00:16:55] Nathan Wrigley:
-[00:17:22] Karla Campos:
-[00:17:33] Nathan Wrigley:
-[00:17:35] Karla Campos:
-[00:17:42] Nathan Wrigley:
-There’s obviously been a lot of controversy in the WordPress space since that event. I wondered if there has been some anxiety? I have a recollection that the event, the planning of the event probably would’ve been happening earlier than it did for this event.
-So I’m just wondering if you could speak to that, whether or not the team itself are happy with the numbers that you’ve got so far? And whether or not things are kind of late in the planning, let’s put it that way. Do you feel that it’s all being put together in a rushed way?
-[00:18:23] Karla Campos:
-But right now we’re up to 730 registered attendees. So we are planning for a thousand attendees. That’s our goal. Hopefully more. But yeah, we expected that it was going to be a little bit less than last year for the various reasons, including the travel restrictions and things that people do not want to come to the US for.
-But, Portland is ultimately a very friendly place and I think our concern is that everyone is safe and happy at the event. So I think we’re doing a very good job with that right now.
-[00:19:11] Nathan Wrigley:
-So the idea that you’d get a similar number of the exact same people, plus others, coming back to the same venue. I know for me at least anyway, it is quite nice to have the opportunity to go to different places. I’m going to be in attendance, so it hasn’t put me off. I’m still going to be there. But I think some people do like the fact that, you know, it’s in Portland one year and it’s in, I don’t know, Texas or California or whatever it may be in different years.
-So maybe that kind of speaks into it a little bit as well. But yeah, the whole thing around traveling to the US, plus the obvious problems that we’ve had in the WordPress space around the community and so on. And then maybe this third piece of it being in the same venue and in the same location, maybe all of those conspire to not make it as big as last year. But still, a thousand, which seems to be the target number, is pretty credible.
-Do you anticipate getting to a thousand? Is the trajectory at the moment, if you were to map that forward, do you think you’ll actually manage that? Despite the fact that it’s an aspirational target? Are you fairly confident you’ll get there?
-[00:20:14] Karla Campos:
-So, our topic is sort of like the future of WordPress. And we’re doing a lot of student initiatives so that, you know, everybody gets a little bit of that WordPress community feel and that would, there’s a lot of students very interested, so I think we can reach the number.
-[00:20:48] Nathan Wrigley:
-It always struck me when you go to these events that the demographic definitely skews older. I don’t mean, you know, particularly old, but you don’t tend to find a bunch of 18 to 20 year olds wandering around in large proportion.
-It seems to me, it’s definitely in the late twenties, early thirties, forties, fifties and and upwards. So that’s been a definite charge that you’ve had then has it, to try and get younger people? Have I got that right? When you said student, did you mean younger people?
-[00:21:29] Karla Campos:
-They’re really interested in sending the students there because even though they’re educators, they’re not the innovators. So they want to come to WordCamp to connect with those innovators, including Google. Google’s liaison of search, Danny Sullivan, that was amazing to the students. They wanted to meet people in charge of the tech industry and connect there. So I’m talking about those students, yeah, the students that are in the tech industry that want to connect with the industry leaders.
-[00:22:17] Nathan Wrigley:
-Do you know if an event like WordCamp, in this case WordCamp US, do you know if an event like that can count? And does that in some way then kind of make it slightly easier to sell a WordPress event into that student marketplace, if you like?
-[00:22:47] Karla Campos:
-We’re welcome to working with any teacher who wants to help their students grow their career and willing to give them extra credit and opportunities. So it depends on the college and the teacher and what already they have established.
-[00:23:17] Nathan Wrigley:
-Just pivoting to you a little bit and the work that you did in the past. Obviously it sounds like you’ve got a heritage in being involved in sizable events, credible events in the tech space, and perhaps other spaces as well.
-What do you make of this event? How do you sort of see it? Do you see it as a sort of professional tech event, something that you may have attended on behalf of organisations that you were working for before? Or is this much more of a kind of community event?
-I can’t really sum up the exact target of what I’m trying to say there, but I’m just really after a feel of what you make of the event in terms of whether it’s more, I don’t know, more friendly, a little bit less business orientated, and perhaps skewing more to community, that kind of thing.
-[00:24:05] Karla Campos:
-Yes, everyone is very skilled. They’re very like awesome in their profession, but they’re also very down to earth and just willing to, hey, share a tidbit here, a tip here. I’ve even seen people help other people with their websites live at the events. Hey, look, I’m having a problem with my website. It’s not doing something on mobile. It’s not responding the way I want it to. It’s not responsive. Can you help me? And someone will stop and say, yeah, let’s sit down here in this corner. Let’s go to that room, and let me look at it and help you a little bit. And it’s something that I don’t see at other conferences where people have this community feel. So I’ve always admired that about WordCamps.
-[00:24:56] Nathan Wrigley:
-And there is much more of sense of camaraderie. And really, I suppose if somebody is listening to this and is kind of on the fence about these events, definitely I would draw your attention to that fact. And although if you are perhaps slightly more on the introverted side, it doesn’t necessarily make it a hundred percent easier to attend, and this feeling that you’ll just suddenly be embraced by everybody in the hallway, it probably won’t work that way. But there is definitely a more friendly atmosphere. There’s a different, and dare I say it, vibe going on, which I have always really appreciated. It definitely feels less corporate, more friendly. There’s more of an opportunity to make friendships, for want of a better way of describing it.
-[00:26:07] Karla Campos:
-[00:26:10] Nathan Wrigley:
-[00:26:11] Karla Campos:
-So that’s a new thing, and that sounds, you know, if a person is coming to WordCamp for the first time, they can go that route, you know, they can actually have somebody there with them.
-[00:26:37] Nathan Wrigley:
-And so the hallway track felt very much, you know, you could take five minutes out and go and sit in the corner over there and get on with your own stuff, what have you. But this would be a really good one to attend. So I would definitely advise people, if you’re on the fence and you kind of think, I maybe should go, I’m not entirely sure. Everything is geared up. We know what that place is like, the conference center is absolutely magnificent. So I would definitely urge people who are wavering, who aren’t entirely sure to give it a go.
-And I will put a link into the show notes for the initiative that Michelle Frechette is leading, the WP Trail Buddies. And if you’ve got concerns about showing up and just hanging out and feeling a little bit isolated, then Michelle will be able to introduce you to somebody who has been there, done that, for want of a better word. Again, another reason to have a little look.
-And the tickets are really inexpensive. It’s not nothing, but at the moment, I don’t think there’s going to be any change in this. But it’s a flat hundred bucks. And, in all honesty, you’ll probably eat more than a hundred dollars worth of food in the time that you’re there. So the ticket price is just absurdly low.
-[00:28:02] Karla Campos:
-[00:28:12] Nathan Wrigley:
-But then also there’s this idea of contributor day. And in contributor day, typically you would select a table, that table will be aligned to some core part of the project. So it could be photography, it could be Core, it could be, I don’t know, polyglots, something like that. And you would allocate your time and decide to work on that for the day.
-I have a feeling that you are doing something a little bit different on contributor day this time around. Do you know about that? Do you want to speak about that?
-[00:28:51] Karla Campos:
-[00:28:53] Nathan Wrigley:
-[00:28:54] Karla Campos:
-But there is something new, which is collaborating remotely for the Testing Team. So that’s fun. That hasn’t been done before.
-[00:29:14] Nathan Wrigley:
-The hackathon, I was lucky enough to go to a hackathon earlier this year. I attended CloudFest in Germany, in Rust in Germany. Obviously you are not able to reveal whether you know or otherwise what that will involve. For the people listening to this, I’ll just give you some indication of what that might involve.
-And a hackathon, rather than just showing up and deciding on the spur of the moment what it is that you’re going to be involved with. A hackathon is more of a kind of project based thing, where you come to the hackathon with a project that you would like to see finished in a certain way. So you might come and say, during the next day, we’re going to try and do this thing, so we’re going to move from here to here.
-And in that way, everybody coalesces on the exact same purpose, and tries to push that thing over the line. And in the hackathons that I’ve been to, again, there’s this sort of slightly tongue in cheek, fun, competitive edge as well, where at the end of the day, different people from the different teams sort of stand up and say exactly what they did and how they did.
-And then there’s kind of like a voting, there’s a panel of people who decide who the, and I’m doing air quotes, who the winner is. So, again, obviously I’m not going to try and get you to reveal any details, but that kind of component, if it is anything like that, that really does bring something new and a bit of fun, I think.
-[00:30:40] Karla Campos:
-[00:30:49] Nathan Wrigley:
-[00:31:23] Karla Campos:
-So I’m not sure if I’m going to be joining next year or not, I haven’t planned that out yet. But I think we’re going to at least have a discussion with the organisers about just kind of like looking back, hey, what did we like. Let’s leave little notes for the next year’s organising team so that they can, you know, they can know what to expect.
-But now we have a roadmap together as a team. So I think it’s fun. And we’ll be way more prepared next year and add more fun stuff that we just didn’t have time for. But we’re all very creative, so you know how those discussions go when everybody’s creative, throwing ideas. And it’s like, all right, we have to pick just three because all of these are great but, you know, we’re on a time constraint, so we just execute these.
-So I think it’s been fun all around. But yeah, just kind of getting all the ideas that we had together and executing them next year.
-[00:32:23] Nathan Wrigley:
-Now, one question, which I think probably will be rounding off the episode, if that’s all right with you, would be to ask you, when does your involvement with this end? And I don’t mean, you know, that you might get involved next year. Because obviously I’m going to attend, and the minute the whole thing is finished, it’s kind of more or less over for me. I may go back to the hotel or spend a few days in Portland having a look around or what have you. But for me, the event has kind of finished at that moment. For you, I’m guessing that’s not the case. Do you have any anticipation of what it will involve in terms of collapsing the event down? At what point it will be considered to be finished by the team?
-[00:33:28] Karla Campos:
-But then of course we’re going to reunite and just kind of have a meeting and talk about the experience. And like we were talking about, what can we do better next year? And I think maybe, I think we’re still going to be in talks at least two weeks after the event is over to kind of close that out as a team.
-[00:33:59] Nathan Wrigley:
-I would just draw attention to the fact that clearly this is not an event which is being organised entirely by you. There’s obviously a huge team of people going on in the background. And it would be remiss of us not to thank all of them. Can’t mention them all by name, but if you go to the website, I’m sure there’ll be places where you can go and find out who is involved in the team.
-Don’t forget that if you want to get tickets and you’re a student, you can pay just $25 for a, basically three day event. I mean, that’s nuts. Or if you are not a student and you want to attend, then $100. And there are still, I think, some additional options that you can explore, perhaps sponsorship options and things like that, above and beyond that as well.
-So, Karla, that’s all the questions I’ve got. Is there anything that I’ve missed? Is there anything prior to recording to this you thought, ah, I must remember to say that, but didn’t get a chance to say it?
-[00:34:57] Karla Campos:
-[00:35:26] Nathan Wrigley:
-So for example, you can look at the schedule, so see who’s speaking. You can look and dig into the location and about it. And obviously buying the tickets as well, that’s all going to be there. So us.wordcamp.org/2025, the numbers.
-There we go. Thank you very much for chatting to me today, Karla Campos. Really, really appreciate it. And very, very best of luck with the event. I hope to see you there.
-[00:36:07] Karla Campos:
-On the podcast today we have 
-Karla has been involved in the WordPress community for over 10 years, starting out in Miami and taking part in meetups and WordCamps before stepping into larger organisational roles. With a background in media and marketing, Karla brings plenty of experience in both web and events to the world of WordPress.
-Karla joins us today as a lead organiser for the upcoming WordCamp US 2025, which will take place in Portland at the end of August. Remarkably, this is her first flagship WordCamp, she’s organising before ever attending.
-We discuss what motivated Karla to take on this major responsibility, how she balances the volunteer work with her professional life, and the challenges, expected and unexpected, along the way.
-We discuss the organisation of such a huge event, from working with a professional production company to handling the logistics, communications, accessibility requests, visas, and more for a thousand-plus attendees. Karla shares how the community side of the event is managed, the late-night worries, and what it really takes, both in time and personal commitment, to make WordCamp US happen, especially as a volunteer.
-She also highlights some new initiatives for this year’s event, renewed efforts to welcome students and first-time attendees, including student ticket pricing and the WP Trail Buddy’s program to help newcomers feel at home. She also teases the introduction of a hackathon-style Contributor Day and new remote collaboration options.
-If you’ve ever wondered what goes on behind the scenes of WordCamp US, how it’s organised, how volunteers are supported, and what motivates people like Karla to invest their own time and resources, this episode is for you.
-## Useful links
-SHARE THIS:
-  * [Click to share on Twitter (Opens in new window)Twitter](https://wptavern.com/podcast/180-karla-campos-on-organising-wordcamp-us?share=twitter&nb=1)
-  * [Click to share on Mastodon (Opens in new window)Mastodon](https://wptavern.com/podcast/180-karla-campos-on-organising-wordcamp-us?share=mastodon&nb=1)
-  * [Click to share on Facebook (Opens in new window)Facebook](https://wptavern.com/podcast/180-karla-campos-on-organising-wordcamp-us?share=facebook&nb=1)
-  * [Click to share on Telegram (Opens in new window)Telegram](https://wptavern.com/podcast/180-karla-campos-on-organising-wordcamp-us?share=telegram&nb=1)
-  * [Click to share on WhatsApp (Opens in new window)WhatsApp](https://wptavern.com/podcast/180-karla-campos-on-organising-wordcamp-us?share=whatsapp&nb=1)
-  * [Click to share on Pocket (Opens in new window)Pocket](https://wptavern.com/podcast/180-karla-campos-on-organising-wordcamp-us?share=pocket&nb=1)
-  * [Click to share on Reddit (Opens in new window)Reddit](https://wptavern.com/podcast/180-karla-campos-on-organising-wordcamp-us?share=reddit&nb=1)
+
+Search in WordPress.org
+[ Get WordPress ](https://wordpress.org/download/)
+[ WordPress.org ](https://wordpress.org/)
+[News](https://wordpress.org/news)
+WordPress Campus Connect Expands
+All posts
+Search results
+  * Categories
+    * [All Posts](https://wordpress.org/news/all-posts/)
+    * [Awards](https://wordpress.org/news/category/awards/)
+    * [Community](https://wordpress.org/news/category/community/)
+    * [Design](https://wordpress.org/news/category/design/)
+    * [Development](https://wordpress.org/news/category/development/)
+    * [Documentation](https://wordpress.org/news/category/documentation/)
+    * [Events](https://wordpress.org/news/category/events/)
+    * [Features](https://wordpress.org/news/category/features/)
+    * [General](https://wordpress.org/news/category/general/)
+    * [Interviews](https://wordpress.org/news/category/interviews/)
+    * [Meta](https://wordpress.org/news/category/meta/)
+    * [Month in WordPress](https://wordpress.org/news/category/month-in-wordpress/)
+    * [Performance](https://wordpress.org/news/category/performance/)
+    * [Podcast](https://wordpress.org/news/podcast/)
+    * [Releases](https://wordpress.org/news/category/releases/)
+    * [Security](https://wordpress.org/news/category/security/)
+    * [Store](https://wordpress.org/news/category/store/)
+    * [Testing](https://wordpress.org/news/category/testing/)
+    * [Updates](https://wordpress.org/news/category/updates/)
+    * [WordCamp](https://wordpress.org/news/category/wordcamp/)
+
+
+  * Categories
+    * [All Posts](https://wordpress.org/news/all-posts/)
+    * [Awards](https://wordpress.org/news/category/awards/)
+    * [Community](https://wordpress.org/news/category/community/)
+    * [Design](https://wordpress.org/news/category/design/)
+    * [Development](https://wordpress.org/news/category/development/)
+    * [Documentation](https://wordpress.org/news/category/documentation/)
+    * [Events](https://wordpress.org/news/category/events/)
+    * [Features](https://wordpress.org/news/category/features/)
+    * [General](https://wordpress.org/news/category/general/)
+    * [Interviews](https://wordpress.org/news/category/interviews/)
+    * [Meta](https://wordpress.org/news/category/meta/)
+    * [Month in WordPress](https://wordpress.org/news/category/month-in-wordpress/)
+    * [Performance](https://wordpress.org/news/category/performance/)
+    * [Podcast](https://wordpress.org/news/podcast/)
+    * [Releases](https://wordpress.org/news/category/releases/)
+    * [Security](https://wordpress.org/news/category/security/)
+    * [Store](https://wordpress.org/news/category/store/)
+    * [Testing](https://wordpress.org/news/category/testing/)
+    * [Updates](https://wordpress.org/news/category/updates/)
+    * [WordCamp](https://wordpress.org/news/category/wordcamp/)
+
+
+May 7, 2025
+By 
+[Anand Upadhyay](https://profiles.wordpress.org/anandau14/)
+in 
+[Community](https://wordpress.org/news/category/community/), [Events](https://wordpress.org/news/category/events/)
+# WordPress Campus Connect Expands
+* * *
+WordPress Campus Connect, [Anand Upadhyay](https://profiles.wordpress.org/anandau14/), garnered immense enthusiasm from 400 Indian students who were eager to engage in hands-on WordPress training.
+WordPress Campus Connect transcends the conventional workshop model by fostering a holistic learning community. It couples on-campus event learning with a diverse range of post-event activities, including meetups, website challenges, scholarships, and volunteering opportunities, all geared towards nurturing student development. The program’s efficacy has prompted other organizations in India to express interest in replicating its structure.
+Looking ahead, multiple local WordPress communities in India aim to reach more students in India through WordPress Campus Connect events. The curriculum will include beginner content, delve into more advanced WordPress concepts, and feature specialized sessions tailored for students with prior WordPress experience. 
+The official recognition of WordPress Campus Connect as an event series paves the way for further expansion, giving the series similar support and standing as WordCamps but with a student education-first goal and focus. Future plans include organizing large-scale student events, establishing WordPress clubs on college campuses, and facilitating mentorship connections for students.
+To support these ambitious goals, volunteers identified several key next steps:
+  * Volunteer Handbook Development:
+  * GatherPress Integration:
+  * Volunteer Recruitment:
+    1. Creating a workflow and guidelines for processing Student Club applications
+    2. On-site facilitation or assistance for WordPress Campus Connect events
+  * Landing Page Creation
+  * Student Groups: 
+
+
+The overwhelming success of WordPress Campus Connect and the enthusiasm it has generated serve as a testament to the transformative power of passion and dedication. As WordPress Campus Connect continues to evolve and expand, it holds the promise of shaping the future of WordPress education and community engagement.
+If you’re interested in helping shape the future of education with WordPress, 
+Share this:
+  * [Click to share on Threads (Opens in new window)Threads](https://wordpress.org/news/2025/05/wordpress-campus-connect-expands/?share=threads&nb=1)
+  * [Click to share on Mastodon (Opens in new window)Mastodon](https://wordpress.org/news/2025/05/wordpress-campus-connect-expands/?share=mastodon&nb=1)
+  * [Click to share on Bluesky (Opens in new window)Bluesky](https://wordpress.org/news/2025/05/wordpress-campus-connect-expands/?share=bluesky&nb=1)
+  * [Click to share on X (Opens in new window)X](https://wordpress.org/news/2025/05/wordpress-campus-connect-expands/?share=x&nb=1)
+  * [Click to share on Facebook (Opens in new window)Facebook](https://wordpress.org/news/2025/05/wordpress-campus-connect-expands/?share=facebook&nb=1)
+  * [Click to share on LinkedIn (Opens in new window)LinkedIn](https://wordpress.org/news/2025/05/wordpress-campus-connect-expands/?share=linkedin&nb=1)
 
 
 * * *
-LIKE THIS
-Loading…
-[RSS](https://wptavern.com/feed/podcast)
-[Download](https://wptavern.com/podcast-download/198673/180-karla-campos-on-organising-wordcamp-us?ref=download ""#180 – Karla Campos on organising WordCamp US"")
-### Tagged
-[podcast](https://wptavern.com/tag/podcast)[wordcamp us](https://wptavern.com/tag/wordcamp-us)
-[Previous Episode: #179 – Mariya Moeva on the Impact of Google’s SiteKit on WordPress](https://wptavern.com/podcast/179-mariya-moeva-on-the-impact-of-googles-sitekit-on-wordpress)
+[PreviousWordPress 6.8.1 Maintenance Release](https://wordpress.org/news/2025/04/wordpress-6-8-1-maintenance-release/)
+[NextAnnouncing the Formation of the WordPress AI Team](https://wordpress.org/news/2025/05/announcing-the-formation-of-the-wordpress-ai-team/)
+## Get the Latest Updates
+### Subscribe to WordPress News
+Email Address 
+Subscribe 
+Join 19.8K other subscribers 
+### WP Briefing — The WordPress Podcast
+Learn about where WordPress is going and how you can get involved.
+  * [RSS](https://wordpress.org/news/feed/podcast)
+
+
+[Listen to all episodes](https://wordpress.org/news/podcast/)
+  * [About](https://wordpress.org/about/)
+  * [News](https://wordpress.org/news/)
+  * [Hosting](https://wordpress.org/hosting/)
+  * [Privacy](https://wordpress.org/about/privacy/)
+
+
+  * [Showcase](https://wordpress.org/showcase/)
+  * [Themes](https://wordpress.org/themes/)
+  * [Plugins](https://wordpress.org/plugins/)
+  * [Patterns](https://wordpress.org/patterns/)
+
+
+  * [Learn](https://learn.wordpress.org/)
+  * [Documentation](https://wordpress.org/documentation/)
+  * [Developers](https://developer.wordpress.org/)
+
+
+  * [Get Involved](https://make.wordpress.org/)
+  * [Events](https://events.wordpress.org/)
+  * [Five for the Future](https://wordpress.org/five-for-the-future/)
+
+
+[ WordPress.org ](https://wordpress.org/) [ WordPress.org ](https://wordpress.org/)
+![](https://wordpress.org/news/2025/05/wordpress-campus-connect-expands/)
+![](https://wordpress.org/news/2025/05/wordpress-campus-connect-expands/)
+"
+"WordCamp US 2025: See You in Portland, Oregon!",https://wordpress.org/news/2025/06/wordcamp-us-2025-see-you-in-portland-oregon/,dafafaf,2025-06-27 18:14:33,"WordCamp US 2025 is heading to vibrant Portland, Oregon, from August 26–29, 2025! Join fellow open source enthusiasts, developers, designers, and WordPress professionals from across the United States and around the world for four days of learning, networking, and collaboration at the Oregon Convention Center. Nestled in the Pacific Northwest, Portland is famous for its [&#8230;]",Wordpress,0.33219242095947266,"[Skip to content](https://wordpress.org/news/2025/06/wceu-2025-a-community-celebration-in-the-swiss-sun/#wp--skip-link--target)
+[ WordPress.org ](https://wordpress.org/)
+  * [News](https://wordpress.org/news/)
+  * [Showcase](https://wordpress.org/showcase/)
+  * [Hosting](https://wordpress.org/hosting/)
+  * Extend
+    * [Themes](https://wordpress.org/themes/)
+    * [Plugins](https://wordpress.org/plugins/)
+    * [Patterns](https://wordpress.org/patterns/)
+    * [Blocks](https://wordpress.org/blocks/)
+  * Learn
+    * [Learn WordPress](https://learn.wordpress.org/)
+    * [Documentation](https://wordpress.org/documentation/)
+    * [Forums](https://wordpress.org/support/forums/)
+    * [Developers](https://developer.wordpress.org/)
+  * Community
+    * [Make WordPress](https://make.wordpress.org/)
+    * [Photo Directory](https://wordpress.org/photos/)
+    * [Five for the Future](https://wordpress.org/five-for-the-future/)
+    * [Events](https://events.wordpress.org/)
+  * About
+    * [About WordPress](https://wordpress.org/about/)
+    * [Enterprise](https://wordpress.org/enterprise/)
+    * [Gutenberg ↗︎](https://wordpress.org/gutenberg/)
+    * [Swag Store ↗︎](https://mercantile.wordpress.org/)
+  * [Get WordPress](https://wordpress.org/download/)
+
+
+Search in WordPress.org
+[ Get WordPress ](https://wordpress.org/download/)
+[ WordPress.org ](https://wordpress.org/)
+[News](https://wordpress.org/news)
+WCEU 2025: A Community Celebration in the Swiss Sun
+All posts
+Search results
+  * Categories
+    * [All Posts](https://wordpress.org/news/all-posts/)
+    * [Awards](https://wordpress.org/news/category/awards/)
+    * [Community](https://wordpress.org/news/category/community/)
+    * [Design](https://wordpress.org/news/category/design/)
+    * [Development](https://wordpress.org/news/category/development/)
+    * [Documentation](https://wordpress.org/news/category/documentation/)
+    * [Events](https://wordpress.org/news/category/events/)
+    * [Features](https://wordpress.org/news/category/features/)
+    * [General](https://wordpress.org/news/category/general/)
+    * [Interviews](https://wordpress.org/news/category/interviews/)
+    * [Meta](https://wordpress.org/news/category/meta/)
+    * [Month in WordPress](https://wordpress.org/news/category/month-in-wordpress/)
+    * [Performance](https://wordpress.org/news/category/performance/)
+    * [Podcast](https://wordpress.org/news/podcast/)
+    * [Releases](https://wordpress.org/news/category/releases/)
+    * [Security](https://wordpress.org/news/category/security/)
+    * [Store](https://wordpress.org/news/category/store/)
+    * [Testing](https://wordpress.org/news/category/testing/)
+    * [Updates](https://wordpress.org/news/category/updates/)
+    * [WordCamp](https://wordpress.org/news/category/wordcamp/)
+
+
+  * Categories
+    * [All Posts](https://wordpress.org/news/all-posts/)
+    * [Awards](https://wordpress.org/news/category/awards/)
+    * [Community](https://wordpress.org/news/category/community/)
+    * [Design](https://wordpress.org/news/category/design/)
+    * [Development](https://wordpress.org/news/category/development/)
+    * [Documentation](https://wordpress.org/news/category/documentation/)
+    * [Events](https://wordpress.org/news/category/events/)
+    * [Features](https://wordpress.org/news/category/features/)
+    * [General](https://wordpress.org/news/category/general/)
+    * [Interviews](https://wordpress.org/news/category/interviews/)
+    * [Meta](https://wordpress.org/news/category/meta/)
+    * [Month in WordPress](https://wordpress.org/news/category/month-in-wordpress/)
+    * [Performance](https://wordpress.org/news/category/performance/)
+    * [Podcast](https://wordpress.org/news/podcast/)
+    * [Releases](https://wordpress.org/news/category/releases/)
+    * [Security](https://wordpress.org/news/category/security/)
+    * [Store](https://wordpress.org/news/category/store/)
+    * [Testing](https://wordpress.org/news/category/testing/)
+    * [Updates](https://wordpress.org/news/category/updates/)
+    * [WordCamp](https://wordpress.org/news/category/wordcamp/)
+
+
+June 7, 2025
+By 
+[Brett McSherry](https://profiles.wordpress.org/bjmcsherry/)
+in 
+[Events](https://wordpress.org/news/category/events/), [WordCamp](https://wordpress.org/news/category/wordcamp/)
+# WCEU 2025: A Community Celebration in the Swiss Sun
 * * *
-0 Comments
-  * Author
-Posts
-  *     * Kurye Duman
-[August 8, 2025 at 5:09 AM](https://wptavern.com/podcast/180-karla-campos-on-organising-wordcamp-us#comment-198737)[](https://wptavern.com/podcast/180-karla-campos-on-organising-wordcamp-us)[](https://wptavern.com/podcast/180-karla-campos-on-organising-wordcamp-us)
-Your comment is awaiting moderation. This is a preview visible only to you. Your comment will be publicly available after its been approved. 
-Kurye Duman, İstanbul’da hızlı ve güvenilir moto kurye hizmetleri sunan öncü bir firma. Zamanında teslimatları ve profesyonel ekibi ile dikkat çekiyor. Acil gönderilerinizde güvenle tercih edebileceğiniz bir adres. Müşteri memnuniyetine odaklı çalışmaları sayesinde, 
-Loading…
-  * Author
-Posts
+Photo by Nilo Velez
+Over 1,723 attendees from 84 countries gathered at the Messe and Congress Center Basel in Switzerland, and 20,353 more joined online for WordCamp Europe 2025.
+> I’m personally very excited… There’s so much I want to do. I think there’s a clear pathway to 7.0 and beyond.
+> Matt Mullenweg, WordPress Cofounder
+The flagship WordPress event kicked off in Basel, Switzerland, with a dedicated Contributor Day. It was followed by two days of engaging talks, panels, hands-on workshops, and vibrant community connections. WordPress Cofounder Matt Mullenweg and Executive Director Mary Hubbard joined a diverse lineup of speakers and panelists, sharing insights in the heart of one of Europe’s most charming cities.
+Set against the backdrop of Basel’s historic streets and Rhine-side views, the sponsor hall buzzed with activity as companies from across the WordPress ecosystem showcased their latest innovations, offered live demos, and connected with attendees. Each day, participants refueled with a range of local and international cuisine — from Swiss specialties to global favorites — making mealtime a lively space for networking, collaboration, and sparking new ideas.
+## A Global Gathering in Basel
+WordCamp Europe has long been one of the most anticipated WordPress events of the year — a space where community, creativity, and collaboration thrive. This year in Basel, the conference delivered an exciting and diverse program that reached every corner of the WordPress ecosystem.
+Here’s what attendees experienced:
+  * Engaging Sessions Across Tracks
+  * A Global Speaker Lineup
+  * Wide-Ranging Topics
+    * Accessibility and key policy updates like the European Accessibility Act and the Cyber Resilience Act
+    * The evolving role of Artificial Intelligence in the open web
+    * Cutting-edge web design, development best practices, SEO, and content strategy
+    * Real-world case studies and showcases from across the community
+  * Hands-On Learning Opportunities
+  * A Community Built on Collaboration
 
 
-[View in Forum](https://wptavern.com/forums/topic/180-karla-campos-on-organising-wordcamp-us)
-###  Leave a Reply 
-Your email address will not be published. Required fields are marked *
-###### Comment *
-Name *  
+## Contributor Day
+WordCamp Europe began with a vibrant Contributor Day that brought together 640 contributors—including many first-timers—to collaborate, share knowledge, and support the WordPress project. Guided by 33 dedicated table leads, with 21 teams, attendees of all experience levels came together to exchange ideas, solve real challenges, and make meaningful contributions to open source. From accessibility improvements to theme development and translation efforts, every table played a part in moving WordPress forward.
+Thanh Nguyen Jeroen Rotty Thanh Nguyen Roan de Vries Thanh Nguyen Nilo Velez Thanh Nguyen Levente András Tóth Jeroen Rotty Levente András Tóth Sebastián Echeverri Jaramillo Thanh Nguyen Nilo Velez
+Contributor Day at WordCamp Europe 2025 brought together a mix of first-time and returning contributors across a wide range of teams, from Core and Accessibility to Polyglots, Training, and Community. Attendees tackled everything from onboarding and ticket triage to translating strings, improving documentation, and enhancing tools and workflows. Development-focused teams explored performance and testing improvements and worked through live coding exercises. Meanwhile, accessibility testers, support volunteers, and photo moderators contributed to efforts that directly impact users around the world.
+In parallel, teams like Marketing, Meta, Hosting, and Sustainability focused on future-facing initiatives—from promoting WordPress through the Showcase and social media campaigns to refining infrastructure, increasing accessibility, and preparing for long-term project growth. Whether contributing to plugins, themes, documentation, or new contributor experiences, participants reinforced the values that power the WordPress project: collaboration, inclusivity, and openness. The day served as a reminder that WordPress is not just software—it’s a community built by and for everyone.
+## Tomorrow Starts with WordPress
+The first full day of WordCamp Europe 2025 brought the community together to celebrate the power of open source collaboration and innovation. Opening remarks from both global and local event leads reflected on the journey of WordCamp Europe—from its beginnings in 2013 in Leiden, Netherlands, to the vibrant event in Basel today. This full-circle moment underscored the growth of the WordPress community, united by a shared commitment to an open web.
+The day launched into an inspiring program with the keynote session, WordPress Without Borders – The Fight for Digital Freedom
+From there, the program unfolded across multiple tracks—each one sparking new conversations and insights. One standout session highlighted social entrepreneurship in Bulgaria, where WordPress is helping grassroots organizations drive change in education, journalism, and social justice. Petya Raykovska shared how nonprofits like Teenovator and the Bulgarian Fund for Women are using WordPress to amplify their work and strengthen their communities.
+Designers and developers explored ways to improve workflows and collaboration. In Bridging Design and Development
+Workshops played a key role throughout the day, including the interactive Block Developer Cookbook: WCEU 2025 EditionAutomating WordPress Setup with Modern AI Tools
+Photo by Marc Wieland
+Day Two of WordCamp Europe 2025 opened with a focus on the evolving role of the WordPress community in a rapidly changing digital world. Sessions explored how contributors—from local meetup organizers to global advocates—play a vital part in shaping WordPress’s future. Talks on inclusivity, such as Over the Rainbow
+As the day progressed, attention turned to the tools and technologies pushing WordPress forward. From sessions on scaling multilingual sites and managing observability to hands-on workshops, developers explored new ways to streamline workflows and enhance performance. Highlights included WordPress Gems for DevsClient-side Web AI Agents
+The afternoon brought a blend of practical guidance and inspiring stories across tracks. A case study on accessibility from Switzerland showed how thoughtful design can benefit all users, while a session on brand-building for women entrepreneurs highlighted the creative and economic opportunities WordPress enables. With topics spanning content strategy, business growth, regulatory readiness, and more, the second day of WCEU 2025 affirmed the strength of the WordPress ecosystem—not only as a technology platform, but as a global movement fueled by people, purpose, and possibility.
+## Fireside Chat
+As the final day drew to a close, Matt and Mary shared some thoughts on EU regulation (Open Web Alliance), AI, and the introduction of the WordPress AI team, and then answered questions from the audience.
+## Closing
+A heartfelt thank you to the dedicated organizers who brought WordCamp Europe 2025 to life in Basel, the speakers who shared their insights, the attendees who joined us in person, and those who followed along from afar. We hope you leave with fresh ideas, meaningful connections, and renewed energy to help shape the future of the open web.
+Jeroen Rotty Chris Clarke Thanh Nguyen Thanh Nguyen Maksym Kaharlytskyi Chris Clarke Atsushi Ando Nilo Velez Jeroen Rotty Nilo Velez
+Be sure to mark your calendars for the final major WordPress events in 2025: 
+Share this:
+  * [Click to share on Threads (Opens in new window)Threads](https://wordpress.org/news/2025/06/wceu-2025-a-community-celebration-in-the-swiss-sun/?share=threads&nb=1)
+  * [Click to share on Mastodon (Opens in new window)Mastodon](https://wordpress.org/news/2025/06/wceu-2025-a-community-celebration-in-the-swiss-sun/?share=mastodon&nb=1)
+  * [Click to share on Bluesky (Opens in new window)Bluesky](https://wordpress.org/news/2025/06/wceu-2025-a-community-celebration-in-the-swiss-sun/?share=bluesky&nb=1)
+  * [Click to share on X (Opens in new window)X](https://wordpress.org/news/2025/06/wceu-2025-a-community-celebration-in-the-swiss-sun/?share=x&nb=1)
+  * [Click to share on Facebook (Opens in new window)Facebook](https://wordpress.org/news/2025/06/wceu-2025-a-community-celebration-in-the-swiss-sun/?share=facebook&nb=1)
+  * [Click to share on LinkedIn (Opens in new window)LinkedIn](https://wordpress.org/news/2025/06/wceu-2025-a-community-celebration-in-the-swiss-sun/?share=linkedin&nb=1)
 
-Email *  
 
-Website:  
-
-[Cancel](https://wptavern.com/podcast/180-karla-campos-on-organising-wordcamp-us#post-0) Submit
-These comments are powered by 
 * * *
-## Listen to more episodes
-  * ### [#179 – Mariya Moeva on the Impact of Google’s SiteKit on WordPress](https://wptavern.com/podcast/179-mariya-moeva-on-the-impact-of-googles-sitekit-on-wordpress)
-July 30, 2025
-  * ### [#178 – Adam Silverstein Explores Transformative Browser Features Impacting WordPress Sites](https://wptavern.com/podcast/178-adam-silverstein-explores-transformative-browser-features-impacting-wordpress-sites)
-July 23, 2025
-  * ### [#177 – Charlotte Bax on Reducing Your Website’s Carbon Footprint](https://wptavern.com/podcast/177-charlotte-bax-on-reducing-your-websites-carbon-footprint)
-July 16, 2025
-  * ### [#176 – Héctor de Prada on the Power of Local WordPress Meetups in Community Building](https://wptavern.com/podcast/176-hector-de-prada-on-the-power-of-local-wordpress-meetups-in-community-building)
-July 9, 2025
+[PreviousAnnouncing the Formation of the WordPress AI Team](https://wordpress.org/news/2025/05/announcing-the-formation-of-the-wordpress-ai-team/)
+[NextDropping security updates for WordPress versions 4.1 through 4.6](https://wordpress.org/news/2025/06/dropping-security-updates-for-wordpress-versions-4-1-through-4-6/)
+## Get the Latest Updates
+### Subscribe to WordPress News
+Email Address 
+Subscribe 
+Join 19.8K other subscribers 
+### WP Briefing — The WordPress Podcast
+Learn about where WordPress is going and how you can get involved.
+  * [RSS](https://wordpress.org/news/feed/podcast)
 
 
-## Related Reads
-  * [#113 – Shawn Hooper on Launching WordCamp Canada (WCEH)](https://wptavern.com/podcast/113-shawn-hooper-on-launching-wordcamp-canada-wceh) 
-
-Date
-    March 27, 2024
-  * [#62 – Naoko Takano on the Importance of the First WordCamp Asia](https://wptavern.com/podcast/62-naoko-takano-on-the-importance-of-the-first-wordcamp-asia) 
-
-Date
-    February 8, 2023
-  * [#29 – Remkus de Vries on How WordCamp Europe Got Started](https://wptavern.com/podcast/29-remkus-de-vries-on-how-wordcamp-europe-got-started) 
-
-Date
-    June 8, 2022
+[Listen to all episodes](https://wordpress.org/news/podcast/)
+  * [About](https://wordpress.org/about/)
+  * [News](https://wordpress.org/news/)
+  * [Hosting](https://wordpress.org/hosting/)
+  * [Privacy](https://wordpress.org/about/privacy/)
 
 
-## Latest Podcast
-  * ### [#180 – Karla Campos on organising WordCamp US](https://wptavern.com/podcast/180-karla-campos-on-organising-wordcamp-us)
-In this episode, Nathan Wrigley talks with Karla Campos, a lead organiser for WordCamp US 2025 in Portland. Karla shares her journey into organising the flagship event, describing the volunteer-driven, time-intensive process, and how her background in marketing and large-scale event planning helps. They discuss event logistics, the role of production teams, community involvement, challenges…
-[Listen Now](https://wptavern.com/podcast/180-karla-campos-on-organising-wordcamp-us)
+  * [Showcase](https://wordpress.org/showcase/)
+  * [Themes](https://wordpress.org/themes/)
+  * [Plugins](https://wordpress.org/plugins/)
+  * [Patterns](https://wordpress.org/patterns/)
 
 
-## Newsletter
-### Subscribe Via Email
-Enter your email address to subscribe to this blog and receive notifications of new posts by email.
-Type your email… 
-Submit 
-## [About WP Tavern](https://wptavern.com/about)
-WordPress Tavern is a website about all things WordPress. We cover news and events, write plugin and theme reviews, and talk about key issues within the WordPress ecosystem…
-  * [Home](https://wptavern.com/)
-  * [About](https://wptavern.com/about)
-  * [Archive](https://wptavern.com/archives)
-  * [Write For Us](https://wptavern.com/contact)
-  * [Ask the Bartender](https://wptavern.com/contact/ask-the-bartender)
+  * [Learn](https://learn.wordpress.org/)
+  * [Documentation](https://wordpress.org/documentation/)
+  * [Developers](https://developer.wordpress.org/)
 
 
-© All Rights Reserved. Powered by 
-![](https://wptavern.com/wp-content/uploads/2021/10/brew.svg)
-# Insert/edit link
-Close 
-Enter the destination URL
-URL
-Link Text
-Open link in a new tab
-Or link to existing content
-Search
-No search term specified. Showing recent items. Search or use up and down arrow keys to select an item. 
-Cancel
-%d
-Notifications
-# Search results
-Magnifying Glass
-Search
-Close search results
-Sort by: 
-Relevance•Newest•Oldest
-## No results found
-## Filter options
-Close Search
+  * [Get Involved](https://make.wordpress.org/)
+  * [Events](https://events.wordpress.org/)
+  * [Five for the Future](https://wordpress.org/five-for-the-future/)
+
+
+[ WordPress.org ](https://wordpress.org/) [ WordPress.org ](https://wordpress.org/)
+![](https://wordpress.org/news/2025/06/wceu-2025-a-community-celebration-in-the-swiss-sun/)
+![](https://wordpress.org/news/2025/06/wceu-2025-a-community-celebration-in-the-swiss-sun/)
+"
+WCEU 2025: A Community Celebration in the Swiss Sun,https://wordpress.org/news/2025/06/wceu-2025-a-community-celebration-in-the-swiss-sun/,dafafaf,2025-06-07 19:19:18,"Over 1,723 attendees from 84 countries gathered at the Messe and Congress Center Basel in Switzerland, and 20,353 more joined online for WordCamp Europe 2025. I’m personally very excited&#8230; There’s so much I want to do. I think there’s a clear pathway to 7.0 and beyond. Matt Mullenweg, WordPress Cofounder The flagship WordPress event kicked [&#8230;]",Wordpress,0.35024014115333557,7d109fd68ac09505
+Announcing the Formation of the WordPress AI Team,https://wordpress.org/news/2025/05/announcing-the-formation-of-the-wordpress-ai-team/,dafafaf,2025-05-27 16:28:01,"Today, I’m pleased to announce the formation of a new WordPress AI Team, a dedicated group focused on accelerating and coordinating artificial intelligence projects across the WordPress ecosystem. AI is already transforming how people create and manage content online. As this technology evolves, it’s essential that WordPress remains at the forefront, ensuring innovation happens in [&#8230;]",Wordpress,0.5078591704368591,"[Skip to content](https://wordpress.org/news/2025/06/wordcamp-us-2025-see-you-in-portland-oregon/#wp--skip-link--target)
+[ WordPress.org ](https://wordpress.org/)
+  * [News](https://wordpress.org/news/)
+  * [Showcase](https://wordpress.org/showcase/)
+  * [Hosting](https://wordpress.org/hosting/)
+  * Extend
+    * [Themes](https://wordpress.org/themes/)
+    * [Plugins](https://wordpress.org/plugins/)
+    * [Patterns](https://wordpress.org/patterns/)
+    * [Blocks](https://wordpress.org/blocks/)
+  * Learn
+    * [Learn WordPress](https://learn.wordpress.org/)
+    * [Documentation](https://wordpress.org/documentation/)
+    * [Forums](https://wordpress.org/support/forums/)
+    * [Developers](https://developer.wordpress.org/)
+  * Community
+    * [Make WordPress](https://make.wordpress.org/)
+    * [Photo Directory](https://wordpress.org/photos/)
+    * [Five for the Future](https://wordpress.org/five-for-the-future/)
+    * [Events](https://events.wordpress.org/)
+  * About
+    * [About WordPress](https://wordpress.org/about/)
+    * [Enterprise](https://wordpress.org/enterprise/)
+    * [Gutenberg ↗︎](https://wordpress.org/gutenberg/)
+    * [Swag Store ↗︎](https://mercantile.wordpress.org/)
+  * [Get WordPress](https://wordpress.org/download/)
+
+
+Search in WordPress.org
+[ Get WordPress ](https://wordpress.org/download/)
+[ WordPress.org ](https://wordpress.org/)
+[News](https://wordpress.org/news)
+WordCamp US 2025: See You in Portland, Oregon!
+All posts
+Search results
+  * Categories
+    * [All Posts](https://wordpress.org/news/all-posts/)
+    * [Awards](https://wordpress.org/news/category/awards/)
+    * [Community](https://wordpress.org/news/category/community/)
+    * [Design](https://wordpress.org/news/category/design/)
+    * [Development](https://wordpress.org/news/category/development/)
+    * [Documentation](https://wordpress.org/news/category/documentation/)
+    * [Events](https://wordpress.org/news/category/events/)
+    * [Features](https://wordpress.org/news/category/features/)
+    * [General](https://wordpress.org/news/category/general/)
+    * [Interviews](https://wordpress.org/news/category/interviews/)
+    * [Meta](https://wordpress.org/news/category/meta/)
+    * [Month in WordPress](https://wordpress.org/news/category/month-in-wordpress/)
+    * [Performance](https://wordpress.org/news/category/performance/)
+    * [Podcast](https://wordpress.org/news/podcast/)
+    * [Releases](https://wordpress.org/news/category/releases/)
+    * [Security](https://wordpress.org/news/category/security/)
+    * [Store](https://wordpress.org/news/category/store/)
+    * [Testing](https://wordpress.org/news/category/testing/)
+    * [Updates](https://wordpress.org/news/category/updates/)
+    * [WordCamp](https://wordpress.org/news/category/wordcamp/)
+
+
+  * Categories
+    * [All Posts](https://wordpress.org/news/all-posts/)
+    * [Awards](https://wordpress.org/news/category/awards/)
+    * [Community](https://wordpress.org/news/category/community/)
+    * [Design](https://wordpress.org/news/category/design/)
+    * [Development](https://wordpress.org/news/category/development/)
+    * [Documentation](https://wordpress.org/news/category/documentation/)
+    * [Events](https://wordpress.org/news/category/events/)
+    * [Features](https://wordpress.org/news/category/features/)
+    * [General](https://wordpress.org/news/category/general/)
+    * [Interviews](https://wordpress.org/news/category/interviews/)
+    * [Meta](https://wordpress.org/news/category/meta/)
+    * [Month in WordPress](https://wordpress.org/news/category/month-in-wordpress/)
+    * [Performance](https://wordpress.org/news/category/performance/)
+    * [Podcast](https://wordpress.org/news/podcast/)
+    * [Releases](https://wordpress.org/news/category/releases/)
+    * [Security](https://wordpress.org/news/category/security/)
+    * [Store](https://wordpress.org/news/category/store/)
+    * [Testing](https://wordpress.org/news/category/testing/)
+    * [Updates](https://wordpress.org/news/category/updates/)
+    * [WordCamp](https://wordpress.org/news/category/wordcamp/)
+
+
+June 27, 2025
+By 
+[Brett McSherry](https://profiles.wordpress.org/bjmcsherry/)
+in 
+[Events](https://wordpress.org/news/category/events/), [WordCamp](https://wordpress.org/news/category/wordcamp/)
+# WordCamp US 2025: See You in Portland, Oregon!
+* * *
+WordCamp US 2025 is heading to vibrant Portland, Oregon, from August 26–29, 2025! Join fellow open source enthusiasts, developers, designers, and WordPress professionals from across the United States and around the world for four days of learning, networking, and collaboration at the Oregon Convention Center.
+Nestled in the Pacific Northwest, Portland is famous for its creative spirit, lush green spaces, and riverside trails, making it an inspiring backdrop for this year’s WordCamp. Whether building your first site or leading a digital agency, WordCamp US offers something for everyone, all set against the city’s stunning natural scenery.
+🎟️ Tickets are limited—secure yours today!
+## What to Expect
+### Contributor Day: August 26
+Kick off your WordCamp US experience by giving back. Contributor Day welcomes all skill levels to collaborate on teams that help make WordPress better, from code to community to documentation. You can make a difference to the project, and build new friendships or rekindle old ones, perhaps even while enjoying views of Portland’s skyline and tree-lined streets.
+### Main Conference: August 27–29
+#### Showcase Day – August 27
+As part of the main conference, day one will give us a look at project showcases, discover innovative uses of WordPress, see how people push the platform’s boundaries, and get inspired to try something new.
+#### Session Days + Expo Hall – August 28-29
+Experience another two days filled with inspiring keynotes, practical sessions, and deep dives into the latest trends in web development, design, content, accessibility, and more. Hear from some of the brightest minds in the WordPress ecosystem and explore topics that get to the heart of what makes WordPress unique. Also, take some time to explore the main floors of WCUS, like the Sponsors Hall.
+### Networking and Community
+Meet WordPress friends new and old, exchange ideas with community leaders, and collaborate with people who share your passion for open source. Enjoy daily lunches and a memorable social event, all included with your ticket. Stroll along the Willamette River or explore nearby parks in between sessions.
+### Venue & Accommodations
+This year, we’re gathering at the Oregon Convention Center in the heart of Portland—a city known for its vibrant neighborhoods and abundant green spaces. We’ve secured a special hotel block right across the street at the Hyatt Regency Portland for convenient, comfortable lodging during your stay.
+  * 🏢Oregon Convention Center  
+Portland, OR 97232  
+
+  * 🛏️ Hyatt Regency Portland  
+375 NE Holladay Street  
+Portland, OR 97232  
+
+
+
+## Registration and Tickets
+Registration officially kicked off last month. Secure your spot early; tickets are selling quickly.
+🎟️ Tickets are limited—secure yours today!
+## Ready to Plan Your WordCamp US Experience?
+Keep checking the 
+Stay tuned for updates and announcements on [WordPress social media channels](https://make.wordpress.org/marketing/handbook/social-media/), and join the conversation.
+### Help Us Spread the Word!
+Whether attending in person or following along online, share your experience and help welcome others to the WordPress community. Use the #WCUS and #WordPress hashtags and tell your story on social!
+Portland is calling—see you at WordCamp US 2025! 🌲
+Share this:
+  * [Click to share on Threads (Opens in new window)Threads](https://wordpress.org/news/2025/06/wordcamp-us-2025-see-you-in-portland-oregon/?share=threads&nb=1)
+  * [Click to share on Mastodon (Opens in new window)Mastodon](https://wordpress.org/news/2025/06/wordcamp-us-2025-see-you-in-portland-oregon/?share=mastodon&nb=1)
+  * [Click to share on Bluesky (Opens in new window)Bluesky](https://wordpress.org/news/2025/06/wordcamp-us-2025-see-you-in-portland-oregon/?share=bluesky&nb=1)
+  * [Click to share on X (Opens in new window)X](https://wordpress.org/news/2025/06/wordcamp-us-2025-see-you-in-portland-oregon/?share=x&nb=1)
+  * [Click to share on Facebook (Opens in new window)Facebook](https://wordpress.org/news/2025/06/wordcamp-us-2025-see-you-in-portland-oregon/?share=facebook&nb=1)
+  * [Click to share on LinkedIn (Opens in new window)LinkedIn](https://wordpress.org/news/2025/06/wordcamp-us-2025-see-you-in-portland-oregon/?share=linkedin&nb=1)
+
+
+* * *
+[PreviousDropping security updates for WordPress versions 4.1 through 4.6](https://wordpress.org/news/2025/06/dropping-security-updates-for-wordpress-versions-4-1-through-4-6/)
+[NextIntroducing WordPress Credits: A New Contribution Internship Program for University Students](https://wordpress.org/news/2025/07/introducing-wordpress-credits-a-new-contribution-internship-program-for-university-students/)
+## Get the Latest Updates
+### Subscribe to WordPress News
+Email Address 
+Subscribe 
+Join 19.8K other subscribers 
+### WP Briefing — The WordPress Podcast
+Learn about where WordPress is going and how you can get involved.
+  * [RSS](https://wordpress.org/news/feed/podcast)
+
+
+[Listen to all episodes](https://wordpress.org/news/podcast/)
+  * [About](https://wordpress.org/about/)
+  * [News](https://wordpress.org/news/)
+  * [Hosting](https://wordpress.org/hosting/)
+  * [Privacy](https://wordpress.org/about/privacy/)
+
+
+  * [Showcase](https://wordpress.org/showcase/)
+  * [Themes](https://wordpress.org/themes/)
+  * [Plugins](https://wordpress.org/plugins/)
+  * [Patterns](https://wordpress.org/patterns/)
+
+
+  * [Learn](https://learn.wordpress.org/)
+  * [Documentation](https://wordpress.org/documentation/)
+  * [Developers](https://developer.wordpress.org/)
+
+
+  * [Get Involved](https://make.wordpress.org/)
+  * [Events](https://events.wordpress.org/)
+  * [Five for the Future](https://wordpress.org/five-for-the-future/)
+
+
+[ WordPress.org ](https://wordpress.org/) [ WordPress.org ](https://wordpress.org/)
+"
+WordPress Campus Connect Expands,https://wordpress.org/news/2025/05/wordpress-campus-connect-expands/,dafafaf,2025-05-07 12:40:19,"WordPress Campus Connect, initially launched in October 2024 as a pilot program, has now been formally established as an official event series due to its resounding success. The inaugural program, spearheaded by myself, Anand Upadhyay, garnered immense enthusiasm from 400 Indian students who were eager to engage in hands-on WordPress training. WordPress Campus Connect transcends [&#8230;]",Wordpress,0.3698374629020691,"[Skip to content](https://wordpress.org/news/2025/07/introducing-wordpress-credits-a-new-contribution-internship-program-for-university-students/#wp--skip-link--target)
+[ WordPress.org ](https://wordpress.org/)
+  * [News](https://wordpress.org/news/)
+  * [Showcase](https://wordpress.org/showcase/)
+  * [Hosting](https://wordpress.org/hosting/)
+  * Extend
+    * [Themes](https://wordpress.org/themes/)
+    * [Plugins](https://wordpress.org/plugins/)
+    * [Patterns](https://wordpress.org/patterns/)
+    * [Blocks](https://wordpress.org/blocks/)
+  * Learn
+    * [Learn WordPress](https://learn.wordpress.org/)
+    * [Documentation](https://wordpress.org/documentation/)
+    * [Forums](https://wordpress.org/support/forums/)
+    * [Developers](https://developer.wordpress.org/)
+  * Community
+    * [Make WordPress](https://make.wordpress.org/)
+    * [Photo Directory](https://wordpress.org/photos/)
+    * [Five for the Future](https://wordpress.org/five-for-the-future/)
+    * [Events](https://events.wordpress.org/)
+  * About
+    * [About WordPress](https://wordpress.org/about/)
+    * [Enterprise](https://wordpress.org/enterprise/)
+    * [Gutenberg ↗︎](https://wordpress.org/gutenberg/)
+    * [Swag Store ↗︎](https://mercantile.wordpress.org/)
+  * [Get WordPress](https://wordpress.org/download/)
+
+
+Search in WordPress.org
+[ Get WordPress ](https://wordpress.org/download/)
+[ WordPress.org ](https://wordpress.org/)
+[News](https://wordpress.org/news)
+Introducing WordPress Credits: A New Contribution Internship Program for University Students
+All posts
+Search results
+  * Categories
+    * [All Posts](https://wordpress.org/news/all-posts/)
+    * [Awards](https://wordpress.org/news/category/awards/)
+    * [Community](https://wordpress.org/news/category/community/)
+    * [Design](https://wordpress.org/news/category/design/)
+    * [Development](https://wordpress.org/news/category/development/)
+    * [Documentation](https://wordpress.org/news/category/documentation/)
+    * [Events](https://wordpress.org/news/category/events/)
+    * [Features](https://wordpress.org/news/category/features/)
+    * [General](https://wordpress.org/news/category/general/)
+    * [Interviews](https://wordpress.org/news/category/interviews/)
+    * [Meta](https://wordpress.org/news/category/meta/)
+    * [Month in WordPress](https://wordpress.org/news/category/month-in-wordpress/)
+    * [Performance](https://wordpress.org/news/category/performance/)
+    * [Podcast](https://wordpress.org/news/podcast/)
+    * [Releases](https://wordpress.org/news/category/releases/)
+    * [Security](https://wordpress.org/news/category/security/)
+    * [Store](https://wordpress.org/news/category/store/)
+    * [Testing](https://wordpress.org/news/category/testing/)
+    * [Updates](https://wordpress.org/news/category/updates/)
+    * [WordCamp](https://wordpress.org/news/category/wordcamp/)
+
+
+  * Categories
+    * [All Posts](https://wordpress.org/news/all-posts/)
+    * [Awards](https://wordpress.org/news/category/awards/)
+    * [Community](https://wordpress.org/news/category/community/)
+    * [Design](https://wordpress.org/news/category/design/)
+    * [Development](https://wordpress.org/news/category/development/)
+    * [Documentation](https://wordpress.org/news/category/documentation/)
+    * [Events](https://wordpress.org/news/category/events/)
+    * [Features](https://wordpress.org/news/category/features/)
+    * [General](https://wordpress.org/news/category/general/)
+    * [Interviews](https://wordpress.org/news/category/interviews/)
+    * [Meta](https://wordpress.org/news/category/meta/)
+    * [Month in WordPress](https://wordpress.org/news/category/month-in-wordpress/)
+    * [Performance](https://wordpress.org/news/category/performance/)
+    * [Podcast](https://wordpress.org/news/podcast/)
+    * [Releases](https://wordpress.org/news/category/releases/)
+    * [Security](https://wordpress.org/news/category/security/)
+    * [Store](https://wordpress.org/news/category/store/)
+    * [Testing](https://wordpress.org/news/category/testing/)
+    * [Updates](https://wordpress.org/news/category/updates/)
+    * [WordCamp](https://wordpress.org/news/category/wordcamp/)
+
+
+July 10, 2025
+By 
+[Isotta Peira](https://profiles.wordpress.org/peiraisotta/)
+in 
+[Community](https://wordpress.org/news/category/community/)
+# Introducing WordPress Credits: A New Contribution Internship Program for University Students
+* * *
+The WordPress Foundation is proud to launch WordPress Credits, a contribution-focused internship program that brings university students into the heart of the WordPress open source project. While WordPress thrives on contributions from a global volunteer community, many students and newcomers face barriers to entry, such as a lack of structured guidance or real-world experience in open source projects. This new program is designed to bridge that gap, nurturing future contributors and ensuring WordPress remains innovative, inclusive, and sustainable for years to come.
+The 
+Open to students from all fields of study, the program blends structured onboarding with a personalized contribution project. Activities are adapted to each student’s degree program and familiarity with WordPress, aiming to develop transferable skills, academic-related competencies, and active participation in the WordPress community. Internship durations may vary depending on the university or educational institution. Some may align with academic semesters (typically 3–4 months), while others, like the University of Pisa, allow students to sign up year-round with a requirement to complete a set number of contribution hours (e.g. 150 hours). Flexible arrangements can be discussed to meet the specific requirements of each institution.
+Foundational Training includes:
+  * An introduction to open source principles and the WordPress Foundation
+  * Getting familiar with community tools (Slack, Make blogs, Learn platform, GitHub)
+  * Setting up a personal WordPress site and publishing content
+
+
+Each student will choose a contribution area and design their own personal project within that area. Examples of possible projects include:
+  * Translating interfaces or documentation
+  * Creating multilingual subtitles for educational videos
+  * Contributing code or performing testing
+  * Supporting product development or design
+  * Writing or editing content
+  * Assisting with community event organization
+  * Developing training materials for Learn WordPress
+  * Creating open source tools
+  * And much more…  
+
+
+
+Interns are guided by an experienced mentor specific to their chosen area and supported by a dedicated WordPress Foundation contact person throughout the program. All student contributions, whether code, translations, documentation, or educational materials, will be publicly visible and integrated into official WordPress projects and resources, directly benefiting the wider community.
+Interested universities and educational institutions
+We also invite companies in the WordPress ecosystem to support this initiative by sponsoring mentors who will guide and empower the next generation of contributors, or by providing tools and resources that help students succeed in their contribution journey. 
+If your company is interested in getting involved[Company Guide](https://make.wordpress.org/handbook/wordpress-credits-contribution-internship-program/get-involved-company-guide/) to learn more and 
+By welcoming students, mentors, sponsors, and volunteers into this initiative, we are building a stronger and more connected WordPress community. Each person who takes part, whether they guide a student, share their experiences, provide sponsorship, or simply help spread the word, helps ensure that open source remains vibrant and accessible for all. Together, we are not just supporting individual contributors; we are shaping the future of WordPress and open source itself.
+Share this:
+  * [Click to share on Threads (Opens in new window)Threads](https://wordpress.org/news/2025/07/introducing-wordpress-credits-a-new-contribution-internship-program-for-university-students/?share=threads&nb=1)
+  * [Click to share on Mastodon (Opens in new window)Mastodon](https://wordpress.org/news/2025/07/introducing-wordpress-credits-a-new-contribution-internship-program-for-university-students/?share=mastodon&nb=1)
+  * [Click to share on Bluesky (Opens in new window)Bluesky](https://wordpress.org/news/2025/07/introducing-wordpress-credits-a-new-contribution-internship-program-for-university-students/?share=bluesky&nb=1)
+  * [Click to share on X (Opens in new window)X](https://wordpress.org/news/2025/07/introducing-wordpress-credits-a-new-contribution-internship-program-for-university-students/?share=x&nb=1)
+  * [Click to share on Facebook (Opens in new window)Facebook](https://wordpress.org/news/2025/07/introducing-wordpress-credits-a-new-contribution-internship-program-for-university-students/?share=facebook&nb=1)
+  * [Click to share on LinkedIn (Opens in new window)LinkedIn](https://wordpress.org/news/2025/07/introducing-wordpress-credits-a-new-contribution-internship-program-for-university-students/?share=linkedin&nb=1)
+
+
+* * *
+[PreviousWordCamp US 2025: See You in Portland, Oregon!](https://wordpress.org/news/2025/06/wordcamp-us-2025-see-you-in-portland-oregon/)
+[NextCelebrating Kim Parsell: 2025 WordCamp US Scholarship Applications Open](https://wordpress.org/news/2025/07/kim-parsell-2025-wcus-scholarship-applications-open/)
+## Get the Latest Updates
+### Subscribe to WordPress News
+Email Address 
+Subscribe 
+Join 19.8K other subscribers 
+### WP Briefing — The WordPress Podcast
+Learn about where WordPress is going and how you can get involved.
+  * [RSS](https://wordpress.org/news/feed/podcast)
+
+
+[Listen to all episodes](https://wordpress.org/news/podcast/)
+  * [About](https://wordpress.org/about/)
+  * [News](https://wordpress.org/news/)
+  * [Hosting](https://wordpress.org/hosting/)
+  * [Privacy](https://wordpress.org/about/privacy/)
+
+
+  * [Showcase](https://wordpress.org/showcase/)
+  * [Themes](https://wordpress.org/themes/)
+  * [Plugins](https://wordpress.org/plugins/)
+  * [Patterns](https://wordpress.org/patterns/)
+
+
+  * [Learn](https://learn.wordpress.org/)
+  * [Documentation](https://wordpress.org/documentation/)
+  * [Developers](https://developer.wordpress.org/)
+
+
+  * [Get Involved](https://make.wordpress.org/)
+  * [Events](https://events.wordpress.org/)
+  * [Five for the Future](https://wordpress.org/five-for-the-future/)
+
+
+[ WordPress.org ](https://wordpress.org/) [ WordPress.org ](https://wordpress.org/)
 "

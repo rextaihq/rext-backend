@@ -54,7 +54,7 @@ def gnews_articles(state: AgentState) -> AgentState:
             data = response.json()
             raw_articles = data.get("articles", [])
 
-            articles = []
+            articles_list = []
             for item in raw_articles:
                 published_at = item.get("publishedAt")
                 published = (
@@ -62,7 +62,7 @@ def gnews_articles(state: AgentState) -> AgentState:
                     if published_at else None
                 )
 
-                articles.append({
+                articles_list.append({
                     "title": item.get("title", ""),
                     "link": item.get("url", ""),
                     "source": item.get("source", {}).get("name", "GNews"),
@@ -70,19 +70,20 @@ def gnews_articles(state: AgentState) -> AgentState:
                     "summary": item.get("description", "")
                 })
                 break
-
-            print("Total Articles: ",len(articles))
+            # Return the articles to the new top-level key
+            print("G News Articles Fethes")
             return {
-                "articles":articles
-            }
+            "articles": articles_list
+        }
 
         else:
+            # return state
             return {
-                "error":f"GNews API returned status code {response.status_code}"
-            }
+                    "error": [{"gnews_error": f"Error Occur in G news data getting: {response.status_code}"}]
+                }
+
 
     except Exception as e:
-        
         return {
-            "error":str(e)
-        }
+                    "error": [{"gnews_exception": str(e)}]
+                }

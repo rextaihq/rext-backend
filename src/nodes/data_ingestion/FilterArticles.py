@@ -2,7 +2,9 @@ from src.states.State import AgentState
 from sentence_transformers import util
 from src.model.model import load_embedder
 # Combine both articles
-def merge_articles(state:AgentState)->AgentState:
+
+embedder = load_embedder()
+def filter_articles(state:AgentState)->AgentState:
     """
     MergeArticles
 
@@ -21,34 +23,32 @@ def merge_articles(state:AgentState)->AgentState:
     """
     print("Combining articles...")
 
-    print("Combining articles...")
+    full_articles = state.get('articles', [])
 
-    articles = state['articles']
-    wordpress_articles = state['wordpress_articles']
-    combined_articles = articles + wordpress_articles
-
-    print(f"Total articles before filtering: {len(combined_articles)}")
+    print(f"Total articles before filtering: {len(full_articles)}")
 
     config = state.get('config', {})
-    keywords = config.keyword
-    similarity_threshold = 0.3
+    keywords = config['keyword']
+    similarity_threshold = config['similarity_threshold']
 
-    if not combined_articles:
-        state['combine_articles'] = []
-        print("No articles to combine.")
-        return state
+    if not full_articles:
+        # Update the 'articles' sub-dictionary with an empty list
+
+        return {
+               "filter_articles": []
+            }
 
     # Embed keywords and combined article titles + summaries
-    keyword_embeddings = load_embedder().encode(keywords, convert_to_tensor=True)
-    article_texts = [f"{a.get('title', '')} {a.get('summary', '')}" for a in combined_articles]
+    keyword_embeddings = embedder.encode(keywords, convert_to_tensor=True)
+    article_texts = [f"{a.get('title', '')} {a.get('summary', '')}" for a in full_articles]
 
     print(article_texts)
-    article_embeddings = load_embedder().encode(article_texts, convert_to_tensor=True)
+    article_embeddings = embedder.encode(article_texts, convert_to_tensor=True)
 
     similarities = util.cos_sim(article_embeddings, keyword_embeddings)
 
     filtered_articles = []
-    for idx, article in enumerate(combined_articles):
+    for idx, article in enumerate(full_articles):
         max_sim, max_idx = similarities[idx].max(dim=0)
         max_sim = max_sim.item()
         matched_keyword = keywords[max_idx]
@@ -58,8 +58,9 @@ def merge_articles(state:AgentState)->AgentState:
             article['similarity'] = max_sim
             filtered_articles.append(article)
 
+    # Update the 'articles' sub-dictionary with the filtered list
     print(f"Articles after filtering: {len(filtered_articles)}")
-    
+
     return {
-        "combine_articles":filtered_articles
-    }
+            "filter_articles": filtered_articles
+            }

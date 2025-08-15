@@ -16,9 +16,9 @@ st.set_page_config(layout="wide")
 
 # Initialize LangGraph client
 client = get_sync_client(
-    url="http://localhost:8123/",
+    # url="http://localhost:8123/",
 
-    # url = "http://127.0.0.1:2024",
+    url = "http://127.0.0.1:2024",
     api_key=os.getenv('LANGSMITH_API_KEY')
 )
 

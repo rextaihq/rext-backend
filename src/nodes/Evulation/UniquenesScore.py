@@ -20,7 +20,7 @@ def score_uniqueness(state: AgentState) -> dict:
         ratings = []
         weights = []
 
-        for article in state.get("combine_articles", []):
+        for article in state.get("filter_articles", []):
             title = article.get("title", "")
             description = article.get("summary", "")
             blog_data = article.get("scraped_markdown", "")
@@ -46,11 +46,12 @@ def score_uniqueness(state: AgentState) -> dict:
             weights.append(response.weight)
 
         return {
+            "evaluations":{
             'uniqueness_rating': ratings,
             'uniqueness_weight': weights
         }
+            }
 
     except Exception as e:
         print("Uniqueness scoring failed:", e)
-        state["error"] = str(e)
-        return str(e)
+        return {"error": [{"Uniqueness scoring failed": str(e)}]}
