@@ -1,5 +1,8 @@
 from src.workflow.workflow import CreateWorkflow
 from src.states.State import URLCONFIF
+import os
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
+
 my_config_instance = URLCONFIF(
     category="technology",
     language="en",

@@ -11,76 +11,97 @@ def re_ranking(state: AgentState) -> AgentState:
         dict: Updated state with `evaluated_articles` (DataFrame serialized as a list of dicts).
     """
     try:
-        # Extract combined article data
-        combine_data = state.get("combine_articles", [])
-        if not combine_data:
-            raise ValueError("No articles found in state['combine_articles'].")
+        filter_data = state.get("filter_articles", [])
+        evulaion_data = state.get("evaluations", {})
 
-        num_articles = len(combine_data)
+        if not filter_data:
+            raise ValueError("No articles found in state['filter_articles'].")
 
-        # get all the rating and weight, ensuring consistent shape
-        relevance_rating = np.array(state.get("relevance_rating", [0] * num_articles))
-        trend_rating = np.array(state.get("trend_rating", [0] * num_articles))
-        controversy_rating = np.array(state.get("controversy_rating", [0] * num_articles))
-        uniqueness_rating = np.array(state.get("uniqueness_rating", [0] * num_articles))
-        reader_rating = np.array(state.get("reader_rating", [0] * num_articles))
-        brand_rating = np.array(state.get("brand_rating", [0] * num_articles))
-        actionable_rating = np.array(state.get("actionable_rating", [0] * num_articles))
-        seo_rating = np.array(state.get("seo_rating", [0] * num_articles))
+        num_articles = len(filter_data)
+
+        print("getting Rating and weights")
+
+        # Get lists of ratings and weights, providing defaults if a category is missing
+        relevance_rating = np.array(evulaion_data.get("relevance_rating", [0] * num_articles))
+        trend_rating = np.array(evulaion_data.get("trend_rating", [0] * num_articles))
+        controversy_rating = np.array(evulaion_data.get("controversy_rating", [0] * num_articles))
+        uniqueness_rating = np.array(evulaion_data.get("uniqueness_rating", [0] * num_articles))
+        reader_rating = np.array(evulaion_data.get("reader_rating", [0] * num_articles))
+        brand_rating = np.array(evulaion_data.get("brand_rating", [0] * num_articles))
+        actionable_rating = np.array(evulaion_data.get("actionable_rating", [0] * num_articles))
+        seo_rating = np.array(evulaion_data.get("seo_rating", [0] * num_articles))
+
+        relevance_weight = np.array(evulaion_data.get("relevance_weight", [1] * num_articles))
+        trend_weight = np.array(evulaion_data.get("trend_weight", [1] * num_articles))
+        controversy_weight = np.array(evulaion_data.get("controversy_weight", [1] * num_articles))
+        uniqueness_weight = np.array(evulaion_data.get("uniqueness_weight", [1] * num_articles))
+        reader_weight = np.array(evulaion_data.get("reader_weight", [1] * num_articles))
+        brand_weight = np.array(evulaion_data.get("brand_weight", [1] * num_articles))
+        actionable_weight = np.array(evulaion_data.get("actionable_weight", [1] * num_articles))
+        seo_weight = np.array(evulaion_data.get("seo_weight", [1] * num_articles))
+
+        print("Calculating Totals")
+        # Ensure all arrays have the same length before summing
+        min_len = min(len(relevance_rating), len(trend_rating), len(controversy_rating), len(uniqueness_rating),
+                      len(reader_rating), len(brand_rating), len(actionable_rating), len(seo_rating),
+                      len(relevance_weight), len(trend_weight), len(controversy_weight), len(uniqueness_weight),
+                      len(reader_weight), len(brand_weight), len(actionable_weight), len(seo_weight))
+
+        # Trim arrays to the minimum length
+        relevance_rating = relevance_rating[:min_len]
+        trend_rating = trend_rating[:min_len]
+        controversy_rating = controversy_rating[:min_len]
+        uniqueness_rating = uniqueness_rating[:min_len]
+        reader_rating = reader_rating[:min_len]
+        brand_rating = brand_rating[:min_len]
+        actionable_rating = actionable_rating[:min_len]
+        seo_rating = seo_rating[:min_len]
+
+        relevance_weight = relevance_weight[:min_len]
+        trend_weight = trend_weight[:min_len]
+        controversy_weight = controversy_weight[:min_len]
+        uniqueness_weight = uniqueness_weight[:min_len]
+        reader_weight = reader_weight[:min_len]
+        brand_weight = brand_weight[:min_len]
+        actionable_weight = actionable_weight[:min_len]
+        seo_weight = seo_weight[:min_len]
 
 
-        # get all the weights, ensuring consistent shape and default to 1 if not present
-        relevance_weight = np.array(state.get("relevance_weight", [1] * num_articles))
-        trend_weight = np.array(state.get("trend_weight", [1] * num_articles))
-        controversy_weight = np.array(state.get("controversy_weight", [1] * num_articles))
-        uniqueness_weight = np.array(state.get("uniqueness_weight", [1] * num_articles))
-        reader_weight = np.array(state.get("reader_weight", [1] * num_articles))
-        brand_weight = np.array(state.get("brand_weight", [1] * num_articles))
-        actionable_weight = np.array(state.get("actionable_weight", [1] * num_articles))
-        seo_weight = np.array(state.get("seo_weight", [1] * num_articles))
+        # Totals
+        total_rating = (
+            relevance_rating + trend_rating + controversy_rating + uniqueness_rating +
+            reader_rating + brand_rating + actionable_rating + seo_rating
+        )
+        total_weight = (
+            relevance_weight + trend_weight + controversy_weight + uniqueness_weight +
+            reader_weight + brand_weight + actionable_weight + seo_weight
+        )
 
-        # now calculte the sum index wise
-        total_rating = (relevance_rating +
-                        trend_rating +
-                        controversy_rating +
-                        uniqueness_rating +
-                        reader_rating +
-                        brand_rating +
-                        actionable_rating +
-                        seo_rating)
+        print("Total Ratting: ",total_rating)
+        print("Total Weight: ",total_weight)
 
-        total_weight = (relevance_weight +
-                        trend_weight +
-                        controversy_weight +
-                        uniqueness_weight +
-                        reader_weight +
-                        brand_weight +
-                        actionable_weight +
-                        seo_weight)
 
-        state['total_rating'] = total_rating.tolist()
-        state['total_weight'] = total_weight.tolist()
-        
-        # add the totalrating and weigh back into articles
-        article = state['combine_articles']
-        for i in range(len(article)):
-            article[i]['rating'] = state['total_rating'][i]
-            article[i]['weight'] = state['total_weight'][i]
+        # Attach scores to each article
+        # Ensure we only process up to min_len articles
+        for i in range(min_len):
+            print("Adding Score: ",i)
+            filter_data[i]['rating'] = int(total_rating[i])
+            filter_data[i]['weight'] = int(total_weight[i])
+            filter_data[i]['total_score'] = int(total_rating[i] * total_weight[i])
 
-            # add a total score
-            article[i]['total_score'] = state['total_rating'][i] * state['total_weight'][i]
+        # Remove articles that did not get fully scored
+        filtered_scored_articles = filter_data[:min_len]
 
-        # Sort in-place using pandas
-        df = pd.DataFrame(combine_data)
-        
+
+        # Sort by total_score
+        df = pd.DataFrame(filtered_scored_articles)
         df_sorted = df.sort_values(by='total_score', ascending=False)
+        
         df.to_csv('full_blog.csv', index=False)
-        # Update state['combine_articles'] with sorted data
-        state['combine_articles'] = df_sorted.to_dict(orient='records')
-
-        return state
-
+        
+        return {
+            "filter_articles": df_sorted.to_dict(orient='records')
+        }
 
     except Exception as e:
-        state["error"] = str(e)
-        return state
+        return {"error": [{"AddEvulationResult failed": str(e)}]}

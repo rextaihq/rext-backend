@@ -54,7 +54,28 @@ def set_configuration(client):
 
         # Optional: Add some sample or default keyword list
         category_list = ["AI", "Technology", "Finance", "Health", "Education", "Climate"]
-        selected_category = st.selectbox("Keyword / Category", category_list, key="category")
+        selected_category = st.selectbox("Category", category_list, key="category")
+
+        # Keywords Section
+        st.write("### Keywords")
+
+        # Initialize keywords in session state
+        if "keywords" not in st.session_state:
+            st.session_state.keywords = ["AI", "ML", "DL", "WordPress", "WordPress Maintenance"]
+
+        # Display keyword inputs
+        for i, kw in enumerate(st.session_state.keywords):
+            kw_key = f"keyword_{i}"
+            st.session_state.keywords[i] = st.text_input(f"Keyword {i+1}", value=kw, key=kw_key)
+
+        # Add and remove keyword buttons
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("➕ Add Keyword"):
+                st.session_state.keywords.append("")
+        with col2:
+            if st.button("➖ Remove Last Keyword") and st.session_state.keywords:
+                st.session_state.keywords.pop()
 
         # Initialize feed URLs in session state (list of dicts with name & url)
         if "feed_entries" not in st.session_state:
@@ -70,7 +91,17 @@ def set_configuration(client):
         if st.button("➕ Add another feed"):
             st.session_state.feed_entries.append({"name": "", "url": ""})
 
-        # Save Button
+
+        threshold = st.number_input(
+            "Select similarity_threshold",
+            min_value=0.0,
+            max_value=1.0,
+            value=0.3,
+            step=0.01,
+            format="%.2f"
+        )
+
+       # --- Save Button ---
         if st.button("✅ Save Configuration", key="save_config"):
             # Build dictionary from cleaned entries
             wordpress_feeds: Dict[str, str] = {}
@@ -80,15 +111,20 @@ def set_configuration(client):
                 if name and url:
                     wordpress_feeds[name] = url
 
+            # Clean keyword list
+            cleaned_keywords = [kw.strip() for kw in st.session_state.keywords if kw.strip()]
+
             # Construct config object
             config_obj = URLCONFIF(
                 country=country_options[selected_country_name],
                 language=language_options[selected_language_name],
                 category=selected_category,
-                WP_URL=wordpress_feeds
+                WP_URL=wordpress_feeds,
+                keyword=cleaned_keywords,
+                similarity_threshold=threshold
             )
 
-            # Convert to dict to store in assistant (or keep as model if needed)
+            # Convert to dict to store in assistant
             config_dict = config_obj.dict()
             config_dict["assistant_id"] = assistant_id
             config_dict["assistant_name"] = assistant_name

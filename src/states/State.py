@@ -1,5 +1,7 @@
 from typing_extensions import TypedDict ,Dict, List, Annotated
 from langgraph.graph.message import add_messages
+from langchain_core.documents import Document
+from src.utils.helper import merge_evaluations
 #  define the evulation creteria
 from pydantic import BaseModel, Field
 from typing import List
@@ -10,56 +12,40 @@ class URLCONFIF(BaseModel):
     language:str = 'en'
     country:str='pk'
     WP_URL: Dict[str, str]
+    keyword :List[str] =['Ai',"ML","DL","Wordpress","WordPress Maintenenace"]
+    similarity_threshold:float = 0.3
+
+class EvaluationState(TypedDict):
+    rating: Annotated[List[int], operator.add]
+    weight: Annotated[List[int], operator.add]
+    total_rating: List[int]
+    total_weight: List[int]
 
 class AgentState(TypedDict, total=False):
-    # Set the congigration for each 
+    # workflow configration
     config: URLCONFIF
 
     # Message state for tools calling
     messages: Annotated[list, add_messages]
-    
+
     # Basic article data
-    articles: List[Dict]
-    wordpress_articles: List[Dict]
-    combine_articles: List[Dict]
+    articles: Annotated[List[Dict], operator.add]
+    filter_articles : List[Dict]
     selected_articles: List[Dict]
 
-    # Relevance evaluation
-    relevance_rating: Annotated[List[int], operator.add]
-    relevance_weight: Annotated[List[int], operator.add]
+    # evaluation
+    evaluations: Annotated[Dict[str, EvaluationState],merge_evaluations]
 
-    # Trend evaluation
-    trend_rating: Annotated[List[int], operator.add]
-    trend_weight: Annotated[List[int], operator.add]
-
-    # Controversy evaluation
-    controversy_rating: Annotated[List[int], operator.add]
-    controversy_weight: Annotated[List[int], operator.add]
-
-    # Uniqueness evaluation
-    uniqueness_rating: Annotated[List[int], operator.add]
-    uniqueness_weight: Annotated[List[int], operator.add]
-
-    reader_rating: Annotated[List[int], operator.add]
-    reader_weight: Annotated[List[int], operator.add]
-
-    brand_rating: Annotated[List[int], operator.add]
-    brand_weight: Annotated[List[int], operator.add]
-
-    actionable_rating: Annotated[List[int], operator.add]
-    actionable_weight: Annotated[List[int], operator.add]
-
-    seo_rating: Annotated[List[int], operator.add]
-    seo_weight: Annotated[List[int], operator.add]
-
-    total_rating: List[int]
-    total_weight: List[int]
-
-   # Articles Outlines
-    approved_outlines : List[Dict]
+    # Articles Outlines
+    outlines : List[Dict]
     approval_feedback : str
-    current_approval_index: int
-    generated_outline:str
+
+    # Summaries section
+    blog_content: List[str]
+    reference_url: List[str]
+    summaries: Annotated[list, operator.add]
+    collapsed_summaries: List[Document]
+    final_summary: str
 
 
     # Blog generation states
@@ -69,7 +55,7 @@ class AgentState(TypedDict, total=False):
     generated_blog: str
 
     # Human feedback or error
-    error: str
+    error: Annotated[List[dict], operator.add]
 
 
 class Evaluation(BaseModel):

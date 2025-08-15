@@ -19,7 +19,7 @@ def score_actionable_potential(state: AgentState) -> dict:
         ratings = []
         weights = []
 
-        for article in state.get("combine_articles", []):
+        for article in state.get("filter_articles", []):
             title = article.get("title", "")
             description = article.get("summary", "")
             blog_data = article.get("scraped_markdown", "")
@@ -45,11 +45,12 @@ def score_actionable_potential(state: AgentState) -> dict:
             weights.append(response.weight)
 
         return {
+            "evaluations":{
             'actionable_rating': ratings,
             'actionable_weight': weights
+        }
         }
 
     except Exception as e:
         print("Actionable content scoring failed:", e)
-        state["error"] = str(e)
-        return str(e)
+        return {"error": [{"Actionable content scoring failed": str(e)}]}

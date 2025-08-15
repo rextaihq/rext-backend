@@ -19,7 +19,7 @@ def score_seo_potential(state: AgentState) -> dict:
         ratings = []
         weights = []
 
-        for article in state.get("combine_articles", []):
+        for article in state.get("filter_articles", []):
             title = article.get('title', '')
             description = article.get('summary', '')
             blog_data = article.get('scraped_markdown', '')
@@ -43,11 +43,12 @@ def score_seo_potential(state: AgentState) -> dict:
             weights.append(response.weight)
 
         return {
+            "evaluations":{
             'seo_rating': ratings,
             'seo_weight': weights
+        }
         }
 
     except Exception as e:
         print("SEO scoring failed:", e)
-        state['error'] = str(e)
-        return str(e)
+        return {"error": [{"SEO scoring failed": str(e)}]}

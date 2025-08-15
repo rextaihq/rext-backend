@@ -12,12 +12,12 @@ async def scrape_full_content(state: AgentState) -> AgentState:
 
     Loops through all combined articles and uses crawl4ai to scrape full page content.
 
-    Updates each article in `state['combine_articles']` with:
+    Updates each article in `state['filter_articles']` with:
     - 'scraped_markdown': full clean Markdown content
     - 'scrape_error': error string if scraping fails
 
     Returns:
-        dict: The updated state with enhanced 'combine_articles' (scraped content included).
+        dict: The updated state with enhanced 'filter_articles' (scraped content included).
     """
     print("Scraping full content...")
 
@@ -26,9 +26,10 @@ async def scrape_full_content(state: AgentState) -> AgentState:
    
 
     # Extract list of URLs from your DataFrame or list of dicts
-    articles = state.get("combine_articles", [])
+    articles = state.get("filter_articles", [])
+    print("Total Articles",len(articles))
     urls = [a["link"] for a in articles]
-
+    print("Total URLs",len(urls))
     async with AsyncWebCrawler(config=browser_config) as crawler:
         results = await crawler.arun_many(urls=urls, config=run_config,)
         # arun_many returns a list of CrawlResult objects :contentReference[oaicite:1]{index=1}
@@ -41,12 +42,13 @@ async def scrape_full_content(state: AgentState) -> AgentState:
             article["Raw Blog Content"] = ""
 
     print("Scraping completed.")
-    df = pd.DataFrame(state['combine_articles'])
+    df = pd.DataFrame(state['filter_articles'])
 
     print("Saving the full data in this path data/full_blog.csv")
     # Ensure directory exists in async-safe way
     await asyncio.to_thread(os.makedirs, "data", exist_ok=True)
     await asyncio.to_thread(df.to_csv, "data/full_blog.csv", index=False)
 
-    state["combine_articles"] = articles
-    return state
+    return {
+               "filter_articles": articles
+        }
