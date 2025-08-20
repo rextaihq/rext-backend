@@ -14,7 +14,7 @@ from crawl4ai.async_configs import BrowserConfig, CrawlerRunConfig, CacheMode
 from langgraph_sdk import get_sync_client
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.embeddings import HuggingFaceEmbeddings
-
+import torch
 load_dotenv()
 
 
@@ -103,12 +103,25 @@ def merge_evaluations(a: Dict[str, List[int]], b: Dict[str, List[int]]) -> Dict[
 
 def get_embedder():
     """Return a lightweight SentenceTransformer embedder."""
-    return SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')
+    if torch.cuda.is_available():
+        return SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2',device="cpu")
+    else:
+        return SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2',device="cpu")
 
 def get_hf_embedding():
     """Return a HuggingFace embedding model for retrieval tasks."""
-    return HuggingFaceEmbeddings(model_name="BAAI/bge-small-en")
-
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    try:
+        return HuggingFaceEmbeddings(
+            model_name="BAAI/bge-small-en",
+            model_kwargs={"device": 'cpu'}
+        )
+    except RuntimeError:
+        # fallback to CPU if CUDA fails
+        return HuggingFaceEmbeddings(
+            model_name="BAAI/bge-small-en",
+            model_kwargs={"device": "cpu"}
+        )
 
 # Content Cleaning
 def clean_blog_content_with_urls(raw_html: str) -> Tuple[str, List[str]]:

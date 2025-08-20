@@ -1,5 +1,5 @@
 version = 1
-revision = 2
+revision = 3
 requires-python = ">=3.11"
 resolution-markers = [
     "python_full_version >= '3.13'",
@@ -469,6 +469,7 @@ dependencies = [
     { name = "sentence-transformers" },
     { name = "streamlit" },
     { name = "streamlit-option-menu" },
+    { name = "torch" },
 ]
 
 [package.metadata]
@@ -497,6 +498,7 @@ requires-dist = [
     { name = "sentence-transformers", specifier = ">=5.1.0" },
     { name = "streamlit", specifier = ">=1.47.1" },
     { name = "streamlit-option-menu", specifier = ">=0.4.0" },
+    { name = "torch", specifier = ">=2.8.0" },
 ]
 
 [[package]]

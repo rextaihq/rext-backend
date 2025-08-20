@@ -1,6 +1,7 @@
 from langchain.chat_models import init_chat_model
 from src.states.State import Evaluation
 from sentence_transformers import SentenceTransformer
+import torch
 
 def LoadModel():
     """
@@ -45,5 +46,9 @@ def searchModel():
 
 
 def load_embedder():
-    embedder = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')
-    return embedder
+    if torch.cuda.is_available():
+        embedder = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2',device="cpu")
+        return embedder
+    else:
+        embedder = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2',device="cpu")
+        return embedder
