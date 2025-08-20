@@ -29,4 +29,5 @@ dependencies = [
     "sentence-transformers>=5.1.0",
     "streamlit>=1.47.1",
     "streamlit-option-menu>=0.4.0",
+    "torch>=2.8.0",
 ]
