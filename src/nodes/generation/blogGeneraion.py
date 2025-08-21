@@ -3,6 +3,7 @@ from langgraph.types import Command, interrupt
 from src.prompts.prompt import blog_post_prompt_template
 from src.states.State import BlogArticle
 from src.model.model import LoadModel
+from langgraph.types import Send
 
 def blog_generation(state:AgentState):
     """
@@ -20,48 +21,33 @@ def blog_generation(state:AgentState):
     
     print("\n🔁 === BlogGeneration Node Triggered ===")
 
-    # Retrieve state
-    approved_outlines = state.get("approved_outlines", [])
-    selected_articles = state.get("selected_articles", [])
-    current_index = state.get("current_blog_index", 0)
+    refine_title = state.get("refine_title")
+    docs = state.get("docs", [])
+    reference_url = state.get("reference_url", [])
     blog_feedback = state.get("blog_feedback", "")
 
-    print(f"📌 Current Index: {current_index}")
-    print(f"🧾 Total Articles to Process: {len(approved_outlines)}")
+    print(f"📝 Generating blog for: {refine_title}")
+    print(f"📚 Number of context docs: {len(docs)}")
 
-    # ✅ Stop condition: all blogs generated
-    if current_index >= len(approved_outlines):
-        print("🎉 All blogs have been generated and approved.")
-        return Command(
-            goto="DraftBlog"
-        )
-
-    # ✅ Get the current outline + selected article context
-    outline = approved_outlines[current_index]
-    article = selected_articles[current_index]
-    print(f"📝 Generating blog for: {outline['title']}")
-
-    # ✅ Extract context for blog generation
-    summary = article.get("summary", "")
-    raw_reference_content = article.get("Raw Blog Content", "")[:10000]
-
-    # ✅ Format the blog generation prompt
+    # ✅ Construct prompt
     print("🧠 Constructing prompt for the LLM...")
-    prompt = blog_post_prompt_template().format(
-        topic_title=outline["title"],
-        summary=summary,
-        approved_outline="\n".join(
-            [f"- {sec['heading']}" for sec in outline.get("sections", [])]
-        ),
-        reference_content=raw_reference_content
+    combined_context = "\n\n".join([d.page_content if hasattr(d, "page_content") else str(d) for d in docs])
+    
+    prompt = blog_prompt_template.format(
+        topic_title=refine_title,
+        reference_content=combined_context,
+        reference_url=reference_url,
+        blog_feedback=blog_feedback
     )
 
+    # ✅ Send to LLM
     print("🤖 Sending prompt to LLM for blog generation...")
     blog_model = LoadModel().with_structured_output(BlogArticle)
     blog_result: BlogArticle = blog_model.invoke(prompt)
     print("✅ Blog content received from LLM.")
 
-    return Command(
-        goto='BlogApproval',
-        update={'generated_blog':blog_result}
+    # ✅ Fan out the state
+    return Send(
+        "BlogApproval",
+        {"generated_blog": blog_result}
     )

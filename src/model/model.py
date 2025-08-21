@@ -1,5 +1,5 @@
 from langchain.chat_models import init_chat_model
-from src.states.State import Evaluation
+from src.states.State import Evaluation,RewriterQuery,QueryDecomposer
 from sentence_transformers import SentenceTransformer
 import torch
 
@@ -52,3 +52,13 @@ def load_embedder():
     else:
         embedder = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2',device="cpu")
         return embedder
+
+
+def title_refine_model():
+    llm = LoadModel()
+    return llm.with_structured_output(RewriterQuery)
+
+
+def query_decomposer_model():
+    llm  = LoadModel()
+    return llm.with_structured_output(QueryDecomposer)

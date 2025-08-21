@@ -1,7 +1,7 @@
 # Standard library imports
 import os
 import re
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple,Any
 
 # Third-party imports
 import yaml
@@ -14,6 +14,9 @@ from crawl4ai.async_configs import BrowserConfig, CrawlerRunConfig, CacheMode
 from langgraph_sdk import get_sync_client
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.embeddings import HuggingFaceEmbeddings
+from langchain_community.vectorstores import FAISS
+from langchain.retrievers.multi_query import MultiQueryRetriever
+from src.model.model import LoadModel
 import torch
 load_dotenv()
 
@@ -85,6 +88,7 @@ def get_client():
     )
     return client
 
+# merge evulation
 def merge_evaluations(a: Dict[str, List[int]], b: Dict[str, List[int]]) -> Dict[str, List[int]]:
     """
     Merges two dictionaries containing lists of evaluation results.
@@ -99,6 +103,18 @@ def merge_evaluations(a: Dict[str, List[int]], b: Dict[str, List[int]]) -> Dict[
             merged[key] = val_list
     return merged
 
+# Merge Context
+def merge_contexts(existing: List[Dict[str, Any]], new: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    merged = {}
+
+    for item in (existing or []) + (new or []):
+        title = item["refine_title"]
+        docs = item.get("docs", [])
+        if title not in merged:
+            merged[title] = []
+        merged[title].extend(docs)
+
+    return [{"refine_title": t, "docs": d} for t, d in merged.items()]
 
 
 def get_embedder():
@@ -178,6 +194,7 @@ def clean_blog_content_with_urls(raw_html: str) -> Tuple[str, List[str]]:
     print("Data Clean Successfully...")
     return clean_text, unique_urls
 
+
 def Splitting(text,chunk_size=5000,chunk_overlap=200):
     print("Splitting.....")
     text_splitter = RecursiveCharacterTextSplitter(
@@ -189,3 +206,16 @@ def Splitting(text,chunk_size=5000,chunk_overlap=200):
     chunks_text = text_splitter.create_documents([text])
     print("Spltting Done")
     return chunks_text
+
+
+def load_vector_store(file_path='my_faiss_index3'):
+    vector_store = FAISS.load_local(
+        file_path, get_hf_embedding(), allow_dangerous_deserialization=True
+    )
+    return vector_store
+
+
+def get_multi_query():
+    return MultiQueryRetriever.from_llm(
+        retriever=load_vector_store().as_retriever(), llm=LoadModel
+    )

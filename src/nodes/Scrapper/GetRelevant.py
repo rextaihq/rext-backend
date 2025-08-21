@@ -2,8 +2,10 @@ from src.states.State import AgentState
 from crawl4ai import AsyncWebCrawler
 from src.utils.helper import GetBrowserConfig
 from crawl4ai.async_configs import BrowserConfig, CrawlerRunConfig, CacheMode
+from langsmith import traceable
 import pandas as pd
 
+@traceable
 async def get_relevant_articles(state: AgentState) -> AgentState:
     """
     Get relevant articles based on user selection.
