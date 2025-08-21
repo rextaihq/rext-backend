@@ -6,6 +6,7 @@ from langgraph.graph import StateGraph,START, END
 from langchain_core.runnables import RunnableLambda
 from src.nodes.Evulation.Evulate import re_ranked_data
 from src.nodes.vectorStore.vectorGraph import vector_store_building
+from src.nodes.generation.blogFlow import blog_generator
 
 
 def CreateWorkflow()-> RunnableLambda[AgentState, AgentState]:
@@ -25,6 +26,7 @@ def CreateWorkflow()-> RunnableLambda[AgentState, AgentState]:
         workflow.add_node("WebSearch",get_subgraph())
         workflow.add_node("GetRelevant",get_relevant_articles)
         workflow.add_node("Building Vectore Store",vector_store_building())
+        workflow.add_node("BlogGenertion",blog_generator)
 
 
         # ------- Connect the nodes
@@ -35,6 +37,6 @@ def CreateWorkflow()-> RunnableLambda[AgentState, AgentState]:
 
         workflow.add_edge("GetRelevant",'Building Vectore Store')
 
-
+        workflow.add_edge("Building Vectore Store",'BlogGenertion')
         
         return workflow
