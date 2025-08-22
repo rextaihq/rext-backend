@@ -8,9 +8,9 @@ def get_relevnt_doc(state: AgentState) -> AgentState:
         print(f"[GetRelevantDoc] Starting retrieval...")
         print(f"[GetRelevantDoc] refine_title: {refine_title}")
 
-        if not refine_title:
-            print("[GetRelevantDoc] No refine_title found in state!")
-            return {"context": []}
+        # if not refine_title:
+        #     print("[GetRelevantDoc] No refine_title found in state!")
+        #     return {"context": []}
 
         results = load_vector_store().similarity_search(refine_title, k=5)
 
@@ -23,7 +23,7 @@ def get_relevnt_doc(state: AgentState) -> AgentState:
         print("=" * 50)
 
         return {
-            "context": [{
+            "blog_context": [{
                 "refine_title": refine_title,
                 "docs": results
             }]
@@ -31,4 +31,4 @@ def get_relevnt_doc(state: AgentState) -> AgentState:
 
     except Exception as e:
         print("[GetRelevantDoc] ERROR:", str(e))
-        return {"context": []}
+        return {"blog_context": []}

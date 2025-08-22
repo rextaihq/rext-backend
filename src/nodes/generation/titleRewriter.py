@@ -25,4 +25,6 @@ def title_rewriter(state:AgentState)-> AgentState:
         return state
     except Exception as e:
         print(str(e))
-        return str(e)
+        return {
+            "error":str(e)
+        }

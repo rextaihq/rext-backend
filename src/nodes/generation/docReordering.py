@@ -6,7 +6,7 @@ def reordering_doc(state: AgentState):
         print("=" * 50)
         print("[ReOrderingDocument] Starting document reordering...")
 
-        context = state.get("context", [])
+        context = state.get("blog_context", [])
         print(f"[ReOrderingDocument] Received {len(context)} documents")
 
         if not context:

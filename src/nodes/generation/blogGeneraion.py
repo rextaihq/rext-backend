@@ -1,7 +1,7 @@
 from src.states.State import AgentState
 from langgraph.types import Command, interrupt
 from src.prompts.prompt import blog_post_prompt_template
-from src.states.State import BlogArticle
+from src.states.schemas import BlogArticle
 from src.model.model import LoadModel
 from langgraph.types import Send
 
@@ -24,7 +24,7 @@ def blog_generation(state:AgentState):
     refine_title = state.get("refine_title")
     docs = state.get("docs", [])
     reference_url = state.get("reference_url", [])
-    blog_feedback = state.get("blog_feedback", "")
+    blog_feedback = state.get("blog_feedback", [])
 
     print(f"📝 Generating blog for: {refine_title}")
     print(f"📚 Number of context docs: {len(docs)}")
@@ -33,7 +33,7 @@ def blog_generation(state:AgentState):
     print("🧠 Constructing prompt for the LLM...")
     combined_context = "\n\n".join([d.page_content if hasattr(d, "page_content") else str(d) for d in docs])
     
-    prompt = blog_prompt_template.format(
+    prompt = blog_post_prompt_template().format(
         topic_title=refine_title,
         reference_content=combined_context,
         reference_url=reference_url,

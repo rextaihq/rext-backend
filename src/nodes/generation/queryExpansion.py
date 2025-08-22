@@ -10,9 +10,9 @@ def query_expansion(state: AgentState):
         refine_title = state.get("refine_title", None)
         print(f"[QueryExpansion] refine_title: {refine_title}")
 
-        if not refine_title:
-            print("[QueryExpansion] No refine_title found in state!")
-            return {"context": []}
+        # if not refine_title:
+        #     print("[QueryExpansion] No refine_title found in state!")
+        #     return {"context": []}
 
         # retriever_from_llm = MultiQueryRetriever.from_llm(
         #     retriever=vector_store.as_retriever(), llm=llm
@@ -31,7 +31,7 @@ def query_expansion(state: AgentState):
         print("=" * 50)
 
         return {
-            "context": [{
+            "blog_context": [{
                 "refine_title": refine_title,
                 "docs": context
             }]
@@ -39,4 +39,4 @@ def query_expansion(state: AgentState):
 
     except Exception as e:
         print("[QueryExpansion] ERROR:", str(e))
-        return {"context": []}
+        return {"blog_context": []}

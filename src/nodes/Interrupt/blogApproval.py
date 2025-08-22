@@ -1,5 +1,6 @@
 from src.states.State import AgentState
 from langgraph.types import Command, interrupt
+from src.states.schemas import BlogArticle
 
 # Blog Approval
 def blog_approval(state:AgentState):
@@ -59,7 +60,7 @@ def blog_approval(state:AgentState):
         approved_blogs.append(new_approved_blog)
 
         return Command(
-            update={"approved_blogs": approved_blogs, "blog_feedback": ""},
+            update={"approved_blogs": [approved_blogs], "blog_feedback": [""]},
             goto="DraftBlog"
         )
 
@@ -67,6 +68,6 @@ def blog_approval(state:AgentState):
         print("❌ Human rejected the blog.")
         feedback = interrupt("📝 Provide feedback for improving the blog:")
         return Command(
-            update={"blog_feedback": feedback},
+            update={"blog_feedback": [feedback]},
             goto="BlogGeneration"
         )

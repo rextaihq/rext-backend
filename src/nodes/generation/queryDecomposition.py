@@ -1,5 +1,5 @@
 from src.states.State import AgentState
-from src/model.model import composer_llm
+from src.model.model import query_decomposer_model
 from src.utils.helper import load_vector_store
 
 def query_decomposition(state: AgentState):
@@ -11,13 +11,13 @@ def query_decomposition(state: AgentState):
         refine_title = state.get("refine_title", None)
         print(f"[QueryDecomposition] refine_title: {refine_title}")
 
-        if not refine_title:
-            print("[QueryDecomposition] No refine_title found in state!")
-            return {"context": []}
+        # if not refine_title:
+        #     print("[QueryDecomposition] No refine_title found in state!")
+        #     return {"context": []}
 
         # Generate sub-queries
         print("[QueryDecomposition] Invoking composer_llm...")
-        sub_titled_obj = composer_llm().invoke(refine_title)
+        sub_titled_obj = query_decomposer_model().invoke(refine_title)
         sub_title = sub_titled_obj.compose_title
         print(f"[QueryDecomposition] Generated {len(sub_title)} sub-queries")
 
@@ -40,11 +40,11 @@ def query_decomposition(state: AgentState):
         print("=" * 50)
 
         return{
-            "context": [{
+            "blog_context": [{
                 "refine_title": refine_title,
                 "docs": sub_query_context
             }]
         }
     except Exception as e:
         print("[QueryDecomposition] ERROR:", str(e))
-        return {"context": []}
+        return {"blog_context": []}
