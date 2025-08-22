@@ -26,7 +26,7 @@ def CreateWorkflow()-> RunnableLambda[AgentState, AgentState]:
         workflow.add_node("WebSearch",get_subgraph())
         workflow.add_node("GetRelevant",get_relevant_articles)
         workflow.add_node("Building Vectore Store",vector_store_building())
-        workflow.add_node("BlogGenertion",blog_generator)
+        workflow.add_node("BlogGenertion",blog_generator())
 
 
         # ------- Connect the nodes
@@ -37,6 +37,6 @@ def CreateWorkflow()-> RunnableLambda[AgentState, AgentState]:
 
         workflow.add_edge("GetRelevant",'Building Vectore Store')
 
-        workflow.add_edge("Building Vectore Store",'BlogGenertion')
+        workflow.add_edge('Building Vectore Store','BlogGenertion')
         
         return workflow

@@ -1,5 +1,5 @@
 from langchain.chat_models import init_chat_model
-from src.states.State import Evaluation,RewriterQuery,QueryDecomposer
+from src.states.schemas import RewriterTitle, QueryDecomposer, Evaluation
 from sentence_transformers import SentenceTransformer
 import torch
 
@@ -56,7 +56,7 @@ def load_embedder():
 
 def title_refine_model():
     llm = LoadModel()
-    return llm.with_structured_output(RewriterQuery)
+    return llm.with_structured_output(RewriterTitle)
 
 
 def query_decomposer_model():

@@ -8,7 +8,7 @@ async def clean_context(state:AgentState):
     selected_articles = state.get("selected_articles", [])
 
     reference_urls = []
-    blog_context = []
+    context = []
 
     for i in range(len(selected_articles)):
 
@@ -22,10 +22,10 @@ async def clean_context(state:AgentState):
         # Split the text into chunks
         chunks_text = Splitting(clean_text)
         reference_urls.extend(urls)  # flatten
-        blog_context.extend(chunks_text)
+        context.extend(chunks_text)
 
     print("Text Cleaning Node End....")
     return {
-        'blog_content':blog_context,
+        'content':context,
         "reference_url":reference_urls
     }

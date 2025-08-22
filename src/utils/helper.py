@@ -13,7 +13,7 @@ from sentence_transformers import SentenceTransformer
 from crawl4ai.async_configs import BrowserConfig, CrawlerRunConfig, CacheMode
 from langgraph_sdk import get_sync_client
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_community.embeddings import HuggingFaceEmbeddings
+from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_community.vectorstores import FAISS
 from langchain.retrievers.multi_query import MultiQueryRetriever
 from src.model.model import LoadModel
@@ -136,7 +136,7 @@ def get_hf_embedding():
         # fallback to CPU if CUDA fails
         return HuggingFaceEmbeddings(
             model_name="BAAI/bge-small-en",
-            model_kwargs={"device": "cpu"}
+            model_kwargs={"device": "cpu","torch_dtype": "auto"}
         )
 
 # Content Cleaning
@@ -217,5 +217,5 @@ def load_vector_store(file_path='my_faiss_index3'):
 
 def get_multi_query():
     return MultiQueryRetriever.from_llm(
-        retriever=load_vector_store().as_retriever(), llm=LoadModel
+        retriever=load_vector_store().as_retriever(), llm=LoadModel()
     )

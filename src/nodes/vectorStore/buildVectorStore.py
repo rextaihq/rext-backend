@@ -7,7 +7,7 @@ from langchain_community.docstore.in_memory import InMemoryDocstore
 from langchain_community.vectorstores import FAISS
 
 def build_vector_store(state: AgentState)->AgentState:
-    blog_context = state['blog_content']
+    blog_context = state['context']
     batch_size = 32
     vector_store_path = "my_faiss_index3"
 
@@ -37,7 +37,6 @@ def build_vector_store(state: AgentState)->AgentState:
         )
 
     # Convert blog_context into LangChain Document objects
-    # documents = [Document(page_content=text) for text in blog_context]
     uuids = [str(uuid4()) for _ in blog_context]
 
     print(f"\n📦 Preparing to insert {len(blog_context)} documents into FAISS...\n")

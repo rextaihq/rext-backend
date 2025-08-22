@@ -1,4 +1,6 @@
 from langgraph.types import Send
+from src.states.State import AgentState
+
 # Fan out  Node for parallel workflow
 def continue_retrieval(state: AgentState):
     sends = []
