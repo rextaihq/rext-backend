@@ -25,8 +25,8 @@ def run_wait_tab(client):
         latest = data_list[0]
 
         checkpoint_id = latest['id']
-        checkpoint_ns = latest['value']['name']
-        node_output = latest['value']['value']
+        checkpoint_ns = latest['value']
+        node_output = latest['value']
 
         st.write("Checkpoint ID:", checkpoint_id)
         st.write("Checkpoint Namespace:", checkpoint_ns)
