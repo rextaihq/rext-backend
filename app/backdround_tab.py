@@ -28,8 +28,9 @@ def run_background_tab(client):
                 category=assisant['config']['category'],
                 country=assisant['config']['country'],
                 language=assisant['config']['language'],
-                WP_URL=assisant['config']['WP_URL']
-
+                WP_URL=assisant['config']['WP_URL'],
+                keyword=assisant['config']['keyword'],
+                similarity_threshold=assisant['config']['similarity_threshold']
             )
             st.write(config.dict())
             try:
