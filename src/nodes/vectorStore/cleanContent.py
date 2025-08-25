@@ -25,7 +25,8 @@ async def clean_context(state:AgentState):
         context.extend(chunks_text)
 
     print("Text Cleaning Node End....")
+    print(f"Total context: {len(context)}")
     return {
-        'content':context,
+        'context':context,
         "reference_url":reference_urls
     }

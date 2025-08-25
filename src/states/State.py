@@ -2,6 +2,7 @@ from typing_extensions import TypedDict, Annotated, Dict, List
 from langgraph.graph.message import add_messages
 from src.utils.helper import merge_evaluations, merge_contexts
 from src.states.schemas import BlogArticle
+from langchain_core.documents import Document
 import operator
 from pydantic import BaseModel
 
@@ -39,7 +40,7 @@ class AgentState(TypedDict, total=False):
     evaluations: Annotated[Dict[str, EvaluationState], merge_evaluations]
 
     # vector store context
-    context: Annotated[List[str], operator.add]
+    context: Annotated[List[Document], operator.add]
 
     # Blog generation states
     blog_context: Annotated[List[Dict], merge_contexts]

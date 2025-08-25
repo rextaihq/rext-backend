@@ -46,8 +46,9 @@ def run_wait_tab(client):
                 category=assisant['config']['category'],
                 country=assisant['config']['country'],
                 language=assisant['config']['language'],
-                WP_URL=assisant['config']['WP_URL']
-
+                WP_URL=assisant['config']['WP_URL'],
+                keyword=assisant['config']['keyword'],
+                similarity_threshold=assisant['config']['similarity_threshold']
             )
             st.write(config.dict())
             try:
@@ -131,7 +132,7 @@ def run_wait_tab(client):
 
             if thread_id and st.button("Generate Blog Post"):
                 try:
-                    run_and_wait(thread_id, assistant_id)  # Use the same variable here
+                    run_and_wait(thread_id, assistant_id)
                 except Exception as e:
                     st.error(f"❌ Failed to generate blog post: {str(e)}")
 

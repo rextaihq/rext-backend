@@ -11,9 +11,6 @@ def build_vector_store(state: AgentState)->AgentState:
     batch_size = 32
     vector_store_path = "my_faiss_index3"
 
-    # if not blog_context:
-    #     raise ValueError("❌ Blog Context is empty")
-
     # Determine embedding dimension
     test_embedding = get_hf_embedding().embed_query("hello world")
     dimension = len(test_embedding)
