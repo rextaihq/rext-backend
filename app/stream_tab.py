@@ -24,23 +24,51 @@ def blog_generator_tab(client):
         return st.selectbox("Select Thread", [t['thread_id'] for t in threads])
 
     def handle_interrupt(thread_data):
-        interrupt_key = list(thread_data['interrupts'].keys())[0]
-        data_list = thread_data['interrupts'][interrupt_key]
-        latest = data_list[0]
+        all_interrupts = thread_data.get('interrupts', {})
+        if not all_interrupts:
+            st.warning("No interrupts found.")
+            return None, None, None
 
-        checkpoint_id = latest['id']
-        checkpoint_ns = latest['value']['name']
-        node_output = latest['value']['value']
+        # Flatten all interrupts into a list
+        flattened_interrupts = []
+        for key, data_list in all_interrupts.items():
+            for interrupt in data_list:
+                flattened_interrupts.append({
+                    "interrupt_key": key,
+                    "id": interrupt.get("id"),
+                    "value": interrupt.get("value")
+                })
 
-        st.write("Checkpoint ID:", checkpoint_id)
-        st.write("Checkpoint Namespace:", checkpoint_ns)
-        st.write("Node Output Message:", node_output)
+        # Display each interrupt
+        for i, interrupt in enumerate(flattened_interrupts):
+            st.markdown(f"### Interrupt {i+1} (Key: {interrupt['interrupt_key']})")
+            st.write("Interrupt ID:", interrupt['id'])
+            # Handle value being either string or dict
+            value = interrupt['value']
+            if isinstance(value, dict):
+                node_output = value.get('value', '')
+                checkpoint_ns = value.get('name', interrupt['id'])
+            else:
+                node_output = value
+                checkpoint_ns = interrupt['id']
 
-        user_checkpoint_id = st.text_input("Enter Checkpoint ID:", value=checkpoint_id)
-        user_checkpoint_ns = st.text_input("Enter Node Name (namespace):", value=checkpoint_ns)
+            st.markdown(f"Checkpoint Namespace: {checkpoint_ns}")
+            st.code(f"Node Output Message:\n{node_output}")
+
+        # Let user select which interrupt to respond to
+        interrupt_ids = [i['id'] for i in flattened_interrupts]
+        selected_index = st.selectbox("Select Interrupt to respond to:", range(len(flattened_interrupts)), format_func=lambda x: f"{flattened_interrupts[x]['id']}")
+        
+        selected_interrupt = flattened_interrupts[selected_index]
         resume_input = st.text_input("Enter Your Response")
-        return user_checkpoint_id, user_checkpoint_ns, resume_input
 
+        selected_value = selected_interrupt['value']
+        if isinstance(selected_value, dict):
+            checkpoint_ns = selected_value.get('name', selected_interrupt['id'])
+        else:
+            checkpoint_ns = selected_interrupt['id']
+
+        return selected_interrupt['id'], checkpoint_ns, resume_input
 
     def stream_run(thread_id, assistant_id, checkpoint=None, resume_value=None):
         assisant = client.assistants.get(assistant_id=assistant_id)

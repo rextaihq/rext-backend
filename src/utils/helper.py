@@ -68,7 +68,7 @@ def GetCrawlerRunConfig():
             word_count_threshold=100,        # Minimum words per content block
             exclude_external_links=True,    # Remove external links
             remove_overlay_elements=True,   # Remove popups/modals
-            process_iframes=True,
+            process_iframes=False,
             exclude_external_images=True,
         exclude_social_media_domains=True,
         only_text=True,           # Only text content
@@ -136,7 +136,7 @@ def get_hf_embedding():
         # fallback to CPU if CUDA fails
         return HuggingFaceEmbeddings(
             model_name="BAAI/bge-small-en",
-            model_kwargs={"device": "cpu","torch_dtype": "auto"}
+            model_kwargs={"device": "cpu"}
         )
 
 # Content Cleaning
@@ -195,7 +195,25 @@ def clean_blog_content_with_urls(raw_html: str) -> Tuple[str, List[str]]:
     return clean_text, unique_urls
 
 
-def Splitting(text,chunk_size=5000,chunk_overlap=200):
+def splitting_text(text,chunk_size=5000,chunk_overlap=200):
+    """
+        Splits a long text into smaller chunks for efficient retrieval and embedding.
+
+        Args:
+            text (str): The input text to split.
+            chunk_size (int, optional): Maximum size of each text chunk. Defaults to 5000.
+            chunk_overlap (int, optional): Number of overlapping characters between chunks. Defaults to 200.
+            source (str, optional): Source identifier (e.g., filename, URL, or document ID). Defaults to "unknown".
+
+        Returns:
+            list: A list of Document objects, where each document contains:
+                - page_content (str): The chunked text content.
+                - metadata (dict): Metadata including:
+                    - "source": Source identifier of the text.
+                    - "chunk_id": Index of the chunk.
+                    - "total_chunks": Total number of chunks created.
+                    - "length": Character length of the chunk.
+    """
     print("Splitting.....")
     text_splitter = RecursiveCharacterTextSplitter(
         chunk_size=chunk_size,
@@ -204,11 +222,29 @@ def Splitting(text,chunk_size=5000,chunk_overlap=200):
         is_separator_regex=False,
     )
     chunks_text = text_splitter.create_documents([text])
+
+    # Add metadata
+    for idx, doc in enumerate(chunks_text):
+        doc.metadata = {
+            "chunk_id": idx,
+            "total_chunks": len(chunks_text),
+            "length": len(doc.page_content)
+        }
     print("Spltting Done")
     return chunks_text
 
 
-def load_vector_store(file_path='my_faiss_index3'):
+def load_vector_store(file_path: str = 'my_faiss_index3'):
+    """
+    Load a FAISS vector store from a local file.
+
+    Args:
+        file_path (str, optional): Path to the saved FAISS index directory.
+                                   Defaults to 'my_faiss_index3'.
+
+    Returns:
+        FAISS: A loaded FAISS vector store with embeddings.
+    """
     vector_store = FAISS.load_local(
         file_path, get_hf_embedding(), allow_dangerous_deserialization=True
     )
@@ -216,6 +252,17 @@ def load_vector_store(file_path='my_faiss_index3'):
 
 
 def get_multi_query():
+    """
+    Create a MultiQueryRetriever using an LLM and a FAISS vector store.
+
+    This retriever expands the input query into multiple queries using the LLM,
+    retrieves relevant documents for each expanded query, and combines them
+    for better recall and retrieval quality.
+
+    Returns:
+        MultiQueryRetriever: A retriever that performs query expansion
+                             and document retrieval using FAISS and an LLM.
+    """
     return MultiQueryRetriever.from_llm(
         retriever=load_vector_store().as_retriever(), llm=LoadModel()
     )
