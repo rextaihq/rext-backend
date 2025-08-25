@@ -28,8 +28,8 @@ def reordering_doc(state: AgentState):
         print("[ReOrderingDocument] Finished ✅")
         print("=" * 50)
 
-        return {"context": reordered_docs}
+        return {"blog_context": reordered_docs}
 
     except Exception as e:
         print("[ReOrderingDocument] ERROR:", str(e))
-        return {"context": []}
+        return {"blog_context": []}

@@ -24,5 +24,5 @@ def continue_generation(state: AgentState):
                 "docs": context["docs"]
             }
         )
-        for context in state["context"]
+        for context in state["blog_context"]
     ]
