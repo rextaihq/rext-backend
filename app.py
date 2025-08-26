@@ -19,7 +19,8 @@ client = get_sync_client(
     # url="http://localhost:8123/",
 
     url = "http://127.0.0.1:2024",
-    api_key=os.getenv('LANGSMITH_API_KEY')
+    api_key=os.getenv('LANGSMITH_API_KEY'),
+    headers={"Authorization": "Bearer user1-token"}
 )
 
 
