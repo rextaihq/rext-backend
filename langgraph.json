@@ -14,5 +14,8 @@
     "RUN playwright install",
     "RUN crawl4ai-setup",
     "RUN crawl4ai-doctor"
-  ]
+  ],
+  "auth": {
+    "path": "src/api/security/auth.py:auth"
+  }
 }
