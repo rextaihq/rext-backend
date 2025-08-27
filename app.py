@@ -20,7 +20,7 @@ client = get_sync_client(
 
     url = "http://127.0.0.1:2024",
     api_key=os.getenv('LANGSMITH_API_KEY'),
-    headers={"Authorization": "Bearer user1-token"}
+    headers={"Authorization": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI0OGMxZWNmMS02MTMzLTQxMTAtOWJmZi1hMjVjYjk2ZDAzOWYiLCJ1c2VybmFtZSI6InNhbSIsImVtYWlsIjoic2FtaTYwNjcxNUBnbWFpbC5jb20iLCJleHAiOjE3NTYzNjg1MzB9.zFaR6xjpwCgfHWAaf42kMWC-ngm9kNZdh0q0kprFYC0"}
 )
 
 

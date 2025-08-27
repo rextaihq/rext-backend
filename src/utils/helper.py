@@ -2,6 +2,8 @@
 import os
 import re
 from typing import Dict, List, Tuple,Any
+import bcrypt
+import jwt
 
 # Third-party imports
 import yaml
@@ -18,8 +20,15 @@ from langchain_community.vectorstores import FAISS
 from langchain.retrievers.multi_query import MultiQueryRetriever
 from src.model.model import LoadModel
 import torch
+# from jwt import JWTError
+from datetime import datetime, timedelta
+from fastapi import Depends, HTTPException, status
+from fastapi.security import OAuth2PasswordBearer
 load_dotenv()
 
+SECRET_KEY= os.getenv("SECRET_KEY")
+ALGORITHM= os.getenv("ALGORITHM")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/user/login")
 
 def loadYamlConfig(file_path="config/config.yaml"):
     """
@@ -266,3 +275,85 @@ def get_multi_query():
     return MultiQueryRetriever.from_llm(
         retriever=load_vector_store().as_retriever(), llm=LoadModel()
     )
+
+
+def hash_password(password: str) -> str:
+    """
+    Hashes a plain text password using bcrypt.
+
+    Args:
+        password (str): The plain text password.
+
+    Returns:
+        str: The hashed password.
+    """
+    return bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+
+def verify_password(password: str, hashed_password: str) -> bool:
+    """
+    Verifies that a plain text password matches the hashed password.
+
+    Args:
+        password (str): The plain text password.
+        hashed_password (str): The hashed password from the database.
+
+    Returns:
+        bool: True if the password matches, False otherwise.
+    """
+    return bcrypt.checkpw(password.encode('utf-8'), hashed_password.encode('utf-8'))
+
+
+def create_access_token(data: dict, expires_delta: timedelta = timedelta(hours=24)) -> str:
+    """
+    Creates a JWT access token.
+
+    Args:
+        data (dict): The payload to include in the token.
+        expires_delta (timedelta, optional): Token expiration time. Defaults to 1 hour.
+
+    Returns:
+        str: The JWT token.
+    """
+    to_encode = data.copy()
+    expire = datetime.utcnow() + expires_delta
+    to_encode.update({"exp": expire})
+    token = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    return token
+
+def create_refresh_token(data: dict, expires_delta: timedelta = timedelta(days=7)) -> str:
+    """Creates a long-lived refresh token."""
+    to_encode = data.copy()
+    expire = datetime.utcnow() + expires_delta
+    to_encode.update({"exp": expire})
+    return jwt.encode(to_encode, REFRESH_SECRET_KEY, algorithm=ALGORITHM)
+
+
+def verify_token(token: str = Depends(oauth2_scheme)) -> dict:
+    """
+    Verifies the JWT token and decodes the payload.
+
+    Args:
+        token (str): JWT token passed via the Authorization header.
+
+    Raises:
+        HTTPException: If token is invalid or expired.
+
+    Returns:
+        dict: The decoded payload.
+    """
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        exp = payload.get("exp")
+        if exp and datetime.utcfromtimestamp(exp) < datetime.utcnow():
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Token has expired",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        return payload
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
