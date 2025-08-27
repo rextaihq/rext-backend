@@ -33,3 +33,4 @@ streamlit-option-menu
 langgraph-sdk
 langchain-community 
 faiss-cpu
+passlib[bcrypt]
