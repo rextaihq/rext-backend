@@ -14,19 +14,19 @@ services:
         ports:
             - "5433:5432"
         environment:
-            POSTGRES_DB: langgraph_db
-            POSTGRES_USER: sami
-            POSTGRES_PASSWORD: 12345
+            POSTGRES_DB: postgres
+            POSTGRES_USER: postgres
+            POSTGRES_PASSWORD: postgres
         volumes:
             - langgraph-data:/var/lib/postgresql/data
         healthcheck:
-            test: pg_isready -U sami
+            test: pg_isready -U postgres
             start_period: 10s
             timeout: 1s
             retries: 5
             interval: 5s
     langgraph-api:
-        image: test
+        image: content-automation2:latest
         ports:
             - "8123:8000"
         depends_on:
@@ -39,4 +39,9 @@ services:
         environment:
             REDIS_URI: ${REDIS_URI}
             LANGSMITH_API_KEY: ${LANGSMITH_API_KEY}
-            DATABASE_URI: ${DATABASE_URI}
+            POSTGRES_URI_CUSTOM: ${POSTGRES_URI_CUSTOM}
+            DATABASE_URI: ${POSTGRES_URI_CUSTOM}
+            SECRET_KEY: ${SECRET_KEY}
+            REFRESH_SECRET_KEY: ${REFRESH_SECRET_KEY}
+            ALGORITHM: ${ALGORITHM}
+            TAVILY_API_KEY: ${TAVILY_API_KEY}

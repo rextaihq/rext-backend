@@ -19,7 +19,6 @@ from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_community.vectorstores import FAISS
 from langchain.retrievers.multi_query import MultiQueryRetriever
 from src.model.model import LoadModel
-import torch
 # from jwt import JWTError
 from datetime import datetime, timedelta
 from fastapi import Depends, HTTPException, status
@@ -125,17 +124,8 @@ def merge_contexts(existing: List[Dict[str, Any]], new: List[Dict[str, Any]]) ->
 
     return [{"refine_title": t, "docs": d} for t, d in merged.items()]
 
-
-def get_embedder():
-    """Return a lightweight SentenceTransformer embedder."""
-    if torch.cuda.is_available():
-        return SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2',device="cpu")
-    else:
-        return SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2',device="cpu")
-
 def get_hf_embedding():
     """Return a HuggingFace embedding model for retrieval tasks."""
-    device = "cuda" if torch.cuda.is_available() else "cpu"
     try:
         return HuggingFaceEmbeddings(
             model_name="BAAI/bge-small-en",

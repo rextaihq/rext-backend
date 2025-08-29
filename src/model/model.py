@@ -1,7 +1,6 @@
 from langchain.chat_models import init_chat_model
 from src.states.schemas import RewriterTitle, QueryDecomposer, Evaluation
 from sentence_transformers import SentenceTransformer
-import torch
 
 def LoadModel():
     """
@@ -46,10 +45,12 @@ def searchModel():
 
 
 def load_embedder():
-    if torch.cuda.is_available():
-        embedder = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2',device="cpu")
-        return embedder
-    else:
+        """
+        Loads and returns a SentenceTransformer embedder using the 'all-MiniLM-L6-v2' model on CPU.
+
+        Returns:
+            SentenceTransformer: An instance of the SentenceTransformer model for generating embeddings.
+        """
         embedder = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2',device="cpu")
         return embedder
 

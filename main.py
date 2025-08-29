@@ -15,13 +15,3 @@ my_config_instance = URLCONFIF(
 
 workflow = CreateWorkflow()
 graph = workflow.compile()
-
-# import asyncio
-
-# async def run_workflow():
-#     await graph.ainvoke({
-#         "config": my_config_instance.model_dump()  # use `model_dump()` instead of `dict()` (Pydantic v2)
-#     })
-
-# if __name__ == "__main__":
-#     asyncio.run(run_workflow())
