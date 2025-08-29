@@ -16,3 +16,7 @@ venv/
 *.tsv
 *.parquet
 *.json
+.langgraph_api
+.idea
+data/
+my_faiss_index3

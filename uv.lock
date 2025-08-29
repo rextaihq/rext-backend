@@ -520,12 +520,10 @@ dependencies = [
     { name = "psycopg", extra = ["binary", "pool"] },
     { name = "psycopg2-binary" },
     { name = "python-dotenv" },
-    { name = "pyyaml" },
     { name = "requests" },
     { name = "sentence-transformers" },
     { name = "streamlit" },
     { name = "streamlit-option-menu" },
-    { name = "torch" },
 ]
 
 [package.metadata]
@@ -551,12 +549,10 @@ requires-dist = [
     { name = "psycopg", extras = ["binary", "pool"], specifier = ">=3.2.9" },
     { name = "psycopg2-binary", specifier = ">=2.9.10" },
     { name = "python-dotenv", specifier = ">=1.1.1" },
-    { name = "pyyaml", specifier = ">=6.0.2" },
     { name = "requests", specifier = ">=2.32.4" },
     { name = "sentence-transformers", specifier = ">=5.1.0" },
     { name = "streamlit", specifier = ">=1.47.1" },
     { name = "streamlit-option-menu", specifier = ">=0.4.0" },
-    { name = "torch", specifier = ">=2.8.0" },
 ]
 
 [[package]]
