@@ -1,5 +1,5 @@
 from src.states.State import AgentState
-from src.model.model import StructuredModel
+from src.model.model import structure_model
 from src.prompts.prompt import create_controversy_score_prompt
 
 def score_controversy(state: AgentState) -> dict:
@@ -38,7 +38,7 @@ def score_controversy(state: AgentState) -> dict:
             )
 
             # Pass the prompt to LLM
-            model_with_parser = StructuredModel()
+            model_with_parser = structure_model()
             response = model_with_parser.invoke(prompt)
 
             ratings.append(response.rating)

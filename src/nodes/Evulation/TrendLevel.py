@@ -1,5 +1,5 @@
 from src.states.State import AgentState
-from src.model.model import StructuredModel
+from src.model.model import structure_model
 from src.prompts.prompt import create_trend_level_prompt
 
 def score_trend_level(state: AgentState) -> dict:
@@ -36,7 +36,7 @@ def score_trend_level(state: AgentState) -> dict:
             )
 
             # Pass the prompt to LLM
-            model_with_parser = StructuredModel()
+            model_with_parser = structure_model()
             response = model_with_parser.invoke(prompt)
 
             ratings.append(response.rating)

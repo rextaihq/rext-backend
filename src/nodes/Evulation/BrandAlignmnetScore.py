@@ -1,5 +1,5 @@
 from src.states.State import AgentState
-from src.model.model import StructuredModel
+from src.model.model import structure_model
 from src.prompts.prompt import create_brand_alignment_score_prompt
 
 def score_brand_alignment(state: AgentState) -> dict:
@@ -35,7 +35,7 @@ def score_brand_alignment(state: AgentState) -> dict:
             )
 
             # Model call
-            model_with_parser = StructuredModel()
+            model_with_parser = structure_model()
             response = model_with_parser.invoke(prompt)
 
             ratings.append(response.rating)

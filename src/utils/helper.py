@@ -18,7 +18,7 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_community.vectorstores import FAISS
 from langchain.retrievers.multi_query import MultiQueryRetriever
-from src.model.model import LoadModel
+from src.model.model import load_model
 # from jwt import JWTError
 from datetime import datetime, timedelta
 from fastapi import Depends, HTTPException, status
@@ -263,7 +263,7 @@ def get_multi_query():
                              and document retrieval using FAISS and an LLM.
     """
     return MultiQueryRetriever.from_llm(
-        retriever=load_vector_store().as_retriever(), llm=LoadModel()
+        retriever=load_vector_store().as_retriever(), llm=load_model()
     )
 
 

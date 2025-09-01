@@ -1,5 +1,24 @@
 from typing import List, Optional
 from pydantic import BaseModel, Field
+from uuid import UUID
+
+# =========Topic Generation Schema=========
+class TopicScore(BaseModel):
+    relevance: float = Field(..., ge=0, le=1, description="Relevance score (0-1)")
+    freshness: float = Field(..., ge=0, le=1, description="Freshness score (0-1)")
+    novelty: float = Field(..., ge=0, le=1, description="Novelty score (0-1)")
+
+class TopicGeneration(BaseModel):
+    title: str
+    angle: str
+    channel_fit: List[str]
+    audience_fit: List[str]
+    scores: TopicScore
+    why_it_works: str
+    tags: List[str]
+
+class TopicGenerationList(BaseModel):
+    topics: List[TopicGeneration]
 
 
 # ===== Blog Generation Schemas =====
