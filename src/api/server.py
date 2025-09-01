@@ -1,18 +1,26 @@
-from typing import Union
-from distro import name
-from src.api.routes.userRoutes import router as user_router
-from fastapi import FastAPI
-from src.api.database.database import Base, engine
-from src.api.models.models import User
-from contextlib import asynccontextmanager
-from dotenv import load_dotenv
+# Standard library imports
 import os
+from contextlib import asynccontextmanager
+from typing import Union
+
+# Third-party imports
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from distro import name
+from dotenv import load_dotenv
+
+# Local application imports
+# from src.api.routes.user_routes import router as user_router
+from src.api.routes.topic_generation_route import router as topic_router
+# from src.api.database.database import Base, engine
+# from src.api.models.models import User
+
 load_dotenv()
 
 # DB_URI = os.getenv("POSTGRES_URI_CUSTOM")
 
 # Create the database tables
-Base.metadata.create_all(bind=engine)
+# Base.metadata.create_all(bind=engine)
 
 # @asynccontextmanager
 # async def lifespan(app: FastAPI):
@@ -32,8 +40,19 @@ app = FastAPI(
     description="API for managing content automation workflows",
     # lifespan=lifespan
 )
+
+# Allow your frontend origi
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins="*",        # allow specific origins
+    allow_credentials=True,
+    allow_methods=["*"],          # allow all HTTP methods
+    allow_headers=["*"],          # allow all headers
+)
+
 # Fixing he issue async issue only in workflow routes
-app.include_router(user_router, prefix="/api", tags=["user"])
+# app.include_router(user_router, prefix="/api", tags=["user"])
+app.include_router(topic_router, prefix="/api", tags=["topic_generation_routes"])
 
 @app.get("/")
 def read_root():

@@ -1,5 +1,5 @@
 from src.states.State import AgentState
-from src.model.model import StructuredModel
+from src.model.model import structure_model
 from src.prompts.prompt import create_reader_interest_score_prompt
 
 def score_reader_interest(state: AgentState) -> dict:
@@ -37,7 +37,7 @@ def score_reader_interest(state: AgentState) -> dict:
             )
 
             # Call the model
-            model_with_parser = StructuredModel()
+            model_with_parser = structure_model()
             response = model_with_parser.invoke(prompt)
 
             ratings.append(response.rating)

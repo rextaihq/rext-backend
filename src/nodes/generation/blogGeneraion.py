@@ -2,7 +2,7 @@ from src.states.State import AgentState
 from langgraph.types import Command, interrupt
 from src.prompts.prompt import blog_post_prompt_template
 from src.states.schemas import BlogArticle
-from src.model.model import LoadModel
+from src.model.model import load_model
 from langgraph.types import Send
 
 def blog_generation(state:AgentState):
@@ -42,7 +42,7 @@ def blog_generation(state:AgentState):
 
     # ✅ Send to LLM
     print("🤖 Sending prompt to LLM for blog generation...")
-    blog_model = LoadModel().with_structured_output(BlogArticle)
+    blog_model = load_model().with_structured_output(BlogArticle)
     blog_result: BlogArticle = blog_model.invoke(prompt)
     print("✅ Blog content received from LLM.")
 

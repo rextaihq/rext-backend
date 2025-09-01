@@ -1,5 +1,5 @@
 from src.states.State import AgentState
-from src.model.model import StructuredModel
+from src.model.model import structure_model
 from src.prompts.prompt import create_actionable_potential_score_prompt
 
 def score_actionable_potential(state: AgentState) -> dict:
@@ -38,7 +38,7 @@ def score_actionable_potential(state: AgentState) -> dict:
             )
 
             # Call the model
-            model_with_parser = StructuredModel()
+            model_with_parser = structure_model()
             response = model_with_parser.invoke(prompt)
 
             ratings.append(response.rating)
