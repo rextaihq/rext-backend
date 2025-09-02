@@ -25,6 +25,15 @@ jobs:
           key: ${{ runner.os }}-uv-${{ hashFiles('**/uv.lock') }}
           restore-keys: |
             ${{ runner.os }}-uv-
-            
+
       - name: Install dependencies
         run: uv sync
+
+     
+      # - name: Install Playwright browser
+      #   run: playwright install chromium
+
+      - name: Setup Crawl4AI
+        run: |
+          crawl4ai-setup
+          crawl4ai-doctor
