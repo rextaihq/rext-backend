@@ -44,15 +44,15 @@ app = FastAPI(
 # Allow your frontend origi
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=['http://localhost:3000'],        # allow specific origins
+    allow_origins=['http://localhost:3000'],        
     allow_credentials=True,
-    allow_methods=["*"],          # allow all HTTP methods
+    allow_methods=["*"],          
     allow_headers=["*"],          # allow all headers
 )
 
 # Fixing he issue async issue only in workflow routes
 # app.include_router(user_router, prefix="/api", tags=["user"])
-app.include_router(topic_router, prefix="/api", tags=["topic_generation_routes"])
+app.include_router(topic_router, prefix="/api")
 
 @app.get("/")
 def read_root():
