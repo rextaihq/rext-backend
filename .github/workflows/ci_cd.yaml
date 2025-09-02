@@ -30,15 +30,26 @@ jobs:
         run: uv sync
 
      
-      - name: Install system dependencies
-        run: apk add --no-cache nss freetype harfbuzz ca-certificates bash libstdc++ chromium
+      - name: Install system dependencies on Ubuntu
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            chromium-browser \
+            libnss3 \
+            libfreetype6 \
+            libharfbuzz0b \
+            ca-certificates \
+            bash \
+            libstdc++ \
+            && sudo apt-get clean
+
 
       - name: Install Python dependencies
         run: uv pip install --system --no-cache-dir playwright crawl4ai
 
       - name: Install Playwright browser
         run: playwright install chromium
-        
+
       - name: Setup Crawl4AI
         run: |
           crawl4ai-setup
