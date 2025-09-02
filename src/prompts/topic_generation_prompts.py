@@ -35,7 +35,7 @@ You are an AI assistant that generates high-quality, creative, and relevant cont
 - Focus: {focus}
 - Subject: {subject}
 - Region: {region}
-- Content Language: {content_language}
+- Content Language: {language}
 - Content Timing Preference: {content_timing_preference}
 - Content Originality Preference: {content_originality_preference}
 - Number of Ideas Required: {num_ideas}
