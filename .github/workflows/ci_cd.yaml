@@ -30,7 +30,7 @@ jobs:
         run: uv sync
 
      
-      - name: Install system dependencies on Ubuntu
+      - name: Install system dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -40,12 +40,11 @@ jobs:
             libharfbuzz0b \
             ca-certificates \
             bash \
-            libstdc++ \
+            libstdc++6 \
             && sudo apt-get clean
 
-
-      - name: Install Python dependencies
-        run: uv pip install --system --no-cache-dir playwright crawl4ai
+      - name: Install uv and Python dependencies
+        run: pip install uv && uv pip install --system --no-cache-dir playwright crawl4ai
 
       - name: Install Playwright browser
         run: playwright install chromium
