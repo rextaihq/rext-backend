@@ -42,7 +42,7 @@ jobs:
             ${{ runner.os }}-pip-
      
       - name: Install system dependencies
-        # if: steps.cache-uv-dependencies.outputs.cache-hit != 'true'
+        if: steps.cache-uv-dependencies.outputs.cache-hit != 'true'
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -60,28 +60,28 @@ jobs:
         run: pip install uv && uv pip install --system --no-cache-dir playwright crawl4ai
 
       - name: Install Playwright browser
-        # if: steps.cache-uv-dependencies.outputs.cache-hit != 'true'
+        if: steps.cache-uv-dependencies.outputs.cache-hit != 'true'
         run: playwright install chromium
 
       - name: Setup Crawl4AI
-        # if: steps.cache-uv-dependencies.outputs.cache-hit != 'true'
+        if: steps.cache-uv-dependencies.outputs.cache-hit != 'true'
         run: |
           crawl4ai-setup
           crawl4ai-doctor
 
-docker_job:
-    needs: build 
-    runs-on: ubuntu-latest
+  docker_job:
+      needs: build 
+      runs-on: ubuntu-latest
 
-    steps:
-      - name: Checkout the code
-        uses: actions/checkout@v3
+      steps:
+        - name: Checkout the code
+          uses: actions/checkout@v3
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        - name: Set up Docker Buildx
+          uses: docker/setup-buildx-action@v3
 
-      - name: Log into Docker Hub
-        uses: docker/login-action@v2
-        with:
-          username: ${{ secrets.DOCKER_USERNAME }}
-          password: ${{ secrets.DOCKER_PASSWORD }}
+        - name: Log into Docker Hub
+          uses: docker/login-action@v2
+          with:
+            username: ${{ secrets.DOCKER_USERNAME }}
+            password: ${{ secrets.DOCKER_PASSWORD }}
