@@ -1,7 +1,6 @@
 from typing import List, Optional
 from pydantic import BaseModel
 
-
 class TopicGeneration(BaseModel):
     wizardMode: str
     industry: str
@@ -30,9 +29,11 @@ class TopicGeneration(BaseModel):
     additional_notes: Optional[str] = None
     num_ideas: int
     region: Optional[str] = None
-    content_language: Optional[str] = "English"
+    language: Optional[str] = "english"
     content_timing_preference: Optional[str] = None
     content_originality_preference: Optional[str] = None
+    fresh_vs_evergreen: Optional[str] = None   # added
+    safe_vs_original: Optional[str] = None     # added
     exclude: Optional[str] = None
     focus: Optional[str] = None
     subject: Optional[str] = None
