@@ -32,8 +32,8 @@ class TopicGeneration(BaseModel):
     language: Optional[str] = "english"
     content_timing_preference: Optional[str] = None
     content_originality_preference: Optional[str] = None
-    fresh_vs_evergreen: Optional[str] = None   # added
-    safe_vs_original: Optional[str] = None     # added
+    fresh_vs_evergreen: Optional[str] = None
+    safe_vs_original: Optional[str] = None
     exclude: Optional[str] = None
     focus: Optional[str] = None
     subject: Optional[str] = None
