@@ -29,8 +29,17 @@ jobs:
       - name: Install dependencies
         run: uv sync
 
+      # Cache pip packages (used by uv pip)
+      - name: Cache pip
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/uv.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
      
       - name: Install system dependencies
+        if: steps.cache-uv-dependencies.outputs.cache-hit != 'true'
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -44,12 +53,15 @@ jobs:
             && sudo apt-get clean
 
       - name: Install uv and Python dependencies
+        if: steps.cache-uv-dependencies.outputs.cache-hit != 'true'
         run: pip install uv && uv pip install --system --no-cache-dir playwright crawl4ai
 
       - name: Install Playwright browser
+        if: steps.cache-uv-dependencies.outputs.cache-hit != 'true'
         run: playwright install chromium
 
       - name: Setup Crawl4AI
+        if: steps.cache-uv-dependencies.outputs.cache-hit != 'true'
         run: |
           crawl4ai-setup
           crawl4ai-doctor
