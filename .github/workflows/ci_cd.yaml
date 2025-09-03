@@ -1,26 +1,26 @@
 name: project_CI
 
-on: 
+on:
   push:
     branches:
       - main
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted # runs on your Ubuntu server
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
-        
+
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.11'
-      
+
       - name: Install uv
         run: pip install uv
-      
+
       - name: Cache uv dependencies
         uses: actions/cache@v3
         with:
@@ -32,17 +32,15 @@ jobs:
       - name: Install dependencies
         run: uv sync
 
-      # Cache pip packages (used by uv pip)
-      - name: Cache pip
+      - name: Cache pip packages
         uses: actions/cache@v3
         with:
           path: ~/.cache/pip
           key: ${{ runner.os }}-pip-${{ hashFiles('**/uv.lock') }}
           restore-keys: |
             ${{ runner.os }}-pip-
-     
+
       - name: Install system dependencies
-        if: steps.cache-uv-dependencies.outputs.cache-hit != 'true'
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -56,61 +54,26 @@ jobs:
             && sudo apt-get clean
 
       - name: Install uv and Python dependencies
-        # if: steps.cache-uv-dependencies.outputs.cache-hit != 'true'
         run: pip install uv && uv pip install --system --no-cache-dir playwright crawl4ai
 
       - name: Install Playwright browser
-        if: steps.cache-uv-dependencies.outputs.cache-hit != 'true'
         run: playwright install chromium
 
       - name: Setup Crawl4AI
-        if: steps.cache-uv-dependencies.outputs.cache-hit != 'true'
         run: |
           crawl4ai-setup
           crawl4ai-doctor
 
-  docker_job:
-      needs: build 
-      runs-on: ubuntu-latest
-
-      steps:
-        - name: Checkout the code
-          uses: actions/checkout@v3
-
-        - name: Set up Docker Buildx
-          uses: docker/setup-buildx-action@v3
-
-        - name: Log into Docker Hub
-          uses: docker/login-action@v2
-          with:
-            username: ${{ secrets.DOCKER_USERNAME }}
-            password: ${{ secrets.DOCKER_PASSWORD }}
-
-        - name: Install LangGraph CLI
-          run: pip install langgraph-cli
-          
-        - name: Build Docker image with LangGraph
-          run: |
-            langgraph build -t revnix/content-automation:latest
-
-        - name: Push Docker image
-          run: |
-            docker push revnix/content-automation:latest
-  
-  deploy:
-    needs: docker_job
-    runs-on: self-hosted
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
-        
-      - name: Deploy Docker
+      - name: Build Docker image
         run: |
-          cd ~/app
-          echo "${{ secrets.DOCKER_PASSWORD }}" | docker login -u "${{ secrets.DOCKER_USERNAME }}" --password-stdin
-          docker pull revnix/content-automation:latest
-          docker-compose down || true
-          docker-compose up -d
+          docker build -t revnix/content-automation:latest .
+
+      - name: Clean previous containers
+        run: |
+          docker-compose -f docker-compose.yml down || true
+
+      - name: Deploy Docker containers
+        run: |
+          docker-compose -f docker-compose.yml up -d
           docker image prune -f
           docker ps
