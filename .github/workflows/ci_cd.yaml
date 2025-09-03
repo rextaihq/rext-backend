@@ -1,26 +1,26 @@
 name: project_CI
 
-on:
+on: 
   push:
     branches:
       - main
 
 jobs:
   build:
-    runs-on: self-hosted # runs on your Ubuntu server
+    runs-on: ubuntu-latest
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
-
+        
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.11'
-
+      
       - name: Install uv
         run: pip install uv
-
+      
       - name: Cache uv dependencies
         uses: actions/cache@v3
         with:
@@ -39,7 +39,7 @@ jobs:
           key: ${{ runner.os }}-pip-${{ hashFiles('**/uv.lock') }}
           restore-keys: |
             ${{ runner.os }}-pip-
-
+     
       - name: Install system dependencies
         run: |
           sudo apt-get update
@@ -64,16 +64,62 @@ jobs:
           crawl4ai-setup
           crawl4ai-doctor
 
-      - name: Build Docker image
-        run: |
-          docker build -t revnix/content-automation:latest .
+  docker_job:
+    needs: build
+    runs-on: ubuntu-latest
 
-      - name: Clean previous containers
-        run: |
-          docker-compose -f docker-compose.yml down || true
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
 
-      - name: Deploy Docker containers
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log into Docker Hub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Install LangGraph CLI
+        run: pip install langgraph-cli
+          
+      - name: Build Docker image with LangGraph
+        run: langgraph build -t revnix/content-automation:latest
+
+      - name: Push Docker image
+        run: docker push revnix/content-automation:latest
+  
+  deploy:
+    needs: docker_job
+    runs-on: self-hosted
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Deploy Docker
         run: |
-          docker-compose -f docker-compose.yml up -d
+          # Ensure correct working directory
+          DEPLOY_DIR=~/app
+          mkdir -p $DEPLOY_DIR
+          cp -r $GITHUB_WORKSPACE/* $DEPLOY_DIR/
+          cd $DEPLOY_DIR
+
+          # Login to Docker
+          echo "${{ secrets.DOCKER_PASSWORD }}" | docker login -u "${{ secrets.DOCKER_USERNAME }}" --password-stdin
+
+          # Pull latest image
+          docker pull revnix/content-automation:latest
+
+          # Stop and remove old containers
+          docker-compose down || true
+
+          # Start containers
+          docker-compose up -d
+
+          # Clean up old images
           docker image prune -f
+
+          # Show running containers
           docker ps
