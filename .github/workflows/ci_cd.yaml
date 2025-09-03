@@ -115,6 +115,15 @@ jobs:
           # Stop and remove old containers
           docker-compose down || true
 
+          REDIS_URI="${{ secrets.REDIS_URI }}" \
+          LANGSMITH_API_KEY="${{ secrets.LANGSMITH_API_KEY }}" \
+          POSTGRES_URI_CUSTOM="${{ secrets.POSTGRES_URI_CUSTOM }}" \
+          SECRET_KEY="${{ secrets.SECRET_KEY }}" \
+          REFRESH_SECRET_KEY="${{ secrets.REFRESH_SECRET_KEY }}" \
+          ALGORITHM="${{ secrets.ALGORITHM }}" \
+          TAVILY_API_KEY="${{ secrets.TAVILY_API_KEY }}" \
+          docker-compose up -d
+
           # Start containers
           docker-compose up -d
 
