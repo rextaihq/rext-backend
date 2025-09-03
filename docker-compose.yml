@@ -40,7 +40,7 @@ services:
             REDIS_URI: redis://langgraph-redis:6379
             LANGSMITH_API_KEY: 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
             POSTGRES_URI_CUSTOM: postgresql://postgres:postgres@langgraph-postgres:5432/postgres
-            DATABASE_URI: ostgresql://postgres:postgres@langgraph-postgres:5432/postgres
+            DATABASE_URI: postgresql://postgres:postgres@langgraph-postgres:5432/postgres
             SECRET_KEY: revnix
             REFRESH_SECRET_KEY: revnixrefresh
             ALGORITHM: HS256
