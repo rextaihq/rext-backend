@@ -86,6 +86,9 @@ jobs:
             username: ${{ secrets.DOCKER_USERNAME }}
             password: ${{ secrets.DOCKER_PASSWORD }}
 
+        - name: Install LangGraph CLI
+          run: pip install langgraph-cli
+          
         - name: Build Docker image with LangGraph
           run: |
             langgraph build -t revnix/content-automation:latest
