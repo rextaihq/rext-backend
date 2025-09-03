@@ -37,11 +37,11 @@ services:
         env_file:
             - .env
         environment:
-            REDIS_URI: ${REDIS_URI}
-            LANGSMITH_API_KEY: ${LANGSMITH_API_KEY}
-            POSTGRES_URI_CUSTOM: ${POSTGRES_URI_CUSTOM}
-            DATABASE_URI: ${POSTGRES_URI_CUSTOM}
-            SECRET_KEY: ${SECRET_KEY}
-            REFRESH_SECRET_KEY: ${REFRESH_SECRET_KEY}
-            ALGORITHM: ${ALGORITHM}
-            TAVILY_API_KEY: ${TAVILY_API_KEY}
+            REDIS_URI: redis://langgraph-redis:6379
+            LANGSMITH_API_KEY: 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
+            POSTGRES_URI_CUSTOM: postgresql://postgres:postgres@langgraph-postgres:5432/postgres
+            DATABASE_URI: ostgresql://postgres:postgres@langgraph-postgres:5432/postgres
+            SECRET_KEY: revnix
+            REFRESH_SECRET_KEY: revnixrefresh
+            ALGORITHM: HS256
+            TAVILY_API_KEY: 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
