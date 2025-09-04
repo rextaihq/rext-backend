@@ -8,23 +8,25 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from distro import name
 from dotenv import load_dotenv
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
+from sqlalchemy.orm import sessionmaker
 
 # Local application imports
 # from src.api.routes.user_routes import router as user_router
 from src.api.routes.topic_generation_route import router as topic_router
-# from src.api.database.database import Base, engine
+from src.api.database.database import Base, engine
 # from src.api.models.models import User
 
 load_dotenv()
 
-# DB_URI = os.getenv("POSTGRES_URI_CUSTOM")
+DB_URI = os.getenv("POSTGRES_URI_CUSTOM")
 
 # Create the database tables
-# Base.metadata.create_all(bind=engine)
+Base.metadata.create_all(bind=engine)
 
 # @asynccontextmanager
 # async def lifespan(app: FastAPI):
-
+#
 #     engine = create_async_engine(DB_URI)
 #     # Create reusable session factory
 #     async_session = sessionmaker(engine, class_=AsyncSession)
