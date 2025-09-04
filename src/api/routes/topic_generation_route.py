@@ -4,6 +4,10 @@ from langchain_core.messages import SystemMessage,HumanMessage
 from src.model.model import topic_generation_model
 from src.prompts.topic_generation_prompts import topic_generation_prompt
 from src.api.security.auth import get_api_key,api_key_header,API_KEY
+from sqlalchemy.orm import Session
+from src.api.models.topic_models import Topics
+from src.api.database.database import get_db
+from src.states.schemas import TopicGenerationList
 
 router = APIRouter(
     prefix="/topic",
@@ -17,7 +21,7 @@ def get_status():
 
 
 @router.post("/generate-topic")
-def generate_topic(data:TopicGeneration, api_key: str = Depends(get_api_key)):
+def generate_topic(data:TopicGeneration, api_key: str = Depends(get_api_key),db: Session = Depends(get_db)):
     if api_key != API_KEY:
         return {"error": "Unauthorized"}
     # Dummy response matching GeneratedTopic interface
@@ -49,5 +53,47 @@ def generate_topic(data:TopicGeneration, api_key: str = Depends(get_api_key)):
 
     return {
         "status": "success",
-        "topics": response
+        "topics": response,
+    }
+
+
+@router.post("/save-topic")
+def save_topic(data: TopicGenerationList, api_key: str = Depends(get_api_key), db: Session = Depends(get_db)):
+    if api_key != API_KEY:
+        return {"error": "Unauthorized"}
+
+    print("Saving Topic to DB..")
+    saved = []
+
+    for topic in data.topics:  # ✅ iterate over the list inside the wrapper model
+        db_topic = Topics(
+            title=topic.title,
+            angle=topic.angle,
+            channel_fit=topic.channel_fit,
+            audience_fit=topic.audience_fit,
+            why_it_works=topic.why_it_works,
+            scores=topic.scores.dict() if hasattr(topic.scores, "dict") else topic.scores,
+            tags=topic.tags
+        )
+        db.add(db_topic)
+        saved.append(db_topic)
+
+    db.commit()
+    print("Topic Saved..")
+    return {
+        "status": "success",
+        "message": f"{len(saved)} topics saved successfully."
+    }
+
+
+@router.get("/get-topics")
+def get_topics(api_key: str = Depends(get_api_key),db: Session = Depends(get_db)):
+    if api_key != API_KEY:
+        return {"error": "Unauthorized"}
+
+    print("Fetching Topics from DB..")
+    topics = db.query(Topics).all()
+    print("Topics Fetched..")
+    return {
+        "topics":topics
     }

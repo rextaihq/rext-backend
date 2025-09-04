@@ -2,7 +2,7 @@ from fastapi import APIRouter,Depends,HTTPException, status
 from src.api.schema.user_schema import LoginUser,RegisterUser
 from src.utils.helper import hash_password,create_access_token,verify_password,create_refresh_token
 from sqlalchemy.orm import Session
-from src.api.models.models import User
+from src.api.models.user_models import User
 from src.api.database.database import get_db
 from dotenv import load_dotenv
 import bcrypt
