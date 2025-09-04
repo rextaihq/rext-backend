@@ -1,8 +1,12 @@
 from langgraph_sdk import Auth
-from fastapi import HTTPException
+from fastapi import HTTPException,Security
+from fastapi.security.api_key import APIKeyHeader
 from src.utils.helper import verify_token
 
 auth = Auth()
+API_KEY = "supersecretapikey" 
+API_KEY_NAME = "content-api-key"
+api_key_header = APIKeyHeader(name=API_KEY_NAME, auto_error=False)
 
 @auth.authenticate
 async def get_current_user(authorization: str | None) -> Auth.types.MinimalUserDict:
@@ -46,3 +50,8 @@ async def add_owner(
 
     # Only let users see their own resources
     return filters
+
+def get_api_key(api_key_header: str = Security(api_key_header)):
+    if api_key_header == API_KEY:
+        return api_key_header
+    raise HTTPException(status_code=403, detail="Could not validate credentials")
