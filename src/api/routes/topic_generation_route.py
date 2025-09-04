@@ -1,8 +1,9 @@
-from fastapi import APIRouter
+from fastapi import APIRouter,Depends
 from src.api.schema.topic_schema import TopicGeneration
 from langchain_core.messages import SystemMessage,HumanMessage
 from src.model.model import topic_generation_model
 from src.prompts.topic_generation_prompts import topic_generation_prompt
+from src.api.security.auth import get_api_key,api_key_header,API_KEY
 
 router = APIRouter(
     prefix="/topic",
@@ -16,9 +17,11 @@ def get_status():
 
 
 @router.post("/generate-topic")
-def generate_topic(data:TopicGeneration):
+def generate_topic(data:TopicGeneration, api_key: str = Depends(get_api_key)):
+    if api_key != API_KEY:
+        return {"error": "Unauthorized"}
     # Dummy response matching GeneratedTopic interface
-    print("Senfing Dummy Response..")
+    print("Sending Dummy Response..")
     # load the model
     model = topic_generation_model()
 
