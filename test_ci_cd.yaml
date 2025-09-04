@@ -1,7 +1,7 @@
 name: project_CI
 
-on: 
-  push:
+on:
+  pull_request:
     branches:
       - main
 
@@ -32,7 +32,6 @@ jobs:
       - name: Install dependencies
         run: uv sync
 
-      # Cache pip packages (used by uv pip)
       - name: Cache pip
         uses: actions/cache@v3
         with:
