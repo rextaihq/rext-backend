@@ -97,3 +97,28 @@ def get_topics(api_key: str = Depends(get_api_key),db: Session = Depends(get_db)
     return {
         "topics":topics
     }
+
+
+@router.delete("/delete-topic/{topic_id}")
+def delete_topic(
+    topic_id: str,
+    api_key: str = Depends(get_api_key),
+    db: Session = Depends(get_db)
+):
+    if api_key != API_KEY:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+    print(f"Attempting to delete topic with ID {topic_id}..")
+    topic = db.query(Topics).filter(Topics.id == topic_id).first()
+
+    if not topic:
+        raise HTTPException(status_code=404, detail="Topic not found")
+
+    db.delete(topic)
+    db.commit()
+
+    print("Topic deleted successfully.")
+    return {
+        "status": "success",
+        "message": f"Topic with ID {topic_id} deleted successfully."
+    }
