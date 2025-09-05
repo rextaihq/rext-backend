@@ -39,3 +39,6 @@ class TopicGeneration(BaseModel):
     subject: Optional[str] = None
 
     timestamp: str
+
+class DeleteTopics(BaseModel):
+    topic_ids: List[str]
