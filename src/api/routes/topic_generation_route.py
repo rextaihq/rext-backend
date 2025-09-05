@@ -1,5 +1,5 @@
-from fastapi import APIRouter,Depends
-from src.api.schema.topic_schema import TopicGeneration
+from fastapi import APIRouter,Depends,Query,HTTPException
+from src.api.schema.topic_schema import TopicGeneration,DeleteTopics
 from langchain_core.messages import SystemMessage,HumanMessage
 from src.model.model import topic_generation_model
 from src.prompts.topic_generation_prompts import topic_generation_prompt
@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from src.api.models.topic_models import Topics
 from src.api.database.database import get_db
 from src.states.schemas import TopicGenerationList
+from typing import List
 
 router = APIRouter(
     prefix="/topic",
@@ -65,7 +66,7 @@ def save_topic(data: TopicGenerationList, api_key: str = Depends(get_api_key), d
     print("Saving Topic to DB..")
     saved = []
 
-    for topic in data.topics:  # ✅ iterate over the list inside the wrapper model
+    for topic in data.topics: 
         db_topic = Topics(
             title=topic.title,
             angle=topic.angle,
@@ -99,26 +100,31 @@ def get_topics(api_key: str = Depends(get_api_key),db: Session = Depends(get_db)
     }
 
 
-@router.delete("/delete-topic/{topic_id}")
-def delete_topic(
-    topic_id: str,
+@router.delete("/delete-topic", description="Delete multiple topics by IDs")
+def delete_topics(
+    topic_ids: DeleteTopics,
     api_key: str = Depends(get_api_key),
     db: Session = Depends(get_db)
 ):
     if api_key != API_KEY:
         raise HTTPException(status_code=401, detail="Unauthorized")
 
-    print(f"Attempting to delete topic with ID {topic_id}..")
-    topic = db.query(Topics).filter(Topics.id == topic_id).first()
+    print(f"Attempting to delete topics with IDs {topic_ids}..")
 
-    if not topic:
-        raise HTTPException(status_code=404, detail="Topic not found")
+    # Fetch topics
+    topic_ids = topic_ids.topic_ids
+    topics = db.query(Topics).filter(Topics.id.in_(topic_ids)).all()
+    if not topics:
+        raise HTTPException(status_code=404, detail="No topics found for given IDs")
 
-    db.delete(topic)
+    # Delete all fetched topics
+    for topic in topics:
+        db.delete(topic)
     db.commit()
 
-    print("Topic deleted successfully.")
+    print("Topics deleted successfully.")
     return {
         "status": "success",
-        "message": f"Topic with ID {topic_id} deleted successfully."
+        "message": f"Deleted {len(topics)} topics successfully.",
+        "ids": topic_ids
     }
