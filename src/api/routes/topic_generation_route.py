@@ -31,7 +31,7 @@ def generate_topic(data:TopicGeneration, api_key: str = Depends(get_api_key),db:
     model = topic_generation_model()
 
     # format the human message
-    human_messages = topic_generation_prompt().format_messages(**data.dict())
+    human_messages = topic_generation_prompt().format_messages(**data.model_dump())
     # this is usually a list with one HumanMessage, but we keep it flexible
 
     # define system message separately

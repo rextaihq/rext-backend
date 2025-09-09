@@ -12,15 +12,10 @@ class TopicGeneration(BaseModel):
     platform: Optional[str] = None
     platform_other: Optional[str] = None
 
-    audience: str
-    reader_level: str
-    audience_size: str
-    demographic_age: List[str]
-    demographic_location: List[str]
+    audience: List[str]
 
     purpose: List[str]
     purpose_other: Optional[str] = None
-    content_goal: List[str]
     tone: List[str]
     tone_other: Optional[str] = None
 
