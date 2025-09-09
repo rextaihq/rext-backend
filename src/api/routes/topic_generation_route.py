@@ -62,7 +62,7 @@ def generate_topic(data:TopicGeneration, api_key: str = Depends(get_api_key),db:
 def save_topic(data: TopicGenerationList, api_key: str = Depends(get_api_key), db: Session = Depends(get_db)):
     if api_key != API_KEY:
         return {"error": "Unauthorized"}
-
+    
     print("Saving Topic to DB..")
     saved = []
 

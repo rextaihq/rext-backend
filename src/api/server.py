@@ -14,8 +14,8 @@ from sqlalchemy.orm import sessionmaker
 # Local application imports
 # from src.api.routes.user_routes import router as user_router
 from src.api.routes.topic_generation_route import router as topic_router
+from src.api.routes.projects_routes import router as project_router
 from src.api.database.database import Base, engine
-# from src.api.models.models import User
 
 load_dotenv()
 
@@ -49,12 +49,13 @@ app.add_middleware(
     allow_origins=['http://localhost:3000'],        
     allow_credentials=True,
     allow_methods=["*"],          
-    allow_headers=["*"],          # allow all headers
+    allow_headers=["*"]
 )
 
 # Fixing he issue async issue only in workflow routes
 # app.include_router(user_router, prefix="/api", tags=["user"])
 app.include_router(topic_router, prefix="/api")
+app.include_router(project_router, prefix="/api")
 
 @app.get("/")
 def read_root():
