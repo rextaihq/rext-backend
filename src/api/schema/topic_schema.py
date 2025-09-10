@@ -19,7 +19,7 @@ class TopicGeneration(BaseModel):
     tone_other: Optional[str] = None
 
     notes: Optional[str] = None
-    num_ideas: int
+    num_topics: int
     content_timing_preference: Optional[str] = None
     content_originality_preference: Optional[str] = None
     subject: Optional[str] = None

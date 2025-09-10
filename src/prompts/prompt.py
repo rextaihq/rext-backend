@@ -111,7 +111,7 @@ def create_uniqueness_score_prompt() -> ChatPromptTemplate:
             Your task is to assess the **originality and uniqueness** of this blog post topic compared to widely available or frequently published WordPress content.
 
             Consider the following while evaluating:
-            - Does the blog offer a fresh perspective or introduce under-discussed ideas?
+            - Does the blog offer a fresh perspective or introduce under-discussed topics?
             - Is it different from typical tutorials, news summaries, or plugin reviews?
             - Does it highlight lesser-known tools, workflows, or use cases?
             - Is the content insightful, thought-provoking, or niche-focused in a way that stands out?

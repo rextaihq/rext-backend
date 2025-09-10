@@ -39,7 +39,7 @@ def generate_topic(data:TopicGeneration, api_key: str = Depends(get_api_key),db:
         content=(
             "You are a helpful content strategist. "
             "Your task is to propose topic ideas. "
-            "Each idea must be useful for the specific audience, "
+            "Each topic must be useful for the specific audience, "
             "fit the content goals, and suit the selected channels."
         )
     )

@@ -26,11 +26,11 @@ You are an AI assistant that generates high-quality, creative, and relevant cont
 - Notes: {notes}
 - Content Timing Preference: {content_timing_preference}
 - Content Originality Preference: {content_originality_preference}
-- Number of Ideas Required: {num_ideas}
+- Number of Topics Required: {num_topics}
 - Timestamp: {timestamp}
 
 ### Task:
-Generate {num_ideas} creative and engaging topic ideas. 
+Generate {num_topics} creative and engaging topic ideas. 
 For each topic, provide:
 - **Title**: A catchy headline
 - **Angle**: The specific perspective or unique approach
