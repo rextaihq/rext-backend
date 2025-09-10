@@ -4,5 +4,5 @@ from uuid import UUID
 
 class ProjectBase(BaseModel):
     title: str = Field(..., max_length=80, description="Title of the project")
-    description: str = Field(..., description="Description of the project")
-    instructions: List[str] = Field(..., description="List of instructions for the project")
+    memory_mode:bool = Field(False, description="Enable or disable memory mode")
+    project_instructions: List[str] = Field(..., description="List of instructions for the project")
