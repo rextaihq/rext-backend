@@ -5,11 +5,16 @@ from uuid import uuid4
 import os, faiss
 from langchain_community.docstore.in_memory import InMemoryDocstore
 from langchain_community.vectorstores import FAISS
+from langchain.schema import Document
 
-def build_vector_store(state: AgentState)->AgentState:
-    blog_context = state['context']
-    batch_size = 32
-    vector_store_path = "my_faiss_index3"
+def build_vector_store(state: AgentState=None,
+    vector_store_path: str="my_faiss_index",
+    batch_size: int=32,
+    blog_context: list[Document]=[]
+):
+    
+    if state is not None:
+        blog_context = state['context']
 
     # Determine embedding dimension
     test_embedding = get_hf_embedding().embed_query("hello world")

@@ -1,4 +1,10 @@
-from fastapi import APIRouter,Depends,Query,HTTPException,UploadFile, File, Form
+from fastapi import (
+    APIRouter,Depends,
+    Query,HTTPException,
+    UploadFile, File, 
+    Form,BackgroundTasks
+    )
+from src.api.tasks.project_task import project_task
 from src.utils.logger import logger
 from src.api.models.projects_model import Projects
 from sqlalchemy.orm import Session
@@ -46,23 +52,25 @@ def get_projects(db: Session = Depends(get_db)):
 # create
 @router.post("/create-project")
 def create_project(
-    # data:ProjectBase,
     title: str = Form(..., max_length=80, description="Title of the project"),
-    description: str = Form(..., description="Description of the project"),
+    memory_mode: bool = Form(False, description="Enable or disable memory mode"),
     instructions: List[str] = Form(..., description="List of instructions for the project"),
     files: List[UploadFile] = File(None),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    background_tasks: BackgroundTasks = None
 ):
     try:
         logger.info("Create project endpoint called.")
-
-        logger.info(f"Handling file uploads for {len(files) if files else 0} files.")
-
-        # 2️⃣ Handle file uploads
         file_attachments = []
+        projects = []
+
         if files:
             for file in files:
                 ext = os.path.splitext(file.filename)[1]
+                if ext not in [".pdf", ".csv", ".txt"]:
+                    logger.warning(f"Unsupported file type: {ext}")
+                    raise HTTPException(status_code=400, detail=f"Unsupported file type: {ext}")
+                     
                 unique_name = f"{uuid4()}{ext}"
                 file_path = os.path.join(UPLOAD_DIR, unique_name)
 
@@ -75,26 +83,35 @@ def create_project(
                 file_attachments.append({
                     "filename": file.filename,
                     "url": file_url,
+                    "path": file_path,  # keep path for background task
                     "filetype": filetype
                 })
 
-                project = Projects(
-                    title=title,
-                    description=description,
-                    instructions=instructions,
-                    file=file_attachments if file_attachments else None 
-                )
+        # create project in DB
+        project = Projects(
+            title=title,
+            memory_mode=str(memory_mode).lower(),
+            instructions=instructions,
+            file=file_attachments if file_attachments else None,
+            status="process"
+        )
 
-                logger.info(f"Creating project with title: {title}")
-                db.add(project)
-                db.commit()
-                db.refresh(project)
-                logger.info(f"Project created with ID: {project.id}")
+        db.add(project)
+        db.commit()
+        db.refresh(project)
+        logger.info(f"Project created with ID: {project.id}")
+        projects.append(project)
 
-                return {
-                    "status": "success",
-                    "project_id": project.id
-                }
+        # ✅ add background task
+        if file_attachments:
+            for f in file_attachments:
+                background_tasks.add_task(project_task, f["path"], project.id)
+
+        return {
+            "status": "success",
+            "project": project
+        }
+
     except Exception as e:
         logger.error(f"Error creating project: {e}")
         raise HTTPException(status_code=500, detail="Internal Server Error")
