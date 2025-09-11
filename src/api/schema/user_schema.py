@@ -1,5 +1,4 @@
-from pydantic import BaseModel, Field, HttpUrl
-from typing import List, Optional
+from pydantic import BaseModel, Field
 
 class RegisterUser(BaseModel):
     username: str = Field(..., description="Name of the user")

@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Float
+from sqlalchemy import Column, String
 from sqlalchemy.dialects.postgresql import UUID, ARRAY, JSONB
 from src.api.database.database import Base
 import uuid

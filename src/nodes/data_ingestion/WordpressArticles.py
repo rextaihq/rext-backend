@@ -1,11 +1,10 @@
 import feedparser
 import time
 from datetime import datetime
-from typing import List, Dict
-from src.states.State import AgentState,URLCONFIF
-from src.utils.helper import loadYamlConfig
+from typing import List
+from src.states.State import AgentState
 
-def wordpress_articles(state:AgentState) -> AgentState:
+def wordpress_articles(state:AgentState):
     """
     WordpressArticles
 

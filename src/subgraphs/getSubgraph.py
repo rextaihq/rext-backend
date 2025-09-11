@@ -1,6 +1,6 @@
 from src.subgraphs.webSearch import web_search
 from src.states.State import AgentState
-from langgraph.graph import StateGraph, START, END
+from langgraph.graph import StateGraph, START
 from langgraph.prebuilt import ToolNode, tools_condition
 from src.tools.searchTool import get_tools
 
@@ -44,9 +44,9 @@ if __name__ == "__main__":
 
     query = "Latest Update in wordpress Maintenenane"
 
-    # Run the graph
-    res = graph.invoke({
-        "selected_articles": [{"title": query}]
-    })
-
-    print(res['selected_articles'])
+    # # Run the graph
+    # res = graph.invoke({
+    #     "selected_articles": [{"title": query}]
+    # })
+    #
+    # print(res['selected_articles'])

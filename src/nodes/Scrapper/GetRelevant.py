@@ -1,9 +1,9 @@
 from src.states.State import AgentState
 from crawl4ai import AsyncWebCrawler
-from src.utils.helper import GetBrowserConfig
+# from src.utils.helper import GetBrowserConfig
 from crawl4ai.async_configs import BrowserConfig, CrawlerRunConfig, CacheMode
 from langsmith import traceable
-import pandas as pd
+# import pandas as pd
 
 @traceable
 async def get_relevant_articles(state: AgentState) -> AgentState:
@@ -12,7 +12,7 @@ async def get_relevant_articles(state: AgentState) -> AgentState:
     """
     try:
         print("Process Selectd Articles..")
-        # selected_arrticles = state.get('selected_articles', [])
+        # selected articles = state.get('selected_articles', [])
         
 
         print("Scraping full content…")
@@ -35,12 +35,15 @@ async def get_relevant_articles(state: AgentState) -> AgentState:
         for article, results in zip(articles, result_content):
             if len(results)>0:
                 for result in results:
-                    article['Raw Blog Content']+= f"\n\n first Blog Conten \n\n{result.markdown}"            
+                    article['Raw Blog Content']+= f"\n\n first Blog Content \n\n{result.markdown}"
             
 
         # Update the state
         state["selected_articles"] = articles
         return state
     except Exception as e:
-        state["error"] = str(e)
-        return str(e)
+        state["error"] = [{
+            "error": str(e)
+        }
+        ]
+        return state

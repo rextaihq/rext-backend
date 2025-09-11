@@ -52,7 +52,6 @@ def run_wait_tab(client):
             st.code(f"Node Output Message:\n{node_output}")
 
         # Let user select which interrupt to respond to
-        interrupt_ids = [i['id'] for i in flattened_interrupts]
         selected_index = st.selectbox("Select Interrupt to respond to:", range(len(flattened_interrupts)), format_func=lambda x: f"{flattened_interrupts[x]['id']}")
         
         selected_interrupt = flattened_interrupts[selected_index]
@@ -69,7 +68,6 @@ def run_wait_tab(client):
     def run_and_wait(thread_id, assistant_id, resume_value={},checkpoint=None):
         with st.spinner("Running the workflow... Please wait."):
             assisant = client.assistants.get(assistant_id=assistant_id)
-            assinstant_config = assisant['config']
 
             config = URLCONFIF(
                 category=assisant['config']['category'],
@@ -79,7 +77,7 @@ def run_wait_tab(client):
                 keyword=assisant['config']['keyword'],
                 similarity_threshold=assisant['config']['similarity_threshold']
             )
-            st.write(config.dict())
+            st.write(config.model_dump())
             try:
                 result = client.runs.wait(
                     thread_id=thread_id,
@@ -142,11 +140,8 @@ def run_wait_tab(client):
     option = st.selectbox("Select Option", ["New", "Resume"])
 
     name, assistant_id = select_assistant(key=1)  # Keep only this one
-    resume_data = None
 
     if assistant_id:
-        thread_id = None
-
         if option == "New":
             thread_choice = st.selectbox("Select Thread", ["New Thread", "Existing Threads"])
             thread_id = None

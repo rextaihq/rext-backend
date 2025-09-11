@@ -3,7 +3,7 @@ from src.utils.helper import load_vector_store
 
 def get_relevnt_doc(state: AgentState) -> AgentState:
     try:
-        refine_title = state.get("refine_title", None)
+        refine_title = state.get("refine_title", "")
         print("=" * 50)
         print(f"[GetRelevantDoc] Starting retrieval...")
         print(f"[GetRelevantDoc] refine_title: {refine_title}")

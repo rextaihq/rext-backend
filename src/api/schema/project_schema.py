@@ -1,6 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import List, Optional
-from uuid import UUID
+from typing import List
 
 class ProjectBase(BaseModel):
     title: str = Field(..., max_length=80, description="Title of the project")

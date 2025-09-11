@@ -1,5 +1,5 @@
 from src.states.State import AgentState
-from src.utils.helper import load_vector_store,get_multi_query
+from src.utils.helper import get_multi_query
 
 # Apply Query Expansion and get results for each query
 def query_expansion(state: AgentState):
@@ -7,7 +7,7 @@ def query_expansion(state: AgentState):
         print("=" * 50)
         print("[QueryExpansion] Starting query expansion...")
 
-        refine_title = state.get("refine_title", None)
+        refine_title = state.get("refine_title", "")
         print(f"[QueryExpansion] refine_title: {refine_title}")
 
         # if not refine_title:

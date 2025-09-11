@@ -2,47 +2,34 @@ from src.nodes.data_ingestion.GNewsArticles import gnews_articles
 from src.nodes.data_ingestion.WordpressArticles import wordpress_articles
 from src.nodes.data_ingestion.FilterArticles import filter_articles
 from src.nodes.Scrapper.Scraper import scrape_full_content
-from langchain_core.runnables import RunnableLambda
-from langgraph.types import CachePolicy
+# from langgraph.types import CachePolicy
 from src.states.State import AgentState
 from langgraph.graph import StateGraph,START, END
 from src.states.State import URLCONFIF
 
-def get_data() -> RunnableLambda[AgentState, AgentState]:
+def get_data():
 
     data_gathering = StateGraph(AgentState)
 
     # ========================= Data Gathering Nodes
     data_gathering.add_node(
         "GetLocal Articles",
-        RunnableLambda(gnews_articles).with_config({
-            "run_name": "Fetch Local Articles",
-            "metadata": {"stage": "data_collection", "source": "local"}
-        })
+        gnews_articles
     )
 
     data_gathering.add_node(
         "GetWordpress Articles",
-        RunnableLambda(wordpress_articles).with_config({
-            "run_name": "Fetch WordPress Articles",
-            "metadata": {"stage": "data_collection", "source": "wordpress"}
-        })
+        wordpress_articles
     )
 
     data_gathering.add_node(
         "FilterArticles",
-        RunnableLambda(filter_articles).with_config({
-            "run_name": "Combine Articles",
-            "metadata": {"stage": "preprocessing"}
-        })
+       filter_articles
     )
 
     data_gathering.add_node(
         "ScrapeFullContent",
-        RunnableLambda(scrape_full_content).with_config({
-            "run_name": "Scrape Full Content",
-            "metadata": {"stage": "preprocessing"}
-        })
+        scrape_full_content
     )
 
     # Define the edges
@@ -58,7 +45,6 @@ def get_data() -> RunnableLambda[AgentState, AgentState]:
 
 if __name__ == "__main__":
     import uuid
-    import asyncio
 
     config = {
         "configurable": {"thread_id": str(uuid.uuid1())},
@@ -75,13 +61,13 @@ if __name__ == "__main__":
     )
 
     
-    data_graph = get_data()
-    # run the graph
-    async def getting_data():
-        result = await data_graph.ainvoke(
-            input={"config":my_config_instance},
-            config=config
-        )
-        return result
-
-    data_result = asyncio.run(getting_data())
+    # data_graph = get_data()
+    # # run the graph
+    # async def getting_data():
+    #     result = await data_graph.ainvoke(
+    #         input={"config":my_config_instance},
+    #         config=config
+    #     )
+    #     return result
+    #
+    # data_result = asyncio.run(getting_data())

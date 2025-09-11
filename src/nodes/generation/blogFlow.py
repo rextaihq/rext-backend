@@ -1,5 +1,5 @@
-from langgraph.graph import StateGraph,START,END
-from langchain_core.runnables import RunnableLambda
+from langgraph.graph import StateGraph,START
+# from langchain_core.runnables import RunnableLambda
 from src.nodes.generation.titleRewriter import title_rewriter
 from src.nodes.generation.getRelevnt import get_relevnt_doc
 from src.nodes.generation.queryDecomposition import query_decomposition
@@ -45,11 +45,11 @@ if __name__ == "__main__":
         ]
     }
 
-    # Build workflow
-    workflow = blog_generator()
-
-    # Run the workflow with dummy input
-    result = workflow.invoke(data)
-
-    print("\n=== Final State ===")
-    print(result)
+    # # Build workflow
+    # workflow = blog_generator()
+    #
+    # # Run the workflow with dummy input
+    # result = workflow.invoke(data)
+    #
+    # print("\n=== Final State ===")
+    # print(result)

@@ -125,7 +125,7 @@ def set_configuration(client):
             )
 
             # Convert to dict to store in assistant
-            config_dict = config_obj.dict()
+            config_dict = config_obj.model_dump()
             config_dict["assistant_id"] = assistant_id
             config_dict["assistant_name"] = assistant_name
 

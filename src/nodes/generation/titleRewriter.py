@@ -1,7 +1,7 @@
 from src.states.State import AgentState
 from src.model.model import title_refine_model
 # query refine node
-def title_rewriter(state:AgentState)-> AgentState:
+def title_rewriter(state:AgentState):
     """
     Query refine
     """
@@ -25,6 +25,6 @@ def title_rewriter(state:AgentState)-> AgentState:
         return state
     except Exception as e:
         print(str(e))
-        return {
+        return [{
             "error":str(e)
-        }
+        }]

@@ -8,66 +8,37 @@ from src.nodes.Evulation.SeoScore import score_seo_potential
 from src.nodes.Evulation.TrendLevel import score_trend_level
 from src.nodes.Evulation.UniquenesScore import score_uniqueness
 from src.nodes.Interrupt.topicSelection import topic_selection
-from langchain_core.runnables import RunnableLambda
-from langgraph.graph import StateGraph,START, END
+# from langchain_core.runnables import RunnableLambda
+from langgraph.graph import StateGraph,START
 from src.states.State import AgentState
 
 
 
-def re_ranked_data()-> RunnableLambda[AgentState, AgentState]:
+def re_ranked_data():
     evulation = StateGraph(AgentState)
     # add nodes
     # Evaluation Nodes
-    evulation.add_node("Relevance to WordPress", RunnableLambda(score_relevance).with_config({
-        "run_name": "Relevance Scoring",
-        "metadata": {"evaluation": "relevance"}
-    }))
+    evulation.add_node("Relevance to WordPress", score_relevance)
 
-    evulation.add_node("Trend Level", RunnableLambda(score_trend_level).with_config({
-        "run_name": "Trend Level Scoring",
-        "metadata": {"evaluation": "trend_level"}
-    }))
+    evulation.add_node("Trend Level", score_trend_level)
 
-    evulation.add_node("Controversy", RunnableLambda(score_controversy).with_config({
-        "run_name": "Controversy Scoring",
-        "metadata": {"evaluation": "controversy"}
-    }))
+    evulation.add_node("Controversy", score_controversy)
 
-    evulation.add_node("Uniqueness", RunnableLambda(score_uniqueness).with_config({
-        "run_name": "Uniqueness Scoring",
-        "metadata": {"evaluation": "uniqueness"}
-    }))
+    evulation.add_node("Uniqueness", score_uniqueness)
 
-    evulation.add_node("Reader Interest", RunnableLambda(score_reader_interest).with_config({
-        "run_name": "Reader Interest Scoring",
-        "metadata": {"evaluation": "interest"}
-    }))
+    evulation.add_node("Reader Interest", score_reader_interest)
 
-    evulation.add_node("Brand Alignment", RunnableLambda(score_brand_alignment).with_config({
-        "run_name": "Brand Alignment Scoring",
-        "metadata": {"evaluation": "brand_alignment"}
-    }))
+    evulation.add_node("Brand Alignment", score_brand_alignment)
 
-    evulation.add_node("Actionable Potential", RunnableLambda(score_actionable_potential).with_config({
-        "run_name": "Actionability Scoring",
-        "metadata": {"evaluation": "actionability"}
-    }))
+    evulation.add_node("Actionable Potential", score_actionable_potential)
 
 
     # Evaluation Result Aggregation
-    evulation.add_node("Evulation Result", RunnableLambda(re_ranking).with_config({
-        "run_name": "Add Evaluation Result",
-        "metadata": {"stage": "evaluation_result"}
-    }))
+    evulation.add_node("Evulation Result", re_ranking)
 
-    evulation.add_node("SEO Potential", RunnableLambda(score_seo_potential).with_config({
-    "run_name": "SEO Potential Scoring",
-    "metadata": {"evaluation": "seo"}
-    }))
+    evulation.add_node("SEO Potential", score_seo_potential)
 
-    evulation.add_node("Topic Selection", RunnableLambda(topic_selection).with_config({
-        "run_name": "Article Selection",
-    }))
+    evulation.add_node("Topic Selection", topic_selection)
 
 
     # Define the edges

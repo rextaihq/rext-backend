@@ -46,7 +46,7 @@ def structure_model():
     return model_with_parser
 
 
-def searchModel():
+def search_model():
     """
     Initializes and returns a chat model using LangChain's `init_chat_model`.
 

@@ -18,7 +18,6 @@ def outline_approval(state:AgentState):
         Command: An object specifying state updates and the next node to transition to in the workflow.
     """
 
-    selected = state.get("selected_articles", [])
     idx = state.get("current_approval_index", 0)
     approved = state.get("approved_outlines", [])
     feedback = state.get("approval_feedback", "")

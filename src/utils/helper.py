@@ -9,8 +9,6 @@ import jwt
 import yaml
 from bs4 import BeautifulSoup
 from dotenv import load_dotenv
-from sentence_transformers import SentenceTransformer
-
 # Project-specific / local imports
 from crawl4ai.async_configs import BrowserConfig, CrawlerRunConfig, CacheMode
 from langgraph_sdk import get_sync_client
@@ -27,6 +25,7 @@ load_dotenv()
 
 SECRET_KEY= os.getenv("SECRET_KEY")
 ALGORITHM= os.getenv("ALGORITHM")
+REFRESH_SECRET_KEY = os.getenv('REFRESH_SECRET_KEY')
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/user/login")
 
 def loadYamlConfig(file_path="config/config.yaml"):
@@ -36,11 +35,13 @@ def loadYamlConfig(file_path="config/config.yaml"):
     :param file_path: Path to the YAML file.
     :return: Dictionary containing the YAML file contents.
     """
+    try:
+        with open(file_path, 'r') as file:
+            config = yaml.safe_load(file)
 
-    with open(file_path, 'r') as file:
-        config = yaml.safe_load(file)
-    
-    return config
+        return config
+    except Exception as e:
+        return  str(e)
 
 
 def GetBrowserConfig():
@@ -73,14 +74,13 @@ def GetCrawlerRunConfig():
     try:
         config = CrawlerRunConfig(
         cache_mode=CacheMode.ENABLED,
-            word_count_threshold=100,        # Minimum words per content block
-            exclude_external_links=True,    # Remove external links
-            remove_overlay_elements=True,   # Remove popups/modals
-            process_iframes=False,
-            exclude_external_images=True,
-        exclude_social_media_domains=True,
-        only_text=True,           # Only text content
-        # verbose=False,
+        word_count_threshold=100,        # Minimum words per content block
+        exclude_external_links=True,    # Remove external links
+        remove_overlay_elements=True,   # Remove popups/modals
+        process_iframes=False,
+        exclude_external_images=True,
+        exclude_social_media_domains=[],
+        only_text=True,
         )
         return config
     except Exception as e:
@@ -113,6 +113,16 @@ def merge_evaluations(a: Dict[str, List[int]], b: Dict[str, List[int]]) -> Dict[
 
 # Merge Context
 def merge_contexts(existing: List[Dict[str, Any]], new: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """
+        Merge two lists of contexts by 'refine_title', combining their 'docs'.
+
+        Args:
+            existing: First list of context dicts.
+            new: Second list of context dicts.
+
+        Returns:
+            A merged list where docs for the same 'refine_title' are aggregated.
+    """
     merged = {}
 
     for item in (existing or []) + (new or []):
@@ -159,17 +169,17 @@ def clean_blog_content_with_urls(raw_html: str) -> Tuple[str, List[str]]:
     text = raw_html.replace("\\n", "\n")
 
     # Extract URLs from markdown links: (https://...)
-    urls = re.findall(r'\((https?://[^\)]+)\)', text)
+    urls = re.findall(r'\((https?://[^)]+)\)', text)
 
     # Extract URLs from HTML anchor tags: href="https://..."
     urls += re.findall(r'href=[\'"]?([^\'" >]+)', text)
 
     # Remove markdown link syntax but keep anchor text only: [text](url) -> text
-    text = re.sub(r'\[(.*?)\]\((.*?)\)', r'\1', text)
+    text = re.sub(r'\[(.*?)]\((.*?)\)', r'\1', text)
 
     # Parse HTML and extract text only
     soup = BeautifulSoup(text, "html.parser")
-    clean_text = soup.get_text(separator="\n")
+    clean_text = soup.get_text()
 
     # Remove excessive blank lines and trim
     clean_text = re.sub(r'\n\s*\n+', '\n\n', clean_text).strip()
@@ -202,8 +212,6 @@ def splitting_text(text,chunk_size=5000,chunk_overlap=200):
             text (str): The input text to split.
             chunk_size (int, optional): Maximum size of each text chunk. Defaults to 5000.
             chunk_overlap (int, optional): Number of overlapping characters between chunks. Defaults to 200.
-            source (str, optional): Source identifier (e.g., filename, URL, or document ID). Defaults to "unknown".
-
         Returns:
             list: A list of Document objects, where each document contains:
                 - page_content (str): The chunked text content.
@@ -229,7 +237,7 @@ def splitting_text(text,chunk_size=5000,chunk_overlap=200):
             "total_chunks": len(chunks_text),
             "length": len(doc.page_content)
         }
-    print("Spltting Done")
+    print("Splitting Done")
     return chunks_text
 
 
@@ -341,9 +349,9 @@ def verify_token(token: str = Depends(oauth2_scheme)) -> dict:
                 headers={"WWW-Authenticate": "Bearer"},
             )
         return payload
-    except Exception as e:
+    except Exception:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid token",
-            headers={"WWW-Authenticate": "Bearer"},
+            headers={"WWW-Authenticate": "Bearer"}
         )
