@@ -6,7 +6,7 @@ from fastapi import (
     )
 from src.api.tasks.project_task import project_task
 from src.utils.logger import logger
-from src.api.models.projects_model import Projects
+from src.api.models.projects_model import Projects,ProjectFiles, Memories
 from sqlalchemy.orm import Session
 from src.api.database.database import get_db
 from typing import List
@@ -61,47 +61,68 @@ def create_project(
     try:
         logger.info("Create project endpoint called.")
         file_attachments = []
-        projects = []
 
+        # 1️⃣ Handle file uploads
         if files:
             for file in files:
                 ext = os.path.splitext(file.filename)[1]
                 if ext not in [".pdf", ".csv", ".txt"]:
                     logger.warning(f"Unsupported file type: {ext}")
                     raise HTTPException(status_code=400, detail=f"Unsupported file type: {ext}")
-                     
+
                 unique_name = f"{uuid4()}{ext}"
                 file_path = os.path.join(UPLOAD_DIR, unique_name)
 
                 with open(file_path, "wb") as buffer:
                     shutil.copyfileobj(file.file, buffer)
 
-                file_url = f"/static/{unique_name}"  # serve via StaticFiles
+                file_url = f"/static/{unique_name}"
                 filetype = mimetypes.guess_type(file.filename)[0] or "unknown"
 
+                # save file entry in DB
                 file_attachments.append({
                     "filename": file.filename,
                     "url": file_url,
-                    "path": file_path,  # keep path for background task
+                    "path": file_path,
                     "filetype": filetype
                 })
 
-        # create project in DB
+        # 2️⃣ Create Project
         project = Projects(
             title=title,
-            memory_mode=str(memory_mode).lower(),
+            memory_mode=memory_mode,
             instructions=instructions,
-            file=file_attachments if file_attachments else None,
             status="process"
         )
-
         db.add(project)
         db.commit()
         db.refresh(project)
         logger.info(f"Project created with ID: {project.id}")
-        projects.append(project)
 
-        # ✅ add background task
+        # 3️⃣ Save project files in DB
+        for f in file_attachments:
+            file_entry = ProjectFiles(
+                project_id=project.id,
+                file_name=f["filename"],
+                file_type=f["filetype"],
+                file_size=str(os.path.getsize(f["path"])),
+                file_path=f["path"]
+            )
+            db.add(file_entry)
+        db.commit()
+
+        # 4️⃣ Add a memory entry if memory_mode is ON
+        if memory_mode:
+            memory = Memories(
+                project_id=project.id,
+                memory_data={"instructions": instructions},  # or other default memory
+            )
+            db.add(memory)
+            db.commit()
+            db.refresh(memory)
+            logger.info(f"Memory created for project {project.id}")
+
+        # 5️⃣ Start background indexing task
         if file_attachments:
             for f in file_attachments:
                 background_tasks.add_task(project_task, f["path"], project.id)
