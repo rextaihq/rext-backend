@@ -1,13 +1,6 @@
-from typing import Annotated
-from langchain_tavily import TavilySearch
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
-from typing_extensions import TypedDict
-
-from langgraph.graph import StateGraph, START, END
-from langgraph.graph.message import add_messages
-from langgraph.prebuilt import ToolNode, tools_condition
 from src.states.State import AgentState
-from src.model.model import searchModel
+from src.model.model import search_model
 from src.tools.searchTool import get_tools
 
 
@@ -43,7 +36,7 @@ def web_search(state: AgentState):
     print("🔍 Starting web search...")
     selected_articles = state.get("selected_articles", [])
 
-    llm_with_tools = searchModel().bind_tools(get_tools())
+    llm_with_tools = search_model().bind_tools(get_tools())
 
     for article in selected_articles:
         title = article.get("title", "")
@@ -70,7 +63,7 @@ def web_search(state: AgentState):
         human_msg = HumanMessage(content=title)
 
         # Run the LLM search
-        response = searchModel().invoke([system_msg, human_msg])
+        response = llm_with_tools.invoke([system_msg, human_msg])
         print(f"      ↳ Model raw output: {response}")
 
         try:

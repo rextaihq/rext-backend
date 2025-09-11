@@ -10,7 +10,7 @@ from langchain.schema import Document
 def build_vector_store(state: AgentState=None,
     vector_store_path: str="my_faiss_index",
     batch_size: int=32,
-    blog_context: list[Document]=[]
+    blog_context: list[Document]=()
 ):
     
     if state is not None:

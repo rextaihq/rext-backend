@@ -8,7 +8,7 @@ def query_decomposition(state: AgentState):
         print("[QueryDecomposition] Starting query decomposition...")
 
         # Get refine_title
-        refine_title = state.get("refine_title", None)
+        refine_title = state.get("refine_title", "")
         print(f"[QueryDecomposition] refine_title: {refine_title}")
 
         # if not refine_title:

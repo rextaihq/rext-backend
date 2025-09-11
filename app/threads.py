@@ -32,7 +32,6 @@ def thread_tab(client):
         if st.button("Stream Run") and thread_id and assistant_id:
             try:
                 processed_nodes = set()
-                node_containers = {}
 
                 for mode, chunk in client.runs.stream(
                     thread_id=thread_id,

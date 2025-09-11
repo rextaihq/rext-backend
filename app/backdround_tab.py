@@ -32,9 +32,8 @@ def run_background_tab(client):
                 keyword=assisant['config']['keyword'],
                 similarity_threshold=assisant['config']['similarity_threshold']
             )
-            st.write(config.dict())
+            st.write(config.model_dump())
             try:
-                assisant = client.assistants.get(assistant_id=assistant_id)
                 run_data = client.runs.create(
                     thread_id=thread_id,
                     assistant_id=assistant_id,

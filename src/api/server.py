@@ -1,15 +1,11 @@
 # Standard library imports
 import os
-from contextlib import asynccontextmanager
 from typing import Union
 
 # Third-party imports
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from distro import name
 from dotenv import load_dotenv
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
-from sqlalchemy.orm import sessionmaker
 
 # Local application imports
 # from src.api.routes.user_routes import router as user_router

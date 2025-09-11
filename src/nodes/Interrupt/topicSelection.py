@@ -1,8 +1,8 @@
-from langgraph.types import Command, interrupt
+from langgraph.types import interrupt
 from src.states.State import AgentState
 import pandas as pd
 
-def topic_selection(state: AgentState) -> Command | AgentState:
+def topic_selection(state: AgentState) ->AgentState:
         print("Human In Loop...")
         # Extract combined article data
         articles = state.get('filter_articles', [])

@@ -1,5 +1,4 @@
 import streamlit as st
-from langgraph.types import Command
 from src.states.State import URLCONFIF
 
 
@@ -56,7 +55,6 @@ def blog_generator_tab(client):
             st.code(f"Node Output Message:\n{node_output}")
 
         # Let user select which interrupt to respond to
-        interrupt_ids = [i['id'] for i in flattened_interrupts]
         selected_index = st.selectbox("Select Interrupt to respond to:", range(len(flattened_interrupts)), format_func=lambda x: f"{flattened_interrupts[x]['id']}")
         
         selected_interrupt = flattened_interrupts[selected_index]
@@ -72,7 +70,6 @@ def blog_generator_tab(client):
 
     def stream_run(thread_id, assistant_id, checkpoint=None, resume_value=None):
         assisant = client.assistants.get(assistant_id=assistant_id)
-        assinstant_config = assisant['config']
 
         config = URLCONFIF(
             category=assisant['config']['category'],
@@ -83,9 +80,8 @@ def blog_generator_tab(client):
             similarity_threshold=assisant['config']['similarity_threshold']
         )
 
-        st.write(config.dict())
+        st.write(config.model_dump())
         processed_nodes = set()
-        node_containers = {}
 
         for mode, chunk in client.runs.stream(
             thread_id=thread_id,
@@ -123,7 +119,6 @@ def blog_generator_tab(client):
                 interrupt_data = chunk["__interrupt__"][0]
                 st.warning("⚠️ Interrupt")
                 # Extract interrupt data
-                interrupt_id = interrupt_data["id"]
                 name = interrupt_data["value"]["name"]
                 message = interrupt_data["value"]["value"]
 

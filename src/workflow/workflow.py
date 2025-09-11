@@ -16,8 +16,6 @@ def CreateWorkflow()-> RunnableLambda[AgentState, AgentState]:
         Returns:
             AgentState: The final state of the agent after all processing.
         """
-    # try:
-        # define the workflow
         workflow = StateGraph(AgentState)
 
         # --- Add Data Gathering Nodes ---

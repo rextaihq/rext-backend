@@ -1,5 +1,5 @@
 from src.states.State import AgentState
-from langgraph.types import Command, interrupt
+from langgraph.types import Command
 from src.prompts.prompt import blog_post_prompt_template
 from src.states.schemas import BlogArticle
 from src.model.model import load_model

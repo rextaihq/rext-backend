@@ -5,8 +5,6 @@ from sqlalchemy.orm import Session
 from src.api.models.user_models import User
 from src.api.database.database import get_db
 from dotenv import load_dotenv
-import bcrypt
-import jwt
 import  os
 
 load_dotenv()

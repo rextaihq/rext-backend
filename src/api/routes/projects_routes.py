@@ -1,6 +1,6 @@
 from fastapi import (
     APIRouter,Depends,
-    Query,HTTPException,
+    HTTPException,
     UploadFile, File, 
     Form,BackgroundTasks
     )
@@ -9,7 +9,6 @@ from src.utils.logger import logger
 from src.api.models.projects_model import Projects
 from sqlalchemy.orm import Session
 from src.api.database.database import get_db
-from src.api.schema.project_schema import ProjectBase
 from typing import List
 import os, shutil, mimetypes
 from uuid import uuid4

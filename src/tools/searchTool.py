@@ -18,8 +18,8 @@ def search_tool():
     list: A list containing all tool instances.
     """
     try:
-        TAVILY_API_KEY = os.getenv('TAVILY_API_KEY')
-        tool = TavilySearch(max_results=10,include_answer="basic", topic="news",TAVILY_API_KEY = TAVILY_API_KEY)
+        tavily_api_key = os.getenv('TAVILY_API_KEY')
+        tool = TavilySearch(max_results=10,include_answer="basic", topic="news",TAVILY_API_KEY = tavily_api_key)
 
         return tool
     except Exception as e:
@@ -33,9 +33,8 @@ def get_tools()-> list:
     Return the list of tools
     """
 
-    searchTool  = search_tool()
     return [
-        search_tool
+        search_tool()
     ]
 
 if __name__ == "__main__":

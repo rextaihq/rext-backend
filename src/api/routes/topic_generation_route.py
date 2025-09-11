@@ -1,14 +1,13 @@
-from fastapi import APIRouter,Depends,Query,HTTPException
+from fastapi import APIRouter,Depends,HTTPException
 from src.api.schema.topic_schema import TopicGeneration,DeleteTopics
-from langchain_core.messages import SystemMessage,HumanMessage
+from langchain_core.messages import SystemMessage
 from src.model.model import topic_generation_model
 from src.prompts.topic_generation_prompts import topic_generation_prompt
-from src.api.security.auth import get_api_key,api_key_header,API_KEY
+from src.api.security.auth import get_api_key,API_KEY
 from sqlalchemy.orm import Session
 from src.api.models.topic_models import Topics
 from src.api.database.database import get_db
 from src.states.schemas import TopicGenerationList
-from typing import List
 
 router = APIRouter(
     prefix="/topic",
@@ -22,7 +21,7 @@ def get_status():
 
 
 @router.post("/generate-topic")
-def generate_topic(data:TopicGeneration, api_key: str = Depends(get_api_key),db: Session = Depends(get_db)):
+def generate_topic(data:TopicGeneration, api_key: str = Depends(get_api_key)):
     if api_key != API_KEY:
         return {"error": "Unauthorized"}
     # Dummy response matching GeneratedTopic interface
@@ -73,7 +72,7 @@ def save_topic(data: TopicGenerationList, api_key: str = Depends(get_api_key), d
             channel_fit=topic.channel_fit,
             audience_fit=topic.audience_fit,
             why_it_works=topic.why_it_works,
-            scores=topic.scores.dict() if hasattr(topic.scores, "dict") else topic.scores,
+            scores=topic.scores.model_dump() if hasattr(topic.scores, "dict") else topic.scores,
             tags=topic.tags
         )
         db.add(db_topic)
