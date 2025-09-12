@@ -13,19 +13,10 @@ You are an AI assistant that generates high-quality, creative, and relevant cont
 - Wizard Mode: {wizardMode}
 - Industry: {industry}
 - Industry (Other): {industry_other}
-- Content Type: {content_type}
-- Content Type (Other): {content_type_other}
-- Platform: {platform}
-- Platform (Other): {platform_other}
 - subject: {subject}
 - Audience: {audience}
 - Purpose: {purpose}
 - Purpose (Other): {purpose_other}
-- Tone: {tone}
-- Tone (Other): {tone_other}
-- Notes: {notes}
-- Content Timing Preference: {content_timing_preference}
-- Content Originality Preference: {content_originality_preference}
 - Number of Topics Required: {num_topics}
 - Timestamp: {timestamp}
 
