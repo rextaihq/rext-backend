@@ -1,26 +1,30 @@
-# Standard library imports
+# === Standard library imports ===
 import os
 import re
-from typing import Dict, List, Tuple,Any
+import uuid
 import bcrypt
 import jwt
+from datetime import datetime, timedelta
+from typing import Any, Dict, List, Tuple
 
-# Third-party imports
+# === Third-party imports ===
 import yaml
 from bs4 import BeautifulSoup
 from dotenv import load_dotenv
-# Project-specific / local imports
-from crawl4ai.async_configs import BrowserConfig, CrawlerRunConfig, CacheMode
-from langgraph_sdk import get_sync_client
-from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_huggingface import HuggingFaceEmbeddings
-from langchain_community.vectorstores import FAISS
-from langchain.retrievers.multi_query import MultiQueryRetriever
-from src.model.model import load_model
-# from jwt import JWTError
-from datetime import datetime, timedelta
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
+from crawl4ai import AsyncWebCrawler
+from crawl4ai.async_configs import BrowserConfig, CrawlerRunConfig, CacheMode
+from langchain_core.documents import Document
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+from langchain.retrievers.multi_query import MultiQueryRetriever
+from pydantic import HttpUrl
+
+# === Project-specific imports ===
+from src.model.model import load_model
+from src.utils.splitter import split_data
+from src.utils.vector_store import load_vector_store
+
 load_dotenv()
 
 SECRET_KEY= os.getenv("SECRET_KEY")
@@ -87,15 +91,6 @@ def GetCrawlerRunConfig():
         print(f"[ERROR] Failed to load crawler run configuration: {e}")
         return None
 
-
-def get_client():
-    # Initialize LangGraph client
-    client = get_sync_client(
-        url="http://localhost:8123/",
-        api_key=os.getenv('LANGSMITH_API_KEY')
-    )
-    return client
-
 # merge evulation
 def merge_evaluations(a: Dict[str, List[int]], b: Dict[str, List[int]]) -> Dict[str, List[int]]:
     """
@@ -134,19 +129,48 @@ def merge_contexts(existing: List[Dict[str, Any]], new: List[Dict[str, Any]]) ->
 
     return [{"refine_title": t, "docs": d} for t, d in merged.items()]
 
-def get_hf_embedding():
-    """Return a HuggingFace embedding model for retrieval tasks."""
-    try:
-        return HuggingFaceEmbeddings(
-            model_name="BAAI/bge-small-en",
-            model_kwargs={"device": 'cpu'}
-        )
-    except RuntimeError:
-        # fallback to CPU if CUDA fails
-        return HuggingFaceEmbeddings(
-            model_name="BAAI/bge-small-en",
-            model_kwargs={"device": "cpu"}
-        )
+async def web_page_scraper(urls: List[HttpUrl]) -> Tuple[List[Document], list]:
+    """
+    Asynchronously crawls given URLs and returns LangChain Documents with extracted content.
+
+    Args:
+        url (List[HttpUrl]): List of URLs to crawl.
+
+    Returns:
+        Tuple[List[Document], list]: (Chunked Documents, Raw crawl results)
+    """
+
+    browser_config = GetBrowserConfig()
+    run_config = GetCrawlerRunConfig()
+
+    # if len(url)
+    async with AsyncWebCrawler(config=browser_config) as crawler:
+        results = await crawler.arun(url=urls, config=run_config)
+
+    documents = []
+    for result in results:
+        if result.success:
+            # Crawl4AI already gives some metadata
+            doc = Document(
+                page_content=result.markdown,
+                metadata={
+
+                    "id": str(uuid.uuid4()),
+                    "url": result.url,
+                    "title": result.metadata.get("title", "No title found"),
+                    "description": result.metadata.get("description", "No description found"),
+                    "keywords": result.metadata.get("keywords", "No keywords found"),
+                    "summary": result.metadata.get("summary", "No summary found"),
+                }
+            )
+            documents.append(doc)
+        else:
+            print(f"Scraping failed for {result.url}: {result.error_message}")
+
+    # Split into chunks
+    chunks_data = split_data(documents)
+
+    return chunks_data, results
 
 # Content Cleaning
 def clean_blog_content_with_urls(raw_html: str) -> Tuple[str, List[str]]:
@@ -174,7 +198,7 @@ def clean_blog_content_with_urls(raw_html: str) -> Tuple[str, List[str]]:
     # Extract URLs from HTML anchor tags: href="https://..."
     urls += re.findall(r'href=[\'"]?([^\'" >]+)', text)
 
-    # Remove markdown link syntax but keep anchor text only: [text](url) -> text
+    # Remove link syntax but keep anchor text only: [text](url) -> text
     text = re.sub(r'\[(.*?)]\((.*?)\)', r'\1', text)
 
     # Parse HTML and extract text only
@@ -204,60 +228,6 @@ def clean_blog_content_with_urls(raw_html: str) -> Tuple[str, List[str]]:
     return clean_text, unique_urls
 
 
-def splitting_text(text,chunk_size=5000,chunk_overlap=200):
-    """
-        Splits a long text into smaller chunks for efficient retrieval and embedding.
-
-        Args:
-            text (str): The input text to split.
-            chunk_size (int, optional): Maximum size of each text chunk. Defaults to 5000.
-            chunk_overlap (int, optional): Number of overlapping characters between chunks. Defaults to 200.
-        Returns:
-            list: A list of Document objects, where each document contains:
-                - page_content (str): The chunked text content.
-                - metadata (dict): Metadata including:
-                    - "source": Source identifier of the text.
-                    - "chunk_id": Index of the chunk.
-                    - "total_chunks": Total number of chunks created.
-                    - "length": Character length of the chunk.
-    """
-    print("Splitting.....")
-    text_splitter = RecursiveCharacterTextSplitter(
-        chunk_size=chunk_size,
-        chunk_overlap=chunk_overlap,
-        length_function=len,
-        is_separator_regex=False,
-    )
-    chunks_text = text_splitter.create_documents([text])
-
-    # Add metadata
-    for idx, doc in enumerate(chunks_text):
-        doc.metadata = {
-            "chunk_id": idx,
-            "total_chunks": len(chunks_text),
-            "length": len(doc.page_content)
-        }
-    print("Splitting Done")
-    return chunks_text
-
-
-def load_vector_store(file_path: str = 'my_faiss_index3'):
-    """
-    Load a FAISS vector store from a local file.
-
-    Args:
-        file_path (str, optional): Path to the saved FAISS index directory.
-                                   Defaults to 'my_faiss_index3'.
-
-    Returns:
-        FAISS: A loaded FAISS vector store with embeddings.
-    """
-    vector_store = FAISS.load_local(
-        file_path, get_hf_embedding(), allow_dangerous_deserialization=True
-    )
-    return vector_store
-
-
 def get_multi_query():
     """
     Create a MultiQueryRetriever using an LLM and a FAISS vector store.
@@ -274,7 +244,7 @@ def get_multi_query():
         retriever=load_vector_store().as_retriever(), llm=load_model()
     )
 
-
+# Encrypt Password
 def hash_password(password: str) -> str:
     """
     Hashes a plain text password using bcrypt.
@@ -287,6 +257,7 @@ def hash_password(password: str) -> str:
     """
     return bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
 
+# verify password
 def verify_password(password: str, hashed_password: str) -> bool:
     """
     Verifies that a plain text password matches the hashed password.
@@ -300,7 +271,7 @@ def verify_password(password: str, hashed_password: str) -> bool:
     """
     return bcrypt.checkpw(password.encode('utf-8'), hashed_password.encode('utf-8'))
 
-
+# Create Access Token
 def create_access_token(data: dict, expires_delta: timedelta = timedelta(hours=24)) -> str:
     """
     Creates a JWT access token.
@@ -318,6 +289,7 @@ def create_access_token(data: dict, expires_delta: timedelta = timedelta(hours=2
     token = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return token
 
+# Refresh token
 def create_refresh_token(data: dict, expires_delta: timedelta = timedelta(days=7)) -> str:
     """Creates a long-lived refresh token."""
     to_encode = data.copy()
@@ -325,7 +297,7 @@ def create_refresh_token(data: dict, expires_delta: timedelta = timedelta(days=7
     to_encode.update({"exp": expire})
     return jwt.encode(to_encode, REFRESH_SECRET_KEY, algorithm=ALGORITHM)
 
-
+# verify password
 def verify_token(token: str = Depends(oauth2_scheme)) -> dict:
     """
     Verifies the JWT token and decodes the payload.

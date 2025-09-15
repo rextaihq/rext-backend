@@ -1,6 +1,6 @@
 from langchain_community.document_loaders import PyMuPDFLoader, CSVLoader
 from sqlalchemy.orm import Session
-from src.utils.helper import splitting_text
+from src.utils.splitter import split_data
 from src.nodes.vectorStore.buildVectorStore import build_vector_store
 from src.api.database.database import get_db
 from src.api.models.projects_model import Projects
@@ -23,11 +23,7 @@ def project_task(file_path: str, project_id):
             raise ValueError("No documents loaded")
 
         # split into chunks
-        chunks_data = splitting_text(
-            text="".join([doc.page_content for doc in documents]),
-            chunk_size=1000,
-            chunk_overlap=200
-        )
+        chunks_data = split_data(documents=documents,chunk_size=1000,overlap=200)
 
         # add to vector store
         build_vector_store(blog_context=chunks_data)

@@ -1,5 +1,5 @@
 from src.states.State import AgentState
-from src.utils.helper import get_hf_embedding
+from src.utils.embedding import get_hf_embedding
 from tqdm import tqdm
 from uuid import uuid4
 import os, faiss
