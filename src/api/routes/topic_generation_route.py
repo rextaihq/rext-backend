@@ -25,7 +25,7 @@ def generate_topic(data:TopicGeneration, api_key: str = Depends(get_api_key)):
     if api_key != API_KEY:
         return {"error": "Unauthorized"}
     # Dummy response matching GeneratedTopic interface
-    print("Sending Dummy Response..")
+    print("Sending Response..")
     # load the model
     model = topic_generation_model()
 
