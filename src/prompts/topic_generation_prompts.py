@@ -34,20 +34,23 @@ For each topic, provide:
 Format the output as **JSON array** of objects with this structure:
 [
   {{
-    "id": "topic_001",
     "title": "Example Title",
     "angle": "Unique angle",
-    "description": "Optional description",
+    "description": "A comprehensive explanation of what this content will cover and why it's valuable",
     "channel_fit": ["blog", "social-media"],
     "audience_fit": ["developers", "tech enthusiasts"],
     "why_it_works": "Reason why this is a strong idea",
     "scores": {{
       "relevance": 0.95,
-      "freshness": 0.90,
-      "novelty": 0.85
+      "seo_potential": 0.88,
+      "trend_level": 0.92,
+      "uniqueness": 0.75,
+      "reader_interest": 0.90,
+      "actionable_potential": 0.95,
+      "brand_alignment": 0.85,
+      "controversy": 0.15
     }},
-    "tags": ["AI", "Robotics", "Healthcare"],
-    "is_saved": false
+    "tags": ["AI", "Robotics", "Healthcare"]
   }}
 ]
 """

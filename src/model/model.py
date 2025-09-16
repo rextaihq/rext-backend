@@ -1,7 +1,7 @@
 from langchain.chat_models import init_chat_model
 from src.states.schemas import RewriterTitle, QueryDecomposer, Evaluation
 from sentence_transformers import SentenceTransformer
-from src.states.schemas import TopicGenerationList
+from src.states.schemas import BasicTopicGenerationList
 
 def load_model():
     """
@@ -17,17 +17,17 @@ def load_model():
 
 def topic_generation_model():
     """
-    Initializes a chat model and enhances it to return structured output 
-    based on the provided Pydantic schema (`TopicGeneration`).
+    Initializes a chat model and enhances it to return structured output
+    based on the provided Pydantic schema (`BasicTopicGeneration`).
 
-    This is useful for tasks where the model's output must follow a specific 
+    This is useful for tasks where the model's output must follow a specific
     format, such as form-based responses, evaluations, or other structured data.
 
     Returns:
-        BaseStructuredChatModel: A chat model that returns outputs conforming to the `TopicGeneration` schema.
+        BaseStructuredChatModel: A chat model that returns outputs conforming to the `BasicTopicGeneration` schema.
     """
     model = load_model()
-    model_with_parser = model.with_structured_output(TopicGenerationList)
+    model_with_parser = model.with_structured_output(BasicTopicGenerationList)
     return model_with_parser
 
 def structure_model():
