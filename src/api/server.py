@@ -10,7 +10,7 @@ from dotenv import load_dotenv
 # Local application imports
 # from src.api.routes.user_routes import router as user_router
 from src.api.routes.topic_generation_route import router as topic_router
-from src.api.routes.projects_routes import router as project_router
+from src.api.routes.workspace_route import router as workspace_router
 from src.api.routes.knowledge.knowledge_routes import router as knowledge_router
 from src.api.routes.knowledge.web_knowledge_route import router as web_router
 from src.api.routes.knowledge.file_knowledge_route import router as file_router
@@ -51,10 +51,10 @@ app.add_middleware(
     allow_headers=["*"]
 )
 
-# Fixing he issue async issue only in workflow routes
+# Fixing the issue async issue only in workflow routes
 # app.include_router(user_router, prefix="/api", tags=["user"])
 app.include_router(topic_router, prefix="/api")
-app.include_router(project_router, prefix="/api")
+app.include_router(workspace_router,prefix="/api")
 app.include_router(knowledge_router,prefix="/api")
 app.include_router(web_router,prefix="/api")
 app.include_router(file_router,prefix="/api")

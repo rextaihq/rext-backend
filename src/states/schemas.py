@@ -2,6 +2,11 @@ from typing import List, Optional
 from pydantic import BaseModel, Field
 
 # =========Topic Generation Schema=========
+class Scores(BaseModel):
+    relevance: float = Field(..., description="How relevant the topic is")
+    novelty: float = Field(..., description="How unique the topic is")
+    clarity: float = Field(..., description="How clear the topic is")
+    
 class BasicTopicGeneration(BaseModel):
     """Basic topic structure for AI generation before enrichment"""
     title: str = Field(..., description="Main headline for the content")
@@ -11,7 +16,7 @@ class BasicTopicGeneration(BaseModel):
     audience_fit: List[str] = Field(..., description="Target audience segments")
     why_it_works: str = Field(..., description="Justification for why this topic is valuable")
     tags: List[str] = Field(..., description="Categorization tags")
-    scores: dict = Field(..., description="Basic scoring from AI generation")
+    scores: Scores
 
 class BasicTopicGenerationList(BaseModel):
     topics: List[BasicTopicGeneration]

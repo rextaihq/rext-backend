@@ -140,13 +140,15 @@ async def web_page_scraper(urls: List[HttpUrl]) -> Tuple[List[Document], list]:
         Tuple[List[Document], list]: (Chunked Documents, Raw crawl results)
     """
 
+    print("Scrapping Stattes")
     browser_config = GetBrowserConfig()
     run_config = GetCrawlerRunConfig()
 
     # if len(url)
+    urls = [str(url) for url in urls]
     async with AsyncWebCrawler(config=browser_config) as crawler:
-        results = await crawler.arun(url=urls, config=run_config)
-
+        results = await crawler.arun(url=urls[0], config=run_config)
+    print("DOne")
     documents = []
     for result in results:
         if result.success:
