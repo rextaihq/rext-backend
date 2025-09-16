@@ -8,6 +8,7 @@ structured data required by the return-response.md specification.
 from typing import List, Dict, Any
 from src.states.schemas import (
     BasicTopicGeneration,
+    BasicTopicScore,
     TopicGeneration,
     TopicScore,
     SuggestedDefaults,
@@ -55,18 +56,32 @@ class TopicEnrichmentService:
         # Generate unique ID if not provided
         topic_id = f"topic_{str(uuid.uuid4())[:8]}"
 
-        # Convert scores dict to TopicScore object
-        scores_dict = basic_topic.get("scores", {})
-        topic_scores = TopicScore(
-            relevance=scores_dict.get("relevance", 0.8),
-            seo_potential=scores_dict.get("seo_potential", 0.8),
-            trend_level=scores_dict.get("trend_level", 0.8),
-            uniqueness=scores_dict.get("uniqueness", 0.8),
-            reader_interest=scores_dict.get("reader_interest", 0.8),
-            actionable_potential=scores_dict.get("actionable_potential", 0.8),
-            brand_alignment=scores_dict.get("brand_alignment", 0.8),
-            controversy=scores_dict.get("controversy", 0.2)
-        )
+        # Convert BasicTopicScore to full TopicScore object
+        basic_scores = basic_topic.get("scores")
+        if isinstance(basic_scores, dict):
+            # Handle dict format (legacy)
+            topic_scores = TopicScore(
+                relevance=basic_scores.get("relevance", 0.8),
+                seo_potential=basic_scores.get("seo_potential", 0.8),
+                trend_level=basic_scores.get("trend_level", 0.8),
+                uniqueness=basic_scores.get("uniqueness", 0.8),
+                reader_interest=basic_scores.get("reader_interest", 0.8),
+                actionable_potential=basic_scores.get("actionable_potential", 0.8),
+                brand_alignment=basic_scores.get("brand_alignment", 0.8),
+                controversy=basic_scores.get("controversy", 0.2)
+            )
+        else:
+            # Handle BasicTopicScore object
+            topic_scores = TopicScore(
+                relevance=basic_scores.relevance,
+                seo_potential=basic_scores.seo_potential,
+                trend_level=basic_scores.trend_level,
+                uniqueness=basic_scores.uniqueness,
+                reader_interest=basic_scores.reader_interest,
+                actionable_potential=basic_scores.actionable_potential,
+                brand_alignment=basic_scores.brand_alignment,
+                controversy=basic_scores.controversy
+            )
 
         # Create suggested defaults based on input parameters and topic content
         suggested_defaults = self._create_suggested_defaults(basic_topic, input_params)
