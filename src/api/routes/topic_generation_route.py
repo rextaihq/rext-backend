@@ -7,8 +7,9 @@ from src.api.security.auth import get_api_key,API_KEY
 from sqlalchemy.orm import Session
 from src.api.models.topic_models import Topics
 from src.api.database.database import get_db
-from src.states.schemas import TopicGenerationList, SaveTopicRequestList
+from src.states.schemas import SaveTopicRequestList
 from src.services.topic_enrichment_service import TopicEnrichmentService
+import uuid
 
 router = APIRouter(
     prefix="/topic",
@@ -61,7 +62,7 @@ def generate_topic(data:TopicGenerationInput, api_key: str = Depends(get_api_key
         basic_topic_dict = basic_topic.model_dump() if hasattr(basic_topic, 'model_dump') else basic_topic
 
         # Add ID and suggested defaults for frontend display
-        basic_topic_dict["id"] = f"topic_{str(__import__('uuid').uuid4())[:8]}"
+        basic_topic_dict["id"] = f"topic_{str(uuid.uuid4())[:8]}"
         basic_topic_dict["suggested_defaults"] = enrichment_service._create_suggested_defaults(
             basic_topic_dict,
             data.model_dump()
@@ -96,7 +97,7 @@ def save_topic(data: SaveTopicRequestList, api_key: str = Depends(get_api_key), 
             "audience_fit": save_topic_data.audience_fit,
             "why_it_works": save_topic_data.why_it_works,
             "tags": save_topic_data.tags,
-            "scores": save_topic_data.scores
+            "scores": save_topic_data.scores  # This is now a BasicTopicScore object
         }
 
         # Use input params if provided, otherwise use defaults
