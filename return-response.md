@@ -133,7 +133,7 @@ This response structure is designed for **non-technical users** (marketers, cont
 
     // Backend research configuration (hidden from users, used internally)
     "internal_research_config": {{
-      "enableSimilarArticles": true, // Whether to fetch similar content (based on novelty score)
+      "enableSimilarArticles": true, // Whether to fetch similar content (based on uniqueness score)
       "maxSimilarArticles": 4, // How many similar articles to analyze
       "researchDepth": "Comprehensive", // Basic/Comprehensive (based on topic complexity)
       "includeCompetitorAnalysis": true, // Whether to analyze competing content

@@ -1,7 +1,7 @@
 from typing import List, Optional
 from pydantic import BaseModel
 
-class TopicGeneration(BaseModel):
+class TopicGenerationInput(BaseModel):
     wizardMode: str
     industry: str
     industry_other: Optional[str] = None
