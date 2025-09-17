@@ -23,7 +23,7 @@ from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from src.api.schemas.response_schemas import (
+from src.api.schema.response_schemas import (
     ErrorResponse,
     ErrorCode,
     ErrorSeverity,

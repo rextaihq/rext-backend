@@ -25,7 +25,7 @@ from fastapi import Request, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
-from src.api.schemas.response_schemas import (
+from api.schema.response_schemas import (
     SuccessResponse,
     ErrorResponse,
     ErrorCode,

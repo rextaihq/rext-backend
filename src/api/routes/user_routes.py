@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from src.api.models.user_models import User
 from src.api.database.database import get_db
 from src.utils.response_utils import success, error, created, unauthorized
-from src.api.schemas.response_schemas import ErrorCode, ErrorSeverity
+from src.api.schema.response_schemas import ErrorCode, ErrorSeverity
 from src.api.middleware.exceptions import (
     DuplicateResourceException,
     WrextAuthenticationException,

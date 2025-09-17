@@ -10,7 +10,7 @@ from src.api.database.database import get_db
 from src.states.schemas import SaveTopicRequestList
 from src.services.topic_enrichment_service import TopicEnrichmentService
 from src.utils.response_utils import success, error, unauthorized, not_found, no_content
-from src.api.schemas.response_schemas import ErrorCode, ErrorSeverity
+from src.api.schema.response_schemas import ErrorCode, ErrorSeverity
 from src.api.middleware.exceptions import (
     TopicGenerationException,
     ResourceNotFoundException,
@@ -384,7 +384,8 @@ def delete_topics(
         topics = db.query(Topics).filter(Topics.id.in_(topic_id_list)).all()
 
         if not topics:
-            raise ResourceNotFoundException(
+            return ResourceNotFoundException(
+                status_code=400,
                 message="No topics found for the provided IDs",
                 resource_type="topics",
                 context={"requested_ids": topic_id_list}
@@ -418,9 +419,6 @@ def delete_topics(
             request=request,
             message=f"Successfully deleted {deleted_count} topics"
         )
-
-    except (ResourceNotFoundException, WrextAuthenticationException):
-        raise
     except Exception as e:
         print(f"Error deleting topics: {e}")
         db.rollback()

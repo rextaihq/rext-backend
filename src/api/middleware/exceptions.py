@@ -19,7 +19,7 @@ Usage:
 
 from typing import Any, Dict, List, Optional
 
-from src.api.schemas.response_schemas import ErrorCode, ErrorSeverity
+from src.api.schema.response_schemas import ErrorCode, ErrorSeverity
 
 
 class WrextAPIException(Exception):
