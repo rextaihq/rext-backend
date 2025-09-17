@@ -242,6 +242,72 @@ def save_topic(
         )
 
 
+@router.get("/get-topic/{topic_id}")
+def get_topic(
+    topic_id: str,
+    request: Request,
+    api_key: str = Depends(get_api_key),
+    db: Session = Depends(get_db)
+):
+    if api_key != API_KEY:
+        raise WrextAuthenticationException(
+            message="Invalid API key provided",
+            context={"api_key_provided": bool(api_key)}
+        )
+
+    try:
+        print(f"Fetching topic with ID: {topic_id}")
+        topic = db.query(Topics).filter(Topics.id == topic_id).first()
+
+        if not topic:
+            raise ResourceNotFoundException(
+                message=f"Topic with ID '{topic_id}' not found",
+                resource_type="topic",
+                context={"topic_id": topic_id}
+            )
+
+        print(f"Found topic: {topic.title}")
+
+        # Convert topic to dict format for consistent response
+        topic_data = {
+            "id": topic.id,
+            "title": topic.title,
+            "angle": topic.angle,
+            "description": topic.description,
+            "channel_fit": topic.channel_fit,
+            "audience_fit": topic.audience_fit,
+            "why_it_works": topic.why_it_works,
+            "scores": topic.scores,
+            "tags": topic.tags,
+            "suggested_defaults": topic.suggested_defaults,
+            "goal_alignment": topic.goal_alignment,
+            "content_guidance": topic.content_guidance,
+            "audience_insights": topic.audience_insights,
+            "internal_research_config": topic.internal_research_config,
+            "user_settings": topic.user_settings,
+            "created_at": topic.created_at.isoformat() if hasattr(topic, 'created_at') else None
+        }
+
+        return success(
+            data=topic_data,
+            request=request,
+            message=f"Topic '{topic.title}' retrieved successfully"
+        )
+
+    except (ResourceNotFoundException, WrextAuthenticationException):
+        raise
+    except Exception as e:
+        print(f"Error fetching topic {topic_id}: {e}")
+        return error(
+            message="Failed to retrieve topic",
+            code=ErrorCode.INTERNAL_SERVER_ERROR,
+            status_code=500,
+            severity=ErrorSeverity.HIGH,
+            context={"error_details": str(e), "topic_id": topic_id},
+            request=request
+        )
+
+
 @router.get("/get-topics")
 def get_topics(
     request: Request,
