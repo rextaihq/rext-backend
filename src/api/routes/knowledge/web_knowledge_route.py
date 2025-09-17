@@ -1,5 +1,5 @@
 from fastapi import (
-    APIRouter, Depends,
+    APIRouter, Depends, Request,
     HTTPException,
     BackgroundTasks
 )
@@ -7,7 +7,7 @@ from pydantic import HttpUrl
 from src.utils.logger import logger
 # from src.api.models.knowledge_model import KnowledgeModel, Website
 from src.api.tasks.knowledge_task import scrape_web_content
-
+from src.utils.response_utils import success
 from sqlalchemy.orm import Session
 from src.api.database.database import get_db
 
@@ -20,9 +20,13 @@ router = APIRouter(
 
 # Health Check
 @router.get("/")
-def get_status():
-    logger.info("web Knowledge Route health check called.")
-    return {"status": "Web Knowledge Route is working!"}
+def get_status(request: Request):
+    logger.info("Web Knowledge Route health check called.")
+    return success(
+        data={"status": "operational", "service": "web_knowledge_service"},
+        request=request,
+        message="Web Knowledge Route is working!"
+    )
 
 
 # # CREATE

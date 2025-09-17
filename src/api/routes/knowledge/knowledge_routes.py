@@ -1,5 +1,5 @@
 from fastapi import (
-    APIRouter, Depends,
+    APIRouter, Depends, Request,
     HTTPException,
     BackgroundTasks
 )
@@ -8,6 +8,7 @@ from src.api.schema.knowledge_schema import KnowledgeSchema
 from src.api.models.knowledge_model import Website
 from sqlalchemy.orm import Session
 from src.api.database.database import get_db
+from src.utils.response_utils import success
 from typing import List
 from src.api.tasks.knowledge_task import scrape_web_content
 
@@ -20,9 +21,13 @@ router = APIRouter(
 
 # Health Check
 @router.get("/")
-def get_status():
+def get_status(request: Request):
     logger.info("Knowledge Route health check called.")
-    return {"status": "Knowledge Route is working!"}
+    return success(
+        data={"status": "operational", "service": "knowledge_service"},
+        request=request,
+        message="Knowledge Route is working!"
+    )
 
 
 # # CREATE
