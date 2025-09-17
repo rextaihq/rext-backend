@@ -3,7 +3,6 @@ from sqlalchemy.orm import Session
 from src.utils.splitter import split_data
 from src.nodes.vectorStore.buildVectorStore import build_vector_store
 from src.api.database.database import get_db
-from src.api.models.projects_model import Projects
 
 def project_task(file_path: str, project_id):
     db_gen = get_db()
@@ -27,14 +26,7 @@ def project_task(file_path: str, project_id):
 
         # add to vector store
         build_vector_store(blog_context=chunks_data)
-
-        # ✅ update project status in DB
-        project = db.query(Projects).filter(Projects.id == project_id).first()
-        if project:
-            project.status = "indexed"
-            db.commit()
-            db.refresh(project)
-
+       
     except Exception as e:
         # mark project as failed
         project = db.query(Projects).filter(Projects.id == project_id).first()

@@ -164,4 +164,3 @@ def delete_web_knowledge(workspace_id: str, web_id: str, request: Request, db: S
     except Exception as e:
         logger.error(f"Error deleting knowledge: {e}")
         raise HTTPException(status_code=500, detail="Internal Server Error")
-    
