@@ -20,6 +20,7 @@ from src.api.middleware.exceptions import (
     WrextExternalServiceException,
     WrextValidationException
 )
+from datetime import datetime, timezone
 
 
 router = APIRouter(
@@ -156,6 +157,7 @@ async def create_workspace(
             title=data.title,
             description=getattr(data, "description", None),
             url=str(data.url),
+            created_at=datetime.now(timezone.utc)
         )
         db.add(workspace)
         db.commit()
@@ -213,7 +215,7 @@ async def create_workspace(
             "title": workspace.title,
             "description": workspace.description,
             "url": workspace.url,
-            "created_at": workspace.created_at.isoformat() if hasattr(workspace, 'created_at') else None
+            # "created_at": workspace.created_at.isoformat() if workspace.created_at else None
         }
 
         return created(
@@ -239,7 +241,7 @@ async def create_workspace(
 
 
 # Delete
-@router.delete("/{workspace_id}")
+@router.delete("/delete/{workspace_id}")
 def delete_workspace(
     workspace_id: str,
     request: Request,
@@ -261,7 +263,12 @@ def delete_workspace(
         db.commit()
         logger.info(f"Workspace deleted: {workspace_id}")
 
-        return no_content(request=request)
+        # return no_content(request=request)
+        return success(
+            data={},
+            request=request,
+            message="Workspace deleted successfully"
+        )
 
     except ResourceNotFoundException:
         raise
@@ -279,7 +286,7 @@ def delete_workspace(
 
 
 # update
-@router.put("/{workspace_id}")
+@router.put("/update/{workspace_id}")
 def update_workspace(
     workspace_id: str,
     data: WorkspaceSchema,
@@ -326,7 +333,7 @@ def update_workspace(
             "title": workspace.title,
             "description": workspace.description,
             "url": workspace.url,
-            "updated_at": workspace.updated_at.isoformat() if hasattr(workspace, 'updated_at') else None
+            # "updated_at": workspace.updated_at.isoformat() if hasattr(workspace, 'updated_at') else None
         }
 
         return success(

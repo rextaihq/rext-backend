@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String,Text
+from sqlalchemy import Column, String,Text,DateTime, func   
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 from src.api.database.database import Base
@@ -11,6 +11,7 @@ class WorkspaceModel(Base):
     title = Column(String, nullable=False, unique=True)
     description = Column(Text, nullable=True)
     url = Column(String, nullable=False)
+    created_at = Column(DateTime(timezone=True), nullable=False)
 
     brand_voices = relationship("BrandVoice", back_populates="workspace", cascade="all, delete-orphan")
     websites = relationship("Website", back_populates="workspace", cascade="all, delete-orphan")
