@@ -1,6 +1,6 @@
 from fastapi import (
     APIRouter, Depends, Request,
-    HTTPException,Body
+    HTTPException
 )
 from src.utils.logger import logger
 from src.api.models.knowledge_model import TextKnowledge
@@ -9,12 +9,9 @@ from src.api.schema.knowledge_schema import TextKnowledgeSchema
 from src.utils.response_utils import success
 from sqlalchemy.orm import Session
 from src.api.database.database import get_db
-from pathlib import Path
-import os
-
 
 router = APIRouter(
-    prefix="/workspace/file",
+    prefix="/workspace/text",
     tags=["file_knowledge"],
     responses={404: {"description": "Not found"}},
 )
@@ -42,13 +39,18 @@ def get_file_knowledges(request: Request, db: Session = Depends(get_db)):
         raise HTTPException(status_code=500, detail="Internal Server Error")
     
 # get file knowledge by ID
-@router.get("/{file_id}")
-def get_file_knowledge(file_id: str, request: Request, db: Session = Depends(get_db)):
+@router.get("/{workspace_id}/{text_id}")
+def get_file_knowledge(
+        text_id: str,
+        workspace_id:str,
+        db: Session = Depends(get_db)
+):
     try:
-        logger.info(f"Fetching file knowledge with ID: {file_id}")
-        knowledge = db.query(TextKnowledge).filter(TextKnowledge.id == file_id).first()
+        logger.info(f"Fetching file knowledge with ID: {text_id}")
+        knowledge = db.query(TextKnowledge).filter(TextKnowledge.id == text_id,
+                                                   workspace_id==workspace_id).first()
         if not knowledge:
-            raise HTTPException(status_code=404, detail=f"File Knowledge with ID {file_id} not found")
+            raise HTTPException(status_code=404, detail=f"File Knowledge with ID {text_id} not found")
         return success(data=knowledge.to_dict())
     except HTTPException as e:
         raise e
@@ -127,7 +129,7 @@ def update_text_knowledge(
         text_response = {
             "text_id":str(text_knowledge.id),
             "worspace_id":str(text_knowledge.workspace_id),
-            "message":"text Knowledge add successfull"
+            "message":"text Knowledge add successful"
         } 
         return success(
             data=text_response,

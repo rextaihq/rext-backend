@@ -134,13 +134,13 @@ async def web_page_scraper(urls: List[HttpUrl]) -> Tuple[List[Document], list]:
     Asynchronously crawls given URLs and returns LangChain Documents with extracted content.
 
     Args:
-        url (List[HttpUrl]): List of URLs to crawl.
+        urls (List[HttpUrl]): List of URLs to crawl.
 
     Returns:
         Tuple[List[Document], list]: (Chunked Documents, Raw crawl results)
     """
 
-    print("Scrapping Stattes")
+    print("Scrapping States")
     browser_config = GetBrowserConfig()
     run_config = GetCrawlerRunConfig()
 
@@ -180,7 +180,7 @@ def clean_blog_content_with_urls(raw_html: str) -> Tuple[str, List[str]]:
     Cleans raw HTML/markdown content by:
     - Converting escaped newlines to real newlines
     - Extracting and returning unique non-media URLs from markdown and HTML anchors
-    - Removing markdown link syntax but keeping anchor text
+    - Removing Markdown link syntax but keeping anchor text
     - Stripping HTML tags
     - Removing excessive whitespace
 

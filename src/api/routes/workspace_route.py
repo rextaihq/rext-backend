@@ -1,18 +1,17 @@
 from fastapi import (
     APIRouter, Depends, Request,
-    HTTPException,
 )
 from src.utils.logger import logger
 from src.api.schema.workspace_schema import WorkspaceSchema
 from src.api.models.workspace_model import WorkspaceModel
-from src.nodes.vectorStore.buildVectorStore import build_vector_store
+from src.utils.vector_store import add_to_vector_store,delete_vectors
 from src.api.models.knowledge_model import BrandVoice
 from src.api.schema.knowledge_schema import BrandSchema
 from src.model.model import load_model
 from sqlalchemy.orm import Session
 from src.api.database.database import get_db
 from src.utils.helper import web_page_scraper
-from src.utils.response_utils import success, error, created, not_found, conflict, no_content
+from src.utils.response_utils import success, error, created
 from src.api.schema.response_schemas import ErrorCode, ErrorSeverity
 from src.api.middleware.exceptions import (
     DuplicateResourceException,
@@ -167,7 +166,14 @@ async def create_workspace(
         # Push scraped chunks into vector store
         try:
             logger.info(f"Inserting {len(chunks)} chunks into vector store for {result.url}")
-            build_vector_store(blog_context=chunks)
+            success_status = add_to_vector_store(blog_context=chunks, doc_id=str(workspace.id))
+            if not success_status:
+                raise WrextExternalServiceException(
+                    message="Failed to insert chunks into vector store",
+                    service_name="vector_store",
+                    service_error="Insertion returned False"
+                )
+
         except Exception as vec_err:
             logger.exception("Vector store insertion failed")
             # Continue workflow – don't block workspace creation
@@ -256,6 +262,17 @@ def delete_workspace(
             raise ResourceNotFoundException(
                 resource_type="workspace",
                 resource_id=workspace_id
+            )
+        # delete vector from store
+        success_status = delete_vectors(vector_id=str(workspace_id))
+        if not success_status:
+            return error(
+                message="Failed to delete vector store",
+                code=ErrorCode.INTERNAL_SERVER_ERROR,
+                status_code=500,
+                severity=ErrorSeverity.HIGH,
+                context={"workspace_id": workspace_id, "error_details": "Unable to delete vectors"},
+                request=request
             )
 
         # Delete the workspace

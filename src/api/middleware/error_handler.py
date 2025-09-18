@@ -180,7 +180,6 @@ class ErrorHandlerMiddleware(BaseHTTPMiddleware):
         )
 
     def _handle_http_exception(
-        self,
         exception: HTTPException,
         request_id: str,
         processing_time_ms: Optional[int] = None
@@ -300,7 +299,7 @@ class ErrorHandlerMiddleware(BaseHTTPMiddleware):
             context=context if context else None
         )
 
-    def _filter_sensitive_details(self, details: list) -> list:
+    def _filter_sensitive_details(details: list) -> list:
         """
         Filter sensitive information from error details.
 
