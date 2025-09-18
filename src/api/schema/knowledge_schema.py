@@ -1,4 +1,4 @@
-from pydantic import BaseModel, HttpUrl,Field
+from pydantic import BaseModel, HttpUrl,Field,constr
 from typing import Optional,List
 
 # Knowledge Schema
@@ -16,3 +16,8 @@ class BrandSchema(BaseModel):
     brand_voice: Optional[List[str]] = Field(default_factory=list, description="Tone and style of communication")
     competitors: Optional[List[str]] = Field(default_factory=list, description="List of competitors")
     content_pillar: Optional[List[str]] = Field(default_factory=list, description="Main content themes or pillars")
+
+
+class TextKnowledgeSchema(BaseModel):
+    content: constr(min_length=10, max_length=5000)
+    workspace_id: str

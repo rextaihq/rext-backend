@@ -1,10 +1,10 @@
-from sqlalchemy import Column, String, Integer, ForeignKey, Text
+from sqlalchemy import Column, String, Integer, ForeignKey, Text, CheckConstraint
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import relationship
 from src.api.database.database import Base
 import uuid
 
-
+# Brand Voice
 class BrandVoice(Base):
     __tablename__ = "brand_voice"
 
@@ -21,7 +21,7 @@ class BrandVoice(Base):
 
     workspace = relationship("WorkspaceModel", back_populates="brand_voices")
 
-
+# Web Knowledge
 class Website(Base):
     __tablename__ = "website"
 
@@ -35,7 +35,7 @@ class Website(Base):
 
     workspace = relationship("WorkspaceModel", back_populates="websites")
 
-
+# File Knowledge
 class KnowledgeFiles(Base):
     __tablename__ = "knowledge_files"
 
@@ -48,3 +48,19 @@ class KnowledgeFiles(Base):
     file_path = Column(String, nullable=False)
 
     workspace = relationship("WorkspaceModel", back_populates="knowledge_files")
+
+
+# Text Knowledge
+class TextKnowledge(Base):
+    __tablename__ = "text_knowledge"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, unique=True, nullable=False)
+    workspace_id = Column(UUID(as_uuid=True), ForeignKey("workspace.id", ondelete="CASCADE"), nullable=False)
+
+    # content
+    content = Column(
+        Text,
+        nullable=False
+    )
+
+    workspace = relationship("WorkspaceModel", back_populates="text_knowledge")

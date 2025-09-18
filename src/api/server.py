@@ -14,6 +14,7 @@ from src.api.routes.topic_generation_route import router as topic_router
 from src.api.routes.workspace_route import router as workspace_router
 from src.api.routes.knowledge.web_knowledge_route import router as web_router
 from src.api.routes.knowledge.file_knowledge_route import router as file_router
+from src.api.routes.knowledge.text_knowledge_route import router as text_router
 from src.api.database.database import Base, engine
 
 # Middleware imports
@@ -40,18 +41,6 @@ async def lifespan(app: FastAPI):
     yield
     # Shutdown
     logger.info("Shutting down Wrext API server...")
-
-# @asynccontextmanager
-# async def lifespan(app: FastAPI):
-#
-#     engine = create_async_engine(DB_URI)
-#     # Create reusable session factory
-#     async_session = sessionmaker(engine, class_=AsyncSession)
-#     # Store in app state
-#     app.state.db_session = async_session
-#     yield
-#     # Clean up connections
-#     await engine.dispose()
 
 app = FastAPI(
     title="Wrext Content Automation API",
@@ -111,6 +100,7 @@ app.include_router(topic_router, prefix="/api", tags=["Topic Generation"])
 app.include_router(workspace_router, prefix="/api", tags=["Workspaces"])
 app.include_router(web_router, prefix="/api", tags=["Web Knowledge"])
 app.include_router(file_router, prefix="/api", tags=["File Knowledge"])
+app.include_router(text_router, prefix="/api", tags=["Text Knowledge"])
 
 # ============================================================================
 # ROOT ENDPOINTS
