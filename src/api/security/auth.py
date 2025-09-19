@@ -1,3 +1,5 @@
+import os
+
 from langgraph_sdk import Auth
 from fastapi import HTTPException, Security
 from fastapi.security.api_key import APIKeyHeader
@@ -7,10 +9,12 @@ from src.api.middleware.exceptions import (
     TokenExpiredException,
     InvalidAPIKeyException
 )
+from dotenv import  load_dotenv
+load_dotenv()
 
 auth = Auth()
-API_KEY = "supersecretapikey" 
-API_KEY_NAME = "content-api-key"
+API_KEY = os.getenv("API_KEY")
+API_KEY_NAME = os.getenv("API_KEY_NAME")
 api_key_header = APIKeyHeader(name=API_KEY_NAME, auto_error=False)
 
 @auth.authenticate
@@ -21,7 +25,6 @@ async def get_current_user(authorization: str | None) -> Auth.types.MinimalUserD
             message="Authorization header missing",
             context={"expected_format": "Bearer <token>"}
         )
-
     try:
         scheme, token = authorization.split()
     except ValueError:

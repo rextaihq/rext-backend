@@ -35,6 +35,22 @@ class Website(Base):
 
     workspace = relationship("WorkspaceModel", back_populates="websites")
 
+    def to_dict(self) -> dict:
+        """Custom serialization for Website model"""
+        base_dict = super().to_dict()
+
+        # Add computed fields if needed
+        base_dict.update({
+            'processing_status': self.status,
+            'content_metrics': {
+                'char_count': self.char_count or 0,
+                'word_count': self.word_count or 0,
+                'estimated_reading_time': (self.word_count or 0) // 200  # ~200 WPM
+            }
+        })
+
+        return base_dict
+
 # File Knowledge
 class KnowledgeFiles(Base):
     __tablename__ = "knowledge_files"
@@ -48,6 +64,23 @@ class KnowledgeFiles(Base):
     file_path = Column(String, nullable=False)
 
     workspace = relationship("WorkspaceModel", back_populates="knowledge_files")
+
+    def to_dict(self) -> dict:
+        """Custom serialization for KnowledgeFiles model"""
+        base_dict = super().to_dict()
+
+        # Add file-specific metadata
+        base_dict.update({
+            'file_metadata': {
+                'name': self.file_name,
+                'type': self.file_type,
+                'size_bytes': self.file_size,
+                'size_mb': round(self.file_size / (1024 * 1024), 2),
+                'path': self.file_path
+            }
+        })
+
+        return base_dict
 
 
 # Text Knowledge
@@ -64,3 +97,20 @@ class TextKnowledge(Base):
     )
 
     workspace = relationship("WorkspaceModel", back_populates="text_knowledge")
+
+    def to_dict(self) -> dict:
+        """Custom serialization for TextKnowledge model"""
+        base_dict = super().to_dict()
+
+        # Add content analysis
+        content_length = len(self.content or '')
+        base_dict.update({
+            'content_analysis': {
+                'char_count': content_length,
+                'word_count': len((self.content or '').split()),
+                'paragraph_count': (self.content or '').count('\n\n') + 1,
+                'is_empty': content_length == 0
+            }
+        })
+
+        return base_dict

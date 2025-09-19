@@ -14,8 +14,7 @@ from src.api.schema.response_schemas import ErrorCode, ErrorSeverity
 from src.api.middleware.exceptions import (
     TopicGenerationException,
     ResourceNotFoundException,
-    WrextAuthenticationException,
-    WrextExternalServiceException
+    WrextAuthenticationException
 )
 import uuid
 

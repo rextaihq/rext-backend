@@ -1,8 +1,7 @@
-from pydantic import BaseModel, HttpUrl,Field
-from typing import Optional,List
+from pydantic import BaseModel, HttpUrl, Field
+from typing import Optional
 
-# Knowledge Schema
 class WorkspaceSchema(BaseModel):
-    title: Optional[str] = None
-    description: str
-    url: Optional[HttpUrl] = None
+    title: str | None = Field(default=None, description="Optional workspace title")
+    description: Optional[str] = Field(..., min_length=3, description="Workspace description")
+    url: HttpUrl | None = Field(default=None, description="Optional workspace URL")

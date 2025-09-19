@@ -10,12 +10,14 @@ from src.utils.vector_store import add_to_vector_store, delete_vectors
 from src.utils.utils import load_split_file_data
 from src.utils.response_utils import success, error
 from src.api.schema.response_schemas import ErrorCode, ErrorSeverity
+from src.api.security.auth import get_api_key, API_KEY
 from sqlalchemy.orm import Session
 from src.api.database.database import get_db
 from pathlib import Path
 import os
 from src.api.middleware.exceptions import (
     WrextExternalServiceException,
+    WrextAuthenticationException
 )
 
 
@@ -43,7 +45,16 @@ def get_status(request: Request):
 
 # Get all file knowledges
 @router.get("/all")
-def get_file_knowledges(request: Request, db: Session = Depends(get_db)):
+def get_file_knowledges(
+        request: Request,
+        db: Session = Depends(get_db),
+        api_key: str = Depends(get_api_key)
+):
+    if api_key != API_KEY:
+        raise WrextAuthenticationException(
+            message="Invalid API key provided",
+            context={"api_key_provided": bool(api_key)}
+        )
     try:
         logger.info("Fetching all file knowledges")
         file_knowledges = db.query(KnowledgeFiles).all()
@@ -54,7 +65,17 @@ def get_file_knowledges(request: Request, db: Session = Depends(get_db)):
     
 # get file knowledge by ID
 @router.get("/{file_id}")
-def get_file_knowledge(file_id: str, request: Request, db: Session = Depends(get_db)):
+def get_file_knowledge(
+        file_id: str,
+        request: Request,
+        db: Session = Depends(get_db),
+        api_key: str = Depends(get_api_key)
+):
+    if api_key != API_KEY:
+        raise WrextAuthenticationException(
+            message="Invalid API key provided",
+            context={"api_key_provided": bool(api_key)}
+        )
     try:
         logger.info(f"Fetching file knowledge with ID: {file_id}")
         knowledge = db.query(KnowledgeFiles).filter(KnowledgeFiles.id == file_id).first()
@@ -76,7 +97,13 @@ async def add_file_knowledge(
         file: UploadFile = File(...),
         db: Session = Depends(get_db),
         workspace_id: str = None,
-    ):
+        api_key: str = Depends(get_api_key)
+):
+    if api_key != API_KEY:
+        raise WrextAuthenticationException(
+            message="Invalid API key provided",
+            context={"api_key_provided": bool(api_key)}
+        )
     try:
         # 1. Validate workspace
         workspace = db.query(WorkspaceModel).filter(WorkspaceModel.id == workspace_id).first()
@@ -162,7 +189,14 @@ def delete_file_knowledge(
         file_id: str,
         workspace_id:str,
         request: Request,
-        db: Session = Depends(get_db)):
+        db: Session = Depends(get_db),
+        api_key: str = Depends(get_api_key)
+):
+    if api_key != API_KEY:
+        raise WrextAuthenticationException(
+            message="Invalid API key provided",
+            context={"api_key_provided": bool(api_key)}
+        )
     try:
         logger.info(f"Deleting file knowledge with ID: {file_id}")
         knowledge = db.query(KnowledgeFiles).filter(KnowledgeFiles.id == file_id, KnowledgeFiles.workspace_id == workspace_id).first()

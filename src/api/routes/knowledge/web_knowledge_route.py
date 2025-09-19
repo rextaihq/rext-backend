@@ -3,25 +3,23 @@ from fastapi import (
     HTTPException,
 )
 from src.utils.logger import logger
-from src.nodes.vectorStore.buildVectorStore import build_vector_store
 from src.utils.vector_store import add_to_vector_store, delete_vectors
 from src.api.models.knowledge_model import Website
 from src.api.models.workspace_model import WorkspaceModel
-from src.model.model import load_model
+from src.api.schema.knowledge_schema import WebKnowledgeSchema
+from src.api.security.auth import get_api_key, API_KEY
 from sqlalchemy.orm import Session
 from src.api.database.database import get_db
 from src.utils.helper import web_page_scraper
-from src.utils.response_utils import success, error, created, not_found, conflict, no_content
+from src.utils.response_utils import success, error, created
 from src.api.schema.response_schemas import ErrorCode, ErrorSeverity
 from src.api.middleware.exceptions import (
     DuplicateResourceException,
     ResourceNotFoundException,
     WrextExternalServiceException,
-    WrextValidationException
+    WrextValidationException,
+    WrextAuthenticationException
 )
-from datetime import datetime, timezone
-from pydantic import HttpUrl
-
 
 router = APIRouter(
     prefix="/workspace/web_knowledge",
@@ -35,7 +33,16 @@ def get_status():
 
 # get knowledes
 @router.get("/all")
-def get_web_knowledges(request: Request, db: Session = Depends(get_db)):
+def get_web_knowledges(
+        request: Request,
+        db: Session = Depends(get_db),
+        api_key: str = Depends(get_api_key)
+):
+    if api_key != API_KEY:
+        raise WrextAuthenticationException(
+            message="Invalid API key provided",
+            context={"api_key_provided": bool(api_key)}
+        )
     try:
         logger.info("Fetching all web knowledges")
         print(request)
@@ -48,7 +55,17 @@ def get_web_knowledges(request: Request, db: Session = Depends(get_db)):
 
 # Get knowledge by ID
 @router.get("/{web_id}")
-def get_web_knowledge(web_id: str, request: Request, db: Session = Depends(get_db)):
+def get_web_knowledge(
+        web_id: str,
+        request: Request,
+        db: Session = Depends(get_db),
+        api_key: str = Depends(get_api_key)
+):
+    if api_key != API_KEY:
+        raise WrextAuthenticationException(
+            message="Invalid API key provided",
+            context={"api_key_provided": bool(api_key)}
+        )
     try:
         logger.info(f"Fetching knowledge with ID: {web_id}")
         knowledge = db.query(Website).filter(Website.id == web_id).first()
@@ -65,28 +82,33 @@ def get_web_knowledge(web_id: str, request: Request, db: Session = Depends(get_d
 # Add new knowledge
 @router.post("/add")
 async def add_web_knowledge(
-        url: str,
+        data:WebKnowledgeSchema,
         request: Request,
         db: Session = Depends(get_db),
-        workspace_id: str = None,
-    ):
+        api_key: str = Depends(get_api_key)
+):
+        if api_key != API_KEY:
+            raise WrextAuthenticationException(
+                message="Invalid API key provided",
+                context={"api_key_provided": bool(api_key)}
+            )
         try:
             logger.info("Check the workspace exists")
-            workspace = db.query(WorkspaceModel).filter(WorkspaceModel.id == workspace_id).first()
+            workspace = db.query(WorkspaceModel).filter(WorkspaceModel.id == data.workspace_id).first()
             if not workspace:
-                raise ResourceNotFoundException(f"Workspace with ID {workspace_id} not found")
+                raise ResourceNotFoundException(f"Workspace with ID {data.workspace_id} not found")
             
             # check if the knowledge already exists
-            existing_knowledge = db.query(Website).filter(Website.url == url, Website.workspace_id == workspace_id).first()
+            existing_knowledge = db.query(Website).filter(Website.url == str(data.url), Website.workspace_id == str(data.workspace_id)).first()
             if existing_knowledge:
-                raise DuplicateResourceException(f"Knowledge for URL {url} already exists in the workspace")
+                raise DuplicateResourceException(f"Knowledge for URL {data.url} already exists in the workspace")
 
 
-            logger.info(f"Scraping content from URL: {url}")
-            chunks, results = await web_page_scraper(urls=[url])
+            logger.info(f"Scraping content from URL: {data.url}")
+            chunks, results = await web_page_scraper(urls=[data.url])
             result = results[0]
             if not result.success:
-                logger.error(f"Failed to scrape URL: {url}")
+                logger.error(f"Failed to scrape URL: {str(data.url)}")
                 raise WrextValidationException(
                     message="Failed to scrape the provided URL",
                     field_errors={"url": ["URL could not be scraped or is inaccessible"]}
@@ -96,11 +118,11 @@ async def add_web_knowledge(
             # Push scraped chunks into vector store
             logger.info(f"Saving knowledge entry to the database")
             new_knowledge = Website(
-                workspace_id=workspace_id,
+                workspace_id=data.workspace_id,
                 url=result.url,
                 status="trained",
-                char_count=len(results.markdown),
-                word_count=len(results.markdown.split())
+                char_count=len(result.markdown),
+                word_count=len(result.markdown.split()) if result else 0
             )
             db.add(new_knowledge)
             db.commit()
@@ -154,7 +176,18 @@ async def add_web_knowledge(
         
 # Delete knowledge by ID
 @router.delete("/delete/{workspace_id}/{web_id}")
-def delete_web_knowledge(workspace_id: str, web_id: str, request: Request, db: Session = Depends(get_db)):
+def delete_web_knowledge(
+        workspace_id: str,
+        web_id: str,
+        request: Request,
+        db: Session = Depends(get_db),
+        api_key: str = Depends(get_api_key)
+):
+    if api_key != API_KEY:
+        raise WrextAuthenticationException(
+            message="Invalid API key provided",
+            context={"api_key_provided": bool(api_key)}
+        )
     try:
         logger.info(f"Deleting knowledge with ID: {web_id} from workspace: {workspace_id}")
         knowledge = db.query(Website).filter(Website.id == web_id, Website.workspace_id == workspace_id).first()

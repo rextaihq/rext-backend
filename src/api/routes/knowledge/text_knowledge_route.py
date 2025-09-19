@@ -8,7 +8,11 @@ from src.api.models.workspace_model import WorkspaceModel
 from src.api.schema.knowledge_schema import TextKnowledgeSchema
 from src.utils.response_utils import success
 from sqlalchemy.orm import Session
+from src.api.security.auth import get_api_key, API_KEY
 from src.api.database.database import get_db
+from src.api.middleware.exceptions import (
+    WrextAuthenticationException
+)
 
 router = APIRouter(
     prefix="/workspace/text",
@@ -29,7 +33,16 @@ def get_status(request: Request):
 
 # Get text knowledges
 @router.get("/all")
-def get_file_knowledges(request: Request, db: Session = Depends(get_db)):
+def get_file_knowledges(
+        request: Request,
+        db: Session = Depends(get_db),
+        api_key: str = Depends(get_api_key)
+):
+    if api_key != API_KEY:
+        raise WrextAuthenticationException(
+            message="Invalid API key provided",
+            context={"api_key_provided": bool(api_key)}
+        )
     try:
         logger.info("Fetching all file knowledges")
         file_knowledges = db.query(TextKnowledge).all()
@@ -43,8 +56,14 @@ def get_file_knowledges(request: Request, db: Session = Depends(get_db)):
 def get_file_knowledge(
         text_id: str,
         workspace_id:str,
-        db: Session = Depends(get_db)
+        db: Session = Depends(get_db),
+        api_key: str = Depends(get_api_key)
 ):
+    if api_key != API_KEY:
+        raise WrextAuthenticationException(
+            message="Invalid API key provided",
+            context={"api_key_provided": bool(api_key)}
+        )
     try:
         logger.info(f"Fetching file knowledge with ID: {text_id}")
         knowledge = db.query(TextKnowledge).filter(TextKnowledge.id == text_id,
@@ -63,8 +82,14 @@ def get_file_knowledge(
 def text_knowledge(
     payload:TextKnowledgeSchema,
     request: Request,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    api_key: str = Depends(get_api_key)
 ):
+    if api_key != API_KEY:
+        raise WrextAuthenticationException(
+            message="Invalid API key provided",
+            context={"api_key_provided": bool(api_key)}
+        )
     try:
         # 1. Validate workspace
         workspace = db.query(WorkspaceModel).filter(WorkspaceModel.id == payload.workspace_id).first()
@@ -106,7 +131,13 @@ def update_text_knowledge(
     new_content: str,
     request: Request = None,
     db: Session = Depends(get_db),
+    api_key: str = Depends(get_api_key)
 ):
+    if api_key != API_KEY:
+        raise WrextAuthenticationException(
+            message="Invalid API key provided",
+            context={"api_key_provided": bool(api_key)}
+        )
     try:
         logger.info(f"Updating text knowledge with ID: {text_id}")
         text_knowledge = db.query(TextKnowledge).filter(TextKnowledge.id == text_id,workspace_id==workspace_id).first()
@@ -147,8 +178,14 @@ def delete_text_knowledge(
     text_id: str,
     workspace_id:str,
     request: Request,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    api_key: str = Depends(get_api_key)
 ):
+    if api_key != API_KEY:
+        raise WrextAuthenticationException(
+            message="Invalid API key provided",
+            context={"api_key_provided": bool(api_key)}
+        )
     try:
         logger.info(f"Deleting text knowledge with ID: {text_id}")
         text_knowledge = db.query(TextKnowledge).filter(TextKnowledge.id == text_id,workspace_id==workspace_id).first()
