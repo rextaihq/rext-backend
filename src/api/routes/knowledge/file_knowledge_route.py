@@ -6,13 +6,17 @@ from fastapi import (
 from src.utils.logger import logger
 from src.api.models.knowledge_model import KnowledgeFiles
 from src.api.models.workspace_model import WorkspaceModel
-from src.nodes.vectorStore.buildVectorStore import build_vector_store
+from src.utils.vector_store import add_to_vector_store, delete_vectors
 from src.utils.utils import load_split_file_data
-from src.utils.response_utils import success
+from src.utils.response_utils import success, error
+from src.api.schema.response_schemas import ErrorCode, ErrorSeverity
 from sqlalchemy.orm import Session
 from src.api.database.database import get_db
 from pathlib import Path
 import os
+from src.api.middleware.exceptions import (
+    WrextExternalServiceException,
+)
 
 
 # for file storage
@@ -95,6 +99,19 @@ async def add_file_knowledge(
         with open(file_path, "wb") as f:
             f.write(await file.read())
 
+        # Save metadata in DB
+        file_size = os.path.getsize(file_path)
+        new_knowledge = KnowledgeFiles(
+            workspace_id=workspace_id,
+            file_name=file.filename,
+            file_type=file.content_type,
+                file_size=file_size,
+            file_path=str(file_path),
+        )
+        db.add(new_knowledge)
+        db.commit()
+        db.refresh(new_knowledge)
+
         # 4. Extract text from file
         chunks = load_split_file_data(str(file_path))
 
@@ -102,27 +119,18 @@ async def add_file_knowledge(
             raise HTTPException(status_code=400, detail="Failed to extract content from the file")
 
         # 5. Add to vector store
-        try: 
-            build_vector_store(
-                blog_context=chunks,
-                vector_store_path="my_faiss_index"
-            )
+        try:
+            logger.info(f"Inserting {len(chunks)} chunks into vector store for {file_path}")
+            success_status = add_to_vector_store(blog_context=chunks, doc_id=f"{str(workspace.id)}_{str(new_knowledge.id)}")
+            if not success_status:
+                raise WrextExternalServiceException(
+                    message="Failed to insert chunks into vector store",
+                    service_name="vector_store",
+                    service_error="Insertion returned False"
+                )
         except Exception as e:
             logger.error(f"Error building vector store: {e}")
             raise HTTPException(status_code=500, detail="Failed to build vector store from file content")
-
-        # 6. Save metadata in DB
-        file_size = os.path.getsize(file_path)
-        new_knowledge = KnowledgeFiles(
-            workspace_id=workspace_id,
-            file_name=file.filename,
-            file_type=file.content_type,
-            file_size=file_size,
-            file_path=str(file_path),
-        )
-        db.add(new_knowledge)
-        db.commit()
-        db.refresh(new_knowledge)
 
         # file data = 
         file_data = {
@@ -149,11 +157,16 @@ async def add_file_knowledge(
         raise HTTPException(status_code=500, detail="Internal Server Error")
     
 # Delete file knowledge
-@router.delete("/delete/{file_id}")
-def delete_file_knowledge(file_id: str, request: Request, db: Session = Depends(get_db)):
+@router.delete("/delete/{workspace_id}/{file_id}")
+def delete_file_knowledge(
+        file_id: str,
+        workspace_id:str,
+        request: Request,
+        db: Session = Depends(get_db)):
     try:
         logger.info(f"Deleting file knowledge with ID: {file_id}")
-        knowledge = db.query(KnowledgeFiles).filter(KnowledgeFiles.id == file_id).first()
+        knowledge = db.query(KnowledgeFiles).filter(KnowledgeFiles.id == file_id, KnowledgeFiles.workspace_id == workspace_id).first()
+
         if not knowledge:
             raise HTTPException(status_code=404, detail=f"File Knowledge with ID {file_id} not found")
         
@@ -161,6 +174,19 @@ def delete_file_knowledge(file_id: str, request: Request, db: Session = Depends(
         if os.path.exists(knowledge.file_path):
             os.remove(knowledge.file_path)
             logger.info(f"Deleted file at path: {knowledge.file_path}")
+
+            # delete vector from store
+            success_status = delete_vectors(vector_id=f"{str(workspace_id)}_{str(file_id)}")
+            if not success_status:
+                return error(
+                    message="Failed to delete vector store",
+                    code=ErrorCode.INTERNAL_SERVER_ERROR,
+                    status_code=500,
+                    severity=ErrorSeverity.HIGH,
+                    context={"workspace_id": workspace_id, "error_details": "Unable to delete vectors"},
+                    request=request
+                )
+
         else:
             logger.warning(f"File at path {knowledge.file_path} does not exist")
 

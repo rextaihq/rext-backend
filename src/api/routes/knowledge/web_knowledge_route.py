@@ -4,6 +4,7 @@ from fastapi import (
 )
 from src.utils.logger import logger
 from src.nodes.vectorStore.buildVectorStore import build_vector_store
+from src.utils.vector_store import add_to_vector_store, delete_vectors
 from src.api.models.knowledge_model import Website
 from src.api.models.workspace_model import WorkspaceModel
 from src.model.model import load_model
@@ -79,7 +80,8 @@ async def add_web_knowledge(
             existing_knowledge = db.query(Website).filter(Website.url == url, Website.workspace_id == workspace_id).first()
             if existing_knowledge:
                 raise DuplicateResourceException(f"Knowledge for URL {url} already exists in the workspace")
-            
+
+
             logger.info(f"Scraping content from URL: {url}")
             chunks, results = await web_page_scraper(urls=[url])
             result = results[0]
@@ -92,16 +94,6 @@ async def add_web_knowledge(
 
             logger.info(f"Building vector store for the scraped content")
             # Push scraped chunks into vector store
-            try:
-                logger.info(f"Inserting {len(chunks)} chunks into vector store for {result.url}")
-                build_vector_store(blog_context=chunks)
-            except Exception as vec_err:
-                logger.exception("Vector store insertion failed")
-                raise WrextExternalServiceException(
-                    message="Failed to process content in vector store",
-                    service_name="vector_store",
-                    service_error=str(vec_err)
-                )
             logger.info(f"Saving knowledge entry to the database")
             new_knowledge = Website(
                 workspace_id=workspace_id,
@@ -113,6 +105,25 @@ async def add_web_knowledge(
             db.add(new_knowledge)
             db.commit()
             db.refresh(new_knowledge)
+
+            try:
+                logger.info(f"Inserting {len(chunks)} chunks into vector store for {result.url}")
+                success_status = add_to_vector_store(blog_context=chunks,
+                                                     doc_id=f"{str(workspace.id)}_{str(new_knowledge.id)}")
+                if not success_status:
+                    raise WrextExternalServiceException(
+                        message="Failed to insert chunks into vector store",
+                        service_name="vector_store",
+                        service_error="Insertion returned False"
+                    )
+            except Exception as vec_err:
+                logger.exception("Vector store insertion failed")
+                raise WrextExternalServiceException(
+                    message="Failed to process content in vector store",
+                    service_name="vector_store",
+                    service_error=str(vec_err)
+                )
+
             knowledge_data = {
                 "web_id": str(new_knowledge.id),
                 "url": new_knowledge.url,
@@ -149,6 +160,18 @@ def delete_web_knowledge(workspace_id: str, web_id: str, request: Request, db: S
         knowledge = db.query(Website).filter(Website.id == web_id, Website.workspace_id == workspace_id).first()
         if not knowledge:
             raise ResourceNotFoundException(f"Knowledge with ID {web_id} not found in the specified workspace")
+
+        # delete vector from store
+        success_status = delete_vectors(vector_id=f"{str(workspace_id)}_{str(web_id)}")
+        if not success_status:
+            return error(
+                message="Failed to delete vector store",
+                code=ErrorCode.INTERNAL_SERVER_ERROR,
+                status_code=500,
+                severity=ErrorSeverity.HIGH,
+                context={"workspace_id": workspace_id, "error_details": "Unable to delete vectors"},
+                request=request
+            )
         
         db.delete(knowledge)
         db.commit()

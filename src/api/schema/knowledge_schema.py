@@ -5,7 +5,7 @@ from typing import Optional,List
 class KnowledgeSchema(BaseModel):
     title: Optional[str] = None
     description: str
-    url: Optional[HttpUrl] = None   # validates proper HTTP/HTTPS URL
+    url: Optional[HttpUrl] = None
 
 # Brand Voice Schema
 class BrandSchema(BaseModel):
