@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String,func,DateTime
+from sqlalchemy import Column, String,func,DateTime,Boolean
 from sqlalchemy.dialects.postgresql import UUID, ARRAY, JSONB
 from src.api.database.database import Base
 import uuid
@@ -20,6 +20,7 @@ class Topics(Base):
     content_guidance = Column(JSONB, nullable=False)  # New field
     audience_insights = Column(JSONB, nullable=False)  # New field
     internal_research_config = Column(JSONB, nullable=False)  # New field
+    approved = Column(Boolean, nullable=True, server_default="true")
     user_settings = Column(JSONB, nullable=False)  # New field
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(),nullable=True)
