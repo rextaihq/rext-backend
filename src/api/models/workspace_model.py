@@ -16,4 +16,4 @@ class WorkspaceModel(Base):
     brand_voices = relationship("BrandVoice", back_populates="workspace", cascade="all, delete-orphan")
     websites = relationship("Website", back_populates="workspace", cascade="all, delete-orphan")
     knowledge_files = relationship("KnowledgeFiles", back_populates="workspace", cascade="all, delete-orphan")
-
+    text_knowledge = relationship("TextKnowledge", back_populates="workspace", cascade="all, delete-orphan")
