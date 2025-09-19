@@ -9,6 +9,7 @@ from src.api.models.knowledge_model import BrandVoice
 from src.api.schema.knowledge_schema import BrandSchema
 from src.model.model import load_model
 from sqlalchemy.orm import Session
+from src.api.security.auth import get_api_key, API_KEY
 from src.api.database.database import get_db
 from src.utils.helper import web_page_scraper
 from src.utils.response_utils import success, error, created
@@ -17,7 +18,8 @@ from src.api.middleware.exceptions import (
     DuplicateResourceException,
     ResourceNotFoundException,
     WrextExternalServiceException,
-    WrextValidationException
+    WrextValidationException,
+    WrextAuthenticationException
 )
 from datetime import datetime, timezone
 
@@ -44,8 +46,14 @@ def get_status(request: Request):
 @router.get("/all")
 def get_workspaces(
     request: Request,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    api_key: str = Depends(get_api_key)
 ):
+    if api_key != API_KEY:
+        raise WrextAuthenticationException(
+            message="Invalid API key provided",
+            context={"api_key_provided": bool(api_key)}
+        )
     try:
         workspaces = db.query(WorkspaceModel).all()
         workspace_data = [
@@ -81,8 +89,14 @@ def get_workspaces(
 def get_workspace_by_id(
     workspace_id: str,
     request: Request,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    api_key: str = Depends(get_api_key)
 ):
+    if api_key != API_KEY:
+        raise WrextAuthenticationException(
+            message="Invalid API key provided",
+            context={"api_key_provided": bool(api_key)}
+        )
     try:
         workspace = db.query(WorkspaceModel).filter_by(id=workspace_id).first()
         if not workspace:
@@ -122,10 +136,16 @@ def get_workspace_by_id(
 async def create_workspace(
     data: WorkspaceSchema,
     request: Request,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    api_key: str = Depends(get_api_key)
+
 ):
     logger.info(f"Received request to create workspace: {data.title}")
-
+    if api_key != API_KEY:
+        raise WrextAuthenticationException(
+            message="Invalid API key provided",
+            context={"api_key_provided": bool(api_key)}
+        )
     try:
         # Check duplicate
         existing_workspace = db.query(WorkspaceModel).filter_by(title=data.title).first()
@@ -251,10 +271,15 @@ async def create_workspace(
 def delete_workspace(
     workspace_id: str,
     request: Request,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    api_key: str = Depends(get_api_key)
 ):
     logger.info(f"Received request to delete workspace: {workspace_id}")
-
+    if api_key != API_KEY:
+        raise WrextAuthenticationException(
+            message="Invalid API key provided",
+            context={"api_key_provided": bool(api_key)}
+        )
     try:
         workspace = db.query(WorkspaceModel).filter_by(id=workspace_id).first()
         if not workspace:
@@ -308,10 +333,15 @@ def update_workspace(
     workspace_id: str,
     data: WorkspaceSchema,
     request: Request,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    api_key: str = Depends(get_api_key)
 ):
     logger.info(f"Received request to update workspace: {workspace_id}")
-
+    if api_key != API_KEY:
+        raise WrextAuthenticationException(
+            message="Invalid API key provided",
+            context={"api_key_provided": bool(api_key)}
+        )
     try:
         workspace = db.query(WorkspaceModel).filter_by(id=workspace_id).first()
         if not workspace:
