@@ -91,14 +91,12 @@ async def add_owner(
 def get_api_key(api_key_header: str = Security(api_key_header)):
     if not api_key_header:
         raise InvalidAPIKeyException(
-            message="API key is required",
-            context={"header_name": API_KEY_NAME}
+            message="API key is required"
         )
 
     if api_key_header != API_KEY:
         raise InvalidAPIKeyException(
-            message="Invalid API key provided",
-            context={"api_key_provided": bool(api_key_header)}
+            message="Invalid API key provided"
         )
 
     return api_key_header

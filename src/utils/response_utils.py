@@ -19,7 +19,7 @@ import json
 import time
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Union, Callable, TypeVar, Generic
-from uuid import uuid4
+from uuid import uuid4, UUID
 
 from fastapi import Request, HTTPException
 from fastapi.responses import JSONResponse
@@ -49,13 +49,16 @@ from src.api.middleware.request_tracker import get_request_id
 # ============================================================================
 
 class DateTimeEncoder(json.JSONEncoder):
-    """Custom JSON encoder that handles datetime objects"""
+    """Custom JSON encoder that handles datetime and UUID objects"""
     def default(self, obj):
         if isinstance(obj, datetime):
             # Convert to ISO format with Z suffix if no timezone info
             if obj.tzinfo is None:
                 return obj.isoformat() + 'Z'
             return obj.isoformat()
+        elif isinstance(obj, UUID):
+            # Convert UUID objects to strings
+            return str(obj)
         return super().default(obj)
 
 

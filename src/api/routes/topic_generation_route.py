@@ -94,7 +94,7 @@ def generate_topic(
                 basic_topic_dict = basic_topic.model_dump() if hasattr(basic_topic, 'model_dump') else basic_topic
 
                 # Add ID and suggested defaults for frontend display
-                basic_topic_dict["id"] = f"topic_{str(uuid.uuid4())[:8]}"
+                basic_topic_dict["id"] = str(uuid.uuid4())
                 basic_topic_dict["suggested_defaults"] = enrichment_service._create_suggested_defaults(
                     basic_topic_dict,
                     data.model_dump()
@@ -177,12 +177,13 @@ def save_topic(
                 # Enrich the topic with full structured data
                 enriched_topic = enrichment_service.enrich_topic(basic_topic_dict, input_params)
 
-                # Use the provided ID from frontend
-                enriched_topic.id = save_topic_data.id
+                # Use the provided ID from frontend, ensuring it's a proper UUID
+                topic_uuid = uuid.UUID(save_topic_data.id) if isinstance(save_topic_data.id, str) else save_topic_data.id
+                enriched_topic.id = topic_uuid
 
                 # Create database record with fully enriched data
                 db_topic = Topics(
-                    id=enriched_topic.id,
+                    id=topic_uuid,
                     title=enriched_topic.title,
                     angle=enriched_topic.angle,
                     description=enriched_topic.description,
