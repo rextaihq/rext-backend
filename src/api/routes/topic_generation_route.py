@@ -1,10 +1,11 @@
 from fastapi import APIRouter, Depends, HTTPException, Request
-from src.api.schema.topic_schema import TopicGenerationInput, DeleteTopics
+from src.api.schema.topic_schema import TopicGenerationInput, DeleteTopics, UpdateTopicRequest
 from langchain_core.messages import SystemMessage
 from src.model.model import topic_generation_model
 from src.prompts.topic_generation_prompts import topic_generation_prompt
 from src.api.security.auth import get_api_key, API_KEY
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 from src.api.models.topic_models import Topics
 from src.api.database.database import get_db
 from src.states.schemas import SaveTopicRequestList
@@ -192,6 +193,8 @@ def save_topic(
                     why_it_works=enriched_topic.why_it_works,
                     scores=enriched_topic.scores.model_dump(),
                     tags=enriched_topic.tags,
+                    approved=False,  # Explicitly set to false - topics require manual approval
+                    approved_at=None,  # Will be set when topic is approved
                     suggested_defaults=enriched_topic.suggested_defaults.model_dump(),
                     goal_alignment=enriched_topic.goal_alignment.model_dump(),
                     content_guidance=enriched_topic.content_guidance.model_dump(),
@@ -279,13 +282,16 @@ def get_topic(
             "why_it_works": topic.why_it_works,
             "scores": topic.scores,
             "tags": topic.tags,
+            "approved": topic.approved,
             "suggested_defaults": topic.suggested_defaults,
             "goal_alignment": topic.goal_alignment,
             "content_guidance": topic.content_guidance,
             "audience_insights": topic.audience_insights,
             "internal_research_config": topic.internal_research_config,
             "user_settings": topic.user_settings,
-            "created_at": topic.created_at.isoformat() if hasattr(topic, 'created_at') else None
+            "created_at": topic.created_at.isoformat() if hasattr(topic, 'created_at') and topic.created_at else None,
+            "updated_at": topic.updated_at.isoformat() if hasattr(topic, 'updated_at') and topic.updated_at else None,
+            "approved_at": topic.approved_at.isoformat() if hasattr(topic, 'approved_at') and topic.approved_at else None
         }
 
         return success(
@@ -322,8 +328,12 @@ def get_topics(
 
     try:
         print("Fetching topics from DB...")
-        topics = db.query(Topics).all()
-        print(f"Fetched {len(topics)} topics")
+        # Order by updated_at first (most recent updates), then by created_at (newest first)
+        topics = db.query(Topics).order_by(
+            Topics.updated_at.desc().nulls_last(),
+            Topics.created_at.desc()
+        ).all()
+        print(f"Fetched {len(topics)} topics (ordered by latest date)")
 
         # Convert topics to dict format for consistent response
         topics_data = [
@@ -337,7 +347,10 @@ def get_topics(
                 "why_it_works": topic.why_it_works,
                 "scores": topic.scores,
                 "tags": topic.tags,
-                "created_at": topic.created_at.isoformat() if hasattr(topic, 'created_at') else None
+                "approved": topic.approved,
+                "created_at": topic.created_at.isoformat() if hasattr(topic, 'created_at') and topic.created_at else None,
+                "updated_at": topic.updated_at.isoformat() if hasattr(topic, 'updated_at') and topic.updated_at else None,
+                "approved_at": topic.approved_at.isoformat() if hasattr(topic, 'approved_at') and topic.approved_at else None
             }
             for topic in topics
         ]
@@ -428,5 +441,112 @@ def delete_topics(
             status_code=500,
             severity=ErrorSeverity.HIGH,
             context={"error_details": str(e), "topic_ids": topic_ids.topic_ids},
+            request=request
+        )
+
+
+@router.put("/update-topic")
+def update_topic(
+    data: UpdateTopicRequest,
+    request: Request,
+    api_key: str = Depends(get_api_key),
+    db: Session = Depends(get_db)
+):
+    if api_key != API_KEY:
+        raise WrextAuthenticationException(
+            message="Invalid API key provided",
+            context={"api_key_provided": bool(api_key)}
+        )
+
+    try:
+        topic_id = data.topic_id
+        print(f"Attempting to update topic with ID: {topic_id}")
+
+        # Fetch the topic
+        topic = db.query(Topics).filter(Topics.id == topic_id).first()
+
+        if not topic:
+            raise ResourceNotFoundException(
+                message=f"Topic with ID '{topic_id}' not found",
+                resource_type="topic",
+                context={"topic_id": topic_id}
+            )
+
+        # Track what fields are being updated
+        updated_fields = []
+
+        # Update only the fields that are provided
+        if data.title is not None:
+            topic.title = data.title
+            updated_fields.append("title")
+
+        if data.angle is not None:
+            topic.angle = data.angle
+            updated_fields.append("angle")
+
+        if data.description is not None:
+            topic.description = data.description
+            updated_fields.append("description")
+
+        if data.channel_fit is not None:
+            topic.channel_fit = data.channel_fit
+            updated_fields.append("channel_fit")
+
+        if data.audience_fit is not None:
+            topic.audience_fit = data.audience_fit
+            updated_fields.append("audience_fit")
+
+        if data.why_it_works is not None:
+            topic.why_it_works = data.why_it_works
+            updated_fields.append("why_it_works")
+
+        if data.tags is not None:
+            topic.tags = data.tags
+            updated_fields.append("tags")
+
+        if data.approved is not None:
+            # If topic is being approved for the first time, set approved_at
+            if data.approved and not topic.approved:
+                topic.approved_at = func.now()
+                updated_fields.append("approved_at")
+            # If topic is being unapproved, clear approved_at
+            elif not data.approved and topic.approved:
+                topic.approved_at = None
+                updated_fields.append("approved_at")
+
+            topic.approved = data.approved
+            updated_fields.append("approved")
+
+        # Always update the timestamp when any field is modified
+        if updated_fields:
+            topic.updated_at = func.now()
+            updated_fields.append("updated_at")
+
+        db.commit()
+        print(f"Successfully updated topic '{topic.title}' - fields: {', '.join(updated_fields)}")
+
+        return success(
+            data={
+                "updated_count": 1,
+                "topic_id": topic_id,
+                "topic_title": topic.title,
+                "updated_fields": updated_fields,
+                "approved": topic.approved
+            },
+            request=request,
+            message=f"Topic '{topic.title}' updated successfully"
+        )
+
+    except (ResourceNotFoundException, WrextAuthenticationException):
+        raise
+    except Exception as e:
+        print(f"Error updating topic {data.topic_id}: {e}")
+        db.rollback()
+        return error(
+            message="Failed to update topic",
+            code=ErrorCode.INTERNAL_SERVER_ERROR,
+            status_code=500,
+            severity=ErrorSeverity.HIGH,
+            context={"error_details": str(e), "topic_id": data.topic_id},
             request=request
         )

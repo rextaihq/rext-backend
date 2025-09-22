@@ -20,9 +20,10 @@ class Topics(Base):
     content_guidance = Column(JSONB, nullable=False)  # New field
     audience_insights = Column(JSONB, nullable=False)  # New field
     internal_research_config = Column(JSONB, nullable=False)  # New field
-    approved = Column(Boolean, nullable=True, server_default="true")
+    approved = Column(Boolean, nullable=True, server_default="false")
+    approved_at = Column(DateTime(timezone=True), nullable=True)  # When topic was approved
     user_settings = Column(JSONB, nullable=False)  # New field
-    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)  # Generated date
     updated_at = Column(DateTime(timezone=True), server_default=func.now(),nullable=True)
     def to_dict(self) -> dict:
         """Custom serialization for Topics model"""

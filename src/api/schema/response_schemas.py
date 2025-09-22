@@ -277,6 +277,9 @@ class ErrorResponse(BaseResponse):
         return v
 
     class Config:
+        json_encoders = {
+            datetime: lambda v: v.isoformat() + 'Z' if v.tzinfo is None else v.isoformat()
+        }
         schema_extra = {
             "example": {
                 "success": False,

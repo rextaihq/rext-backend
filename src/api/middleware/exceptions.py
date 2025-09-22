@@ -162,7 +162,6 @@ class InvalidAPIKeyException(WrextAuthenticationException):
     def __init__(self, message: str = "Invalid or missing API key"):
         super().__init__(
             message=message,
-            error_code=ErrorCode.API_KEY_INVALID,
             context={"suggestion": "Please check your API key configuration"}
         )
 

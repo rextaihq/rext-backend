@@ -14,6 +14,7 @@ Features:
 - Integration with monitoring systems
 """
 
+import json
 import traceback
 from datetime import datetime
 from typing import Callable, Dict, Any, Optional
@@ -139,7 +140,7 @@ class ErrorHandlerMiddleware(BaseHTTPMiddleware):
 
         return JSONResponse(
             status_code=error_response.error["status_code"],
-            content=error_response.dict()
+            content=json.loads(error_response.json())
         )
 
     def _handle_wrext_exception(
@@ -452,7 +453,7 @@ def setup_exception_handlers(app: FastAPI) -> None:
 
         return JSONResponse(
             status_code=exc.status_code,
-            content=error_response.dict()
+            content=json.loads(error_response.json())
         )
 
     @app.exception_handler(HTTPException)
@@ -481,7 +482,7 @@ def setup_exception_handlers(app: FastAPI) -> None:
 
         return JSONResponse(
             status_code=exc.status_code,
-            content=error_response.dict()
+            content=json.loads(error_response.json())
         )
 
     @app.exception_handler(ValidationError)
@@ -518,5 +519,5 @@ def setup_exception_handlers(app: FastAPI) -> None:
 
         return JSONResponse(
             status_code=422,
-            content=error_response.dict()
+            content=json.loads(error_response.json())
         )
