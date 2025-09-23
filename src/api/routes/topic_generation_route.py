@@ -9,13 +9,16 @@ from src.api.models.topic_models import Topics
 from src.api.database.database import get_db
 from src.states.schemas import SaveTopicRequestList
 from src.services.topic_enrichment_service import TopicEnrichmentService
-from src.utils.response_utils import success, error, unauthorized, not_found, no_content
+from src.utils.response_utils import success, error
 from src.api.schema.response_schemas import ErrorCode, ErrorSeverity
 from src.api.middleware.exceptions import (
     TopicGenerationException,
     ResourceNotFoundException,
     WrextAuthenticationException
 )
+from src.utils.logger import logger
+from src.api.models.notificaton_model import Notification
+from src.api.routes.notifications import controller
 import uuid
 
 router = APIRouter(
@@ -34,10 +37,11 @@ def get_status(request: Request):
 
 
 @router.post("/generate-topic")
-def generate_topic(
+async def generate_topic(
     data: TopicGenerationInput,
     request: Request,
-    api_key: str = Depends(get_api_key)
+    api_key: str = Depends(get_api_key),
+    db: Session = Depends(get_db)
 ):
     if api_key != API_KEY:
         raise WrextAuthenticationException(
@@ -109,6 +113,43 @@ def generate_topic(
                 message="Failed to enrich generated topics",
                 generation_params=data.model_dump(),
                 context={"enrichment_error": str(enrichment_err)}
+            )
+
+        # Create the notification
+        first_topic_title = display_topics[0]["title"] if display_topics else "Topics"
+        try:
+            new_notification = Notification(
+                title="Topic Generated Successfully",
+                description=f"Your new topic '{first_topic_title}' has been created and is ready for review",
+                notification_type="success",
+                status="unread"
+            )
+            db.add(new_notification)
+            db.commit()
+            db.refresh(new_notification)
+            await controller.broadcast(new_notification.to_dict())
+        except Exception as e:
+            print(f"Unexpected error during topic generation: {e}")
+            logger.info("creating  notification Failed...")
+            new_notification = Notification(
+                title="Topic Generated Successfully",
+                description=f"your Topic {first_topic_title} creation failed",
+                notification_type="error",
+                status="unread"
+            )
+            db.add(new_notification)
+            db.commit()
+            db.refresh(new_notification)
+
+            logger.info("Send the success notification")
+            await controller.broadcast(new_notification.to_dict())
+            return error(
+                message="Topic generation failed due to server error",
+                code=ErrorCode.TOPIC_GENERATION_FAILED,
+                status_code=500,
+                severity=ErrorSeverity.HIGH,
+                context={"error_details": str(e), "generation_params": data.model_dump()},
+                request=request
             )
 
         return success(

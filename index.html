@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Real-Time Notifications</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 40px; }
+    h1 { color: #333; }
+
+    /* Notification Bell */
+    .notification { position: relative; display: inline-block; cursor: pointer; }
+    .notification .bell { font-size: 28px; }
+    .notification .badge {
+      position: absolute; top: -5px; right: -10px;
+      padding: 4px 8px; border-radius: 50%; background: red;
+      color: white; font-size: 12px;
+    }
+
+    /* Notification List */
+    #notifications { margin-top: 20px; padding: 0; list-style: none; }
+    #notifications li {
+      background: #f1f1f1; padding: 10px; margin-bottom: 10px;
+      border-radius: 6px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+
+    /* Toast Popup */
+    #toast-container {
+      position: fixed; top: 20px; right: 20px; z-index: 9999;
+    }
+    .toast {
+      background: #333; color: white; padding: 12px 16px;
+      border-radius: 6px; margin-bottom: 10px;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+      opacity: 0; transform: translateX(100%); transition: all 0.4s ease;
+    }
+    .toast.show { opacity: 1; transform: translateX(0); }
+  </style>
+</head>
+<body>
+
+  <div class="notification">
+    <span class="bell">🔔</span>
+    <span class="badge" id="notificationCount">0</span>
+  </div>
+
+  <ul id="notifications"></ul>
+  <div id="toast-container"></div>
+
+<script>
+    let count = 0;
+    const countSpan = document.getElementById("notificationCount");
+    const notificationsList = document.getElementById("notifications");
+    const toastContainer = document.getElementById("toast-container");
+
+    let ws;
+    let reconnectInterval = 2000; // 2 seconds
+
+    function initWebSocket() {
+      if (ws && ws.readyState !== WebSocket.CLOSED) return;
+      ws = new WebSocket("ws://127.0.0.1:8000/api/notifications/ws");
+
+      ws.onopen = () => {
+        console.log("Connected to WebSocket ✅");
+
+        // 🔹 Send dummy user id to backend
+        ws.send(JSON.stringify({
+          action: "register",
+          user_id: "dummy123"
+        }));
+      };
+
+      ws.onmessage = (event) => {
+        let data;
+        try {
+          data = JSON.parse(event.data);
+        } catch {
+          data = { title: "Server", description: event.data, notification_type: "info" };
+        }
+
+        // Ignore ping messages
+        if (data.action === "ping") return;
+
+        count++;
+        countSpan.textContent = count;
+
+        const li = document.createElement("li");
+        li.innerHTML = `<strong>${data.data.title}</strong><br>${data.data.description}<br><em>Type: ${data.data.notification_type}</em>`;
+        notificationsList.appendChild(li);
+
+        showToast(`${data.data.title}: ${data.data.description}`);
+      };
+
+      ws.onclose = () => {
+        console.log("WebSocket closed ❌. Reconnecting...");
+        setTimeout(initWebSocket, reconnectInterval);
+      };
+
+      ws.onerror = (err) => {
+        console.error("WebSocket error:", err);
+        ws.close();
+      };
+    }
+
+    function showToast(message) {
+      const toast = document.createElement("div");
+      toast.classList.add("toast");
+      toast.textContent = message;
+      toastContainer.appendChild(toast);
+
+      setTimeout(() => toast.classList.add("show"), 100);
+
+      setTimeout(() => {
+        toast.classList.remove("show");
+        setTimeout(() => toast.remove(), 400);
+      }, 5000);
+    }
+
+    initWebSocket();
+  </script>
+</body>
+</html>

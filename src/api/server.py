@@ -15,6 +15,7 @@ from src.api.routes.workspace_route import router as workspace_router
 from src.api.routes.knowledge.web_knowledge_route import router as web_router
 from src.api.routes.knowledge.file_knowledge_route import router as file_router
 from src.api.routes.knowledge.text_knowledge_route import router as text_router
+from src.api.routes.notifications.notification_routes import router as notification_router
 from src.api.database.database import Base, engine
 
 # Middleware imports
@@ -101,6 +102,7 @@ app.include_router(workspace_router, prefix="/api", tags=["Workspaces"])
 app.include_router(web_router, prefix="/api", tags=["Web Knowledge"])
 app.include_router(file_router, prefix="/api", tags=["File Knowledge"])
 app.include_router(text_router, prefix="/api", tags=["Text Knowledge"])
+app.include_router(notification_router,prefix="/api",tags=["Notifications"])
 
 # ============================================================================
 # ROOT ENDPOINTS

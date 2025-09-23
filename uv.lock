@@ -489,6 +489,7 @@ dependencies = [
     { name = "python-dotenv" },
     { name = "requests" },
     { name = "sentence-transformers" },
+    { name = "websockets" },
 ]
 
 [package.metadata]
@@ -517,6 +518,7 @@ requires-dist = [
     { name = "python-dotenv", specifier = ">=1.1.1" },
     { name = "requests", specifier = ">=2.32.4" },
     { name = "sentence-transformers", specifier = ">=5.1.0" },
+    { name = "websockets", specifier = ">=15.0.1" },
 ]
 
 [[package]]
