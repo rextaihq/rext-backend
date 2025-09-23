@@ -3,8 +3,8 @@ from fastapi import (
 )
 from src.utils.logger import logger
 from sqlalchemy.orm import Session
-from src.api.models.reviewser_model import ContentReviewer
-from src.api.schema.reviwer_schema import ReviewerBase
+from src.api.models.users_model import ContentUsers
+from src.api.schema.users_schema import UsersBase
 from src.api.security.auth import get_api_key, API_KEY
 from src.api.database.database import get_db
 from src.utils.response_utils import success, error, created
@@ -21,8 +21,8 @@ from datetime import datetime, timezone
 
 
 router = APIRouter(
-    prefix="/content-reviewer",
-    tags=["Content Reviewer"],
+    prefix="/content-users",
+    tags=["Content Users"],
     responses={404: {"description": "Not found"}},
     dependencies=[Depends(get_api_key)]
 )
@@ -39,13 +39,13 @@ def read_root(
     )
 
 # get all reviewers
-@router.get("/reviewers")
+@router.get("/users")
 def get_all_reviewers(
     request: Request,
     db: Session = Depends(get_db)
 ):
     try:
-        reviewers = db.query(ContentReviewer).all()
+        reviewers = db.query(ContentUsers).all()
         
         reviwer_data = [
             reviewer.to_dict() for reviewer in reviewers
@@ -65,18 +65,18 @@ def get_all_reviewers(
         )
 
 # get by id
-@router.get("/reviewer/{reviewer_id}")
+@router.get("/user/{user_id}")
 def get_reviewer_by_id(
     request: Request,
-    reviewer_id: str,
+    user_id: str,
     db: Session = Depends(get_db)
 ):
     try:
-        reviewer = db.query(ContentReviewer).filter(ContentReviewer.id == reviewer_id).first()
-        if not reviewer:
-            raise ResourceNotFoundException(f"Reviewer with id {reviewer_id} not found.")
+        user = db.query(ContentUsers).filter(ContentUsers.id == user_id).first()
+        if not user:
+            raise ResourceNotFoundException(f"Reviewer with id {user_id} not found.")
         return success(
-            data=reviewer.to_dict(),
+            data=user.to_dict(),
             request=request,
             message="Reviewer fetched successfully."
         )
@@ -98,19 +98,19 @@ def get_reviewer_by_id(
         )
     
 # create reviewer
-@router.post("/add-reviewer")
+@router.post("/add-user")
 def create_reviewer(
     request: Request,
-    data:ReviewerBase,
+    data:UsersBase,
     db: Session = Depends(get_db)
 ):
     try:
         # Check for duplicate email
-        existing_reviewer = db.query(ContentReviewer).filter(ContentReviewer.email == data.email).first()
-        if existing_reviewer:
+        existing_user = db.query(ContentUsers).filter(ContentUsers.email == data.email).first()
+        if existing_user:
             raise DuplicateResourceException(f"Reviewer with email {data.email} already exists.")
         
-        new_reviewer = ContentReviewer(
+        new_reviewer = ContentUsers(
             name=data.name,
             email=data.email,
             expertise=data.expertise,
@@ -145,17 +145,17 @@ def create_reviewer(
     
 
 # update reviewer
-@router.put("/update-reviewer/{reviewer_id}")
+@router.put("/update-user/{user_id}")
 def update_reviewer(
     request: Request,
-    reviewer_id: str,
-    data:ReviewerBase,
+    user_id: str,
+    data:UsersBase,
     db: Session = Depends(get_db)
 ):
     try:
-        reviewer = db.query(ContentReviewer).filter(ContentReviewer.id == reviewer_id).first()
+        reviewer = db.query(ContentUsers).filter(ContentUsers.id == user_id).first()
         if not reviewer:
-            raise ResourceNotFoundException(f"Reviewer with id {reviewer_id} not found.")
+            raise ResourceNotFoundException(f"Reviewer with id {user_id} not found.")
         
         # Update fields
         reviewer.name = data.name
@@ -188,16 +188,16 @@ def update_reviewer(
         )
 
 # delete reviewer
-@router.delete("/delete-reviewer/{reviewer_id}")
+@router.delete("/delete-user/{user_id}")
 def delete_reviewer(
     request: Request,
-    reviewer_id: str,
+    user_id: str,
     db: Session = Depends(get_db)
 ):
     try:
-        reviewer = db.query(ContentReviewer).filter(ContentReviewer.id == reviewer_id).first()
+        reviewer = db.query(ContentUsers).filter(ContentUsers.id == user_id).first()
         if not reviewer:
-            raise ResourceNotFoundException(f"Reviewer with id {reviewer_id} not found.")
+            raise ResourceNotFoundException(f"Reviewer with id {user_id} not found.")
         
         db.delete(reviewer)
         db.commit()
