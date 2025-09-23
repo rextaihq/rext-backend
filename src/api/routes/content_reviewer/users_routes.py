@@ -38,35 +38,35 @@ def read_root(
         message="Workspace service is working!"
     )
 
-# get all reviewers
+# get all User
 @router.get("/users")
-def get_all_reviewers(
+def get_all_users(
     request: Request,
     db: Session = Depends(get_db)
 ):
     try:
-        reviewers = db.query(ContentUsers).all()
+        users = db.query(ContentUsers).all()
         
-        reviwer_data = [
-            reviewer.to_dict() for reviewer in reviewers
+        users_data = [
+            user.to_dict() for user in users
         ]
         return success(
-            data=reviwer_data,
+            data=users_data,
             request=request,
-            message="Reviewers fetched successfully."
+            message="Users fetched successfully."
         )
     except Exception as e:
-        logger.error(f"Error fetching reviewers: {e}")
+        logger.error(f"Error fetching users: {e}")
         return error(
             code=ErrorCode.INTERNAL_SERVER_ERROR,
             error_severity=ErrorSeverity.HIGH,
-            message="An error occurred while fetching reviewers.",
+            message="An error occurred while fetching users.",
             request=request
         )
 
 # get by id
 @router.get("/user/{user_id}")
-def get_reviewer_by_id(
+def get_user_by_id(
     request: Request,
     user_id: str,
     db: Session = Depends(get_db)
@@ -74,11 +74,11 @@ def get_reviewer_by_id(
     try:
         user = db.query(ContentUsers).filter(ContentUsers.id == user_id).first()
         if not user:
-            raise ResourceNotFoundException(f"Reviewer with id {user_id} not found.")
+            raise ResourceNotFoundException(f"User with id {user_id} not found.")
         return success(
             data=user.to_dict(),
             request=request,
-            message="Reviewer fetched successfully."
+            message="User fetched successfully."
         )
     except ResourceNotFoundException as rnfe:
         logger.warning(f"Resource not found: {rnfe}")
@@ -89,17 +89,17 @@ def get_reviewer_by_id(
             request=request
         )
     except Exception as e:
-        logger.error(f"Error fetching reviewer: {e}")
+        logger.error(f"Error fetching users: {e}")
         return error(
             code=ErrorCode.INTERNAL_SERVER_ERROR,
             error_severity=ErrorSeverity.HIGH,
-            message="An error occurred while fetching the reviewer.",
+            message="An error occurred while fetching the users.",
             request=request
         )
     
-# create reviewer
+# create user
 @router.post("/add-user")
-def create_reviewer(
+def create_user(
     request: Request,
     data:UsersBase,
     db: Session = Depends(get_db)
@@ -108,35 +108,35 @@ def create_reviewer(
         # Check for duplicate email
         existing_user = db.query(ContentUsers).filter(ContentUsers.email == data.email).first()
         if existing_user:
-            raise DuplicateResourceException(f"Reviewer with email {data.email} already exists.")
+            raise DuplicateResourceException(f"User with email {data.email} already exists.")
         
-        new_reviewer = ContentUsers(
+        new_user = ContentUsers(
             name=data.name,
             email=data.email,
             expertise=data.expertise,
             affiliated_topics=data.affiliated_topics
         )
-        db.add(new_reviewer)
+        db.add(new_user)
         db.commit()
-        db.refresh(new_reviewer)
+        db.refresh(new_user)
         return created(
-            data=new_reviewer.to_dict(),
+            data=new_user.to_dict(),
             request=request,
-            message="Reviewer created successfully."
+            message="new_user created successfully."
         )
     except DuplicateResourceException as dre:
         logger.warning(f"Duplicate resource: {dre}")
         return error(
-            message="Reviewer with this email already exists.",
+            message="Users with this email already exists.",
             code=ErrorCode.INTERNAL_SERVER_ERROR,
             status_code=500,
             severity=ErrorSeverity.HIGH,
             request=request
         )
     except Exception as e:
-        logger.error(f"Error creating reviewer: {e}")
+        logger.error(f"Error creating user: {e}")
         return error(
-            message="Failed to add reviewer",
+            message="Failed to add user",
             code=ErrorCode.INTERNAL_SERVER_ERROR,
             status_code=500,
             severity=ErrorSeverity.HIGH,
@@ -144,31 +144,31 @@ def create_reviewer(
         )
     
 
-# update reviewer
+# update user
 @router.put("/update-user/{user_id}")
-def update_reviewer(
+def update_user(
     request: Request,
     user_id: str,
     data:UsersBase,
     db: Session = Depends(get_db)
 ):
     try:
-        reviewer = db.query(ContentUsers).filter(ContentUsers.id == user_id).first()
-        if not reviewer:
-            raise ResourceNotFoundException(f"Reviewer with id {user_id} not found.")
+        user = db.query(ContentUsers).filter(ContentUsers.id == user_id).first()
+        if not user:
+            raise ResourceNotFoundException(f"User with id {user_id} not found.")
         
         # Update fields
-        reviewer.name = data.name
-        reviewer.email = data.email
-        reviewer.expertise = data.expertise
-        reviewer.affiliated_topics = data.affiliated_topics
+        user.name = data.name
+        user.email = data.email
+        user.expertise = data.expertise
+        user.affiliated_topics = data.affiliated_topics
         
         db.commit()
-        db.refresh(reviewer)
+        db.refresh(user)
         return success(
-            data=reviewer.to_dict(),
+            data=user.to_dict(),
             request=request,
-            message="Reviewer updated successfully."
+            message="User updated successfully."
         )
     except ResourceNotFoundException as rnfe:
         logger.warning(f"Resource not found: {rnfe}")
@@ -179,32 +179,32 @@ def update_reviewer(
             request=request
         )
     except Exception as e:
-        logger.error(f"Error updating reviewer: {e}")
+        logger.error(f"Error updating User: {e}")
         return error(
             code=ErrorCode.INTERNAL_SERVER_ERROR,
             error_severity=ErrorSeverity.HIGH,
-            message="An error occurred while updating the reviewer.",
+            message="An error occurred while updating the User",
             request=request
         )
 
-# delete reviewer
+# delete User
 @router.delete("/delete-user/{user_id}")
-def delete_reviewer(
+def delete_user(
     request: Request,
     user_id: str,
     db: Session = Depends(get_db)
 ):
     try:
-        reviewer = db.query(ContentUsers).filter(ContentUsers.id == user_id).first()
-        if not reviewer:
-            raise ResourceNotFoundException(f"Reviewer with id {user_id} not found.")
+        user = db.query(ContentUsers).filter(ContentUsers.id == user_id).first()
+        if not user:
+            raise ResourceNotFoundException(f"user with id {user_id} not found.")
         
-        db.delete(reviewer)
+        db.delete(user)
         db.commit()
         return success(
             data=None,
             request=request,
-            message="Reviewer deleted successfully."
+            message="user deleted successfully."
         )
     except ResourceNotFoundException as rnfe:
         logger.warning(f"Resource not found: {rnfe}")
@@ -215,10 +215,10 @@ def delete_reviewer(
             request=request
         )
     except Exception as e:
-        logger.error(f"Error deleting reviewer: {e}")
+        logger.error(f"Error deleting user: {e}")
         return error(
             code=ErrorCode.INTERNAL_SERVER_ERROR,
             error_severity=ErrorSeverity.HIGH,
-            message="An error occurred while deleting the reviewer.",
+            message="An error occurred while deleting the user.",
             request=request
         )
