@@ -15,7 +15,7 @@ from src.api.routes.workspace_route import router as workspace_router
 from src.api.routes.knowledge.web_knowledge_route import router as web_router
 from src.api.routes.knowledge.file_knowledge_route import router as file_router
 from src.api.routes.knowledge.text_knowledge_route import router as text_router
-from src.api.routes.content_reviewer.users_routes import router as users_router
+from src.api.routes.content_users.users_routes import router as users_router
 from src.api.database.database import Base, engine
 
 # Middleware imports
