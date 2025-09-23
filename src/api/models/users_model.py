@@ -4,7 +4,7 @@ from src.api.database.database import Base
 import uuid
 
 
-class ContentReviewer(Base):
+class ContentUsers(Base):
     __tablename__ = "reviewers"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, unique=True, nullable=False)
