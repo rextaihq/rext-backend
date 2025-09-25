@@ -2,7 +2,10 @@ from langchain.chat_models import init_chat_model
 from src.states.schemas import RewriterTitle, QueryDecomposer, Evaluation
 from sentence_transformers import SentenceTransformer
 from src.states.schemas import BasicTopicGenerationList
+from dotenv import load_dotenv
+import os
 
+load_dotenv()
 def load_model():
     """
     Initializes and returns a chat model using LangChain's `init_chat_model`.
@@ -12,7 +15,7 @@ def load_model():
     Returns:
         BaseChatModel: An instance of the initialized chat model.
     """
-    model = init_chat_model("gpt-4o-mini", model_provider="openai")
+    model = init_chat_model("gpt-4o-mini", model_provider="openai",api_key=os.getenv("OPENAI_API_KEY"))
     return model
 
 def topic_generation_model():

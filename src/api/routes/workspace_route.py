@@ -3,7 +3,7 @@ from fastapi import (
 )
 from src.utils.logger import logger
 from src.api.schema.workspace_schema import WorkspaceSchema
-from src.api.models.workspace_model import WorkspaceModel
+from src.api.models.workspace_models.workspace_model import WorkspaceModel
 from src.utils.vector_store import add_to_vector_store,delete_vectors
 from src.api.models.knowledge_model import BrandVoice
 from src.api.schema.knowledge_schema import BrandSchema

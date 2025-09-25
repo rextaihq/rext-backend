@@ -5,7 +5,7 @@ from fastapi import (
 )
 from src.utils.logger import logger
 from src.api.models.knowledge_model import KnowledgeFiles
-from src.api.models.workspace_model import WorkspaceModel
+from src.api.models.workspace_models.workspace_model import WorkspaceModel
 from src.utils.vector_store import add_to_vector_store, delete_vectors
 from src.utils.utils import load_split_file_data
 from src.utils.response_utils import success, error
