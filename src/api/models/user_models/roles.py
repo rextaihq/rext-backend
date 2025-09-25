@@ -7,20 +7,23 @@ from src.api.database.database import Base
 
 
 # -------------------------
-# Role
+# Roles
 # -------------------------
 class Role(Base):
     __tablename__ = "roles"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, unique=True, nullable=False)
     name = Column(String(100), unique=True, nullable=False)
-    display_name = Column(String(100), unique=True, nullable=False)
+    display_name = Column(String(150), nullable=False)
     description = Column(Text)
     hierarchy_level = Column(Integer, default=0)
-    is_system_role = Column(Boolean, default=False)
+    is_system_role = Column(Boolean, default=True)
     created_at = Column(TIMESTAMP, default=datetime.utcnow)
     updated_at = Column(TIMESTAMP, default=datetime.utcnow, onupdate=datetime.utcnow)
 
+    # Relationships
+    user_roles = relationship("UserRole", back_populates="role")
+    invited_roles = relationship("UserInvitations", back_populates="role")
 
     def to_dict(self):
         return {

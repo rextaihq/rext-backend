@@ -1,13 +1,20 @@
-from sqlalchemy import Column, String
-from src.api.database.database import Base
-from sqlalchemy import Column, String, Boolean, Integer, Text, TIMESTAMP
-from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.dialects.postgresql import UUID
-from datetime import datetime
 import uuid
+from datetime import datetime
+from sqlalchemy import (
+    Column, String, Boolean, Integer, Text, TIMESTAMP, DateTime,
+    ForeignKey, UniqueConstraint
+)
+from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import relationship
+from src.api.database.database import Base
 
+
+# -------------------------
+# Users
+# -------------------------
 class Users(Base):
     __tablename__ = "users"
+
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, unique=True, nullable=False)
     email = Column(String(255), unique=True, nullable=False)
     username = Column(String(100), unique=True, nullable=False)
@@ -28,13 +35,16 @@ class Users(Base):
     failed_login_attempts = Column(Integer, default=0)
     language = Column(String(10), default="en")
     timezone = Column(String(50), default="UTC")
-    created_at = Column(TIMESTAMP, nullable=False,default=datetime.utcnow)
+    created_at = Column(TIMESTAMP, nullable=False, default=datetime.utcnow)
     updated_at = Column(TIMESTAMP, default=datetime.utcnow, onupdate=datetime.utcnow)
     deleted_at = Column(TIMESTAMP)
 
-
-    # define the relations
-    
+    # Relationships
+    user_roles = relationship("UserRole", back_populates="user", foreign_keys="UserRole.user_id")
+    workspace_memberships = relationship("WorkspaceMembers", back_populates="user")
+    workspaces = relationship("WorkspaceModel", back_populates="owner")
+    sent_invitations = relationship("UserInvitations", back_populates="invited_by")
+    assigned_roles = relationship("UserRole", back_populates="assigned_by", foreign_keys="UserRole.assigned_by_user_id")
 
     def to_dict(self):
         return {

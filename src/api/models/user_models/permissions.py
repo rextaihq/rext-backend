@@ -7,18 +7,18 @@ from src.api.database.database import Base
 
 
 # -------------------------
-# Role
+# Permissions Model
 # -------------------------
-class Role(Base):
+class Permissions(Base):
     __tablename__ = "permissions"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, unique=True, nullable=False)
-    name = Column(String(100), unique=True, nullable=False)
+    name = Column(String(150), nullable=False)
+    display_name = Column(String(200))
     description = Column(Text)
-    resource = Column(String(100))
+    resource = Column(String(50))
     action = Column(String(50))
     created_at = Column(TIMESTAMP, default=datetime.utcnow)
-
 
     def to_dict(self):
         return {

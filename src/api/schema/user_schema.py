@@ -22,3 +22,7 @@ class UpdateUser(BaseModel):
     avatar_url: Optional[str] = Field(None, description="Profile avatar URL")
     language: Optional[str] = Field(None, description="User language")
     timezone: Optional[str] = Field(None, description="User timezone")
+
+class ResetPassword(BaseModel):
+    token: str
+    new_password: str

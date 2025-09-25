@@ -2,7 +2,8 @@
 import os
 from typing import Union
 from contextlib import asynccontextmanager
-
+import src.api.models 
+from src.api.models.user_models.invitations import UserInvitations
 # Third-party imports
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware

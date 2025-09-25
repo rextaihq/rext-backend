@@ -1,8 +1,17 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Request
-from src.api.schema.user_schema import LoginUser, RegisterUser,UpdateUser
-from src.utils.helper import hash_password, create_access_token, verify_password, create_refresh_token
+from fastapi import APIRouter, Depends, HTTPException, status, Request,BackgroundTasks
+from src.utils.logger import logger
+from src.api.schema.user_schema import (LoginUser, RegisterUser,
+                                        UpdateUser,ResetPassword)
+from src.utils.helper import (hash_password, create_access_token, 
+                              verify_password, create_refresh_token
+                              )
 from sqlalchemy.orm import Session
-from src.api.models.user_models.users import Users
+from src.api.models.user_models.users import Users  
+from src.api.models.user_models.roles import Role
+from src.api.models.user_models.user_roles import UserRole
+from src.api.models.workspace_models.workspace_model import WorkspaceModel
+from src.api.models.workspace_models.workspace_member import WorkspaceMembers
+from src.api.tasks.send_mail import send_email
 from src.api.database.database import get_db
 from src.utils.response_utils import success, error, created, unauthorized
 from src.api.schema.response_schemas import ErrorCode, ErrorSeverity
@@ -13,6 +22,7 @@ from src.api.middleware.exceptions import (
 )
 from dotenv import load_dotenv
 from datetime import datetime, timedelta
+import uuid
 import os
 
 load_dotenv()
@@ -41,6 +51,7 @@ def get_users(request: Request, db: Session = Depends(get_db)):
     Endpoint to retrieve all users.
     """
     try:
+        logger.info("Fetching all users from the database")
         users = db.query(Users).all()
 
         # Convert users to dict format (excluding passwords)
@@ -68,8 +79,9 @@ def create_user(user: RegisterUser, request: Request, db: Session = Depends(get_
     """
     try:
         # Check if user already exists with this email
+        logger.info(f"Checking for existing user with email: {user.email}")
         existing_user = db.query(Users).filter(
-            (Users.email == user.email)
+            (Users.email == user.email) | (Users.username == user.username)
         ).first()
 
         if existing_user:
@@ -89,6 +101,7 @@ def create_user(user: RegisterUser, request: Request, db: Session = Depends(get_
                 )
 
         # Hash password and create user
+        logger.info("Creating new user")
         hashed_pwd = hash_password(user.password)
         new_user = Users(
             username=user.username,
@@ -99,14 +112,51 @@ def create_user(user: RegisterUser, request: Request, db: Session = Depends(get_
         db.add(new_user)
         db.commit()
         db.refresh(new_user)
+        
+        # Assign default role
+        logger.info("Assigning default role to new user")
+        default_role = db.query(Role).filter(Role.name == "admin").first()
+        if not default_role:
+            logger.info("Creating default admin role")
+            default_role = Role(
+                name="admin",
+                display_name="Administrator",
+                description="Default admin role with all permissions",
+                hierarchy_level=1,
+                is_system_role=True
+            )
+            db.add(default_role)
+            db.commit()
+            db.refresh(default_role)
+
+        logger.info(f"Assigning role {default_role.name} to user {new_user.username}")
+        user_role = UserRole(
+            user_id=new_user.id,
+            role_id=default_role.id,
+            workspace_id=None,
+            is_primary=True,
+            assigned_at=datetime.utcnow(),
+            assigned_by_user_id=new_user.id
+        )
+        db.add(user_role)
+        db.commit()
+        db.refresh(user_role)
+
+        logger.info(f"User {new_user.username} created successfully with ID {new_user.id}")
 
         # Return user data (excluding password)
         user_data = {
             "id": str(new_user.id),
             "username": new_user.username,
             "email": new_user.email,
+            "first_name": new_user.first_name,
+            "last_name": new_user.last_name,
+            "display_name": new_user.display_name,
+            "language": new_user.language,
+            "timezone": new_user.timezone,
             "status": new_user.status,
-            "created_at": new_user.created_at.isoformat() if hasattr(new_user, 'created_at') else None
+            "roles": [default_role.to_dict()],
+            "created_at": new_user.created_at.isoformat() if hasattr(new_user, 'created_at') else None,
         }
 
         return created(
@@ -131,7 +181,11 @@ def create_user(user: RegisterUser, request: Request, db: Session = Depends(get_
 
 
 @router.post("/login")
-def login_user(user: LoginUser, request: Request, db: Session = Depends(get_db)):
+def login_user(
+    user: LoginUser, 
+    request: Request, 
+    db: Session = Depends(get_db)
+    ):
     """
     Endpoint to log in a user with table updates.
     """
@@ -174,11 +228,20 @@ def login_user(user: LoginUser, request: Request, db: Session = Depends(get_db))
         db.commit()
         db.refresh(db_user)
 
+        # get all the roles of the user
+        user_roles = db.query(UserRole).filter(UserRole.user_id == db_user.id).all()
+        role_names = []
+        for ur in user_roles:
+            role = db.query(Role).get(ur.role_id)
+            if role:
+                role_names.append(role.name)
+
         # Prepare JWT payload
         token_data = {
-            "sub": str(db_user.id),
+            "id": str(db_user.id),
             "username": db_user.username,
-            "email": db_user.email
+            "email": db_user.email,
+            "roles": role_names
         }
 
         # Generate tokens
@@ -196,7 +259,8 @@ def login_user(user: LoginUser, request: Request, db: Session = Depends(get_db))
                     "username": db_user.username,
                     "email": db_user.email,
                     "last_login_at": db_user.last_login_at,
-                    "login_count": db_user.login_count
+                    "login_count": db_user.login_count,
+                    "roles": role_names
                 }
             },
             request=request,
@@ -232,7 +296,17 @@ def delete_user(user_id: str, request: Request, db: Session = Depends(get_db)):
                 severity=ErrorSeverity.MEDIUM,
                 request=request
             )
-
+        
+        # Prevent deleting an already deleted user
+        if db_user.deleted_at:
+            return error(
+                message="User already deleted",
+                code=ErrorCode.DEPENDENCY_ERROR,
+                status_code=400,
+                severity=ErrorSeverity.MEDIUM,
+                request=request
+            )
+        
         # Soft delete
         db_user.deleted_at = datetime.utcnow()
         db.commit()
@@ -270,7 +344,25 @@ def update_user(user_id: str, user: UpdateUser, request: Request, db: Session = 
                 severity=ErrorSeverity.MEDIUM,
                 request=request
             )
-
+         # Check for duplicate email
+        if user.email and db.query(Users).filter(Users.email == user.email, Users.id != user_id).first():
+            return error(
+                message="Email already exists",
+                code=ErrorCode.DUPLICATE_RESOURCE,
+                status_code=400,
+                severity=ErrorSeverity.MEDIUM,
+                request=request
+            )
+        # Check for duplicate username
+        if user.username and db.query(Users).filter(Users.username == user.username, Users.id != user_id).first():
+            return error(
+                message="Username already exists",
+                code=ErrorCode.DUPLICATE_RESOURCE,
+                status_code=400,
+                severity=ErrorSeverity.MEDIUM,
+                request=request
+            )
+        
         # Update fields if provided
         if user.email is not None:
             db_user.email = user.email
@@ -320,3 +412,101 @@ def update_user(user_id: str, user: UpdateUser, request: Request, db: Session = 
             context={"error_details": str(e)},
             request=request
         )
+    
+# forget password
+@router.post("/forgot-password")
+def forgot_password(
+    email: str, 
+    request: Request, 
+    db: Session = Depends(get_db),
+    background_tasks: BackgroundTasks = None
+    ):
+    """
+    Initiate forgot password process
+    """
+    try:
+        logger.info(f"Initiating forgot password for email: {email}")
+        db_user = db.query(Users).filter(Users.email == email).first()
+        if not db_user:
+            return error(
+                message="User with this email does not exist",
+                code=ErrorCode.RESOURCE_NOT_FOUND,
+                status_code=404,
+                severity=ErrorSeverity.MEDIUM,
+                request=request
+            )
+        
+        # Generate reset token and expiry
+        reset_token = str(uuid.uuid4())
+        db_user.reset_token = reset_token
+        db_user.reset_token_expires = datetime.utcnow() + timedelta(hours=1)
+        db.commit()
+        db.refresh(db_user)
+
+        # Here you would generate a reset token and send email
+        reset_link = f"https://yourfrontend.com/reset-password/{reset_token}"
+
+        # Send email in background
+        background_tasks.add_task(
+            send_email,
+            to=db_user.email,
+            subject="Reset Your Password",
+            body=f"<p>Click the link to reset your password: <a href='{reset_link}'>Reset Password</a></p>"
+        )
+
+        return success(
+            data={"message": "Password reset link has been sent to your email.","token":reset_token},
+            request=request,
+            message="Forgot password initiated successfully"
+        )
+    except Exception as e:
+        return error(
+            message="Failed to initiate forgot password",
+            code=ErrorCode.INTERNAL_SERVER_ERROR,
+            status_code=500,
+            severity=ErrorSeverity.HIGH,
+            context={"error_details": str(e)},
+            request=request
+        )
+
+# reset user password
+@router.post("/reset-password")
+def reset_password(payload:ResetPassword, request: Request, db: Session = Depends(get_db)):
+    """
+    Reset user password
+    """
+    try:
+        user = db.query(Users).filter(Users.reset_token == payload.token).first()
+        if not user:
+            return error(message="Invalid token", request=request)
+
+        if user.reset_token_expires < datetime.utcnow():
+            return error(message="Token has expired", request=request)
+
+        # Update password
+        user.password_hash = hash_password(payload.new_password)
+        user.reset_token = None
+        user.reset_token_expires = None
+        user.password_changed_at = datetime.utcnow()
+        db.commit()
+        db.refresh(user)
+
+        return success(data={"id": str(user.id)}, request=request, message="Password updated successfully")
+    
+    except Exception as e:
+        return error(
+            message="Failed to reset password",
+            code=ErrorCode.INTERNAL_SERVER_ERROR,
+            status_code=500,
+            severity=ErrorSeverity.HIGH,
+            context={"error_details": str(e)},
+            request=request
+        )
+
+# Email verification
+# @router.post("/verify-email/{token}")
+# def verify_email(token: str, request: Request, db: Session = Depends(get_db)):
+#     """
+#     Verify user email using token
+#     """
+#     pass
