@@ -4,6 +4,7 @@ from fastapi import (
 from src.utils.logger import logger
 from src.api.schema.workspace_schema import WorkspaceSchema
 from src.api.models.workspace_models.workspace_model import WorkspaceModel
+from src.api.models.user_models.users import Users
 from src.utils.vector_store import add_to_vector_store,delete_vectors
 from src.api.models.knowledge_model import BrandVoice
 from src.api.schema.knowledge_schema import BrandSchema
@@ -22,7 +23,7 @@ from src.api.middleware.exceptions import (
     WrextAuthenticationException
 )
 from datetime import datetime, timezone
-
+from src.api.security.auth import get_current_user
 
 router = APIRouter(
     prefix="/workspace",
@@ -47,19 +48,30 @@ def get_status(request: Request):
 def get_workspaces(
     request: Request,
     db: Session = Depends(get_db),
-    api_key: str = Depends(get_api_key)
+    user: str = Depends(get_current_user)
 ):
-    if api_key != API_KEY:
+    
+    # if api_key != API_KEY:
+    #     raise WrextAuthenticationException(
+    #         message="Invalid API key provided",
+    #         context={"api_key_provided": bool(api_key)}
+    #     )
+    
+    # get the user
+    user_id = user.get("identity")
+    db_user = db.query(Users).filter_by(id=user_id).first()
+    if not db_user:
         raise WrextAuthenticationException(
-            message="Invalid API key provided",
-            context={"api_key_provided": bool(api_key)}
+            message="User not found",
+            context={"user_id": user_id}
         )
+    
     try:
         workspaces = db.query(WorkspaceModel).all()
         workspace_data = [
             {
                 "id": str(ws.id),
-                "title": ws.title,
+                "name": ws.name,
                 "description": ws.description,
                 "url": ws.url,
                 "created_at": ws.created_at.isoformat() if hasattr(ws, 'created_at') else None
@@ -108,7 +120,7 @@ def get_workspace_by_id(
 
         workspace_data = {
             "id": str(workspace.id),
-            "title": workspace.title,
+            "name": workspace.name,
             "description": workspace.description,
             "url": workspace.url,
             "created_at": workspace.created_at.isoformat() if hasattr(workspace, 'created_at') else None
@@ -173,7 +185,7 @@ async def create_workspace(
 
         # Create workspace record first
         workspace = WorkspaceModel(
-            title=data.title,
+            name=data.name,
             description=getattr(data, "description", None),
             url=str(data.url),
             created_at=datetime.now(timezone.utc)

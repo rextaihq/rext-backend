@@ -16,6 +16,7 @@ def send_email(to: str, subject: str, body: str):
     """
     Send an email using SMTP
     """
+    print("Preparing to send email...")
     msg = MIMEMultipart()
     msg['From'] = EMAIL_ADDRESS
     msg['To'] = to
@@ -33,3 +34,12 @@ def send_email(to: str, subject: str, body: str):
         print(f"Email sent to {to}")
     except Exception as e:
         print(f"Error sending email: {e}")
+
+
+# if __name__ == "__main__":
+#     # Example usage
+#     send_email(
+#         to="sami606713@gmail.com",
+#         subject="Test Email",
+#         body="<h1>This is a test email</h1><p>Sent using Python</p>"
+#     )

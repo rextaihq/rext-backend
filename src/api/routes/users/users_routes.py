@@ -2,8 +2,9 @@ from fastapi import APIRouter, Depends, HTTPException, status, Request,Backgroun
 from src.utils.logger import logger
 from src.api.schema.user_schema import (LoginUser, RegisterUser,
                                         UpdateUser,ResetPassword)
-from src.utils.helper import (hash_password, create_access_token, 
-                              verify_password, create_refresh_token
+from src.api.security.token_utils import (hash_password, create_access_token,
+                              verify_password, create_refresh_token,
+                              create_reset_token,verify_token
                               )
 from sqlalchemy.orm import Session
 from src.api.models.user_models.users import Users  
@@ -31,7 +32,8 @@ SECRET_KEY= os.getenv("SECRET_KEY")
 ALGORITHM= os.getenv("ALGORITHM")
 router = APIRouter(
     prefix="/user",
-    tags=["user"]
+    tags=["user"],
+    # dependencies=
 )
 
 @router.get("/status")
@@ -104,6 +106,8 @@ def create_user(user: RegisterUser, request: Request, db: Session = Depends(get_
         logger.info("Creating new user")
         hashed_pwd = hash_password(user.password)
         new_user = Users(
+            first_name=user.first_name,
+            last_name=user.last_name,
             username=user.username,
             email=user.email,
             password_hash=hashed_pwd
@@ -339,7 +343,7 @@ def update_user(user_id: str, user: UpdateUser, request: Request, db: Session = 
         if not db_user:
             return error(
                 message="User not found",
-                code=ErrorCode.NOT_FOUND,
+                code=ErrorCode.RESOURCE_NOT_FOUND,
                 status_code=404,
                 severity=ErrorSeverity.MEDIUM,
                 request=request
@@ -437,9 +441,13 @@ def forgot_password(
             )
         
         # Generate reset token and expiry
-        reset_token = str(uuid.uuid4())
+        reset_data = {
+            "user_id": str(db_user.id),
+            "email": db_user.email,
+            "jti": str(uuid.uuid4())
+        }
+        reset_token = create_reset_token(data=reset_data)
         db_user.reset_token = reset_token
-        db_user.reset_token_expires = datetime.utcnow() + timedelta(hours=1)
         db.commit()
         db.refresh(db_user)
 
@@ -455,7 +463,7 @@ def forgot_password(
         )
 
         return success(
-            data={"message": "Password reset link has been sent to your email.","token":reset_token},
+            data={"message": "Password reset link has been sent to your email."},
             request=request,
             message="Forgot password initiated successfully"
         )
@@ -480,13 +488,14 @@ def reset_password(payload:ResetPassword, request: Request, db: Session = Depend
         if not user:
             return error(message="Invalid token", request=request)
 
-        if user.reset_token_expires < datetime.utcnow():
-            return error(message="Token has expired", request=request)
+    #    verify token
+        logger.info("Verifying reset token")
+        _ = verify_token(payload.token)
+
 
         # Update password
         user.password_hash = hash_password(payload.new_password)
         user.reset_token = None
-        user.reset_token_expires = None
         user.password_changed_at = datetime.utcnow()
         db.commit()
         db.refresh(user)
@@ -504,9 +513,38 @@ def reset_password(payload:ResetPassword, request: Request, db: Session = Depend
         )
 
 # Email verification
-# @router.post("/verify-email/{token}")
-# def verify_email(token: str, request: Request, db: Session = Depends(get_db)):
-#     """
-#     Verify user email using token
-#     """
-#     pass
+@router.get("/verify-email")
+def verify_email(token: str, request: Request, db: Session = Depends(get_db)):
+    """
+    Verify user's email using the provided token
+    """
+    try:
+        logger.info("Verifying email with token")
+        payload = verify_token(token)
+        user_id = payload.get("id")
+        if not user_id:
+            return error(message="Invalid token payload", request=request)
+
+        user = db.query(Users).filter(Users.id == user_id).first()
+        if not user:
+            return error(message="User not found", request=request)
+
+        if user.email_verified:
+            return success(data={"id": str(user.id)}, request=request, message="Email already verified")
+
+        user.email_verified = True
+        user.email_verified_at = datetime.utcnow()
+        db.commit()
+        db.refresh(user)
+
+        return success(data={"id": str(user.id)}, request=request, message="Email verified successfully")
+
+    except Exception as e:
+        return error(
+            message="Failed to verify email",
+            code=ErrorCode.INTERNAL_SERVER_ERROR,
+            status_code=500,
+            severity=ErrorSeverity.HIGH,
+            context={"error_details": str(e)},
+            request=request
+        )

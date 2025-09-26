@@ -2,6 +2,8 @@ from pydantic import BaseModel, EmailStr, Field
 from typing import Optional
 
 class RegisterUser(BaseModel):
+    first_name: str = Field(..., description="First name of the user")
+    last_name:  str = Field(..., description="Last name of the user")
     username:  str = Field(..., description="Name of the user")
     email: EmailStr = Field(..., description="Email address of the user")
     password: str = Field(..., min_length=8, description="Password for the user account")
