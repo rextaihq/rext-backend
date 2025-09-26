@@ -3,7 +3,7 @@ import os
 from langgraph_sdk import Auth
 from fastapi import HTTPException, Security
 from fastapi.security.api_key import APIKeyHeader
-from src.utils.helper import verify_token
+from src.api.security.token_utils import verify_token
 from src.api.middleware.exceptions import (
     WrextAuthenticationException,
     TokenExpiredException,
@@ -17,7 +17,7 @@ API_KEY = os.getenv("API_KEY")
 API_KEY_NAME = os.getenv("API_KEY_NAME")
 api_key_header = APIKeyHeader(name=API_KEY_NAME, auto_error=False)
 
-@auth.authenticate
+# @auth.authenticate
 async def get_current_user(authorization: str | None) -> Auth.types.MinimalUserDict:
     """Check if the user's token is valid."""
     if not authorization:
@@ -59,7 +59,7 @@ async def get_current_user(authorization: str | None) -> Auth.types.MinimalUserD
         )
 
     # Extract user info from JWT payload
-    user_id = payload.get("sub")  # usually `sub` holds user id
+    user_id = payload.get("id")  # usually `sub` holds user id
     if not user_id:
         raise WrextAuthenticationException(
             message="User ID missing in token payload",
@@ -70,6 +70,7 @@ async def get_current_user(authorization: str | None) -> Auth.types.MinimalUserD
         "identity": user_id,
         "name": payload.get("name"),
         "email": payload.get("email"),
+        "roles": payload.get("roles", []),
     }
 
     print("Identity verified:", user_info)

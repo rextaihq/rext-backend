@@ -12,7 +12,7 @@ from dotenv import load_dotenv
 # Local application imports
 from src.api.routes.users.users_routes import router as users_router    
 from src.api.routes.topic_generation_route import router as topic_router
-from src.api.routes.workspace_route import router as workspace_router
+from src.api.routes.workspaces.workspace_route import router as workspace_router
 from src.api.routes.knowledge.web_knowledge_route import router as web_router
 from src.api.routes.knowledge.file_knowledge_route import router as file_router
 from src.api.routes.knowledge.text_knowledge_route import router as text_router
