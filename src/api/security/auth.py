@@ -1,7 +1,7 @@
 import os
-
 from langgraph_sdk import Auth
 from fastapi import HTTPException, Security
+from fastapi import Header
 from fastapi.security.api_key import APIKeyHeader
 from src.api.security.token_utils import verify_token
 from src.api.middleware.exceptions import (
@@ -18,7 +18,7 @@ API_KEY_NAME = os.getenv("API_KEY_NAME")
 api_key_header = APIKeyHeader(name=API_KEY_NAME, auto_error=False)
 
 # @auth.authenticate
-async def get_current_user(authorization: str | None) -> Auth.types.MinimalUserDict:
+def get_current_user(authorization: str = Header(...)) -> Auth.types.MinimalUserDict:
     """Check if the user's token is valid."""
     if not authorization:
         raise WrextAuthenticationException(
@@ -68,7 +68,7 @@ async def get_current_user(authorization: str | None) -> Auth.types.MinimalUserD
 
     user_info = {
         "identity": user_id,
-        "name": payload.get("name"),
+        "username": payload.get("username"),
         "email": payload.get("email"),
         "roles": payload.get("roles", []),
     }

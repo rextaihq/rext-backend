@@ -4,7 +4,7 @@ from fastapi import (
     UploadFile, File
 )
 from src.utils.logger import logger
-from src.api.models.knowledge_model import KnowledgeFiles
+from src.api.models.knowledge_models.knowledge_model import KnowledgeFiles
 from src.api.models.workspace_models.workspace_model import WorkspaceModel
 from src.utils.vector_store import add_to_vector_store, delete_vectors
 from src.utils.utils import load_split_file_data

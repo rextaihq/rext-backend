@@ -3,7 +3,7 @@ from fastapi import (
     HTTPException
 )
 from src.utils.logger import logger
-from src.api.models.knowledge_model import TextKnowledge
+from src.api.models.knowledge_models.knowledge_model import TextKnowledge
 from src.api.models.workspace_models.workspace_model import WorkspaceModel
 from src.api.schema.knowledge_schema import TextKnowledgeSchema
 from src.utils.response_utils import success

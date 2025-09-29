@@ -4,7 +4,7 @@ from fastapi import (
 )
 from src.utils.logger import logger
 from src.utils.vector_store import add_to_vector_store, delete_vectors
-from src.api.models.knowledge_model import Website
+from src.api.models.knowledge_models.knowledge_model import Website
 from src.api.models.workspace_models.workspace_model import WorkspaceModel
 from src.api.schema.knowledge_schema import WebKnowledgeSchema
 from src.api.security.auth import get_api_key, API_KEY

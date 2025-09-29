@@ -9,7 +9,7 @@ from src.api.database.database import Base
 # -------------------------
 # Permissions Model
 # -------------------------
-class Permissions(Base):
+class Permission(Base):
     __tablename__ = "permissions"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, unique=True, nullable=False)
@@ -19,6 +19,9 @@ class Permissions(Base):
     resource = Column(String(50))
     action = Column(String(50))
     created_at = Column(TIMESTAMP, default=datetime.utcnow)
+
+    # Relationships
+    roles = relationship("RolePermission", back_populates="permission")
 
     def to_dict(self):
         return {

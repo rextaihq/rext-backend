@@ -1,20 +1,13 @@
-from fastapi import (
-    APIRouter, Depends, Request,
-)
-from src.utils.logger import logger
-from src.api.schema.workspace_schema import WorkspaceSchema
-from src.api.models.workspace_models.workspace_model import WorkspaceModel
-from src.api.models.user_models.users import Users
-from src.utils.vector_store import add_to_vector_store,delete_vectors
-from src.api.models.knowledge_model import BrandVoice
-from src.api.schema.knowledge_schema import BrandSchema
-from src.model.model import load_model
+from fastapi import APIRouter, Depends, Request
 from sqlalchemy.orm import Session
-from src.api.security.auth import get_api_key, API_KEY
-from src.api.database.database import get_db
+from datetime import datetime, timezone
+
+from src.utils.logger import logger
 from src.utils.helper import web_page_scraper
+from src.utils.vector_store import add_to_vector_store, delete_vectors
 from src.utils.response_utils import success, error, created
-from src.api.schema.response_schemas import ErrorCode, ErrorSeverity
+from src.api.database.database import get_db
+from src.api.security.auth import get_current_user
 from src.api.middleware.exceptions import (
     DuplicateResourceException,
     ResourceNotFoundException,
@@ -22,8 +15,18 @@ from src.api.middleware.exceptions import (
     WrextValidationException,
     WrextAuthenticationException
 )
-from datetime import datetime, timezone
-from src.api.security.auth import get_current_user
+from src.api.schema.response_schemas import ErrorCode, ErrorSeverity
+from src.api.schema.workspace_schema import WorkspaceSchema
+from src.api.models.workspace_models.workspace_model import WorkspaceModel
+from src.api.models.workspace_models.workspace_member import WorkspaceMembers
+from src.api.models.user_models.users import Users
+from src.api.models.user_models.roles import Role
+from src.api.models.user_models.permissions import Permission
+from src.api.models.user_models.role_permissions import RolePermission
+from src.api.models.user_models.user_roles import UserRole
+from src.api.models.knowledge_models.knowledge_model import BrandVoice
+from src.api.schema.knowledge_schema import BrandSchema
+from src.model.model import load_model
 
 router = APIRouter(
     prefix="/workspace",
@@ -32,7 +35,9 @@ router = APIRouter(
 )
 
 
+# -------------------------
 # Health Check
+# -------------------------
 @router.get("/")
 def get_status(request: Request):
     logger.info("Workspace Route health check called.")
@@ -43,49 +48,47 @@ def get_status(request: Request):
     )
 
 
-# get workspaces
+# -------------------------
+# Get all workspaces for user
+# -------------------------
 @router.get("/all")
 def get_workspaces(
-    request: Request,
-    db: Session = Depends(get_db),
-    user: str = Depends(get_current_user)
-):
-    
-    # if api_key != API_KEY:
-    #     raise WrextAuthenticationException(
-    #         message="Invalid API key provided",
-    #         context={"api_key_provided": bool(api_key)}
-    #     )
-    
-    # get the user
+    request: Request, 
+    db: Session = Depends(get_db), 
+    user: dict = Depends(get_current_user)):
     user_id = user.get("identity")
-    db_user = db.query(Users).filter_by(id=user_id).first()
+    db_user = db.query(Users).filter(Users.id == user_id, Users.deleted_at == None).first()
     if not db_user:
         raise WrextAuthenticationException(
             message="User not found",
             context={"user_id": user_id}
         )
-    
+
     try:
-        workspaces = db.query(WorkspaceModel).all()
+        workspaces = (
+            db.query(WorkspaceModel)
+            .filter(WorkspaceMembers.user_id == user_id)
+            .all()
+        )
+
         workspace_data = [
             {
                 "id": str(ws.id),
+                "user_id": str(ws.user_id),
                 "name": ws.name,
                 "description": ws.description,
                 "url": ws.url,
-                "created_at": ws.created_at.isoformat() if hasattr(ws, 'created_at') else None
-            } for ws in workspaces
+                "created_at": ws.created_at.isoformat() if ws.created_at else None,
+            }
+            for ws in workspaces
         ]
 
         return success(
-            data={
-                "workspaces": workspace_data,
-                "total_count": len(workspace_data)
-            },
+            data={"workspaces": workspace_data, "total_count": len(workspace_data)},
             request=request,
             message=f"Retrieved {len(workspace_data)} workspaces successfully"
         )
+
     except Exception as e:
         logger.exception("Error fetching workspaces")
         return error(
@@ -96,34 +99,34 @@ def get_workspaces(
             request=request
         )
 
-# get by id
+# -------------------------
+# Get workspace by ID
+# -------------------------
 @router.get("/{workspace_id}")
-def get_workspace_by_id(
-    workspace_id: str,
-    request: Request,
-    db: Session = Depends(get_db),
-    api_key: str = Depends(get_api_key)
-):
-    if api_key != API_KEY:
-        raise WrextAuthenticationException(
-            message="Invalid API key provided",
-            context={"api_key_provided": bool(api_key)}
-        )
+def get_workspace_by_id(workspace_id: str, request: Request, db: Session = Depends(get_db), user: dict = Depends(get_current_user)):
+    user_id = user.get("identity")
+    db_user = db.query(Users).filter(Users.id == user_id, Users.deleted_at == None).first()
+    if not db_user:
+        raise WrextAuthenticationException(message="User not found", context={"user_id": user_id})
+
     try:
-        workspace = db.query(WorkspaceModel).filter_by(id=workspace_id).first()
+        workspace = (
+            db.query(WorkspaceModel)
+            .join(WorkspaceMembers, WorkspaceMembers.workspace_id == WorkspaceModel.id)
+            .filter(WorkspaceModel.id == workspace_id, WorkspaceMembers.user_id == user_id)
+            .first()
+        )
+
         if not workspace:
-            logger.warning(f"Workspace not found: {workspace_id}")
-            raise ResourceNotFoundException(
-                resource_type="workspace",
-                resource_id=workspace_id
-            )
+            raise ResourceNotFoundException(resource_type="workspace", resource_id=workspace_id)
 
         workspace_data = {
             "id": str(workspace.id),
+            "user_id": str(workspace.user_id),
             "name": workspace.name,
             "description": workspace.description,
             "url": workspace.url,
-            "created_at": workspace.created_at.isoformat() if hasattr(workspace, 'created_at') else None
+            "created_at": workspace.created_at.isoformat() if workspace.created_at else None,
         }
 
         return success(
@@ -131,6 +134,7 @@ def get_workspace_by_id(
             request=request,
             message="Workspace retrieved successfully"
         )
+
     except ResourceNotFoundException:
         raise
     except Exception as e:
@@ -143,117 +147,127 @@ def get_workspace_by_id(
             request=request
         )
 
-# CREATE Workspace
+
+# -------------------------
+# Create workspace
+# -------------------------
 @router.post("/create")
 async def create_workspace(
     data: WorkspaceSchema,
     request: Request,
     db: Session = Depends(get_db),
-    api_key: str = Depends(get_api_key)
-
+    user: dict = Depends(get_current_user)
 ):
-    logger.info(f"Received request to create workspace: {data.title}")
-    if api_key != API_KEY:
-        raise WrextAuthenticationException(
-            message="Invalid API key provided",
-            context={"api_key_provided": bool(api_key)}
+    user_id = user.get("identity")
+
+    # Verify user exists
+    db_user = db.query(Users).filter(Users.id == user_id, Users.deleted_at == None).first()
+    if not db_user:
+        raise WrextAuthenticationException(message="User not found", context={"user_id": user_id})
+
+    # Validate URL
+    if not data.url:
+        raise WrextValidationException(
+            message="Workspace URL is required",
+            field_errors={"url": ["URL must be provided and valid"]}
         )
+
     try:
-        # Check duplicate
-        existing_workspace = db.query(WorkspaceModel).filter_by(title=data.title).first()
+        # Check for duplicate workspace name for the user
+        existing_workspace = db.query(WorkspaceModel).filter_by(name=data.name, user_id=user_id).first()
         if existing_workspace:
-            logger.warning(f"Duplicate workspace title: {data.title}")
             raise DuplicateResourceException(
-                message=f"Workspace with title '{data.title}' already exists",
+                message=f"Workspace with title '{data.name}' already exists",
                 resource_type="workspace",
                 conflicting_field="title",
-                conflicting_value=data.title
+                conflicting_value=data.name
             )
 
-        # Scrape website
-        logger.info(f"Scraping content from: {data.url}")
-        chunks, results = await web_page_scraper(urls=[data.url])
-        result = results[0]
-        if not result.success:
-            logger.error(f"Failed to scrape URL: {data.url}")
-            raise WrextValidationException(
-                message="Failed to scrape the provided URL",
-                field_errors={"url": ["URL could not be scraped or is inaccessible"]}
-            )
-
-        content = result.markdown
-
-        # Create workspace record first
+        # Create workspace
         workspace = WorkspaceModel(
+            user_id=user_id,
             name=data.name,
             description=getattr(data, "description", None),
-            url=str(data.url),
-            created_at=datetime.now(timezone.utc)
+            url=str(data.url)
         )
         db.add(workspace)
         db.commit()
         db.refresh(workspace)
-        logger.info(f"Workspace created with id={workspace.id}")
 
-        # Push scraped chunks into vector store
+        # Add creator as default member
+        member = WorkspaceMembers(
+            workspace_id=workspace.id,
+            user_id=user_id,
+            joined_at=datetime.now(timezone.utc),
+            is_default=True,
+            status = "active",
+            invitation_id = None
+        )
+        db.add(member)
+
+        # Assign 'admin' role to creator
+        admin_role = Role(
+            name="admin",
+            display_name="Administrator",
+            description="Workspace administrator with full permissions",            
+        )
+
+        db.add(admin_role)
+
+        # privide the necessary permissions to admin role
+
+        db.commit()
+        db.refresh(workspace)
+        db.refresh(member)
+
+        # Scrape content
         try:
-            logger.info(f"Inserting {len(chunks)} chunks into vector store for {result.url}")
-            success_status = add_to_vector_store(blog_context=chunks, doc_id=str(workspace.id))
-            if not success_status:
-                raise WrextExternalServiceException(
-                    message="Failed to insert chunks into vector store",
-                    service_name="vector_store",
-                    service_error="Insertion returned False"
-                )
+            chunks, results = await web_page_scraper(urls=[data.url])
+            result = results[0]
+            if not result.success:
+                logger.warning(f"Failed to scrape URL: {data.url}")
+            content = result.markdown
+        except Exception as scrape_err:
+            logger.warning(f"Scraping failed for URL {data.url}: {scrape_err}")
+            content = ""
 
+        # Vector store insertion
+        try:
+            if chunks:
+                add_to_vector_store(blog_context=chunks, workspace_id=str(workspace.id))
         except Exception as vec_err:
-            logger.exception("Vector store insertion failed")
-            # Continue workflow – don't block workspace creation
-            raise WrextExternalServiceException(
-                message="Failed to process content in vector store",
-                service_name="vector_store",
-                service_error=str(vec_err)
-            )
+            logger.warning(f"Vector store insertion failed: {vec_err}")
 
-        # Extract brand info using LLM
+        # Brand voice extraction (LLM)
         try:
-            logger.info("Extracting brand voice using LLM")
-            model = load_model()
-            structure_model = model.with_structured_output(BrandSchema)
-            brand_data = structure_model.invoke(content)
-            logger.info(f"Brand data extracted: {brand_data}")
+            if content:
+                model = load_model()
+                structure_model = model.with_structured_output(BrandSchema)
+                brand_data = structure_model.invoke(content)
 
-            brand_voice = BrandVoice(
-                workspace_id=workspace.id,
-                about=brand_data.about,
-                customer_profile=brand_data.customer_profile,
-                selling_position=brand_data.selling_position,
-                target_audience=brand_data.target_audience,
-                brand_voice=brand_data.brand_voice,
-                competitors=brand_data.competitors,
-                content_strategy=brand_data.content_pillar,
-            )
-
-            db.add(brand_voice)
-            db.commit()
-            db.refresh(brand_voice)
-
-            logger.info(f"Brand voice saved for workspace {workspace.id}")
+                brand_voice = BrandVoice(
+                    workspace_id=workspace.id,
+                    about=brand_data.about,
+                    customer_profile=brand_data.customer_profile,
+                    selling_position=brand_data.selling_position,
+                    target_audience=brand_data.target_audience,
+                    brand_voice=brand_data.brand_voice,
+                    competitors=brand_data.competitors,
+                    content_strategy=brand_data.content_pillar,
+                )
+                db.add(brand_voice)
+                db.commit()
+                db.refresh(brand_voice)
         except Exception as llm_err:
-            logger.exception("LLM extraction failed")
-            # Workspace is still valid – don't fail entire request
-            raise WrextExternalServiceException(
-                message="Failed to extract brand voice using AI",
-                service_name="llm_service",
-                service_error=str(llm_err)
-            )
+            logger.warning(f"Brand voice extraction failed: {llm_err}")
 
+        # Prepare response
         workspace_data = {
             "id": str(workspace.id),
-            "title": workspace.title,
+            "name": workspace.name,
             "description": workspace.description,
             "url": workspace.url,
-            # "created_at": workspace.created_at.isoformat() if workspace.created_at else None
+            "created_at": workspace.created_at.isoformat() if workspace.created_at else None,
         }
 
         return created(
@@ -262,11 +276,10 @@ async def create_workspace(
             message="Workspace created successfully"
         )
 
-    except (DuplicateResourceException, WrextValidationException, WrextExternalServiceException):
-        # Re-raise custom exceptions to be handled by middleware
+    except (DuplicateResourceException, WrextValidationException):
         raise
     except Exception as e:
-        logger.exception(f"Unexpected error creating workspace {data.title}")
+        logger.exception(f"Unexpected error creating workspace {data.name}")
         db.rollback()
         return error(
             message="Failed to create workspace due to server error",
@@ -278,51 +291,36 @@ async def create_workspace(
         )
 
 
-# Delete
-@router.delete("/delete/{workspace_id}")
-def delete_workspace(
-    workspace_id: str,
-    request: Request,
-    db: Session = Depends(get_db),
-    api_key: str = Depends(get_api_key)
-):
-    logger.info(f"Received request to delete workspace: {workspace_id}")
-    if api_key != API_KEY:
-        raise WrextAuthenticationException(
-            message="Invalid API key provided",
-            context={"api_key_provided": bool(api_key)}
-        )
-    try:
-        workspace = db.query(WorkspaceModel).filter_by(id=workspace_id).first()
-        if not workspace:
-            logger.warning(f"Workspace not found: {workspace_id}")
-            raise ResourceNotFoundException(
-                resource_type="workspace",
-                resource_id=workspace_id
-            )
-        # delete vector from store
-        success_status = delete_vectors(vector_id=str(workspace_id))
-        if not success_status:
-            return error(
-                message="Failed to delete vector store",
-                code=ErrorCode.INTERNAL_SERVER_ERROR,
-                status_code=500,
-                severity=ErrorSeverity.HIGH,
-                context={"workspace_id": workspace_id, "error_details": "Unable to delete vectors"},
-                request=request
-            )
 
-        # Delete the workspace
+# -------------------------
+# Delete workspace
+# -------------------------
+@router.delete("/delete/{workspace_id}")
+def delete_workspace(workspace_id: str, request: Request, db: Session = Depends(get_db), user: dict = Depends(get_current_user)):
+    user_id = user.get("identity")
+    db_user = db.query(Users).filter(Users.id == user_id, Users.deleted_at == None).first()
+    if not db_user:
+        raise WrextAuthenticationException(message="User not found", context={"user_id": user_id})
+
+    try:
+        workspace = (
+            db.query(WorkspaceModel)
+            .join(WorkspaceMembers, WorkspaceMembers.workspace_id == WorkspaceModel.id)
+            .filter(WorkspaceModel.id == workspace_id, WorkspaceMembers.user_id == user_id)
+            .first()
+        )
+        if not workspace:
+            raise ResourceNotFoundException(resource_type="workspace", resource_id=workspace_id)
+
+        try:
+            delete_vectors(vector_id=str(workspace.id))
+        except Exception as e:
+            logger.warning(f"Failed to delete vectors for workspace {workspace.id}: {e}")
+
         db.delete(workspace)
         db.commit()
-        logger.info(f"Workspace deleted: {workspace_id}")
 
-        # return no_content(request=request)
-        return success(
-            data={},
-            request=request,
-            message="Workspace deleted successfully"
-        )
+        return success(data={}, request=request, message="Workspace deleted successfully")
 
     except ResourceNotFoundException:
         raise
@@ -339,67 +337,62 @@ def delete_workspace(
         )
 
 
-# update
+# -------------------------
+# Update workspace
+# -------------------------
 @router.put("/update/{workspace_id}")
-def update_workspace(
-    workspace_id: str,
-    data: WorkspaceSchema,
-    request: Request,
-    db: Session = Depends(get_db),
-    api_key: str = Depends(get_api_key)
-):
-    logger.info(f"Received request to update workspace: {workspace_id}")
-    if api_key != API_KEY:
-        raise WrextAuthenticationException(
-            message="Invalid API key provided",
-            context={"api_key_provided": bool(api_key)}
-        )
-    try:
-        workspace = db.query(WorkspaceModel).filter_by(id=workspace_id).first()
-        if not workspace:
-            logger.warning(f"Workspace not found: {workspace_id}")
-            raise ResourceNotFoundException(
-                resource_type="workspace",
-                resource_id=workspace_id
-            )
+def update_workspace(workspace_id: str, data: WorkspaceSchema, request: Request, db: Session = Depends(get_db), user: dict = Depends(get_current_user)):
+    user_id = user.get("identity")
+    db_user = db.query(Users).filter(Users.id == user_id, Users.deleted_at == None).first()
+    if not db_user:
+        raise WrextAuthenticationException(message="User not found", context={"user_id": user_id})
 
-        # Check for duplicate title if title is being updated
-        if data.title and data.title != workspace.title:
-            existing_workspace = db.query(WorkspaceModel).filter_by(title=data.title).first()
+    try:
+        workspace = (
+            db.query(WorkspaceModel)
+            .join(WorkspaceMembers, WorkspaceMembers.workspace_id == WorkspaceModel.id)
+            .filter(WorkspaceModel.id == workspace_id, WorkspaceMembers.user_id == user_id)
+            .first()
+        )
+        if not workspace:
+            raise ResourceNotFoundException(resource_type="workspace", resource_id=workspace_id)
+
+        # Duplicate title check
+        if data.name and data.name != workspace.name:
+            existing_workspace = db.query(WorkspaceModel).filter(
+                WorkspaceModel.name == data.name,
+                WorkspaceModel.user_id == user_id
+            ).first()
             if existing_workspace:
-                logger.warning(f"Duplicate workspace title: {data.title}")
                 raise DuplicateResourceException(
-                    message=f"Workspace with title '{data.title}' already exists",
+                    message=f"Workspace with title '{data.name}' already exists",
                     resource_type="workspace",
                     conflicting_field="title",
-                    conflicting_value=data.title
+                    conflicting_value=data.name
                 )
 
         # Update fields
-        if data.title:
-            workspace.title = data.title
+        if data.name:
+            workspace.name = data.name
         if data.description is not None:
             workspace.description = data.description
         if data.url:
             workspace.url = str(data.url)
+        workspace.updated_at = datetime.now(timezone.utc)
 
         db.commit()
         db.refresh(workspace)
-        logger.info(f"Workspace updated: {workspace_id}")
 
         workspace_data = {
             "id": str(workspace.id),
-            "title": workspace.title,
+            "name": workspace.name,
             "description": workspace.description,
             "url": workspace.url,
-            # "updated_at": workspace.updated_at.isoformat() if hasattr(workspace, 'updated_at') else None
+            "created_at": workspace.created_at.isoformat() if workspace.created_at else None,
+            "updated_at": workspace.updated_at.isoformat() if workspace.updated_at else None,
         }
 
-        return success(
-            data={"workspace": workspace_data},
-            request=request,
-            message="Workspace updated successfully"
-        )
+        return success(data={"workspace": workspace_data}, request=request, message="Workspace updated successfully")
 
     except (ResourceNotFoundException, DuplicateResourceException):
         raise

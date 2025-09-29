@@ -3,7 +3,7 @@ from sqlalchemy.dialects.postgresql import UUID, ARRAY, JSONB
 from src.api.database.database import Base
 import uuid
 
-class Topics(Base):
+class TopicsModel(Base):
     __tablename__ = "topics"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, unique=True, nullable=False)  # Changed to String to match schema
