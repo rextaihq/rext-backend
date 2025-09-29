@@ -17,6 +17,7 @@ class WorkspaceModel(Base):
     description = Column(Text, nullable=True)
     url = Column(String, nullable=False)
     created_at = Column(DateTime(timezone=True), nullable=False, default=datetime.utcnow)
+    updated_at = Column(DateTime(timezone=True), nullable=True, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     # Relationships
     owner = relationship("Users", back_populates="workspaces")
@@ -38,4 +39,5 @@ class WorkspaceModel(Base):
             "description": self.description,
             "url": self.url,
             "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
         }

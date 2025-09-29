@@ -24,7 +24,7 @@ from src.api.models.user_models.roles import Role
 from src.api.models.user_models.permissions import Permission
 from src.api.models.user_models.role_permissions import RolePermission
 from src.api.models.user_models.user_roles import UserRole
-from src.api.models.knowledge_models.knowledge_model import BrandVoice
+from src.api.models.knowledge_models.knowledge_model import BrandVoice, Website, KnowledgeFiles, TextKnowledge
 from src.api.schema.knowledge_schema import BrandSchema
 from src.model.model import load_model
 
@@ -65,23 +65,58 @@ def get_workspaces(
         )
 
     try:
-        workspaces = (
-            db.query(WorkspaceModel)
+        # Enhanced query to get workspace data with owner info and counts
+        from sqlalchemy import func
+
+        workspaces_query = (
+            db.query(
+                WorkspaceModel,
+                Users.display_name.label('owner_name'),
+                Users.email.label('owner_email'),
+                func.count(Website.id).label('web_knowledge_count'),
+                func.count(KnowledgeFiles.id).label('files_count'),
+                func.count(TextKnowledge.id).label('text_knowledge_count')
+            )
+            .join(WorkspaceMembers, WorkspaceMembers.workspace_id == WorkspaceModel.id)
+            .join(Users, Users.id == WorkspaceModel.user_id)
+            .outerjoin(Website, Website.workspace_id == WorkspaceModel.id)
+            .outerjoin(KnowledgeFiles, KnowledgeFiles.workspace_id == WorkspaceModel.id)
+            .outerjoin(TextKnowledge, TextKnowledge.workspace_id == WorkspaceModel.id)
             .filter(WorkspaceMembers.user_id == user_id)
+            .group_by(WorkspaceModel.id, Users.id)
             .all()
         )
 
-        workspace_data = [
-            {
+        workspace_data = []
+        for result in workspaces_query:
+            ws = result[0]  # WorkspaceModel
+            owner_name = result[1]
+            owner_email = result[2]
+            web_count = result[3] or 0
+            files_count = result[4] or 0
+            text_count = result[5] or 0
+            total_knowledge = web_count + files_count + text_count
+
+            workspace_data.append({
                 "id": str(ws.id),
                 "user_id": str(ws.user_id),
                 "name": ws.name,
                 "description": ws.description,
                 "url": ws.url,
                 "created_at": ws.created_at.isoformat() if ws.created_at else None,
-            }
-            for ws in workspaces
-        ]
+                "updated_at": ws.updated_at.isoformat() if ws.updated_at else None,
+                "owner": {
+                    "name": owner_name,
+                    "email": owner_email
+                },
+                "knowledge_stats": {
+                    "web_knowledge": web_count,
+                    "files": files_count,
+                    "text_knowledge": text_count,
+                    "total": total_knowledge
+                },
+                "status": "active"  # Could be enhanced with actual status logic
+            })
 
         return success(
             data={"workspaces": workspace_data, "total_count": len(workspace_data)},
