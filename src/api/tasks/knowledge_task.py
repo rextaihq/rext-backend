@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from src.api.database.database import get_db
 from src.utils.helper import web_page_scraper
 from src.nodes.vectorStore.buildVectorStore import build_vector_store
-from src.api.models.knowledge_model import Website,BrandVoice
+from src.api.models.knowledge_models.knowledge_model import Website,BrandVoice
 from pydantic import HttpUrl
 from src.api.schema.knowledge_schema import BrandSchema
 

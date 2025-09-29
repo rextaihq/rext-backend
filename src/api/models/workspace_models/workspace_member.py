@@ -14,7 +14,7 @@ class WorkspaceMembers(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, unique=True, nullable=False)
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
     workspace_id = Column(UUID(as_uuid=True), ForeignKey("workspace.id"), nullable=False)
-    invited_by_user_id = Column(UUID(as_uuid=True), ForeignKey("user_invitations.id"), nullable=True)
+    invitation_id = Column(UUID(as_uuid=True), ForeignKey("user_invitations.id"), nullable=True)
     status = Column(String(50), default="pending")  # active, inactive, pending
     is_default = Column(Boolean, default=False)
     joined_at = Column(TIMESTAMP, default=datetime.utcnow, nullable=False)
@@ -23,7 +23,7 @@ class WorkspaceMembers(Base):
     # Relationships
     user = relationship("Users", foreign_keys=[user_id], back_populates="workspace_memberships")
     workspace = relationship("WorkspaceModel", foreign_keys=[workspace_id], back_populates="members")
-    invitation = relationship("UserInvitations", foreign_keys=[invited_by_user_id], back_populates="workspace_members")
+    invitation = relationship("UserInvitations", foreign_keys=[invitation_id], back_populates="workspace_members")
 
     def to_dict(self):
         return {

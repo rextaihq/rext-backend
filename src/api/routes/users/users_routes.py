@@ -119,13 +119,13 @@ def create_user(user: RegisterUser, request: Request, db: Session = Depends(get_
         
         # Assign default role
         logger.info("Assigning default role to new user")
-        default_role = db.query(Role).filter(Role.name == "admin").first()
+        default_role = db.query(Role).filter(Role.name == "user").first()
         if not default_role:
-            logger.info("Creating default admin role")
+            logger.info("Creating default user role")
             default_role = Role(
-                name="admin",
-                display_name="Administrator",
-                description="Default admin role with all permissions",
+                name="user",
+                display_name="User",
+                description="Default role for regular users",
                 hierarchy_level=1,
                 is_system_role=True
             )
@@ -133,20 +133,20 @@ def create_user(user: RegisterUser, request: Request, db: Session = Depends(get_
             db.commit()
             db.refresh(default_role)
 
-        logger.info(f"Assigning role {default_role.name} to user {new_user.username}")
-        user_role = UserRole(
-            user_id=new_user.id,
-            role_id=default_role.id,
-            workspace_id=None,
-            is_primary=True,
-            assigned_at=datetime.utcnow(),
-            assigned_by_user_id=new_user.id
-        )
-        db.add(user_role)
-        db.commit()
-        db.refresh(user_role)
+        # logger.info(f"Assigning role {default_role.name} to user {new_user.username}")
+        # user_role = UserRole(
+        #     user_id=new_user.id,
+        #     role_id=default_role.id,
+        #     workspace_id=None,
+        #     is_primary=True,
+        #     assigned_at=datetime.utcnow(),
+        #     assigned_by_user_id=new_user.id
+        # )
+        # db.add(user_role)
+        # db.commit()
+        # db.refresh(user_role)
 
-        logger.info(f"User {new_user.username} created successfully with ID {new_user.id}")
+        # logger.info(f"User {new_user.username} created successfully with ID {new_user.id}")
 
         # Return user data (excluding password)
         user_data = {
@@ -233,13 +233,7 @@ def login_user(
         db.refresh(db_user)
 
         # get all the roles of the user
-        user_roles = db.query(UserRole).filter(UserRole.user_id == db_user.id).all()
-        role_names = []
-        for ur in user_roles:
-            role = db.query(Role).get(ur.role_id)
-            if role:
-                role_names.append(role.name)
-
+        role_names = [ur.role.name for ur in db_user.user_roles if ur.is_primary]
         # Prepare JWT payload
         token_data = {
             "id": str(db_user.id),

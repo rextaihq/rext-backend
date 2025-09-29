@@ -6,7 +6,7 @@ from src.prompts.topic_generation_prompts import topic_generation_prompt
 from src.api.security.auth import get_api_key, API_KEY
 from sqlalchemy.orm import Session
 from sqlalchemy import func
-from src.api.models.topic_models import Topics
+from src.api.models.topic_models.topic_models import TopicsModel as Topics
 from src.api.database.database import get_db
 from src.states.schemas import SaveTopicRequestList
 from src.services.topic_enrichment_service import TopicEnrichmentService

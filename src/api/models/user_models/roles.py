@@ -22,8 +22,10 @@ class Role(Base):
     updated_at = Column(TIMESTAMP, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     # Relationships
+    permissions = relationship("RolePermission", back_populates="role")
     user_roles = relationship("UserRole", back_populates="role")
     invited_roles = relationship("UserInvitations", back_populates="role")
+  
 
     def to_dict(self):
         return {

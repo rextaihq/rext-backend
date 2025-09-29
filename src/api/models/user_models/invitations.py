@@ -1,5 +1,5 @@
 import uuid
-from sqlalchemy import Column, String, Boolean, Integer, Text, TIMESTAMP, ForeignKey
+from sqlalchemy import Column, String, Boolean, Integer, Text, TIMESTAMP, ForeignKey, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID, JSONB, INET
 from sqlalchemy.orm import relationship
 from datetime import datetime
@@ -16,6 +16,11 @@ class UserInvitations(Base):
     status = Column(String(50), default="pending")  # e.g., pending, accepted, revoked
     created_at = Column(TIMESTAMP, default=datetime.utcnow, nullable=False)
     expires_at = Column(TIMESTAMP, nullable=False)
+
+    # add a constraint to ensure that the combination of email and workspace_id is unique
+    __table_args__ = (
+        UniqueConstraint('email', 'workspace_id', name='uq_email_workspace'),
+    )
     
     # Relationships
     workspace = relationship("WorkspaceModel", foreign_keys=[workspace_id],back_populates="invitations")

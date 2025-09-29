@@ -12,16 +12,16 @@ class WorkspaceModel(Base):
     __tablename__ = "workspace"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, unique=True, nullable=False)
-    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False) 
-    name = Column(String, nullable=False, unique=True)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    name = Column(String, nullable=False)
     description = Column(Text, nullable=True)
-    url = Column(String, nullable=True, unique=True)
+    url = Column(String, nullable=False)
     created_at = Column(DateTime(timezone=True), nullable=False, default=datetime.utcnow)
 
     # Relationships
     owner = relationship("Users", back_populates="workspaces")
     user_roles = relationship("UserRole", back_populates="workspace")
-    members = relationship("WorkspaceMembers", back_populates="workspace")
+    members = relationship("WorkspaceMembers", back_populates="workspace",cascade="all, delete-orphan")
     invitations = relationship("UserInvitations", back_populates="workspace")
 
     # Other related entities

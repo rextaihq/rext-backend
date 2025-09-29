@@ -11,12 +11,12 @@ def add_to_vector_store(
     vector_store_path: str="vector_store/content_store",
     batch_size: int=32,
     blog_context: list[Document]=(),
-    doc_id:str=None
+    workspace_id:str=None
 )->bool:
     if blog_context is None:
         raise "Document should not be none"
 
-    if doc_id is None:
+    if workspace_id is None:
         raise "Doc id should not be none"
     # Determine embedding dimension
     test_embedding = get_hf_embedding().embed_query("hello world")
@@ -43,7 +43,7 @@ def add_to_vector_store(
     documents_with_metadata = [
             Document(
                 page_content=doc.page_content,
-                metadata={**doc.metadata, "doc_id": doc_id} 
+                metadata={**doc.metadata, "workspace_id": workspace_id} 
             )
             for doc in blog_context
     ]
@@ -94,7 +94,7 @@ def delete_vectors(vector_id: str):
     ids_to_delete = []
     for doc_id, doc in vector_store.docstore.dict.items():
         # assuming metadata has "workspace_id"
-        if doc.metadata.get("doc_id") == vector_id:
+        if doc.metadata.get("workspace_id") == vector_id:
             ids_to_delete.append(doc_id)
 
     if not ids_to_delete:
