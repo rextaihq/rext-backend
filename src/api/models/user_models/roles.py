@@ -13,11 +13,11 @@ class Role(Base):
     __tablename__ = "roles"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, unique=True, nullable=False)
-    name = Column(String(100), unique=True, nullable=False)
+    name = Column(String(100), nullable=False)
     display_name = Column(String(150), nullable=False)
     description = Column(Text)
     hierarchy_level = Column(Integer, default=0)
-    is_system_role = Column(Boolean, default=True)
+    is_system_role = Column(Boolean, default=False)
     created_at = Column(TIMESTAMP, default=datetime.utcnow)
     updated_at = Column(TIMESTAMP, default=datetime.utcnow, onupdate=datetime.utcnow)
 

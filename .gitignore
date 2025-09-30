@@ -46,3 +46,4 @@ docs/_build/
 target/
 .ipynb_checkpoints
 profile_default/            
+permission_seeds.py

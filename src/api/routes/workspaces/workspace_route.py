@@ -183,7 +183,9 @@ async def create_workspace(
                 conflicting_value=data.name
             )
 
-        # Create workspace
+        # -------------------------
+        # 1️⃣ Create workspace
+        # -------------------------
         workspace = WorkspaceModel(
             user_id=user_id,
             name=data.name,
@@ -194,51 +196,80 @@ async def create_workspace(
         db.commit()
         db.refresh(workspace)
 
-        # Add creator as default member
+        # -------------------------
+        # 2️⃣ Add creator as default member
+        # -------------------------
         member = WorkspaceMembers(
             workspace_id=workspace.id,
             user_id=user_id,
             joined_at=datetime.now(timezone.utc),
             is_default=True,
-            status = "active",
-            invitation_id = None
+            status="active"
         )
         db.add(member)
-
-        # Assign 'admin' role to creator
-        admin_role = Role(
-            name="admin",
-            display_name="Administrator",
-            description="Workspace administrator with full permissions",            
-        )
-
-        db.add(admin_role)
-
-        # privide the necessary permissions to admin role
-
         db.commit()
-        db.refresh(workspace)
         db.refresh(member)
 
-        # Scrape content
+        # -------------------------
+        # 3️⃣ Create workspace admin role
+        # -------------------------
+        admin_role_name = f"{workspace.id}_admin"
+
+        # Check if role already exists (very unlikely for workspace-specific role)
+        admin_role = db.query(Role).filter_by(name=admin_role_name).first()
+        if not admin_role:
+            admin_role = Role(
+                name=admin_role_name,
+                display_name="Workspace Administrator",
+                description="Workspace admin with full content/topic permissions",
+                is_system_role=False
+            )
+            db.add(admin_role)
+            db.commit()
+            db.refresh(admin_role)
+
+        # -------------------------
+        # 4️⃣ Assign all topic/content permissions to this admin role
+        # -------------------------
+        permissions = db.query(Permission).filter(Permission.resource.in_(["topic", "content"])).all()
+        for perm in permissions:
+            exists = db.query(RolePermission).filter_by(
+                role_id=admin_role.id, permission_id=perm.id
+            ).first()
+            if not exists:
+                rp = RolePermission(role_id=admin_role.id, permission_id=perm.id)
+                db.add(rp)
+        db.commit()
+
+        # -------------------------
+        # 5️⃣ Assign this role to the workspace creator
+        # -------------------------
+        user_role = UserRole(
+            user_id=user_id,
+            role_id=admin_role.id,
+            workspace_id=workspace.id,
+            is_primary=True
+        )
+        db.add(user_role)
+        db.commit()
+
+        # -------------------------
+        # 6️⃣ Scrape content & other tasks
+        # -------------------------
         try:
             chunks, results = await web_page_scraper(urls=[data.url])
             result = results[0]
-            if not result.success:
-                logger.warning(f"Failed to scrape URL: {data.url}")
-            content = result.markdown
+            content = result.markdown if result.success else ""
         except Exception as scrape_err:
             logger.warning(f"Scraping failed for URL {data.url}: {scrape_err}")
             content = ""
 
-        # Vector store insertion
         try:
             if chunks:
                 add_to_vector_store(blog_context=chunks, workspace_id=str(workspace.id))
         except Exception as vec_err:
             logger.warning(f"Vector store insertion failed: {vec_err}")
 
-        # Brand voice extraction (LLM)
         try:
             if content:
                 model = load_model()
@@ -261,7 +292,9 @@ async def create_workspace(
         except Exception as llm_err:
             logger.warning(f"Brand voice extraction failed: {llm_err}")
 
-        # Prepare response
+        # -------------------------
+        # 7️⃣ Return response
+        # -------------------------
         workspace_data = {
             "id": str(workspace.id),
             "name": workspace.name,
@@ -289,8 +322,6 @@ async def create_workspace(
             context={"error_details": str(e)},
             request=request
         )
-
-
 
 # -------------------------
 # Delete workspace
