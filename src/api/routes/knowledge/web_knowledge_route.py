@@ -173,7 +173,53 @@ async def add_web_knowledge(
         except Exception as e:
             logger.error(f"Error adding knowledge: {e}")
             raise HTTPException(status_code=500, detail="Internal Server Error")
-        
+
+
+# Update web knowledge (title only, URL cannot be changed)
+@router.put("/update/{workspace_id}/{web_id}")
+def update_web_knowledge(
+        workspace_id: str,
+        web_id: str,
+        title: str,
+        request: Request,
+        db: Session = Depends(get_db),
+        api_key: str = Depends(get_api_key)
+):
+    if api_key != API_KEY:
+        raise WrextAuthenticationException(
+            message="Invalid API key provided",
+            context={"api_key_provided": bool(api_key)}
+        )
+    try:
+        logger.info(f"Updating web knowledge ID: {web_id} in workspace: {workspace_id}")
+        knowledge = db.query(Website).filter(
+            Website.id == web_id,
+            Website.workspace_id == workspace_id
+        ).first()
+
+        if not knowledge:
+            raise ResourceNotFoundException(
+                resource_type="web_knowledge",
+                resource_id=web_id
+            )
+
+        knowledge.title = title
+        db.commit()
+        db.refresh(knowledge)
+
+        return success(
+            data={"web_knowledge": knowledge},
+            request=request,
+            message="Web knowledge updated successfully"
+        )
+    except ResourceNotFoundException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating web knowledge: {e}")
+        db.rollback()
+        raise HTTPException(status_code=500, detail="Internal Server Error")
+
+
 # Delete knowledge by ID
 @router.delete("/delete/{workspace_id}/{web_id}")
 def delete_web_knowledge(

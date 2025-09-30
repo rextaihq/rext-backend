@@ -182,7 +182,53 @@ async def add_file_knowledge(
     except Exception as e:
         logger.error(f"Error adding file knowledge: {e}")
         raise HTTPException(status_code=500, detail="Internal Server Error")
-    
+
+
+# Update file knowledge (name only)
+@router.put("/update/{workspace_id}/{file_id}")
+def update_file_knowledge(
+        workspace_id: str,
+        file_id: str,
+        name: str,
+        request: Request,
+        db: Session = Depends(get_db),
+        api_key: str = Depends(get_api_key)
+):
+    if api_key != API_KEY:
+        raise WrextAuthenticationException(
+            message="Invalid API key provided",
+            context={"api_key_provided": bool(api_key)}
+        )
+    try:
+        logger.info(f"Updating file knowledge ID: {file_id} in workspace: {workspace_id}")
+        knowledge = db.query(KnowledgeFiles).filter(
+            KnowledgeFiles.id == file_id,
+            KnowledgeFiles.workspace_id == workspace_id
+        ).first()
+
+        if not knowledge:
+            raise ResourceNotFoundException(
+                resource_type="file_knowledge",
+                resource_id=file_id
+            )
+
+        knowledge.name = name
+        db.commit()
+        db.refresh(knowledge)
+
+        return success(
+            data={"file_knowledge": knowledge},
+            request=request,
+            message="File knowledge updated successfully"
+        )
+    except ResourceNotFoundException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating file knowledge: {e}")
+        db.rollback()
+        raise HTTPException(status_code=500, detail="Internal Server Error")
+
+
 # Delete file knowledge
 @router.delete("/delete/{workspace_id}/{file_id}")
 def delete_file_knowledge(

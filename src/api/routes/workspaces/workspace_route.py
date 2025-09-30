@@ -66,16 +66,17 @@ def get_workspaces(
 
     try:
         # Enhanced query to get workspace data with owner info and counts
-        from sqlalchemy import func
+        from sqlalchemy import func, distinct
 
         workspaces_query = (
             db.query(
                 WorkspaceModel,
                 Users.display_name.label('owner_name'),
                 Users.email.label('owner_email'),
-                func.count(Website.id).label('web_knowledge_count'),
-                func.count(KnowledgeFiles.id).label('files_count'),
-                func.count(TextKnowledge.id).label('text_knowledge_count')
+                func.count(distinct(Website.id)).label('web_knowledge_count'),
+                func.count(distinct(KnowledgeFiles.id)).label('files_count'),
+                func.count(distinct(TextKnowledge.id)).label('text_knowledge_count'),
+                func.count(distinct(WorkspaceMembers.id)).label('members_count')
             )
             .join(WorkspaceMembers, WorkspaceMembers.workspace_id == WorkspaceModel.id)
             .join(Users, Users.id == WorkspaceModel.user_id)
@@ -95,6 +96,7 @@ def get_workspaces(
             web_count = result[3] or 0
             files_count = result[4] or 0
             text_count = result[5] or 0
+            members_count = result[6] or 0
             total_knowledge = web_count + files_count + text_count
 
             workspace_data.append({
@@ -115,6 +117,7 @@ def get_workspaces(
                     "text_knowledge": text_count,
                     "total": total_knowledge
                 },
+                "members_count": members_count,
                 "status": "active"  # Could be enhanced with actual status logic
             })
 
@@ -155,6 +158,38 @@ def get_workspace_by_id(workspace_id: str, request: Request, db: Session = Depen
         if not workspace:
             raise ResourceNotFoundException(resource_type="workspace", resource_id=workspace_id)
 
+        # Get brand voice data
+        brand_voice = db.query(BrandVoice).filter(BrandVoice.workspace_id == workspace_id).first()
+
+        # Get comprehensive analytics with knowledge counts and content metrics
+        from sqlalchemy import func
+
+        # Knowledge counts
+        web_count = db.query(func.count(Website.id)).filter(Website.workspace_id == workspace_id).scalar() or 0
+        files_count = db.query(func.count(KnowledgeFiles.id)).filter(KnowledgeFiles.workspace_id == workspace_id).scalar() or 0
+        text_count = db.query(func.count(TextKnowledge.id)).filter(TextKnowledge.workspace_id == workspace_id).scalar() or 0
+        members_count = db.query(func.count(WorkspaceMembers.id)).filter(WorkspaceMembers.workspace_id == workspace_id).scalar() or 0
+
+        # Content analytics - word counts
+        web_word_stats = db.query(
+            func.sum(Website.word_count).label('total_words'),
+            func.avg(Website.word_count).label('avg_words')
+        ).filter(Website.workspace_id == workspace_id).first()
+
+        file_word_stats = db.query(
+            func.sum(KnowledgeFiles.word_count).label('total_words'),
+            func.avg(KnowledgeFiles.word_count).label('avg_words')
+        ).filter(KnowledgeFiles.workspace_id == workspace_id).first()
+
+        total_web_words = int(web_word_stats.total_words or 0)
+        avg_web_words = int(web_word_stats.avg_words or 0)
+        total_file_words = int(file_word_stats.total_words or 0)
+        avg_file_words = int(file_word_stats.avg_words or 0)
+
+        # Calculate total content metrics
+        total_words = total_web_words + total_file_words
+        estimated_reading_time = total_words // 200  # ~200 words per minute
+
         workspace_data = {
             "id": str(workspace.id),
             "user_id": str(workspace.user_id),
@@ -162,7 +197,46 @@ def get_workspace_by_id(workspace_id: str, request: Request, db: Session = Depen
             "description": workspace.description,
             "url": workspace.url,
             "created_at": workspace.created_at.isoformat() if workspace.created_at else None,
+            # Keep backward compatibility with knowledge_stats at root level
+            "knowledge_stats": {
+                "web_knowledge": web_count,
+                "files": files_count,
+                "text_knowledge": text_count,
+                "total": web_count + files_count + text_count
+            },
+            # Also provide detailed analytics
+            "analytics": {
+                "knowledge_counts": {
+                    "web_knowledge": web_count,
+                    "files": files_count,
+                    "text_knowledge": text_count,
+                    "total_knowledge_items": web_count + files_count + text_count
+                },
+                "content_metrics": {
+                    "total_words": total_words,
+                    "web_content_words": total_web_words,
+                    "file_content_words": total_file_words,
+                    "avg_web_article_words": avg_web_words,
+                    "avg_file_words": avg_file_words,
+                    "estimated_reading_time_minutes": estimated_reading_time
+                },
+                "team_metrics": {
+                    "total_members": members_count
+                }
+            }
         }
+
+        # Add brand voice data if exists
+        if brand_voice:
+            workspace_data["brand_voice"] = {
+                "about": brand_voice.about,
+                "customer_profile": brand_voice.customer_profile,
+                "selling_position": brand_voice.selling_position,
+                "target_audience": brand_voice.target_audience,
+                "brand_voice": brand_voice.brand_voice,
+                "competitors": brand_voice.competitors,
+                "content_strategy": brand_voice.content_strategy,
+            }
 
         return success(
             data={"workspace": workspace_data},
@@ -373,6 +447,423 @@ def delete_workspace(workspace_id: str, request: Request, db: Session = Depends(
 
 
 # -------------------------
+# Get workspace members
+# -------------------------
+@router.get("/{workspace_id}/members")
+def get_workspace_members(workspace_id: str, request: Request, db: Session = Depends(get_db), user: dict = Depends(get_current_user)):
+    user_id = user.get("identity")
+    db_user = db.query(Users).filter(Users.id == user_id, Users.deleted_at == None).first()
+    if not db_user:
+        raise WrextAuthenticationException(message="User not found", context={"user_id": user_id})
+
+    try:
+        # Check if user has access to this workspace
+        workspace = (
+            db.query(WorkspaceModel)
+            .join(WorkspaceMembers, WorkspaceMembers.workspace_id == WorkspaceModel.id)
+            .filter(WorkspaceModel.id == workspace_id, WorkspaceMembers.user_id == user_id)
+            .first()
+        )
+        if not workspace:
+            raise ResourceNotFoundException(resource_type="workspace", resource_id=workspace_id)
+
+        # Get all members of the workspace with user details
+        members = (
+            db.query(WorkspaceMembers, Users)
+            .join(Users, Users.id == WorkspaceMembers.user_id)
+            .filter(WorkspaceMembers.workspace_id == workspace_id)
+            .all()
+        )
+
+        members_data = []
+        for member, user_info in members:
+            members_data.append({
+                "id": str(member.id),
+                "user_id": str(member.user_id),
+                "workspace_id": str(member.workspace_id),
+                "status": member.status,
+                "is_default": member.is_default,
+                "joined_at": member.joined_at.isoformat() if member.joined_at else None,
+                "last_activity_at": member.last_activity_at.isoformat() if member.last_activity_at else None,
+                "user": {
+                    "id": str(user_info.id),
+                    "email": user_info.email,
+                    "display_name": user_info.display_name,
+                    "is_verified": user_info.email_verified,
+                }
+            })
+
+        return success(
+            data={"members": members_data, "total_count": len(members_data)},
+            request=request,
+            message=f"Retrieved {len(members_data)} members successfully"
+        )
+
+    except ResourceNotFoundException:
+        raise
+    except Exception as e:
+        logger.exception(f"Error fetching workspace members {workspace_id}")
+        return error(
+            message="Failed to retrieve workspace members",
+            code=ErrorCode.INTERNAL_SERVER_ERROR,
+            status_code=500,
+            severity=ErrorSeverity.HIGH,
+            request=request
+        )
+
+
+# -------------------------
+# Add workspace member
+# -------------------------
+@router.post("/{workspace_id}/members")
+def add_workspace_member(
+    workspace_id: str,
+    email: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: dict = Depends(get_current_user)
+):
+    user_id = user.get("identity")
+    db_user = db.query(Users).filter(Users.id == user_id, Users.deleted_at == None).first()
+    if not db_user:
+        raise WrextAuthenticationException(message="User not found", context={"user_id": user_id})
+
+    try:
+        # Verify user is owner or has access to workspace
+        workspace = (
+            db.query(WorkspaceModel)
+            .join(WorkspaceMembers, WorkspaceMembers.workspace_id == WorkspaceModel.id)
+            .filter(WorkspaceModel.id == workspace_id, WorkspaceMembers.user_id == user_id)
+            .first()
+        )
+        if not workspace:
+            raise ResourceNotFoundException(resource_type="workspace", resource_id=workspace_id)
+
+        # Find user by email
+        new_user = db.query(Users).filter(Users.email == email, Users.deleted_at == None).first()
+        if not new_user:
+            raise ResourceNotFoundException(resource_type="user", resource_id=email)
+
+        # Check if already a member
+        existing_member = db.query(WorkspaceMembers).filter(
+            WorkspaceMembers.workspace_id == workspace_id,
+            WorkspaceMembers.user_id == new_user.id
+        ).first()
+        if existing_member:
+            raise DuplicateResourceException(
+                message=f"User {email} is already a member of this workspace",
+                resource_type="workspace_member",
+                conflicting_field="user_id",
+                conflicting_value=str(new_user.id)
+            )
+
+        # Add as member
+        new_member = WorkspaceMembers(
+            user_id=new_user.id,
+            workspace_id=workspace_id,
+            status="active",
+            is_default=False,
+            joined_at=datetime.now(timezone.utc),
+            last_activity_at=datetime.now(timezone.utc)
+        )
+        db.add(new_member)
+        db.commit()
+        db.refresh(new_member)
+
+        return success(
+            data={
+                "member": {
+                    "id": str(new_member.id),
+                    "user_id": str(new_user.id),
+                    "email": new_user.email,
+                    "display_name": new_user.display_name,
+                    "status": new_member.status,
+                }
+            },
+            request=request,
+            message=f"User {email} added to workspace successfully"
+        )
+
+    except (ResourceNotFoundException, DuplicateResourceException):
+        raise
+    except Exception as e:
+        logger.exception(f"Error adding member to workspace {workspace_id}")
+        db.rollback()
+        return error(
+            message="Failed to add member to workspace",
+            code=ErrorCode.INTERNAL_SERVER_ERROR,
+            status_code=500,
+            severity=ErrorSeverity.HIGH,
+            request=request
+        )
+
+
+# -------------------------
+# Remove workspace member
+# -------------------------
+@router.delete("/{workspace_id}/members/{member_id}")
+def remove_workspace_member(
+    workspace_id: str,
+    member_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: dict = Depends(get_current_user)
+):
+    user_id = user.get("identity")
+    db_user = db.query(Users).filter(Users.id == user_id, Users.deleted_at == None).first()
+    if not db_user:
+        raise WrextAuthenticationException(message="User not found", context={"user_id": user_id})
+
+    try:
+        # Verify user has access to workspace
+        workspace = (
+            db.query(WorkspaceModel)
+            .join(WorkspaceMembers, WorkspaceMembers.workspace_id == WorkspaceModel.id)
+            .filter(WorkspaceModel.id == workspace_id, WorkspaceMembers.user_id == user_id)
+            .first()
+        )
+        if not workspace:
+            raise ResourceNotFoundException(resource_type="workspace", resource_id=workspace_id)
+
+        # Get member to remove
+        member = db.query(WorkspaceMembers).filter(
+            WorkspaceMembers.id == member_id,
+            WorkspaceMembers.workspace_id == workspace_id
+        ).first()
+
+        if not member:
+            raise ResourceNotFoundException(resource_type="member", resource_id=member_id)
+
+        # Cannot remove workspace owner (is_default=True)
+        if member.is_default:
+            raise WrextValidationException(
+                message="Cannot remove workspace owner",
+                validation_errors={"member_id": "This member is the workspace owner"}
+            )
+
+        # Delete member
+        db.delete(member)
+        db.commit()
+
+        return success(
+            data={"member_id": member_id},
+            request=request,
+            message="Member removed from workspace successfully"
+        )
+
+    except (ResourceNotFoundException, WrextValidationException):
+        raise
+    except Exception as e:
+        logger.exception(f"Error removing member from workspace {workspace_id}")
+        db.rollback()
+        return error(
+            message="Failed to remove member from workspace",
+            code=ErrorCode.INTERNAL_SERVER_ERROR,
+            status_code=500,
+            severity=ErrorSeverity.HIGH,
+            request=request
+        )
+
+
+# -------------------------
+# Get all knowledge for workspace
+# -------------------------
+@router.get("/{workspace_id}/knowledge/all")
+def get_workspace_knowledge(workspace_id: str, request: Request, db: Session = Depends(get_db), user: dict = Depends(get_current_user)):
+    user_id = user.get("identity")
+    db_user = db.query(Users).filter(Users.id == user_id, Users.deleted_at == None).first()
+    if not db_user:
+        raise WrextAuthenticationException(message="User not found", context={"user_id": user_id})
+
+    try:
+        # Check if user has access to this workspace
+        workspace = (
+            db.query(WorkspaceModel)
+            .join(WorkspaceMembers, WorkspaceMembers.workspace_id == WorkspaceModel.id)
+            .filter(WorkspaceModel.id == workspace_id, WorkspaceMembers.user_id == user_id)
+            .first()
+        )
+        if not workspace:
+            raise ResourceNotFoundException(resource_type="workspace", resource_id=workspace_id)
+
+        # Get all knowledge types for this workspace
+        web_knowledge = db.query(Website).filter(Website.workspace_id == workspace_id).all()
+        file_knowledge = db.query(KnowledgeFiles).filter(KnowledgeFiles.workspace_id == workspace_id).all()
+        text_knowledge = db.query(TextKnowledge).filter(TextKnowledge.workspace_id == workspace_id).all()
+
+        # Use to_dict() for consistent structure with type annotation
+        web_data = [{"type": "web", **item.to_dict()} for item in web_knowledge]
+        file_data = [{"type": "file", **item.to_dict()} for item in file_knowledge]
+        text_data = [{"type": "text", **item.to_dict()} for item in text_knowledge]
+
+        return success(
+            data={
+                "web_knowledge": web_data,
+                "file_knowledge": file_data,
+                "text_knowledge": text_data,
+                "summary": {
+                    "web_count": len(web_data),
+                    "file_count": len(file_data),
+                    "text_count": len(text_data),
+                    "total_count": len(web_data) + len(file_data) + len(text_data)
+                }
+            },
+            request=request,
+            message="Retrieved all knowledge successfully"
+        )
+
+    except ResourceNotFoundException:
+        raise
+    except Exception as e:
+        logger.exception(f"Error fetching workspace knowledge {workspace_id}")
+        return error(
+            message="Failed to retrieve workspace knowledge",
+            code=ErrorCode.INTERNAL_SERVER_ERROR,
+            status_code=500,
+            severity=ErrorSeverity.HIGH,
+            request=request
+        )
+
+
+# -------------------------
+# Get web knowledge for workspace
+# -------------------------
+@router.get("/{workspace_id}/knowledge/web")
+def get_workspace_web_knowledge(workspace_id: str, request: Request, db: Session = Depends(get_db), user: dict = Depends(get_current_user)):
+    user_id = user.get("identity")
+    db_user = db.query(Users).filter(Users.id == user_id, Users.deleted_at == None).first()
+    if not db_user:
+        raise WrextAuthenticationException(message="User not found", context={"user_id": user_id})
+
+    try:
+        # Check if user has access to this workspace
+        workspace = (
+            db.query(WorkspaceModel)
+            .join(WorkspaceMembers, WorkspaceMembers.workspace_id == WorkspaceModel.id)
+            .filter(WorkspaceModel.id == workspace_id, WorkspaceMembers.user_id == user_id)
+            .first()
+        )
+        if not workspace:
+            raise ResourceNotFoundException(resource_type="workspace", resource_id=workspace_id)
+
+        # Get web knowledge for this workspace
+        web_knowledge = db.query(Website).filter(Website.workspace_id == workspace_id).all()
+
+        # Use to_dict() to match the structure from /api/workspace/web_knowledge/all
+        web_data = [item.to_dict() for item in web_knowledge]
+
+        return success(
+            data={"web_knowledge": web_data, "total_count": len(web_data)},
+            request=request,
+            message=f"Retrieved {len(web_data)} web knowledge items"
+        )
+
+    except ResourceNotFoundException:
+        raise
+    except Exception as e:
+        logger.exception(f"Error fetching workspace web knowledge {workspace_id}")
+        return error(
+            message="Failed to retrieve web knowledge",
+            code=ErrorCode.INTERNAL_SERVER_ERROR,
+            status_code=500,
+            severity=ErrorSeverity.HIGH,
+            request=request
+        )
+
+
+# -------------------------
+# Get file knowledge for workspace
+# -------------------------
+@router.get("/{workspace_id}/knowledge/files")
+def get_workspace_file_knowledge(workspace_id: str, request: Request, db: Session = Depends(get_db), user: dict = Depends(get_current_user)):
+    user_id = user.get("identity")
+    db_user = db.query(Users).filter(Users.id == user_id, Users.deleted_at == None).first()
+    if not db_user:
+        raise WrextAuthenticationException(message="User not found", context={"user_id": user_id})
+
+    try:
+        # Check if user has access to this workspace
+        workspace = (
+            db.query(WorkspaceModel)
+            .join(WorkspaceMembers, WorkspaceMembers.workspace_id == WorkspaceModel.id)
+            .filter(WorkspaceModel.id == workspace_id, WorkspaceMembers.user_id == user_id)
+            .first()
+        )
+        if not workspace:
+            raise ResourceNotFoundException(resource_type="workspace", resource_id=workspace_id)
+
+        # Get file knowledge for this workspace
+        file_knowledge = db.query(KnowledgeFiles).filter(KnowledgeFiles.workspace_id == workspace_id).all()
+
+        # Use to_dict() to match the structure from /api/workspace/file/all
+        file_data = [item.to_dict() for item in file_knowledge]
+
+        return success(
+            data={"file_knowledge": file_data, "total_count": len(file_data)},
+            request=request,
+            message=f"Retrieved {len(file_data)} file knowledge items"
+        )
+
+    except ResourceNotFoundException:
+        raise
+    except Exception as e:
+        logger.exception(f"Error fetching workspace file knowledge {workspace_id}")
+        return error(
+            message="Failed to retrieve file knowledge",
+            code=ErrorCode.INTERNAL_SERVER_ERROR,
+            status_code=500,
+            severity=ErrorSeverity.HIGH,
+            request=request
+        )
+
+
+# -------------------------
+# Get text knowledge for workspace
+# -------------------------
+@router.get("/{workspace_id}/knowledge/text")
+def get_workspace_text_knowledge(workspace_id: str, request: Request, db: Session = Depends(get_db), user: dict = Depends(get_current_user)):
+    user_id = user.get("identity")
+    db_user = db.query(Users).filter(Users.id == user_id, Users.deleted_at == None).first()
+    if not db_user:
+        raise WrextAuthenticationException(message="User not found", context={"user_id": user_id})
+
+    try:
+        # Check if user has access to this workspace
+        workspace = (
+            db.query(WorkspaceModel)
+            .join(WorkspaceMembers, WorkspaceMembers.workspace_id == WorkspaceModel.id)
+            .filter(WorkspaceModel.id == workspace_id, WorkspaceMembers.user_id == user_id)
+            .first()
+        )
+        if not workspace:
+            raise ResourceNotFoundException(resource_type="workspace", resource_id=workspace_id)
+
+        # Get text knowledge for this workspace
+        text_knowledge = db.query(TextKnowledge).filter(TextKnowledge.workspace_id == workspace_id).all()
+
+        # Use to_dict() to match the structure from /api/workspace/text/all
+        text_data = [item.to_dict() for item in text_knowledge]
+
+        return success(
+            data={"text_knowledge": text_data, "total_count": len(text_data)},
+            request=request,
+            message=f"Retrieved {len(text_data)} text knowledge items"
+        )
+
+    except ResourceNotFoundException:
+        raise
+    except Exception as e:
+        logger.exception(f"Error fetching workspace text knowledge {workspace_id}")
+        return error(
+            message="Failed to retrieve text knowledge",
+            code=ErrorCode.INTERNAL_SERVER_ERROR,
+            status_code=500,
+            severity=ErrorSeverity.HIGH,
+            request=request
+        )
+
+
+# -------------------------
 # Update workspace
 # -------------------------
 @router.put("/update/{workspace_id}")
@@ -436,6 +927,93 @@ def update_workspace(workspace_id: str, data: WorkspaceSchema, request: Request,
         db.rollback()
         return error(
             message="Failed to update workspace",
+            code=ErrorCode.INTERNAL_SERVER_ERROR,
+            status_code=500,
+            severity=ErrorSeverity.HIGH,
+            context={"workspace_id": workspace_id, "error_details": str(e)},
+            request=request
+        )
+
+
+# -------------------------
+# Update brand voice
+# -------------------------
+@router.put("/{workspace_id}/brand-voice")
+def update_brand_voice(
+    workspace_id: str,
+    brand_data: BrandSchema,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: dict = Depends(get_current_user)
+):
+    user_id = user.get("identity")
+    db_user = db.query(Users).filter(Users.id == user_id, Users.deleted_at == None).first()
+    if not db_user:
+        raise WrextAuthenticationException(message="User not found", context={"user_id": user_id})
+
+    try:
+        # Verify workspace access
+        workspace = (
+            db.query(WorkspaceModel)
+            .join(WorkspaceMembers, WorkspaceMembers.workspace_id == WorkspaceModel.id)
+            .filter(WorkspaceModel.id == workspace_id, WorkspaceMembers.user_id == user_id)
+            .first()
+        )
+        if not workspace:
+            raise ResourceNotFoundException(resource_type="workspace", resource_id=workspace_id)
+
+        # Get or create brand voice
+        brand_voice = db.query(BrandVoice).filter(BrandVoice.workspace_id == workspace_id).first()
+
+        if brand_voice:
+            # Update existing brand voice
+            brand_voice.about = brand_data.about
+            brand_voice.customer_profile = brand_data.customer_profile
+            brand_voice.selling_position = brand_data.selling_position
+            brand_voice.target_audience = brand_data.target_audience
+            brand_voice.brand_voice = brand_data.brand_voice
+            brand_voice.competitors = brand_data.competitors
+            brand_voice.content_strategy = brand_data.content_pillar
+        else:
+            # Create new brand voice
+            brand_voice = BrandVoice(
+                workspace_id=workspace_id,
+                about=brand_data.about,
+                customer_profile=brand_data.customer_profile,
+                selling_position=brand_data.selling_position,
+                target_audience=brand_data.target_audience,
+                brand_voice=brand_data.brand_voice,
+                competitors=brand_data.competitors,
+                content_strategy=brand_data.content_pillar,
+            )
+            db.add(brand_voice)
+
+        db.commit()
+        db.refresh(brand_voice)
+
+        return success(
+            data={
+                "brand_voice": {
+                    "about": brand_voice.about,
+                    "customer_profile": brand_voice.customer_profile,
+                    "selling_position": brand_voice.selling_position,
+                    "target_audience": brand_voice.target_audience,
+                    "brand_voice": brand_voice.brand_voice,
+                    "competitors": brand_voice.competitors,
+                    "content_strategy": brand_voice.content_strategy,
+                }
+            },
+            request=request,
+            message="Brand voice updated successfully"
+        )
+
+    except ResourceNotFoundException:
+        raise
+    except Exception as e:
+        logger.exception(f"Error updating brand voice for workspace {workspace_id}")
+        db.rollback()
+        return error(
+            message="Failed to update brand voice",
             code=ErrorCode.INTERNAL_SERVER_ERROR,
             status_code=500,
             severity=ErrorSeverity.HIGH,
