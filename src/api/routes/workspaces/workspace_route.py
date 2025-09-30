@@ -274,13 +274,6 @@ async def create_workspace(
     if not db_user:
         raise WrextAuthenticationException(message="User not found", context={"user_id": user_id})
 
-    # Validate URL
-    if not data.url:
-        raise WrextValidationException(
-            message="Workspace URL is required",
-            field_errors={"url": ["URL must be provided and valid"]}
-        )
-
     try:
         # Check for duplicate workspace name for the user
         existing_workspace = db.query(WorkspaceModel).filter_by(name=data.name, user_id=user_id).first()
@@ -297,11 +290,10 @@ async def create_workspace(
             user_id=user_id,
             name=data.name,
             description=getattr(data, "description", None),
-            url=str(data.url)
+            url=str(data.url) if data.url else None
         )
         db.add(workspace)
-        db.commit()
-        db.refresh(workspace)
+        db.flush() 
 
         # Add creator as default member
         member = WorkspaceMembers(
@@ -309,66 +301,83 @@ async def create_workspace(
             user_id=user_id,
             joined_at=datetime.now(timezone.utc),
             is_default=True,
-            status = "active",
-            invitation_id = None
+            status="active",
+            invitation_id=None
         )
         db.add(member)
+        db.flush() 
 
         # Assign 'admin' role to creator
         admin_role = Role(
-            name="admin",
+            name=f"{workspace.name}_admin",
             display_name="Administrator",
             description="Workspace administrator with full permissions",            
         )
-
         db.add(admin_role)
+        db.flush() 
 
-        # privide the necessary permissions to admin role
+        # --- Branching logic ---
+        brand_voice = None
+        if data.url:
+            # Scrape content
+            try:
+                chunks, results = await web_page_scraper(urls=[data.url])
+                result = results[0]
+                if not result.success:
+                    logger.warning(f"Failed to scrape URL: {data.url}")
+                content = result.markdown
+            except Exception as scrape_err:
+                logger.warning(f"Scraping failed for URL {data.url}: {scrape_err}")
+                content = ""
 
-        db.commit()
-        db.refresh(workspace)
-        db.refresh(member)
+            # Vector store insertion
+            try:
+                if chunks:
+                    add_to_vector_store(blog_context=chunks, workspace_id=str(workspace.id))
+            except Exception as vec_err:
+                logger.warning(f"Vector store insertion failed: {vec_err}")
 
-        # Scrape content
-        try:
-            chunks, results = await web_page_scraper(urls=[data.url])
-            result = results[0]
-            if not result.success:
-                logger.warning(f"Failed to scrape URL: {data.url}")
-            content = result.markdown
-        except Exception as scrape_err:
-            logger.warning(f"Scraping failed for URL {data.url}: {scrape_err}")
-            content = ""
+            # Brand voice extraction (LLM)
+            try:
+                if content:
+                    model = load_model()
+                    structure_model = model.with_structured_output(BrandSchema)
+                    brand_data = structure_model.invoke(content)
 
-        # Vector store insertion
-        try:
-            if chunks:
-                add_to_vector_store(blog_context=chunks, workspace_id=str(workspace.id))
-        except Exception as vec_err:
-            logger.warning(f"Vector store insertion failed: {vec_err}")
+                    brand_voice = BrandVoice(
+                        workspace_id=workspace.id,
+                        about=brand_data.about,
+                        customer_profile=brand_data.customer_profile,
+                        selling_position=brand_data.selling_position,
+                        target_audience=brand_data.target_audience,
+                        brand_voice=brand_data.brand_voice,
+                        competitors=brand_data.competitors,
+                        content_strategy=brand_data.content_pillar,
+                    )
+                    db.add(brand_voice)
+                    db.flush()
+            except Exception as llm_err:
+                logger.warning(f"Brand voice extraction failed: {llm_err}")
 
-        # Brand voice extraction (LLM)
-        try:
-            if content:
-                model = load_model()
-                structure_model = model.with_structured_output(BrandSchema)
-                brand_data = structure_model.invoke(content)
-
+        else:
+            # Directly use provided brand data (from request body)
+            try:
                 brand_voice = BrandVoice(
                     workspace_id=workspace.id,
-                    about=brand_data.about,
-                    customer_profile=brand_data.customer_profile,
-                    selling_position=brand_data.selling_position,
-                    target_audience=brand_data.target_audience,
-                    brand_voice=brand_data.brand_voice,
-                    competitors=brand_data.competitors,
-                    content_strategy=brand_data.content_pillar,
+                    about=data.about,
+                    customer_profile=data.customer_profile,
+                    selling_position=data.selling_position,
+                    target_audience=data.target_audience,
+                    brand_voice=data.brand_voice,
+                    competitors=data.competitors,
+                    content_strategy=data.content_strategy,
                 )
                 db.add(brand_voice)
-                db.commit()
-                db.refresh(brand_voice)
-        except Exception as llm_err:
-            logger.warning(f"Brand voice extraction failed: {llm_err}")
+                db.flush()
+            except Exception as direct_err:
+                logger.warning(f"Direct brand voice save failed: {direct_err}")
+
+        db.commit()
 
         # Prepare response
         workspace_data = {
@@ -398,6 +407,7 @@ async def create_workspace(
             context={"error_details": str(e)},
             request=request
         )
+
 
 
 
