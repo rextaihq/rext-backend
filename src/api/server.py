@@ -21,7 +21,7 @@ from src.api.routes.workspaces.members.members_routes import router as members_r
 from src.api.routes.knowledge.web_knowledge_route import router as web_router
 from src.api.routes.knowledge.file_knowledge_route import router as file_router
 from src.api.routes.knowledge.text_knowledge_route import router as text_router
-from src.api.database.database import Base, engine
+from src.api.database.database import engine
 
 # Middleware imports
 from src.api.middleware.request_tracker import RequestTrackerMiddleware
@@ -33,8 +33,37 @@ load_dotenv()
 
 DB_URI = os.getenv("POSTGRES_URI_CUSTOM")
 
-# Create the database tables
-Base.metadata.create_all(bind=engine)
+# Database tables are managed by Alembic migrations
+# Run migrations with: alembic upgrade head
+
+
+def check_migrations():
+    """Check if database migrations are up to date."""
+    try:
+        from alembic.config import Config
+        from alembic.script import ScriptDirectory
+        from alembic.runtime.migration import MigrationContext
+
+        alembic_cfg = Config("alembic.ini")
+        script = ScriptDirectory.from_config(alembic_cfg)
+
+        with engine.begin() as connection:
+            context = MigrationContext.configure(connection)
+            current_rev = context.get_current_revision()
+            head_rev = script.get_current_head()
+
+            if current_rev != head_rev:
+                logger.warning(
+                    f"Database migration out of date. "
+                    f"Current: {current_rev}, Expected: {head_rev}. "
+                    f"Run 'alembic upgrade head' to update."
+                )
+                return False
+            logger.info(f"Database migrations up to date (revision: {current_rev})")
+            return True
+    except Exception as e:
+        logger.error(f"Error checking migrations: {e}")
+        return False
 
 
 @asynccontextmanager
@@ -43,7 +72,12 @@ async def lifespan(app: FastAPI):
     # Startup
     logger.info("Starting Wrext API server...")
     logger.info(f"Database URI: {DB_URI[:20]}..." if DB_URI else "No database URI configured")
+    logger.info("Database managed by Alembic migrations")
     logger.info("Middleware configured: RequestTracker, ErrorHandler")
+
+    # Optional: Check migration status (uncomment to enable)
+    # check_migrations()
+
     yield
     # Shutdown
     logger.info("Shutting down Wrext API server...")
