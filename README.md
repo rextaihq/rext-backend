@@ -201,6 +201,32 @@ python migrate.py history
 - **Test** migrations in development before applying to production
 - **Backup** database before running migrations in production
 
+## Database Seeding
+
+### Production Seeds (via Migrations)
+
+Essential data required for the application to function is automatically seeded via Alembic migrations:
+
+- **Default Permissions**: 6 permissions (content & topic CRUD operations)
+  - Automatically created when running: `alembic upgrade head`
+  - Migration: `4883f6e4c3f5_seed_default_permissions.py`
+  - Idempotent: Safe to run multiple times
+
+### Development/Test Data
+
+Development and test data should be created on-demand when needed:
+
+- **NOT maintained in repository** - Environment-specific and changes frequently
+- **Create fresh for test scenarios** - Use database clients or custom scripts
+- **Never run dummy data in production** ⚠️
+
+### Seeding Best Practices
+
+- ✅ **Production-critical data**: Add to Alembic migrations (idempotent)
+- ✅ **Run migrations**: `alembic upgrade head` to apply all seeds
+- ❌ **Never commit**: Large dummy data scripts to repository
+- ❌ **Never run**: Development seeds in production environment
+
 ## Development
 
 Python version: See `.python-version` file
