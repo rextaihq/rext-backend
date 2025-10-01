@@ -215,7 +215,83 @@ alembic history
 - Bold emphasis on critical safety notes
 - Easy-to-follow format with code blocks
 
-**Next Steps:** Phase 3 Complete - Moving to Phase 4
+**Next Steps:** Phase 4 - Task 4.2 (Update Dummy Data Script)
+
+---
+
+## PHASE 4: Seeding Integration - In Progress
+
+### Phase 4 Task 4.1 (Completed: 2025-10-01) - Convert Permission Seeds to Data Migration ✅
+
+**Discovery Phase Completed:**
+1. **Current State**: permission_seeds.py standalone script exists with 6 default permissions
+2. **Permission Model**: Located at src/api/models/user_models/permissions.py
+3. **Baseline Migration**: cc3bde5553b9 is current head
+4. **Database**: 0 permissions currently in database
+
+**Implementation - Task 4.1: Convert Permission Seeds to Data Migration**
+
+**Migration Created:**
+- **File**: `alembic/versions/4883f6e4c3f5_seed_default_permissions.py`
+- **Revision ID**: 4883f6e4c3f5
+- **Parent Revision**: cc3bde5553b9 (initial_schema_baseline)
+
+**Changes Applied:**
+1. ✅ Created new data migration using `alembic revision -m "seed_default_permissions"`
+2. ✅ Implemented idempotent upgrade() function:
+   - Checks if permission exists before inserting (prevents duplicates)
+   - Seeds 6 default permissions:
+     - content.create, content.update, content.delete
+     - topic.create, topic.update, topic.delete
+   - Uses UUIDs for primary keys
+   - Sets created_at timestamp
+3. ✅ Implemented downgrade() function:
+   - Removes all 6 seeded permissions by name
+   - Reversible migration
+4. ✅ Used lightweight Permission model in migration (no relationships)
+
+**Testing Results:**
+1. ✅ **Initial Migration Apply**: Successfully created 6 permissions
+   - Verified count: 6 permissions in database
+   - All permissions queryable with correct names and display names
+2. ✅ **Downgrade Test**: Successfully removed all 6 permissions
+   - Verified count: 0 permissions after downgrade
+3. ✅ **Idempotency Test**: Re-ran upgrade twice
+   - First upgrade: Created 6 permissions
+   - Second upgrade: No duplicates created, still 6 permissions
+   - ✅ IDEMPOTENCY TEST PASSED
+4. ✅ **Migration Status**: Now at 4883f6e4c3f5 (head)
+
+**Migration Code Quality:**
+- Follows Alembic best practices
+- Uses declarative_base for lightweight model definition
+- Proper session management with commit
+- Error handling via SQLAlchemy ORM
+- Clean separation from application models
+
+**Acceptance Criteria Met:**
+1. ✅ Migration file created in alembic/versions/
+2. ✅ Migration is idempotent (verified by running twice)
+3. ✅ Upgrade creates 6 default permissions
+4. ✅ Downgrade removes the 6 seeded permissions
+5. ✅ Migration applies without errors
+6. ✅ Re-running migration doesn't create duplicates
+7. ✅ Permissions queryable from database
+
+**Key Implementation Features:**
+- Idempotent check using `session.query().filter_by().first()`
+- Separate model definition in migration (doesn't depend on app models)
+- Proper UUID generation using uuid.uuid4()
+- UTC timestamps for consistency
+- Clean upgrade/downgrade symmetry
+
+**Files Modified:**
+- ✅ NEW: `alembic/versions/4883f6e4c3f5_seed_default_permissions.py`
+
+**Database State After Task:**
+- Migration revision: 4883f6e4c3f5 (head)
+- Permissions table: 6 default permissions seeded
+- All permissions have proper structure (id, name, display_name, description, resource, action, created_at)
 
 ---
 
@@ -416,7 +492,7 @@ Base.metadata.create_all(bind=engine)  # ❌ Remove this
 | 1 | Setup & Installation | 30 min | Low | None | ✅ Complete |
 | 2 | Initial Migration Creation | 45 min | Medium | Phase 1 | ✅ Complete |
 | 3 | Application Integration | 1 hour | High | Phase 2 | ✅ Complete (Task 3.1 ✅, Task 3.2 ✅, Task 3.3 ✅, Task 3.4 ✅) |
-| 4 | Seeding Integration | 45 min | Medium | Phase 3 | ⏳ Pending |
+| 4 | Seeding Integration | 45 min | Medium | Phase 3 | 🔄 In Progress (Task 4.1 ✅, Task 4.2 Pending) |
 | 5 | Testing & Validation | 1 hour | Low | Phase 4 | ⏳ Pending |
 | 6 | Deployment Strategy | 30 min | Medium | Phase 5 | ⏳ Pending |
 
