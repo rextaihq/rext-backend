@@ -167,6 +167,59 @@ alembic history
 
 ---
 
+### Phase 3 Task 3.2 (Completed: 2025-10-01) - Create Migration Utility Script ✅
+
+**Discovery Phase Completed:**
+1. **Current State**: No migrate.py utility exists
+2. **Requirements**: Create a Python script that wraps common Alembic commands
+3. **Purpose**: Simplify migration management for developers
+4. **Commands Needed**: status, upgrade, downgrade, create, history
+
+**Implementation - Task 3.2: Create Migration Utility Script**
+
+**Changes Applied:**
+1. ✅ **migrate.py**: Created full utility script with all 5 commands
+2. ✅ **Permissions**: Set chmod +x for direct execution
+3. ✅ **Commands Implemented**:
+   - `status`: Shows current migration revision with verbose details
+   - `upgrade`: Upgrades to head (latest) migration
+   - `downgrade`: Downgrades one revision with safety confirmation
+   - `create`: Creates new migration with autogenerate
+   - `history`: Displays complete migration history
+
+**Files Created:**
+- `/Users/mobeen/Work/Products/wrext/wrext-backend/migrate.py` (2388 bytes, executable)
+
+**Testing Results:**
+- ✅ Help text displays correctly when no arguments provided
+- ✅ Status command shows current revision: cc3bde5553b9 (head)
+- ✅ History command displays migration timeline with full details
+- ✅ Upgrade command executes successfully (database already at head)
+- ✅ Unknown command handling works correctly
+- ✅ File has executable permissions (-rwxr-xr-x)
+
+**Acceptance Criteria Met:**
+1. ✅ migrate.py created in backend root
+2. ✅ All 5 commands implemented (status, upgrade, downgrade, create, history)
+3. ✅ Script is executable
+4. ✅ Status command shows current revision
+5. ✅ Upgrade command works (shows already up-to-date)
+6. ✅ History command shows migration timeline
+7. ✅ Downgrade has safety confirmation
+8. ✅ Create command uses autogenerate
+
+**Key Implementation Features:**
+- User-friendly CLI with clear help text
+- Emoji indicators for success (✅), warning (⚠️), and error (❌)
+- Safety confirmation required for downgrade operations
+- Autogenerate support for creating new migrations
+- Verbose output for status and history commands
+- Proper error handling and user feedback
+
+**Next Steps:** Task 3.3 - Update Documentation
+
+---
+
 ## Executive Summary
 
 This document provides a comprehensive step-by-step plan to integrate Alembic into the wrext-backend project. Alembic will work alongside SQLAlchemy to provide:
