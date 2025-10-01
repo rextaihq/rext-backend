@@ -163,11 +163,61 @@ alembic history
 - Error handling in check function prevents crashes if alembic.ini missing
 - Informative log messages guide users on migration management
 
-**Next Steps:** Task 3.2 - Create Migration Utility Script
+**Next Steps:** Task 3.3 - Update Documentation
 
 ---
 
 ### Phase 3 Task 3.2 (Completed: 2025-10-01) - Create Migration Utility Script ✅
+
+**Next Steps:** Task 3.4 - Test Application Startup
+
+---
+
+### Phase 3 Task 3.3 (Completed: 2025-10-01) - Update Documentation ✅
+
+**Discovery Phase Completed:**
+1. **Current State**: README.md exists but lacks database migration documentation
+2. **Requirements**: Add comprehensive migration instructions for developers
+3. **Location**: [README.md](wrext-backend/README.md)
+
+**Implementation - Task 3.3: Update Documentation**
+
+**Changes Applied:**
+1. ✅ **README.md**: Added complete "Database Migrations" section with:
+   - Common Alembic commands
+   - Migration utility script usage
+   - Step-by-step migration workflow
+   - Important notes and best practices
+2. ✅ Positioned after "Data Storage" and before "Development" sections
+3. ✅ Includes both direct Alembic commands and migrate.py utility examples
+
+**Documentation Sections Added:**
+- **Common Commands**: Direct alembic CLI usage
+- **Using the Migration Utility**: Python migrate.py wrapper
+- **Migration Workflow**: 6-step process from model change to verification
+- **Important Notes**: Best practices for production safety
+
+**Files Modified:**
+- [README.md](wrext-backend/README.md) - Added 54 lines of migration documentation
+
+**Acceptance Criteria Met:**
+1. ✅ Migration instructions added to README
+2. ✅ Common workflows documented
+3. ✅ Both alembic and migrate.py commands included
+4. ✅ Best practices highlighted
+5. ✅ Clear step-by-step workflow provided
+6. ✅ Production safety notes included
+
+**Key Documentation Features:**
+- Comprehensive command reference for daily use
+- Clear separation between direct Alembic and utility script usage
+- Step-by-step workflow that matches the plan
+- Bold emphasis on critical safety notes
+- Easy-to-follow format with code blocks
+
+**Next Steps:** Task 3.4 - Test Application Startup
+
+---
 
 **Discovery Phase Completed:**
 1. **Current State**: No migrate.py utility exists
@@ -293,7 +343,7 @@ Base.metadata.create_all(bind=engine)  # ❌ Remove this
 |-------|------|----------|------------|--------------|--------|
 | 1 | Setup & Installation | 30 min | Low | None | ✅ Complete |
 | 2 | Initial Migration Creation | 45 min | Medium | Phase 1 | ✅ Complete |
-| 3 | Application Integration | 1 hour | High | Phase 2 | 🔄 In Progress (Task 3.1 ✅) |
+| 3 | Application Integration | 1 hour | High | Phase 2 | 🔄 In Progress (Task 3.1 ✅, Task 3.2 ✅, Task 3.3 ✅, Task 3.4 Pending) |
 | 4 | Seeding Integration | 45 min | Medium | Phase 3 | ⏳ Pending |
 | 5 | Testing & Validation | 1 hour | Low | Phase 4 | ⏳ Pending |
 | 6 | Deployment Strategy | 30 min | Medium | Phase 5 | ⏳ Pending |
