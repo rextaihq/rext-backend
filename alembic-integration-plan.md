@@ -328,6 +328,163 @@ alembic current
 
 ---
 
+### Phase 5 Task 5.2 (Completed: 2025-10-01) - Test Migration Workflows ✅
+
+**Discovery Phase Completed:**
+1. **Current State**: Database at 4883f6e4c3f5 (permission seeding migration)
+2. **Objective**: Test complete migration development lifecycle
+3. **Test Cases**: Add column, modify column, add table
+
+**Implementation - Task 5.2: Test Migration Workflows**
+
+**Test Case 1: Add New Column (avatar_url to Users) ✅**
+
+**Steps Executed:**
+1. ✅ Added `avatar_url = Column(String(500), nullable=True)` to Users model
+2. ✅ Generated migration: `alembic revision --autogenerate -m "add_user_avatar_url"`
+3. ✅ Migration file created: `b576a46c9246_add_user_avatar_url.py`
+4. ✅ Reviewed migration - correct upgrade/downgrade operations
+5. ✅ Applied migration: `alembic upgrade head`
+6. ✅ Verified column exists: `avatar_url VARCHAR(500)`
+7. ✅ Tested rollback: `alembic downgrade -1`
+8. ✅ Verified column removed successfully
+9. ✅ Re-applied: `alembic upgrade head`
+10. ✅ Cleanup: Removed column from model and created reverse migration
+
+**Results:**
+- Migration generated correctly with add_column and drop_column operations
+- Column added/removed successfully
+- Rollback worked perfectly
+- Database state tracked correctly (b576a46c9246 -> 4883f6e4c3f5 -> b576a46c9246)
+
+**Test Case 2: Modify Existing Column (language field length) ✅**
+
+**Steps Executed:**
+1. ✅ Changed `language = Column(String(10))` to `language = Column(String(20))`
+2. ✅ Generated migration: `alembic revision --autogenerate -m "increase_language_field_length"`
+3. ✅ Migration file created: `f28ed492e235_increase_language_field_length.py`
+4. ✅ **Alembic detected type change!** VARCHAR(10) -> String(20)
+5. ✅ Applied migration successfully
+6. ✅ Verified column changed: `language VARCHAR(20)`
+7. ✅ Tested rollback: Column reverted to VARCHAR(10)
+8. ✅ Cleanup: Reverted model to String(10)
+
+**Results:**
+- **Important Discovery**: Alembic CAN detect column length changes (contrary to common belief)
+- Uses `op.alter_column()` with type_ parameter
+- Proper upgrade/downgrade with correct existing_type preservation
+- Rollback restored original length perfectly
+
+**Test Case 3: Add New Table (Categories) ✅**
+
+**Steps Executed:**
+1. ✅ Created new model: `src/api/models/user_models/categories.py`
+2. ✅ Added import to `alembic/env.py`: `from src.api.models.user_models.categories import Category`
+3. ✅ Generated migration: `alembic revision --autogenerate -m "add_categories_table"`
+4. ✅ Migration file created: `0acd51b52dfd_add_categories_table.py`
+5. ✅ Reviewed migration - correct CREATE TABLE with all columns and constraints
+6. ✅ Applied migration: Table created with 5 columns (id, name, description, created_at, updated_at)
+7. ✅ Verified table exists in database
+8. ✅ Tested rollback: `alembic downgrade -1`
+9. ✅ Verified table dropped successfully
+10. ✅ Cleanup: Removed model file and env.py import
+
+**Results:**
+- Table creation migration generated perfectly
+- All columns, constraints, and indexes included
+- Primary key, unique constraints auto-detected
+- Rollback dropped table cleanly
+- Total tables: 14 -> 15 -> 14 (correct state management)
+
+**Multi-Change Migration:**
+- Final categories migration also included language column revert (String(20) -> String(10))
+- Alembic correctly bundled multiple schema changes into single migration
+- Both operations (CREATE TABLE + ALTER COLUMN) executed successfully
+- Rollback handled both operations in reverse order
+
+**Cleanup Process:**
+1. ✅ Rolled back all test migrations: `alembic downgrade 4883f6e4c3f5`
+2. ✅ Removed 4 test migration files
+3. ✅ Removed categories.py model file
+4. ✅ Removed categories import from env.py
+5. ✅ Removed avatar_url from users.py
+6. ✅ Verified database at original state: 14 tables, 6 permissions
+
+**Files Modified (and Reverted):**
+- [src/api/models/user_models/users.py](wrext-backend/src/api/models/user_models/users.py) - Added/removed avatar_url, changed/reverted language length
+- [src/api/models/user_models/categories.py](wrext-backend/src/api/models/user_models/categories.py) - Created and deleted
+- [alembic/env.py](wrext-backend/alembic/env.py) - Added/removed Category import
+- Migration files created and deleted:
+  - b576a46c9246_add_user_avatar_url.py
+  - 7c7cdc4606b3_remove_user_avatar_url_test_cleanup.py
+  - f28ed492e235_increase_language_field_length.py
+  - 0acd51b52dfd_add_categories_table.py
+
+**Acceptance Criteria Met:**
+1. ✅ New column migration generated, applied, and rolled back successfully
+2. ✅ Column modification detected and applied correctly
+3. ✅ New table migration generated and applied successfully
+4. ✅ All rollbacks worked correctly
+5. ✅ Database returned to original state after cleanup
+6. ✅ No errors during any migration operation
+
+**Key Learnings:**
+
+1. **Alembic Autogenerate is Powerful:**
+   - Detects new columns accurately
+   - Detects column type/length changes (including String length!)
+   - Detects new tables with all constraints
+   - Detects column deletions
+
+2. **Migration Generation Best Practices:**
+   - Always review generated migrations before applying
+   - Check both upgrade() and downgrade() functions
+   - Verify existing_type parameters are correct
+   - Test rollback before considering migration complete
+
+3. **Workflow Validation:**
+   - Database must be at head before generating new migrations
+   - Multiple changes can be bundled into single migration
+   - Migration file naming: `<revision>_<message>.py`
+   - Downgrade operations execute in reverse order
+
+4. **Rollback Reliability:**
+   - All test rollbacks executed flawlessly
+   - Database state properly tracked throughout
+   - No data loss during rollback operations
+   - Constraints properly added/removed
+
+5. **Model-First Development:**
+   - Change models first, then generate migrations
+   - Import all models in alembic/env.py for detection
+   - Remove imports when removing models
+   - Keep models and database in sync via migrations
+
+**Testing Commands Reference:**
+```bash
+# Generate migration
+alembic revision --autogenerate -m "description"
+
+# Apply migration
+alembic upgrade head
+
+# Rollback one migration
+alembic downgrade -1
+
+# Rollback to specific revision
+alembic downgrade <revision_id>
+
+# Check current state
+alembic current
+
+# View history
+alembic history
+```
+
+**Next Steps:** Phase 5.3 - Test Application Integration
+
+---
+
 ## PHASE 4: Seeding Integration - ✅ Complete
 
 ### Phase 4 Task 4.3 (Completed: 2025-10-01) - Document Seeding Strategy ✅
@@ -712,7 +869,7 @@ Base.metadata.create_all(bind=engine)  # ❌ Remove this
 | 2 | Initial Migration Creation | 45 min | Medium | Phase 1 | ✅ Complete |
 | 3 | Application Integration | 1 hour | High | Phase 2 | ✅ Complete (Task 3.1 ✅, Task 3.2 ✅, Task 3.3 ✅, Task 3.4 ✅) |
 | 4 | Seeding Integration | 45 min | Medium | Phase 3 | ✅ Complete (Task 4.1 ✅, Task 4.2 ✅, Task 4.3 ✅) |
-| 5 | Testing & Validation | 1 hour | Low | Phase 4 | ⏳ In Progress (Task 5.1 ✅, Task 5.2 ⏳, Task 5.3 ⏳) |
+| 5 | Testing & Validation | 1 hour | Low | Phase 4 | ⏳ In Progress (Task 5.1 ✅, Task 5.2 ✅, Task 5.3 ⏳) |
 | 6 | Deployment Strategy | 30 min | Medium | Phase 5 | ⏳ Pending |
 
 **Total Estimated Time**: ~4.5 hours
