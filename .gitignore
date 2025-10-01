@@ -45,4 +45,8 @@ scrapy.cfg
 docs/_build/
 target/
 .ipynb_checkpoints
-profile_default/            
+profile_default/
+
+# Alembic
+alembic/__pycache__/
+alembic/versions/__pycache__/            
