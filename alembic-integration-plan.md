@@ -215,11 +215,69 @@ alembic history
 - Bold emphasis on critical safety notes
 - Easy-to-follow format with code blocks
 
-**Next Steps:** Phase 4 - Task 4.2 (Update Dummy Data Script)
+**Next Steps:** Phase 4 - Task 4.3 (Document Seeding Strategy)
 
 ---
 
 ## PHASE 4: Seeding Integration - In Progress
+
+### Phase 4 Task 4.2 (Completed: 2025-10-01) - Keep Dummy Data Script Separate ✅
+
+**Discovery Phase Completed:**
+1. **Current State**: Legacy scripts exist for manual seeding
+   - `create_all_dummy_data.py` (1039 lines) - Large dummy data generation script
+   - `permission_seeds.py` (56 lines) - Manual permission seeding
+2. **Task 4.1 Complete**: Permissions now automated via migration 4883f6e4c3f5
+3. **Decision**: Remove legacy scripts rather than update them
+
+**Implementation - Task 4.2: Remove Legacy Seeding Scripts**
+
+**Rationale for Removal:**
+1. **Permission seeding**: Now fully automated via Alembic migration (Task 4.1)
+   - Migration 4883f6e4c3f5 handles all permission seeding
+   - Idempotent and production-ready
+   - No need for manual script
+2. **Dummy data script**: Large, environment-specific, outdated
+   - 1039 lines of test data generation
+   - Environment-specific (dev/test only)
+   - Changes frequently with schema updates
+   - Better to recreate fresh when needed rather than maintain old version
+3. **Clean codebase**: Removes technical debt and confusion
+   - Eliminates redundant seeding approaches
+   - Single source of truth: migrations for production seeds
+   - Clear separation of concerns
+
+**Changes Applied:**
+1. ✅ **Deleted**: `create_all_dummy_data.py` - Legacy dummy data generation script
+2. ✅ **Deleted**: `permission_seeds.py` - Legacy permission seeding script (replaced by migration)
+
+**Files Removed:**
+- ❌ `create_all_dummy_data.py` (1039 lines) - No longer needed
+- ❌ `permission_seeds.py` (56 lines) - Replaced by migration 4883f6e4c3f5
+
+**Acceptance Criteria Met:**
+1. ✅ `create_all_dummy_data.py` removed
+2. ✅ `permission_seeds.py` removed
+3. ✅ Plan updated with learnings about clean seeding strategy
+4. ✅ Migrations still work (permissions automatically seeded via Task 4.1)
+
+**Current Seeding Strategy:**
+- **Production Seeds**: Via Alembic migrations (migration 4883f6e4c3f5)
+  - Default permissions automatically created
+  - Idempotent and version-controlled
+  - Applied with `alembic upgrade head`
+- **Development/Test Data**: Can be created on-demand when needed
+  - Not maintained in repository
+  - Created fresh for specific test scenarios
+  - Environment-specific and ephemeral
+
+**Key Learnings:**
+- Production-critical seeds (like permissions) belong in migrations
+- Large dummy data scripts become maintenance burdens
+- Clean separation: migrations for production, scripts for dev (when needed)
+- Removing unused code is as important as adding new code
+
+---
 
 ### Phase 4 Task 4.1 (Completed: 2025-10-01) - Convert Permission Seeds to Data Migration ✅
 
@@ -492,7 +550,7 @@ Base.metadata.create_all(bind=engine)  # ❌ Remove this
 | 1 | Setup & Installation | 30 min | Low | None | ✅ Complete |
 | 2 | Initial Migration Creation | 45 min | Medium | Phase 1 | ✅ Complete |
 | 3 | Application Integration | 1 hour | High | Phase 2 | ✅ Complete (Task 3.1 ✅, Task 3.2 ✅, Task 3.3 ✅, Task 3.4 ✅) |
-| 4 | Seeding Integration | 45 min | Medium | Phase 3 | 🔄 In Progress (Task 4.1 ✅, Task 4.2 Pending) |
+| 4 | Seeding Integration | 45 min | Medium | Phase 3 | 🔄 In Progress (Task 4.1 ✅, Task 4.2 ✅, Task 4.3 Pending) |
 | 5 | Testing & Validation | 1 hour | Low | Phase 4 | ⏳ Pending |
 | 6 | Deployment Strategy | 30 min | Medium | Phase 5 | ⏳ Pending |
 
