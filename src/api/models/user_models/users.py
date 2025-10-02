@@ -36,6 +36,7 @@ class Users(Base):
     avatar_url = Column(String(500))
     created_at = Column(TIMESTAMP, nullable=False, default=datetime.utcnow)
     updated_at = Column(TIMESTAMP, default=datetime.utcnow, onupdate=datetime.utcnow)
+    deactivated_at = Column(TIMESTAMP)
     deleted_at = Column(TIMESTAMP)
 
     # Relationships

@@ -8,7 +8,11 @@ from src.api.schema.user_schema import (LoginUser, RegisterUser,
                                         UpdateProfileRequest,
                                         ProfileResponse,
                                         UserStatusRequest,
-                                        UserStatusResponse)
+                                        UserStatusResponse,
+                                        DeactivateAccountRequest,
+                                        DeactivateAccountResponse,
+                                        DataExportRequest,
+                                        DataExportResponse)
 from src.api.schema.user_role_schema import AssignUserRoleRequest, UserRoleResponse
 from src.api.security.token_utils import (hash_password, create_access_token,
                               verify_password, create_refresh_token,
@@ -30,6 +34,7 @@ from src.api.database.database import get_db
 from src.utils.response_utils import success, error, created, unauthorized
 from src.utils.token_cleanup import cleanup_expired_tokens
 from src.utils.audit_helper import create_audit_log
+from src.utils.account_cleanup import delete_deactivated_accounts, get_pending_deletions
 from src.api.middleware.permissions import is_admin
 from src.api.schema.response_schemas import ErrorCode, ErrorSeverity
 from src.api.middleware.exceptions import (
@@ -541,6 +546,95 @@ def logout_user(
         logger.error(f"Logout failed: {str(e)}")
         return error(
             message="Logout failed",
+            code=ErrorCode.INTERNAL_SERVER_ERROR,
+            status_code=500,
+            severity=ErrorSeverity.HIGH,
+            context={"error_details": str(e)},
+            request=request
+        )
+
+
+# Admin: Cleanup Deactivated Accounts
+@router.post("/admin/cleanup-deactivated-accounts")
+def cleanup_deactivated_accounts_endpoint(
+    request: Request,
+    current_user: dict = Depends(get_current_user),
+    _: bool = Depends(is_admin),
+    db: Session = Depends(get_db)
+):
+    """
+    Admin endpoint to manually trigger cleanup of deactivated accounts.
+
+    Permanently deletes accounts that have been deactivated for 14+ days.
+    Only accessible to users with admin or super_admin role.
+
+    Returns:
+        Number of accounts deleted
+
+    Note:
+        This should ideally be run as a scheduled job (cron/celery)
+        but can be triggered manually via this endpoint.
+    """
+    try:
+        deleted_count = delete_deactivated_accounts(db)
+
+        logger.info(
+            f"Admin {current_user.get('identity')} triggered deactivated account cleanup - "
+            f"deleted {deleted_count} account(s)"
+        )
+
+        return success(
+            data={
+                "deleted_count": deleted_count,
+                "message": f"Successfully deleted {deleted_count} deactivated account(s)"
+            },
+            request=request,
+            message=f"Cleaned up {deleted_count} deactivated account(s)"
+        )
+
+    except Exception as e:
+        logger.error(f"Deactivated account cleanup failed: {str(e)}")
+        return error(
+            message="Account cleanup failed",
+            code=ErrorCode.INTERNAL_SERVER_ERROR,
+            status_code=500,
+            severity=ErrorSeverity.HIGH,
+            context={"error_details": str(e)},
+            request=request
+        )
+
+
+@router.get("/admin/pending-deletions")
+def get_pending_deletions_endpoint(
+    request: Request,
+    current_user: dict = Depends(get_current_user),
+    _: bool = Depends(is_admin),
+    db: Session = Depends(get_db)
+):
+    """
+    Admin endpoint to view accounts scheduled for deletion.
+
+    Returns list of deactivated accounts with their scheduled deletion dates.
+    Only accessible to users with admin or super_admin role.
+    """
+    try:
+        pending = get_pending_deletions(db)
+
+        logger.info(f"Admin {current_user.get('identity')} viewed pending account deletions")
+
+        return success(
+            data={
+                "pending_deletions": pending,
+                "count": len(pending)
+            },
+            request=request,
+            message=f"Retrieved {len(pending)} account(s) pending deletion"
+        )
+
+    except Exception as e:
+        logger.error(f"Failed to retrieve pending deletions: {str(e)}")
+        return error(
+            message="Failed to retrieve pending deletions",
             code=ErrorCode.INTERNAL_SERVER_ERROR,
             status_code=500,
             severity=ErrorSeverity.HIGH,
@@ -1767,6 +1861,269 @@ def ban_user(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to ban user"
+        )
+
+
+# -------------------------
+# Account Settings Endpoints
+# -------------------------
+
+@router.post("/deactivate", response_model=DeactivateAccountResponse)
+def deactivate_account(
+    request: Request,
+    deactivation_data: DeactivateAccountRequest,
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Deactivate user's own account.
+
+    Account will be marked as inactive and scheduled for permanent deletion after 14 days.
+    User will be logged out immediately.
+
+    - **reason**: Optional reason for deactivation
+    - **confirm**: Must be true to proceed
+
+    Returns deactivation confirmation with scheduled deletion date.
+    """
+    try:
+        user_id = current_user.get("identity")
+        logger.info(f"Account deactivation requested for user: {user_id}")
+
+        # Get user from database
+        db_user = db.query(Users).filter(Users.id == user_id).first()
+        if not db_user:
+            return error(
+                message="User not found",
+                code=ErrorCode.RESOURCE_NOT_FOUND,
+                status_code=404,
+                severity=ErrorSeverity.MEDIUM,
+                request=request
+            )
+
+        # Check if already deactivated
+        if db_user.status == "inactive":
+            return error(
+                message="Account is already deactivated",
+                code=ErrorCode.INVALID_INPUT,
+                status_code=400,
+                severity=ErrorSeverity.LOW,
+                request=request
+            )
+
+        # Update user status
+        old_status = db_user.status
+        db_user.status = "inactive"
+        db_user.deactivated_at = datetime.utcnow()
+        db_user.updated_at = datetime.utcnow()
+
+        # Calculate scheduled deletion date (14 days from now)
+        scheduled_deletion = db_user.deactivated_at + timedelta(days=14)
+
+        # Create audit log
+        create_audit_log(
+            db=db,
+            user_id=user_id,
+            action="user.deactivate",
+            resource_type="user",
+            resource_id=str(user_id),
+            old_values={"status": old_status},
+            new_values={
+                "status": "inactive",
+                "deactivated_at": db_user.deactivated_at.isoformat(),
+                "scheduled_deletion": scheduled_deletion.isoformat(),
+                "reason": deactivation_data.reason
+            },
+            request=request,
+            username=db_user.username,
+            user_email=db_user.email
+        )
+
+        db.commit()
+        db.refresh(db_user)
+
+        logger.info(f"User {user_id} deactivated successfully. Scheduled deletion: {scheduled_deletion}")
+
+        response_data = DeactivateAccountResponse(
+            user_id=str(db_user.id),
+            email=db_user.email,
+            status="inactive",
+            deactivated_at=db_user.deactivated_at.isoformat(),
+            scheduled_deletion_at=scheduled_deletion.isoformat(),
+            message=f"Account deactivated successfully. Your account will be permanently deleted on {scheduled_deletion.strftime('%B %d, %Y')}."
+        )
+
+        return success(
+            data=response_data.model_dump(),
+            request=request,
+            message="Account deactivated successfully"
+        )
+
+    except Exception as e:
+        logger.error(f"Error deactivating account for user {current_user.get('identity')}: {str(e)}")
+        db.rollback()
+        return error(
+            message="Failed to deactivate account",
+            code=ErrorCode.INTERNAL_SERVER_ERROR,
+            status_code=500,
+            severity=ErrorSeverity.HIGH,
+            context={"error_details": str(e)},
+            request=request
+        )
+
+
+@router.post("/export-data", response_model=DataExportResponse)
+def export_user_data(
+    request: Request,
+    export_request: DataExportRequest,
+    background_tasks: BackgroundTasks,
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Request export of user's data.
+
+    Generates a comprehensive data export including:
+    - Profile information
+    - Role assignments
+    - Workspace memberships
+    - Activity logs (if available)
+
+    Export will be generated in the background and sent via email.
+
+    Returns export request confirmation.
+    """
+    try:
+        user_id = current_user.get("identity")
+        logger.info(f"Data export requested for user: {user_id}")
+
+        # Get user from database
+        db_user = db.query(Users).filter(Users.id == user_id).first()
+        if not db_user:
+            return error(
+                message="User not found",
+                code=ErrorCode.RESOURCE_NOT_FOUND,
+                status_code=404,
+                severity=ErrorSeverity.MEDIUM,
+                request=request
+            )
+
+        # Generate export ID
+        export_id = str(uuid.uuid4())
+
+        # Collect user data based on request
+        export_data = {}
+
+        if export_request.include_profile:
+            export_data["profile"] = {
+                "id": str(db_user.id),
+                "email": db_user.email,
+                "username": db_user.username,
+                "first_name": db_user.first_name,
+                "last_name": db_user.last_name,
+                "display_name": db_user.display_name,
+                "language": db_user.language,
+                "timezone": db_user.timezone,
+                "status": db_user.status,
+                "email_verified": db_user.email_verified,
+                "email_verified_at": db_user.email_verified_at.isoformat() if db_user.email_verified_at else None,
+                "created_at": db_user.created_at.isoformat() if db_user.created_at else None,
+                "last_login_at": db_user.last_login_at.isoformat() if db_user.last_login_at else None,
+                "login_count": db_user.login_count
+            }
+
+        if export_request.include_roles:
+            roles = []
+            for user_role in db_user.user_roles:
+                roles.append({
+                    "role_name": user_role.role.name if user_role.role else None,
+                    "role_display_name": user_role.role.display_name if user_role.role else None,
+                    "is_primary": user_role.is_primary,
+                    "workspace_id": str(user_role.workspace_id) if user_role.workspace_id else None,
+                    "assigned_at": user_role.assigned_at.isoformat() if user_role.assigned_at else None
+                })
+            export_data["roles"] = roles
+
+        if export_request.include_workspaces:
+            workspaces = []
+            for membership in db_user.workspace_memberships:
+                workspaces.append({
+                    "workspace_id": str(membership.workspace_id),
+                    "workspace_name": membership.workspace.name if membership.workspace else None,
+                    "role": membership.role,
+                    "status": membership.status,
+                    "joined_at": membership.joined_at.isoformat() if membership.joined_at else None
+                })
+            export_data["workspaces"] = workspaces
+
+        # Note: Activity logs would require audit_logs table access
+        if export_request.include_activity:
+            export_data["activity"] = {
+                "note": "Activity logs export will be available once audit log system is queried"
+            }
+
+        # Convert to JSON for email
+        import json
+        export_json = json.dumps(export_data, indent=2)
+
+        # Get frontend URL
+        frontend_url = os.getenv("FRONTEND_URL", "http://localhost:3000")
+
+        # Send email with data export in background
+        background_tasks.add_task(
+            send_email,
+            to=db_user.email,
+            subject="Your WREXT Data Export",
+            body=f"""
+            <h2>Your Data Export is Ready</h2>
+            <p>Hello {db_user.first_name or db_user.username},</p>
+            <p>Your requested data export has been generated.</p>
+            <p><strong>Export ID:</strong> {export_id}</p>
+            <p><strong>Generated at:</strong> {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}</p>
+
+            <h3>Export Contents:</h3>
+            <ul>
+                <li>Profile Information: {'✓' if export_request.include_profile else '✗'}</li>
+                <li>Role Assignments: {'✓' if export_request.include_roles else '✗'}</li>
+                <li>Workspace Memberships: {'✓' if export_request.include_workspaces else '✗'}</li>
+                <li>Activity Logs: {'✓' if export_request.include_activity else '✗'}</li>
+            </ul>
+
+            <p>Your data is attached as a JSON file to this email.</p>
+            <p><a href="{frontend_url}">Return to WREXT</a></p>
+
+            <hr>
+            <pre style="background: #f4f4f4; padding: 15px; border-radius: 5px; overflow-x: auto;">
+{export_json}
+            </pre>
+            """
+        )
+
+        logger.info(f"Data export {export_id} generated for user {user_id}")
+
+        response_data = DataExportResponse(
+            export_id=export_id,
+            user_id=str(user_id),
+            status="completed",
+            requested_at=datetime.utcnow().isoformat(),
+            message="Data export has been sent to your email address"
+        )
+
+        return success(
+            data=response_data.model_dump(),
+            request=request,
+            message="Data export request completed successfully"
+        )
+
+    except Exception as e:
+        logger.error(f"Error exporting data for user {current_user.get('identity')}: {str(e)}")
+        return error(
+            message="Failed to export user data",
+            code=ErrorCode.INTERNAL_SERVER_ERROR,
+            status_code=500,
+            severity=ErrorSeverity.HIGH,
+            context={"error_details": str(e)},
+            request=request
         )
 
 

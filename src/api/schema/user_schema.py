@@ -81,3 +81,39 @@ class UserStatusResponse(BaseModel):
     changed_by: str
     reason: Optional[str]
     changed_at: str
+
+class DeactivateAccountRequest(BaseModel):
+    """Schema for account deactivation request"""
+    reason: Optional[str] = Field(None, max_length=500, description="Reason for deactivation")
+    confirm: bool = Field(..., description="User must confirm deactivation")
+
+    @field_validator('confirm')
+    @classmethod
+    def must_confirm(cls, v):
+        if not v:
+            raise ValueError('You must confirm account deactivation')
+        return v
+
+class DeactivateAccountResponse(BaseModel):
+    """Schema for account deactivation response"""
+    user_id: str
+    email: str
+    status: str
+    deactivated_at: str
+    scheduled_deletion_at: str
+    message: str
+
+class DataExportRequest(BaseModel):
+    """Schema for data export request"""
+    include_profile: bool = Field(True, description="Include profile data")
+    include_roles: bool = Field(True, description="Include role assignments")
+    include_workspaces: bool = Field(True, description="Include workspace memberships")
+    include_activity: bool = Field(True, description="Include activity logs")
+
+class DataExportResponse(BaseModel):
+    """Schema for data export response"""
+    export_id: str
+    user_id: str
+    status: str
+    requested_at: str
+    message: str
