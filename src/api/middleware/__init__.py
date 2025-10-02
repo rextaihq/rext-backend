@@ -5,6 +5,11 @@
 
 from .error_handler import ErrorHandlerMiddleware, setup_exception_handlers
 from .request_tracker import RequestTrackerMiddleware
+from .permissions import (
+    PermissionChecker,
+    require_permissions,
+    is_admin,
+)
 from .exceptions import (
     # Base exceptions
     WrextAPIException,
@@ -28,6 +33,11 @@ __all__ = [
 
     # Setup functions
     "setup_exception_handlers",
+
+    # Permission checking
+    "PermissionChecker",
+    "require_permissions",
+    "is_admin",
 
     # Exception classes
     "WrextAPIException",

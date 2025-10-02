@@ -1,0 +1,49 @@
+"""
+Token Blacklist Model
+
+This model stores revoked/blacklisted JWT tokens to prevent their reuse.
+Used for logout functionality and refresh token rotation.
+
+When a token is blacklisted:
+- Logout: User's access token is added to prevent reuse
+- Refresh: Old refresh token is blacklisted after rotation
+- Forced logout: Admin can revoke all user tokens
+"""
+
+import uuid
+from datetime import datetime
+from sqlalchemy import Column, String, TIMESTAMP, Index
+from sqlalchemy.dialects.postgresql import UUID
+from src.api.database.database import Base
+
+
+class TokenBlacklist(Base):
+    """Store revoked/blacklisted tokens."""
+    __tablename__ = "token_blacklist"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    jti = Column(String(255), unique=True, nullable=False, index=True)  # JWT ID (unique token identifier)
+    token_type = Column(String(20), nullable=False)  # "access" or "refresh"
+    user_id = Column(UUID(as_uuid=True), nullable=False, index=True)  # User who owned the token
+    revoked_at = Column(TIMESTAMP, default=datetime.utcnow, nullable=False)  # When token was blacklisted
+    expires_at = Column(TIMESTAMP, nullable=False, index=True)  # When token would naturally expire
+    reason = Column(String(100))  # "logout", "refresh", "forced_logout", "password_change", etc.
+
+    __table_args__ = (
+        # Indexes for fast lookups
+        Index('idx_token_blacklist_jti', 'jti'),  # Primary lookup by JTI
+        Index('idx_token_blacklist_user_id', 'user_id'),  # Lookup by user
+        Index('idx_token_blacklist_expires_at', 'expires_at'),  # For cleanup jobs
+    )
+
+    def to_dict(self):
+        """Convert model to dictionary."""
+        return {
+            "id": str(self.id),
+            "jti": self.jti,
+            "token_type": self.token_type,
+            "user_id": str(self.user_id),
+            "revoked_at": self.revoked_at.isoformat() if self.revoked_at else None,
+            "expires_at": self.expires_at.isoformat() if self.expires_at else None,
+            "reason": self.reason,
+        }

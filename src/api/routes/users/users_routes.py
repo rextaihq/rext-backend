@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Request, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, status, Request, BackgroundTasks, Header
 from src.utils.logger import logger
 from src.api.security.auth import get_current_user
 from src.api.schema.user_schema import (LoginUser, RegisterUser,
@@ -7,17 +7,21 @@ from src.api.schema.user_schema import (LoginUser, RegisterUser,
 from src.api.security.token_utils import (hash_password, create_access_token,
                               verify_password, create_refresh_token,
                               create_reset_token, verify_token,
-                              create_verification_token
+                              create_verification_token, verify_refresh_token,
+                              is_token_blacklisted
                               )
 from sqlalchemy.orm import Session
-from src.api.models.user_models.users import Users  
+from src.api.models.user_models.users import Users
 from src.api.models.user_models.roles import Role
 from src.api.models.user_models.user_roles import UserRole
+from src.api.models.user_models.token_blacklist import TokenBlacklist
 from src.api.models.workspace_models.workspace_model import WorkspaceModel
 from src.api.models.workspace_models.workspace_member import WorkspaceMembers
 from src.api.tasks.send_mail import send_email
 from src.api.database.database import get_db
 from src.utils.response_utils import success, error, created, unauthorized
+from src.utils.token_cleanup import cleanup_expired_tokens
+from src.api.middleware.permissions import is_admin
 from src.api.schema.response_schemas import ErrorCode, ErrorSeverity
 from src.api.middleware.exceptions import (
     DuplicateResourceException,
@@ -326,6 +330,261 @@ def login_user(
             context={"error_details": str(e)},
             request=request
         )
+
+
+# Refresh Access Token
+@router.post("/refresh")
+def refresh_access_token(
+    request: Request,
+    refresh_token: str,
+    db: Session = Depends(get_db)
+):
+    """
+    Refresh access token using refresh token.
+
+    This endpoint allows clients to obtain a new access token
+    without requiring the user to log in again. Implements refresh
+    token rotation for better security - old refresh token is
+    blacklisted and a new pair is issued.
+
+    Args:
+        request: FastAPI request object
+        refresh_token: The refresh token to use
+        db: Database session
+
+    Returns:
+        New access token and refresh token pair
+
+    Raises:
+        401: If token is expired, invalid, or blacklisted
+        403: If user account is not active
+        404: If user not found
+    """
+    try:
+        # Verify refresh token
+        payload = verify_refresh_token(refresh_token)
+
+        # Check if token is blacklisted
+        jti = payload.get("jti")
+        if not jti:
+            raise WrextAuthenticationException(
+                message="Token missing JTI",
+                context={"note": "Old token format not supported"}
+            )
+
+        if is_token_blacklisted(jti, db):
+            raise WrextAuthenticationException(
+                message="Refresh token has been revoked",
+                context={"reason": "Token blacklisted"}
+            )
+
+        # Get user from database
+        user_id = payload.get("id")
+        db_user = db.query(Users).filter(Users.id == user_id).first()
+
+        if not db_user:
+            raise WrextAuthenticationException(
+                message="User not found",
+                context={"user_id": user_id}
+            )
+
+        # Check if user is active
+        if db_user.status != "active":
+            raise WrextAuthenticationException(
+                message="User account is not active",
+                context={"status": db_user.status}
+            )
+
+        # Get user's current roles
+        role_names = [ur.role.name for ur in db_user.user_roles if ur.is_primary]
+
+        # Create new token pair
+        token_data = {
+            "id": str(db_user.id),
+            "username": db_user.username,
+            "email": db_user.email,
+            "roles": role_names
+        }
+        new_access_token = create_access_token(data=token_data)
+        new_refresh_token = create_refresh_token(data=token_data)
+
+        # Blacklist old refresh token (token rotation)
+        blacklist_entry = TokenBlacklist(
+            jti=jti,
+            token_type="refresh",
+            user_id=db_user.id,
+            revoked_at=datetime.utcnow(),
+            expires_at=datetime.utcfromtimestamp(payload.get("exp")),
+            reason="refresh"
+        )
+        db.add(blacklist_entry)
+        db.commit()
+
+        logger.info(f"Access token refreshed for user {db_user.id}")
+
+        return success(
+            data={
+                "access_token": new_access_token,
+                "refresh_token": new_refresh_token,
+                "token_type": "bearer"
+            },
+            request=request,
+            message="Token refreshed successfully"
+        )
+
+    except WrextAuthenticationException:
+        # Re-raise to be handled by middleware
+        raise
+    except Exception as e:
+        logger.error(f"Token refresh failed: {str(e)}")
+        return error(
+            message="Failed to refresh token",
+            code=ErrorCode.INTERNAL_SERVER_ERROR,
+            status_code=500,
+            severity=ErrorSeverity.HIGH,
+            context={"error_details": str(e)},
+            request=request
+        )
+
+
+# Logout User
+@router.post("/logout")
+def logout_user(
+    request: Request,
+    current_user: dict = Depends(get_current_user),
+    authorization: str = Header(...),
+    db: Session = Depends(get_db)
+):
+    """
+    Logout user by blacklisting their access token.
+
+    The client should also delete stored refresh tokens locally.
+    This prevents the access token from being reused after logout.
+
+    Args:
+        request: FastAPI request object
+        current_user: Current authenticated user (from get_current_user dependency)
+        authorization: Authorization header with Bearer token
+        db: Database session
+
+    Returns:
+        Success message
+
+    Raises:
+        401: If token is invalid, missing JTI, or already blacklisted
+        500: If logout process fails
+    """
+    try:
+        # Extract token from authorization header
+        scheme, token = authorization.split()
+
+        # Decode token to get JTI and expiration
+        payload = verify_token(token)
+        jti = payload.get("jti")
+        exp = payload.get("exp")
+        user_id = current_user.get("identity")
+
+        if not jti:
+            raise WrextAuthenticationException(
+                message="Token missing JTI",
+                context={"note": "Old token format not supported"}
+            )
+
+        # Check if already blacklisted
+        if is_token_blacklisted(jti, db):
+            logger.info(f"Token already blacklisted for user {user_id}")
+            return success(
+                data={"message": "Already logged out"},
+                request=request,
+                message="Logout successful"
+            )
+
+        # Blacklist the access token
+        blacklist_entry = TokenBlacklist(
+            jti=jti,
+            token_type="access",
+            user_id=user_id,
+            revoked_at=datetime.utcnow(),
+            expires_at=datetime.utcfromtimestamp(exp),
+            reason="logout"
+        )
+        db.add(blacklist_entry)
+        db.commit()
+
+        logger.info(f"User {user_id} logged out successfully")
+
+        return success(
+            data={"message": "Logged out successfully"},
+            request=request,
+            message="Logout successful"
+        )
+
+    except WrextAuthenticationException:
+        # Re-raise to be handled by middleware
+        raise
+    except Exception as e:
+        logger.error(f"Logout failed: {str(e)}")
+        return error(
+            message="Logout failed",
+            code=ErrorCode.INTERNAL_SERVER_ERROR,
+            status_code=500,
+            severity=ErrorSeverity.HIGH,
+            context={"error_details": str(e)},
+            request=request
+        )
+
+
+# Admin: Cleanup Expired Tokens
+@router.post("/admin/cleanup-tokens")
+def cleanup_tokens_endpoint(
+    request: Request,
+    current_user: dict = Depends(get_current_user),
+    _: bool = Depends(is_admin),
+    db: Session = Depends(get_db)
+):
+    """
+    Admin endpoint to manually trigger token cleanup.
+
+    Removes expired tokens from blacklist to prevent table growth.
+    Only accessible to users with admin or super_admin role.
+
+    Args:
+        request: FastAPI request object
+        current_user: Current authenticated user (must be admin)
+        _: Admin check dependency (enforces admin role)
+        db: Database session
+
+    Returns:
+        Number of tokens deleted
+
+    Raises:
+        403: If user is not an admin
+        500: If cleanup process fails
+    """
+    try:
+        deleted_count = cleanup_expired_tokens(db)
+
+        logger.info(f"Admin {current_user.get('identity')} triggered token cleanup - deleted {deleted_count} tokens")
+
+        return success(
+            data={
+                "deleted_count": deleted_count,
+                "message": f"Successfully cleaned up {deleted_count} expired tokens"
+            },
+            request=request,
+            message=f"Cleaned up {deleted_count} expired tokens"
+        )
+    except Exception as e:
+        logger.error(f"Manual token cleanup failed: {str(e)}")
+        return error(
+            message="Token cleanup failed",
+            code=ErrorCode.INTERNAL_SERVER_ERROR,
+            status_code=500,
+            severity=ErrorSeverity.HIGH,
+            context={"error_details": str(e)},
+            request=request
+        )
+
 
 # Delete user
 @router.delete("/delete/{user_id}")

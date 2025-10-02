@@ -1903,15 +1903,23 @@ Created comprehensive subscription management models for SaaS pricing tiers.
 
 ---
 
-## Phase 2: Core Authentication & Authorization
+## Phase 2: Core Authentication & Authorization ✅
 
 **Priority:** CRITICAL
 **Estimated Effort:** 3-4 days
 **Dependencies:** Phase 1
+**Status:** COMPLETED (2025-10-02)
+**Progress:** 4/4 tasks (100%)
 
 ### Overview
 
 This phase implements core authentication and authorization features including permission checking middleware, refresh token endpoint, session management, and token blacklist.
+
+**All tasks completed on 2025-10-02:**
+- ✅ Task 2.1: Permission checking middleware
+- ✅ Task 2.2: Refresh token endpoint with rotation
+- ✅ Task 2.3: Logout with token blacklisting
+- ✅ Task 2.4: Token cleanup utility
 
 ### Goals
 
@@ -1924,12 +1932,46 @@ This phase implements core authentication and authorization features including p
 
 ---
 
-### Task 2.1: Create Permission Checking Middleware
+### Task 2.1: Create Permission Checking Middleware ✅
 
 **Complexity:** Medium
 **Priority:** Critical
+**Status:** COMPLETED (2025-10-02)
 
-#### Implementation Steps
+#### Implementation Summary
+
+**Files Created:**
+- `src/api/middleware/permissions.py` - Permission checking middleware (260 lines)
+
+**Files Modified:**
+- `src/api/middleware/__init__.py` - Added exports for PermissionChecker, require_permissions, is_admin
+
+**Implementation Details:**
+- Created `PermissionChecker` class as FastAPI dependency
+- Implemented `require_permissions()` factory function
+- Implemented `is_admin()` helper for admin-only endpoints
+- Support for workspace-scoped permissions via path/query params
+- Permission retrieval via SQLAlchemy joins (Permission → RolePermission → UserRole)
+- Both `require_all` and `require_any` logic supported
+- Proper logging (debug for success, warning for denied access)
+- Returns 401 for unauthenticated, 403 for insufficient permissions
+
+**Key Features:**
+- Query optimization: Single database query to fetch all user permissions
+- Workspace isolation: Filters by workspace_id when workspace_scoped=True
+- Global roles: Includes roles with workspace_id=NULL for workspace-scoped checks
+- Flexible permission logic: AND (require_all=True) or OR (require_all=False)
+
+**Testing:**
+- Syntax check passed (py_compile)
+- Import structure verified
+- Ready for integration testing with actual endpoints
+
+**Next Steps:**
+- Apply to protected endpoints in Phase 3 (RBAC APIs)
+- Consider Redis caching for permission lookups in production
+
+#### Implementation Steps (Original Plan)
 
 1. **Create Permission Checker Decorator**
 
@@ -2188,12 +2230,58 @@ This phase implements core authentication and authorization features including p
 
 ---
 
-### Task 2.2: Implement Refresh Token Endpoint
+### Task 2.2: Implement Refresh Token Endpoint ✅
 
 **Complexity:** Medium
 **Priority:** Critical
+**Status:** COMPLETED (2025-10-02)
 
-#### Implementation Steps
+#### Implementation Summary
+
+**Files Created:**
+- `src/api/models/user_models/token_blacklist.py` - TokenBlacklist model (50 lines)
+
+**Files Modified:**
+- `src/api/security/token_utils.py` - Added JTI to tokens, verify_refresh_token(), is_token_blacklisted()
+- `src/api/routes/users/users_routes.py` - Added /refresh endpoint with token rotation
+- `src/api/models/user_models/__init__.py` - Added TokenBlacklist export
+- `alembic/env.py` - Added TokenBlacklist import for migrations
+
+**Implementation Details:**
+- Created TokenBlacklist model with jti, token_type, user_id, revoked_at, expires_at, reason
+- Added 3 indexes: jti (unique), user_id, expires_at
+- Updated create_access_token() to include JTI and type="access"
+- Updated create_refresh_token() to include JTI and type="refresh"
+- Implemented verify_refresh_token() - validates token type and expiration
+- Implemented is_token_blacklisted() - checks if JTI is blacklisted
+- Added /refresh endpoint with token rotation (old token blacklisted, new pair issued)
+- Endpoint validates: token not blacklisted, user exists, user is active
+- Returns new access + refresh token pair
+
+**Key Features:**
+- Token rotation: Old refresh token blacklisted on each refresh
+- JTI (JWT ID): All tokens now have unique identifier for tracking
+- Type checking: Ensures refresh tokens used for refresh, access for auth
+- User validation: Inactive users cannot refresh tokens
+- Comprehensive logging: Info for success, error for failures
+
+**Testing:**
+- Syntax validation passed for all files
+- Ready for alembic migration
+
+**Migration Required:**
+Run the following commands when ready to apply database changes:
+```bash
+alembic revision --autogenerate -m "add_token_blacklist_table"
+alembic upgrade head
+```
+
+**Next Steps:**
+- Apply migration when database is accessible
+- Test refresh endpoint with valid/invalid/blacklisted tokens
+- Implement logout endpoint (Task 2.3) using blacklist
+
+#### Implementation Steps (Original Plan)
 
 1. **Create Token Blacklist Model**
 
@@ -2465,12 +2553,52 @@ This phase implements core authentication and authorization features including p
 
 ---
 
-### Task 2.3: Implement Logout Endpoint with Token Blacklisting
+### Task 2.3: Implement Logout Endpoint with Token Blacklisting ✅
 
 **Complexity:** Low
 **Priority:** High
+**Status:** COMPLETED (2025-10-02)
 
-#### Implementation Steps
+#### Implementation Summary
+
+**Files Modified:**
+- `src/api/routes/users/users_routes.py` - Added /logout endpoint
+- `src/api/security/auth.py` - Updated get_current_user() to check token blacklist
+
+**Implementation Details:**
+- Added /logout endpoint that blacklists access tokens
+- Endpoint extracts JTI from token and adds to TokenBlacklist table
+- Handles already-blacklisted tokens gracefully (returns success)
+- Validates token has JTI (rejects old token format)
+- Updated get_current_user() to inject database session dependency
+- Added blacklist check after token verification in get_current_user()
+- Blacklisted tokens now rejected with "Token has been revoked" error
+- Added Header import to users_routes.py for authorization parameter
+
+**Key Features:**
+- Logout blacklists current access token
+- All protected endpoints now reject blacklisted tokens
+- Idempotent: Calling logout twice returns success both times
+- Proper exception handling preserves existing WrextAuthenticationException flow
+- Comprehensive logging for logout events
+
+**Flow:**
+1. User calls /logout with Bearer token in Authorization header
+2. Token verified and JTI extracted
+3. JTI added to token_blacklist table with reason="logout"
+4. Any subsequent API call with that token fails at get_current_user()
+5. User must login again to get new tokens
+
+**Testing:**
+- Syntax validation passed for both files
+- Ready for integration testing
+
+**Next Steps:**
+- Test logout flow end-to-end
+- Test blacklisted token rejection on protected endpoints
+- Implement token cleanup utility (Task 2.4)
+
+#### Implementation Steps (Original Plan)
 
 1. **Add Logout Endpoint**
 
@@ -2652,12 +2780,68 @@ This phase implements core authentication and authorization features including p
 
 ---
 
-### Task 2.4: Create Background Job for Token Cleanup
+### Task 2.4: Create Background Job for Token Cleanup ✅
 
 **Complexity:** Medium
 **Priority:** Medium
+**Status:** COMPLETED (2025-10-02)
 
-#### Implementation Steps
+#### Implementation Summary
+
+**Files Created:**
+- `src/utils/token_cleanup.py` - Cleanup utility function (65 lines)
+- `scripts/cleanup_tokens.py` - Standalone cron job script (55 lines)
+
+**Files Modified:**
+- `src/api/routes/users/users_routes.py` - Added /admin/cleanup-tokens endpoint
+
+**Implementation Details:**
+- Created `cleanup_expired_tokens()` function in token_cleanup.py
+- Function deletes tokens where expires_at < current time
+- Returns count of deleted tokens
+- Proper error handling with rollback on failure
+- Created standalone script for cron job execution
+- Script can run manually or via cron
+- Added admin-only endpoint for manual cleanup trigger
+- Endpoint uses is_admin dependency to restrict access
+
+**Key Features:**
+- Cleanup removes only expired tokens (preserves active blacklisted tokens)
+- Database transaction with commit/rollback
+- Comprehensive logging (info for success, debug for no-op, error for failures)
+- Cron script with exit codes (0=success, 1=failure)
+- Made script executable with chmod +x
+- Admin endpoint logs which admin triggered cleanup
+
+**Usage:**
+
+**Manual run:**
+```bash
+cd /path/to/wrext-backend
+python3 scripts/cleanup_tokens.py
+```
+
+**Cron job (every 6 hours):**
+```bash
+0 */6 * * * cd /path/to/wrext-backend && python3 scripts/cleanup_tokens.py >> logs/token_cleanup.log 2>&1
+```
+
+**Via API (admin only):**
+```bash
+curl -X POST http://localhost:8000/api/user/admin/cleanup-tokens \
+  -H "Authorization: Bearer <admin_token>"
+```
+
+**Testing:**
+- Syntax validation passed for all files
+- Ready for integration testing
+
+**Next Steps:**
+- Test cleanup with expired tokens in database
+- Set up cron job in production
+- Monitor blacklist table size
+
+#### Implementation Steps (Original Plan)
 
 1. **Create Cleanup Utility**
 

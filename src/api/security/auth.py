@@ -1,9 +1,11 @@
 import os
 from langgraph_sdk import Auth
-from fastapi import HTTPException, Security
+from fastapi import HTTPException, Security, Depends
 from fastapi import Header
 from fastapi.security.api_key import APIKeyHeader
-from src.api.security.token_utils import verify_token
+from sqlalchemy.orm import Session
+from src.api.database.database import get_db
+from src.api.security.token_utils import verify_token, is_token_blacklisted
 from src.api.middleware.exceptions import (
     WrextAuthenticationException,
     TokenExpiredException,
@@ -18,8 +20,11 @@ API_KEY_NAME = os.getenv("API_KEY_NAME")
 api_key_header = APIKeyHeader(name=API_KEY_NAME, auto_error=False)
 
 # @auth.authenticate
-def get_current_user(authorization: str = Header(...)) -> Auth.types.MinimalUserDict:
-    """Check if the user's token is valid."""
+def get_current_user(
+    authorization: str = Header(...),
+    db: Session = Depends(get_db)
+) -> Auth.types.MinimalUserDict:
+    """Check if the user's token is valid and not blacklisted."""
     if not authorization:
         raise WrextAuthenticationException(
             message="Authorization header missing",
@@ -42,6 +47,15 @@ def get_current_user(authorization: str = Header(...)) -> Auth.types.MinimalUser
     try:
         # Verify the token
         payload = verify_token(token)
+
+        # Check if token is blacklisted
+        jti = payload.get("jti")
+        if jti and is_token_blacklisted(jti, db):
+            raise WrextAuthenticationException(
+                message="Token has been revoked",
+                context={"reason": "Token blacklisted"}
+            )
+
     except HTTPException as e:
         if "expired" in str(e.detail).lower():
             raise TokenExpiredException(
@@ -52,6 +66,9 @@ def get_current_user(authorization: str = Header(...)) -> Auth.types.MinimalUser
                 message="Invalid authentication token",
                 context={"token_error": str(e.detail)}
             )
+    except WrextAuthenticationException:
+        # Re-raise authentication exceptions (including blacklist check)
+        raise
     except Exception as e:
         raise WrextAuthenticationException(
             message="Token validation failed",
