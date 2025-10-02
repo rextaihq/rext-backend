@@ -83,6 +83,24 @@ def create_reset_token(data: dict, expires_delta: timedelta = timedelta(minutes=
     token = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return token
 
+# Verification Token
+def create_verification_token(data: dict, expires_delta: timedelta = timedelta(hours=24)) -> str:
+    """
+    Creates a JWT token for email verification.
+
+    Args:
+        data (dict): The payload to include in the token.
+        expires_delta (timedelta, optional): Token expiration time. Defaults to 24 hours.
+
+    Returns:
+        str: The JWT token.
+    """
+    to_encode = data.copy()
+    expire = datetime.utcnow() + expires_delta
+    to_encode.update({"exp": expire})
+    token = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    return token
+
 # def verify_reset_token(token: str) -> dict | None:
 #     """
 #     Verify and decode the JWT reset token.

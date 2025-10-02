@@ -45,7 +45,7 @@ async def add_member_to_workspace(
     """
     try:
         # Check if workspace exists
-        workspace = db.query(WorkspaceModel).filter(WorkspaceModel.id == workspace_id,user_id =user.get("identity")).first()
+        workspace = db.query(WorkspaceModel).filter(WorkspaceModel.id == workspace_id, WorkspaceModel.user_id == user.get("identity")).first()
         if not workspace:
             raise ResourceNotFoundException(f"Workspace with id {workspace_id} not found")
 
@@ -59,7 +59,7 @@ async def add_member_to_workspace(
 
         # Add user as a member
         new_member = WorkspaceMembers(
-            user_id=user.id,
+            user_id=user.get("identity"),
             workspace_id=workspace_id,
             status="active",
             joined_at=datetime.now(timezone.utc),
@@ -71,7 +71,7 @@ async def add_member_to_workspace(
 
         return created(
             message="User added to workspace successfully",
-            data={"user_id": str(user.id), "workspace_id": workspace_id},
+            data={"user_id": str(user.get("identity")), "workspace_id": workspace_id},
             request=request
         )
     except Exception as e:

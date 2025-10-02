@@ -1,10 +1,13 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Request,BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, status, Request, BackgroundTasks
 from src.utils.logger import logger
+from src.api.security.auth import get_current_user
 from src.api.schema.user_schema import (LoginUser, RegisterUser,
-                                        UpdateUser,ResetPassword)
+                                        UpdateUser, ResetPassword,
+                                        ForgotPasswordRequest)
 from src.api.security.token_utils import (hash_password, create_access_token,
                               verify_password, create_refresh_token,
-                              create_reset_token,verify_token
+                              create_reset_token, verify_token,
+                              create_verification_token
                               )
 from sqlalchemy.orm import Session
 from src.api.models.user_models.users import Users  
@@ -48,34 +51,63 @@ def get_user_status(request: Request):
     )
 
 @router.get("/users")
-def get_users(request: Request, db: Session = Depends(get_db)):
+def get_users(
+    request: Request,
+    workspace_id: str = None,
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
     """
-    Endpoint to retrieve all users.
+    Endpoint to retrieve users, optionally filtered by workspace.
+    Requires authentication.
     """
     try:
-        logger.info("Fetching all users from the database")
-        users = db.query(Users).all()
+        logger.info(f"Fetching users for workspace: {workspace_id or 'all'}")
+
+        # Base query
+        query = db.query(Users)
+
+        if workspace_id:
+            # Filter by workspace membership
+            query = query.join(WorkspaceMembers).filter(
+                WorkspaceMembers.workspace_id == workspace_id,
+                WorkspaceMembers.status == "active"
+            )
+            logger.info(f"Filtering users by workspace_id: {workspace_id}")
+
+        users = query.all()
 
         # Convert users to dict format (excluding passwords)
         user_data = [user.to_dict() for user in users]
 
         return success(
-            data={"users": user_data, "total_count": len(user_data)},
+            data={
+                "users": user_data,
+                "total_count": len(user_data),
+                "workspace_id": workspace_id
+            },
             request=request,
             message=f"Retrieved {len(user_data)} users successfully"
         )
     except Exception as e:
+        logger.error(f"Failed to retrieve users: {str(e)}")
         return error(
             message="Failed to retrieve users",
             code=ErrorCode.INTERNAL_SERVER_ERROR,
             status_code=500,
             severity=ErrorSeverity.HIGH,
+            context={"error_details": str(e)},
             request=request
         )
 
 
 @router.post("/register")
-def create_user(user: RegisterUser, request: Request, db: Session = Depends(get_db)):
+def create_user(
+    user: RegisterUser,
+    request: Request,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db)
+):
     """
     Endpoint to create a new user.
     """
@@ -116,7 +148,24 @@ def create_user(user: RegisterUser, request: Request, db: Session = Depends(get_
         db.add(new_user)
         db.commit()
         db.refresh(new_user)
-        
+
+        # Generate email verification token
+        verification_token = create_verification_token({"user_id": str(new_user.id)})
+
+        # Get frontend URL from environment
+        frontend_url = os.getenv("FRONTEND_URL", "http://localhost:3000")
+        verification_link = f"{frontend_url}/verify-email?token={verification_token}"
+
+        # Send verification email in background
+        background_tasks.add_task(
+            send_email,
+            to=new_user.email,
+            subject="Verify Your Email Address",
+            body=f"<p>Welcome {new_user.first_name}!</p><p>Click the link to verify your email: <a href='{verification_link}'>Verify Email</a></p><p>This link will expire in 24 hours.</p>"
+        )
+
+        logger.info(f"Verification email sent to {new_user.email}")
+
         # Assign default role
         logger.info("Assigning default role to new user")
         default_role = db.query(Role).filter(Role.name == "user").first()
@@ -133,20 +182,20 @@ def create_user(user: RegisterUser, request: Request, db: Session = Depends(get_
             db.commit()
             db.refresh(default_role)
 
-        # logger.info(f"Assigning role {default_role.name} to user {new_user.username}")
-        # user_role = UserRole(
-        #     user_id=new_user.id,
-        #     role_id=default_role.id,
-        #     workspace_id=None,
-        #     is_primary=True,
-        #     assigned_at=datetime.utcnow(),
-        #     assigned_by_user_id=new_user.id
-        # )
-        # db.add(user_role)
-        # db.commit()
-        # db.refresh(user_role)
+        logger.info(f"Assigning role {default_role.name} to user {new_user.username}")
+        user_role = UserRole(
+            user_id=new_user.id,
+            role_id=default_role.id,
+            workspace_id=None,
+            is_primary=True,
+            assigned_at=datetime.utcnow(),
+            assigned_by_user_id=new_user.id
+        )
+        db.add(user_role)
+        db.commit()
+        db.refresh(user_role)
 
-        # logger.info(f"User {new_user.username} created successfully with ID {new_user.id}")
+        logger.info(f"User {new_user.username} created successfully with ID {new_user.id}")
 
         # Return user data (excluding password)
         user_data = {
@@ -414,17 +463,17 @@ def update_user(user_id: str, user: UpdateUser, request: Request, db: Session = 
 # forget password
 @router.post("/forgot-password")
 def forgot_password(
-    email: str, 
-    request: Request, 
-    db: Session = Depends(get_db),
-    background_tasks: BackgroundTasks = None
+    request: Request,
+    forgot_request: ForgotPasswordRequest,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db)
     ):
     """
     Initiate forgot password process
     """
     try:
-        logger.info(f"Initiating forgot password for email: {email}")
-        db_user = db.query(Users).filter(Users.email == email).first()
+        logger.info(f"Initiating forgot password for email: {forgot_request.email}")
+        db_user = db.query(Users).filter(Users.email == forgot_request.email).first()
         if not db_user:
             return error(
                 message="User with this email does not exist",
@@ -433,7 +482,7 @@ def forgot_password(
                 severity=ErrorSeverity.MEDIUM,
                 request=request
             )
-        
+
         # Generate reset token and expiry
         reset_data = {
             "user_id": str(db_user.id),
@@ -445,8 +494,9 @@ def forgot_password(
         db.commit()
         db.refresh(db_user)
 
-        # Here you would generate a reset token and send email
-        reset_link = f"https://yourfrontend.com/reset-password/{reset_token}"
+        # Get frontend URL from environment
+        frontend_url = os.getenv("FRONTEND_URL", "http://localhost:3000")
+        reset_link = f"{frontend_url}/reset-password?token={reset_token}"
 
         # Send email in background
         background_tasks.add_task(
@@ -515,7 +565,7 @@ def verify_email(token: str, request: Request, db: Session = Depends(get_db)):
     try:
         logger.info("Verifying email with token")
         payload = verify_token(token)
-        user_id = payload.get("id")
+        user_id = payload.get("user_id")  # Use consistent key with token creation
         if not user_id:
             return error(message="Invalid token payload", request=request)
 
