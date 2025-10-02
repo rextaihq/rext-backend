@@ -2,12 +2,14 @@
 import os
 from typing import Union
 from contextlib import asynccontextmanager
-import src.api.models 
+import src.api.models
 from src.api.models.user_models.invitations import UserInvitations
 from src.api.models.user_models.role_permissions import RolePermission
 from src.api.models.user_models.roles import Role
 from src.api.models.user_models.user_roles import UserRole
 from src.api.models.user_models.permissions import Permission
+from src.api.models.subscription_models.plans import SubscriptionPlan
+from src.api.models.subscription_models.subscriptions import UserSubscription
 # Third-party imports
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -23,6 +25,9 @@ from src.api.routes.knowledge.file_knowledge_route import router as file_router
 from src.api.routes.knowledge.text_knowledge_route import router as text_router
 from src.api.routes.roles.role_routes import router as roles_router
 from src.api.routes.permissions.permission_routes import router as permissions_router
+from src.api.routes.subscriptions.plan_routes import router as plan_routes_router
+from src.api.routes.subscriptions.subscription_routes import router as subscription_routes_router
+from src.api.routes.subscriptions.admin_subscription_routes import router as admin_subscription_routes_router
 from src.api.database.database import engine
 
 # Middleware imports
@@ -147,6 +152,9 @@ app.include_router(text_router, prefix="/api", tags=["Text Knowledge"])
 app.include_router(users_router, prefix="/api", tags=["Users"])
 app.include_router(roles_router, prefix="/api/v1", tags=["Roles"])
 app.include_router(permissions_router, prefix="/api/v1", tags=["Permissions"])
+app.include_router(plan_routes_router, prefix="/api/v1", tags=["Subscription Plans"])
+app.include_router(subscription_routes_router, prefix="/api/v1", tags=["Subscriptions"])
+app.include_router(admin_subscription_routes_router, prefix="/api/v1", tags=["Admin Subscriptions"])
 
 # ============================================================================
 # ROOT ENDPOINTS
