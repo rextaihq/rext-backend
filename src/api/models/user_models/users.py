@@ -33,6 +33,7 @@ class Users(Base):
     failed_login_attempts = Column(Integer, default=0)
     language = Column(String(10), default="en")
     timezone = Column(String(50), default="UTC")
+    avatar_url = Column(String(500))
     created_at = Column(TIMESTAMP, nullable=False, default=datetime.utcnow)
     updated_at = Column(TIMESTAMP, default=datetime.utcnow, onupdate=datetime.utcnow)
     deleted_at = Column(TIMESTAMP)
@@ -56,6 +57,7 @@ class Users(Base):
             "email_verified": self.email_verified,
             "language": self.language,
             "timezone": self.timezone,
+            "avatar_url": self.avatar_url,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
         }

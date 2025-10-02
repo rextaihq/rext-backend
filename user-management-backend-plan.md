@@ -4212,6 +4212,61 @@ PATCH /profile:
 
 ---
 
+### Task 4.6: Avatar Upload Endpoint ✅
+
+**Complexity:** Medium
+**Priority:** Medium
+**Status:** COMPLETED (2025-10-02)
+
+#### Key Features
+
+- ✅ Avatar upload endpoint (`POST /user/avatar/upload`)
+- ✅ Avatar delete endpoint (`DELETE /user/avatar`)
+- ✅ File type validation (JPEG, PNG, GIF, WebP)
+- ✅ File size validation (max 5MB)
+- ✅ User-specific storage directory
+
+#### Implementation Details
+
+**Files Created:**
+- Database migration: `d28b3fe4efb9_add_avatar_url_to_users_table.py`
+
+**Files Modified:**
+- `src/api/models/user_models/users.py` - Added avatar_url column (String(500))
+- `src/api/routes/users/users_routes.py` - Added upload and delete endpoints
+
+**Key Learnings:**
+- Avatar storage structure: `uploads/avatars/{user_id}/{user_id}_{timestamp}.{ext}`
+- File validation: type check (4 allowed types), size check (5MB max)
+- Old avatar deletion: removes previous file on new upload
+- Path storage: relative path stored in DB (`/avatars/{user_id}/{filename}`)
+- Used FastAPI UploadFile for multipart/form-data handling
+- Async upload handler for efficient file I/O
+
+**Upload Flow:**
+1. Validate file type and size
+2. Create user-specific directory if not exists
+3. Delete old avatar file if exists
+4. Generate unique filename with timestamp
+5. Save file to `uploads/avatars/{user_id}/`
+6. Update user.avatar_url with relative path
+7. Return avatar URL and metadata
+
+**Storage Details:**
+- Allowed types: `image/jpeg`, `image/png`, `image/gif`, `image/webp`
+- Max size: 5MB
+- Directory: `uploads/avatars/{user_id}/`
+- Filename format: `{user_id}_{timestamp}.{ext}`
+- Database field: `avatar_url` varchar(500)
+
+**Testing:**
+- ✅ Model update validated
+- ✅ Migration generated successfully
+- ✅ Python syntax validated
+- ✅ Directory structure verified
+
+---
+
 ### Phase 4 Summary
 
 Due to length constraints, Phase 4-6 would follow similar detailed patterns covering:
@@ -4220,6 +4275,7 @@ Due to length constraints, Phase 4-6 would follow similar detailed patterns cove
 - Profile management with validation
 - Status management with audit trails
 - Complete invitation workflows
+- Avatar upload and management
 
 ---
 

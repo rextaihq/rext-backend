@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Request, BackgroundTasks, Header
+from fastapi import APIRouter, Depends, HTTPException, status, Request, BackgroundTasks, Header, UploadFile, File
 from src.utils.logger import logger
 from src.api.security.auth import get_current_user
 from src.api.schema.user_schema import (LoginUser, RegisterUser,
@@ -39,10 +39,16 @@ from src.api.middleware.exceptions import (
 )
 from dotenv import load_dotenv
 from datetime import datetime, timedelta
+from pathlib import Path
 import uuid
 import os
+import time
 
 load_dotenv()
+
+# Avatar upload directory
+AVATAR_UPLOAD_DIR = Path("uploads/avatars")
+AVATAR_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 SECRET_KEY= os.getenv("SECRET_KEY")
 ALGORITHM= os.getenv("ALGORITHM")
@@ -1761,4 +1767,193 @@ def ban_user(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to ban user"
+        )
+
+
+# -------------------------
+# Avatar Upload Endpoints
+# -------------------------
+
+@router.post("/avatar/upload")
+async def upload_avatar(
+    request: Request,
+    file: UploadFile = File(...),
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Upload user avatar image.
+
+    - **file**: Image file (JPEG, PNG, GIF, WebP)
+    - Max size: 5MB
+    - Replaces existing avatar if present
+    """
+    try:
+        user_id = current_user.get("identity")
+        logger.info(f"User {user_id} uploading avatar")
+
+        # Get user
+        user = db.query(Users).filter(Users.id == user_id).first()
+        if not user:
+            return error(
+                message="User not found",
+                code=ErrorCode.RESOURCE_NOT_FOUND,
+                status_code=404,
+                severity=ErrorSeverity.MEDIUM,
+                request=request
+            )
+
+        # Validate file type
+        allowed_types = ["image/jpeg", "image/png", "image/gif", "image/webp"]
+        if file.content_type not in allowed_types:
+            return error(
+                message=f"Invalid file type. Allowed: {', '.join(allowed_types)}",
+                code=ErrorCode.INVALID_INPUT,
+                status_code=400,
+                severity=ErrorSeverity.LOW,
+                request=request
+            )
+
+        # Read file content
+        file_content = await file.read()
+        file_size = len(file_content)
+
+        # Validate file size (5MB max)
+        max_size = 5 * 1024 * 1024  # 5MB
+        if file_size > max_size:
+            return error(
+                message=f"File too large. Max size: 5MB. Your file: {file_size / (1024 * 1024):.2f}MB",
+                code=ErrorCode.INVALID_INPUT,
+                status_code=400,
+                severity=ErrorSeverity.LOW,
+                request=request
+            )
+
+        # Create user-specific directory
+        user_avatar_dir = AVATAR_UPLOAD_DIR / str(user_id)
+        user_avatar_dir.mkdir(parents=True, exist_ok=True)
+
+        # Delete old avatar if exists
+        if user.avatar_url:
+            old_avatar_path = Path(user.avatar_url.lstrip('/'))
+            if old_avatar_path.exists():
+                try:
+                    old_avatar_path.unlink()
+                    logger.info(f"Deleted old avatar: {old_avatar_path}")
+                except Exception as e:
+                    logger.warning(f"Could not delete old avatar: {str(e)}")
+
+        # Generate unique filename
+        file_extension = file.filename.split('.')[-1] if '.' in file.filename else 'jpg'
+        timestamp = int(time.time())
+        new_filename = f"{user_id}_{timestamp}.{file_extension}"
+        file_path = user_avatar_dir / new_filename
+
+        # Save file
+        with open(file_path, "wb") as f:
+            f.write(file_content)
+
+        # Update user avatar_url (store relative path)
+        relative_path = f"/avatars/{user_id}/{new_filename}"
+        user.avatar_url = relative_path
+        user.updated_at = datetime.utcnow()
+
+        db.commit()
+        db.refresh(user)
+
+        logger.info(f"Avatar uploaded successfully for user {user_id}: {relative_path}")
+
+        return success(
+            data={
+                "avatar_url": user.avatar_url,
+                "file_size": file_size,
+                "uploaded_at": user.updated_at.isoformat()
+            },
+            request=request,
+            message="Avatar uploaded successfully"
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error uploading avatar for user {current_user.get('identity')}: {str(e)}")
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to upload avatar"
+        )
+
+
+@router.delete("/avatar")
+def delete_avatar(
+    request: Request,
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Delete user avatar.
+
+    Sets avatar_url to null and removes the file from storage.
+    """
+    try:
+        user_id = current_user.get("identity")
+        logger.info(f"User {user_id} deleting avatar")
+
+        # Get user
+        user = db.query(Users).filter(Users.id == user_id).first()
+        if not user:
+            return error(
+                message="User not found",
+                code=ErrorCode.RESOURCE_NOT_FOUND,
+                status_code=404,
+                severity=ErrorSeverity.MEDIUM,
+                request=request
+            )
+
+        # Check if user has avatar
+        if not user.avatar_url:
+            return error(
+                message="No avatar to delete",
+                code=ErrorCode.RESOURCE_NOT_FOUND,
+                status_code=404,
+                severity=ErrorSeverity.LOW,
+                request=request
+            )
+
+        # Delete file from storage
+        avatar_path = Path(user.avatar_url.lstrip('/'))
+        if avatar_path.exists():
+            try:
+                avatar_path.unlink()
+                logger.info(f"Deleted avatar file: {avatar_path}")
+            except Exception as e:
+                logger.warning(f"Could not delete avatar file: {str(e)}")
+
+        # Update user
+        old_avatar_url = user.avatar_url
+        user.avatar_url = None
+        user.updated_at = datetime.utcnow()
+
+        db.commit()
+        db.refresh(user)
+
+        logger.info(f"Avatar deleted successfully for user {user_id}")
+
+        return success(
+            data={
+                "deleted_avatar_url": old_avatar_url,
+                "deleted_at": user.updated_at.isoformat()
+            },
+            request=request,
+            message="Avatar deleted successfully"
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting avatar for user {current_user.get('identity')}: {str(e)}")
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to delete avatar"
         )
