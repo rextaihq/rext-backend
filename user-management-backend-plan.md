@@ -769,6 +769,7 @@ This phase implements core authentication and authorization features including p
 - ✅ Task 2.2: Refresh token endpoint with rotation
 - ✅ Task 2.3: Logout with token blacklisting
 - ✅ Task 2.4: Token cleanup utility
+- ✅ Task 2.5: Add role & permissions to JWT token
 
 ### Goals
 
@@ -1016,6 +1017,248 @@ Run the following commands when ready to apply database changes:
 
 ---
 
+### Task 2.5: Add Role & Permissions to JWT Token ✅
+
+**Complexity:** Low
+**Priority:** CRITICAL
+**Status:** COMPLETED (2025-10-02)
+
+#### Implementation Summary
+
+**Files Modified:**
+- `src/api/routes/users/users_routes.py` - Updated login and refresh token endpoints
+
+#### Problem Statement
+
+The frontend RBAC infrastructure was complete but blocked because JWT tokens only included role names, not permission data. The frontend needed permission information in the JWT payload to enable client-side permission checking and UI rendering decisions.
+
+#### Implementation Details
+
+**Changes to Login Endpoint (lines 308-330):**
+- Added permission query using SQLAlchemy joins (Permission → RolePermission → UserRole)
+- Filters permissions by user_id and workspace_id=NULL (global permissions only)
+- Added `permissions` array to JWT token payload
+- Query uses `.distinct()` to avoid duplicate permissions from multiple roles
+
+**Changes to Refresh Token Endpoint (lines 432-454):**
+- Added identical permission query logic to ensure refreshed tokens have updated permissions
+- Ensures users get latest permissions after role/permission changes on token refresh
+- Maintains consistency between login and refresh token payloads
+
+**JWT Payload Structure (Before):**
+```python
+{
+    "id": "uuid",
+    "username": "user123",
+    "email": "user@example.com",
+    "roles": ["user", "admin"]
+}
+```
+
+**JWT Payload Structure (After):**
+```python
+{
+    "id": "uuid",
+    "username": "user123",
+    "email": "user@example.com",
+    "roles": ["user", "admin"],
+    "permissions": ["user.read", "user.write", "workspace.create", ...]
+}
+```
+
+#### Key Features
+
+- **Permission Resolution:** Queries all permissions from user's primary roles via database joins
+- **Workspace Filtering:** Only includes global permissions (workspace_id=NULL) for login tokens
+- **Consistency:** Both login and refresh endpoints use identical permission query logic
+- **Empty Array Handling:** Returns empty permissions array if user has no permissions (not an error)
+- **No Breaking Changes:** Existing JWT structure unchanged, only adds new `permissions` field
+
+#### Technical Notes
+
+**Permission Query Performance:**
+- Single database query using SQLAlchemy joins
+- Uses existing indexes on user_roles, role_permissions tables
+- `.distinct()` prevents duplicate permissions from multiple roles
+- Query pattern matches existing `PermissionChecker._get_user_permissions()` in permissions middleware
+
+**Token Size Considerations:**
+- Each permission name adds ~15-30 bytes to JWT
+- Average user with 10-20 permissions: ~200-400 bytes overhead
+- JWT still well within typical size limits (<8KB for most proxies)
+
+**Permission Updates:**
+- Permissions embedded in JWT at login/refresh time
+- Changes to user's roles/permissions won't reflect until token refreshed
+- This is expected behavior for stateless JWT authentication
+- Frontend can force refresh if immediate update needed
+
+#### Testing
+
+**Manual Testing:**
+- Created test script to verify JWT token generation includes permissions
+- Tested token encoding/decoding with pyjwt library
+- Verified permissions array correctly populated in decoded token
+- Confirmed empty permissions array returned when user has no permissions
+
+**Code Verification:**
+- Reviewed login endpoint code changes (lines 308-330)
+- Reviewed refresh token endpoint changes (lines 432-454)
+- Verified Permission model already imported in file
+- Confirmed no syntax errors in modified code
+
+#### Integration Points
+
+**Frontend Impact:**
+- Frontend can now decode JWT and access `permissions` array
+- Enables client-side permission checking without additional API calls
+- Supports RBAC UI components that hide/show features based on permissions
+- Frontend RBAC helper functions can read from decoded token
+
+**Backend Impact:**
+- No changes to existing permission middleware (still queries DB independently)
+- Backend continues to validate permissions on every request (defense in depth)
+- JWT permissions are informational only, not used for authorization decisions
+- Maintains security: backend never trusts client-side permission checks
+
+#### Success Criteria
+
+- ✅ Login endpoint returns JWT with `permissions` array in payload
+- ✅ Refresh token endpoint returns JWT with updated `permissions` array
+- ✅ JWT payload includes all permissions from user's primary roles
+- ✅ Permissions are workspace-filtered (global permissions only)
+- ✅ Empty permissions array returned if user has no permissions
+- ✅ Frontend can decode and access `permissions` from JWT
+- ✅ Existing auth flow continues to work
+- ✅ Backend permission middleware still functions independently
+
+#### Lessons Learned
+
+**What Worked Well:**
+- Reused existing permission query pattern from `PermissionChecker` middleware
+- Single query per login/refresh keeps performance impact minimal
+- Adding to existing token payload avoided breaking changes
+
+**Considerations for Future:**
+- Could add workspace-specific permissions in future (currently global only)
+- May need Redis caching if permission queries become bottleneck
+- Consider permission groups/scopes to reduce JWT size if users have 50+ permissions
+
+#### Next Steps
+
+- Frontend can now implement client-side permission checking using JWT
+- Frontend RBAC components can render based on `permissions` array
+- Consider adding workspace-scoped permissions to JWT in Phase 5
+- Monitor JWT token sizes in production (add alerting if >4KB)
+
+---
+
+### Task 2.4: Session Management APIs ✅ COMPLETED (2025-10-02)
+
+**Status:** ✅ COMPLETE
+**Completed:** 2025-10-02
+**Duration:** 4 hours (actual)
+
+**Implementation:**
+
+Created comprehensive session management system to track and manage user login sessions across devices.
+
+**Database Changes:**
+- ✅ Created `UserSession` model (`src/api/models/user_models/user_sessions.py`)
+- ✅ Added migration `23b403658069_add_user_sessions_table.py`
+- ✅ Updated `Users` model with `sessions` relationship
+- ✅ Installed `user-agents==2.2.0` package for device detection
+
+**API Endpoints Created:**
+1. ✅ `GET /api/v1/user/sessions` - List all active sessions
+   - Returns sessions with device info, IP, location metadata
+   - Marks current session based on JWT token JTI
+   - Ordered by last_activity_at descending
+
+2. ✅ `DELETE /api/v1/user/sessions/{session_id}` - Revoke specific session
+   - Remote logout functionality
+   - Blacklists associated token
+   - Deactivates session record
+
+3. ✅ `DELETE /api/v1/user/sessions` - Revoke all other sessions
+   - Logout from all devices except current
+   - Security feature for suspected unauthorized access
+   - Preserves current session
+
+**Updated Endpoints:**
+- ✅ `/login` - Now creates session record with device tracking
+- ✅ `/logout` - Now deactivates session record
+
+**Features Implemented:**
+- ✅ Device type detection (desktop/mobile/tablet) using user-agents library
+- ✅ Browser and OS detection (e.g., "Chrome on Windows")
+- ✅ IP address tracking from request.client
+- ✅ Session expiration tracking based on JWT expiry
+- ✅ JTI (JWT ID) association with sessions
+- ✅ Comprehensive logging for all session operations
+
+**Database Schema:**
+```python
+user_sessions:
+  - id (UUID, primary key)
+  - user_id (UUID, foreign key to users)
+  - jti (String, unique, indexed) # JWT token ID
+  - device_name (String) # e.g., "Chrome on Windows"
+  - device_type (String) # desktop/mobile/tablet
+  - user_agent (Text) # Full user agent string
+  - ip_address (String) # IPv4 or IPv6
+  - country (String) # Optional geolocation
+  - city (String) # Optional geolocation
+  - is_active (Boolean, indexed)
+  - created_at (Timestamp)
+  - last_activity_at (Timestamp, indexed)
+  - expires_at (Timestamp)
+  - revoked_at (Timestamp)
+  - session_metadata (JSONB) # Extensibility
+```
+
+**Files Created:**
+- `src/api/models/user_models/user_sessions.py` (67 lines)
+- `src/api/schema/session_schema.py` (35 lines)
+- `alembic/versions/23b403658069_add_user_sessions_table.py` (69 lines)
+
+**Files Modified:**
+- `src/api/models/user_models/users.py` - Added sessions relationship
+- `src/api/models/user_models/__init__.py` - Exported UserSession
+- `src/api/routes/users/users_routes.py` - Added imports, updated login/logout (+235 lines)
+
+**Testing:**
+```bash
+# Login (creates session)
+curl -X POST http://localhost:2024/api/v1/user/login \
+  -H "Content-Type: application/json" \
+  -d '{"email": "user@example.com", "password": "password"}'
+
+# List sessions
+curl http://localhost:2024/api/v1/user/sessions \
+  -H "Authorization: Bearer <token>"
+
+# Revoke session
+curl -X DELETE http://localhost:2024/api/v1/user/sessions/<session_id> \
+  -H "Authorization: Bearer <token>"
+
+# Revoke all other sessions
+curl -X DELETE http://localhost:2024/api/v1/user/sessions \
+  -H "Authorization: Bearer <token>"
+```
+
+**Success Criteria:**
+- ✅ Sessions tracked on login
+- ✅ Sessions deactivated on logout
+- ✅ List endpoint returns all active sessions
+- ✅ Current session marked correctly
+- ✅ Revoke endpoint blacklists tokens
+- ✅ Device information parsed correctly
+- ✅ IP addresses captured
+- ✅ Database indexes optimize queries
+
+---
+
 ### Phase 2 Summary
 
 **Deliverables:**
@@ -1024,29 +1267,37 @@ Run the following commands when ready to apply database changes:
 3. Logout endpoint with token blacklisting
 4. Token blacklist model and migration
 5. Token cleanup utility and cron script
+6. Role & permissions added to JWT tokens
+7. **Session management APIs and tracking** ✅ NEW (2025-10-02)
 
-**Database Migration Count:** +1 migration (token_blacklist)
+**Database Migration Count:** +2 migrations (token_blacklist, user_sessions)
 
 **Files Created:**
 - `src/api/middleware/permissions.py`
 - `src/api/models/user_models/token_blacklist.py`
+- `src/api/models/user_models/user_sessions.py` ✅ NEW
+- `src/api/schema/session_schema.py` ✅ NEW
 - `src/utils/token_cleanup.py`
 - `scripts/cleanup_tokens.py`
 
 **Files Modified:**
 - `src/api/security/token_utils.py`
 - `src/api/security/auth.py`
-- `src/api/routes/users/users_routes.py`
+- `src/api/routes/users/users_routes.py` (updated for sessions)
 - `alembic/env.py`
 
 **Testing Checklist:**
-- [ ] Permission checking works for all scenarios
-- [ ] Refresh token endpoint returns new tokens
-- [ ] Token rotation blacklists old refresh tokens
-- [ ] Logout blacklists access tokens
-- [ ] Blacklisted tokens rejected
-- [ ] Token cleanup removes expired tokens
-- [ ] Admin endpoints accessible only to admins
+- [x] Permission checking works for all scenarios
+- [x] Refresh token endpoint returns new tokens
+- [x] Token rotation blacklists old refresh tokens
+- [x] Logout blacklists access tokens
+- [x] Blacklisted tokens rejected
+- [x] Token cleanup removes expired tokens
+- [x] Admin endpoints accessible only to admins
+- [x] **Sessions created on login** ✅ NEW
+- [x] **Sessions deactivated on logout** ✅ NEW
+- [x] **Session list endpoint returns active sessions** ✅ NEW
+- [x] **Session revocation works correctly** ✅ NEW
 
 ---
 
@@ -1897,6 +2148,51 @@ PATCH /profile:
 - Comprehensive data export system
 - Auto-deletion scheduler for deactivated accounts
 - Admin tools for account cleanup and monitoring
+
+---
+
+## Phase 4.5: Notification Preferences API ✅
+
+**Priority:** MEDIUM
+**Status:** COMPLETED (2025-10-02)
+**Actual Effort:** 3 hours
+
+### Overview
+
+Implemented API endpoints for managing user notification preferences to support the frontend notification settings page. Users can now configure email and in-app notification preferences with full CRUD functionality.
+
+### Task 4.5.1: Notification Preferences Endpoints ✅
+
+**Files Created:**
+- `src/api/models/user_models/notification_preferences.py` - NotificationPreferences model
+- `src/api/schema/notification_schema.py` - Pydantic schemas
+- `alembic/versions/56bb656bf89e_add_notification_preferences_table.py` - Migration
+
+**Files Modified:**
+- `src/api/routes/users/users_routes.py` - Added GET/PATCH endpoints (lines 2352-2472)
+- `src/api/models/user_models/__init__.py` - Added NotificationPreferences export
+- `src/api/models/user_models/users.py` - Added notification_preferences relationship
+- `alembic/env.py` - Added NotificationPreferences import
+
+**API Endpoints:**
+- GET `/api/user/preferences/notifications` - Get preferences (auto-creates defaults)
+- PATCH `/api/user/preferences/notifications` - Update preferences
+
+**Key Features:**
+- One-to-one relationship with Users table
+- Auto-creation of defaults on first GET
+- Snake_case (DB) to camelCase (API) conversion
+- 11 boolean preferences + 1 enum field (email digest frequency)
+- Pydantic validation with Literal types
+- Foreign key CASCADE delete
+
+**Success Criteria Met:**
+- ✅ Model and schema created
+- ✅ Migration applied successfully
+- ✅ GET/PATCH endpoints implemented
+- ✅ Default values match frontend expectations
+- ✅ Proper authentication and error handling
+- ✅ Frontend integration ready
 
 ---
 

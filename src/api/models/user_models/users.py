@@ -45,6 +45,8 @@ class Users(Base):
     workspaces = relationship("WorkspaceModel", back_populates="owner")
     sent_invitations = relationship("UserInvitations", back_populates="invited_by")
     assigned_roles = relationship("UserRole", back_populates="assigned_by", foreign_keys="UserRole.assigned_by_user_id")
+    notification_preferences = relationship("NotificationPreferences", back_populates="user", uselist=False)
+    sessions = relationship("UserSession", back_populates="user", cascade="all, delete-orphan")
 
     def to_dict(self):
         return {

@@ -25,6 +25,7 @@ from src.api.models.user_models.user_roles import UserRole
 from src.api.models.user_models.role_permissions import RolePermission
 from src.api.models.user_models.invitations import UserInvitations
 from src.api.models.user_models.token_blacklist import TokenBlacklist
+from src.api.models.user_models.notification_preferences import NotificationPreferences
 from src.api.models.workspace_models.workspace_model import WorkspaceModel
 from src.api.models.workspace_models.workspace_member import WorkspaceMembers
 from src.api.models.knowledge_models.knowledge_model import (

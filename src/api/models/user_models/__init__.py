@@ -5,6 +5,8 @@ from .user_roles import UserRole
 from .role_permissions import RolePermission
 from .invitations import UserInvitations
 from .token_blacklist import TokenBlacklist
+from .notification_preferences import NotificationPreferences
+from .user_sessions import UserSession
 
 __all__ = [
     "Users",
@@ -14,4 +16,6 @@ __all__ = [
     "RolePermission",
     "UserInvitations",
     "TokenBlacklist",
+    "NotificationPreferences",
+    "UserSession",
 ]

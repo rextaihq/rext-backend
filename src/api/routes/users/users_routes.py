@@ -14,6 +14,8 @@ from src.api.schema.user_schema import (LoginUser, RegisterUser,
                                         DataExportRequest,
                                         DataExportResponse)
 from src.api.schema.user_role_schema import AssignUserRoleRequest, UserRoleResponse
+from src.api.schema.notification_schema import NotificationPreferencesResponse, UpdateNotificationPreferencesRequest
+from src.api.schema.session_schema import SessionResponse, SessionListResponse
 from src.api.security.token_utils import (hash_password, create_access_token,
                               verify_password, create_refresh_token,
                               create_reset_token, verify_token,
@@ -27,6 +29,8 @@ from src.api.models.user_models.user_roles import UserRole
 from src.api.models.user_models.token_blacklist import TokenBlacklist
 from src.api.models.user_models.permissions import Permission
 from src.api.models.user_models.role_permissions import RolePermission
+from src.api.models.user_models.notification_preferences import NotificationPreferences
+from src.api.models.user_models.user_sessions import UserSession
 from src.api.models.workspace_models.workspace_model import WorkspaceModel
 from src.api.models.workspace_models.workspace_member import WorkspaceMembers
 from src.api.tasks.send_mail import send_email
@@ -48,6 +52,7 @@ from pathlib import Path
 import uuid
 import os
 import time
+from user_agents import parse as parse_user_agent
 
 load_dotenv()
 
@@ -307,17 +312,64 @@ def login_user(
 
         # get all the roles of the user
         role_names = [ur.role.name for ur in db_user.user_roles if ur.is_primary]
+
+        # Get user's permissions via roles
+        permission_names = (
+            db.query(Permission.name)
+            .join(RolePermission, RolePermission.permission_id == Permission.id)
+            .join(UserRole, UserRole.role_id == RolePermission.role_id)
+            .filter(UserRole.user_id == db_user.id)
+            .filter(UserRole.workspace_id == None)  # Global permissions only for login
+            .distinct()
+            .all()
+        )
+        permissions = [p.name for p in permission_names]
+
         # Prepare JWT payload
         token_data = {
             "id": str(db_user.id),
             "username": db_user.username,
             "email": db_user.email,
-            "roles": role_names
+            "roles": role_names,
+            "permissions": permissions
         }
 
         # Generate tokens
         access_token = create_access_token(data=token_data)
         refresh_token = create_refresh_token(data=token_data)
+
+        # Parse user agent for device information
+        user_agent_string = request.headers.get("user-agent", "Unknown")
+        user_agent = parse_user_agent(user_agent_string)
+        device_type = "mobile" if user_agent.is_mobile else ("tablet" if user_agent.is_tablet else "desktop")
+        device_name = f"{user_agent.browser.family} on {user_agent.os.family}"
+
+        # Get client IP address
+        client_ip = request.client.host if request.client else "Unknown"
+
+        # Decode access token to get JTI and expiration
+        access_payload = verify_token(access_token)
+        jti = access_payload.get("jti")
+        exp_timestamp = access_payload.get("exp")
+        expires_at = datetime.utcfromtimestamp(exp_timestamp) if exp_timestamp else datetime.utcnow() + timedelta(hours=24)
+
+        # Create session record
+        new_session = UserSession(
+            user_id=db_user.id,
+            jti=jti,
+            device_name=device_name,
+            device_type=device_type,
+            user_agent=user_agent_string,
+            ip_address=client_ip,
+            is_active=True,
+            created_at=datetime.utcnow(),
+            last_activity_at=datetime.utcnow(),
+            expires_at=expires_at
+        )
+        db.add(new_session)
+        db.commit()
+
+        logger.info(f"Created session {new_session.id} for user {db_user.id} from {client_ip}")
 
         # Return successful login response
         return success(
@@ -418,12 +470,25 @@ def refresh_access_token(
         # Get user's current roles
         role_names = [ur.role.name for ur in db_user.user_roles if ur.is_primary]
 
+        # Get user's permissions via roles
+        permission_names = (
+            db.query(Permission.name)
+            .join(RolePermission, RolePermission.permission_id == Permission.id)
+            .join(UserRole, UserRole.role_id == RolePermission.role_id)
+            .filter(UserRole.user_id == db_user.id)
+            .filter(UserRole.workspace_id == None)  # Global permissions only
+            .distinct()
+            .all()
+        )
+        permissions = [p.name for p in permission_names]
+
         # Create new token pair
         token_data = {
             "id": str(db_user.id),
             "username": db_user.username,
             "email": db_user.email,
-            "roles": role_names
+            "roles": role_names,
+            "permissions": permissions
         }
         new_access_token = create_access_token(data=token_data)
         new_refresh_token = create_refresh_token(data=token_data)
@@ -531,6 +596,18 @@ def logout_user(
         db.add(blacklist_entry)
         db.commit()
 
+        # Deactivate the session
+        session = db.query(UserSession).filter(
+            UserSession.jti == jti,
+            UserSession.is_active == True
+        ).first()
+
+        if session:
+            session.is_active = False
+            session.revoked_at = datetime.utcnow()
+            db.commit()
+            logger.info(f"Deactivated session {session.id} for user {user_id}")
+
         logger.info(f"User {user_id} logged out successfully")
 
         return success(
@@ -546,6 +623,231 @@ def logout_user(
         logger.error(f"Logout failed: {str(e)}")
         return error(
             message="Logout failed",
+            code=ErrorCode.INTERNAL_SERVER_ERROR,
+            status_code=500,
+            severity=ErrorSeverity.HIGH,
+            context={"error_details": str(e)},
+            request=request
+        )
+
+
+# Session Management Endpoints
+
+@router.get("/sessions")
+def list_user_sessions(
+    request: Request,
+    current_user: dict = Depends(get_current_user),
+    authorization: str = Header(...),
+    db: Session = Depends(get_db)
+):
+    """
+    List all active sessions for the current user.
+
+    Shows sessions across all devices with device info, IP addresses,
+    and activity timestamps. Marks the current session for UI display.
+
+    Args:
+        request: FastAPI request object
+        current_user: Current authenticated user
+        authorization: Authorization header with current token
+        db: Database session
+
+    Returns:
+        List of user sessions with metadata
+    """
+    try:
+        user_id = current_user.get("identity")
+
+        # Get current token's JTI to mark current session
+        scheme, token = authorization.split()
+        current_payload = verify_token(token)
+        current_jti = current_payload.get("jti")
+
+        # Query all active sessions for user
+        sessions = db.query(UserSession).filter(
+            UserSession.user_id == user_id,
+            UserSession.is_active == True
+        ).order_by(UserSession.last_activity_at.desc()).all()
+
+        # Convert to response format
+        session_list = []
+        for session in sessions:
+            session_dict = session.to_dict()
+            session_dict["is_current"] = (session.jti == current_jti)
+            session_list.append(SessionResponse(**session_dict))
+
+        logger.info(f"Retrieved {len(session_list)} active sessions for user {user_id}")
+
+        return success(
+            data={
+                "sessions": [s.model_dump() for s in session_list],
+                "total_count": len(session_list),
+                "active_count": len([s for s in session_list if s.is_active])
+            },
+            request=request,
+            message="Sessions retrieved successfully"
+        )
+
+    except Exception as e:
+        logger.error(f"Failed to list sessions: {str(e)}")
+        return error(
+            message="Failed to retrieve sessions",
+            code=ErrorCode.INTERNAL_SERVER_ERROR,
+            status_code=500,
+            severity=ErrorSeverity.HIGH,
+            context={"error_details": str(e)},
+            request=request
+        )
+
+
+@router.delete("/sessions/{session_id}")
+def revoke_session(
+    session_id: str,
+    request: Request,
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Revoke a specific user session (remote logout).
+
+    Deactivates the session and blacklists the associated token.
+    The user will be logged out on that device on next API call.
+
+    Args:
+        session_id: UUID of the session to revoke
+        request: FastAPI request object
+        current_user: Current authenticated user
+        db: Database session
+
+    Returns:
+        Success confirmation
+
+    Raises:
+        404: If session not found or doesn't belong to user
+    """
+    try:
+        user_id = current_user.get("identity")
+
+        # Find session
+        session = db.query(UserSession).filter(
+            UserSession.id == session_id,
+            UserSession.user_id == user_id,
+            UserSession.is_active == True
+        ).first()
+
+        if not session:
+            raise WrextValidationException(
+                message="Session not found or already revoked",
+                context={"session_id": session_id}
+            )
+
+        # Blacklist the token
+        blacklist_entry = TokenBlacklist(
+            jti=session.jti,
+            token_type="access",
+            user_id=user_id,
+            revoked_at=datetime.utcnow(),
+            expires_at=session.expires_at,
+            reason="session_revoked"
+        )
+        db.add(blacklist_entry)
+
+        # Deactivate session
+        session.is_active = False
+        session.revoked_at = datetime.utcnow()
+        db.commit()
+
+        logger.info(f"Revoked session {session_id} for user {user_id}")
+
+        return success(
+            data={"session_id": session_id, "revoked": True},
+            request=request,
+            message="Session revoked successfully"
+        )
+
+    except WrextValidationException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to revoke session: {str(e)}")
+        return error(
+            message="Failed to revoke session",
+            code=ErrorCode.INTERNAL_SERVER_ERROR,
+            status_code=500,
+            severity=ErrorSeverity.HIGH,
+            context={"error_details": str(e)},
+            request=request
+        )
+
+
+@router.delete("/sessions")
+def revoke_all_sessions(
+    request: Request,
+    current_user: dict = Depends(get_current_user),
+    authorization: str = Header(...),
+    db: Session = Depends(get_db)
+):
+    """
+    Revoke all sessions except the current one (logout all other devices).
+
+    Useful for security purposes when user suspects unauthorized access.
+    Blacklists all tokens and deactivates all sessions except current.
+
+    Args:
+        request: FastAPI request object
+        current_user: Current authenticated user
+        authorization: Authorization header with current token
+        db: Database session
+
+    Returns:
+        Count of revoked sessions
+    """
+    try:
+        user_id = current_user.get("identity")
+
+        # Get current token's JTI to preserve current session
+        scheme, token = authorization.split()
+        current_payload = verify_token(token)
+        current_jti = current_payload.get("jti")
+
+        # Find all other active sessions
+        other_sessions = db.query(UserSession).filter(
+            UserSession.user_id == user_id,
+            UserSession.is_active == True,
+            UserSession.jti != current_jti
+        ).all()
+
+        revoked_count = 0
+        for session in other_sessions:
+            # Blacklist token
+            blacklist_entry = TokenBlacklist(
+                jti=session.jti,
+                token_type="access",
+                user_id=user_id,
+                revoked_at=datetime.utcnow(),
+                expires_at=session.expires_at,
+                reason="all_sessions_revoked"
+            )
+            db.add(blacklist_entry)
+
+            # Deactivate session
+            session.is_active = False
+            session.revoked_at = datetime.utcnow()
+            revoked_count += 1
+
+        db.commit()
+
+        logger.info(f"Revoked {revoked_count} sessions for user {user_id} (kept current)")
+
+        return success(
+            data={"revoked_count": revoked_count, "current_session_preserved": True},
+            request=request,
+            message=f"Revoked {revoked_count} sessions successfully"
+        )
+
+    except Exception as e:
+        logger.error(f"Failed to revoke all sessions: {str(e)}")
+        return error(
+            message="Failed to revoke sessions",
             code=ErrorCode.INTERNAL_SERVER_ERROR,
             status_code=500,
             severity=ErrorSeverity.HIGH,
@@ -2313,4 +2615,131 @@ def delete_avatar(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to delete avatar"
+        )
+
+
+# -------------------------
+# Notification Preferences Endpoints
+# -------------------------
+
+@router.get("/preferences/notifications", response_model=None)
+def get_notification_preferences(
+    request: Request,
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Get current user's notification preferences.
+
+    Returns default preferences if none exist yet.
+    Creates default preferences automatically on first access.
+
+    Returns:
+        NotificationPreferencesResponse: User's notification preferences
+
+    Raises:
+        500: If database operation fails
+    """
+    try:
+        user_id = current_user.get("identity")
+
+        # Try to get existing preferences
+        preferences = db.query(NotificationPreferences).filter(
+            NotificationPreferences.user_id == user_id
+        ).first()
+
+        # If no preferences exist, create defaults
+        if not preferences:
+            preferences = NotificationPreferences(user_id=user_id)
+            db.add(preferences)
+            db.commit()
+            db.refresh(preferences)
+            logger.info(f"Created default notification preferences for user {user_id}")
+
+        return success(
+            data=preferences.to_dict(),
+            request=request,
+            message="Notification preferences retrieved successfully"
+        )
+    except Exception as e:
+        logger.error(f"Failed to get notification preferences for user {current_user.get('identity')}: {str(e)}")
+        return error(
+            message="Failed to retrieve notification preferences",
+            code=ErrorCode.INTERNAL_SERVER_ERROR,
+            status_code=500,
+            severity=ErrorSeverity.MEDIUM,
+            context={"error_details": str(e)},
+            request=request
+        )
+
+
+@router.patch("/preferences/notifications", response_model=None)
+def update_notification_preferences(
+    preferences_update: UpdateNotificationPreferencesRequest,
+    request: Request,
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Update current user's notification preferences.
+
+    Creates preferences with default values if they don't exist yet.
+    All fields must be provided in the request body.
+
+    Args:
+        preferences_update: Notification preferences data
+
+    Returns:
+        NotificationPreferencesResponse: Updated notification preferences
+
+    Raises:
+        400: If validation fails
+        500: If database operation fails
+    """
+    try:
+        user_id = current_user.get("identity")
+
+        # Get or create preferences
+        preferences = db.query(NotificationPreferences).filter(
+            NotificationPreferences.user_id == user_id
+        ).first()
+
+        if not preferences:
+            preferences = NotificationPreferences(user_id=user_id)
+            db.add(preferences)
+            logger.info(f"Creating notification preferences for user {user_id}")
+
+        # Update all fields
+        preferences.email_notifications = preferences_update.emailNotifications
+        preferences.email_digest_frequency = preferences_update.emailDigestFrequency
+        preferences.email_workspace_invites = preferences_update.emailWorkspaceInvites
+        preferences.email_comments = preferences_update.emailComments
+        preferences.email_mentions = preferences_update.emailMentions
+        preferences.email_updates = preferences_update.emailUpdates
+        preferences.in_app_notifications = preferences_update.inAppNotifications
+        preferences.in_app_workspace_invites = preferences_update.inAppWorkspaceInvites
+        preferences.in_app_comments = preferences_update.inAppComments
+        preferences.in_app_mentions = preferences_update.inAppMentions
+        preferences.in_app_updates = preferences_update.inAppUpdates
+
+        db.commit()
+        db.refresh(preferences)
+
+        logger.info(f"Updated notification preferences for user {user_id}")
+
+        return success(
+            data=preferences.to_dict(),
+            request=request,
+            message="Notification preferences updated successfully"
+        )
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Failed to update notification preferences for user {current_user.get('identity')}: {str(e)}")
+        return error(
+            message="Failed to update notification preferences",
+            code=ErrorCode.INTERNAL_SERVER_ERROR,
+            status_code=500,
+            severity=ErrorSeverity.MEDIUM,
+            context={"error_details": str(e)},
+            request=request
         )
