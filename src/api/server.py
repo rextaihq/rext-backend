@@ -28,6 +28,8 @@ from src.api.routes.permissions.permission_routes import router as permissions_r
 from src.api.routes.subscriptions.plan_routes import router as plan_routes_router
 from src.api.routes.subscriptions.subscription_routes import router as subscription_routes_router
 from src.api.routes.subscriptions.admin_subscription_routes import router as admin_subscription_routes_router
+from src.api.routes.audit.audit_routes import router as audit_router
+from src.api.routes.security.security_routes import router as security_router
 from src.api.database.database import engine
 
 # Middleware imports
@@ -155,6 +157,8 @@ app.include_router(permissions_router, prefix="/api/v1", tags=["Permissions"])
 app.include_router(plan_routes_router, prefix="/api/v1", tags=["Subscription Plans"])
 app.include_router(subscription_routes_router, prefix="/api/v1", tags=["Subscriptions"])
 app.include_router(admin_subscription_routes_router, prefix="/api/v1", tags=["Admin Subscriptions"])
+app.include_router(audit_router, prefix="/api/v1", tags=["Audit Logs"])
+app.include_router(security_router, prefix="/api/v1", tags=["Security Monitoring"])
 
 # ============================================================================
 # ROOT ENDPOINTS

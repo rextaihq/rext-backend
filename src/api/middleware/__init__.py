@@ -5,6 +5,13 @@
 
 from .error_handler import ErrorHandlerMiddleware, setup_exception_handlers
 from .request_tracker import RequestTrackerMiddleware
+from .rate_limiter import (
+    RateLimiterMiddleware,
+    login_rate_limit,
+    password_reset_rate_limit,
+    registration_rate_limit,
+    email_verification_rate_limit,
+)
 from .permissions import (
     PermissionChecker,
     require_permissions,
@@ -30,9 +37,16 @@ __all__ = [
     # Middleware classes
     "ErrorHandlerMiddleware",
     "RequestTrackerMiddleware",
+    "RateLimiterMiddleware",
 
     # Setup functions
     "setup_exception_handlers",
+
+    # Rate limiting
+    "login_rate_limit",
+    "password_reset_rate_limit",
+    "registration_rate_limit",
+    "email_verification_rate_limit",
 
     # Permission checking
     "PermissionChecker",
