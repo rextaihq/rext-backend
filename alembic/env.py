@@ -30,6 +30,9 @@ from src.api.models.knowledge_models.knowledge_model import (
     BrandVoice, Website, KnowledgeFiles, TextKnowledge
 )
 from src.api.models.topic_models.topic_models import TopicsModel
+from src.api.models.subscription_models.plans import SubscriptionPlan
+from src.api.models.subscription_models.subscriptions import UserSubscription
+from src.api.models.audit_models.audit_logs import AuditLog
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
