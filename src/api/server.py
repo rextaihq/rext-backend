@@ -22,6 +22,7 @@ from src.api.routes.knowledge.web_knowledge_route import router as web_router
 from src.api.routes.knowledge.file_knowledge_route import router as file_router
 from src.api.routes.knowledge.text_knowledge_route import router as text_router
 from src.api.routes.roles.role_routes import router as roles_router
+from src.api.routes.permissions.permission_routes import router as permissions_router
 from src.api.database.database import engine
 
 # Middleware imports
@@ -145,6 +146,7 @@ app.include_router(file_router, prefix="/api", tags=["File Knowledge"])
 app.include_router(text_router, prefix="/api", tags=["Text Knowledge"])
 app.include_router(users_router, prefix="/api", tags=["Users"])
 app.include_router(roles_router, prefix="/api/v1", tags=["Roles"])
+app.include_router(permissions_router, prefix="/api/v1", tags=["Permissions"])
 
 # ============================================================================
 # ROOT ENDPOINTS
