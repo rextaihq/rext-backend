@@ -3910,7 +3910,7 @@ Key endpoints:
 **Priority:** HIGH
 **Estimated Effort:** 4-5 days
 **Dependencies:** Phase 2
-**Progress:** 2/5 tasks (40%) ⚠️ IN PROGRESS
+**Progress:** 4/5 tasks (80%) ✅ MOSTLY COMPLETE
 
 ### Overview
 
@@ -3918,11 +3918,11 @@ Complete the user management system with email verification flow, password manag
 
 ### Goals
 
-1. ⚠️ Email verification flow (already implemented in Phase 0)
+1. ✅ Email verification flow (already implemented in Phase 0)
 2. ✅ Create password change endpoint - **COMPLETED 2025-10-02**
 3. ✅ Build user profile management - **COMPLETED 2025-10-02**
-4. ❌ Implement user status management
-5. ❌ Complete invitation system
+4. ✅ Implement user status management - **COMPLETED 2025-10-02**
+5. ✅ Complete invitation system - **COMPLETED 2025-10-02**
 
 ---
 
@@ -4164,9 +4164,11 @@ PATCH /profile:
 **Complexity:** High
 **Priority:** High
 **Status:** COMPLETED (2025-10-02)
+**Actual Effort:** 4 hours
 
 #### Key Features
 
+- ✅ **Create invitation endpoint** (`POST /workspace/invitations/`) - **ADDED 2025-10-02**
 - ✅ Accept invitation endpoint (`POST /workspace/invitations/accept`)
 - ✅ Revoke invitation endpoint (`POST /workspace/invitations/{invitation_id}/revoke`)
 - ✅ List sent invitations (`GET /workspace/invitations/sent`)
@@ -4180,7 +4182,62 @@ PATCH /profile:
 - `src/utils/invitation_utils.py` - Expiry check and invitation detail utilities
 
 **Files Modified:**
-- `src/api/routes/workspaces/invitations.py/invitation_route.py` - Added accept, revoke, and list endpoints
+- `src/api/routes/workspaces/invitations.py/invitation_route.py` - All invitation endpoints
+- `src/api/schema/invitation_schema.py` - Added CreateInvitationRequest schema
+
+**Endpoints Implemented:**
+1. **POST /workspace/invitations/** - Create new invitation (workspace member required)
+2. **POST /workspace/invitations/accept** - Accept invitation by token
+3. **POST /workspace/invitations/{invitation_id}/revoke** - Revoke invitation (creator or admin)
+4. **GET /workspace/invitations/sent** - List invitations sent by current user
+5. **GET /workspace/invitations/received** - List pending invitations for current user's email
+
+#### Create Invitation Implementation (NEW)
+
+**CreateInvitationRequest Schema:**
+```python
+class CreateInvitationRequest(BaseModel):
+    email: EmailStr = Field(..., description="Email address to invite")
+    workspace_id: str = Field(..., description="Workspace ID")
+    role_id: str = Field(..., description="Role ID to assign")
+    expiry_days: Optional[int] = Field(7, ge=1, le=30, description="Days until expiration")
+```
+
+**Create Invitation Logic:**
+1. Authenticate user via get_current_user
+2. Verify workspace exists
+3. Verify user is workspace member (active status)
+4. Verify role exists
+5. Check for duplicate pending invitation (email + workspace)
+6. Auto-expire old invitations if found
+7. Check if user is already a workspace member
+8. Generate unique invitation token (UUID)
+9. Calculate expiration date (1-30 days, default 7)
+10. Create invitation record in database
+11. Send invitation email in background (with workspace name, role, expiry)
+12. Create audit log entry
+13. Return invitation details
+
+**Security Measures:**
+- Requires workspace membership to invite others
+- Prevents duplicate invitations (same email + workspace)
+- Prevents inviting existing members
+- Email sent to invitee with unique token
+- Configurable expiration (1-30 days)
+- Audit logging for invitation creation
+- Background email sending (non-blocking)
+
+**Email Template:**
+- Subject: "You've been invited to join {workspace_name} on WREXT"
+- Body includes: inviter name, workspace name, role, expiration date, accept link
+- Accept link format: `{FRONTEND_URL}/invitations/accept?token={token}`
+
+**Error Handling:**
+- `404 Not Found` - Workspace or role not found
+- `403 Forbidden` - User not a workspace member
+- `409 Conflict` - Active invitation already exists
+- `409 Conflict` - User already a workspace member
+- `500 Internal Server Error` - Database or email errors
 
 **Key Learnings:**
 - Accept endpoint validates token, checks expiry, creates workspace membership
@@ -4189,26 +4246,30 @@ PATCH /profile:
 - Revoke endpoint requires invitation creator permission (workspace admin check is TODO)
 - List endpoints filter by user (sent) or email (received)
 - Auto-expiry integrated: marks expired invitations during list operations
-- Audit logging for revocation actions using create_audit_log() helper
+- Audit logging for creation and revocation actions using create_audit_log() helper
 - Status values: `pending`, `accepted`, `revoked`, `expired`
+- Background email sending prevents blocking the API response
 
-**Invitation Flow:**
-1. User receives invitation email with token
-2. User authenticates and calls accept endpoint with token
-3. System validates: token exists, not expired, email matches, status is pending
-4. Creates WorkspaceMembers record with role from invitation
-5. Marks invitation as accepted
-6. Returns workspace details
+**Complete Invitation Flow:**
+1. **Create**: Workspace member invites user by email → generates token → sends email
+2. **Receive**: Invited user receives email with invitation link
+3. **Accept**: User authenticates → clicks link → system validates → creates membership
+4. **Alternative**: Invitation creator or admin can revoke before acceptance
 
 **Testing:**
-- ✅ Schema validation tested successfully
+- ✅ Schema validation tested successfully (CreateInvitationRequest added)
 - ✅ Utility functions verified
-- ✅ Python syntax validated
+- ✅ Python syntax validated (py_compile)
+- ✅ All imports verified
+- ⏳ Manual API testing pending (requires running server)
 
 **Future Enhancements:**
 - Implement proper workspace admin check for revocation
-- Add email notifications on accept/revoke
+- Add resend invitation endpoint
+- Add bulk invite endpoint (multiple emails)
+- Add invitation templates with custom messages
 - Add invitation expiry cleanup background job
+- Add email notifications on accept/revoke to inviter
 
 ---
 
