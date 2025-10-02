@@ -22,7 +22,8 @@ from src.api.schema.role_schema import (
     RoleUpdate,
     RoleResponse,
     RoleWithPermissions,
-    PermissionSummary
+    PermissionSummary,
+    AssignPermissionsRequest
 )
 from src.utils.response_utils import success, error, created
 from src.api.middleware.exceptions import (
@@ -556,4 +557,227 @@ def delete_role(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to delete role"
+        )
+
+
+# ============================================================================
+# ROLE-PERMISSION ASSIGNMENT ENDPOINTS
+# ============================================================================
+
+
+@router.post("/{role_id}/permissions", response_model=dict)
+def assign_permissions_to_role(
+    request: Request,
+    role_id: str,
+    assignment_data: AssignPermissionsRequest,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Assign permissions to a role.
+
+    Requires: role.manage_permissions permission OR admin role
+
+    Parameters:
+    - role_id: UUID of the role
+
+    Request Body:
+    - permission_ids: List of permission UUIDs to assign
+
+    Returns:
+    - Count of permissions added
+    """
+    try:
+        # Check permission (allow if user has role.manage_permissions OR is admin)
+        user_id = current_user.get("identity")
+
+        # Check if admin
+        is_user_admin = db.query(UserRole).join(Role).filter(
+            UserRole.user_id == user_id,
+            Role.name.in_(["admin", "super_admin"])
+        ).first() is not None
+
+        if not is_user_admin:
+            # Check for role.manage_permissions permission
+            has_permission = (
+                db.query(Permission.name)
+                .join(RolePermission, RolePermission.permission_id == Permission.id)
+                .join(UserRole, UserRole.role_id == RolePermission.role_id)
+                .filter(
+                    UserRole.user_id == user_id,
+                    Permission.name == "role.manage_permissions"
+                )
+                .first()
+            )
+
+            if not has_permission:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Insufficient permissions. Required: role.manage_permissions or admin role"
+                )
+
+        # Verify role exists
+        role = db.query(Role).filter(Role.id == role_id).first()
+        if not role:
+            raise ResourceNotFoundException(
+                message="Role not found",
+                context={"role_id": role_id}
+            )
+
+        # Get existing permission assignments
+        existing_perms = db.query(RolePermission.permission_id).filter(
+            RolePermission.role_id == role_id
+        ).all()
+        existing_perm_ids = {str(perm[0]) for perm in existing_perms}
+
+        # Add new permissions
+        added_count = 0
+        skipped_count = 0
+        invalid_count = 0
+
+        for perm_id in assignment_data.permission_ids:
+            # Skip if already assigned
+            if perm_id in existing_perm_ids:
+                skipped_count += 1
+                continue
+
+            # Verify permission exists
+            permission = db.query(Permission).filter(Permission.id == perm_id).first()
+            if not permission:
+                logger.warning(f"Permission {perm_id} not found, skipping")
+                invalid_count += 1
+                continue
+
+            # Create assignment
+            role_perm = RolePermission(
+                role_id=role_id,
+                permission_id=perm_id,
+                created_at=datetime.utcnow()
+            )
+            db.add(role_perm)
+            added_count += 1
+
+        db.commit()
+
+        logger.info(
+            f"Added {added_count} permissions to role '{role.name}' "
+            f"(skipped {skipped_count} existing, {invalid_count} invalid) "
+            f"by user {user_id}"
+        )
+
+        return success(
+            data={
+                "role_id": str(role_id),
+                "role_name": role.name,
+                "added_count": added_count,
+                "skipped_count": skipped_count,
+                "invalid_count": invalid_count
+            },
+            request=request,
+            message=f"Added {added_count} permission(s) to role '{role.display_name}'"
+        )
+
+    except (HTTPException, ResourceNotFoundException):
+        raise
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error assigning permissions to role {role_id}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to assign permissions"
+        )
+
+
+@router.delete("/{role_id}/permissions/{permission_id}", response_model=dict)
+def revoke_permission_from_role(
+    request: Request,
+    role_id: str,
+    permission_id: str,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Revoke a permission from a role.
+
+    Requires: role.manage_permissions permission OR admin role
+
+    Parameters:
+    - role_id: UUID of the role
+    - permission_id: UUID of the permission to revoke
+
+    Returns:
+    - Success message
+    """
+    try:
+        # Check permission (allow if user has role.manage_permissions OR is admin)
+        user_id = current_user.get("identity")
+
+        # Check if admin
+        is_user_admin = db.query(UserRole).join(Role).filter(
+            UserRole.user_id == user_id,
+            Role.name.in_(["admin", "super_admin"])
+        ).first() is not None
+
+        if not is_user_admin:
+            # Check for role.manage_permissions permission
+            has_permission = (
+                db.query(Permission.name)
+                .join(RolePermission, RolePermission.permission_id == Permission.id)
+                .join(UserRole, UserRole.role_id == RolePermission.role_id)
+                .filter(
+                    UserRole.user_id == user_id,
+                    Permission.name == "role.manage_permissions"
+                )
+                .first()
+            )
+
+            if not has_permission:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Insufficient permissions. Required: role.manage_permissions or admin role"
+                )
+
+        # Find the role-permission assignment
+        role_perm = db.query(RolePermission).filter(
+            RolePermission.role_id == role_id,
+            RolePermission.permission_id == permission_id
+        ).first()
+
+        if not role_perm:
+            raise ResourceNotFoundException(
+                message="Permission assignment not found",
+                context={"role_id": role_id, "permission_id": permission_id}
+            )
+
+        # Get role and permission names for logging
+        role = db.query(Role).filter(Role.id == role_id).first()
+        permission = db.query(Permission).filter(Permission.id == permission_id).first()
+
+        db.delete(role_perm)
+        db.commit()
+
+        logger.info(
+            f"Revoked permission '{permission.name if permission else permission_id}' "
+            f"from role '{role.name if role else role_id}' by user {user_id}"
+        )
+
+        return success(
+            data={
+                "role_id": str(role_id),
+                "permission_id": str(permission_id),
+                "role_name": role.name if role else None,
+                "permission_name": permission.name if permission else None
+            },
+            request=request,
+            message=f"Permission revoked from role"
+        )
+
+    except (HTTPException, ResourceNotFoundException):
+        raise
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error revoking permission {permission_id} from role {role_id}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to revoke permission"
         )

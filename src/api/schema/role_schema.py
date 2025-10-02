@@ -113,3 +113,22 @@ class RoleWithPermissions(RoleResponse):
 
     class Config:
         from_attributes = True
+
+
+class AssignPermissionsRequest(BaseModel):
+    """Schema for assigning permissions to a role."""
+    permission_ids: List[str] = Field(
+        ...,
+        description="List of permission UUIDs to assign to the role",
+        min_length=1
+    )
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "permission_ids": [
+                    "550e8400-e29b-41d4-a716-446655440000",
+                    "550e8400-e29b-41d4-a716-446655440001"
+                ]
+            }
+        }
