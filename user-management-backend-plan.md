@@ -4159,17 +4159,56 @@ PATCH /profile:
 
 ---
 
-### Task 4.5: Complete Invitation System
+### Task 4.5: Complete Invitation System ✅
 
 **Complexity:** High
 **Priority:** High
+**Status:** COMPLETED (2025-10-02)
 
 #### Key Features
 
-- Accept invitation endpoint
-- Revoke invitation endpoint
-- List pending invitations
-- Auto-expire old invitations
+- ✅ Accept invitation endpoint (`POST /workspace/invitations/accept`)
+- ✅ Revoke invitation endpoint (`POST /workspace/invitations/{invitation_id}/revoke`)
+- ✅ List sent invitations (`GET /workspace/invitations/sent`)
+- ✅ List received invitations (`GET /workspace/invitations/received`)
+- ✅ Auto-expire old invitations (integrated in list endpoints)
+
+#### Implementation Details
+
+**Files Created:**
+- `src/api/schema/invitation_schema.py` - Invitation request/response schemas
+- `src/utils/invitation_utils.py` - Expiry check and invitation detail utilities
+
+**Files Modified:**
+- `src/api/routes/workspaces/invitations.py/invitation_route.py` - Added accept, revoke, and list endpoints
+
+**Key Learnings:**
+- Accept endpoint validates token, checks expiry, creates workspace membership
+- Email validation ensures invitation email matches authenticated user email
+- Prevents duplicate memberships with existence check
+- Revoke endpoint requires invitation creator permission (workspace admin check is TODO)
+- List endpoints filter by user (sent) or email (received)
+- Auto-expiry integrated: marks expired invitations during list operations
+- Audit logging for revocation actions using create_audit_log() helper
+- Status values: `pending`, `accepted`, `revoked`, `expired`
+
+**Invitation Flow:**
+1. User receives invitation email with token
+2. User authenticates and calls accept endpoint with token
+3. System validates: token exists, not expired, email matches, status is pending
+4. Creates WorkspaceMembers record with role from invitation
+5. Marks invitation as accepted
+6. Returns workspace details
+
+**Testing:**
+- ✅ Schema validation tested successfully
+- ✅ Utility functions verified
+- ✅ Python syntax validated
+
+**Future Enhancements:**
+- Implement proper workspace admin check for revocation
+- Add email notifications on accept/revoke
+- Add invitation expiry cleanup background job
 
 ---
 
