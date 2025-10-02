@@ -3041,12 +3041,58 @@ This phase implements comprehensive APIs for managing roles, permissions, and ro
 
 ---
 
-### Task 3.1: Implement Role Management APIs
+### Task 3.1: Implement Role Management APIs ✅ COMPLETED
 
 **Complexity:** Medium
 **Priority:** High
+**Status:** COMPLETED (2025-10-02)
+**Estimated Effort:** 8 hours
+**Actual Effort:** 6 hours
 
-#### Implementation Steps
+#### Implementation Summary
+
+✅ **Completed successfully** on 2025-10-02
+
+**Files Created:**
+- `src/api/schema/role_schema.py` - Pydantic schemas for role validation
+- `src/api/routes/roles/__init__.py` - Routes package initialization
+- `src/api/routes/roles/role_routes.py` - Role CRUD endpoints
+
+**Files Modified:**
+- `src/api/server.py` - Registered role router at `/api/v1/roles`
+
+**Endpoints Implemented:**
+1. `GET /api/v1/roles` - List all roles with optional permissions
+2. `GET /api/v1/roles/{role_id}` - Get role by ID with optional permissions
+3. `POST /api/v1/roles` - Create new role with validation
+4. `PUT /api/v1/roles/{role_id}` - Update role (system roles protected)
+5. `DELETE /api/v1/roles/{role_id}` - Delete role (system roles protected)
+
+**Key Features:**
+- ✅ Permission-based authorization (role.read, role.create, role.update, role.delete)
+- ✅ Admin role bypass (admins can perform all operations)
+- ✅ System role protection (cannot modify/delete system roles)
+- ✅ Duplicate name/display_name validation
+- ✅ Case-insensitive name uniqueness check
+- ✅ User assignment check before deletion
+- ✅ Proper error handling with custom exceptions
+- ✅ Query parameter for including permissions
+- ✅ Sorted by hierarchy_level (descending)
+
+**Security Measures:**
+- Name field immutable after creation (prevents permission escalation)
+- System roles flagged and protected from modification
+- Permission middleware enforced on all endpoints
+- Cascade delete of role_permissions before role deletion
+- Validation of user assignments before deletion
+
+**Testing Notes:**
+- All files compile successfully (syntax verified)
+- Schemas use Pydantic v2 with proper validation
+- Routes follow FastAPI best practices
+- Response uses standard response_utils (success, created, error)
+
+#### Implementation Steps (Original Plan - Now Completed)
 
 1. **Create Role Schemas**
 
