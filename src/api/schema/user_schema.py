@@ -1,5 +1,5 @@
-from pydantic import BaseModel, EmailStr, Field
-from typing import Optional
+from pydantic import BaseModel, EmailStr, Field, field_validator
+from typing import Optional, Literal
 
 class RegisterUser(BaseModel):
     first_name: str = Field(..., description="First name of the user")
@@ -31,3 +31,53 @@ class ResetPassword(BaseModel):
 
 class ForgotPasswordRequest(BaseModel):
     email: EmailStr = Field(..., description="Email address to send password reset link")
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str = Field(..., min_length=1, description="Current password for verification")
+    new_password: str = Field(..., min_length=8, description="New password (min 8 characters)")
+    confirm_password: str = Field(..., min_length=8, description="Confirm new password")
+
+    @field_validator('confirm_password')
+    @classmethod
+    def passwords_match(cls, v, info):
+        if 'new_password' in info.data and v != info.data['new_password']:
+            raise ValueError('Passwords do not match')
+        return v
+
+class UpdateProfileRequest(BaseModel):
+    """Schema for users to update their own profile (self-service)"""
+    first_name: Optional[str] = Field(None, min_length=1, max_length=100, description="First name")
+    last_name: Optional[str] = Field(None, min_length=1, max_length=100, description="Last name")
+    display_name: Optional[str] = Field(None, min_length=1, max_length=200, description="Display name")
+    language: Optional[str] = Field(None, min_length=2, max_length=10, description="Language preference (e.g., 'en', 'es')")
+    timezone: Optional[str] = Field(None, min_length=1, max_length=50, description="Timezone (e.g., 'UTC', 'America/New_York')")
+
+class ProfileResponse(BaseModel):
+    """Schema for profile response"""
+    id: str
+    email: str
+    username: str
+    first_name: Optional[str]
+    last_name: Optional[str]
+    display_name: Optional[str]
+    language: str
+    timezone: str
+    status: str
+    email_verified: bool
+    created_at: str
+    updated_at: Optional[str]
+
+class UserStatusRequest(BaseModel):
+    """Schema for changing user status (admin only)"""
+    reason: Optional[str] = Field(None, max_length=500, description="Reason for status change")
+
+class UserStatusResponse(BaseModel):
+    """Schema for user status response"""
+    user_id: str
+    username: str
+    email: str
+    old_status: str
+    new_status: str
+    changed_by: str
+    reason: Optional[str]
+    changed_at: str

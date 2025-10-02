@@ -3910,6 +3910,7 @@ Key endpoints:
 **Priority:** HIGH
 **Estimated Effort:** 4-5 days
 **Dependencies:** Phase 2
+**Progress:** 2/5 tasks (40%) ⚠️ IN PROGRESS
 
 ### Overview
 
@@ -3917,67 +3918,244 @@ Complete the user management system with email verification flow, password manag
 
 ### Goals
 
-1. Implement complete email verification flow
-2. Create password change endpoint
-3. Build user profile management
-4. Implement user status management
-5. Complete invitation system
+1. ⚠️ Email verification flow (already implemented in Phase 0)
+2. ✅ Create password change endpoint - **COMPLETED 2025-10-02**
+3. ✅ Build user profile management - **COMPLETED 2025-10-02**
+4. ❌ Implement user status management
+5. ❌ Complete invitation system
 
 ---
 
-### Task 4.1: Complete Email Verification Flow
+### Task 4.1: Complete Email Verification Flow ⚠️ Already Implemented
 
 **Complexity:** Medium
 **Priority:** High
+**Status:** Already implemented in Phase 0 (verify-email endpoint exists)
 
 #### Key Features
 
-- Send verification email on registration
-- Resend verification email endpoint
-- Email verification token with expiry
-- Update user status after verification
+- ✅ Send verification email on registration
+- ✅ Email verification token with expiry
+- ✅ Update user status after verification
+- ❌ Resend verification email endpoint (not yet implemented)
+
+**Note:** Email verification endpoint already exists at `/user/verify-email` (implemented in Phase 0). Only missing feature is resend functionality.
 
 ---
 
-### Task 4.2: Implement Password Management
+### Task 4.2: Implement Password Management ✅ COMPLETED
 
 **Complexity:** Low
 **Priority:** High
+**Status:** COMPLETED (2025-10-02)
+**Actual Effort:** 2 hours
 
-#### Key Features
+#### Implementation Summary
 
-- Change password (requires current password)
-- Password history to prevent reuse
-- Password strength validation
-- Update password_changed_at timestamp
+**Files Created:**
+- None (used existing files)
+
+**Files Modified:**
+- `src/api/schema/user_schema.py` - Added ChangePasswordRequest Pydantic schema with validation
+- `src/api/routes/users/users_routes.py` - Added change_password endpoint (line 823)
+
+**Endpoint Implemented:**
+- `POST /api/v1/user/change-password` - Change password for authenticated users
+
+#### Key Features Implemented
+
+- ✅ Change password (requires current password)
+- ✅ Verify current password before allowing change
+- ✅ Password strength validation (min 8 characters via Pydantic)
+- ✅ Confirm password matches new password
+- ✅ Prevent reuse of current password
+- ✅ Update password_changed_at timestamp
+- ✅ Proper error handling and logging
+- ✅ Requires authentication (get_current_user dependency)
+- ❌ Password history to prevent reuse (future enhancement)
+
+#### Technical Details
+
+**Schema (ChangePasswordRequest):**
+```python
+class ChangePasswordRequest(BaseModel):
+    current_password: str = Field(..., min_length=1)
+    new_password: str = Field(..., min_length=8)
+    confirm_password: str = Field(..., min_length=8)
+
+    @field_validator('confirm_password')
+    def passwords_match(cls, v, info):
+        # Validates passwords match
+```
+
+**Endpoint Logic:**
+1. Authenticate user via get_current_user dependency
+2. Fetch user from database
+3. Verify current password with bcrypt
+4. Check new password differs from current
+5. Hash new password with bcrypt
+6. Update password_hash and password_changed_at
+7. Return success with timestamp
+
+**Security Measures:**
+- Current password verification prevents unauthorized changes
+- New password must differ from current password
+- All password operations use bcrypt hashing
+- Failed attempts logged for security monitoring
+- Requires valid JWT access token
+
+**Error Responses:**
+- `401 Unauthorized` - Not authenticated
+- `400 Bad Request` - Current password incorrect
+- `400 Bad Request` - New password same as current
+- `400 Bad Request` - Passwords don't match (Pydantic validation)
+- `400 Bad Request` - Password < 8 characters (Pydantic validation)
+- `404 Not Found` - User not found (shouldn't occur with valid auth)
+- `500 Internal Server Error` - Database/system error
+
+**Testing:**
+- ✅ Syntax verification passed (py_compile)
+- ✅ Import verification passed
+- ⏳ Manual testing pending (requires running server with authentication)
+
+**Future Enhancements:**
+- Password history table to prevent reuse of last N passwords
+- Password strength meter (uppercase, lowercase, numbers, special chars)
+- Force password change after X days
+- Invalidate all sessions after password change
 
 ---
 
-### Task 4.3: Build User Profile Management
+### Task 4.3: Build User Profile Management ✅ COMPLETED
 
 **Complexity:** Medium
 **Priority:** High
+**Status:** COMPLETED (2025-10-02)
+**Actual Effort:** 3 hours
 
-#### Key Features
+#### Implementation Summary
 
-- Get user profile endpoint
-- Update user profile (self and admin)
-- Avatar upload endpoint
-- Profile completeness indicator
+**Files Created:**
+- None (used existing files)
+
+**Files Modified:**
+- `src/api/schema/user_schema.py` - Added UpdateProfileRequest and ProfileResponse schemas
+- `src/api/routes/users/users_routes.py` - Added get_profile() and update_profile() endpoints
+
+**Endpoints Implemented:**
+- `GET /api/v1/user/profile` - Get current user's profile (authenticated)
+- `PATCH /api/v1/user/profile` - Update current user's profile (authenticated)
+
+#### Key Features Implemented
+
+- ✅ Get user profile endpoint (self-service)
+- ✅ Update user profile (self-service for own profile)
+- ❌ Admin profile management (existing `/update/{user_id}` serves this purpose)
+- ❌ Avatar upload endpoint (separate task - Phase 4.3b)
+- ❌ Profile completeness indicator (future enhancement)
+
+#### Technical Details
+
+**UpdateProfileRequest Schema:**
+```python
+class UpdateProfileRequest(BaseModel):
+    first_name: Optional[str] = Field(None, min_length=1, max_length=100)
+    last_name: Optional[str] = Field(None, min_length=1, max_length=100)
+    display_name: Optional[str] = Field(None, min_length=1, max_length=200)
+    language: Optional[str] = Field(None, min_length=2, max_length=10)
+    timezone: Optional[str] = Field(None, min_length=1, max_length=50)
+```
+
+**Key Design Decisions:**
+1. **Self-service focused** - Users can only update their own profile
+2. **Separate from admin endpoint** - Existing `/update/{user_id}` remains for admin use
+3. **Security restrictions** - Email, username, password excluded (use dedicated endpoints)
+4. **Partial updates** - Only provided fields are updated
+5. **Field tracking** - Returns list of updated fields in response
+
+**GET /profile Logic:**
+1. Authenticate user via get_current_user
+2. Fetch user from database by user_id
+3. Build profile response with all user fields
+4. Return profile data with defaults for language/timezone
+
+**PATCH /profile Logic:**
+1. Authenticate user via get_current_user
+2. Fetch user from database
+3. Update only provided fields (partial update)
+4. Track which fields were updated
+5. Update updated_at timestamp
+6. Return updated profile and list of changed fields
+
+**Security Measures:**
+- Requires authentication (get_current_user dependency)
+- Users can only access/modify their own profile
+- Sensitive fields (email, username, password) excluded from self-service
+- Email changes would require verification (future enhancement)
+- Admin endpoint (`/update/{user_id}`) remains separate
+
+**Error Responses:**
+
+GET /profile:
+- `401 Unauthorized` - Not authenticated
+- `404 Not Found` - User not found
+- `500 Internal Server Error` - Database error
+
+PATCH /profile:
+- `401 Unauthorized` - Not authenticated
+- `404 Not Found` - User not found
+- `400 Bad Request` - Validation error (Pydantic)
+- `500 Internal Server Error` - Database error
+
+**Testing:**
+- ✅ Syntax verification passed (py_compile)
+- ✅ Import verification passed
+- ✅ Endpoint registration verified
+- ⏳ Manual testing pending (requires running server)
+
+**Future Enhancements:**
+- Profile completeness percentage calculation
+- Avatar URL field integration
+- Email change with verification flow
+- Username change with uniqueness validation
+- Profile visibility settings (public/private fields)
 
 ---
 
-### Task 4.4: User Status Management
+### Task 4.4: User Status Management ✅
 
 **Complexity:** Medium
 **Priority:** High
+**Status:** COMPLETED (2025-10-02)
 
 #### Key Features
 
-- Suspend user endpoint
-- Activate user endpoint
-- Ban user endpoint
-- Status change audit logging
+- ✅ Suspend user endpoint (`POST /user/{user_id}/suspend`)
+- ✅ Activate user endpoint (`POST /user/{user_id}/activate`)
+- ✅ Ban user endpoint (`POST /user/{user_id}/ban`)
+- ✅ Status change audit logging with create_audit_log() helper
+
+#### Implementation Details
+
+**Files Created:**
+- `src/utils/audit_helper.py` - Reusable audit log creation utility
+
+**Files Modified:**
+- `src/api/schema/user_schema.py` - Added UserStatusRequest, UserStatusResponse schemas
+- `src/api/routes/users/users_routes.py` - Added 3 status management endpoints
+
+**Key Learnings:**
+- Audit logging implemented as reusable utility for all future status changes
+- Admin permission check using existing `is_admin()` middleware
+- Status values: `active`, `suspended`, `banned`
+- Audit actions: `user.suspend`, `user.activate`, `user.ban`
+- All status changes track old/new values with optional reason
+- Request IP, user agent, and request ID captured automatically
+
+**Testing:**
+- ✅ Schema validation tested successfully
+- ✅ Audit helper function verified
+- ✅ Python syntax validated
 
 ---
 

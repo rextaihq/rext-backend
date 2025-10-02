@@ -3,7 +3,12 @@ from src.utils.logger import logger
 from src.api.security.auth import get_current_user
 from src.api.schema.user_schema import (LoginUser, RegisterUser,
                                         UpdateUser, ResetPassword,
-                                        ForgotPasswordRequest)
+                                        ForgotPasswordRequest,
+                                        ChangePasswordRequest,
+                                        UpdateProfileRequest,
+                                        ProfileResponse,
+                                        UserStatusRequest,
+                                        UserStatusResponse)
 from src.api.schema.user_role_schema import AssignUserRoleRequest, UserRoleResponse
 from src.api.security.token_utils import (hash_password, create_access_token,
                               verify_password, create_refresh_token,
@@ -24,6 +29,7 @@ from src.api.tasks.send_mail import send_email
 from src.api.database.database import get_db
 from src.utils.response_utils import success, error, created, unauthorized
 from src.utils.token_cleanup import cleanup_expired_tokens
+from src.utils.audit_helper import create_audit_log
 from src.api.middleware.permissions import is_admin
 from src.api.schema.response_schemas import ErrorCode, ErrorSeverity
 from src.api.middleware.exceptions import (
@@ -818,6 +824,247 @@ def reset_password(payload:ResetPassword, request: Request, db: Session = Depend
             request=request
         )
 
+# Change password (authenticated)
+@router.post("/change-password")
+def change_password(
+    request: Request,
+    password_data: ChangePasswordRequest,
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Change user password (requires authentication)
+
+    - **current_password**: Current password for verification
+    - **new_password**: New password (min 8 characters)
+    - **confirm_password**: Confirmation of new password
+    """
+    try:
+        user_id = current_user.get("identity")
+        logger.info(f"Password change requested for user: {user_id}")
+
+        # Get user from database
+        db_user = db.query(Users).filter(Users.id == user_id).first()
+        if not db_user:
+            return error(
+                message="User not found",
+                code=ErrorCode.RESOURCE_NOT_FOUND,
+                status_code=404,
+                severity=ErrorSeverity.MEDIUM,
+                request=request
+            )
+
+        # Verify current password
+        if not verify_password(password_data.current_password, db_user.password_hash):
+            logger.warning(f"Failed password change attempt for user {user_id}: incorrect current password")
+            return error(
+                message="Current password is incorrect",
+                code=ErrorCode.INVALID_INPUT,
+                status_code=400,
+                severity=ErrorSeverity.LOW,
+                request=request
+            )
+
+        # Check if new password is same as current (optional security measure)
+        if verify_password(password_data.new_password, db_user.password_hash):
+            return error(
+                message="New password must be different from current password",
+                code=ErrorCode.INVALID_INPUT,
+                status_code=400,
+                severity=ErrorSeverity.LOW,
+                request=request
+            )
+
+        # Update password
+        db_user.password_hash = hash_password(password_data.new_password)
+        db_user.password_changed_at = datetime.utcnow()
+        db.commit()
+        db.refresh(db_user)
+
+        logger.info(f"Password changed successfully for user: {user_id}")
+        return success(
+            data={
+                "user_id": str(db_user.id),
+                "password_changed_at": db_user.password_changed_at.isoformat()
+            },
+            request=request,
+            message="Password changed successfully"
+        )
+
+    except Exception as e:
+        logger.error(f"Error changing password for user {current_user.get('identity')}: {str(e)}")
+        db.rollback()
+        return error(
+            message="Failed to change password",
+            code=ErrorCode.INTERNAL_SERVER_ERROR,
+            status_code=500,
+            severity=ErrorSeverity.HIGH,
+            context={"error_details": str(e)},
+            request=request
+        )
+
+# Get current user profile
+@router.get("/profile", response_model=dict)
+def get_profile(
+    request: Request,
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Get current authenticated user's profile
+
+    Returns complete profile information for the logged-in user
+    """
+    try:
+        user_id = current_user.get("identity")
+        logger.info(f"Fetching profile for user: {user_id}")
+
+        # Get user from database
+        db_user = db.query(Users).filter(Users.id == user_id).first()
+        if not db_user:
+            return error(
+                message="User not found",
+                code=ErrorCode.RESOURCE_NOT_FOUND,
+                status_code=404,
+                severity=ErrorSeverity.MEDIUM,
+                request=request
+            )
+
+        # Build profile response
+        profile_data = {
+            "id": str(db_user.id),
+            "email": db_user.email,
+            "username": db_user.username,
+            "first_name": db_user.first_name,
+            "last_name": db_user.last_name,
+            "display_name": db_user.display_name,
+            "language": db_user.language or "en",
+            "timezone": db_user.timezone or "UTC",
+            "status": db_user.status,
+            "email_verified": db_user.email_verified,
+            "created_at": db_user.created_at.isoformat() if db_user.created_at else None,
+            "updated_at": db_user.updated_at.isoformat() if db_user.updated_at else None
+        }
+
+        logger.info(f"Profile fetched successfully for user: {user_id}")
+        return success(
+            data={"profile": profile_data},
+            request=request,
+            message="Profile retrieved successfully"
+        )
+
+    except Exception as e:
+        logger.error(f"Error fetching profile for user {current_user.get('identity')}: {str(e)}")
+        return error(
+            message="Failed to fetch profile",
+            code=ErrorCode.INTERNAL_SERVER_ERROR,
+            status_code=500,
+            severity=ErrorSeverity.HIGH,
+            context={"error_details": str(e)},
+            request=request
+        )
+
+# Update current user profile
+@router.patch("/profile")
+def update_profile(
+    request: Request,
+    profile_data: UpdateProfileRequest,
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Update current authenticated user's profile
+
+    - **first_name**: First name
+    - **last_name**: Last name
+    - **display_name**: Display name
+    - **language**: Language preference
+    - **timezone**: Timezone preference
+
+    Note: Email, username, and password cannot be changed via this endpoint
+    """
+    try:
+        user_id = current_user.get("identity")
+        logger.info(f"Profile update requested for user: {user_id}")
+
+        # Get user from database
+        db_user = db.query(Users).filter(Users.id == user_id).first()
+        if not db_user:
+            return error(
+                message="User not found",
+                code=ErrorCode.RESOURCE_NOT_FOUND,
+                status_code=404,
+                severity=ErrorSeverity.MEDIUM,
+                request=request
+            )
+
+        # Track what was updated
+        updated_fields = []
+
+        # Update fields if provided
+        if profile_data.first_name is not None:
+            db_user.first_name = profile_data.first_name
+            updated_fields.append("first_name")
+
+        if profile_data.last_name is not None:
+            db_user.last_name = profile_data.last_name
+            updated_fields.append("last_name")
+
+        if profile_data.display_name is not None:
+            db_user.display_name = profile_data.display_name
+            updated_fields.append("display_name")
+
+        if profile_data.language is not None:
+            db_user.language = profile_data.language
+            updated_fields.append("language")
+
+        if profile_data.timezone is not None:
+            db_user.timezone = profile_data.timezone
+            updated_fields.append("timezone")
+
+        # Update timestamp
+        db_user.updated_at = datetime.utcnow()
+
+        db.commit()
+        db.refresh(db_user)
+
+        # Build response
+        profile_response = {
+            "id": str(db_user.id),
+            "email": db_user.email,
+            "username": db_user.username,
+            "first_name": db_user.first_name,
+            "last_name": db_user.last_name,
+            "display_name": db_user.display_name,
+            "language": db_user.language,
+            "timezone": db_user.timezone,
+            "status": db_user.status,
+            "email_verified": db_user.email_verified,
+            "updated_at": db_user.updated_at.isoformat()
+        }
+
+        logger.info(f"Profile updated successfully for user {user_id}. Updated fields: {', '.join(updated_fields)}")
+        return success(
+            data={
+                "profile": profile_response,
+                "updated_fields": updated_fields
+            },
+            request=request,
+            message="Profile updated successfully"
+        )
+
+    except Exception as e:
+        logger.error(f"Error updating profile for user {current_user.get('identity')}: {str(e)}")
+        db.rollback()
+        return error(
+            message="Failed to update profile",
+            code=ErrorCode.INTERNAL_SERVER_ERROR,
+            status_code=500,
+            severity=ErrorSeverity.HIGH,
+            context={"error_details": str(e)},
+            request=request
+        )
+
 # Email verification
 @router.get("/verify-email")
 def verify_email(token: str, request: Request, db: Session = Depends(get_db)):
@@ -1225,4 +1472,293 @@ def list_user_roles(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to retrieve user roles"
+        )
+
+
+# -------------------------
+# User Status Management Endpoints
+# -------------------------
+
+@router.post("/{user_id}/suspend", response_model=UserStatusResponse)
+def suspend_user(
+    user_id: str,
+    request: Request,
+    status_data: UserStatusRequest,
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Suspend a user account (admin only).
+
+    - **user_id**: ID of the user to suspend
+    - **reason**: Optional reason for suspension
+
+    Requires admin privileges.
+    """
+    try:
+        # Check if current user is admin
+        if not is_admin(current_user):
+            return error(
+                message="Insufficient permissions. Admin role required.",
+                code=ErrorCode.PERMISSION_DENIED,
+                status_code=403,
+                severity=ErrorSeverity.HIGH,
+                request=request
+            )
+
+        # Get target user
+        target_user = db.query(Users).filter(Users.id == user_id).first()
+        if not target_user:
+            return error(
+                message="User not found",
+                code=ErrorCode.RESOURCE_NOT_FOUND,
+                status_code=404,
+                severity=ErrorSeverity.MEDIUM,
+                request=request
+            )
+
+        # Store old status
+        old_status = target_user.status
+
+        # Update status
+        target_user.status = "suspended"
+        target_user.updated_at = datetime.utcnow()
+
+        # Create audit log
+        admin_user_id = current_user.get("identity")
+        admin_user = db.query(Users).filter(Users.id == admin_user_id).first()
+
+        create_audit_log(
+            db=db,
+            user_id=admin_user_id,
+            action="user.suspend",
+            resource_type="user",
+            resource_id=str(user_id),
+            old_values={"status": old_status},
+            new_values={"status": "suspended", "reason": status_data.reason},
+            request=request,
+            username=admin_user.username if admin_user else None,
+            user_email=admin_user.email if admin_user else None
+        )
+
+        db.commit()
+        db.refresh(target_user)
+
+        logger.info(f"User {user_id} suspended by admin {admin_user_id}")
+
+        response_data = UserStatusResponse(
+            user_id=str(target_user.id),
+            username=target_user.username,
+            email=target_user.email,
+            old_status=old_status,
+            new_status="suspended",
+            changed_by=admin_user.username if admin_user else "unknown",
+            reason=status_data.reason,
+            changed_at=target_user.updated_at.isoformat()
+        )
+
+        return success(
+            data=response_data.model_dump(),
+            request=request,
+            message=f"User {target_user.username} suspended successfully"
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error suspending user {user_id}: {str(e)}")
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to suspend user"
+        )
+
+
+@router.post("/{user_id}/activate", response_model=UserStatusResponse)
+def activate_user(
+    user_id: str,
+    request: Request,
+    status_data: UserStatusRequest,
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Activate a suspended or banned user account (admin only).
+
+    - **user_id**: ID of the user to activate
+    - **reason**: Optional reason for activation
+
+    Requires admin privileges.
+    """
+    try:
+        # Check if current user is admin
+        if not is_admin(current_user):
+            return error(
+                message="Insufficient permissions. Admin role required.",
+                code=ErrorCode.PERMISSION_DENIED,
+                status_code=403,
+                severity=ErrorSeverity.HIGH,
+                request=request
+            )
+
+        # Get target user
+        target_user = db.query(Users).filter(Users.id == user_id).first()
+        if not target_user:
+            return error(
+                message="User not found",
+                code=ErrorCode.RESOURCE_NOT_FOUND,
+                status_code=404,
+                severity=ErrorSeverity.MEDIUM,
+                request=request
+            )
+
+        # Store old status
+        old_status = target_user.status
+
+        # Update status
+        target_user.status = "active"
+        target_user.updated_at = datetime.utcnow()
+
+        # Create audit log
+        admin_user_id = current_user.get("identity")
+        admin_user = db.query(Users).filter(Users.id == admin_user_id).first()
+
+        create_audit_log(
+            db=db,
+            user_id=admin_user_id,
+            action="user.activate",
+            resource_type="user",
+            resource_id=str(user_id),
+            old_values={"status": old_status},
+            new_values={"status": "active", "reason": status_data.reason},
+            request=request,
+            username=admin_user.username if admin_user else None,
+            user_email=admin_user.email if admin_user else None
+        )
+
+        db.commit()
+        db.refresh(target_user)
+
+        logger.info(f"User {user_id} activated by admin {admin_user_id}")
+
+        response_data = UserStatusResponse(
+            user_id=str(target_user.id),
+            username=target_user.username,
+            email=target_user.email,
+            old_status=old_status,
+            new_status="active",
+            changed_by=admin_user.username if admin_user else "unknown",
+            reason=status_data.reason,
+            changed_at=target_user.updated_at.isoformat()
+        )
+
+        return success(
+            data=response_data.model_dump(),
+            request=request,
+            message=f"User {target_user.username} activated successfully"
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error activating user {user_id}: {str(e)}")
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to activate user"
+        )
+
+
+@router.post("/{user_id}/ban", response_model=UserStatusResponse)
+def ban_user(
+    user_id: str,
+    request: Request,
+    status_data: UserStatusRequest,
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Ban a user account (admin only).
+
+    - **user_id**: ID of the user to ban
+    - **reason**: Optional reason for ban
+
+    Requires admin privileges.
+    """
+    try:
+        # Check if current user is admin
+        if not is_admin(current_user):
+            return error(
+                message="Insufficient permissions. Admin role required.",
+                code=ErrorCode.PERMISSION_DENIED,
+                status_code=403,
+                severity=ErrorSeverity.HIGH,
+                request=request
+            )
+
+        # Get target user
+        target_user = db.query(Users).filter(Users.id == user_id).first()
+        if not target_user:
+            return error(
+                message="User not found",
+                code=ErrorCode.RESOURCE_NOT_FOUND,
+                status_code=404,
+                severity=ErrorSeverity.MEDIUM,
+                request=request
+            )
+
+        # Store old status
+        old_status = target_user.status
+
+        # Update status
+        target_user.status = "banned"
+        target_user.updated_at = datetime.utcnow()
+
+        # Create audit log
+        admin_user_id = current_user.get("identity")
+        admin_user = db.query(Users).filter(Users.id == admin_user_id).first()
+
+        create_audit_log(
+            db=db,
+            user_id=admin_user_id,
+            action="user.ban",
+            resource_type="user",
+            resource_id=str(user_id),
+            old_values={"status": old_status},
+            new_values={"status": "banned", "reason": status_data.reason},
+            request=request,
+            username=admin_user.username if admin_user else None,
+            user_email=admin_user.email if admin_user else None
+        )
+
+        db.commit()
+        db.refresh(target_user)
+
+        logger.info(f"User {user_id} banned by admin {admin_user_id}")
+
+        response_data = UserStatusResponse(
+            user_id=str(target_user.id),
+            username=target_user.username,
+            email=target_user.email,
+            old_status=old_status,
+            new_status="banned",
+            changed_by=admin_user.username if admin_user else "unknown",
+            reason=status_data.reason,
+            changed_at=target_user.updated_at.isoformat()
+        )
+
+        return success(
+            data=response_data.model_dump(),
+            request=request,
+            message=f"User {target_user.username} banned successfully"
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error banning user {user_id}: {str(e)}")
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to ban user"
         )
