@@ -16,7 +16,7 @@ class ChangeMemberRoleRequest(BaseModel):
 
 class WorkspaceSchema(BaseModel):
     name: Optional[str] = Field(None, description="Optional workspace title")
-    description: str = Field(..., min_length=3, description="Workspace description")
+    description: Optional[str] = Field(None, description="Workspace description")
     url: Optional[HttpUrl] = Field(None, description="Workspace URL")
 
     # Extra fields from brand_data
