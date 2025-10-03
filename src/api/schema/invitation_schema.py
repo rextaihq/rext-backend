@@ -17,6 +17,14 @@ class CreateInvitationRequest(BaseModel):
     expiry_days: Optional[int] = Field(7, ge=1, le=30, description="Days until invitation expires (1-30, default 7)")
 
 
+class BulkCreateInvitationRequest(BaseModel):
+    """Schema for creating multiple invitations at once."""
+    emails: List[EmailStr] = Field(..., min_length=1, max_length=50, description="List of email addresses to invite (max 50)")
+    workspace_id: str = Field(..., description="Workspace ID")
+    role_id: str = Field(..., description="Role ID to assign to all invitees")
+    expiry_days: Optional[int] = Field(7, ge=1, le=30, description="Days until invitations expire (1-30, default 7)")
+
+
 class RevokeInvitationRequest(BaseModel):
     """Schema for revoking an invitation."""
     reason: Optional[str] = Field(None, max_length=500, description="Reason for revocation")
@@ -43,3 +51,19 @@ class InvitationListResponse(BaseModel):
     invitations: List[InvitationResponse]
     total_count: int
     status_filter: Optional[str] = None
+
+
+class BulkInvitationResult(BaseModel):
+    """Result for a single invitation in bulk operation."""
+    email: str
+    success: bool
+    invitation_id: Optional[str] = None
+    error_message: Optional[str] = None
+
+
+class BulkInvitationResponse(BaseModel):
+    """Schema for bulk invitation response."""
+    total_requested: int
+    successful: int
+    failed: int
+    results: List[BulkInvitationResult]

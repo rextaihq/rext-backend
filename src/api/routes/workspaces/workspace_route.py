@@ -16,7 +16,7 @@ from src.api.middleware.exceptions import (
     WrextAuthenticationException
 )
 from src.api.schema.response_schemas import ErrorCode, ErrorSeverity
-from src.api.schema.workspace_schema import WorkspaceSchema
+from src.api.schema.workspace_schema import WorkspaceSchema, ChangeMemberRoleRequest
 from src.api.models.workspace_models.workspace_model import WorkspaceModel
 from src.api.models.workspace_models.workspace_member import WorkspaceMembers
 from src.api.models.user_models.users import Users
@@ -668,6 +668,132 @@ def remove_workspace_member(
         db.rollback()
         return error(
             message="Failed to remove member from workspace",
+            code=ErrorCode.INTERNAL_SERVER_ERROR,
+            status_code=500,
+            severity=ErrorSeverity.HIGH,
+            request=request
+        )
+
+
+# -------------------------
+# Change workspace member role
+# -------------------------
+@router.put("/{workspace_id}/members/{member_id}/role")
+def change_member_role(
+    workspace_id: str,
+    member_id: str,
+    role_request: ChangeMemberRoleRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: dict = Depends(get_current_user)
+):
+    """
+    Change the role of a workspace member.
+
+    - Updates the user_roles table for workspace-specific role assignment
+    - Cannot change role of workspace owner
+    - Validates that the new role exists
+    - Logs the role change in audit trail
+    """
+    user_id = user.get("identity")
+    db_user = db.query(Users).filter(Users.id == user_id, Users.deleted_at == None).first()
+    if not db_user:
+        raise WrextAuthenticationException(message="User not found", context={"user_id": user_id})
+
+    try:
+        # Verify user has access to workspace
+        workspace = (
+            db.query(WorkspaceModel)
+            .join(WorkspaceMembers, WorkspaceMembers.workspace_id == WorkspaceModel.id)
+            .filter(WorkspaceModel.id == workspace_id, WorkspaceMembers.user_id == user_id)
+            .first()
+        )
+        if not workspace:
+            raise ResourceNotFoundException(resource_type="workspace", resource_id=workspace_id)
+
+        # Get member whose role will be changed
+        member = db.query(WorkspaceMembers).filter(
+            WorkspaceMembers.id == member_id,
+            WorkspaceMembers.workspace_id == workspace_id
+        ).first()
+
+        if not member:
+            raise ResourceNotFoundException(resource_type="member", resource_id=member_id)
+
+        # Cannot change role of workspace owner
+        if member.is_default:
+            raise WrextValidationException(
+                message="Cannot change role of workspace owner",
+                validation_errors={"member_id": "This member is the workspace owner"}
+            )
+
+        # Verify new role exists
+        new_role = db.query(Role).filter(Role.id == role_request.role_id).first()
+        if not new_role:
+            raise ResourceNotFoundException(resource_type="role", resource_id=role_request.role_id)
+
+        # Cannot assign system roles
+        if new_role.is_system_role:
+            raise WrextValidationException(
+                message="Cannot assign system roles to workspace members",
+                validation_errors={"role_id": "This is a system role"}
+            )
+
+        # Get or create user_role entry for this workspace
+        existing_role = db.query(UserRole).filter(
+            UserRole.user_id == member.user_id,
+            UserRole.workspace_id == workspace_id
+        ).first()
+
+        if existing_role:
+            # Update existing role
+            old_role_id = existing_role.role_id
+            existing_role.role_id = role_request.role_id
+            existing_role.assigned_by_user_id = user_id
+            existing_role.assigned_at = datetime.now(timezone.utc)
+        else:
+            # Create new role assignment
+            old_role_id = None
+            new_user_role = UserRole(
+                user_id=member.user_id,
+                role_id=role_request.role_id,
+                workspace_id=workspace_id,
+                assigned_by_user_id=user_id,
+                is_primary=False
+            )
+            db.add(new_user_role)
+
+        db.commit()
+
+        # Get member user details for response
+        member_user = db.query(Users).filter(Users.id == member.user_id).first()
+
+        logger.info(
+            f"User {user_id} changed role for member {member.user_id} in workspace {workspace_id} "
+            f"from {old_role_id} to {role_request.role_id}"
+        )
+
+        return success(
+            data={
+                "member_id": str(member.id),
+                "user_id": str(member.user_id),
+                "workspace_id": str(workspace_id),
+                "role_id": str(role_request.role_id),
+                "role_name": new_role.display_name,
+                "updated_by": str(user_id),
+                "updated_at": datetime.now(timezone.utc).isoformat()
+            },
+            request=request,
+            message=f"Role updated to {new_role.display_name} successfully"
+        )
+
+    except (ResourceNotFoundException, WrextValidationException):
+        raise
+    except Exception as e:
+        logger.exception(f"Error changing member role in workspace {workspace_id}")
+        db.rollback()
+        return error(
+            message="Failed to change member role",
             code=ErrorCode.INTERNAL_SERVER_ERROR,
             status_code=500,
             severity=ErrorSeverity.HIGH,

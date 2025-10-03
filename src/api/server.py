@@ -20,6 +20,7 @@ from src.api.routes.users.users_routes import router as users_router
 from src.api.routes.topics.topic_generation_route import router as topic_router
 from src.api.routes.workspaces.workspace_route import router as workspace_router
 from src.api.routes.workspaces.members.members_routes import router as members_router
+from src.api.routes.workspaces.email_template_route import router as email_template_router
 from src.api.routes.knowledge.web_knowledge_route import router as web_router
 from src.api.routes.knowledge.file_knowledge_route import router as file_router
 from src.api.routes.knowledge.text_knowledge_route import router as text_router
@@ -148,6 +149,7 @@ app.include_router(users_router, prefix="/api", tags=["Authentication"])
 app.include_router(topic_router, prefix="/api", tags=["Topic Generation"])
 app.include_router(workspace_router, prefix="/api", tags=["Workspaces"])
 app.include_router(members_router, prefix="/api", tags=["Workspace Members"])
+app.include_router(email_template_router, prefix="/api", tags=["Email Templates"])
 app.include_router(web_router, prefix="/api", tags=["Web Knowledge"])
 app.include_router(file_router, prefix="/api", tags=["File Knowledge"])
 app.include_router(text_router, prefix="/api", tags=["Text Knowledge"])

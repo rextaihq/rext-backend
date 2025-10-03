@@ -24,6 +24,7 @@ class WorkspaceModel(Base):
     user_roles = relationship("UserRole", back_populates="workspace")
     members = relationship("WorkspaceMembers", back_populates="workspace",cascade="all, delete-orphan")
     invitations = relationship("UserInvitations", back_populates="workspace")
+    email_templates = relationship("EmailTemplate", back_populates="workspace", cascade="all, delete-orphan")
 
     # Other related entities
     brand_voices = relationship("BrandVoice", back_populates="workspace", cascade="all, delete-orphan")

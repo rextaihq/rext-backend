@@ -9,6 +9,7 @@ from src.utils.logger import logger
 from src.utils.response_utils import success, error, created
 from src.utils.invitation_utils import is_invitation_expired, get_invitation_with_details
 from src.utils.audit_helper import create_audit_log
+from src.utils.email_template_utils import render_workspace_email
 from src.api.database.database import get_db
 from src.api.security.auth import get_current_user
 from src.api.middleware.exceptions import (
@@ -21,10 +22,13 @@ from src.api.middleware.exceptions import (
 from src.api.schema.response_schemas import ErrorCode, ErrorSeverity
 from src.api.schema.invitation_schema import (
     CreateInvitationRequest,
+    BulkCreateInvitationRequest,
     AcceptInvitationRequest,
     RevokeInvitationRequest,
     InvitationResponse,
-    InvitationListResponse
+    InvitationListResponse,
+    BulkInvitationResult,
+    BulkInvitationResponse
 )
 from src.api.models.user_models.users import Users
 from src.api.models.user_models.invitations import UserInvitations
@@ -169,23 +173,30 @@ def create_invitation(
         # Get inviter details for email
         inviter = db.query(Users).filter(Users.id == user_id).first()
 
-        # Send invitation email in background
+        # Send invitation email in background using custom or default template
         frontend_url = os.getenv("FRONTEND_URL", "http://localhost:3000")
         invitation_link = f"{frontend_url}/invitations/accept?token={invitation_token}"
+
+        # Render email template
+        email_content = render_workspace_email(
+            db=db,
+            workspace_id=invitation_data.workspace_id,
+            template_type="workspace_invitation",
+            variables={
+                "workspace_name": workspace.name,
+                "inviter_name": inviter.display_name or inviter.username,
+                "recipient_email": invitation_data.email,
+                "role_name": role.display_name or role.name,
+                "invitation_url": invitation_link,
+                "expiry_days": str(invitation_data.expiry_days)
+            }
+        )
 
         background_tasks.add_task(
             send_email,
             to=invitation_data.email,
-            subject=f"You've been invited to join {workspace.name} on WREXT",
-            body=f"""
-            <p>Hello,</p>
-            <p>{inviter.display_name or inviter.username} has invited you to join <strong>{workspace.name}</strong> on WREXT.</p>
-            <p>Role: {role.display_name or role.name}</p>
-            <p>Click the link below to accept this invitation:</p>
-            <p><a href='{invitation_link}'>Accept Invitation</a></p>
-            <p>This invitation will expire on {expires_at.strftime('%Y-%m-%d %H:%M UTC')}.</p>
-            <p>If you don't have an account yet, you'll be able to sign up using this email address.</p>
-            """
+            subject=email_content["subject"],
+            body=email_content["body"]
         )
 
         logger.info(f"Invitation created: {invitation.id} for {invitation_data.email} to workspace {workspace.name}")
@@ -234,6 +245,219 @@ def create_invitation(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to create invitation"
+        )
+
+
+@router.post("/bulk", status_code=status.HTTP_201_CREATED)
+def create_bulk_invitations(
+    request: Request,
+    invitation_data: BulkCreateInvitationRequest,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Create multiple invitations at once for users to join a workspace.
+
+    - **emails**: List of email addresses (max 50)
+    - **workspace_id**: ID of the workspace
+    - **role_id**: Role to assign to all invited users
+    - **expiry_days**: Days until invitations expire (1-30, default 7)
+
+    Returns a detailed report of successful and failed invitations.
+    Requires: workspace admin/owner OR user.invite permission
+    """
+    try:
+        user_id = current_user.get("identity")
+        logger.info(f"User {user_id} creating bulk invitations for {len(invitation_data.emails)} emails")
+
+        # Verify workspace exists
+        workspace = db.query(WorkspaceModel).filter(
+            WorkspaceModel.id == invitation_data.workspace_id
+        ).first()
+
+        if not workspace:
+            raise ResourceNotFoundException(
+                message="Workspace not found",
+                resource_type="workspace",
+                resource_id=invitation_data.workspace_id
+            )
+
+        # Check if user has permission to invite to this workspace
+        membership = db.query(WorkspaceMembers).filter(
+            WorkspaceMembers.workspace_id == invitation_data.workspace_id,
+            WorkspaceMembers.user_id == user_id,
+            WorkspaceMembers.status == "active"
+        ).first()
+
+        if not membership:
+            raise WrextAuthenticationException(
+                message="You are not a member of this workspace",
+                context={"workspace_id": invitation_data.workspace_id}
+            )
+
+        # Verify role exists
+        role = db.query(Role).filter(Role.id == invitation_data.role_id).first()
+        if not role:
+            raise ResourceNotFoundException(
+                message="Role not found",
+                resource_type="role",
+                resource_id=invitation_data.role_id
+            )
+
+        # Get inviter details for email
+        inviter = db.query(Users).filter(Users.id == user_id).first()
+        inviter_name = inviter.display_name if inviter else "A workspace member"
+
+        # Process each email
+        results = []
+        successful = 0
+        failed = 0
+
+        for email in invitation_data.emails:
+            try:
+                email_lower = email.lower()
+
+                # Check if invitation already exists for this email + workspace
+                existing_invitation = db.query(UserInvitations).filter(
+                    UserInvitations.email == email_lower,
+                    UserInvitations.workspace_id == invitation_data.workspace_id,
+                    UserInvitations.status == "pending"
+                ).first()
+
+                if existing_invitation:
+                    # Check if expired - if so, revoke it and create new one
+                    if is_invitation_expired(existing_invitation):
+                        existing_invitation.status = "expired"
+                        db.commit()
+                    else:
+                        results.append(BulkInvitationResult(
+                            email=email,
+                            success=False,
+                            error_message="An active invitation already exists for this email"
+                        ))
+                        failed += 1
+                        continue
+
+                # Check if user is already a member
+                existing_user = db.query(Users).filter(Users.email == email_lower).first()
+                if existing_user:
+                    existing_membership = db.query(WorkspaceMembers).filter(
+                        WorkspaceMembers.user_id == existing_user.id,
+                        WorkspaceMembers.workspace_id == invitation_data.workspace_id
+                    ).first()
+
+                    if existing_membership:
+                        results.append(BulkInvitationResult(
+                            email=email,
+                            success=False,
+                            error_message="User is already a member of this workspace"
+                        ))
+                        failed += 1
+                        continue
+
+                # Generate invitation token
+                invitation_token = str(uuid.uuid4())
+
+                # Calculate expiry
+                expires_at = datetime.utcnow() + timedelta(days=invitation_data.expiry_days)
+
+                # Create invitation
+                invitation = UserInvitations(
+                    email=email_lower,
+                    workspace_id=invitation_data.workspace_id,
+                    role_id=invitation_data.role_id,
+                    invited_by_user_id=user_id,
+                    invitation_token=invitation_token,
+                    status="pending",
+                    expires_at=expires_at
+                )
+
+                db.add(invitation)
+                db.flush()  # Get the ID without committing
+
+                # Send invitation email asynchronously
+                frontend_url = os.getenv("FRONTEND_URL", "http://localhost:3000")
+                invitation_url = f"{frontend_url}/accept-invitation?token={invitation_token}"
+
+                background_tasks.add_task(
+                    send_email,
+                    to_email=email,
+                    subject=f"You're invited to join {workspace.name}",
+                    body=f"""
+                    Hi there,
+
+                    {inviter_name} has invited you to join the "{workspace.name}" workspace.
+
+                    Role: {role.display_name}
+
+                    Click the link below to accept the invitation:
+                    {invitation_url}
+
+                    This invitation will expire in {invitation_data.expiry_days} days.
+
+                    If you don't want to join this workspace, you can ignore this email.
+
+                    Best regards,
+                    The Wrext Team
+                    """
+                )
+
+                # Audit log for each invitation
+                create_audit_log(
+                    db=db,
+                    user_id=user_id,
+                    action="invitation.created",
+                    resource_type="invitation",
+                    resource_id=str(invitation.id),
+                    details={
+                        "email": email,
+                        "workspace_id": str(invitation_data.workspace_id),
+                        "role_id": str(invitation_data.role_id),
+                        "expires_at": expires_at.isoformat()
+                    }
+                )
+
+                results.append(BulkInvitationResult(
+                    email=email,
+                    success=True,
+                    invitation_id=str(invitation.id)
+                ))
+                successful += 1
+
+            except Exception as e:
+                logger.error(f"Error creating invitation for {email}: {str(e)}")
+                results.append(BulkInvitationResult(
+                    email=email,
+                    success=False,
+                    error_message=str(e)
+                ))
+                failed += 1
+
+        # Commit all successful invitations
+        db.commit()
+
+        logger.info(f"Bulk invitation completed: {successful} successful, {failed} failed")
+
+        return created(
+            data={
+                "total_requested": len(invitation_data.emails),
+                "successful": successful,
+                "failed": failed,
+                "results": [r.dict() for r in results]
+            },
+            request=request,
+            message=f"Bulk invitation completed: {successful} sent, {failed} failed"
+        )
+
+    except (ResourceNotFoundException, WrextAuthenticationException):
+        raise
+    except Exception as e:
+        logger.error(f"Error in bulk invitation: {str(e)}")
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to process bulk invitations"
         )
 
 
