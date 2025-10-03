@@ -24,6 +24,7 @@ from src.api.routes.workspaces.email_template_route import router as email_templ
 from src.api.routes.knowledge.web_knowledge_route import router as web_router
 from src.api.routes.knowledge.file_knowledge_route import router as file_router
 from src.api.routes.knowledge.text_knowledge_route import router as text_router
+from src.api.routes.content.content_route import router as content_router
 from src.api.routes.roles.role_routes import router as roles_router
 from src.api.routes.permissions.permission_routes import router as permissions_router
 from src.api.routes.subscriptions.plan_routes import router as plan_routes_router
@@ -153,6 +154,7 @@ app.include_router(email_template_router, prefix="/api", tags=["Email Templates"
 app.include_router(web_router, prefix="/api", tags=["Web Knowledge"])
 app.include_router(file_router, prefix="/api", tags=["File Knowledge"])
 app.include_router(text_router, prefix="/api", tags=["Text Knowledge"])
+app.include_router(content_router, prefix="/api", tags=["Content"])
 app.include_router(users_router, prefix="/api", tags=["Users"])
 app.include_router(roles_router, prefix="/api/v1", tags=["Roles"])
 app.include_router(permissions_router, prefix="/api/v1", tags=["Permissions"])
@@ -209,6 +211,7 @@ def api_status(request: Request):
                 "authentication": "/api/user",
                 "topics": "/api/topic",
                 "workspaces": "/api/workspace",
+                "content": "/api/content",
                 "knowledge": "/api/knowledge"
             },
             "features": {
