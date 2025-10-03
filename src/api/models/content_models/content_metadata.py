@@ -32,4 +32,4 @@ class ContentMetadata(Base):
     updated_at = Column(DateTime(timezone=True), nullable=True, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     # Relationships
-    content = relationship("Content", back_populates="metadata")
+    content = relationship("Content", back_populates="content_metadata")
