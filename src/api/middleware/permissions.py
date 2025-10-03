@@ -20,7 +20,7 @@ from fastapi import Depends, HTTPException, status, Request
 from sqlalchemy.orm import Session
 
 from src.api.database.database import get_db
-from src.api.security.auth import get_current_user
+from src.api.security.dependencies import get_current_user
 from src.api.models.user_models.users import Users
 from src.api.models.user_models.user_roles import UserRole
 from src.api.models.user_models.role_permissions import RolePermission

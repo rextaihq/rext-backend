@@ -24,7 +24,7 @@ from src.api.middleware.exceptions import (
     WrextAuthenticationException
 )
 from datetime import datetime, timezone
-from src.api.security.auth import get_current_user
+from src.api.security.dependencies import get_current_user
 
 router = APIRouter(
     prefix="/workspace/members",

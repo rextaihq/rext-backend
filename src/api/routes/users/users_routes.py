@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Request, BackgroundTasks, Header, UploadFile, File
 from src.utils.logger import logger
-from src.api.security.auth import get_current_user
+from src.api.security.dependencies import get_current_user
 from src.api.schema.user_schema import (LoginUser, RegisterUser,
                                         UpdateUser, ResetPassword,
                                         ForgotPasswordRequest,

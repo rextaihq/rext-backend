@@ -24,7 +24,7 @@ from sqlalchemy import func
 from datetime import datetime, timedelta
 
 from src.api.database.database import get_db
-from src.api.security.auth import get_current_user
+from src.api.security.dependencies import get_current_user
 from src.api.models.subscription_models.subscriptions import (
     UserSubscription,
     SubscriptionStatus

@@ -12,15 +12,15 @@ from datetime import datetime, timedelta
 import uuid
 
 from src.api.database.database import get_db
-from src.api.security.auth import get_current_user
+from src.api.security.dependencies import get_current_user
 from src.api.models.subscription_models.plans import SubscriptionPlan
 from src.api.models.subscription_models.subscriptions import (
     UserSubscription,
     SubscriptionStatus,
     BillingPeriod
 )
-from src.api.models.workspace_models.workspaces import Workspace
-from src.api.models.topic_models.topics import Topic
+from src.api.models.workspace_models.workspace_model import WorkspaceModel as Workspace
+from src.api.models.topic_models.topic_models import TopicsModel as Topic
 from src.api.schema.subscription_schema import (
     SubscriptionCreateRequest,
     SubscriptionUpgradeRequest,

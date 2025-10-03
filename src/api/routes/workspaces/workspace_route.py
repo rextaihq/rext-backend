@@ -7,7 +7,7 @@ from src.utils.helper import web_page_scraper
 from src.utils.vector_store import add_to_vector_store, delete_vectors
 from src.utils.response_utils import success, error, created
 from src.api.database.database import get_db
-from src.api.security.auth import get_current_user
+from src.api.security.dependencies import get_current_user
 from src.api.middleware.exceptions import (
     DuplicateResourceException,
     ResourceNotFoundException,

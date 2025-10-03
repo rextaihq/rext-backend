@@ -11,7 +11,7 @@ from src.utils.invitation_utils import is_invitation_expired, get_invitation_wit
 from src.utils.audit_helper import create_audit_log
 from src.utils.email_template_utils import render_workspace_email
 from src.api.database.database import get_db
-from src.api.security.auth import get_current_user
+from src.api.security.dependencies import get_current_user
 from src.api.middleware.exceptions import (
     DuplicateResourceException,
     ResourceNotFoundException,

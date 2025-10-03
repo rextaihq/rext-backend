@@ -20,7 +20,7 @@ from src.utils.email_template_utils import (
     get_default_template
 )
 from src.api.database.database import get_db
-from src.api.security.auth import get_current_user
+from src.api.security.dependencies import get_current_user
 from src.api.middleware.exceptions import (
     DuplicateResourceException,
     ResourceNotFoundException,

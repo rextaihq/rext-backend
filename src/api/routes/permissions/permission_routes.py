@@ -11,7 +11,7 @@ from typing import List, Optional
 from datetime import datetime
 
 from src.api.database.database import get_db
-from src.api.security.auth import get_current_user
+from src.api.security.dependencies import get_current_user
 from src.api.middleware.permissions import require_permissions, is_admin
 from src.api.models.user_models.permissions import Permission
 from src.api.models.user_models.role_permissions import RolePermission

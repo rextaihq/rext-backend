@@ -5,7 +5,7 @@ This module defines Pydantic models for subscription-related API operations.
 """
 
 from pydantic import BaseModel, Field, field_validator
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 from datetime import datetime
 from decimal import Decimal
 from enum import Enum

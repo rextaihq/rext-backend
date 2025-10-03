@@ -16,7 +16,7 @@ import io
 import json
 
 from src.api.database.database import get_db
-from src.api.security.auth import get_current_user
+from src.api.security.dependencies import get_current_user
 from src.api.middleware.permissions import is_admin
 from src.api.models.audit_models.audit_logs import AuditLog
 from src.api.models.user_models.users import Users

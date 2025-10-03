@@ -12,7 +12,7 @@ from datetime import datetime
 import uuid
 
 from src.api.database.database import get_db
-from src.api.security.auth import get_current_user
+from src.api.security.dependencies import get_current_user
 from src.api.middleware.permissions import require_permissions, is_admin
 from src.api.models.subscription_models.plans import SubscriptionPlan
 from src.api.models.subscription_models.subscriptions import UserSubscription
