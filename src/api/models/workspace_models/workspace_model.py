@@ -31,6 +31,7 @@ class WorkspaceModel(Base):
     websites = relationship("Website", back_populates="workspace", cascade="all, delete-orphan")
     knowledge_files = relationship("KnowledgeFiles", back_populates="workspace", cascade="all, delete-orphan")
     text_knowledge = relationship("TextKnowledge", back_populates="workspace", cascade="all, delete-orphan")
+    content_items = relationship("Content", back_populates="workspace", cascade="all, delete-orphan")
 
     def to_dict(self):
         return {

@@ -1,5 +1,6 @@
 from sqlalchemy import Column, String,func,DateTime,Boolean
 from sqlalchemy.dialects.postgresql import UUID, ARRAY, JSONB
+from sqlalchemy.orm import relationship
 from src.api.database.database import Base
 import uuid
 
@@ -25,6 +26,10 @@ class TopicsModel(Base):
     user_settings = Column(JSONB, nullable=False)  # New field
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)  # Generated date
     updated_at = Column(DateTime(timezone=True), server_default=func.now(),nullable=True)
+
+    # Content relationship
+    content_items = relationship("Content", back_populates="topic")
+
     def to_dict(self) -> dict:
         """Custom serialization for Topics model"""
         base_dict = super().to_dict()
