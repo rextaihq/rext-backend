@@ -128,21 +128,26 @@ wrext-backend/
 
 | Issue | Count | Impact |
 |-------|-------|--------|
-| Print statements in production | 36 | No structured logging |
+| Print statements in production | 36 | No structured logging, PII leaks |
 | TODO comments | 15 | Incomplete features |
 | Broad exception catches | 30+ | Hidden errors |
 | No tests | 0 | No quality assurance |
-| Duplicate router registration | 1 | Potential conflicts |
+| Duplicate router registration | 1 | Potential conflicts (line 149 & 158 in server.py) |
+| Legacy workflow at top-level | 1 | main.py imports LangGraph unnecessarily |
+| __pycache__ in repo | Multiple | Missing .gitignore hygiene |
+| SMTP plaintext secrets | 1 | send_mail.py stores passwords in memory |
 
 ### Performance Issues 🟡
 
 | Issue | Impact | Solution |
 |-------|--------|----------|
-| No connection pooling | Database bottleneck | Configure pool settings |
+| No connection pooling | Database bottleneck | Configure pool settings with pool_pre_ping |
 | Sync routes (95%) | Poor concurrency | Convert to async |
 | No caching | Redundant queries | Add Redis cache |
 | Missing indexes | Slow queries | Add database indexes |
 | Large route files | Maintainability | Refactor and split |
+| Heavy inline SQL logic | Testing difficulty | Extract service layers |
+| Topic save unbounded | Risk of huge payloads | Add chunking/quotas |
 
 ---
 
@@ -206,6 +211,7 @@ wrext-backend/
 1. **Rotate ALL API keys**
    - OpenAI, Langsmith, WordPress tokens
    - Generate new cryptographically secure secrets
+   - Add gitleaks to CI to prevent future exposures
 
 2. **Secure Secrets**
    ```python
@@ -218,8 +224,15 @@ wrext-backend/
    ```bash
    git rm --cached .env
    echo ".env" >> .gitignore
-   git commit -m "Remove exposed secrets"
+   # Also clean up __pycache__ directories
+   find . -type d -name "__pycache__" -exec rm -r {} +
+   echo "__pycache__/" >> .gitignore
+   git commit -m "Remove exposed secrets and build artifacts"
    ```
+
+4. **Fix duplicate router registration**
+   - Remove duplicate `users_router` mount at line 158 in server.py
+   - Standardize on single API versioning scheme
 
 ### 📝 Week 1
 1. **Replace print() statements**
@@ -614,12 +627,19 @@ export const CACHE_CONFIGS: Record<string, CacheConfig> = {
 - Multiple LLM provider support
 - Vector store integration
 
+### Issues from Codex Analysis
+- **Legacy workflow bootstrap**: `main.py:1-17` imports and compiles LangGraph on import even though HTTP API doesn't use it
+- **Can slow startup or crash**: When dependencies missing
+- **README drift**: Still documents original blog automation, not FastAPI service
+
 ### Improvements Needed
 1. **Error Handling**: Add retry logic for LLM calls
 2. **Cost Tracking**: Monitor API usage
 3. **Caching**: Cache embeddings and responses
 4. **Observability**: Add LangSmith tracing
 5. **Testing**: Mock LLM responses in tests
+6. **Clarify entrypoints**: Archive LangGraph code to dedicated module
+7. **Update documentation**: Refresh README for FastAPI service
 
 ---
 
@@ -652,6 +672,48 @@ export const CACHE_CONFIGS: Record<string, CacheConfig> = {
 
 ---
 
+## Consolidation Opportunities (from Codex Analysis)
+
+### Service Layer Extraction
+- **Current**: Heavy SQL logic inline in routes (`workspace_route.py:34-180`, `users_routes.py:69-210`)
+- **Solution**: Extract service layers for testing and reuse
+```python
+# services/workspace_service.py
+class WorkspaceService:
+    def __init__(self, db: Session):
+        self.db = db
+
+    async def get_workspace_analytics(self, workspace_id: str):
+        # Extracted business logic
+        pass
+```
+
+### Email Sending Consolidation
+- **Current**: Direct SMTP calls with plaintext passwords (`send_mail.py`)
+- **Solution**: Provider abstraction with retries and templating
+```python
+# services/email_service.py
+class EmailService:
+    async def send_with_retry(self, template: str, context: dict):
+        # Unified email handling
+        pass
+```
+
+### Environment Configuration
+- **Current**: Scattered `load_dotenv()` calls across modules
+- **Solution**: Single config loader at startup
+```python
+# config.py
+class Settings(BaseSettings):
+    # Centralized configuration
+    class Config:
+        env_file = ".env"
+```
+
+### Response Utilities
+- **Current**: Overlapping utilities in `response_utils.py` and `response_schemas.py`
+- **Solution**: Single response package to avoid divergence
+
 ## Action Plan
 
 ### Day 1 (CRITICAL)
@@ -659,24 +721,32 @@ export const CACHE_CONFIGS: Record<string, CacheConfig> = {
 - [ ] Generate secure SECRET_KEY
 - [ ] Remove .env from repository
 - [ ] Update docker-compose secrets
+- [ ] Fix duplicate router registration
+- [ ] Clean __pycache__ from repo
 
 ### Week 1
-- [ ] Replace 36 print statements
+- [ ] Replace 36 print statements with logger
 - [ ] Enable CORS configuration
 - [ ] Start splitting users_routes.py
 - [ ] Set up basic logging
+- [ ] Archive LangGraph code to module
+- [ ] Update README for FastAPI
 
 ### Week 2-4
 - [ ] Add unit tests (40% coverage)
 - [ ] Implement rate limiting
-- [ ] Complete TODO items
+- [ ] Complete TODO items (15 total)
 - [ ] Add database indexes
+- [ ] Extract service layers
+- [ ] Consolidate email handling
 
 ### Month 2-3
 - [ ] Achieve 70% test coverage
 - [ ] Convert to async routes
 - [ ] Add Redis caching
 - [ ] Implement monitoring
+- [ ] Add dependency injection
+- [ ] Set up proper .gitignore
 
 ---
 
