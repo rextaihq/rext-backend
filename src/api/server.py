@@ -37,6 +37,8 @@ from src.api.database.database import engine
 # Middleware imports
 from src.api.middleware.request_tracker import RequestTrackerMiddleware
 from src.api.middleware.error_handler import ErrorHandlerMiddleware, setup_exception_handlers
+from src.api.middleware.security import SecurityHeadersMiddleware
+from src.api.config import settings
 from src.utils.response_utils import success
 from src.utils.logger import logger
 
@@ -82,9 +84,11 @@ async def lifespan(app: FastAPI):
     """Application lifespan events."""
     # Startup
     logger.info("Starting Wrext API server...")
+    logger.info(f"Environment: {settings.ENVIRONMENT}")
     logger.info(f"Database URI: {DB_URI[:20]}..." if DB_URI else "No database URI configured")
     logger.info("Database managed by Alembic migrations")
-    logger.info("Middleware configured: RequestTracker, ErrorHandler")
+    logger.info("Middleware configured: RequestTracker, ErrorHandler, SecurityHeaders")
+    logger.info(f"CORS allowed origins: {settings.allowed_origins_list}")
 
     # Optional: Check migration status (uncomment to enable)
     # check_migrations()
@@ -125,18 +129,19 @@ app.add_middleware(
     max_error_details=10
 )
 
-# CORS middleware (last in chain)
+# CORS middleware - configured via environment variables
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        'http://localhost:3000',
-        'http://127.0.0.1:3000',
-        # Add production origins here
-    ],
+    allow_origins=settings.allowed_origins_list,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"]
+    allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH"],
+    allow_headers=["*"],
+    expose_headers=["X-Request-ID"],
+    max_age=3600,  # Cache preflight requests for 1 hour
 )
+
+# Security headers middleware
+app.add_middleware(SecurityHeadersMiddleware)
 
 # Setup global exception handlers
 setup_exception_handlers(app)
@@ -145,17 +150,16 @@ setup_exception_handlers(app)
 # ROUTE REGISTRATION
 # ============================================================================
 
-# Include all API routes with consistent prefix
-app.include_router(users_router, prefix="/api", tags=["Authentication"])
-app.include_router(topic_router, prefix="/api", tags=["Topic Generation"])
-app.include_router(workspace_router, prefix="/api", tags=["Workspaces"])
-app.include_router(members_router, prefix="/api", tags=["Workspace Members"])
-app.include_router(email_template_router, prefix="/api", tags=["Email Templates"])
-app.include_router(web_router, prefix="/api", tags=["Web Knowledge"])
-app.include_router(file_router, prefix="/api", tags=["File Knowledge"])
-app.include_router(text_router, prefix="/api", tags=["Text Knowledge"])
-app.include_router(content_router, prefix="/api", tags=["Content"])
-app.include_router(users_router, prefix="/api", tags=["Users"])
+# Include all API routes with consistent prefix (/api/v1)
+app.include_router(users_router, prefix="/api/v1", tags=["Authentication"])
+app.include_router(topic_router, prefix="/api/v1", tags=["Topic Generation"])
+app.include_router(workspace_router, prefix="/api/v1", tags=["Workspaces"])
+app.include_router(members_router, prefix="/api/v1", tags=["Workspace Members"])
+app.include_router(email_template_router, prefix="/api/v1", tags=["Email Templates"])
+app.include_router(web_router, prefix="/api/v1", tags=["Web Knowledge"])
+app.include_router(file_router, prefix="/api/v1", tags=["File Knowledge"])
+app.include_router(text_router, prefix="/api/v1", tags=["Text Knowledge"])
+app.include_router(content_router, prefix="/api/v1", tags=["Content"])
 app.include_router(roles_router, prefix="/api/v1", tags=["Roles"])
 app.include_router(permissions_router, prefix="/api/v1", tags=["Permissions"])
 app.include_router(plan_routes_router, prefix="/api/v1", tags=["Subscription Plans"])
@@ -208,11 +212,11 @@ def api_status(request: Request):
         data={
             "api_status": "operational",
             "endpoints": {
-                "authentication": "/api/user",
-                "topics": "/api/topic",
-                "workspaces": "/api/workspace",
-                "content": "/api/content",
-                "knowledge": "/api/knowledge"
+                "authentication": "/api/v1/user",
+                "topics": "/api/v1/topic",
+                "workspaces": "/api/v1/workspace",
+                "content": "/api/v1/content",
+                "knowledge": "/api/v1/knowledge"
             },
             "features": {
                 "consistent_responses": True,

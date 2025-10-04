@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 
 from src.api.database.database import get_db
 from src.api.security.token_utils import verify_token, is_token_blacklisted
+from src.utils.logger import logger
 
 # Lazy import to avoid circular dependency
 if TYPE_CHECKING:
@@ -97,5 +98,6 @@ def get_current_user(
         "roles": payload.get("roles", []),
     }
 
-    print("Identity verified:", user_info)
+    # Log identity verification without PII
+    logger.info("Identity verified", extra={"user_id": user_id})
     return user_info
