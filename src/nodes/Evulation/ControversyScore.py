@@ -2,6 +2,10 @@ from src.states.State import AgentState
 from src.model.model import structure_model
 from src.prompts.prompt import create_controversy_score_prompt
 
+from src.api.lib.logger import auto_logger
+
+logger = auto_logger()
+
 def score_controversy(state: AgentState) -> dict:
     """
     Evaluate whether each topic is currently controversial or debated within the WordPress ecosystem.
@@ -14,7 +18,7 @@ def score_controversy(state: AgentState) -> dict:
             - article_weight (List[List[int]]): Nested list with fixed weight = 1.
     """
     try:
-        print("Scoring controversy...")
+        logger.info("Scoring controversy...")
 
         ratings = []
         weights = []
@@ -53,5 +57,5 @@ def score_controversy(state: AgentState) -> dict:
 
 
     except Exception as e:
-        print("Controversy scoring failed:", e)
+        logger.info("Controversy scoring failed:", e)
         return {"error": [{"Controversy scoring failed": str(e)}]}

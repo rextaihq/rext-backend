@@ -45,7 +45,7 @@ def get_web_knowledges(
         )
     try:
         logger.info("Fetching all web knowledges")
-        print(request)
+        logger.info(request)
         web_knowledges = db.query(Website).all()
         return success(data=[knowledge.to_dict() for knowledge in web_knowledges])
     except Exception as e:

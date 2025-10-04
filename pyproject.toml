@@ -31,4 +31,6 @@ dependencies = [
     "requests>=2.32.4",
     "sentence-transformers>=5.1.0",
     "user-agents>=2.2.0",
+    "structlog>=25.4.0",
+    "python-json-logger>=3.3.0",
 ]

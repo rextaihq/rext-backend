@@ -40,7 +40,7 @@ def cleanup_expired_tokens(db: Session) -> int:
         >>> from src.api.database.database import SessionLocal
         >>> db = SessionLocal()
         >>> deleted = cleanup_expired_tokens(db)
-        >>> print(f"Deleted {deleted} tokens")
+        >>> logger.info(f"Deleted {deleted} tokens")
         >>> db.close()
     """
     try:

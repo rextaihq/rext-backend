@@ -2,6 +2,10 @@ from src.states.State import AgentState
 from src.model.model import structure_model
 from src.prompts.prompt import score_seo_potential_prompt
 
+from src.api.lib.logger import auto_logger
+
+logger = auto_logger()
+
 def score_seo_potential(state: AgentState) -> dict:
     """
     Evaluate the SEO potential of each topic based on keyword relevance and searchability.
@@ -14,7 +18,7 @@ def score_seo_potential(state: AgentState) -> dict:
             - article_weight (List[List[int]]): A nested list of weights.
     """
     try:
-        print("Scoring SEO potential...")
+        logger.info("Scoring SEO potential...")
 
         ratings = []
         weights = []
@@ -50,5 +54,5 @@ def score_seo_potential(state: AgentState) -> dict:
         }
 
     except Exception as e:
-        print("SEO scoring failed:", e)
+        logger.info("SEO scoring failed:", e)
         return {"error": [{"SEO scoring failed": str(e)}]}

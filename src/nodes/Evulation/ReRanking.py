@@ -2,6 +2,10 @@ from src.states.State import AgentState
 import pandas as pd
 import numpy as np
 
+from src.api.lib.logger import auto_logger
+
+logger = auto_logger()
+
 # Adding Evulation Results
 def re_ranking(state: AgentState) -> AgentState:
     """
@@ -19,7 +23,7 @@ def re_ranking(state: AgentState) -> AgentState:
 
         num_articles = len(filter_data)
 
-        print("getting Rating and weights")
+        logger.info("getting Rating and weights")
 
         # Get lists of ratings and weights, providing defaults if a category is missing
         relevance_rating = np.array(evulaion_data.get("relevance_rating", [0] * num_articles))
@@ -40,7 +44,7 @@ def re_ranking(state: AgentState) -> AgentState:
         actionable_weight = np.array(evulaion_data.get("actionable_weight", [1] * num_articles))
         seo_weight = np.array(evulaion_data.get("seo_weight", [1] * num_articles))
 
-        print("Calculating Totals")
+        logger.info("Calculating Totals")
         # Ensure all arrays have the same length before summing
         min_len = min(len(relevance_rating), len(trend_rating), len(controversy_rating), len(uniqueness_rating),
                       len(reader_rating), len(brand_rating), len(actionable_rating), len(seo_rating),
@@ -77,14 +81,14 @@ def re_ranking(state: AgentState) -> AgentState:
             reader_weight + brand_weight + actionable_weight + seo_weight
         )
 
-        print("Total Ratting: ",total_rating)
-        print("Total Weight: ",total_weight)
+        logger.info("Total Ratting: ",total_rating)
+        logger.info("Total Weight: ",total_weight)
 
 
         # Attach scores to each article
         # Ensure we only process up to min_len articles
         for i in range(min_len):
-            print("Adding Score: ",i)
+            logger.info("Adding Score: ",i)
             filter_data[i]['rating'] = int(total_rating[i])
             filter_data[i]['weight'] = int(total_weight[i])
             filter_data[i]['total_score'] = int(total_rating[i] * total_weight[i])

@@ -1,30 +1,19 @@
-import logging
-import os
+"""
+DEPRECATED: Use src.api.lib.logger instead.
 
-# Create logs folder if not exists
-LOG_DIR = "logs"
-os.makedirs(LOG_DIR, exist_ok=True)
+This module is kept for backward compatibility but will be removed in a future version.
+Please migrate to the new structured logging:
+    from src.api.lib.logger import auto_logger
+    logger = auto_logger()
+"""
+import warnings
+from src.api.lib.logger import auto_logger
 
-# Configure logger
-logger = logging.getLogger("projects_logger")
-logger.setLevel(logging.INFO)
-
-# File handler
-file_handler = logging.FileHandler(os.path.join(LOG_DIR, "projects.log"))
-file_handler.setLevel(logging.INFO)
-
-# Console handler (optional, for debugging)
-console_handler = logging.StreamHandler()
-console_handler.setLevel(logging.INFO)
-
-# Formatter
-formatter = logging.Formatter(
-    "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+warnings.warn(
+    "src.utils.logger is deprecated. Use src.api.lib.logger instead.",
+    DeprecationWarning,
+    stacklevel=2
 )
-file_handler.setFormatter(formatter)
-console_handler.setFormatter(formatter)
 
-# Add handlers (avoid duplicate handlers)
-if not logger.handlers:
-    logger.addHandler(file_handler)
-    logger.addHandler(console_handler)
+# Provide backward compatibility
+logger = auto_logger()

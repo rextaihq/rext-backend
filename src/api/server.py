@@ -42,7 +42,13 @@ from src.api.config import settings
 from src.utils.response_utils import success
 from src.utils.logger import logger
 
+# Structured logging
+from src.api.lib.logging_config import configure_logging, RequestIDMiddleware
+
 load_dotenv()
+
+# Configure structured logging at startup
+configure_logging()
 
 DB_URI = os.getenv("POSTGRES_URI_CUSTOM")
 
@@ -119,6 +125,9 @@ app.add_middleware(
     log_requests=True,
     include_processing_time=True
 )
+
+# Structured logging request ID middleware
+app.add_middleware(RequestIDMiddleware)
 
 # Error handling middleware (second in chain)
 app.add_middleware(

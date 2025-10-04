@@ -1,6 +1,10 @@
 from langchain_community.document_loaders import PyMuPDFLoader, CSVLoader
 from src.utils.splitter import split_data
 
+from src.api.lib.logger import auto_logger
+
+logger = auto_logger()
+
 def load_split_file_data(file_path: str) -> str:
     """Load and return the content of a file as text."""
     try:
@@ -23,5 +27,5 @@ def load_split_file_data(file_path: str) -> str:
         return chunks_data
        
     except Exception as e:
-        print(f"⚠️ Error loading file {file_path}: {e}")
+        logger.info(f"⚠️ Error loading file {file_path}: {e}")
         return []

@@ -1,6 +1,10 @@
 from src.states.State import AgentState
 from sentence_transformers import util
 from src.model.model import load_embedder
+
+from src.api.lib.logger import auto_logger
+
+logger = auto_logger()
 # Combine both articles
 
 embedder = load_embedder()
@@ -18,14 +22,14 @@ def filter_articles(state:AgentState)->AgentState:
     Example:
         combined_articles = CombineArticles(latest_articles, wordpress_articles)
         for article in combined_articles:
-            print(article['title'], article['link'])
+            logger.info(article['title'], article['link'])
 
     """
-    print("Combining articles...")
+    logger.info("Combining articles...")
 
     full_articles = state.get('articles', [])
 
-    print(f"Total articles before filtering: {len(full_articles)}")
+    logger.info(f"Total articles before filtering: {len(full_articles)}")
 
     config = state.get('config', {})
     keywords = config['keyword']
@@ -42,7 +46,7 @@ def filter_articles(state:AgentState)->AgentState:
     keyword_embeddings = embedder.encode(keywords, convert_to_tensor=True)
     article_texts = [f"{a.get('title', '')} {a.get('summary', '')}" for a in full_articles]
 
-    print(article_texts)
+    logger.info(article_texts)
     article_embeddings = embedder.encode(article_texts, convert_to_tensor=True)
 
     similarities = util.cos_sim(article_embeddings, keyword_embeddings)
@@ -59,7 +63,7 @@ def filter_articles(state:AgentState)->AgentState:
             filtered_articles.append(article)
 
     # Update the 'articles' sub-dictionary with the filtered list
-    print(f"Articles after filtering: {len(filtered_articles)}")
+    logger.info(f"Articles after filtering: {len(filtered_articles)}")
 
     return {
             "filter_articles": filtered_articles

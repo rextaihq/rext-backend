@@ -2,8 +2,12 @@ from langgraph.types import interrupt
 from src.states.State import AgentState
 import pandas as pd
 
+from src.api.lib.logger import auto_logger
+
+logger = auto_logger()
+
 def topic_selection(state: AgentState) ->AgentState:
-        print("Human In Loop...")
+        logger.info("Human In Loop...")
         # Extract combined article data
         articles = state.get('filter_articles', [])
         if not articles:

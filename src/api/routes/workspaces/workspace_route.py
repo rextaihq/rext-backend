@@ -1,11 +1,14 @@
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy.orm import Session
 from datetime import datetime, timezone
+from uuid import UUID
 
 from src.utils.logger import logger
 from src.utils.helper import web_page_scraper
 from src.utils.vector_store import add_to_vector_store, delete_vectors
 from src.utils.response_utils import success, error, created
+from src.utils.slug_utils import generate_workspace_slug, generate_unique_slug
+from src.utils.workspace_utils import resolve_workspace
 from src.api.database.database import get_db
 from src.api.security.dependencies import get_current_user
 from src.api.middleware.exceptions import (
@@ -103,6 +106,7 @@ def get_workspaces(
                 "id": str(ws.id),
                 "user_id": str(ws.user_id),
                 "name": ws.name,
+                "slug": ws.slug if hasattr(ws, 'slug') else None,  # Include slug
                 "description": ws.description,
                 "url": ws.url,
                 "created_at": ws.created_at.isoformat() if ws.created_at else None,
@@ -194,6 +198,7 @@ def get_workspace_by_id(workspace_id: str, request: Request, db: Session = Depen
             "id": str(workspace.id),
             "user_id": str(workspace.user_id),
             "name": workspace.name,
+            "slug": workspace.slug if hasattr(workspace, 'slug') else None,  # Include slug
             "description": workspace.description,
             "url": workspace.url,
             "created_at": workspace.created_at.isoformat() if workspace.created_at else None,
@@ -258,6 +263,142 @@ def get_workspace_by_id(workspace_id: str, request: Request, db: Session = Depen
 
 
 # -------------------------
+# Get workspace by slug
+# -------------------------
+@router.get("/slug/{workspace_slug}")
+def get_workspace_by_slug(
+    workspace_slug: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: dict = Depends(get_current_user)
+):
+    """
+    Get workspace by slug instead of ID.
+    This is the preferred endpoint for frontend routing.
+    """
+    user_id = user.get("identity")
+    db_user = db.query(Users).filter(Users.id == user_id, Users.deleted_at == None).first()
+    if not db_user:
+        raise WrextAuthenticationException(message="User not found", context={"user_id": user_id})
+
+    try:
+        # Query workspace by slug
+        workspace = (
+            db.query(WorkspaceModel)
+            .join(WorkspaceMembers, WorkspaceMembers.workspace_id == WorkspaceModel.id)
+            .filter(WorkspaceModel.slug == workspace_slug, WorkspaceMembers.user_id == user_id)
+            .first()
+        )
+
+        if not workspace:
+            raise ResourceNotFoundException(resource_type="workspace", resource_id=workspace_slug)
+
+        workspace_id = workspace.id
+
+        # Get brand voice data
+        brand_voice = db.query(BrandVoice).filter(BrandVoice.workspace_id == workspace_id).first()
+
+        # Get comprehensive analytics with knowledge counts and content metrics
+        from sqlalchemy import func
+
+        # Knowledge counts
+        web_count = db.query(func.count(Website.id)).filter(Website.workspace_id == workspace_id).scalar() or 0
+        files_count = db.query(func.count(KnowledgeFiles.id)).filter(KnowledgeFiles.workspace_id == workspace_id).scalar() or 0
+        text_count = db.query(func.count(TextKnowledge.id)).filter(TextKnowledge.workspace_id == workspace_id).scalar() or 0
+        members_count = db.query(func.count(WorkspaceMembers.id)).filter(WorkspaceMembers.workspace_id == workspace_id).scalar() or 0
+
+        # Content analytics - word counts
+        web_word_stats = db.query(
+            func.sum(Website.word_count).label('total_words'),
+            func.avg(Website.word_count).label('avg_words')
+        ).filter(Website.workspace_id == workspace_id).first()
+
+        file_word_stats = db.query(
+            func.sum(KnowledgeFiles.word_count).label('total_words'),
+            func.avg(KnowledgeFiles.word_count).label('avg_words')
+        ).filter(KnowledgeFiles.workspace_id == workspace_id).first()
+
+        total_web_words = int(web_word_stats.total_words or 0)
+        avg_web_words = int(web_word_stats.avg_words or 0)
+        total_file_words = int(file_word_stats.total_words or 0)
+        avg_file_words = int(file_word_stats.avg_words or 0)
+
+        # Calculate total content metrics
+        total_words = total_web_words + total_file_words
+        estimated_reading_time = total_words // 200  # ~200 words per minute
+
+        workspace_data = {
+            "id": str(workspace.id),
+            "user_id": str(workspace.user_id),
+            "name": workspace.name,
+            "slug": workspace.slug,  # Include slug
+            "description": workspace.description,
+            "url": workspace.url,
+            "created_at": workspace.created_at.isoformat() if workspace.created_at else None,
+            # Keep backward compatibility with knowledge_stats at root level
+            "knowledge_stats": {
+                "web_knowledge": web_count,
+                "files": files_count,
+                "text_knowledge": text_count,
+                "total": web_count + files_count + text_count
+            },
+            # Comprehensive analytics data
+            "analytics": {
+                "knowledge_counts": {
+                    "web_knowledge": web_count,
+                    "files": files_count,
+                    "text_knowledge": text_count,
+                    "total_knowledge_items": web_count + files_count + text_count
+                },
+                "content_metrics": {
+                    "total_words": total_words,
+                    "web_content_words": total_web_words,
+                    "file_content_words": total_file_words,
+                    "avg_web_article_words": avg_web_words,
+                    "avg_file_words": avg_file_words,
+                    "estimated_reading_time_minutes": estimated_reading_time
+                },
+                "team_metrics": {
+                    "total_members": members_count
+                }
+            }
+        }
+
+        # Add brand voice data if exists
+        if brand_voice:
+            workspace_data["brand_voice"] = {
+                "id": str(brand_voice.id),
+                "workspace_id": str(brand_voice.workspace_id),
+                "about": brand_voice.about,
+                "customer_profile": brand_voice.customer_profile,
+                "selling_position": brand_voice.selling_position,
+                "target_audience": brand_voice.target_audience,
+                "brand_voice": brand_voice.brand_voice,
+                "competitors": brand_voice.competitors,
+                "content_strategy": brand_voice.content_strategy,
+                "created_at": brand_voice.created_at.isoformat() if brand_voice.created_at else None,
+            }
+
+        return success(
+            data={"workspace": workspace_data},
+            request=request,
+            message="Workspace retrieved successfully"
+        )
+
+    except ResourceNotFoundException:
+        raise
+    except Exception as e:
+        logger.exception(f"Error fetching workspace by slug {workspace_slug}")
+        return error(
+            message="Failed to retrieve workspace",
+            code=ErrorCode.INTERNAL_SERVER_ERROR,
+            status_code=500,
+            severity=ErrorSeverity.HIGH,
+            request=request
+        )
+
+
+# -------------------------
 # Create workspace
 # -------------------------
 @router.post("/create")
@@ -285,10 +426,15 @@ async def create_workspace(
                 conflicting_value=data.name
             )
 
+        # Generate unique slug for workspace
+        base_slug = generate_workspace_slug(data.name)
+        unique_slug = generate_unique_slug(db, base_slug, WorkspaceModel)
+
         # Create workspace
         workspace = WorkspaceModel(
             user_id=user_id,
             name=data.name,
+            slug=unique_slug,  # Add slug
             description=getattr(data, "description", None),
             url=str(data.url) if data.url else None
         )
@@ -383,6 +529,7 @@ async def create_workspace(
         workspace_data = {
             "id": str(workspace.id),
             "name": workspace.name,
+            "slug": workspace.slug,  # Include slug
             "description": workspace.description,
             "url": workspace.url,
             "created_at": workspace.created_at.isoformat() if workspace.created_at else None,
@@ -812,20 +959,23 @@ def get_workspace_knowledge(workspace_id: str, request: Request, db: Session = D
         raise WrextAuthenticationException(message="User not found", context={"user_id": user_id})
 
     try:
-        # Check if user has access to this workspace
-        workspace = (
-            db.query(WorkspaceModel)
-            .join(WorkspaceMembers, WorkspaceMembers.workspace_id == WorkspaceModel.id)
-            .filter(WorkspaceModel.id == workspace_id, WorkspaceMembers.user_id == user_id)
-            .first()
-        )
+        # Resolve workspace from either UUID or slug
+        workspace = resolve_workspace(db, workspace_id)
         if not workspace:
             raise ResourceNotFoundException(resource_type="workspace", resource_id=workspace_id)
 
+        # Check if user has access to this workspace
+        member = db.query(WorkspaceMembers).filter(
+            WorkspaceMembers.workspace_id == workspace.id,
+            WorkspaceMembers.user_id == user_id
+        ).first()
+        if not member:
+            raise ResourceNotFoundException(resource_type="workspace", resource_id=workspace_id)
+
         # Get all knowledge types for this workspace
-        web_knowledge = db.query(Website).filter(Website.workspace_id == workspace_id).all()
-        file_knowledge = db.query(KnowledgeFiles).filter(KnowledgeFiles.workspace_id == workspace_id).all()
-        text_knowledge = db.query(TextKnowledge).filter(TextKnowledge.workspace_id == workspace_id).all()
+        web_knowledge = db.query(Website).filter(Website.workspace_id == workspace.id).all()
+        file_knowledge = db.query(KnowledgeFiles).filter(KnowledgeFiles.workspace_id == workspace.id).all()
+        text_knowledge = db.query(TextKnowledge).filter(TextKnowledge.workspace_id == workspace.id).all()
 
         # Use to_dict() for consistent structure with type annotation
         web_data = [{"type": "web", **item.to_dict()} for item in web_knowledge]
@@ -872,18 +1022,21 @@ def get_workspace_web_knowledge(workspace_id: str, request: Request, db: Session
         raise WrextAuthenticationException(message="User not found", context={"user_id": user_id})
 
     try:
-        # Check if user has access to this workspace
-        workspace = (
-            db.query(WorkspaceModel)
-            .join(WorkspaceMembers, WorkspaceMembers.workspace_id == WorkspaceModel.id)
-            .filter(WorkspaceModel.id == workspace_id, WorkspaceMembers.user_id == user_id)
-            .first()
-        )
+        # Resolve workspace from either UUID or slug
+        workspace = resolve_workspace(db, workspace_id)
         if not workspace:
             raise ResourceNotFoundException(resource_type="workspace", resource_id=workspace_id)
 
+        # Check if user has access to this workspace
+        member = db.query(WorkspaceMembers).filter(
+            WorkspaceMembers.workspace_id == workspace.id,
+            WorkspaceMembers.user_id == user_id
+        ).first()
+        if not member:
+            raise ResourceNotFoundException(resource_type="workspace", resource_id=workspace_id)
+
         # Get web knowledge for this workspace
-        web_knowledge = db.query(Website).filter(Website.workspace_id == workspace_id).all()
+        web_knowledge = db.query(Website).filter(Website.workspace_id == workspace.id).all()
 
         # Use to_dict() to match the structure from /api/workspace/web_knowledge/all
         web_data = [item.to_dict() for item in web_knowledge]
@@ -918,18 +1071,21 @@ def get_workspace_file_knowledge(workspace_id: str, request: Request, db: Sessio
         raise WrextAuthenticationException(message="User not found", context={"user_id": user_id})
 
     try:
-        # Check if user has access to this workspace
-        workspace = (
-            db.query(WorkspaceModel)
-            .join(WorkspaceMembers, WorkspaceMembers.workspace_id == WorkspaceModel.id)
-            .filter(WorkspaceModel.id == workspace_id, WorkspaceMembers.user_id == user_id)
-            .first()
-        )
+        # Resolve workspace from either UUID or slug
+        workspace = resolve_workspace(db, workspace_id)
         if not workspace:
             raise ResourceNotFoundException(resource_type="workspace", resource_id=workspace_id)
 
+        # Check if user has access to this workspace
+        member = db.query(WorkspaceMembers).filter(
+            WorkspaceMembers.workspace_id == workspace.id,
+            WorkspaceMembers.user_id == user_id
+        ).first()
+        if not member:
+            raise ResourceNotFoundException(resource_type="workspace", resource_id=workspace_id)
+
         # Get file knowledge for this workspace
-        file_knowledge = db.query(KnowledgeFiles).filter(KnowledgeFiles.workspace_id == workspace_id).all()
+        file_knowledge = db.query(KnowledgeFiles).filter(KnowledgeFiles.workspace_id == workspace.id).all()
 
         # Use to_dict() to match the structure from /api/workspace/file/all
         file_data = [item.to_dict() for item in file_knowledge]
@@ -964,18 +1120,21 @@ def get_workspace_text_knowledge(workspace_id: str, request: Request, db: Sessio
         raise WrextAuthenticationException(message="User not found", context={"user_id": user_id})
 
     try:
-        # Check if user has access to this workspace
-        workspace = (
-            db.query(WorkspaceModel)
-            .join(WorkspaceMembers, WorkspaceMembers.workspace_id == WorkspaceModel.id)
-            .filter(WorkspaceModel.id == workspace_id, WorkspaceMembers.user_id == user_id)
-            .first()
-        )
+        # Resolve workspace from either UUID or slug
+        workspace = resolve_workspace(db, workspace_id)
         if not workspace:
             raise ResourceNotFoundException(resource_type="workspace", resource_id=workspace_id)
 
+        # Check if user has access to this workspace
+        member = db.query(WorkspaceMembers).filter(
+            WorkspaceMembers.workspace_id == workspace.id,
+            WorkspaceMembers.user_id == user_id
+        ).first()
+        if not member:
+            raise ResourceNotFoundException(resource_type="workspace", resource_id=workspace_id)
+
         # Get text knowledge for this workspace
-        text_knowledge = db.query(TextKnowledge).filter(TextKnowledge.workspace_id == workspace_id).all()
+        text_knowledge = db.query(TextKnowledge).filter(TextKnowledge.workspace_id == workspace.id).all()
 
         # Use to_dict() to match the structure from /api/workspace/text/all
         text_data = [item.to_dict() for item in text_knowledge]

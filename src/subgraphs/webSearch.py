@@ -3,6 +3,10 @@ from src.states.State import AgentState
 from src.model.model import search_model
 from src.tools.searchTool import get_tools
 
+from src.api.lib.logger import auto_logger
+
+logger = auto_logger()
+
 
 # Chatbot node function
 def web_search(state: AgentState):
@@ -33,14 +37,14 @@ def web_search(state: AgentState):
             - messages: Original messages plus a completion message.
     """
     
-    print("🔍 Starting web search...")
+    logger.info("🔍 Starting web search...")
     selected_articles = state.get("selected_articles", [])
 
     llm_with_tools = search_model().bind_tools(get_tools())
 
     for article in selected_articles:
         title = article.get("title", "")
-        print(f"   • Processing title: {title}")
+        logger.info(f"   • Processing title: {title}")
 
         # Build the search request
         system_msg = SystemMessage(
@@ -64,18 +68,18 @@ def web_search(state: AgentState):
 
         # Run the LLM search
         response = llm_with_tools.invoke([system_msg, human_msg])
-        print(f"      ↳ Model raw output: {response}")
+        logger.info(f"      ↳ Model raw output: {response}")
 
         try:
-            print("      ↳ Parsing response...")
+            logger.info("      ↳ Parsing response...")
             urls = eval(response.content)  # ⚠ Safe here because we control the model format
             if isinstance(urls, list) and all(isinstance(u, str) for u in urls):
                 article.setdefault("full_links", []).extend(urls)
-                print(f"      ✅ Found URLs: {urls}")
+                logger.info(f"      ✅ Found URLs: {urls}")
             else:
                 raise ValueError("Parsed content is not a valid list of URLs.")
         except Exception as e:
-            print(f"      ❌ Error parsing response for '{title}': {e}")
+            logger.info(f"      ❌ Error parsing response for '{title}': {e}")
             article.setdefault("full_links", [])
 
     # Update messages for tool conditions

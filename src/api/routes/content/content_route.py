@@ -9,6 +9,7 @@ import re
 
 from src.utils.logger import logger
 from src.utils.response_utils import success, error, created
+from src.utils.workspace_utils import get_workspace_id_from_identifier, is_valid_uuid
 from src.api.database.database import get_db
 from src.api.security.dependencies import get_current_user
 from src.api.middleware.exceptions import (
@@ -71,22 +72,30 @@ def generate_unique_slug(db: Session, base_slug: str) -> str:
     return slug
 
 
-def verify_workspace_access(db: Session, workspace_id: UUID, user_id: UUID) -> WorkspaceModel:
-    """Verify user has access to workspace"""
-    workspace = db.query(WorkspaceModel).filter(
-        WorkspaceModel.id == workspace_id,
-        WorkspaceModel.deleted_at == None
-    ).first()
+def verify_workspace_access(db: Session, workspace_identifier: str, user_id: UUID) -> WorkspaceModel:
+    """Verify user has access to workspace (by UUID or slug)"""
+    # Resolve workspace ID from either UUID or slug
+    if is_valid_uuid(workspace_identifier):
+        workspace_id = UUID(workspace_identifier)
+        workspace = db.query(WorkspaceModel).filter(
+            WorkspaceModel.id == workspace_id,
+            WorkspaceModel.deleted_at == None
+        ).first()
+    else:
+        workspace = db.query(WorkspaceModel).filter(
+            WorkspaceModel.slug == workspace_identifier,
+            WorkspaceModel.deleted_at == None
+        ).first()
 
     if not workspace:
         raise ResourceNotFoundException(
             resource_type="Workspace",
-            resource_id=str(workspace_id)
+            resource_id=workspace_identifier
         )
 
     # Check membership
     member = db.query(WorkspaceMembers).filter(
-        WorkspaceMembers.workspace_id == workspace_id,
+        WorkspaceMembers.workspace_id == workspace.id,
         WorkspaceMembers.user_id == user_id
     ).first()
 
@@ -162,7 +171,7 @@ def _build_content_response(content: Content, include_metadata: bool = False, in
 # -------------------------
 @router.get("/{workspace_id}")
 def list_content(
-    workspace_id: UUID,
+    workspace_id: str,  # Now accepts both UUID and slug
     request: Request,
     status: Optional[str] = Query(None, description="Filter by status"),
     include_metadata: bool = Query(False, description="Include metadata in response"),
@@ -181,7 +190,7 @@ def list_content(
     try:
         # Build query
         query = db.query(Content).filter(
-            Content.workspace_id == workspace_id,
+            Content.workspace_id == workspace.id,
             Content.deleted_at == None
         )
 
@@ -207,7 +216,7 @@ def list_content(
             data={
                 "content": content_list,
                 "total_count": total_count,
-                "workspace_id": str(workspace_id),
+                "workspace_id": str(workspace.id),
                 "limit": limit,
                 "offset": offset
             },
@@ -229,7 +238,7 @@ def list_content(
 # -------------------------
 @router.get("/{workspace_id}/{content_id}")
 def get_content(
-    workspace_id: UUID,
+    workspace_id: str,  # Now accepts both UUID and slug
     content_id: UUID,
     request: Request,
     include_metadata: bool = Query(True, description="Include metadata in response"),
@@ -241,13 +250,13 @@ def get_content(
     user_id = user.get("identity")
 
     # Verify workspace access
-    verify_workspace_access(db, workspace_id, user_id)
+    workspace = verify_workspace_access(db, workspace_id, user_id)
 
     try:
         # Get content
         content = db.query(Content).filter(
             Content.id == content_id,
-            Content.workspace_id == workspace_id,
+            Content.workspace_id == workspace.id,
             Content.deleted_at == None
         ).first()
 
@@ -283,7 +292,7 @@ def get_content(
 # -------------------------
 @router.post("/{workspace_id}")
 def create_content(
-    workspace_id: UUID,
+    workspace_id: str,  # Now accepts both UUID and slug
     data: ContentCreate,
     request: Request,
     db: Session = Depends(get_db),
@@ -292,15 +301,18 @@ def create_content(
     """Create new content in a workspace"""
     user_id = user.get("identity")
 
-    # Verify workspace access
-    verify_workspace_access(db, workspace_id, user_id)
+    # Verify workspace access and get the workspace
+    workspace = verify_workspace_access(db, workspace_id, user_id)
 
-    # Verify workspace_id matches the one in request body
-    if data.workspace_id != workspace_id:
-        raise WrextValidationException(
-            message="Workspace ID mismatch",
-            context={"path_workspace_id": str(workspace_id), "body_workspace_id": str(data.workspace_id)}
-        )
+    # If workspace_id in body is provided, verify it matches
+    if data.workspace_id:
+        # Resolve the actual workspace ID
+        actual_workspace_id = workspace.id
+        if data.workspace_id != actual_workspace_id:
+            raise WrextValidationException(
+                message="Workspace ID mismatch",
+                context={"path_workspace_id": str(workspace_id), "body_workspace_id": str(data.workspace_id)}
+            )
 
     try:
         # Generate unique slug from title
@@ -309,7 +321,7 @@ def create_content(
 
         # Create content
         content = Content(
-            workspace_id=workspace_id,
+            workspace_id=workspace.id,  # Use the actual UUID from workspace object
             topic_id=data.topic_id,
             created_by_user_id=user_id,
             assigned_to_user_id=data.assigned_to_user_id,
@@ -392,7 +404,7 @@ def create_content(
 # -------------------------
 @router.put("/{workspace_id}/{content_id}")
 def update_content(
-    workspace_id: UUID,
+    workspace_id: str,  # Now accepts both UUID and slug
     content_id: UUID,
     data: ContentUpdate,
     request: Request,
@@ -403,13 +415,13 @@ def update_content(
     user_id = user.get("identity")
 
     # Verify workspace access
-    verify_workspace_access(db, workspace_id, user_id)
+    workspace = verify_workspace_access(db, workspace_id, user_id)
 
     try:
         # Get content
         content = db.query(Content).filter(
             Content.id == content_id,
-            Content.workspace_id == workspace_id,
+            Content.workspace_id == workspace.id,
             Content.deleted_at == None
         ).first()
 
@@ -534,7 +546,7 @@ def update_content(
 # -------------------------
 @router.delete("/{workspace_id}/{content_id}")
 def delete_content(
-    workspace_id: UUID,
+    workspace_id: str,  # Now accepts both UUID and slug
     content_id: UUID,
     request: Request,
     db: Session = Depends(get_db),
@@ -544,13 +556,13 @@ def delete_content(
     user_id = user.get("identity")
 
     # Verify workspace access
-    verify_workspace_access(db, workspace_id, user_id)
+    workspace = verify_workspace_access(db, workspace_id, user_id)
 
     try:
         # Get content
         content = db.query(Content).filter(
             Content.id == content_id,
-            Content.workspace_id == workspace_id,
+            Content.workspace_id == workspace.id,
             Content.deleted_at == None
         ).first()
 

@@ -30,7 +30,7 @@ def delete_deactivated_accounts(db: Session) -> int:
         >>> from src.api.database.database import get_db
         >>> db = next(get_db())
         >>> deleted_count = delete_deactivated_accounts(db)
-        >>> print(f"Deleted {deleted_count} accounts")
+        >>> logger.info(f"Deleted {deleted_count} accounts")
     """
     try:
         # Calculate cutoff date (14 days ago)
@@ -93,7 +93,7 @@ def get_pending_deletions(db: Session) -> list:
     Example:
         >>> pending = get_pending_deletions(db)
         >>> for account in pending:
-        ...     print(f"{account['email']} - deletes on {account['scheduled_deletion']}")
+        ...     logger.info(f"{account['email']} - deletes on {account['scheduled_deletion']}")
     """
     try:
         deactivated_users = db.query(Users).filter(
@@ -139,7 +139,7 @@ def cancel_account_deactivation(user_id: str, db: Session) -> bool:
     Example:
         >>> success = cancel_account_deactivation("user-uuid", db)
         >>> if success:
-        ...     print("Account reactivated successfully")
+        ...     logger.info("Account reactivated successfully")
     """
     try:
         user = db.query(Users).filter(Users.id == user_id).first()

@@ -1,6 +1,10 @@
 from langchain_tavily import TavilySearch
 from dotenv import load_dotenv
 import os
+
+from src.api.lib.logger import auto_logger
+
+logger = auto_logger()
 load_dotenv()
 
 def search_tool():
@@ -23,7 +27,7 @@ def search_tool():
 
         return tool
     except Exception as e:
-        print(str(e))
+        logger.info(str(e))
         return {
             "error":str(e)
         }
@@ -40,4 +44,4 @@ def get_tools()-> list:
 if __name__ == "__main__":
     tool = search_tool()
     results  = tool.invoke("Tell me about open ai")
-    print(results)
+    logger.info(results)

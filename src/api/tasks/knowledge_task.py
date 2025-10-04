@@ -94,4 +94,4 @@ if __name__ == "__main__":
             website_id="11235"
         )
     )
-    print(result)
+    logger.info(result)
