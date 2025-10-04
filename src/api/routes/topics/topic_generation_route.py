@@ -185,6 +185,7 @@ def save_topic(
                 # Create database record with fully enriched data
                 db_topic = Topics(
                     id=topic_uuid,
+                    workspace_id=uuid.UUID(save_topic_data.workspace_id),
                     title=enriched_topic.title,
                     angle=enriched_topic.angle,
                     description=enriched_topic.description,
@@ -249,6 +250,7 @@ def save_topic(
 def get_topic(
     topic_id: str,
     request: Request,
+    workspace_id: str,
     api_key: str = Depends(get_api_key),
     db: Session = Depends(get_db)
 ):
@@ -259,14 +261,17 @@ def get_topic(
         )
 
     try:
-        print(f"Fetching topic with ID: {topic_id}")
-        topic = db.query(Topics).filter(Topics.id == topic_id).first()
+        print(f"Fetching topic with ID: {topic_id} for workspace: {workspace_id}")
+        topic = db.query(Topics).filter(
+            Topics.id == topic_id,
+            Topics.workspace_id == uuid.UUID(workspace_id)
+        ).first()
 
         if not topic:
             raise ResourceNotFoundException(
-                message=f"Topic with ID '{topic_id}' not found",
+                message=f"Topic with ID '{topic_id}' not found in workspace '{workspace_id}'",
                 resource_type="topic",
-                context={"topic_id": topic_id}
+                context={"topic_id": topic_id, "workspace_id": workspace_id}
             )
 
         print(f"Found topic: {topic.title}")
@@ -274,6 +279,7 @@ def get_topic(
         # Convert topic to dict format for consistent response
         topic_data = {
             "id": topic.id,
+            "workspace_id": topic.workspace_id,
             "title": topic.title,
             "angle": topic.angle,
             "description": topic.description,
@@ -317,6 +323,7 @@ def get_topic(
 @router.get("/get-topics")
 def get_topics(
     request: Request,
+    workspace_id: str,
     api_key: str = Depends(get_api_key),
     db: Session = Depends(get_db)
 ):
@@ -327,18 +334,21 @@ def get_topics(
         )
 
     try:
-        print("Fetching topics from DB...")
-        # Order by updated_at first (most recent updates), then by created_at (newest first)
-        topics = db.query(Topics).order_by(
+        print(f"Fetching topics from DB for workspace {workspace_id}...")
+        # Filter by workspace_id and order by updated_at first (most recent updates), then by created_at (newest first)
+        topics = db.query(Topics).filter(
+            Topics.workspace_id == uuid.UUID(workspace_id)
+        ).order_by(
             Topics.updated_at.desc().nulls_last(),
             Topics.created_at.desc()
         ).all()
-        print(f"Fetched {len(topics)} topics (ordered by latest date)")
+        print(f"Fetched {len(topics)} topics for workspace {workspace_id} (ordered by latest date)")
 
         # Convert topics to dict format for consistent response
         topics_data = [
             {
                 "id": topic.id,
+                "workspace_id": topic.workspace_id,
                 "title": topic.title,
                 "angle": topic.angle,
                 "description": topic.description,
@@ -380,6 +390,7 @@ def get_topics(
 def delete_topics(
     topic_ids: DeleteTopics,
     request: Request,
+    workspace_id: str,
     api_key: str = Depends(get_api_key),
     db: Session = Depends(get_db)
 ):
@@ -391,10 +402,13 @@ def delete_topics(
 
     try:
         topic_id_list = topic_ids.topic_ids
-        print(f"Attempting to delete {len(topic_id_list)} topics...")
+        print(f"Attempting to delete {len(topic_id_list)} topics from workspace {workspace_id}...")
 
-        # Fetch topics
-        topics = db.query(Topics).filter(Topics.id.in_(topic_id_list)).all()
+        # Fetch topics - only from the specified workspace
+        topics = db.query(Topics).filter(
+            Topics.id.in_(topic_id_list),
+            Topics.workspace_id == uuid.UUID(workspace_id)
+        ).all()
 
         if not topics:
             return ResourceNotFoundException(
@@ -449,6 +463,7 @@ def delete_topics(
 def update_topic(
     data: UpdateTopicRequest,
     request: Request,
+    workspace_id: str,
     api_key: str = Depends(get_api_key),
     db: Session = Depends(get_db)
 ):
@@ -460,16 +475,19 @@ def update_topic(
 
     try:
         topic_id = data.topic_id
-        print(f"Attempting to update topic with ID: {topic_id}")
+        print(f"Attempting to update topic with ID: {topic_id} in workspace: {workspace_id}")
 
-        # Fetch the topic
-        topic = db.query(Topics).filter(Topics.id == topic_id).first()
+        # Fetch the topic - only from the specified workspace
+        topic = db.query(Topics).filter(
+            Topics.id == topic_id,
+            Topics.workspace_id == uuid.UUID(workspace_id)
+        ).first()
 
         if not topic:
             raise ResourceNotFoundException(
-                message=f"Topic with ID '{topic_id}' not found",
+                message=f"Topic with ID '{topic_id}' not found in workspace '{workspace_id}'",
                 resource_type="topic",
-                context={"topic_id": topic_id}
+                context={"topic_id": topic_id, "workspace_id": workspace_id}
             )
 
         # Track what fields are being updated

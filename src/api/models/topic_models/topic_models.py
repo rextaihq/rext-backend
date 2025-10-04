@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String,func,DateTime,Boolean
+from sqlalchemy import Column, String, func, DateTime, Boolean, ForeignKey
 from sqlalchemy.dialects.postgresql import UUID, ARRAY, JSONB
 from sqlalchemy.orm import relationship
 from src.api.database.database import Base
@@ -8,6 +8,7 @@ class TopicsModel(Base):
     __tablename__ = "topics"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, unique=True, nullable=False)  # Changed to String to match schema
+    workspace_id = Column(UUID(as_uuid=True), ForeignKey("workspace.id", ondelete="CASCADE"), nullable=False, index=True)
     title = Column(String, nullable=False)
     angle = Column(String, nullable=False)
     description = Column(String, nullable=False)  # New field
@@ -27,7 +28,8 @@ class TopicsModel(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)  # Generated date
     updated_at = Column(DateTime(timezone=True), server_default=func.now(),nullable=True)
 
-    # Content relationship
+    # Relationships
+    workspace = relationship("WorkspaceModel", back_populates="topics")
     content_items = relationship("Content", back_populates="topic")
 
     def to_dict(self) -> dict:
