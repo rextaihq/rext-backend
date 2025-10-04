@@ -8,8 +8,9 @@ from src.api.models.knowledge_models.knowledge_model import Website
 from src.api.models.workspace_models.workspace_model import WorkspaceModel
 from src.api.schema.knowledge_schema import WebKnowledgeSchema
 from src.api.security.auth import get_api_key, API_KEY
-from sqlalchemy.orm import Session
-from src.api.database.database import get_db
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
+from src.api.database.async_database import get_async_db
 from src.utils.helper import web_page_scraper
 from src.utils.response_utils import success, error, created
 from src.api.schema.response_schemas import ErrorCode, ErrorSeverity
@@ -28,14 +29,14 @@ router = APIRouter(
 )
 
 @router.get("/")
-def get_status():
+async def get_status():
     return success(data={"status": "Web Knowledge Route is operational"})
 
 # get knowledes
 @router.get("/all")
-def get_web_knowledges(
+async def get_web_knowledges(
         request: Request,
-        db: Session = Depends(get_db),
+        db: AsyncSession = Depends(get_async_db),
         api_key: str = Depends(get_api_key)
 ):
     if api_key != API_KEY:
@@ -46,7 +47,8 @@ def get_web_knowledges(
     try:
         logger.info("Fetching all web knowledges")
         logger.info(request)
-        web_knowledges = db.query(Website).all()
+        result = await db.execute(select(Website))
+        web_knowledges = result.scalars().all()
         return success(data=[knowledge.to_dict() for knowledge in web_knowledges])
     except Exception as e:
         logger.error(f"Error fetching knowledges: {e}")
@@ -55,10 +57,10 @@ def get_web_knowledges(
 
 # Get knowledge by ID
 @router.get("/{web_id}")
-def get_web_knowledge(
+async def get_web_knowledge(
         web_id: str,
         request: Request,
-        db: Session = Depends(get_db),
+        db: AsyncSession = Depends(get_async_db),
         api_key: str = Depends(get_api_key)
 ):
     if api_key != API_KEY:
@@ -68,7 +70,8 @@ def get_web_knowledge(
         )
     try:
         logger.info(f"Fetching knowledge with ID: {web_id}")
-        knowledge = db.query(Website).filter(Website.id == web_id).first()
+        result = await db.execute(select(Website).where(Website.id == web_id))
+        knowledge = result.scalar_one_or_none()
         if not knowledge:
             raise ResourceNotFoundException(f"Knowledge with ID {web_id} not found")
         return success(data=knowledge.to_dict())
@@ -84,7 +87,7 @@ def get_web_knowledge(
 async def add_web_knowledge(
         data:WebKnowledgeSchema,
         request: Request,
-        db: Session = Depends(get_db),
+        db: AsyncSession = Depends(get_async_db),
         api_key: str = Depends(get_api_key)
 ):
         if api_key != API_KEY:
@@ -94,12 +97,14 @@ async def add_web_knowledge(
             )
         try:
             logger.info("Check the workspace exists")
-            workspace = db.query(WorkspaceModel).filter(WorkspaceModel.id == data.workspace_id).first()
+            result = await db.execute(select(WorkspaceModel).where(WorkspaceModel.id == data.workspace_id))
+            workspace = result.scalar_one_or_none()
             if not workspace:
                 raise ResourceNotFoundException(f"Workspace with ID {data.workspace_id} not found")
-            
+
             # check if the knowledge already exists
-            existing_knowledge = db.query(Website).filter(Website.url == str(data.url), Website.workspace_id == str(data.workspace_id)).first()
+            result = await db.execute(select(Website).where(Website.url == str(data.url), Website.workspace_id == str(data.workspace_id)))
+            existing_knowledge = result.scalar_one_or_none()
             if existing_knowledge:
                 raise DuplicateResourceException(f"Knowledge for URL {data.url} already exists in the workspace")
 
@@ -125,8 +130,8 @@ async def add_web_knowledge(
                 word_count=len(result.markdown.split()) if result else 0
             )
             db.add(new_knowledge)
-            db.commit()
-            db.refresh(new_knowledge)
+            await db.commit()
+            await db.refresh(new_knowledge)
 
             try:
                 logger.info(f"Inserting {len(chunks)} chunks into vector store for {result.url}")
@@ -177,12 +182,12 @@ async def add_web_knowledge(
 
 # Update web knowledge (title only, URL cannot be changed)
 @router.put("/update/{workspace_id}/{web_id}")
-def update_web_knowledge(
+async def update_web_knowledge(
         workspace_id: str,
         web_id: str,
         title: str,
         request: Request,
-        db: Session = Depends(get_db),
+        db: AsyncSession = Depends(get_async_db),
         api_key: str = Depends(get_api_key)
 ):
     if api_key != API_KEY:
@@ -192,10 +197,11 @@ def update_web_knowledge(
         )
     try:
         logger.info(f"Updating web knowledge ID: {web_id} in workspace: {workspace_id}")
-        knowledge = db.query(Website).filter(
+        result = await db.execute(select(Website).where(
             Website.id == web_id,
             Website.workspace_id == workspace_id
-        ).first()
+        ))
+        knowledge = result.scalar_one_or_none()
 
         if not knowledge:
             raise ResourceNotFoundException(
@@ -204,8 +210,8 @@ def update_web_knowledge(
             )
 
         knowledge.title = title
-        db.commit()
-        db.refresh(knowledge)
+        await db.commit()
+        await db.refresh(knowledge)
 
         return success(
             data={"web_knowledge": knowledge},
@@ -216,17 +222,17 @@ def update_web_knowledge(
         raise
     except Exception as e:
         logger.error(f"Error updating web knowledge: {e}")
-        db.rollback()
+        await db.rollback()
         raise HTTPException(status_code=500, detail="Internal Server Error")
 
 
 # Delete knowledge by ID
 @router.delete("/delete/{workspace_id}/{web_id}")
-def delete_web_knowledge(
+async def delete_web_knowledge(
         workspace_id: str,
         web_id: str,
         request: Request,
-        db: Session = Depends(get_db),
+        db: AsyncSession = Depends(get_async_db),
         api_key: str = Depends(get_api_key)
 ):
     if api_key != API_KEY:
@@ -236,7 +242,8 @@ def delete_web_knowledge(
         )
     try:
         logger.info(f"Deleting knowledge with ID: {web_id} from workspace: {workspace_id}")
-        knowledge = db.query(Website).filter(Website.id == web_id, Website.workspace_id == workspace_id).first()
+        result = await db.execute(select(Website).where(Website.id == web_id, Website.workspace_id == workspace_id))
+        knowledge = result.scalar_one_or_none()
         if not knowledge:
             raise ResourceNotFoundException(f"Knowledge with ID {web_id} not found in the specified workspace")
 
@@ -251,9 +258,9 @@ def delete_web_knowledge(
                 context={"workspace_id": workspace_id, "error_details": "Unable to delete vectors"},
                 request=request
             )
-        
-        db.delete(knowledge)
-        db.commit()
+
+        await db.delete(knowledge)
+        await db.commit()
         logger.info(f"Knowledge with ID: {web_id} deleted successfully")
         return success(
             data={},

@@ -4,7 +4,8 @@ Email Template Routes
 Endpoints for managing workspace email templates.
 """
 from fastapi import APIRouter, Depends, Request, HTTPException, status, Query
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -19,7 +20,7 @@ from src.utils.email_template_utils import (
     DEFAULT_TEMPLATES,
     get_default_template
 )
-from src.api.database.database import get_db
+from src.api.database.async_database import get_async_db
 from src.api.security.dependencies import get_current_user
 from src.api.middleware.exceptions import (
     DuplicateResourceException,
@@ -50,7 +51,7 @@ router = APIRouter(
 
 
 @router.get("/variables/{template_type}")
-def get_template_variables(
+async def get_template_variables(
     template_type: str,
     request: Request,
 ):
@@ -92,7 +93,7 @@ def get_template_variables(
 
 
 @router.post("/preview")
-def preview_email_template(
+async def preview_email_template(
     preview_request: PreviewEmailRequest,
     request: Request,
 ):
@@ -148,11 +149,11 @@ def preview_email_template(
 
 
 @router.get("/{workspace_id}")
-def list_email_templates(
+async def list_email_templates(
     workspace_id: str,
     request: Request,
     template_type: Optional[str] = Query(None, description="Filter by template type"),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user)
 ):
     """
@@ -164,10 +165,13 @@ def list_email_templates(
         user_id = current_user.get("identity")
 
         # Verify workspace exists and user has access
-        membership = db.query(WorkspaceMembers).filter(
-            WorkspaceMembers.workspace_id == workspace_id,
-            WorkspaceMembers.user_id == user_id
-        ).first()
+        result = await db.execute(
+            select(WorkspaceMembers).where(
+                WorkspaceMembers.workspace_id == workspace_id,
+                WorkspaceMembers.user_id == user_id
+            )
+        )
+        membership = result.scalar_one_or_none()
 
         if not membership:
             raise WrextAuthenticationException(
@@ -176,14 +180,15 @@ def list_email_templates(
             )
 
         # Build query
-        query = db.query(EmailTemplate).filter(
+        query = select(EmailTemplate).where(
             EmailTemplate.workspace_id == workspace_id
         )
 
         if template_type:
-            query = query.filter(EmailTemplate.template_type == template_type)
+            query = query.where(EmailTemplate.template_type == template_type)
 
-        templates = query.order_by(EmailTemplate.created_at.desc()).all()
+        result = await db.execute(query.order_by(EmailTemplate.created_at.desc()))
+        templates = result.scalars().all()
 
         return success(
             data={
@@ -208,10 +213,10 @@ def list_email_templates(
 
 
 @router.post("/", status_code=status.HTTP_201_CREATED)
-def create_email_template(
+async def create_email_template(
     template_data: CreateEmailTemplateRequest,
     request: Request,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user)
 ):
     """
@@ -223,10 +228,13 @@ def create_email_template(
         user_id = current_user.get("identity")
 
         # Verify workspace exists and user has access
-        membership = db.query(WorkspaceMembers).filter(
-            WorkspaceMembers.workspace_id == template_data.workspace_id,
-            WorkspaceMembers.user_id == user_id
-        ).first()
+        result = await db.execute(
+            select(WorkspaceMembers).where(
+                WorkspaceMembers.workspace_id == template_data.workspace_id,
+                WorkspaceMembers.user_id == user_id
+            )
+        )
+        membership = result.scalar_one_or_none()
 
         if not membership:
             raise WrextAuthenticationException(
@@ -256,11 +264,14 @@ def create_email_template(
             )
 
         # Check for existing template of same type (only one active per type per workspace)
-        existing_template = db.query(EmailTemplate).filter(
-            EmailTemplate.workspace_id == template_data.workspace_id,
-            EmailTemplate.template_type == template_type_enum,
-            EmailTemplate.is_active == True
-        ).first()
+        result = await db.execute(
+            select(EmailTemplate).where(
+                EmailTemplate.workspace_id == template_data.workspace_id,
+                EmailTemplate.template_type == template_type_enum,
+                EmailTemplate.is_active == True
+            )
+        )
+        existing_template = result.scalar_one_or_none()
 
         if existing_template:
             raise DuplicateResourceException(
@@ -282,8 +293,8 @@ def create_email_template(
         )
 
         db.add(template)
-        db.commit()
-        db.refresh(template)
+        await db.commit()
+        await db.refresh(template)
 
         logger.info(f"Created email template {template.id} for workspace {template_data.workspace_id}")
 
@@ -297,7 +308,7 @@ def create_email_template(
         raise
     except Exception as e:
         logger.error(f"Error creating email template: {str(e)}")
-        db.rollback()
+        await db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to create email template"
@@ -305,11 +316,11 @@ def create_email_template(
 
 
 @router.put("/{template_id}")
-def update_email_template(
+async def update_email_template(
     template_id: str,
     template_data: UpdateEmailTemplateRequest,
     request: Request,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user)
 ):
     """
@@ -321,7 +332,8 @@ def update_email_template(
         user_id = current_user.get("identity")
 
         # Get template
-        template = db.query(EmailTemplate).filter(EmailTemplate.id == template_id).first()
+        result = await db.execute(select(EmailTemplate).where(EmailTemplate.id == template_id))
+        template = result.scalar_one_or_none()
 
         if not template:
             raise ResourceNotFoundException(
@@ -331,10 +343,13 @@ def update_email_template(
             )
 
         # Verify user has access to workspace
-        membership = db.query(WorkspaceMembers).filter(
-            WorkspaceMembers.workspace_id == template.workspace_id,
-            WorkspaceMembers.user_id == user_id
-        ).first()
+        result = await db.execute(
+            select(WorkspaceMembers).where(
+                WorkspaceMembers.workspace_id == template.workspace_id,
+                WorkspaceMembers.user_id == user_id
+            )
+        )
+        membership = result.scalar_one_or_none()
 
         if not membership:
             raise WrextAuthenticationException(
@@ -366,8 +381,8 @@ def update_email_template(
 
         template.updated_at = datetime.now(timezone.utc)
 
-        db.commit()
-        db.refresh(template)
+        await db.commit()
+        await db.refresh(template)
 
         logger.info(f"Updated email template {template_id}")
 
@@ -381,7 +396,7 @@ def update_email_template(
         raise
     except Exception as e:
         logger.error(f"Error updating email template: {str(e)}")
-        db.rollback()
+        await db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to update email template"
@@ -389,10 +404,10 @@ def update_email_template(
 
 
 @router.delete("/{template_id}")
-def delete_email_template(
+async def delete_email_template(
     template_id: str,
     request: Request,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user)
 ):
     """
@@ -404,7 +419,8 @@ def delete_email_template(
         user_id = current_user.get("identity")
 
         # Get template
-        template = db.query(EmailTemplate).filter(EmailTemplate.id == template_id).first()
+        result = await db.execute(select(EmailTemplate).where(EmailTemplate.id == template_id))
+        template = result.scalar_one_or_none()
 
         if not template:
             raise ResourceNotFoundException(
@@ -414,10 +430,13 @@ def delete_email_template(
             )
 
         # Verify user has access to workspace
-        membership = db.query(WorkspaceMembers).filter(
-            WorkspaceMembers.workspace_id == template.workspace_id,
-            WorkspaceMembers.user_id == user_id
-        ).first()
+        result = await db.execute(
+            select(WorkspaceMembers).where(
+                WorkspaceMembers.workspace_id == template.workspace_id,
+                WorkspaceMembers.user_id == user_id
+            )
+        )
+        membership = result.scalar_one_or_none()
 
         if not membership:
             raise WrextAuthenticationException(
@@ -432,8 +451,8 @@ def delete_email_template(
                 validation_errors={"template_id": "This is a default template"}
             )
 
-        db.delete(template)
-        db.commit()
+        await db.delete(template)
+        await db.commit()
 
         logger.info(f"Deleted email template {template_id}")
 
@@ -447,7 +466,7 @@ def delete_email_template(
         raise
     except Exception as e:
         logger.error(f"Error deleting email template: {str(e)}")
-        db.rollback()
+        await db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to delete email template"
@@ -455,7 +474,7 @@ def delete_email_template(
 
 
 @router.get("/defaults/{template_type}")
-def get_default_template_for_type(
+async def get_default_template_for_type(
     template_type: str,
     request: Request,
 ):

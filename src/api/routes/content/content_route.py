@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, Request, Query
-from sqlalchemy.orm import Session
-from sqlalchemy import func, desc
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import func, desc, select
 from datetime import datetime, timezone
 from typing import Optional
 from uuid import UUID
@@ -10,7 +10,7 @@ import re
 from src.utils.logger import logger
 from src.utils.response_utils import success, error, created
 from src.utils.workspace_utils import get_workspace_id_from_identifier, is_valid_uuid
-from src.api.database.database import get_db
+from src.api.database.async_database import get_async_db
 from src.api.security.dependencies import get_current_user
 from src.api.middleware.exceptions import (
     ResourceNotFoundException,
@@ -60,32 +60,41 @@ def slugify(text: str) -> str:
     return text
 
 
-def generate_unique_slug(db: Session, base_slug: str) -> str:
+async def generate_unique_slug(db: AsyncSession, base_slug: str) -> str:
     """Generate unique slug by appending number if needed"""
     slug = base_slug
     counter = 1
 
-    while db.query(Content).filter(Content.slug == slug, Content.deleted_at == None).first():
+    while True:
+        result = await db.execute(select(Content).where(Content.slug == slug, Content.deleted_at == None))
+        if not result.scalar_one_or_none():
+            break
         slug = f"{base_slug}-{counter}"
         counter += 1
 
     return slug
 
 
-def verify_workspace_access(db: Session, workspace_identifier: str, user_id: UUID) -> WorkspaceModel:
+async def verify_workspace_access(db: AsyncSession, workspace_identifier: str, user_id: UUID) -> WorkspaceModel:
     """Verify user has access to workspace (by UUID or slug)"""
     # Resolve workspace ID from either UUID or slug
     if is_valid_uuid(workspace_identifier):
         workspace_id = UUID(workspace_identifier)
-        workspace = db.query(WorkspaceModel).filter(
-            WorkspaceModel.id == workspace_id,
-            WorkspaceModel.deleted_at == None
-        ).first()
+        result = await db.execute(
+            select(WorkspaceModel).where(
+                WorkspaceModel.id == workspace_id,
+                WorkspaceModel.deleted_at == None
+            )
+        )
+        workspace = result.scalar_one_or_none()
     else:
-        workspace = db.query(WorkspaceModel).filter(
-            WorkspaceModel.slug == workspace_identifier,
-            WorkspaceModel.deleted_at == None
-        ).first()
+        result = await db.execute(
+            select(WorkspaceModel).where(
+                WorkspaceModel.slug == workspace_identifier,
+                WorkspaceModel.deleted_at == None
+            )
+        )
+        workspace = result.scalar_one_or_none()
 
     if not workspace:
         raise ResourceNotFoundException(
@@ -94,10 +103,13 @@ def verify_workspace_access(db: Session, workspace_identifier: str, user_id: UUI
         )
 
     # Check membership
-    member = db.query(WorkspaceMembers).filter(
-        WorkspaceMembers.workspace_id == workspace.id,
-        WorkspaceMembers.user_id == user_id
-    ).first()
+    result = await db.execute(
+        select(WorkspaceMembers).where(
+            WorkspaceMembers.workspace_id == workspace.id,
+            WorkspaceMembers.user_id == user_id
+        )
+    )
+    member = result.scalar_one_or_none()
 
     if not member:
         raise WrextAuthorizationException(
@@ -170,7 +182,7 @@ def _build_content_response(content: Content, include_metadata: bool = False, in
 # List Content for Workspace
 # -------------------------
 @router.get("/{workspace_id}")
-def list_content(
+async def list_content(
     workspace_id: str,  # Now accepts both UUID and slug
     request: Request,
     status: Optional[str] = Query(None, description="Filter by status"),
@@ -178,31 +190,41 @@ def list_content(
     include_seo: bool = Query(False, description="Include SEO data in response"),
     limit: int = Query(100, le=500, description="Maximum number of items to return"),
     offset: int = Query(0, ge=0, description="Number of items to skip"),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     user: dict = Depends(get_current_user)
 ):
     """List all content for a workspace with optional filtering and pagination"""
     user_id = user.get("identity")
 
     # Verify access
-    workspace = verify_workspace_access(db, workspace_id, user_id)
+    workspace = await verify_workspace_access(db, workspace_id, user_id)
 
     try:
         # Build query
-        query = db.query(Content).filter(
+        query = select(Content).where(
             Content.workspace_id == workspace.id,
             Content.deleted_at == None
         )
 
         # Filter by status if provided
         if status:
-            query = query.filter(Content.status == status)
+            query = query.where(Content.status == status)
 
         # Get total count
-        total_count = query.count()
+        count_query = select(func.count()).select_from(Content).where(
+            Content.workspace_id == workspace.id,
+            Content.deleted_at == None
+        )
+        if status:
+            count_query = count_query.where(Content.status == status)
+
+        count_result = await db.execute(count_query)
+        total_count = count_result.scalar()
 
         # Apply pagination and ordering
-        content_items = query.order_by(desc(Content.created_at)).offset(offset).limit(limit).all()
+        query = query.order_by(desc(Content.created_at)).offset(offset).limit(limit)
+        result = await db.execute(query)
+        content_items = result.scalars().all()
 
         # Build response
         content_list = [
@@ -237,28 +259,31 @@ def list_content(
 # Get Single Content by ID
 # -------------------------
 @router.get("/{workspace_id}/{content_id}")
-def get_content(
+async def get_content(
     workspace_id: str,  # Now accepts both UUID and slug
     content_id: UUID,
     request: Request,
     include_metadata: bool = Query(True, description="Include metadata in response"),
     include_seo: bool = Query(True, description="Include SEO data in response"),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     user: dict = Depends(get_current_user)
 ):
     """Get a single content item by ID"""
     user_id = user.get("identity")
 
     # Verify workspace access
-    workspace = verify_workspace_access(db, workspace_id, user_id)
+    workspace = await verify_workspace_access(db, workspace_id, user_id)
 
     try:
         # Get content
-        content = db.query(Content).filter(
-            Content.id == content_id,
-            Content.workspace_id == workspace.id,
-            Content.deleted_at == None
-        ).first()
+        result = await db.execute(
+            select(Content).where(
+                Content.id == content_id,
+                Content.workspace_id == workspace.id,
+                Content.deleted_at == None
+            )
+        )
+        content = result.scalar_one_or_none()
 
         if not content:
             raise ResourceNotFoundException(
@@ -291,18 +316,18 @@ def get_content(
 # Create New Content
 # -------------------------
 @router.post("/{workspace_id}")
-def create_content(
+async def create_content(
     workspace_id: str,  # Now accepts both UUID and slug
     data: ContentCreate,
     request: Request,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     user: dict = Depends(get_current_user)
 ):
     """Create new content in a workspace"""
     user_id = user.get("identity")
 
     # Verify workspace access and get the workspace
-    workspace = verify_workspace_access(db, workspace_id, user_id)
+    workspace = await verify_workspace_access(db, workspace_id, user_id)
 
     # If workspace_id in body is provided, verify it matches
     if data.workspace_id:
@@ -317,7 +342,7 @@ def create_content(
     try:
         # Generate unique slug from title
         base_slug = slugify(data.title)
-        unique_slug = generate_unique_slug(db, base_slug)
+        unique_slug = await generate_unique_slug(db, base_slug)
 
         # Create content
         content = Content(
@@ -336,7 +361,7 @@ def create_content(
             updated_at=datetime.now(timezone.utc)
         )
         db.add(content)
-        db.flush()
+        await db.flush()
 
         # Create metadata if provided
         if data.metadata:
@@ -376,8 +401,8 @@ def create_content(
             )
             db.add(seo_data)
 
-        db.commit()
-        db.refresh(content)
+        await db.commit()
+        await db.refresh(content)
 
         content_data = _build_content_response(content, True, True)
 
@@ -390,7 +415,7 @@ def create_content(
         )
 
     except Exception as e:
-        db.rollback()
+        await db.rollback()
         logger.error(f"Error creating content in workspace {workspace_id}: {str(e)}")
         return error(
             message="Failed to create content",
@@ -403,27 +428,30 @@ def create_content(
 # Update Content
 # -------------------------
 @router.put("/{workspace_id}/{content_id}")
-def update_content(
+async def update_content(
     workspace_id: str,  # Now accepts both UUID and slug
     content_id: UUID,
     data: ContentUpdate,
     request: Request,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     user: dict = Depends(get_current_user)
 ):
     """Update existing content"""
     user_id = user.get("identity")
 
     # Verify workspace access
-    workspace = verify_workspace_access(db, workspace_id, user_id)
+    workspace = await verify_workspace_access(db, workspace_id, user_id)
 
     try:
         # Get content
-        content = db.query(Content).filter(
-            Content.id == content_id,
-            Content.workspace_id == workspace.id,
-            Content.deleted_at == None
-        ).first()
+        result = await db.execute(
+            select(Content).where(
+                Content.id == content_id,
+                Content.workspace_id == workspace.id,
+                Content.deleted_at == None
+            )
+        )
+        content = result.scalar_one_or_none()
 
         if not content:
             raise ResourceNotFoundException(
@@ -437,7 +465,7 @@ def update_content(
             # Regenerate slug if title changed
             base_slug = slugify(data.title)
             if content.slug != base_slug:
-                content.slug = generate_unique_slug(db, base_slug)
+                content.slug = await generate_unique_slug(db, base_slug)
 
         if data.body_markdown is not None:
             content.body_markdown = data.body_markdown
@@ -461,7 +489,8 @@ def update_content(
 
         # Update metadata if provided
         if data.metadata:
-            metadata = db.query(ContentMetadata).filter(ContentMetadata.content_id == content_id).first()
+            result = await db.execute(select(ContentMetadata).where(ContentMetadata.content_id == content_id))
+            metadata = result.scalar_one_or_none()
             if metadata:
                 # Update existing
                 if data.metadata.content_summary is not None:
@@ -492,7 +521,8 @@ def update_content(
 
         # Update SEO data if provided
         if data.seo_data:
-            seo_data = db.query(ContentSEOData).filter(ContentSEOData.content_id == content_id).first()
+            result = await db.execute(select(ContentSEOData).where(ContentSEOData.content_id == content_id))
+            seo_data = result.scalar_one_or_none()
             if seo_data:
                 # Update existing
                 if data.seo_data.content_primary_keywords is not None:
@@ -516,8 +546,8 @@ def update_content(
                 )
                 db.add(seo_data)
 
-        db.commit()
-        db.refresh(content)
+        await db.commit()
+        await db.refresh(content)
 
         content_data = _build_content_response(content, True, True)
 
@@ -532,7 +562,7 @@ def update_content(
     except ResourceNotFoundException:
         raise
     except Exception as e:
-        db.rollback()
+        await db.rollback()
         logger.error(f"Error updating content {content_id}: {str(e)}")
         return error(
             message="Failed to update content",
@@ -545,26 +575,29 @@ def update_content(
 # Delete Content (Soft Delete)
 # -------------------------
 @router.delete("/{workspace_id}/{content_id}")
-def delete_content(
+async def delete_content(
     workspace_id: str,  # Now accepts both UUID and slug
     content_id: UUID,
     request: Request,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     user: dict = Depends(get_current_user)
 ):
     """Soft delete content by setting deleted_at timestamp"""
     user_id = user.get("identity")
 
     # Verify workspace access
-    workspace = verify_workspace_access(db, workspace_id, user_id)
+    workspace = await verify_workspace_access(db, workspace_id, user_id)
 
     try:
         # Get content
-        content = db.query(Content).filter(
-            Content.id == content_id,
-            Content.workspace_id == workspace.id,
-            Content.deleted_at == None
-        ).first()
+        result = await db.execute(
+            select(Content).where(
+                Content.id == content_id,
+                Content.workspace_id == workspace.id,
+                Content.deleted_at == None
+            )
+        )
+        content = result.scalar_one_or_none()
 
         if not content:
             raise ResourceNotFoundException(
@@ -574,7 +607,7 @@ def delete_content(
 
         # Soft delete
         content.deleted_at = datetime.now(timezone.utc)
-        db.commit()
+        await db.commit()
 
         logger.info(f"Deleted content {content_id} from workspace {workspace_id}")
 
@@ -587,7 +620,7 @@ def delete_content(
     except ResourceNotFoundException:
         raise
     except Exception as e:
-        db.rollback()
+        await db.rollback()
         logger.error(f"Error deleting content {content_id}: {str(e)}")
         return error(
             message="Failed to delete content",

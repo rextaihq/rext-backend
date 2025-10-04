@@ -8,14 +8,14 @@ All endpoints require super admin permissions.
 """
 
 from fastapi import APIRouter, Depends, HTTPException, status, Request, Query
-from sqlalchemy.orm import Session
-from sqlalchemy import func, and_, or_, case, extract
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import func, and_, or_, case, extract, select
 from typing import List, Optional, Dict
 from datetime import datetime, timedelta
 from decimal import Decimal
 import uuid
 
-from src.api.database.database import get_db
+from src.api.database.async_database import get_async_db
 from src.api.security.dependencies import get_current_user
 from src.api.models.subscription_models.plans import SubscriptionPlan
 from src.api.models.subscription_models.subscriptions import (
@@ -52,17 +52,20 @@ router = APIRouter(
 )
 
 
-def check_super_admin(db: Session, user_id: str) -> bool:
+async def check_super_admin(db: AsyncSession, user_id: str) -> bool:
     """Check if user is a super admin."""
-    return db.query(UserRole).join(Role).filter(
-        UserRole.user_id == user_id,
-        Role.name == "super_admin"
-    ).first() is not None
+    result = await db.execute(
+        select(UserRole).join(Role).where(
+            UserRole.user_id == user_id,
+            Role.name == "super_admin"
+        )
+    )
+    return result.scalar_one_or_none() is not None
 
 
-def require_super_admin(db: Session, user_id: str):
+async def require_super_admin(db: AsyncSession, user_id: str):
     """Raise exception if user is not super admin."""
-    if not check_super_admin(db, user_id):
+    if not await check_super_admin(db, user_id):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Super admin role required for this operation"
@@ -74,10 +77,10 @@ def require_super_admin(db: Session, user_id: str):
 # ============================================================================
 
 @router.post("/assign", response_model=dict, status_code=status.HTTP_201_CREATED)
-def assign_subscription(
+async def assign_subscription(
     request: Request,
     assign_data: AdminSubscriptionAssignRequest,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user)
 ):
     """
@@ -100,10 +103,11 @@ def assign_subscription(
     """
     try:
         admin_user_id = current_user.get("identity")
-        require_super_admin(db, admin_user_id)
+        await require_super_admin(db, admin_user_id)
 
         # Verify user exists
-        user = db.query(Users).filter(Users.id == assign_data.user_id).first()
+        result = await db.execute(select(Users).where(Users.id == assign_data.user_id))
+        user = result.scalar_one_or_none()
         if not user:
             raise ResourceNotFoundException(
                 resource="user",
@@ -111,10 +115,13 @@ def assign_subscription(
             )
 
         # Verify plan exists
-        plan = db.query(SubscriptionPlan).filter(
-            SubscriptionPlan.id == assign_data.plan_id,
-            SubscriptionPlan.is_active == True
-        ).first()
+        result = await db.execute(
+            select(SubscriptionPlan).where(
+                SubscriptionPlan.id == assign_data.plan_id,
+                SubscriptionPlan.is_active == True
+            )
+        )
+        plan = result.scalar_one_or_none()
         if not plan:
             raise ResourceNotFoundException(
                 resource="subscription_plan",
@@ -122,10 +129,13 @@ def assign_subscription(
             )
 
         # Check for existing active subscription
-        existing = db.query(UserSubscription).filter(
-            UserSubscription.user_id == assign_data.user_id,
-            UserSubscription.status.in_([SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIAL])
-        ).first()
+        result = await db.execute(
+            select(UserSubscription).where(
+                UserSubscription.user_id == assign_data.user_id,
+                UserSubscription.status.in_([SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIAL])
+            )
+        )
+        existing = result.scalar_one_or_none()
 
         if existing:
             raise DuplicateResourceException(
@@ -155,8 +165,8 @@ def assign_subscription(
         )
 
         db.add(new_subscription)
-        db.commit()
-        db.refresh(new_subscription)
+        await db.commit()
+        await db.refresh(new_subscription)
 
         logger.info(
             f"Admin {admin_user_id} assigned subscription: "
@@ -178,7 +188,7 @@ def assign_subscription(
         raise
     except Exception as e:
         logger.error(f"Error assigning subscription: {e}")
-        db.rollback()
+        await db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to assign subscription"
@@ -186,11 +196,11 @@ def assign_subscription(
 
 
 @router.post("/{subscription_id}/extend", response_model=dict)
-def extend_subscription(
+async def extend_subscription(
     request: Request,
     subscription_id: str,
     extend_data: AdminSubscriptionExtendRequest,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user)
 ):
     """
@@ -210,12 +220,13 @@ def extend_subscription(
     """
     try:
         admin_user_id = current_user.get("identity")
-        require_super_admin(db, admin_user_id)
+        await require_super_admin(db, admin_user_id)
 
         # Get subscription
-        subscription = db.query(UserSubscription).filter(
-            UserSubscription.id == subscription_id
-        ).first()
+        result = await db.execute(
+            select(UserSubscription).where(UserSubscription.id == subscription_id)
+        )
+        subscription = result.scalar_one_or_none()
 
         if not subscription:
             raise ResourceNotFoundException(
@@ -238,8 +249,8 @@ def extend_subscription(
             subscription.trial_end_date = subscription.trial_end_date + timedelta(days=extend_data.extend_days)
 
         subscription.updated_at = datetime.utcnow()
-        db.commit()
-        db.refresh(subscription)
+        await db.commit()
+        await db.refresh(subscription)
 
         logger.info(
             f"Admin {admin_user_id} extended subscription {subscription_id} by {extend_data.extend_days} days. "
@@ -256,7 +267,7 @@ def extend_subscription(
         raise
     except Exception as e:
         logger.error(f"Error extending subscription {subscription_id}: {e}")
-        db.rollback()
+        await db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to extend subscription"
@@ -264,11 +275,11 @@ def extend_subscription(
 
 
 @router.post("/{subscription_id}/reset-usage", response_model=dict)
-def reset_usage(
+async def reset_usage(
     request: Request,
     subscription_id: str,
     reset_data: AdminUsageResetRequest,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user)
 ):
     """
@@ -288,12 +299,13 @@ def reset_usage(
     """
     try:
         admin_user_id = current_user.get("identity")
-        require_super_admin(db, admin_user_id)
+        await require_super_admin(db, admin_user_id)
 
         # Get subscription
-        subscription = db.query(UserSubscription).filter(
-            UserSubscription.id == subscription_id
-        ).first()
+        result = await db.execute(
+            select(UserSubscription).where(UserSubscription.id == subscription_id)
+        )
+        subscription = result.scalar_one_or_none()
 
         if not subscription:
             raise ResourceNotFoundException(
@@ -309,8 +321,8 @@ def reset_usage(
             subscription.usage_reset_date = datetime.utcnow() + timedelta(days=30)
 
         subscription.updated_at = datetime.utcnow()
-        db.commit()
-        db.refresh(subscription)
+        await db.commit()
+        await db.refresh(subscription)
 
         logger.info(
             f"Admin {admin_user_id} reset usage for subscription {subscription_id}. "
@@ -327,7 +339,7 @@ def reset_usage(
         raise
     except Exception as e:
         logger.error(f"Error resetting usage for subscription {subscription_id}: {e}")
-        db.rollback()
+        await db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to reset usage"
@@ -335,14 +347,14 @@ def reset_usage(
 
 
 @router.get("", response_model=dict)
-def list_all_subscriptions(
+async def list_all_subscriptions(
     request: Request,
     status_filter: Optional[str] = Query(None, description="Filter by status (active, trial, cancelled, etc.)"),
     plan_id: Optional[str] = Query(None, description="Filter by plan ID"),
     user_email: Optional[str] = Query(None, description="Filter by user email"),
     limit: int = Query(50, ge=1, le=500),
     offset: int = Query(0, ge=0),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user)
 ):
     """
@@ -360,10 +372,10 @@ def list_all_subscriptions(
     """
     try:
         admin_user_id = current_user.get("identity")
-        require_super_admin(db, admin_user_id)
+        await require_super_admin(db, admin_user_id)
 
         # Build query
-        query = db.query(UserSubscription, Users, SubscriptionPlan).join(
+        query = select(UserSubscription, Users, SubscriptionPlan).join(
             Users, UserSubscription.user_id == Users.id
         ).join(
             SubscriptionPlan, UserSubscription.plan_id == SubscriptionPlan.id
@@ -373,7 +385,7 @@ def list_all_subscriptions(
         if status_filter:
             try:
                 status_enum = SubscriptionStatus(status_filter.lower())
-                query = query.filter(UserSubscription.status == status_enum)
+                query = query.where(UserSubscription.status == status_enum)
             except ValueError:
                 raise WrextValidationException(
                     field="status_filter",
@@ -381,16 +393,19 @@ def list_all_subscriptions(
                 )
 
         if plan_id:
-            query = query.filter(UserSubscription.plan_id == plan_id)
+            query = query.where(UserSubscription.plan_id == plan_id)
 
         if user_email:
-            query = query.filter(Users.email.ilike(f"%{user_email}%"))
+            query = query.where(Users.email.ilike(f"%{user_email}%"))
 
         # Get total count
-        total_count = query.count()
+        count_query = select(func.count()).select_from(query.subquery())
+        result = await db.execute(count_query)
+        total_count = result.scalar()
 
         # Apply pagination
-        subscriptions = query.order_by(UserSubscription.created_at.desc()).offset(offset).limit(limit).all()
+        result = await db.execute(query.order_by(UserSubscription.created_at.desc()).offset(offset).limit(limit))
+        subscriptions = result.all()
 
         # Format response
         subscriptions_data = []
@@ -425,10 +440,10 @@ def list_all_subscriptions(
 
 
 @router.get("/{subscription_id}", response_model=dict)
-def get_subscription_admin(
+async def get_subscription_admin(
     request: Request,
     subscription_id: str,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user)
 ):
     """
@@ -445,24 +460,26 @@ def get_subscription_admin(
     """
     try:
         admin_user_id = current_user.get("identity")
-        require_super_admin(db, admin_user_id)
+        await require_super_admin(db, admin_user_id)
 
         # Get subscription with related data
-        result = db.query(UserSubscription, Users, SubscriptionPlan).join(
+        query = select(UserSubscription, Users, SubscriptionPlan).join(
             Users, UserSubscription.user_id == Users.id
         ).join(
             SubscriptionPlan, UserSubscription.plan_id == SubscriptionPlan.id
-        ).filter(
+        ).where(
             UserSubscription.id == subscription_id
-        ).first()
+        )
+        result = await db.execute(query)
+        row = result.first()
 
-        if not result:
+        if not row:
             raise ResourceNotFoundException(
                 resource="subscription",
                 identifier=subscription_id
             )
 
-        subscription, user, plan = result
+        subscription, user, plan = row
 
         # Build detailed response
         response_data = subscription.to_dict()
@@ -495,9 +512,9 @@ def get_subscription_admin(
 # ============================================================================
 
 @router.get("/stats/overview", response_model=dict)
-def get_subscription_stats(
+async def get_subscription_stats(
     request: Request,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user)
 ):
     """
@@ -513,33 +530,49 @@ def get_subscription_stats(
     """
     try:
         admin_user_id = current_user.get("identity")
-        require_super_admin(db, admin_user_id)
+        await require_super_admin(db, admin_user_id)
 
         # Count subscriptions by status
-        total_subscriptions = db.query(func.count(UserSubscription.id)).scalar() or 0
+        result = await db.execute(select(func.count(UserSubscription.id)))
+        total_subscriptions = result.scalar() or 0
 
-        active_subscriptions = db.query(func.count(UserSubscription.id)).filter(
-            UserSubscription.status == SubscriptionStatus.ACTIVE
-        ).scalar() or 0
+        result = await db.execute(
+            select(func.count(UserSubscription.id)).where(
+                UserSubscription.status == SubscriptionStatus.ACTIVE
+            )
+        )
+        active_subscriptions = result.scalar() or 0
 
-        trial_subscriptions = db.query(func.count(UserSubscription.id)).filter(
-            UserSubscription.status == SubscriptionStatus.TRIAL
-        ).scalar() or 0
+        result = await db.execute(
+            select(func.count(UserSubscription.id)).where(
+                UserSubscription.status == SubscriptionStatus.TRIAL
+            )
+        )
+        trial_subscriptions = result.scalar() or 0
 
-        cancelled_subscriptions = db.query(func.count(UserSubscription.id)).filter(
-            UserSubscription.status == SubscriptionStatus.CANCELLED
-        ).scalar() or 0
+        result = await db.execute(
+            select(func.count(UserSubscription.id)).where(
+                UserSubscription.status == SubscriptionStatus.CANCELLED
+            )
+        )
+        cancelled_subscriptions = result.scalar() or 0
 
-        expired_subscriptions = db.query(func.count(UserSubscription.id)).filter(
-            UserSubscription.status == SubscriptionStatus.EXPIRED
-        ).scalar() or 0
+        result = await db.execute(
+            select(func.count(UserSubscription.id)).where(
+                UserSubscription.status == SubscriptionStatus.EXPIRED
+            )
+        )
+        expired_subscriptions = result.scalar() or 0
 
-        suspended_subscriptions = db.query(func.count(UserSubscription.id)).filter(
-            UserSubscription.status == SubscriptionStatus.SUSPENDED
-        ).scalar() or 0
+        result = await db.execute(
+            select(func.count(UserSubscription.id)).where(
+                UserSubscription.status == SubscriptionStatus.SUSPENDED
+            )
+        )
+        suspended_subscriptions = result.scalar() or 0
 
         # Calculate MRR (Monthly Recurring Revenue)
-        mrr_result = db.query(
+        mrr_query = select(
             func.sum(
                 case(
                     (UserSubscription.billing_period == BillingPeriod.MONTHLY, SubscriptionPlan.price_monthly),
@@ -549,9 +582,11 @@ def get_subscription_stats(
             )
         ).join(
             SubscriptionPlan, UserSubscription.plan_id == SubscriptionPlan.id
-        ).filter(
+        ).where(
             UserSubscription.status.in_([SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIAL])
-        ).scalar()
+        )
+        result = await db.execute(mrr_query)
+        mrr_result = result.scalar()
 
         mrr = float(mrr_result) if mrr_result else 0.0
 
@@ -560,10 +595,13 @@ def get_subscription_stats(
 
         # Calculate churn rate (last 30 days)
         thirty_days_ago = datetime.utcnow() - timedelta(days=30)
-        cancellations_last_month = db.query(func.count(UserSubscription.id)).filter(
-            UserSubscription.cancelled_at >= thirty_days_ago,
-            UserSubscription.cancelled_at <= datetime.utcnow()
-        ).scalar() or 0
+        result = await db.execute(
+            select(func.count(UserSubscription.id)).where(
+                UserSubscription.cancelled_at >= thirty_days_ago,
+                UserSubscription.cancelled_at <= datetime.utcnow()
+            )
+        )
+        cancellations_last_month = result.scalar() or 0
 
         churn_rate = round(
             (cancellations_last_month / active_subscriptions * 100) if active_subscriptions > 0 else 0,
@@ -571,20 +609,26 @@ def get_subscription_stats(
         )
 
         # Calculate trial conversion rate (all time)
-        total_trials_ever = db.query(func.count(UserSubscription.id)).filter(
-            or_(
-                UserSubscription.status == SubscriptionStatus.TRIAL,
-                and_(
-                    UserSubscription.status == SubscriptionStatus.ACTIVE,
-                    UserSubscription.trial_end_date.isnot(None)
+        result = await db.execute(
+            select(func.count(UserSubscription.id)).where(
+                or_(
+                    UserSubscription.status == SubscriptionStatus.TRIAL,
+                    and_(
+                        UserSubscription.status == SubscriptionStatus.ACTIVE,
+                        UserSubscription.trial_end_date.isnot(None)
+                    )
                 )
             )
-        ).scalar() or 0
+        )
+        total_trials_ever = result.scalar() or 0
 
-        converted_trials = db.query(func.count(UserSubscription.id)).filter(
-            UserSubscription.status == SubscriptionStatus.ACTIVE,
-            UserSubscription.trial_end_date.isnot(None)
-        ).scalar() or 0
+        result = await db.execute(
+            select(func.count(UserSubscription.id)).where(
+                UserSubscription.status == SubscriptionStatus.ACTIVE,
+                UserSubscription.trial_end_date.isnot(None)
+            )
+        )
+        converted_trials = result.scalar() or 0
 
         trial_conversion_rate = round(
             (converted_trials / total_trials_ever * 100) if total_trials_ever > 0 else 0,
@@ -626,9 +670,9 @@ def get_subscription_stats(
 
 
 @router.get("/stats/revenue", response_model=dict)
-def get_revenue_metrics(
+async def get_revenue_metrics(
     request: Request,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user)
 ):
     """
@@ -641,10 +685,10 @@ def get_revenue_metrics(
     """
     try:
         admin_user_id = current_user.get("identity")
-        require_super_admin(db, admin_user_id)
+        await require_super_admin(db, admin_user_id)
 
         # Calculate current month MRR
-        current_mrr_result = db.query(
+        current_mrr_query = select(
             func.sum(
                 case(
                     (UserSubscription.billing_period == BillingPeriod.MONTHLY, SubscriptionPlan.price_monthly),
@@ -654,15 +698,17 @@ def get_revenue_metrics(
             )
         ).join(
             SubscriptionPlan, UserSubscription.plan_id == SubscriptionPlan.id
-        ).filter(
+        ).where(
             UserSubscription.status.in_([SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIAL])
-        ).scalar()
+        )
+        result = await db.execute(current_mrr_query)
+        current_mrr_result = result.scalar()
 
         current_mrr = float(current_mrr_result) if current_mrr_result else 0.0
 
         # Calculate new revenue (subscriptions started in last 30 days)
         thirty_days_ago = datetime.utcnow() - timedelta(days=30)
-        new_revenue_result = db.query(
+        new_revenue_query = select(
             func.sum(
                 case(
                     (UserSubscription.billing_period == BillingPeriod.MONTHLY, SubscriptionPlan.price_monthly),
@@ -672,14 +718,16 @@ def get_revenue_metrics(
             )
         ).join(
             SubscriptionPlan, UserSubscription.plan_id == SubscriptionPlan.id
-        ).filter(
+        ).where(
             UserSubscription.start_date >= thirty_days_ago
-        ).scalar()
+        )
+        result = await db.execute(new_revenue_query)
+        new_revenue_result = result.scalar()
 
         new_revenue = float(new_revenue_result) if new_revenue_result else 0.0
 
         # Get revenue breakdown by plan
-        plan_revenue = db.query(
+        plan_revenue_query = select(
             SubscriptionPlan.id,
             SubscriptionPlan.name,
             SubscriptionPlan.display_name,
@@ -693,13 +741,15 @@ def get_revenue_metrics(
             ).label('revenue_monthly')
         ).join(
             UserSubscription, SubscriptionPlan.id == UserSubscription.plan_id
-        ).filter(
+        ).where(
             UserSubscription.status.in_([SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIAL])
         ).group_by(
             SubscriptionPlan.id,
             SubscriptionPlan.name,
             SubscriptionPlan.display_name
-        ).all()
+        )
+        result = await db.execute(plan_revenue_query)
+        plan_revenue = result.all()
 
         by_plan = []
         for plan_id, plan_name, display_name, count, revenue_monthly in plan_revenue:
@@ -744,10 +794,10 @@ def get_revenue_metrics(
 
 
 @router.get("/stats/churn", response_model=dict)
-def get_churn_analysis(
+async def get_churn_analysis(
     request: Request,
     period_days: int = Query(30, ge=1, le=365, description="Analysis period in days"),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user)
 ):
     """
@@ -761,36 +811,48 @@ def get_churn_analysis(
     """
     try:
         admin_user_id = current_user.get("identity")
-        require_super_admin(db, admin_user_id)
+        await require_super_admin(db, admin_user_id)
 
         period_start = datetime.utcnow() - timedelta(days=period_days)
         period_end = datetime.utcnow()
 
         # Active subscriptions at start of period
-        total_active_start = db.query(func.count(UserSubscription.id)).filter(
-            UserSubscription.start_date < period_start,
-            or_(
-                UserSubscription.end_date.is_(None),
-                UserSubscription.end_date > period_start
+        result = await db.execute(
+            select(func.count(UserSubscription.id)).where(
+                UserSubscription.start_date < period_start,
+                or_(
+                    UserSubscription.end_date.is_(None),
+                    UserSubscription.end_date > period_start
+                )
             )
-        ).scalar() or 0
+        )
+        total_active_start = result.scalar() or 0
 
         # New subscriptions in period
-        new_subscriptions = db.query(func.count(UserSubscription.id)).filter(
-            UserSubscription.start_date >= period_start,
-            UserSubscription.start_date <= period_end
-        ).scalar() or 0
+        result = await db.execute(
+            select(func.count(UserSubscription.id)).where(
+                UserSubscription.start_date >= period_start,
+                UserSubscription.start_date <= period_end
+            )
+        )
+        new_subscriptions = result.scalar() or 0
 
         # Cancellations in period
-        cancellations = db.query(func.count(UserSubscription.id)).filter(
-            UserSubscription.cancelled_at >= period_start,
-            UserSubscription.cancelled_at <= period_end
-        ).scalar() or 0
+        result = await db.execute(
+            select(func.count(UserSubscription.id)).where(
+                UserSubscription.cancelled_at >= period_start,
+                UserSubscription.cancelled_at <= period_end
+            )
+        )
+        cancellations = result.scalar() or 0
 
         # Active subscriptions at end of period
-        total_active_end = db.query(func.count(UserSubscription.id)).filter(
-            UserSubscription.status.in_([SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIAL])
-        ).scalar() or 0
+        result = await db.execute(
+            select(func.count(UserSubscription.id)).where(
+                UserSubscription.status.in_([SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIAL])
+            )
+        )
+        total_active_end = result.scalar() or 0
 
         # Calculate rates
         churn_rate = round(
@@ -826,10 +888,10 @@ def get_churn_analysis(
 
 
 @router.get("/stats/trial-conversion", response_model=dict)
-def get_trial_conversion_metrics(
+async def get_trial_conversion_metrics(
     request: Request,
     period_days: int = Query(90, ge=1, le=365, description="Analysis period in days"),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user)
 ):
     """
@@ -843,35 +905,47 @@ def get_trial_conversion_metrics(
     """
     try:
         admin_user_id = current_user.get("identity")
-        require_super_admin(db, admin_user_id)
+        await require_super_admin(db, admin_user_id)
 
         period_start = datetime.utcnow() - timedelta(days=period_days)
 
         # Trials started in period
-        total_trials_started = db.query(func.count(UserSubscription.id)).filter(
-            UserSubscription.start_date >= period_start,
-            UserSubscription.trial_end_date.isnot(None)
-        ).scalar() or 0
+        result = await db.execute(
+            select(func.count(UserSubscription.id)).where(
+                UserSubscription.start_date >= period_start,
+                UserSubscription.trial_end_date.isnot(None)
+            )
+        )
+        total_trials_started = result.scalar() or 0
 
         # Trials converted (now active with trial_end_date set)
-        trials_converted = db.query(func.count(UserSubscription.id)).filter(
-            UserSubscription.start_date >= period_start,
-            UserSubscription.status == SubscriptionStatus.ACTIVE,
-            UserSubscription.trial_end_date.isnot(None)
-        ).scalar() or 0
+        result = await db.execute(
+            select(func.count(UserSubscription.id)).where(
+                UserSubscription.start_date >= period_start,
+                UserSubscription.status == SubscriptionStatus.ACTIVE,
+                UserSubscription.trial_end_date.isnot(None)
+            )
+        )
+        trials_converted = result.scalar() or 0
 
         # Trials expired
-        trials_expired = db.query(func.count(UserSubscription.id)).filter(
-            UserSubscription.start_date >= period_start,
-            UserSubscription.status == SubscriptionStatus.EXPIRED,
-            UserSubscription.trial_end_date.isnot(None)
-        ).scalar() or 0
+        result = await db.execute(
+            select(func.count(UserSubscription.id)).where(
+                UserSubscription.start_date >= period_start,
+                UserSubscription.status == SubscriptionStatus.EXPIRED,
+                UserSubscription.trial_end_date.isnot(None)
+            )
+        )
+        trials_expired = result.scalar() or 0
 
         # Trials still active
-        trials_active = db.query(func.count(UserSubscription.id)).filter(
-            UserSubscription.start_date >= period_start,
-            UserSubscription.status == SubscriptionStatus.TRIAL
-        ).scalar() or 0
+        result = await db.execute(
+            select(func.count(UserSubscription.id)).where(
+                UserSubscription.start_date >= period_start,
+                UserSubscription.status == SubscriptionStatus.TRIAL
+            )
+        )
+        trials_active = result.scalar() or 0
 
         # Calculate conversion rate
         conversion_rate = round(
@@ -880,12 +954,14 @@ def get_trial_conversion_metrics(
         )
 
         # Calculate average trial length
-        trial_lengths = db.query(
+        trial_lengths_query = select(
             func.extract('epoch', UserSubscription.trial_end_date - UserSubscription.start_date) / 86400
-        ).filter(
+        ).where(
             UserSubscription.start_date >= period_start,
             UserSubscription.trial_end_date.isnot(None)
-        ).all()
+        )
+        result = await db.execute(trial_lengths_query)
+        trial_lengths = result.all()
 
         avg_trial_length = round(
             sum(length[0] for length in trial_lengths if length[0]) / len(trial_lengths)

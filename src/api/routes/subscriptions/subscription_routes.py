@@ -5,13 +5,13 @@ This module provides subscription management operations for end users.
 """
 
 from fastapi import APIRouter, Depends, HTTPException, status, Request, Query
-from sqlalchemy.orm import Session
-from sqlalchemy import func, and_
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, func, and_
 from typing import List, Optional
 from datetime import datetime, timedelta
 import uuid
 
-from src.api.database.database import get_db
+from src.api.database.async_database import get_async_db
 from src.api.security.dependencies import get_current_user
 from src.api.models.subscription_models.plans import SubscriptionPlan
 from src.api.models.subscription_models.subscriptions import (
@@ -45,26 +45,31 @@ router = APIRouter(
 
 
 # Helper function to get active subscription
-def get_active_subscription(db: Session, user_id: str) -> Optional[UserSubscription]:
+async def get_active_subscription(db: AsyncSession, user_id: str) -> Optional[UserSubscription]:
     """Get user's active subscription."""
-    return db.query(UserSubscription).filter(
-        UserSubscription.user_id == user_id,
-        UserSubscription.status.in_([SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIAL])
-    ).first()
+    result = await db.execute(
+        select(UserSubscription).where(
+            UserSubscription.user_id == user_id,
+            UserSubscription.status.in_([SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIAL])
+        )
+    )
+    return result.scalar_one_or_none()
 
 
 # Helper function to calculate usage counts
-def calculate_usage(db: Session, user_id: str) -> dict:
+async def calculate_usage(db: AsyncSession, user_id: str) -> dict:
     """Calculate current resource usage for a user."""
     # Count workspaces owned by user
-    workspaces_count = db.query(func.count(Workspace.id)).filter(
-        Workspace.creator_id == user_id
-    ).scalar() or 0
+    workspaces_result = await db.execute(
+        select(func.count(Workspace.id)).where(Workspace.creator_id == user_id)
+    )
+    workspaces_count = workspaces_result.scalar() or 0
 
     # Count topics across all user's workspaces
-    topics_count = db.query(func.count(Topic.id)).join(Workspace).filter(
-        Workspace.creator_id == user_id
-    ).scalar() or 0
+    topics_result = await db.execute(
+        select(func.count(Topic.id)).join(Workspace).where(Workspace.creator_id == user_id)
+    )
+    topics_count = topics_result.scalar() or 0
 
     # TODO: Add knowledge items count when knowledge models are available
     knowledge_count = 0
@@ -77,10 +82,10 @@ def calculate_usage(db: Session, user_id: str) -> dict:
 
 
 @router.post("/subscribe", response_model=dict, status_code=status.HTTP_201_CREATED)
-def subscribe_to_plan(
+async def subscribe_to_plan(
     request: Request,
     subscription_data: SubscriptionCreateRequest,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user)
 ):
     """
@@ -101,7 +106,7 @@ def subscribe_to_plan(
         user_id = current_user.get("identity")
 
         # Check if user already has an active subscription
-        existing_subscription = get_active_subscription(db, user_id)
+        existing_subscription = await get_active_subscription(db, user_id)
         if existing_subscription:
             raise DuplicateResourceException(
                 resource="subscription",
@@ -110,10 +115,13 @@ def subscribe_to_plan(
             )
 
         # Get the plan
-        plan = db.query(SubscriptionPlan).filter(
-            SubscriptionPlan.id == subscription_data.plan_id,
-            SubscriptionPlan.is_active == True
-        ).first()
+        plan_result = await db.execute(
+            select(SubscriptionPlan).where(
+                SubscriptionPlan.id == subscription_data.plan_id,
+                SubscriptionPlan.is_active == True
+            )
+        )
+        plan = plan_result.scalar_one_or_none()
 
         if not plan:
             raise ResourceNotFoundException(
@@ -141,8 +149,8 @@ def subscribe_to_plan(
         )
 
         db.add(new_subscription)
-        db.commit()
-        db.refresh(new_subscription)
+        await db.commit()
+        await db.refresh(new_subscription)
 
         logger.info(f"User {user_id} subscribed to plan: {plan.name} ({subscription_data.billing_period})")
 
@@ -161,7 +169,7 @@ def subscribe_to_plan(
         raise
     except Exception as e:
         logger.error(f"Error creating subscription: {e}")
-        db.rollback()
+        await db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to create subscription"
@@ -169,9 +177,9 @@ def subscribe_to_plan(
 
 
 @router.get("/my-subscription", response_model=dict)
-def get_my_subscription(
+async def get_my_subscription(
     request: Request,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user)
 ):
     """
@@ -184,7 +192,7 @@ def get_my_subscription(
     try:
         user_id = current_user.get("identity")
 
-        subscription = get_active_subscription(db, user_id)
+        subscription = await get_active_subscription(db, user_id)
 
         if not subscription:
             return success(
@@ -194,9 +202,10 @@ def get_my_subscription(
             )
 
         # Get plan details
-        plan = db.query(SubscriptionPlan).filter(
-            SubscriptionPlan.id == subscription.plan_id
-        ).first()
+        plan_result = await db.execute(
+            select(SubscriptionPlan).where(SubscriptionPlan.id == subscription.plan_id)
+        )
+        plan = plan_result.scalar_one_or_none()
 
         # Build response
         response_data = subscription.to_dict()
@@ -227,10 +236,10 @@ def get_my_subscription(
 
 
 @router.get("/history", response_model=dict)
-def get_subscription_history(
+async def get_subscription_history(
     request: Request,
     limit: int = Query(10, ge=1, le=100),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user)
 ):
     """
@@ -245,17 +254,21 @@ def get_subscription_history(
     try:
         user_id = current_user.get("identity")
 
-        subscriptions = db.query(UserSubscription).filter(
-            UserSubscription.user_id == user_id
-        ).order_by(UserSubscription.created_at.desc()).limit(limit).all()
+        subscriptions_result = await db.execute(
+            select(UserSubscription).where(
+                UserSubscription.user_id == user_id
+            ).order_by(UserSubscription.created_at.desc()).limit(limit)
+        )
+        subscriptions = subscriptions_result.scalars().all()
 
         subscriptions_data = []
         for sub in subscriptions:
             sub_data = sub.to_dict()
             # Add plan name
-            plan = db.query(SubscriptionPlan).filter(
-                SubscriptionPlan.id == sub.plan_id
-            ).first()
+            plan_result = await db.execute(
+                select(SubscriptionPlan).where(SubscriptionPlan.id == sub.plan_id)
+            )
+            plan = plan_result.scalar_one_or_none()
             if plan:
                 sub_data["plan_name"] = plan.name
                 sub_data["plan_display_name"] = plan.display_name
@@ -279,10 +292,10 @@ def get_subscription_history(
 
 
 @router.post("/upgrade", response_model=dict)
-def upgrade_subscription(
+async def upgrade_subscription(
     request: Request,
     upgrade_data: SubscriptionUpgradeRequest,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user)
 ):
     """
@@ -301,7 +314,7 @@ def upgrade_subscription(
         user_id = current_user.get("identity")
 
         # Get current subscription
-        current_subscription = get_active_subscription(db, user_id)
+        current_subscription = await get_active_subscription(db, user_id)
         if not current_subscription:
             raise ResourceNotFoundException(
                 resource="subscription",
@@ -310,14 +323,18 @@ def upgrade_subscription(
             )
 
         # Get current and new plans
-        current_plan = db.query(SubscriptionPlan).filter(
-            SubscriptionPlan.id == current_subscription.plan_id
-        ).first()
+        current_plan_result = await db.execute(
+            select(SubscriptionPlan).where(SubscriptionPlan.id == current_subscription.plan_id)
+        )
+        current_plan = current_plan_result.scalar_one_or_none()
 
-        new_plan = db.query(SubscriptionPlan).filter(
-            SubscriptionPlan.id == upgrade_data.new_plan_id,
-            SubscriptionPlan.is_active == True
-        ).first()
+        new_plan_result = await db.execute(
+            select(SubscriptionPlan).where(
+                SubscriptionPlan.id == upgrade_data.new_plan_id,
+                SubscriptionPlan.is_active == True
+            )
+        )
+        new_plan = new_plan_result.scalar_one_or_none()
 
         if not new_plan:
             raise ResourceNotFoundException(
@@ -331,8 +348,8 @@ def upgrade_subscription(
             if upgrade_data.billing_period and upgrade_data.billing_period != current_subscription.billing_period:
                 current_subscription.billing_period = upgrade_data.billing_period
                 current_subscription.updated_at = datetime.utcnow()
-                db.commit()
-                db.refresh(current_subscription)
+                await db.commit()
+                await db.refresh(current_subscription)
 
                 return success(
                     data=current_subscription.to_dict(),
@@ -346,7 +363,7 @@ def upgrade_subscription(
                 )
 
         # Calculate current usage
-        current_usage = calculate_usage(db, user_id)
+        current_usage = await calculate_usage(db, user_id)
 
         # Validate downgrade (check if current usage exceeds new plan limits)
         is_downgrade = (
@@ -380,8 +397,8 @@ def upgrade_subscription(
             current_subscription.billing_period = upgrade_data.billing_period
         current_subscription.updated_at = datetime.utcnow()
 
-        db.commit()
-        db.refresh(current_subscription)
+        await db.commit()
+        await db.refresh(current_subscription)
 
         action = "downgraded" if is_downgrade else "upgraded"
         logger.info(f"User {user_id} {action} subscription from {current_plan.name} to {new_plan.name}")
@@ -401,7 +418,7 @@ def upgrade_subscription(
         raise
     except Exception as e:
         logger.error(f"Error upgrading subscription: {e}")
-        db.rollback()
+        await db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to upgrade subscription"
@@ -409,10 +426,10 @@ def upgrade_subscription(
 
 
 @router.post("/cancel", response_model=dict)
-def cancel_subscription(
+async def cancel_subscription(
     request: Request,
     cancel_data: SubscriptionCancelRequest,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user)
 ):
     """
@@ -429,7 +446,7 @@ def cancel_subscription(
         user_id = current_user.get("identity")
 
         # Get current subscription
-        subscription = get_active_subscription(db, user_id)
+        subscription = await get_active_subscription(db, user_id)
         if not subscription:
             raise ResourceNotFoundException(
                 resource="subscription",
@@ -454,8 +471,8 @@ def cancel_subscription(
 
         subscription.updated_at = datetime.utcnow()
 
-        db.commit()
-        db.refresh(subscription)
+        await db.commit()
+        await db.refresh(subscription)
 
         logger.info(f"User {user_id} cancelled subscription (immediately={cancel_data.cancel_immediately})")
         if cancel_data.reason:
@@ -473,7 +490,7 @@ def cancel_subscription(
         raise
     except Exception as e:
         logger.error(f"Error cancelling subscription: {e}")
-        db.rollback()
+        await db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to cancel subscription"
@@ -481,9 +498,9 @@ def cancel_subscription(
 
 
 @router.get("/usage", response_model=dict)
-def get_usage_stats(
+async def get_usage_stats(
     request: Request,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user)
 ):
     """
@@ -498,7 +515,7 @@ def get_usage_stats(
         user_id = current_user.get("identity")
 
         # Get current subscription
-        subscription = get_active_subscription(db, user_id)
+        subscription = await get_active_subscription(db, user_id)
         if not subscription:
             raise ResourceNotFoundException(
                 resource="subscription",
@@ -507,9 +524,10 @@ def get_usage_stats(
             )
 
         # Get plan
-        plan = db.query(SubscriptionPlan).filter(
-            SubscriptionPlan.id == subscription.plan_id
-        ).first()
+        plan_result = await db.execute(
+            select(SubscriptionPlan).where(SubscriptionPlan.id == subscription.plan_id)
+        )
+        plan = plan_result.scalar_one_or_none()
 
         if not plan:
             raise ResourceNotFoundException(
@@ -518,7 +536,7 @@ def get_usage_stats(
             )
 
         # Calculate current usage
-        current_usage = calculate_usage(db, user_id)
+        current_usage = await calculate_usage(db, user_id)
 
         # Helper function to calculate percentage
         def calc_percentage(current: int, maximum: int) -> float:
@@ -564,9 +582,9 @@ def get_usage_stats(
 
 
 @router.get("/trial-status", response_model=dict)
-def get_trial_status(
+async def get_trial_status(
     request: Request,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user)
 ):
     """
@@ -581,7 +599,7 @@ def get_trial_status(
     try:
         user_id = current_user.get("identity")
 
-        subscription = get_active_subscription(db, user_id)
+        subscription = await get_active_subscription(db, user_id)
         if not subscription:
             return success(
                 data={

@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, Request, HTTPException, status, Query, BackgroundTasks
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 from datetime import datetime, timezone, timedelta
 from typing import Optional
 import uuid
@@ -10,7 +11,7 @@ from src.utils.response_utils import success, error, created
 from src.utils.invitation_utils import is_invitation_expired, get_invitation_with_details
 from src.utils.audit_helper import create_audit_log
 from src.utils.email_template_utils import render_workspace_email
-from src.api.database.database import get_db
+from src.api.database.async_database import get_async_db
 from src.api.security.dependencies import get_current_user
 from src.api.middleware.exceptions import (
     DuplicateResourceException,
@@ -44,7 +45,7 @@ router = APIRouter(
 )
 
 @router.get("/status")
-def get_invitation_status(request: Request):
+async def get_invitation_status(request: Request):
     """Qa
     Endpoint to check the invitation service status.
     """
@@ -54,11 +55,11 @@ def get_invitation_status(request: Request):
     )
 
 @router.post("/", status_code=status.HTTP_201_CREATED)
-def create_invitation(
+async def create_invitation(
     request: Request,
     invitation_data: CreateInvitationRequest,
     background_tasks: BackgroundTasks,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user)
 ):
     """
@@ -76,9 +77,10 @@ def create_invitation(
         logger.info(f"User {user_id} creating invitation for {invitation_data.email}")
 
         # Verify workspace exists
-        workspace = db.query(WorkspaceModel).filter(
-            WorkspaceModel.id == invitation_data.workspace_id
-        ).first()
+        result = await db.execute(
+            select(WorkspaceModel).where(WorkspaceModel.id == invitation_data.workspace_id)
+        )
+        workspace = result.scalar_one_or_none()
 
         if not workspace:
             raise ResourceNotFoundException(
@@ -89,11 +91,14 @@ def create_invitation(
 
         # Check if user has permission to invite to this workspace
         # Must be workspace member with appropriate role
-        membership = db.query(WorkspaceMembers).filter(
-            WorkspaceMembers.workspace_id == invitation_data.workspace_id,
-            WorkspaceMembers.user_id == user_id,
-            WorkspaceMembers.status == "active"
-        ).first()
+        result = await db.execute(
+            select(WorkspaceMembers).where(
+                WorkspaceMembers.workspace_id == invitation_data.workspace_id,
+                WorkspaceMembers.user_id == user_id,
+                WorkspaceMembers.status == "active"
+            )
+        )
+        membership = result.scalar_one_or_none()
 
         if not membership:
             raise WrextAuthenticationException(
@@ -104,7 +109,8 @@ def create_invitation(
         # TODO: Add permission check for user.invite or workspace admin role
 
         # Verify role exists
-        role = db.query(Role).filter(Role.id == invitation_data.role_id).first()
+        result = await db.execute(select(Role).where(Role.id == invitation_data.role_id))
+        role = result.scalar_one_or_none()
         if not role:
             raise ResourceNotFoundException(
                 message="Role not found",
@@ -113,17 +119,20 @@ def create_invitation(
             )
 
         # Check if invitation already exists for this email + workspace
-        existing_invitation = db.query(UserInvitations).filter(
-            UserInvitations.email == invitation_data.email.lower(),
-            UserInvitations.workspace_id == invitation_data.workspace_id,
-            UserInvitations.status == "pending"
-        ).first()
+        result = await db.execute(
+            select(UserInvitations).where(
+                UserInvitations.email == invitation_data.email.lower(),
+                UserInvitations.workspace_id == invitation_data.workspace_id,
+                UserInvitations.status == "pending"
+            )
+        )
+        existing_invitation = result.scalar_one_or_none()
 
         if existing_invitation:
             # Check if expired - if so, revoke it and create new one
             if is_invitation_expired(existing_invitation):
                 existing_invitation.status = "expired"
-                db.commit()
+                await db.commit()
             else:
                 raise DuplicateResourceException(
                     message="An active invitation already exists for this email and workspace",
@@ -134,12 +143,18 @@ def create_invitation(
 
         # Check if user is already a member
         # First find if user exists with this email
-        existing_user = db.query(Users).filter(Users.email == invitation_data.email.lower()).first()
+        result = await db.execute(
+            select(Users).where(Users.email == invitation_data.email.lower())
+        )
+        existing_user = result.scalar_one_or_none()
         if existing_user:
-            existing_membership = db.query(WorkspaceMembers).filter(
-                WorkspaceMembers.user_id == existing_user.id,
-                WorkspaceMembers.workspace_id == invitation_data.workspace_id
-            ).first()
+            result = await db.execute(
+                select(WorkspaceMembers).where(
+                    WorkspaceMembers.user_id == existing_user.id,
+                    WorkspaceMembers.workspace_id == invitation_data.workspace_id
+                )
+            )
+            existing_membership = result.scalar_one_or_none()
 
             if existing_membership:
                 raise DuplicateResourceException(
@@ -167,11 +182,12 @@ def create_invitation(
         )
 
         db.add(invitation)
-        db.commit()
-        db.refresh(invitation)
+        await db.commit()
+        await db.refresh(invitation)
 
         # Get inviter details for email
-        inviter = db.query(Users).filter(Users.id == user_id).first()
+        result = await db.execute(select(Users).where(Users.id == user_id))
+        inviter = result.scalar_one_or_none()
 
         # Send invitation email in background using custom or default template
         frontend_url = os.getenv("FRONTEND_URL", "http://localhost:3000")
@@ -241,7 +257,7 @@ def create_invitation(
         raise
     except Exception as e:
         logger.error(f"Error creating invitation: {str(e)}")
-        db.rollback()
+        await db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to create invitation"
@@ -249,11 +265,11 @@ def create_invitation(
 
 
 @router.post("/bulk", status_code=status.HTTP_201_CREATED)
-def create_bulk_invitations(
+async def create_bulk_invitations(
     request: Request,
     invitation_data: BulkCreateInvitationRequest,
     background_tasks: BackgroundTasks,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user)
 ):
     """
@@ -272,9 +288,10 @@ def create_bulk_invitations(
         logger.info(f"User {user_id} creating bulk invitations for {len(invitation_data.emails)} emails")
 
         # Verify workspace exists
-        workspace = db.query(WorkspaceModel).filter(
-            WorkspaceModel.id == invitation_data.workspace_id
-        ).first()
+        result = await db.execute(
+            select(WorkspaceModel).where(WorkspaceModel.id == invitation_data.workspace_id)
+        )
+        workspace = result.scalar_one_or_none()
 
         if not workspace:
             raise ResourceNotFoundException(
@@ -284,11 +301,14 @@ def create_bulk_invitations(
             )
 
         # Check if user has permission to invite to this workspace
-        membership = db.query(WorkspaceMembers).filter(
-            WorkspaceMembers.workspace_id == invitation_data.workspace_id,
-            WorkspaceMembers.user_id == user_id,
-            WorkspaceMembers.status == "active"
-        ).first()
+        result = await db.execute(
+            select(WorkspaceMembers).where(
+                WorkspaceMembers.workspace_id == invitation_data.workspace_id,
+                WorkspaceMembers.user_id == user_id,
+                WorkspaceMembers.status == "active"
+            )
+        )
+        membership = result.scalar_one_or_none()
 
         if not membership:
             raise WrextAuthenticationException(
@@ -297,7 +317,8 @@ def create_bulk_invitations(
             )
 
         # Verify role exists
-        role = db.query(Role).filter(Role.id == invitation_data.role_id).first()
+        result = await db.execute(select(Role).where(Role.id == invitation_data.role_id))
+        role = result.scalar_one_or_none()
         if not role:
             raise ResourceNotFoundException(
                 message="Role not found",
@@ -306,7 +327,8 @@ def create_bulk_invitations(
             )
 
         # Get inviter details for email
-        inviter = db.query(Users).filter(Users.id == user_id).first()
+        result = await db.execute(select(Users).where(Users.id == user_id))
+        inviter = result.scalar_one_or_none()
         inviter_name = inviter.display_name if inviter else "A workspace member"
 
         # Process each email
@@ -319,17 +341,20 @@ def create_bulk_invitations(
                 email_lower = email.lower()
 
                 # Check if invitation already exists for this email + workspace
-                existing_invitation = db.query(UserInvitations).filter(
-                    UserInvitations.email == email_lower,
-                    UserInvitations.workspace_id == invitation_data.workspace_id,
-                    UserInvitations.status == "pending"
-                ).first()
+                result = await db.execute(
+                    select(UserInvitations).where(
+                        UserInvitations.email == email_lower,
+                        UserInvitations.workspace_id == invitation_data.workspace_id,
+                        UserInvitations.status == "pending"
+                    )
+                )
+                existing_invitation = result.scalar_one_or_none()
 
                 if existing_invitation:
                     # Check if expired - if so, revoke it and create new one
                     if is_invitation_expired(existing_invitation):
                         existing_invitation.status = "expired"
-                        db.commit()
+                        await db.commit()
                     else:
                         results.append(BulkInvitationResult(
                             email=email,
@@ -340,12 +365,16 @@ def create_bulk_invitations(
                         continue
 
                 # Check if user is already a member
-                existing_user = db.query(Users).filter(Users.email == email_lower).first()
+                result = await db.execute(select(Users).where(Users.email == email_lower))
+                existing_user = result.scalar_one_or_none()
                 if existing_user:
-                    existing_membership = db.query(WorkspaceMembers).filter(
-                        WorkspaceMembers.user_id == existing_user.id,
-                        WorkspaceMembers.workspace_id == invitation_data.workspace_id
-                    ).first()
+                    result = await db.execute(
+                        select(WorkspaceMembers).where(
+                            WorkspaceMembers.user_id == existing_user.id,
+                            WorkspaceMembers.workspace_id == invitation_data.workspace_id
+                        )
+                    )
+                    existing_membership = result.scalar_one_or_none()
 
                     if existing_membership:
                         results.append(BulkInvitationResult(
@@ -374,7 +403,7 @@ def create_bulk_invitations(
                 )
 
                 db.add(invitation)
-                db.flush()  # Get the ID without committing
+                await db.flush()  # Get the ID without committing
 
                 # Send invitation email asynchronously
                 frontend_url = os.getenv("FRONTEND_URL", "http://localhost:3000")
@@ -435,7 +464,7 @@ def create_bulk_invitations(
                 failed += 1
 
         # Commit all successful invitations
-        db.commit()
+        await db.commit()
 
         logger.info(f"Bulk invitation completed: {successful} successful, {failed} failed")
 
@@ -454,7 +483,7 @@ def create_bulk_invitations(
         raise
     except Exception as e:
         logger.error(f"Error in bulk invitation: {str(e)}")
-        db.rollback()
+        await db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to process bulk invitations"
@@ -466,10 +495,10 @@ def create_bulk_invitations(
 # -------------------------
 
 @router.post("/accept")
-def accept_invitation(
+async def accept_invitation(
     request: Request,
     invitation_data: AcceptInvitationRequest,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user)
 ):
     """
@@ -484,7 +513,8 @@ def accept_invitation(
         logger.info(f"User {user_id} attempting to accept invitation with token")
 
         # Get user details
-        user = db.query(Users).filter(Users.id == user_id).first()
+        result = await db.execute(select(Users).where(Users.id == user_id))
+        user = result.scalar_one_or_none()
         if not user:
             return error(
                 message="User not found",
@@ -495,9 +525,10 @@ def accept_invitation(
             )
 
         # Find invitation by token
-        invitation = db.query(UserInvitations).filter(
-            UserInvitations.invitation_token == invitation_data.token
-        ).first()
+        result = await db.execute(
+            select(UserInvitations).where(UserInvitations.invitation_token == invitation_data.token)
+        )
+        invitation = result.scalar_one_or_none()
 
         if not invitation:
             return error(
@@ -532,7 +563,7 @@ def accept_invitation(
         # Check if expired
         if is_invitation_expired(invitation):
             invitation.status = "expired"
-            db.commit()
+            await db.commit()
             return error(
                 message="Invitation has expired",
                 code=ErrorCode.INVALID_INPUT,
@@ -542,10 +573,13 @@ def accept_invitation(
             )
 
         # Check if user already has membership in this workspace
-        existing_membership = db.query(WorkspaceMembers).filter(
-            WorkspaceMembers.user_id == user_id,
-            WorkspaceMembers.workspace_id == invitation.workspace_id
-        ).first()
+        result = await db.execute(
+            select(WorkspaceMembers).where(
+                WorkspaceMembers.user_id == user_id,
+                WorkspaceMembers.workspace_id == invitation.workspace_id
+            )
+        )
+        existing_membership = result.scalar_one_or_none()
 
         if existing_membership:
             return error(
@@ -571,13 +605,14 @@ def accept_invitation(
         invitation.status = "accepted"
 
         # Get workspace details for response
-        workspace = db.query(WorkspaceModel).filter(
-            WorkspaceModel.id == invitation.workspace_id
-        ).first()
+        result = await db.execute(
+            select(WorkspaceModel).where(WorkspaceModel.id == invitation.workspace_id)
+        )
+        workspace = result.scalar_one_or_none()
 
         # Commit all changes
-        db.commit()
-        db.refresh(membership)
+        await db.commit()
+        await db.refresh(membership)
 
         logger.info(f"User {user_id} accepted invitation to workspace {invitation.workspace_id}")
 
@@ -598,7 +633,7 @@ def accept_invitation(
         raise
     except Exception as e:
         logger.error(f"Error accepting invitation: {str(e)}")
-        db.rollback()
+        await db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to accept invitation"
@@ -606,11 +641,11 @@ def accept_invitation(
 
 
 @router.post("/{invitation_id}/revoke")
-def revoke_invitation(
+async def revoke_invitation(
     invitation_id: str,
     request: Request,
     revoke_data: RevokeInvitationRequest,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user)
 ):
     """
@@ -624,9 +659,10 @@ def revoke_invitation(
         logger.info(f"User {user_id} attempting to revoke invitation {invitation_id}")
 
         # Get invitation
-        invitation = db.query(UserInvitations).filter(
-            UserInvitations.id == invitation_id
-        ).first()
+        result = await db.execute(
+            select(UserInvitations).where(UserInvitations.id == invitation_id)
+        )
+        invitation = result.scalar_one_or_none()
 
         if not invitation:
             return error(
@@ -638,7 +674,8 @@ def revoke_invitation(
             )
 
         # Check permission: must be invitation creator or workspace admin
-        user = db.query(Users).filter(Users.id == user_id).first()
+        result = await db.execute(select(Users).where(Users.id == user_id))
+        user = result.scalar_one_or_none()
 
         # Check if user created the invitation
         is_creator = str(invitation.invited_by_user_id) == str(user_id)
@@ -687,8 +724,8 @@ def revoke_invitation(
             user_email=user.email if user else None
         )
 
-        db.commit()
-        db.refresh(invitation)
+        await db.commit()
+        await db.refresh(invitation)
 
         logger.info(f"Invitation {invitation_id} revoked by user {user_id}")
 
@@ -707,7 +744,7 @@ def revoke_invitation(
         raise
     except Exception as e:
         logger.error(f"Error revoking invitation {invitation_id}: {str(e)}")
-        db.rollback()
+        await db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to revoke invitation"
@@ -715,10 +752,10 @@ def revoke_invitation(
 
 
 @router.get("/sent")
-def list_sent_invitations(
+async def list_sent_invitations(
     request: Request,
     status_filter: Optional[str] = Query(None, description="Filter by status (pending, accepted, revoked, expired)"),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user)
 ):
     """
@@ -731,16 +768,17 @@ def list_sent_invitations(
         logger.info(f"User {user_id} listing sent invitations")
 
         # Build query
-        query = db.query(UserInvitations).filter(
+        query = select(UserInvitations).where(
             UserInvitations.invited_by_user_id == user_id
         )
 
         # Apply status filter
         if status_filter:
-            query = query.filter(UserInvitations.status == status_filter)
+            query = query.where(UserInvitations.status == status_filter)
 
         # Get invitations
-        invitations = query.order_by(UserInvitations.created_at.desc()).all()
+        result = await db.execute(query.order_by(UserInvitations.created_at.desc()))
+        invitations = result.scalars().all()
 
         # Format response with details
         invitations_data = []
@@ -768,9 +806,9 @@ def list_sent_invitations(
 
 
 @router.get("/received")
-def list_received_invitations(
+async def list_received_invitations(
     request: Request,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user)
 ):
     """
@@ -782,7 +820,8 @@ def list_received_invitations(
         user_id = current_user.get("identity")
 
         # Get user email
-        user = db.query(Users).filter(Users.id == user_id).first()
+        result = await db.execute(select(Users).where(Users.id == user_id))
+        user = result.scalar_one_or_none()
         if not user:
             return error(
                 message="User not found",
@@ -795,10 +834,13 @@ def list_received_invitations(
         logger.info(f"User {user_id} listing received invitations for email {user.email}")
 
         # Get pending invitations for user's email
-        invitations = db.query(UserInvitations).filter(
-            UserInvitations.email == user.email,
-            UserInvitations.status == "pending"
-        ).order_by(UserInvitations.created_at.desc()).all()
+        result = await db.execute(
+            select(UserInvitations).where(
+                UserInvitations.email == user.email,
+                UserInvitations.status == "pending"
+            ).order_by(UserInvitations.created_at.desc())
+        )
+        invitations = result.scalars().all()
 
         # Filter out expired and add details
         invitations_data = []
@@ -812,7 +854,7 @@ def list_received_invitations(
                 inv.status = "expired"
 
         # Commit any expiry status updates
-        db.commit()
+        await db.commit()
 
         return success(
             data={
@@ -825,7 +867,7 @@ def list_received_invitations(
 
     except Exception as e:
         logger.error(f"Error listing received invitations: {str(e)}")
-        db.rollback()
+        await db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to retrieve received invitations"

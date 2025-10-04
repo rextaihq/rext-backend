@@ -4,10 +4,10 @@ from langchain_core.messages import SystemMessage
 from src.model.model import topic_generation_model
 from src.prompts.topic_generation_prompts import topic_generation_prompt
 from src.api.security.auth import get_api_key, API_KEY
-from sqlalchemy.orm import Session
-from sqlalchemy import func
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import func, select
 from src.api.models.topic_models.topic_models import TopicsModel as Topics
-from src.api.database.database import get_db
+from src.api.database.async_database import get_async_db
 from src.states.schemas import SaveTopicRequestList
 from src.services.topic_enrichment_service import TopicEnrichmentService
 from src.utils.response_utils import success, error, unauthorized, not_found, no_content
@@ -31,7 +31,7 @@ router = APIRouter(
 
 
 @router.get("/")
-def get_status(request: Request):
+async def get_status(request: Request):
     return success(
         data={"status": "operational", "service": "topic_generation"},
         request=request,
@@ -40,7 +40,7 @@ def get_status(request: Request):
 
 
 @router.post("/generate-topic")
-def generate_topic(
+async def generate_topic(
     data: TopicGenerationInput,
     request: Request,
     api_key: str = Depends(get_api_key)
@@ -146,11 +146,11 @@ def generate_topic(
 
 
 @router.post("/save-topic")
-def save_topic(
+async def save_topic(
     data: SaveTopicRequestList,
     request: Request,
     api_key: str = Depends(get_api_key),
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_async_db)
 ):
     if api_key != API_KEY:
         raise WrextAuthenticationException(
@@ -188,7 +188,7 @@ def save_topic(
                 enriched_topic.id = topic_uuid
 
                 # Resolve workspace ID from either UUID or slug
-                actual_workspace_id = get_workspace_id_from_identifier(db, save_topic_data.workspace_id)
+                actual_workspace_id = await get_workspace_id_from_identifier(db, save_topic_data.workspace_id)
                 if not actual_workspace_id:
                     raise ResourceNotFoundException(
                         message=f"Workspace '{save_topic_data.workspace_id}' not found",
@@ -234,7 +234,7 @@ def save_topic(
                 request=request
             )
 
-        db.commit()
+        await db.commit()
         logger.info(f"Enriched and saved {len(saved)} topics")
 
         return success(
@@ -249,7 +249,7 @@ def save_topic(
 
     except Exception as e:
         logger.info(f"Error saving topics: {e}")
-        db.rollback()
+        await db.rollback()
         return error(
             message="Failed to save topics due to server error",
             code=ErrorCode.INTERNAL_SERVER_ERROR,
@@ -261,12 +261,12 @@ def save_topic(
 
 
 @router.get("/get-topic/{topic_id}")
-def get_topic(
+async def get_topic(
     topic_id: str,
     request: Request,
     workspace_id: str,
     api_key: str = Depends(get_api_key),
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_async_db)
 ):
     if api_key != API_KEY:
         raise WrextAuthenticationException(
@@ -276,7 +276,7 @@ def get_topic(
 
     try:
         # Resolve workspace ID from either UUID or slug
-        actual_workspace_id = get_workspace_id_from_identifier(db, workspace_id)
+        actual_workspace_id = await get_workspace_id_from_identifier(db, workspace_id)
         if not actual_workspace_id:
             raise ResourceNotFoundException(
                 message=f"Workspace '{workspace_id}' not found",
@@ -285,10 +285,11 @@ def get_topic(
             )
 
         logger.info(f"Fetching topic with ID: {topic_id} for workspace: {workspace_id} (resolved to {actual_workspace_id})")
-        topic = db.query(Topics).filter(
+        result = await db.execute(select(Topics).where(
             Topics.id == topic_id,
             Topics.workspace_id == actual_workspace_id
-        ).first()
+        ))
+        topic = result.scalar_one_or_none()
 
         if not topic:
             raise ResourceNotFoundException(
@@ -344,11 +345,11 @@ def get_topic(
 
 
 @router.get("/get-topics")
-def get_topics(
+async def get_topics(
     request: Request,
     workspace_id: str,
     api_key: str = Depends(get_api_key),
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_async_db)
 ):
     if api_key != API_KEY:
         raise WrextAuthenticationException(
@@ -358,7 +359,7 @@ def get_topics(
 
     try:
         # Resolve workspace ID from either UUID or slug
-        actual_workspace_id = get_workspace_id_from_identifier(db, workspace_id)
+        actual_workspace_id = await get_workspace_id_from_identifier(db, workspace_id)
         if not actual_workspace_id:
             raise ResourceNotFoundException(
                 message=f"Workspace '{workspace_id}' not found",
@@ -368,12 +369,13 @@ def get_topics(
 
         logger.info(f"Fetching topics from DB for workspace {workspace_id} (resolved to {actual_workspace_id})...")
         # Filter by workspace_id and order by updated_at first (most recent updates), then by created_at (newest first)
-        topics = db.query(Topics).filter(
+        result = await db.execute(select(Topics).where(
             Topics.workspace_id == actual_workspace_id
         ).order_by(
             Topics.updated_at.desc().nulls_last(),
             Topics.created_at.desc()
-        ).all()
+        ))
+        topics = result.scalars().all()
         logger.info(f"Fetched {len(topics)} topics for workspace {workspace_id} (ordered by latest date)")
 
         # Convert topics to dict format for consistent response
@@ -419,12 +421,12 @@ def get_topics(
 
 
 @router.delete("/delete-topic", description="Delete multiple topics by IDs")
-def delete_topics(
+async def delete_topics(
     topic_ids: DeleteTopics,
     request: Request,
     workspace_id: str,
     api_key: str = Depends(get_api_key),
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_async_db)
 ):
     if api_key != API_KEY:
         raise WrextAuthenticationException(
@@ -437,7 +439,7 @@ def delete_topics(
         logger.info(f"Attempting to delete {len(topic_id_list)} topics from workspace {workspace_id}...")
 
         # Resolve workspace ID from either UUID or slug
-        actual_workspace_id = get_workspace_id_from_identifier(db, workspace_id)
+        actual_workspace_id = await get_workspace_id_from_identifier(db, workspace_id)
         if not actual_workspace_id:
             raise ResourceNotFoundException(
                 message=f"Workspace '{workspace_id}' not found",
@@ -446,10 +448,11 @@ def delete_topics(
             )
 
         # Fetch topics - only from the specified workspace
-        topics = db.query(Topics).filter(
+        result = await db.execute(select(Topics).where(
             Topics.id.in_(topic_id_list),
             Topics.workspace_id == actual_workspace_id
-        ).all()
+        ))
+        topics = result.scalars().all()
 
         if not topics:
             return ResourceNotFoundException(
@@ -466,10 +469,10 @@ def delete_topics(
         # Delete all found topics
         deleted_count = 0
         for topic in topics:
-            db.delete(topic)
+            await db.delete(topic)
             deleted_count += 1
 
-        db.commit()
+        await db.commit()
         logger.info(f"Successfully deleted {deleted_count} topics")
 
         response_data = {
@@ -489,7 +492,7 @@ def delete_topics(
         )
     except Exception as e:
         logger.info(f"Error deleting topics: {e}")
-        db.rollback()
+        await db.rollback()
         return error(
             message="Failed to delete topics",
             code=ErrorCode.INTERNAL_SERVER_ERROR,
@@ -501,12 +504,12 @@ def delete_topics(
 
 
 @router.put("/update-topic")
-def update_topic(
+async def update_topic(
     data: UpdateTopicRequest,
     request: Request,
     workspace_id: str,
     api_key: str = Depends(get_api_key),
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_async_db)
 ):
     if api_key != API_KEY:
         raise WrextAuthenticationException(
@@ -519,7 +522,7 @@ def update_topic(
         logger.info(f"Attempting to update topic with ID: {topic_id} in workspace: {workspace_id}")
 
         # Resolve workspace ID from either UUID or slug
-        actual_workspace_id = get_workspace_id_from_identifier(db, workspace_id)
+        actual_workspace_id = await get_workspace_id_from_identifier(db, workspace_id)
         if not actual_workspace_id:
             raise ResourceNotFoundException(
                 message=f"Workspace '{workspace_id}' not found",
@@ -528,10 +531,11 @@ def update_topic(
             )
 
         # Fetch the topic - only from the specified workspace
-        topic = db.query(Topics).filter(
+        result = await db.execute(select(Topics).where(
             Topics.id == topic_id,
             Topics.workspace_id == actual_workspace_id
-        ).first()
+        ))
+        topic = result.scalar_one_or_none()
 
         if not topic:
             raise ResourceNotFoundException(
@@ -590,7 +594,7 @@ def update_topic(
             topic.updated_at = func.now()
             updated_fields.append("updated_at")
 
-        db.commit()
+        await db.commit()
         logger.info(f"Successfully updated topic '{topic.title}' - fields: {', '.join(updated_fields)}")
 
         return success(
@@ -609,7 +613,7 @@ def update_topic(
         raise
     except Exception as e:
         logger.info(f"Error updating topic {data.topic_id}: {e}")
-        db.rollback()
+        await db.rollback()
         return error(
             message="Failed to update topic",
             code=ErrorCode.INTERNAL_SERVER_ERROR,

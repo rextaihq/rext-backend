@@ -5,12 +5,12 @@ This module provides CRUD operations for permissions with proper authorization.
 """
 
 from fastapi import APIRouter, Depends, HTTPException, status, Request, Query
-from sqlalchemy.orm import Session
-from sqlalchemy import func
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import func, select
 from typing import List, Optional
 from datetime import datetime
 
-from src.api.database.database import get_db
+from src.api.database.async_database import get_async_db
 from src.api.security.dependencies import get_current_user
 from src.api.middleware.permissions import require_permissions, is_admin
 from src.api.models.user_models.permissions import Permission
@@ -40,11 +40,11 @@ router = APIRouter(
 
 
 @router.get("", response_model=dict)
-def list_permissions(
+async def list_permissions(
     request: Request,
     resource: Optional[str] = Query(None, description="Filter by resource type"),
     include_roles: bool = Query(False, description="Include roles for each permission"),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user)
 ):
     """
@@ -64,23 +64,26 @@ def list_permissions(
         user_id = current_user.get("identity")
 
         # Check if admin
-        is_user_admin = db.query(UserRole).join(Role).filter(
-            UserRole.user_id == user_id,
-            Role.name.in_(["admin", "super_admin"])
-        ).first() is not None
+        result = await db.execute(
+            select(UserRole).join(Role).where(
+                UserRole.user_id == user_id,
+                Role.name.in_(["admin", "super_admin"])
+            )
+        )
+        is_user_admin = result.scalar_one_or_none() is not None
 
         if not is_user_admin:
             # Check for permission.read permission
-            has_permission = (
-                db.query(Permission.name)
+            result = await db.execute(
+                select(Permission.name)
                 .join(RolePermission, RolePermission.permission_id == Permission.id)
                 .join(UserRole, UserRole.role_id == RolePermission.role_id)
-                .filter(
+                .where(
                     UserRole.user_id == user_id,
                     Permission.name == "permission.read"
                 )
-                .first()
             )
+            has_permission = result.scalar_one_or_none()
 
             if not has_permission:
                 raise HTTPException(
@@ -89,25 +92,26 @@ def list_permissions(
                 )
 
         # Query permissions
-        query = db.query(Permission)
+        query = select(Permission)
 
         # Filter by resource if provided
         if resource:
-            query = query.filter(Permission.resource == resource)
+            query = query.where(Permission.resource == resource)
 
-        permissions = query.order_by(Permission.resource, Permission.action).all()
+        result = await db.execute(query.order_by(Permission.resource, Permission.action))
+        permissions = result.scalars().all()
 
         # Format response
         if include_roles:
             permissions_data = []
             for perm in permissions:
                 # Get roles that have this permission
-                roles = (
-                    db.query(Role)
+                result = await db.execute(
+                    select(Role)
                     .join(RolePermission, RolePermission.role_id == Role.id)
-                    .filter(RolePermission.permission_id == perm.id)
-                    .all()
+                    .where(RolePermission.permission_id == perm.id)
                 )
+                roles = result.scalars().all()
 
                 perm_dict = perm.to_dict()
                 perm_dict["roles"] = [
@@ -140,11 +144,11 @@ def list_permissions(
 
 
 @router.get("/{permission_id}", response_model=dict)
-def get_permission(
+async def get_permission(
     request: Request,
     permission_id: str,
     include_roles: bool = Query(False, description="Include roles"),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user)
 ):
     """
@@ -166,23 +170,26 @@ def get_permission(
         user_id = current_user.get("identity")
 
         # Check if admin
-        is_user_admin = db.query(UserRole).join(Role).filter(
-            UserRole.user_id == user_id,
-            Role.name.in_(["admin", "super_admin"])
-        ).first() is not None
+        result = await db.execute(
+            select(UserRole).join(Role).where(
+                UserRole.user_id == user_id,
+                Role.name.in_(["admin", "super_admin"])
+            )
+        )
+        is_user_admin = result.scalar_one_or_none() is not None
 
         if not is_user_admin:
             # Check for permission.read permission
-            has_permission = (
-                db.query(Permission.name)
+            result = await db.execute(
+                select(Permission.name)
                 .join(RolePermission, RolePermission.permission_id == Permission.id)
                 .join(UserRole, UserRole.role_id == RolePermission.role_id)
-                .filter(
+                .where(
                     UserRole.user_id == user_id,
                     Permission.name == "permission.read"
                 )
-                .first()
             )
+            has_permission = result.scalar_one_or_none()
 
             if not has_permission:
                 raise HTTPException(
@@ -191,7 +198,8 @@ def get_permission(
                 )
 
         # Get permission
-        permission = db.query(Permission).filter(Permission.id == permission_id).first()
+        result = await db.execute(select(Permission).where(Permission.id == permission_id))
+        permission = result.scalar_one_or_none()
 
         if not permission:
             raise ResourceNotFoundException(
@@ -203,12 +211,12 @@ def get_permission(
 
         # Include roles if requested
         if include_roles:
-            roles = (
-                db.query(Role)
+            result = await db.execute(
+                select(Role)
                 .join(RolePermission, RolePermission.role_id == Role.id)
-                .filter(RolePermission.permission_id == permission.id)
-                .all()
+                .where(RolePermission.permission_id == permission.id)
             )
+            roles = result.scalars().all()
 
             perm_data["roles"] = [
                 {
@@ -237,10 +245,10 @@ def get_permission(
 
 
 @router.post("", response_model=dict, status_code=status.HTTP_201_CREATED)
-def create_permission(
+async def create_permission(
     request: Request,
     permission_data: PermissionCreate,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user)
 ):
     """
@@ -263,23 +271,26 @@ def create_permission(
         user_id = current_user.get("identity")
 
         # Check if admin
-        is_user_admin = db.query(UserRole).join(Role).filter(
-            UserRole.user_id == user_id,
-            Role.name.in_(["admin", "super_admin"])
-        ).first() is not None
+        result = await db.execute(
+            select(UserRole).join(Role).where(
+                UserRole.user_id == user_id,
+                Role.name.in_(["admin", "super_admin"])
+            )
+        )
+        is_user_admin = result.scalar_one_or_none() is not None
 
         if not is_user_admin:
             # Check for permission.create permission
-            has_permission = (
-                db.query(Permission.name)
+            result = await db.execute(
+                select(Permission.name)
                 .join(RolePermission, RolePermission.permission_id == Permission.id)
                 .join(UserRole, UserRole.role_id == RolePermission.role_id)
-                .filter(
+                .where(
                     UserRole.user_id == user_id,
                     Permission.name == "permission.create"
                 )
-                .first()
             )
+            has_permission = result.scalar_one_or_none()
 
             if not has_permission:
                 raise HTTPException(
@@ -288,9 +299,12 @@ def create_permission(
                 )
 
         # Check if permission name already exists (case-insensitive)
-        existing_perm = db.query(Permission).filter(
-            func.lower(Permission.name) == permission_data.name.lower()
-        ).first()
+        result = await db.execute(
+            select(Permission).where(
+                func.lower(Permission.name) == permission_data.name.lower()
+            )
+        )
+        existing_perm = result.scalar_one_or_none()
 
         if existing_perm:
             raise DuplicateResourceException(
@@ -316,8 +330,8 @@ def create_permission(
         )
 
         db.add(new_permission)
-        db.commit()
-        db.refresh(new_permission)
+        await db.commit()
+        await db.refresh(new_permission)
 
         logger.info(f"Permission created: {new_permission.name} by user {user_id}")
 
@@ -330,7 +344,7 @@ def create_permission(
     except (HTTPException, DuplicateResourceException, WrextValidationException):
         raise
     except Exception as e:
-        db.rollback()
+        await db.rollback()
         logger.error(f"Error creating permission: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -339,11 +353,11 @@ def create_permission(
 
 
 @router.put("/{permission_id}", response_model=dict)
-def update_permission(
+async def update_permission(
     request: Request,
     permission_id: str,
     permission_data: PermissionUpdate,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user)
 ):
     """
@@ -371,23 +385,26 @@ def update_permission(
         user_id = current_user.get("identity")
 
         # Check if admin
-        is_user_admin = db.query(UserRole).join(Role).filter(
-            UserRole.user_id == user_id,
-            Role.name.in_(["admin", "super_admin"])
-        ).first() is not None
+        result = await db.execute(
+            select(UserRole).join(Role).where(
+                UserRole.user_id == user_id,
+                Role.name.in_(["admin", "super_admin"])
+            )
+        )
+        is_user_admin = result.scalar_one_or_none() is not None
 
         if not is_user_admin:
             # Check for permission.update permission
-            has_permission = (
-                db.query(Permission.name)
+            result = await db.execute(
+                select(Permission.name)
                 .join(RolePermission, RolePermission.permission_id == Permission.id)
                 .join(UserRole, UserRole.role_id == RolePermission.role_id)
-                .filter(
+                .where(
                     UserRole.user_id == user_id,
                     Permission.name == "permission.update"
                 )
-                .first()
             )
+            has_permission = result.scalar_one_or_none()
 
             if not has_permission:
                 raise HTTPException(
@@ -396,7 +413,8 @@ def update_permission(
                 )
 
         # Get permission
-        permission = db.query(Permission).filter(Permission.id == permission_id).first()
+        result = await db.execute(select(Permission).where(Permission.id == permission_id))
+        permission = result.scalar_one_or_none()
 
         if not permission:
             raise ResourceNotFoundException(
@@ -423,10 +441,13 @@ def update_permission(
             if permission.name != expected_name:
                 # Update name to match new resource.action
                 # Check if new name already exists
-                existing = db.query(Permission).filter(
-                    Permission.name == expected_name,
-                    Permission.id != permission_id
-                ).first()
+                result = await db.execute(
+                    select(Permission).where(
+                        Permission.name == expected_name,
+                        Permission.id != permission_id
+                    )
+                )
+                existing = result.scalar_one_or_none()
 
                 if existing:
                     raise DuplicateResourceException(
@@ -436,8 +457,8 @@ def update_permission(
 
                 permission.name = expected_name
 
-        db.commit()
-        db.refresh(permission)
+        await db.commit()
+        await db.refresh(permission)
 
         logger.info(f"Permission updated: {permission.name} by user {user_id}")
 
@@ -450,7 +471,7 @@ def update_permission(
     except (HTTPException, ResourceNotFoundException, DuplicateResourceException):
         raise
     except Exception as e:
-        db.rollback()
+        await db.rollback()
         logger.error(f"Error updating permission {permission_id}: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -459,10 +480,10 @@ def update_permission(
 
 
 @router.delete("/{permission_id}", response_model=dict)
-def delete_permission(
+async def delete_permission(
     request: Request,
     permission_id: str,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user)
 ):
     """
@@ -484,23 +505,26 @@ def delete_permission(
         user_id = current_user.get("identity")
 
         # Check if admin
-        is_user_admin = db.query(UserRole).join(Role).filter(
-            UserRole.user_id == user_id,
-            Role.name.in_(["admin", "super_admin"])
-        ).first() is not None
+        result = await db.execute(
+            select(UserRole).join(Role).where(
+                UserRole.user_id == user_id,
+                Role.name.in_(["admin", "super_admin"])
+            )
+        )
+        is_user_admin = result.scalar_one_or_none() is not None
 
         if not is_user_admin:
             # Check for permission.delete permission
-            has_permission = (
-                db.query(Permission.name)
+            result = await db.execute(
+                select(Permission.name)
                 .join(RolePermission, RolePermission.permission_id == Permission.id)
                 .join(UserRole, UserRole.role_id == RolePermission.role_id)
-                .filter(
+                .where(
                     UserRole.user_id == user_id,
                     Permission.name == "permission.delete"
                 )
-                .first()
             )
+            has_permission = result.scalar_one_or_none()
 
             if not has_permission:
                 raise HTTPException(
@@ -509,7 +533,8 @@ def delete_permission(
                 )
 
         # Get permission
-        permission = db.query(Permission).filter(Permission.id == permission_id).first()
+        result = await db.execute(select(Permission).where(Permission.id == permission_id))
+        permission = result.scalar_one_or_none()
 
         if not permission:
             raise ResourceNotFoundException(
@@ -518,9 +543,12 @@ def delete_permission(
             )
 
         # Check if permission is assigned to any roles
-        role_count = db.query(RolePermission).filter(
-            RolePermission.permission_id == permission_id
-        ).count()
+        result = await db.execute(
+            select(RolePermission).where(
+                RolePermission.permission_id == permission_id
+            )
+        )
+        role_count = len(result.scalars().all())
 
         if role_count > 0:
             raise WrextValidationException(
@@ -530,8 +558,8 @@ def delete_permission(
 
         # Delete the permission
         permission_name = permission.name
-        db.delete(permission)
-        db.commit()
+        await db.delete(permission)
+        await db.commit()
 
         logger.info(f"Permission deleted: {permission_name} by user {user_id}")
 
@@ -544,7 +572,7 @@ def delete_permission(
     except (HTTPException, ResourceNotFoundException, WrextValidationException):
         raise
     except Exception as e:
-        db.rollback()
+        await db.rollback()
         logger.error(f"Error deleting permission {permission_id}: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

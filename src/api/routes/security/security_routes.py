@@ -6,13 +6,13 @@ Includes failed login tracking, locked account management, and security statisti
 """
 
 from fastapi import APIRouter, Depends, HTTPException, status, Request, Query
-from sqlalchemy.orm import Session
-from sqlalchemy import func, and_, or_
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, func, and_, or_
 from typing import List, Optional
 from datetime import datetime, timedelta
 import uuid
 
-from src.api.database.database import get_db
+from src.api.database.async_database import get_async_db
 from src.api.security.dependencies import get_current_user
 from src.api.middleware.permissions import is_admin
 from src.api.models.user_models.users import Users
@@ -39,11 +39,11 @@ router = APIRouter(
 
 
 @router.get("/failed-logins", response_model=dict)
-def get_failed_logins(
+async def get_failed_logins(
     request: Request,
     limit: int = Query(50, ge=1, le=500, description="Results per page"),
     offset: int = Query(0, ge=0, description="Pagination offset"),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user),
     _: bool = Depends(is_admin)
 ):
@@ -59,12 +59,15 @@ def get_failed_logins(
     """
     try:
         # Get users with failed login attempts
-        query = db.query(Users).filter(
+        query = select(Users).where(
             Users.failed_login_attempts > 0
         ).order_by(Users.failed_login_attempts.desc())
 
-        total_count = query.count()
-        users = query.offset(offset).limit(limit).all()
+        total_count_result = await db.execute(select(func.count()).select_from(query.subquery()))
+        total_count = total_count_result.scalar() or 0
+
+        users_result = await db.execute(query.offset(offset).limit(limit))
+        users = users_result.scalars().all()
 
         users_data = []
         for user in users:
@@ -103,12 +106,12 @@ def get_failed_logins(
 
 
 @router.get("/locked-accounts", response_model=dict)
-def get_locked_accounts(
+async def get_locked_accounts(
     request: Request,
     include_expired: bool = Query(False, description="Include accounts with expired locks"),
     limit: int = Query(50, ge=1, le=500, description="Results per page"),
     offset: int = Query(0, ge=0, description="Pagination offset"),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user),
     _: bool = Depends(is_admin)
 ):
@@ -125,17 +128,18 @@ def get_locked_accounts(
     """
     try:
         # Build query
-        query = db.query(Users).filter(
-            Users.locked_until.isnot(None)
-        )
+        query = select(Users).where(Users.locked_until.isnot(None))
 
         if not include_expired:
-            query = query.filter(Users.locked_until > datetime.utcnow())
+            query = query.where(Users.locked_until > datetime.utcnow())
 
         query = query.order_by(Users.locked_until.desc())
 
-        total_count = query.count()
-        users = query.offset(offset).limit(limit).all()
+        total_count_result = await db.execute(select(func.count()).select_from(query.subquery()))
+        total_count = total_count_result.scalar() or 0
+
+        users_result = await db.execute(query.offset(offset).limit(limit))
+        users = users_result.scalars().all()
 
         locked_accounts = []
         now = datetime.utcnow()
@@ -176,11 +180,11 @@ def get_locked_accounts(
 
 
 @router.post("/{user_id}/unlock", response_model=dict)
-def unlock_account(
+async def unlock_account(
     request: Request,
     user_id: str,
     unlock_data: UnlockAccountRequest,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user),
     _: bool = Depends(is_admin)
 ):
@@ -200,7 +204,8 @@ def unlock_account(
         admin_user_id = current_user.get("identity")
 
         # Get user
-        user = db.query(Users).filter(Users.id == user_id).first()
+        user_result = await db.execute(select(Users).where(Users.id == user_id))
+        user = user_result.scalar_one_or_none()
 
         if not user:
             raise ResourceNotFoundException(
@@ -220,11 +225,12 @@ def unlock_account(
         user.failed_login_attempts = 0
         user.updated_at = datetime.utcnow()
 
-        db.commit()
-        db.refresh(user)
+        await db.commit()
+        await db.refresh(user)
 
         # Create audit log
-        admin_user = db.query(Users).filter(Users.id == admin_user_id).first()
+        admin_user_result = await db.execute(select(Users).where(Users.id == admin_user_id))
+        admin_user = admin_user_result.scalar_one_or_none()
 
         create_audit_log(
             db=db,
@@ -258,7 +264,7 @@ def unlock_account(
         raise
     except Exception as e:
         logger.error(f"Error unlocking account {user_id}: {e}")
-        db.rollback()
+        await db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to unlock account"
@@ -266,11 +272,11 @@ def unlock_account(
 
 
 @router.post("/{user_id}/reset-failed-attempts", response_model=dict)
-def reset_failed_attempts(
+async def reset_failed_attempts(
     request: Request,
     user_id: str,
     reset_data: ResetFailedAttemptsRequest,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user),
     _: bool = Depends(is_admin)
 ):
@@ -290,7 +296,8 @@ def reset_failed_attempts(
         admin_user_id = current_user.get("identity")
 
         # Get user
-        user = db.query(Users).filter(Users.id == user_id).first()
+        user_result = await db.execute(select(Users).where(Users.id == user_id))
+        user = user_result.scalar_one_or_none()
 
         if not user:
             raise ResourceNotFoundException(
@@ -304,11 +311,12 @@ def reset_failed_attempts(
         user.failed_login_attempts = 0
         user.updated_at = datetime.utcnow()
 
-        db.commit()
-        db.refresh(user)
+        await db.commit()
+        await db.refresh(user)
 
         # Create audit log
-        admin_user = db.query(Users).filter(Users.id == admin_user_id).first()
+        admin_user_result = await db.execute(select(Users).where(Users.id == admin_user_id))
+        admin_user = admin_user_result.scalar_one_or_none()
 
         create_audit_log(
             db=db,
@@ -342,7 +350,7 @@ def reset_failed_attempts(
         raise
     except Exception as e:
         logger.error(f"Error resetting failed attempts for {user_id}: {e}")
-        db.rollback()
+        await db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to reset failed login attempts"
@@ -350,9 +358,9 @@ def reset_failed_attempts(
 
 
 @router.get("/stats", response_model=dict)
-def get_security_stats(
+async def get_security_stats(
     request: Request,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user),
     _: bool = Depends(is_admin)
 ):
@@ -374,68 +382,96 @@ def get_security_stats(
         last_30d = now - timedelta(days=30)
 
         # Failed login stats from audit logs
-        failed_logins_24h = db.query(func.count(AuditLog.id)).filter(
-            AuditLog.action == "auth.login",
-            AuditLog.status == "failed",
-            AuditLog.created_at >= last_24h
-        ).scalar() or 0
+        failed_24h_result = await db.execute(
+            select(func.count(AuditLog.id)).where(
+                AuditLog.action == "auth.login",
+                AuditLog.status == "failed",
+                AuditLog.created_at >= last_24h
+            )
+        )
+        failed_logins_24h = failed_24h_result.scalar() or 0
 
-        failed_logins_7d = db.query(func.count(AuditLog.id)).filter(
-            AuditLog.action == "auth.login",
-            AuditLog.status == "failed",
-            AuditLog.created_at >= last_7d
-        ).scalar() or 0
+        failed_7d_result = await db.execute(
+            select(func.count(AuditLog.id)).where(
+                AuditLog.action == "auth.login",
+                AuditLog.status == "failed",
+                AuditLog.created_at >= last_7d
+            )
+        )
+        failed_logins_7d = failed_7d_result.scalar() or 0
 
-        failed_logins_30d = db.query(func.count(AuditLog.id)).filter(
-            AuditLog.action == "auth.login",
-            AuditLog.status == "failed",
-            AuditLog.created_at >= last_30d
-        ).scalar() or 0
+        failed_30d_result = await db.execute(
+            select(func.count(AuditLog.id)).where(
+                AuditLog.action == "auth.login",
+                AuditLog.status == "failed",
+                AuditLog.created_at >= last_30d
+            )
+        )
+        failed_logins_30d = failed_30d_result.scalar() or 0
 
         # Locked accounts
-        currently_locked = db.query(func.count(Users.id)).filter(
-            Users.locked_until.isnot(None),
-            Users.locked_until > now
-        ).scalar() or 0
+        locked_result = await db.execute(
+            select(func.count(Users.id)).where(
+                Users.locked_until.isnot(None),
+                Users.locked_until > now
+            )
+        )
+        currently_locked = locked_result.scalar() or 0
 
-        locked_24h = db.query(func.count(AuditLog.id)).filter(
-            AuditLog.action == "user.lock",
-            AuditLog.created_at >= last_24h
-        ).scalar() or 0
+        locked_24h_result = await db.execute(
+            select(func.count(AuditLog.id)).where(
+                AuditLog.action == "user.lock",
+                AuditLog.created_at >= last_24h
+            )
+        )
+        locked_24h = locked_24h_result.scalar() or 0
 
         # Password security
-        password_resets_24h = db.query(func.count(AuditLog.id)).filter(
-            AuditLog.action == "auth.password_reset",
-            AuditLog.created_at >= last_24h
-        ).scalar() or 0
+        pwd_reset_result = await db.execute(
+            select(func.count(AuditLog.id)).where(
+                AuditLog.action == "auth.password_reset",
+                AuditLog.created_at >= last_24h
+            )
+        )
+        password_resets_24h = pwd_reset_result.scalar() or 0
 
-        password_changes_24h = db.query(func.count(AuditLog.id)).filter(
-            AuditLog.action == "auth.password_change",
-            AuditLog.created_at >= last_24h
-        ).scalar() or 0
+        pwd_change_result = await db.execute(
+            select(func.count(AuditLog.id)).where(
+                AuditLog.action == "auth.password_change",
+                AuditLog.created_at >= last_24h
+            )
+        )
+        password_changes_24h = pwd_change_result.scalar() or 0
 
         # Account activity
-        new_registrations_24h = db.query(func.count(Users.id)).filter(
-            Users.created_at >= last_24h
-        ).scalar() or 0
+        new_users_result = await db.execute(
+            select(func.count(Users.id)).where(Users.created_at >= last_24h)
+        )
+        new_registrations_24h = new_users_result.scalar() or 0
 
-        email_verifications_24h = db.query(func.count(AuditLog.id)).filter(
-            AuditLog.action == "user.verify_email",
-            AuditLog.created_at >= last_24h
-        ).scalar() or 0
+        verify_result = await db.execute(
+            select(func.count(AuditLog.id)).where(
+                AuditLog.action == "user.verify_email",
+                AuditLog.created_at >= last_24h
+            )
+        )
+        email_verifications_24h = verify_result.scalar() or 0
 
         # Top failed login IPs (from audit logs)
-        top_ips = db.query(
-            AuditLog.ip_address,
-            func.count(AuditLog.id).label('count')
-        ).filter(
-            AuditLog.action == "auth.login",
-            AuditLog.status == "failed",
-            AuditLog.created_at >= last_7d,
-            AuditLog.ip_address.isnot(None)
-        ).group_by(AuditLog.ip_address).order_by(
-            func.count(AuditLog.id).desc()
-        ).limit(10).all()
+        top_ips_result = await db.execute(
+            select(
+                AuditLog.ip_address,
+                func.count(AuditLog.id).label('count')
+            ).where(
+                AuditLog.action == "auth.login",
+                AuditLog.status == "failed",
+                AuditLog.created_at >= last_7d,
+                AuditLog.ip_address.isnot(None)
+            ).group_by(AuditLog.ip_address).order_by(
+                func.count(AuditLog.id).desc()
+            ).limit(10)
+        )
+        top_ips = top_ips_result.all()
 
         top_failed_login_ips = [
             {"ip": str(ip), "count": count}
@@ -443,12 +479,15 @@ def get_security_stats(
         ]
 
         # Top users with failed logins
-        top_users_query = db.query(
-            Users.email,
-            Users.failed_login_attempts.label('count')
-        ).filter(
-            Users.failed_login_attempts > 0
-        ).order_by(Users.failed_login_attempts.desc()).limit(10).all()
+        top_users_result = await db.execute(
+            select(
+                Users.email,
+                Users.failed_login_attempts.label('count')
+            ).where(
+                Users.failed_login_attempts > 0
+            ).order_by(Users.failed_login_attempts.desc()).limit(10)
+        )
+        top_users_query = top_users_result.all()
 
         top_failed_login_users = [
             {"email": email, "count": count}
@@ -486,11 +525,11 @@ def get_security_stats(
 
 
 @router.get("/login-history/{user_id}", response_model=dict)
-def get_user_login_history(
+async def get_user_login_history(
     request: Request,
     user_id: str,
     limit: int = Query(50, ge=1, le=100, description="Number of recent logins"),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user),
     _: bool = Depends(is_admin)
 ):
@@ -508,7 +547,8 @@ def get_user_login_history(
     """
     try:
         # Get user
-        user = db.query(Users).filter(Users.id == user_id).first()
+        user_result = await db.execute(select(Users).where(Users.id == user_id))
+        user = user_result.scalar_one_or_none()
 
         if not user:
             raise ResourceNotFoundException(
@@ -517,10 +557,13 @@ def get_user_login_history(
             )
 
         # Get login events from audit log
-        login_events = db.query(AuditLog).filter(
-            AuditLog.user_id == user_id,
-            AuditLog.action.like("auth.login%")
-        ).order_by(AuditLog.created_at.desc()).limit(limit).all()
+        events_result = await db.execute(
+            select(AuditLog).where(
+                AuditLog.user_id == user_id,
+                AuditLog.action.like("auth.login%")
+            ).order_by(AuditLog.created_at.desc()).limit(limit)
+        )
+        login_events = events_result.scalars().all()
 
         login_history = []
         for event in login_events:

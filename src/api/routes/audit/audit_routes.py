@@ -7,15 +7,15 @@ and queried via these endpoints.
 """
 
 from fastapi import APIRouter, Depends, HTTPException, status, Request, Query, Response
-from sqlalchemy.orm import Session
-from sqlalchemy import func, or_, and_
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import func, or_, and_, select
 from typing import List, Optional
 from datetime import datetime
 import csv
 import io
 import json
 
-from src.api.database.database import get_db
+from src.api.database.async_database import get_async_db
 from src.api.security.dependencies import get_current_user
 from src.api.middleware.permissions import is_admin
 from src.api.models.audit_models.audit_logs import AuditLog
@@ -40,8 +40,8 @@ router = APIRouter(
 )
 
 
-def build_audit_query(
-    db: Session,
+async def build_audit_query(
+    db: AsyncSession,
     user_id: Optional[str] = None,
     username: Optional[str] = None,
     user_email: Optional[str] = None,
@@ -58,44 +58,44 @@ def build_audit_query(
 
     Helper function to construct SQLAlchemy query with optional filters.
     """
-    query = db.query(AuditLog)
+    query = select(AuditLog)
 
     # Filter by user
     if user_id:
-        query = query.filter(AuditLog.user_id == user_id)
+        query = query.where(AuditLog.user_id == user_id)
     if username:
-        query = query.filter(AuditLog.username.ilike(f"%{username}%"))
+        query = query.where(AuditLog.username.ilike(f"%{username}%"))
     if user_email:
-        query = query.filter(AuditLog.user_email.ilike(f"%{user_email}%"))
+        query = query.where(AuditLog.user_email.ilike(f"%{user_email}%"))
 
     # Filter by action (supports prefix matching, e.g., "user." matches all user actions)
     if action:
         if action.endswith("."):
             # Prefix match: "user." matches "user.create", "user.update", etc.
-            query = query.filter(AuditLog.action.like(f"{action}%"))
+            query = query.where(AuditLog.action.like(f"{action}%"))
         else:
             # Exact match
-            query = query.filter(AuditLog.action == action)
+            query = query.where(AuditLog.action == action)
 
     # Filter by resource
     if resource_type:
-        query = query.filter(AuditLog.resource_type == resource_type)
+        query = query.where(AuditLog.resource_type == resource_type)
     if resource_id:
-        query = query.filter(AuditLog.resource_id == resource_id)
+        query = query.where(AuditLog.resource_id == resource_id)
 
     # Filter by workspace
     if workspace_id:
-        query = query.filter(AuditLog.workspace_id == workspace_id)
+        query = query.where(AuditLog.workspace_id == workspace_id)
 
     # Filter by status
     if status_filter:
-        query = query.filter(AuditLog.status == status_filter.value)
+        query = query.where(AuditLog.status == status_filter.value)
 
     # Filter by date range
     if date_from:
         try:
             date_from_dt = datetime.fromisoformat(date_from.replace("Z", "+00:00"))
-            query = query.filter(AuditLog.created_at >= date_from_dt)
+            query = query.where(AuditLog.created_at >= date_from_dt)
         except ValueError:
             raise WrextValidationException(
                 field="date_from",
@@ -105,7 +105,7 @@ def build_audit_query(
     if date_to:
         try:
             date_to_dt = datetime.fromisoformat(date_to.replace("Z", "+00:00"))
-            query = query.filter(AuditLog.created_at <= date_to_dt)
+            query = query.where(AuditLog.created_at <= date_to_dt)
         except ValueError:
             raise WrextValidationException(
                 field="date_to",
@@ -154,7 +154,7 @@ def format_audit_log(log: AuditLog, include_details: bool = False) -> dict:
 
 
 @router.get("", response_model=dict)
-def list_audit_logs(
+async def list_audit_logs(
     request: Request,
     user_id: Optional[str] = Query(None, description="Filter by user ID"),
     username: Optional[str] = Query(None, description="Filter by username (partial match)"),
@@ -168,7 +168,7 @@ def list_audit_logs(
     date_to: Optional[str] = Query(None, description="End date (ISO 8601)"),
     limit: int = Query(50, ge=1, le=1000, description="Results per page"),
     offset: int = Query(0, ge=0, description="Pagination offset"),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user),
     _: bool = Depends(is_admin)
 ):
@@ -194,7 +194,7 @@ def list_audit_logs(
     """
     try:
         # Build query with filters
-        query = build_audit_query(
+        query = await build_audit_query(
             db=db,
             user_id=user_id,
             username=username,
@@ -209,10 +209,17 @@ def list_audit_logs(
         )
 
         # Get total count
-        total_count = query.count()
+        count_query = select(func.count()).select_from(AuditLog)
+        # Apply same filters for count
+        for whereclause in query.whereclause.clauses if hasattr(query.whereclause, 'clauses') else [query.whereclause] if query.whereclause is not None else []:
+            count_query = count_query.where(whereclause)
+        count_result = await db.execute(count_query)
+        total_count = count_result.scalar() or 0
 
         # Apply ordering and pagination
-        logs = query.order_by(AuditLog.created_at.desc()).offset(offset).limit(limit).all()
+        query = query.order_by(AuditLog.created_at.desc()).offset(offset).limit(limit)
+        result = await db.execute(query)
+        logs = result.scalars().all()
 
         # Format response
         logs_data = [format_audit_log(log, include_details=False) for log in logs]
@@ -240,10 +247,10 @@ def list_audit_logs(
 
 
 @router.get("/{audit_log_id}", response_model=dict)
-def get_audit_log(
+async def get_audit_log(
     request: Request,
     audit_log_id: str,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user),
     _: bool = Depends(is_admin)
 ):
@@ -260,7 +267,8 @@ def get_audit_log(
     """
     try:
         # Get audit log
-        log = db.query(AuditLog).filter(AuditLog.id == audit_log_id).first()
+        result = await db.execute(select(AuditLog).where(AuditLog.id == audit_log_id))
+        log = result.scalar_one_or_none()
 
         if not log:
             raise ResourceNotFoundException(
@@ -288,7 +296,7 @@ def get_audit_log(
 
 
 @router.get("/user/my-logs", response_model=dict)
-def get_my_audit_logs(
+async def get_my_audit_logs(
     request: Request,
     action: Optional[str] = Query(None, description="Filter by action"),
     resource_type: Optional[str] = Query(None, description="Filter by resource type"),
@@ -296,7 +304,7 @@ def get_my_audit_logs(
     date_to: Optional[str] = Query(None, description="End date (ISO 8601)"),
     limit: int = Query(50, ge=1, le=500, description="Results per page"),
     offset: int = Query(0, ge=0, description="Pagination offset"),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user)
 ):
     """
@@ -319,7 +327,7 @@ def get_my_audit_logs(
         user_id = current_user.get("identity")
 
         # Build query with user filter
-        query = build_audit_query(
+        query = await build_audit_query(
             db=db,
             user_id=user_id,
             action=action,
@@ -329,10 +337,17 @@ def get_my_audit_logs(
         )
 
         # Get total count
-        total_count = query.count()
+        count_query = select(func.count()).select_from(AuditLog)
+        # Apply same filters for count
+        for whereclause in query.whereclause.clauses if hasattr(query.whereclause, 'clauses') else [query.whereclause] if query.whereclause is not None else []:
+            count_query = count_query.where(whereclause)
+        count_result = await db.execute(count_query)
+        total_count = count_result.scalar() or 0
 
         # Apply ordering and pagination
-        logs = query.order_by(AuditLog.created_at.desc()).offset(offset).limit(limit).all()
+        query = query.order_by(AuditLog.created_at.desc()).offset(offset).limit(limit)
+        result = await db.execute(query)
+        logs = result.scalars().all()
 
         # Format response (no sensitive details for users)
         logs_data = [format_audit_log(log, include_details=False) for log in logs]
@@ -360,7 +375,7 @@ def get_my_audit_logs(
 
 
 @router.get("/export/download")
-def export_audit_logs(
+async def export_audit_logs(
     request: Request,
     format: AuditLogExportFormat = Query(AuditLogExportFormat.JSON, description="Export format (json/csv)"),
     user_id: Optional[str] = Query(None, description="Filter by user ID"),
@@ -369,7 +384,7 @@ def export_audit_logs(
     date_from: Optional[str] = Query(None, description="Start date (ISO 8601)"),
     date_to: Optional[str] = Query(None, description="End date (ISO 8601)"),
     limit: int = Query(1000, ge=1, le=10000, description="Max records to export"),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user),
     _: bool = Depends(is_admin)
 ):
@@ -386,7 +401,7 @@ def export_audit_logs(
     """
     try:
         # Build query with filters
-        query = build_audit_query(
+        query = await build_audit_query(
             db=db,
             user_id=user_id,
             action=action,
@@ -396,7 +411,9 @@ def export_audit_logs(
         )
 
         # Get logs (limit to prevent memory issues)
-        logs = query.order_by(AuditLog.created_at.desc()).limit(limit).all()
+        query = query.order_by(AuditLog.created_at.desc()).limit(limit)
+        result = await db.execute(query)
+        logs = result.scalars().all()
 
         logger.info(f"Admin {current_user.get('identity')} exporting {len(logs)} audit logs as {format.value}")
 
@@ -469,10 +486,10 @@ def export_audit_logs(
 
 
 @router.get("/stats/overview", response_model=dict)
-def get_audit_stats(
+async def get_audit_stats(
     request: Request,
     days: int = Query(30, ge=1, le=365, description="Number of days to analyze"),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user),
     _: bool = Depends(is_admin)
 ):
@@ -491,52 +508,70 @@ def get_audit_stats(
         cutoff_date = datetime.utcnow() - timedelta(days=days)
 
         # Total logs
-        total_logs = db.query(func.count(AuditLog.id)).filter(
-            AuditLog.created_at >= cutoff_date
-        ).scalar() or 0
+        total_logs_result = await db.execute(
+            select(func.count(AuditLog.id)).where(
+                AuditLog.created_at >= cutoff_date
+            )
+        )
+        total_logs = total_logs_result.scalar() or 0
 
         # Logs by action (top 10)
-        logs_by_action = db.query(
-            AuditLog.action,
-            func.count(AuditLog.id).label('count')
-        ).filter(
-            AuditLog.created_at >= cutoff_date
-        ).group_by(AuditLog.action).order_by(func.count(AuditLog.id).desc()).limit(10).all()
+        logs_by_action_result = await db.execute(
+            select(
+                AuditLog.action,
+                func.count(AuditLog.id).label('count')
+            ).where(
+                AuditLog.created_at >= cutoff_date
+            ).group_by(AuditLog.action).order_by(func.count(AuditLog.id).desc()).limit(10)
+        )
+        logs_by_action = logs_by_action_result.all()
 
         # Logs by resource type
-        logs_by_resource = db.query(
-            AuditLog.resource_type,
-            func.count(AuditLog.id).label('count')
-        ).filter(
-            AuditLog.created_at >= cutoff_date
-        ).group_by(AuditLog.resource_type).order_by(func.count(AuditLog.id).desc()).all()
+        logs_by_resource_result = await db.execute(
+            select(
+                AuditLog.resource_type,
+                func.count(AuditLog.id).label('count')
+            ).where(
+                AuditLog.created_at >= cutoff_date
+            ).group_by(AuditLog.resource_type).order_by(func.count(AuditLog.id).desc())
+        )
+        logs_by_resource = logs_by_resource_result.all()
 
         # Logs by status
-        logs_by_status = db.query(
-            AuditLog.status,
-            func.count(AuditLog.id).label('count')
-        ).filter(
-            AuditLog.created_at >= cutoff_date
-        ).group_by(AuditLog.status).all()
+        logs_by_status_result = await db.execute(
+            select(
+                AuditLog.status,
+                func.count(AuditLog.id).label('count')
+            ).where(
+                AuditLog.created_at >= cutoff_date
+            ).group_by(AuditLog.status)
+        )
+        logs_by_status = logs_by_status_result.all()
 
         # Most active users (top 10)
-        most_active_users = db.query(
-            AuditLog.user_id,
-            AuditLog.username,
-            func.count(AuditLog.id).label('action_count')
-        ).filter(
-            AuditLog.created_at >= cutoff_date,
-            AuditLog.user_id.isnot(None)
-        ).group_by(AuditLog.user_id, AuditLog.username).order_by(
-            func.count(AuditLog.id).desc()
-        ).limit(10).all()
+        most_active_users_result = await db.execute(
+            select(
+                AuditLog.user_id,
+                AuditLog.username,
+                func.count(AuditLog.id).label('action_count')
+            ).where(
+                AuditLog.created_at >= cutoff_date,
+                AuditLog.user_id.isnot(None)
+            ).group_by(AuditLog.user_id, AuditLog.username).order_by(
+                func.count(AuditLog.id).desc()
+            ).limit(10)
+        )
+        most_active_users = most_active_users_result.all()
 
         # Recent failures (last 24 hours)
         twenty_four_hours_ago = datetime.utcnow() - timedelta(hours=24)
-        recent_failures = db.query(func.count(AuditLog.id)).filter(
-            AuditLog.created_at >= twenty_four_hours_ago,
-            AuditLog.status == "failed"
-        ).scalar() or 0
+        recent_failures_result = await db.execute(
+            select(func.count(AuditLog.id)).where(
+                AuditLog.created_at >= twenty_four_hours_ago,
+                AuditLog.status == "failed"
+            )
+        )
+        recent_failures = recent_failures_result.scalar() or 0
 
         # Format stats
         stats_data = {

@@ -5,13 +5,13 @@ This module provides CRUD operations for subscription plans with proper permissi
 """
 
 from fastapi import APIRouter, Depends, HTTPException, status, Request, Query
-from sqlalchemy.orm import Session
-from sqlalchemy import func
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import func, select
 from typing import List, Optional
 from datetime import datetime
 import uuid
 
-from src.api.database.database import get_db
+from src.api.database.async_database import get_async_db
 from src.api.security.dependencies import get_current_user
 from src.api.middleware.permissions import require_permissions, is_admin
 from src.api.models.subscription_models.plans import SubscriptionPlan
@@ -38,19 +38,22 @@ router = APIRouter(
 )
 
 
-def check_admin(db: Session, user_id: str) -> bool:
+async def check_admin(db: AsyncSession, user_id: str) -> bool:
     """Check if user is an admin."""
-    return db.query(UserRole).join(Role).filter(
-        UserRole.user_id == user_id,
-        Role.name.in_(["admin", "super_admin"])
-    ).first() is not None
+    result = await db.execute(
+        select(UserRole).join(Role).where(
+            UserRole.user_id == user_id,
+            Role.name.in_(["admin", "super_admin"])
+        )
+    )
+    return result.scalar_one_or_none() is not None
 
 
 @router.post("", response_model=dict, status_code=status.HTTP_201_CREATED)
-def create_plan(
+async def create_plan(
     request: Request,
     plan_data: SubscriptionPlanCreate,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user)
 ):
     """
@@ -74,16 +77,19 @@ def create_plan(
         user_id = current_user.get("identity")
 
         # Check admin permission
-        if not check_admin(db, user_id):
+        if not await check_admin(db, user_id):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Admin role required to create subscription plans"
             )
 
         # Check if plan with same name already exists
-        existing_plan = db.query(SubscriptionPlan).filter(
-            SubscriptionPlan.name == plan_data.name
-        ).first()
+        result = await db.execute(
+            select(SubscriptionPlan).where(
+                SubscriptionPlan.name == plan_data.name
+            )
+        )
+        existing_plan = result.scalar_one_or_none()
 
         if existing_plan:
             raise DuplicateResourceException(
@@ -115,8 +121,8 @@ def create_plan(
         )
 
         db.add(new_plan)
-        db.commit()
-        db.refresh(new_plan)
+        await db.commit()
+        await db.refresh(new_plan)
 
         logger.info(f"Admin {user_id} created subscription plan: {new_plan.name}")
 
@@ -130,7 +136,7 @@ def create_plan(
         raise
     except Exception as e:
         logger.error(f"Error creating subscription plan: {e}")
-        db.rollback()
+        await db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to create subscription plan"
@@ -138,11 +144,11 @@ def create_plan(
 
 
 @router.get("", response_model=dict)
-def list_plans(
+async def list_plans(
     request: Request,
     include_inactive: bool = Query(False, description="Include inactive plans (admin only)"),
     include_private: bool = Query(False, description="Include private plans (admin only)"),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user)
 ):
     """
@@ -160,27 +166,29 @@ def list_plans(
     """
     try:
         user_id = current_user.get("identity")
-        is_user_admin = check_admin(db, user_id)
+        is_user_admin = await check_admin(db, user_id)
 
         # Build query
-        query = db.query(SubscriptionPlan)
+        query = select(SubscriptionPlan)
 
         # Apply filters based on user role
         if not is_user_admin:
             # Regular users see only active, public plans
-            query = query.filter(
+            query = query.where(
                 SubscriptionPlan.is_active == True,
                 SubscriptionPlan.is_public == True
             )
         else:
             # Admin users can filter
             if not include_inactive:
-                query = query.filter(SubscriptionPlan.is_active == True)
+                query = query.where(SubscriptionPlan.is_active == True)
             if not include_private:
-                query = query.filter(SubscriptionPlan.is_public == True)
+                query = query.where(SubscriptionPlan.is_public == True)
 
         # Order by price (monthly)
-        plans = query.order_by(SubscriptionPlan.price_monthly.asc()).all()
+        query = query.order_by(SubscriptionPlan.price_monthly.asc())
+        result = await db.execute(query)
+        plans = result.scalars().all()
 
         plans_data = [plan.to_dict() for plan in plans]
 
@@ -202,10 +210,10 @@ def list_plans(
 
 
 @router.get("/{plan_id}", response_model=dict)
-def get_plan(
+async def get_plan(
     request: Request,
     plan_id: str,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user)
 ):
     """
@@ -217,12 +225,15 @@ def get_plan(
     """
     try:
         user_id = current_user.get("identity")
-        is_user_admin = check_admin(db, user_id)
+        is_user_admin = await check_admin(db, user_id)
 
         # Get plan
-        plan = db.query(SubscriptionPlan).filter(
-            SubscriptionPlan.id == plan_id
-        ).first()
+        result = await db.execute(
+            select(SubscriptionPlan).where(
+                SubscriptionPlan.id == plan_id
+            )
+        )
+        plan = result.scalar_one_or_none()
 
         if not plan:
             raise ResourceNotFoundException(
@@ -241,10 +252,13 @@ def get_plan(
 
         # Add subscription count for admin users
         if is_user_admin:
-            active_subscriptions = db.query(func.count(UserSubscription.id)).filter(
-                UserSubscription.plan_id == plan_id,
-                UserSubscription.status.in_(["active", "trial"])
-            ).scalar()
+            count_result = await db.execute(
+                select(func.count(UserSubscription.id)).where(
+                    UserSubscription.plan_id == plan_id,
+                    UserSubscription.status.in_(["active", "trial"])
+                )
+            )
+            active_subscriptions = count_result.scalar()
 
             plan_data["active_subscriptions"] = active_subscriptions or 0
 
@@ -265,11 +279,11 @@ def get_plan(
 
 
 @router.patch("/{plan_id}", response_model=dict)
-def update_plan(
+async def update_plan(
     request: Request,
     plan_id: str,
     plan_data: SubscriptionPlanUpdate,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user)
 ):
     """
@@ -287,16 +301,19 @@ def update_plan(
         user_id = current_user.get("identity")
 
         # Check admin permission
-        if not check_admin(db, user_id):
+        if not await check_admin(db, user_id):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Admin role required to update subscription plans"
             )
 
         # Get plan
-        plan = db.query(SubscriptionPlan).filter(
-            SubscriptionPlan.id == plan_id
-        ).first()
+        result = await db.execute(
+            select(SubscriptionPlan).where(
+                SubscriptionPlan.id == plan_id
+            )
+        )
+        plan = result.scalar_one_or_none()
 
         if not plan:
             raise ResourceNotFoundException(
@@ -318,8 +335,8 @@ def update_plan(
 
         plan.updated_at = datetime.utcnow()
 
-        db.commit()
-        db.refresh(plan)
+        await db.commit()
+        await db.refresh(plan)
 
         logger.info(f"Admin {user_id} updated subscription plan: {plan.name}")
 
@@ -333,7 +350,7 @@ def update_plan(
         raise
     except Exception as e:
         logger.error(f"Error updating subscription plan {plan_id}: {e}")
-        db.rollback()
+        await db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to update subscription plan"
@@ -341,11 +358,11 @@ def update_plan(
 
 
 @router.delete("/{plan_id}", response_model=dict)
-def delete_plan(
+async def delete_plan(
     request: Request,
     plan_id: str,
     force: bool = Query(False, description="Force delete even if subscriptions exist"),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user)
 ):
     """
@@ -367,16 +384,19 @@ def delete_plan(
         user_id = current_user.get("identity")
 
         # Check admin permission
-        if not check_admin(db, user_id):
+        if not await check_admin(db, user_id):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Admin role required to delete subscription plans"
             )
 
         # Get plan
-        plan = db.query(SubscriptionPlan).filter(
-            SubscriptionPlan.id == plan_id
-        ).first()
+        result = await db.execute(
+            select(SubscriptionPlan).where(
+                SubscriptionPlan.id == plan_id
+            )
+        )
+        plan = result.scalar_one_or_none()
 
         if not plan:
             raise ResourceNotFoundException(
@@ -385,10 +405,13 @@ def delete_plan(
             )
 
         # Check for active subscriptions
-        active_subscriptions = db.query(func.count(UserSubscription.id)).filter(
-            UserSubscription.plan_id == plan_id,
-            UserSubscription.status.in_(["active", "trial"])
-        ).scalar()
+        count_result = await db.execute(
+            select(func.count(UserSubscription.id)).where(
+                UserSubscription.plan_id == plan_id,
+                UserSubscription.status.in_(["active", "trial"])
+            )
+        )
+        active_subscriptions = count_result.scalar()
 
         if active_subscriptions > 0 and not force:
             raise WrextValidationException(
@@ -397,8 +420,8 @@ def delete_plan(
             )
 
         plan_name = plan.display_name
-        db.delete(plan)
-        db.commit()
+        await db.delete(plan)
+        await db.commit()
 
         logger.warning(f"Admin {user_id} deleted subscription plan: {plan.name} (force={force})")
 
@@ -412,7 +435,7 @@ def delete_plan(
         raise
     except Exception as e:
         logger.error(f"Error deleting subscription plan {plan_id}: {e}")
-        db.rollback()
+        await db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to delete subscription plan"

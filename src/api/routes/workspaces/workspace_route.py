@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, Request
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, func, distinct
 from datetime import datetime, timezone
 from uuid import UUID
 
@@ -9,7 +10,7 @@ from src.utils.vector_store import add_to_vector_store, delete_vectors
 from src.utils.response_utils import success, error, created
 from src.utils.slug_utils import generate_workspace_slug, generate_unique_slug
 from src.utils.workspace_utils import resolve_workspace
-from src.api.database.database import get_db
+from src.api.database.async_database import get_async_db
 from src.api.security.dependencies import get_current_user
 from src.api.middleware.exceptions import (
     DuplicateResourceException,
@@ -42,7 +43,7 @@ router = APIRouter(
 # Health Check
 # -------------------------
 @router.get("/")
-def get_status(request: Request):
+async def get_status(request: Request):
     logger.info("Workspace Route health check called.")
     return success(
         data={"status": "operational", "service": "workspace_service"},
@@ -55,12 +56,13 @@ def get_status(request: Request):
 # Get all workspaces for user
 # -------------------------
 @router.get("/all")
-def get_workspaces(
-    request: Request, 
-    db: Session = Depends(get_db), 
+async def get_workspaces(
+    request: Request,
+    db: AsyncSession = Depends(get_async_db),
     user: dict = Depends(get_current_user)):
     user_id = user.get("identity")
-    db_user = db.query(Users).filter(Users.id == user_id, Users.deleted_at == None).first()
+    result = await db.execute(select(Users).where(Users.id == user_id, Users.deleted_at == None))
+    db_user = result.scalar_one_or_none()
     if not db_user:
         raise WrextAuthenticationException(
             message="User not found",
@@ -69,10 +71,8 @@ def get_workspaces(
 
     try:
         # Enhanced query to get workspace data with owner info and counts
-        from sqlalchemy import func, distinct
-
         workspaces_query = (
-            db.query(
+            select(
                 WorkspaceModel,
                 Users.display_name.label('owner_name'),
                 Users.email.label('owner_email'),
@@ -86,20 +86,22 @@ def get_workspaces(
             .outerjoin(Website, Website.workspace_id == WorkspaceModel.id)
             .outerjoin(KnowledgeFiles, KnowledgeFiles.workspace_id == WorkspaceModel.id)
             .outerjoin(TextKnowledge, TextKnowledge.workspace_id == WorkspaceModel.id)
-            .filter(WorkspaceMembers.user_id == user_id)
+            .where(WorkspaceMembers.user_id == user_id)
             .group_by(WorkspaceModel.id, Users.id)
-            .all()
         )
 
+        result = await db.execute(workspaces_query)
+        workspaces_results = result.all()
+
         workspace_data = []
-        for result in workspaces_query:
-            ws = result[0]  # WorkspaceModel
-            owner_name = result[1]
-            owner_email = result[2]
-            web_count = result[3] or 0
-            files_count = result[4] or 0
-            text_count = result[5] or 0
-            members_count = result[6] or 0
+        for result_row in workspaces_results:
+            ws = result_row[0]  # WorkspaceModel
+            owner_name = result_row[1]
+            owner_email = result_row[2]
+            web_count = result_row[3] or 0
+            files_count = result_row[4] or 0
+            text_count = result_row[5] or 0
+            members_count = result_row[6] or 0
             total_knowledge = web_count + files_count + text_count
 
             workspace_data.append({
@@ -145,45 +147,57 @@ def get_workspaces(
 # Get workspace by ID
 # -------------------------
 @router.get("/{workspace_id}")
-def get_workspace_by_id(workspace_id: str, request: Request, db: Session = Depends(get_db), user: dict = Depends(get_current_user)):
+async def get_workspace_by_id(workspace_id: str, request: Request, db: AsyncSession = Depends(get_async_db), user: dict = Depends(get_current_user)):
     user_id = user.get("identity")
-    db_user = db.query(Users).filter(Users.id == user_id, Users.deleted_at == None).first()
+    result = await db.execute(select(Users).where(Users.id == user_id, Users.deleted_at == None))
+    db_user = result.scalar_one_or_none()
     if not db_user:
         raise WrextAuthenticationException(message="User not found", context={"user_id": user_id})
 
     try:
-        workspace = (
-            db.query(WorkspaceModel)
+        workspace_query = (
+            select(WorkspaceModel)
             .join(WorkspaceMembers, WorkspaceMembers.workspace_id == WorkspaceModel.id)
-            .filter(WorkspaceModel.id == workspace_id, WorkspaceMembers.user_id == user_id)
-            .first()
+            .where(WorkspaceModel.id == workspace_id, WorkspaceMembers.user_id == user_id)
         )
+        result = await db.execute(workspace_query)
+        workspace = result.scalar_one_or_none()
 
         if not workspace:
             raise ResourceNotFoundException(resource_type="workspace", resource_id=workspace_id)
 
         # Get brand voice data
-        brand_voice = db.query(BrandVoice).filter(BrandVoice.workspace_id == workspace_id).first()
+        result = await db.execute(select(BrandVoice).where(BrandVoice.workspace_id == workspace_id))
+        brand_voice = result.scalar_one_or_none()
 
         # Get comprehensive analytics with knowledge counts and content metrics
-        from sqlalchemy import func
-
         # Knowledge counts
-        web_count = db.query(func.count(Website.id)).filter(Website.workspace_id == workspace_id).scalar() or 0
-        files_count = db.query(func.count(KnowledgeFiles.id)).filter(KnowledgeFiles.workspace_id == workspace_id).scalar() or 0
-        text_count = db.query(func.count(TextKnowledge.id)).filter(TextKnowledge.workspace_id == workspace_id).scalar() or 0
-        members_count = db.query(func.count(WorkspaceMembers.id)).filter(WorkspaceMembers.workspace_id == workspace_id).scalar() or 0
+        result = await db.execute(select(func.count(Website.id)).where(Website.workspace_id == workspace_id))
+        web_count = result.scalar() or 0
+
+        result = await db.execute(select(func.count(KnowledgeFiles.id)).where(KnowledgeFiles.workspace_id == workspace_id))
+        files_count = result.scalar() or 0
+
+        result = await db.execute(select(func.count(TextKnowledge.id)).where(TextKnowledge.workspace_id == workspace_id))
+        text_count = result.scalar() or 0
+
+        result = await db.execute(select(func.count(WorkspaceMembers.id)).where(WorkspaceMembers.workspace_id == workspace_id))
+        members_count = result.scalar() or 0
 
         # Content analytics - word counts
-        web_word_stats = db.query(
+        web_word_query = select(
             func.sum(Website.word_count).label('total_words'),
             func.avg(Website.word_count).label('avg_words')
-        ).filter(Website.workspace_id == workspace_id).first()
+        ).where(Website.workspace_id == workspace_id)
+        result = await db.execute(web_word_query)
+        web_word_stats = result.first()
 
-        file_word_stats = db.query(
+        file_word_query = select(
             func.sum(KnowledgeFiles.word_count).label('total_words'),
             func.avg(KnowledgeFiles.word_count).label('avg_words')
-        ).filter(KnowledgeFiles.workspace_id == workspace_id).first()
+        ).where(KnowledgeFiles.workspace_id == workspace_id)
+        result = await db.execute(file_word_query)
+        file_word_stats = result.first()
 
         total_web_words = int(web_word_stats.total_words or 0)
         avg_web_words = int(web_word_stats.avg_words or 0)
@@ -266,10 +280,10 @@ def get_workspace_by_id(workspace_id: str, request: Request, db: Session = Depen
 # Get workspace by slug
 # -------------------------
 @router.get("/slug/{workspace_slug}")
-def get_workspace_by_slug(
+async def get_workspace_by_slug(
     workspace_slug: str,
     request: Request,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     user: dict = Depends(get_current_user)
 ):
     """
@@ -277,18 +291,20 @@ def get_workspace_by_slug(
     This is the preferred endpoint for frontend routing.
     """
     user_id = user.get("identity")
-    db_user = db.query(Users).filter(Users.id == user_id, Users.deleted_at == None).first()
+    result = await db.execute(select(Users).where(Users.id == user_id, Users.deleted_at == None))
+    db_user = result.scalar_one_or_none()
     if not db_user:
         raise WrextAuthenticationException(message="User not found", context={"user_id": user_id})
 
     try:
         # Query workspace by slug
-        workspace = (
-            db.query(WorkspaceModel)
+        workspace_query = (
+            select(WorkspaceModel)
             .join(WorkspaceMembers, WorkspaceMembers.workspace_id == WorkspaceModel.id)
-            .filter(WorkspaceModel.slug == workspace_slug, WorkspaceMembers.user_id == user_id)
-            .first()
+            .where(WorkspaceModel.slug == workspace_slug, WorkspaceMembers.user_id == user_id)
         )
+        result = await db.execute(workspace_query)
+        workspace = result.scalar_one_or_none()
 
         if not workspace:
             raise ResourceNotFoundException(resource_type="workspace", resource_id=workspace_slug)
@@ -296,27 +312,37 @@ def get_workspace_by_slug(
         workspace_id = workspace.id
 
         # Get brand voice data
-        brand_voice = db.query(BrandVoice).filter(BrandVoice.workspace_id == workspace_id).first()
+        result = await db.execute(select(BrandVoice).where(BrandVoice.workspace_id == workspace_id))
+        brand_voice = result.scalar_one_or_none()
 
         # Get comprehensive analytics with knowledge counts and content metrics
-        from sqlalchemy import func
-
         # Knowledge counts
-        web_count = db.query(func.count(Website.id)).filter(Website.workspace_id == workspace_id).scalar() or 0
-        files_count = db.query(func.count(KnowledgeFiles.id)).filter(KnowledgeFiles.workspace_id == workspace_id).scalar() or 0
-        text_count = db.query(func.count(TextKnowledge.id)).filter(TextKnowledge.workspace_id == workspace_id).scalar() or 0
-        members_count = db.query(func.count(WorkspaceMembers.id)).filter(WorkspaceMembers.workspace_id == workspace_id).scalar() or 0
+        result = await db.execute(select(func.count(Website.id)).where(Website.workspace_id == workspace_id))
+        web_count = result.scalar() or 0
+
+        result = await db.execute(select(func.count(KnowledgeFiles.id)).where(KnowledgeFiles.workspace_id == workspace_id))
+        files_count = result.scalar() or 0
+
+        result = await db.execute(select(func.count(TextKnowledge.id)).where(TextKnowledge.workspace_id == workspace_id))
+        text_count = result.scalar() or 0
+
+        result = await db.execute(select(func.count(WorkspaceMembers.id)).where(WorkspaceMembers.workspace_id == workspace_id))
+        members_count = result.scalar() or 0
 
         # Content analytics - word counts
-        web_word_stats = db.query(
+        web_word_query = select(
             func.sum(Website.word_count).label('total_words'),
             func.avg(Website.word_count).label('avg_words')
-        ).filter(Website.workspace_id == workspace_id).first()
+        ).where(Website.workspace_id == workspace_id)
+        result = await db.execute(web_word_query)
+        web_word_stats = result.first()
 
-        file_word_stats = db.query(
+        file_word_query = select(
             func.sum(KnowledgeFiles.word_count).label('total_words'),
             func.avg(KnowledgeFiles.word_count).label('avg_words')
-        ).filter(KnowledgeFiles.workspace_id == workspace_id).first()
+        ).where(KnowledgeFiles.workspace_id == workspace_id)
+        result = await db.execute(file_word_query)
+        file_word_stats = result.first()
 
         total_web_words = int(web_word_stats.total_words or 0)
         avg_web_words = int(web_word_stats.avg_words or 0)
@@ -405,19 +431,21 @@ def get_workspace_by_slug(
 async def create_workspace(
     data: WorkspaceSchema,
     request: Request,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     user: dict = Depends(get_current_user)
 ):
     user_id = user.get("identity")
 
     # Verify user exists
-    db_user = db.query(Users).filter(Users.id == user_id, Users.deleted_at == None).first()
+    result = await db.execute(select(Users).where(Users.id == user_id, Users.deleted_at == None))
+    db_user = result.scalar_one_or_none()
     if not db_user:
         raise WrextAuthenticationException(message="User not found", context={"user_id": user_id})
 
     try:
         # Check for duplicate workspace name for the user
-        existing_workspace = db.query(WorkspaceModel).filter_by(name=data.name, user_id=user_id).first()
+        result = await db.execute(select(WorkspaceModel).where(WorkspaceModel.name == data.name, WorkspaceModel.user_id == user_id))
+        existing_workspace = result.scalar_one_or_none()
         if existing_workspace:
             raise DuplicateResourceException(
                 message=f"Workspace with title '{data.name}' already exists",
@@ -439,7 +467,7 @@ async def create_workspace(
             url=str(data.url) if data.url else None
         )
         db.add(workspace)
-        db.flush() 
+        await db.flush()
 
         # Add creator as default member
         member = WorkspaceMembers(
@@ -451,16 +479,16 @@ async def create_workspace(
             invitation_id=None
         )
         db.add(member)
-        db.flush() 
+        await db.flush()
 
         # Assign 'admin' role to creator
         admin_role = Role(
             name=f"{workspace.name}_admin",
             display_name="Administrator",
-            description="Workspace administrator with full permissions",            
+            description="Workspace administrator with full permissions",
         )
         db.add(admin_role)
-        db.flush() 
+        await db.flush()
 
         # --- Branching logic ---
         brand_voice = None
@@ -501,7 +529,7 @@ async def create_workspace(
                         content_strategy=brand_data.content_pillar,
                     )
                     db.add(brand_voice)
-                    db.flush()
+                    await db.flush()
             except Exception as llm_err:
                 logger.warning(f"Brand voice extraction failed: {llm_err}")
 
@@ -519,11 +547,11 @@ async def create_workspace(
                     content_strategy=data.content_strategy,
                 )
                 db.add(brand_voice)
-                db.flush()
+                await db.flush()
             except Exception as direct_err:
                 logger.warning(f"Direct brand voice save failed: {direct_err}")
 
-        db.commit()
+        await db.commit()
 
         # Prepare response
         workspace_data = {
@@ -545,7 +573,7 @@ async def create_workspace(
         raise
     except Exception as e:
         logger.exception(f"Unexpected error creating workspace {data.name}")
-        db.rollback()
+        await db.rollback()
         return error(
             message="Failed to create workspace due to server error",
             code=ErrorCode.INTERNAL_SERVER_ERROR,
@@ -562,19 +590,21 @@ async def create_workspace(
 # Delete workspace
 # -------------------------
 @router.delete("/delete/{workspace_id}")
-def delete_workspace(workspace_id: str, request: Request, db: Session = Depends(get_db), user: dict = Depends(get_current_user)):
+async def delete_workspace(workspace_id: str, request: Request, db: AsyncSession = Depends(get_async_db), user: dict = Depends(get_current_user)):
     user_id = user.get("identity")
-    db_user = db.query(Users).filter(Users.id == user_id, Users.deleted_at == None).first()
+    result = await db.execute(select(Users).where(Users.id == user_id, Users.deleted_at == None))
+    db_user = result.scalar_one_or_none()
     if not db_user:
         raise WrextAuthenticationException(message="User not found", context={"user_id": user_id})
 
     try:
-        workspace = (
-            db.query(WorkspaceModel)
+        workspace_query = (
+            select(WorkspaceModel)
             .join(WorkspaceMembers, WorkspaceMembers.workspace_id == WorkspaceModel.id)
-            .filter(WorkspaceModel.id == workspace_id, WorkspaceMembers.user_id == user_id)
-            .first()
+            .where(WorkspaceModel.id == workspace_id, WorkspaceMembers.user_id == user_id)
         )
+        result = await db.execute(workspace_query)
+        workspace = result.scalar_one_or_none()
         if not workspace:
             raise ResourceNotFoundException(resource_type="workspace", resource_id=workspace_id)
 
@@ -583,8 +613,8 @@ def delete_workspace(workspace_id: str, request: Request, db: Session = Depends(
         except Exception as e:
             logger.warning(f"Failed to delete vectors for workspace {workspace.id}: {e}")
 
-        db.delete(workspace)
-        db.commit()
+        await db.delete(workspace)
+        await db.commit()
 
         return success(data={}, request=request, message="Workspace deleted successfully")
 
@@ -592,7 +622,7 @@ def delete_workspace(workspace_id: str, request: Request, db: Session = Depends(
         raise
     except Exception as e:
         logger.exception(f"Error deleting workspace {workspace_id}")
-        db.rollback()
+        await db.rollback()
         return error(
             message="Failed to delete workspace",
             code=ErrorCode.INTERNAL_SERVER_ERROR,
@@ -607,30 +637,33 @@ def delete_workspace(workspace_id: str, request: Request, db: Session = Depends(
 # Get workspace members
 # -------------------------
 @router.get("/{workspace_id}/members")
-def get_workspace_members(workspace_id: str, request: Request, db: Session = Depends(get_db), user: dict = Depends(get_current_user)):
+async def get_workspace_members(workspace_id: str, request: Request, db: AsyncSession = Depends(get_async_db), user: dict = Depends(get_current_user)):
     user_id = user.get("identity")
-    db_user = db.query(Users).filter(Users.id == user_id, Users.deleted_at == None).first()
+    result = await db.execute(select(Users).where(Users.id == user_id, Users.deleted_at == None))
+    db_user = result.scalar_one_or_none()
     if not db_user:
         raise WrextAuthenticationException(message="User not found", context={"user_id": user_id})
 
     try:
         # Check if user has access to this workspace
-        workspace = (
-            db.query(WorkspaceModel)
+        workspace_query = (
+            select(WorkspaceModel)
             .join(WorkspaceMembers, WorkspaceMembers.workspace_id == WorkspaceModel.id)
-            .filter(WorkspaceModel.id == workspace_id, WorkspaceMembers.user_id == user_id)
-            .first()
+            .where(WorkspaceModel.id == workspace_id, WorkspaceMembers.user_id == user_id)
         )
+        result = await db.execute(workspace_query)
+        workspace = result.scalar_one_or_none()
         if not workspace:
             raise ResourceNotFoundException(resource_type="workspace", resource_id=workspace_id)
 
         # Get all members of the workspace with user details
-        members = (
-            db.query(WorkspaceMembers, Users)
+        members_query = (
+            select(WorkspaceMembers, Users)
             .join(Users, Users.id == WorkspaceMembers.user_id)
-            .filter(WorkspaceMembers.workspace_id == workspace_id)
-            .all()
+            .where(WorkspaceMembers.workspace_id == workspace_id)
         )
+        result = await db.execute(members_query)
+        members = result.all()
 
         members_data = []
         for member, user_info in members:
@@ -673,39 +706,43 @@ def get_workspace_members(workspace_id: str, request: Request, db: Session = Dep
 # Add workspace member
 # -------------------------
 @router.post("/{workspace_id}/members")
-def add_workspace_member(
+async def add_workspace_member(
     workspace_id: str,
     email: str,
     request: Request,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     user: dict = Depends(get_current_user)
 ):
     user_id = user.get("identity")
-    db_user = db.query(Users).filter(Users.id == user_id, Users.deleted_at == None).first()
+    result = await db.execute(select(Users).where(Users.id == user_id, Users.deleted_at == None))
+    db_user = result.scalar_one_or_none()
     if not db_user:
         raise WrextAuthenticationException(message="User not found", context={"user_id": user_id})
 
     try:
         # Verify user is owner or has access to workspace
-        workspace = (
-            db.query(WorkspaceModel)
+        workspace_query = (
+            select(WorkspaceModel)
             .join(WorkspaceMembers, WorkspaceMembers.workspace_id == WorkspaceModel.id)
-            .filter(WorkspaceModel.id == workspace_id, WorkspaceMembers.user_id == user_id)
-            .first()
+            .where(WorkspaceModel.id == workspace_id, WorkspaceMembers.user_id == user_id)
         )
+        result = await db.execute(workspace_query)
+        workspace = result.scalar_one_or_none()
         if not workspace:
             raise ResourceNotFoundException(resource_type="workspace", resource_id=workspace_id)
 
         # Find user by email
-        new_user = db.query(Users).filter(Users.email == email, Users.deleted_at == None).first()
+        result = await db.execute(select(Users).where(Users.email == email, Users.deleted_at == None))
+        new_user = result.scalar_one_or_none()
         if not new_user:
             raise ResourceNotFoundException(resource_type="user", resource_id=email)
 
         # Check if already a member
-        existing_member = db.query(WorkspaceMembers).filter(
+        result = await db.execute(select(WorkspaceMembers).where(
             WorkspaceMembers.workspace_id == workspace_id,
             WorkspaceMembers.user_id == new_user.id
-        ).first()
+        ))
+        existing_member = result.scalar_one_or_none()
         if existing_member:
             raise DuplicateResourceException(
                 message=f"User {email} is already a member of this workspace",
@@ -724,8 +761,8 @@ def add_workspace_member(
             last_activity_at=datetime.now(timezone.utc)
         )
         db.add(new_member)
-        db.commit()
-        db.refresh(new_member)
+        await db.commit()
+        await db.refresh(new_member)
 
         return success(
             data={
@@ -745,7 +782,7 @@ def add_workspace_member(
         raise
     except Exception as e:
         logger.exception(f"Error adding member to workspace {workspace_id}")
-        db.rollback()
+        await db.rollback()
         return error(
             message="Failed to add member to workspace",
             code=ErrorCode.INTERNAL_SERVER_ERROR,
@@ -759,34 +796,37 @@ def add_workspace_member(
 # Remove workspace member
 # -------------------------
 @router.delete("/{workspace_id}/members/{member_id}")
-def remove_workspace_member(
+async def remove_workspace_member(
     workspace_id: str,
     member_id: str,
     request: Request,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     user: dict = Depends(get_current_user)
 ):
     user_id = user.get("identity")
-    db_user = db.query(Users).filter(Users.id == user_id, Users.deleted_at == None).first()
+    result = await db.execute(select(Users).where(Users.id == user_id, Users.deleted_at == None))
+    db_user = result.scalar_one_or_none()
     if not db_user:
         raise WrextAuthenticationException(message="User not found", context={"user_id": user_id})
 
     try:
         # Verify user has access to workspace
-        workspace = (
-            db.query(WorkspaceModel)
+        workspace_query = (
+            select(WorkspaceModel)
             .join(WorkspaceMembers, WorkspaceMembers.workspace_id == WorkspaceModel.id)
-            .filter(WorkspaceModel.id == workspace_id, WorkspaceMembers.user_id == user_id)
-            .first()
+            .where(WorkspaceModel.id == workspace_id, WorkspaceMembers.user_id == user_id)
         )
+        result = await db.execute(workspace_query)
+        workspace = result.scalar_one_or_none()
         if not workspace:
             raise ResourceNotFoundException(resource_type="workspace", resource_id=workspace_id)
 
         # Get member to remove
-        member = db.query(WorkspaceMembers).filter(
+        result = await db.execute(select(WorkspaceMembers).where(
             WorkspaceMembers.id == member_id,
             WorkspaceMembers.workspace_id == workspace_id
-        ).first()
+        ))
+        member = result.scalar_one_or_none()
 
         if not member:
             raise ResourceNotFoundException(resource_type="member", resource_id=member_id)
@@ -799,8 +839,8 @@ def remove_workspace_member(
             )
 
         # Delete member
-        db.delete(member)
-        db.commit()
+        await db.delete(member)
+        await db.commit()
 
         return success(
             data={"member_id": member_id},
@@ -812,7 +852,7 @@ def remove_workspace_member(
         raise
     except Exception as e:
         logger.exception(f"Error removing member from workspace {workspace_id}")
-        db.rollback()
+        await db.rollback()
         return error(
             message="Failed to remove member from workspace",
             code=ErrorCode.INTERNAL_SERVER_ERROR,
@@ -826,12 +866,12 @@ def remove_workspace_member(
 # Change workspace member role
 # -------------------------
 @router.put("/{workspace_id}/members/{member_id}/role")
-def change_member_role(
+async def change_member_role(
     workspace_id: str,
     member_id: str,
     role_request: ChangeMemberRoleRequest,
     request: Request,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     user: dict = Depends(get_current_user)
 ):
     """
@@ -843,26 +883,29 @@ def change_member_role(
     - Logs the role change in audit trail
     """
     user_id = user.get("identity")
-    db_user = db.query(Users).filter(Users.id == user_id, Users.deleted_at == None).first()
+    result = await db.execute(select(Users).where(Users.id == user_id, Users.deleted_at == None))
+    db_user = result.scalar_one_or_none()
     if not db_user:
         raise WrextAuthenticationException(message="User not found", context={"user_id": user_id})
 
     try:
         # Verify user has access to workspace
-        workspace = (
-            db.query(WorkspaceModel)
+        workspace_query = (
+            select(WorkspaceModel)
             .join(WorkspaceMembers, WorkspaceMembers.workspace_id == WorkspaceModel.id)
-            .filter(WorkspaceModel.id == workspace_id, WorkspaceMembers.user_id == user_id)
-            .first()
+            .where(WorkspaceModel.id == workspace_id, WorkspaceMembers.user_id == user_id)
         )
+        result = await db.execute(workspace_query)
+        workspace = result.scalar_one_or_none()
         if not workspace:
             raise ResourceNotFoundException(resource_type="workspace", resource_id=workspace_id)
 
         # Get member whose role will be changed
-        member = db.query(WorkspaceMembers).filter(
+        result = await db.execute(select(WorkspaceMembers).where(
             WorkspaceMembers.id == member_id,
             WorkspaceMembers.workspace_id == workspace_id
-        ).first()
+        ))
+        member = result.scalar_one_or_none()
 
         if not member:
             raise ResourceNotFoundException(resource_type="member", resource_id=member_id)
@@ -875,7 +918,8 @@ def change_member_role(
             )
 
         # Verify new role exists
-        new_role = db.query(Role).filter(Role.id == role_request.role_id).first()
+        result = await db.execute(select(Role).where(Role.id == role_request.role_id))
+        new_role = result.scalar_one_or_none()
         if not new_role:
             raise ResourceNotFoundException(resource_type="role", resource_id=role_request.role_id)
 
@@ -887,10 +931,11 @@ def change_member_role(
             )
 
         # Get or create user_role entry for this workspace
-        existing_role = db.query(UserRole).filter(
+        result = await db.execute(select(UserRole).where(
             UserRole.user_id == member.user_id,
             UserRole.workspace_id == workspace_id
-        ).first()
+        ))
+        existing_role = result.scalar_one_or_none()
 
         if existing_role:
             # Update existing role
@@ -910,10 +955,11 @@ def change_member_role(
             )
             db.add(new_user_role)
 
-        db.commit()
+        await db.commit()
 
         # Get member user details for response
-        member_user = db.query(Users).filter(Users.id == member.user_id).first()
+        result = await db.execute(select(Users).where(Users.id == member.user_id))
+        member_user = result.scalar_one_or_none()
 
         logger.info(
             f"User {user_id} changed role for member {member.user_id} in workspace {workspace_id} "
@@ -938,7 +984,7 @@ def change_member_role(
         raise
     except Exception as e:
         logger.exception(f"Error changing member role in workspace {workspace_id}")
-        db.rollback()
+        await db.rollback()
         return error(
             message="Failed to change member role",
             code=ErrorCode.INTERNAL_SERVER_ERROR,
@@ -952,9 +998,10 @@ def change_member_role(
 # Get all knowledge for workspace
 # -------------------------
 @router.get("/{workspace_id}/knowledge/all")
-def get_workspace_knowledge(workspace_id: str, request: Request, db: Session = Depends(get_db), user: dict = Depends(get_current_user)):
+async def get_workspace_knowledge(workspace_id: str, request: Request, db: AsyncSession = Depends(get_async_db), user: dict = Depends(get_current_user)):
     user_id = user.get("identity")
-    db_user = db.query(Users).filter(Users.id == user_id, Users.deleted_at == None).first()
+    result = await db.execute(select(Users).where(Users.id == user_id, Users.deleted_at == None))
+    db_user = result.scalar_one_or_none()
     if not db_user:
         raise WrextAuthenticationException(message="User not found", context={"user_id": user_id})
 
@@ -965,17 +1012,23 @@ def get_workspace_knowledge(workspace_id: str, request: Request, db: Session = D
             raise ResourceNotFoundException(resource_type="workspace", resource_id=workspace_id)
 
         # Check if user has access to this workspace
-        member = db.query(WorkspaceMembers).filter(
+        result = await db.execute(select(WorkspaceMembers).where(
             WorkspaceMembers.workspace_id == workspace.id,
             WorkspaceMembers.user_id == user_id
-        ).first()
+        ))
+        member = result.scalar_one_or_none()
         if not member:
             raise ResourceNotFoundException(resource_type="workspace", resource_id=workspace_id)
 
         # Get all knowledge types for this workspace
-        web_knowledge = db.query(Website).filter(Website.workspace_id == workspace.id).all()
-        file_knowledge = db.query(KnowledgeFiles).filter(KnowledgeFiles.workspace_id == workspace.id).all()
-        text_knowledge = db.query(TextKnowledge).filter(TextKnowledge.workspace_id == workspace.id).all()
+        result = await db.execute(select(Website).where(Website.workspace_id == workspace.id))
+        web_knowledge = result.scalars().all()
+
+        result = await db.execute(select(KnowledgeFiles).where(KnowledgeFiles.workspace_id == workspace.id))
+        file_knowledge = result.scalars().all()
+
+        result = await db.execute(select(TextKnowledge).where(TextKnowledge.workspace_id == workspace.id))
+        text_knowledge = result.scalars().all()
 
         # Use to_dict() for consistent structure with type annotation
         web_data = [{"type": "web", **item.to_dict()} for item in web_knowledge]
@@ -1015,9 +1068,10 @@ def get_workspace_knowledge(workspace_id: str, request: Request, db: Session = D
 # Get web knowledge for workspace
 # -------------------------
 @router.get("/{workspace_id}/knowledge/web")
-def get_workspace_web_knowledge(workspace_id: str, request: Request, db: Session = Depends(get_db), user: dict = Depends(get_current_user)):
+async def get_workspace_web_knowledge(workspace_id: str, request: Request, db: AsyncSession = Depends(get_async_db), user: dict = Depends(get_current_user)):
     user_id = user.get("identity")
-    db_user = db.query(Users).filter(Users.id == user_id, Users.deleted_at == None).first()
+    result = await db.execute(select(Users).where(Users.id == user_id, Users.deleted_at == None))
+    db_user = result.scalar_one_or_none()
     if not db_user:
         raise WrextAuthenticationException(message="User not found", context={"user_id": user_id})
 
@@ -1028,15 +1082,17 @@ def get_workspace_web_knowledge(workspace_id: str, request: Request, db: Session
             raise ResourceNotFoundException(resource_type="workspace", resource_id=workspace_id)
 
         # Check if user has access to this workspace
-        member = db.query(WorkspaceMembers).filter(
+        result = await db.execute(select(WorkspaceMembers).where(
             WorkspaceMembers.workspace_id == workspace.id,
             WorkspaceMembers.user_id == user_id
-        ).first()
+        ))
+        member = result.scalar_one_or_none()
         if not member:
             raise ResourceNotFoundException(resource_type="workspace", resource_id=workspace_id)
 
         # Get web knowledge for this workspace
-        web_knowledge = db.query(Website).filter(Website.workspace_id == workspace.id).all()
+        result = await db.execute(select(Website).where(Website.workspace_id == workspace.id))
+        web_knowledge = result.scalars().all()
 
         # Use to_dict() to match the structure from /api/workspace/web_knowledge/all
         web_data = [item.to_dict() for item in web_knowledge]
@@ -1064,9 +1120,10 @@ def get_workspace_web_knowledge(workspace_id: str, request: Request, db: Session
 # Get file knowledge for workspace
 # -------------------------
 @router.get("/{workspace_id}/knowledge/files")
-def get_workspace_file_knowledge(workspace_id: str, request: Request, db: Session = Depends(get_db), user: dict = Depends(get_current_user)):
+async def get_workspace_file_knowledge(workspace_id: str, request: Request, db: AsyncSession = Depends(get_async_db), user: dict = Depends(get_current_user)):
     user_id = user.get("identity")
-    db_user = db.query(Users).filter(Users.id == user_id, Users.deleted_at == None).first()
+    result = await db.execute(select(Users).where(Users.id == user_id, Users.deleted_at == None))
+    db_user = result.scalar_one_or_none()
     if not db_user:
         raise WrextAuthenticationException(message="User not found", context={"user_id": user_id})
 
@@ -1077,15 +1134,17 @@ def get_workspace_file_knowledge(workspace_id: str, request: Request, db: Sessio
             raise ResourceNotFoundException(resource_type="workspace", resource_id=workspace_id)
 
         # Check if user has access to this workspace
-        member = db.query(WorkspaceMembers).filter(
+        result = await db.execute(select(WorkspaceMembers).where(
             WorkspaceMembers.workspace_id == workspace.id,
             WorkspaceMembers.user_id == user_id
-        ).first()
+        ))
+        member = result.scalar_one_or_none()
         if not member:
             raise ResourceNotFoundException(resource_type="workspace", resource_id=workspace_id)
 
         # Get file knowledge for this workspace
-        file_knowledge = db.query(KnowledgeFiles).filter(KnowledgeFiles.workspace_id == workspace.id).all()
+        result = await db.execute(select(KnowledgeFiles).where(KnowledgeFiles.workspace_id == workspace.id))
+        file_knowledge = result.scalars().all()
 
         # Use to_dict() to match the structure from /api/workspace/file/all
         file_data = [item.to_dict() for item in file_knowledge]
@@ -1113,9 +1172,10 @@ def get_workspace_file_knowledge(workspace_id: str, request: Request, db: Sessio
 # Get text knowledge for workspace
 # -------------------------
 @router.get("/{workspace_id}/knowledge/text")
-def get_workspace_text_knowledge(workspace_id: str, request: Request, db: Session = Depends(get_db), user: dict = Depends(get_current_user)):
+async def get_workspace_text_knowledge(workspace_id: str, request: Request, db: AsyncSession = Depends(get_async_db), user: dict = Depends(get_current_user)):
     user_id = user.get("identity")
-    db_user = db.query(Users).filter(Users.id == user_id, Users.deleted_at == None).first()
+    result = await db.execute(select(Users).where(Users.id == user_id, Users.deleted_at == None))
+    db_user = result.scalar_one_or_none()
     if not db_user:
         raise WrextAuthenticationException(message="User not found", context={"user_id": user_id})
 
@@ -1126,15 +1186,17 @@ def get_workspace_text_knowledge(workspace_id: str, request: Request, db: Sessio
             raise ResourceNotFoundException(resource_type="workspace", resource_id=workspace_id)
 
         # Check if user has access to this workspace
-        member = db.query(WorkspaceMembers).filter(
+        result = await db.execute(select(WorkspaceMembers).where(
             WorkspaceMembers.workspace_id == workspace.id,
             WorkspaceMembers.user_id == user_id
-        ).first()
+        ))
+        member = result.scalar_one_or_none()
         if not member:
             raise ResourceNotFoundException(resource_type="workspace", resource_id=workspace_id)
 
         # Get text knowledge for this workspace
-        text_knowledge = db.query(TextKnowledge).filter(TextKnowledge.workspace_id == workspace.id).all()
+        result = await db.execute(select(TextKnowledge).where(TextKnowledge.workspace_id == workspace.id))
+        text_knowledge = result.scalars().all()
 
         # Use to_dict() to match the structure from /api/workspace/text/all
         text_data = [item.to_dict() for item in text_knowledge]
@@ -1162,28 +1224,31 @@ def get_workspace_text_knowledge(workspace_id: str, request: Request, db: Sessio
 # Update workspace
 # -------------------------
 @router.put("/update/{workspace_id}")
-def update_workspace(workspace_id: str, data: WorkspaceSchema, request: Request, db: Session = Depends(get_db), user: dict = Depends(get_current_user)):
+async def update_workspace(workspace_id: str, data: WorkspaceSchema, request: Request, db: AsyncSession = Depends(get_async_db), user: dict = Depends(get_current_user)):
     user_id = user.get("identity")
-    db_user = db.query(Users).filter(Users.id == user_id, Users.deleted_at == None).first()
+    result = await db.execute(select(Users).where(Users.id == user_id, Users.deleted_at == None))
+    db_user = result.scalar_one_or_none()
     if not db_user:
         raise WrextAuthenticationException(message="User not found", context={"user_id": user_id})
 
     try:
-        workspace = (
-            db.query(WorkspaceModel)
+        workspace_query = (
+            select(WorkspaceModel)
             .join(WorkspaceMembers, WorkspaceMembers.workspace_id == WorkspaceModel.id)
-            .filter(WorkspaceModel.id == workspace_id, WorkspaceMembers.user_id == user_id)
-            .first()
+            .where(WorkspaceModel.id == workspace_id, WorkspaceMembers.user_id == user_id)
         )
+        result = await db.execute(workspace_query)
+        workspace = result.scalar_one_or_none()
         if not workspace:
             raise ResourceNotFoundException(resource_type="workspace", resource_id=workspace_id)
 
         # Duplicate title check
         if data.name and data.name != workspace.name:
-            existing_workspace = db.query(WorkspaceModel).filter(
+            result = await db.execute(select(WorkspaceModel).where(
                 WorkspaceModel.name == data.name,
                 WorkspaceModel.user_id == user_id
-            ).first()
+            ))
+            existing_workspace = result.scalar_one_or_none()
             if existing_workspace:
                 raise DuplicateResourceException(
                     message=f"Workspace with title '{data.name}' already exists",
@@ -1201,8 +1266,8 @@ def update_workspace(workspace_id: str, data: WorkspaceSchema, request: Request,
             workspace.url = str(data.url)
         workspace.updated_at = datetime.now(timezone.utc)
 
-        db.commit()
-        db.refresh(workspace)
+        await db.commit()
+        await db.refresh(workspace)
 
         workspace_data = {
             "id": str(workspace.id),
@@ -1219,7 +1284,7 @@ def update_workspace(workspace_id: str, data: WorkspaceSchema, request: Request,
         raise
     except Exception as e:
         logger.exception(f"Error updating workspace {workspace_id}")
-        db.rollback()
+        await db.rollback()
         return error(
             message="Failed to update workspace",
             code=ErrorCode.INTERNAL_SERVER_ERROR,
@@ -1234,31 +1299,34 @@ def update_workspace(workspace_id: str, data: WorkspaceSchema, request: Request,
 # Update brand voice
 # -------------------------
 @router.put("/{workspace_id}/brand-voice")
-def update_brand_voice(
+async def update_brand_voice(
     workspace_id: str,
     brand_data: BrandSchema,
     request: Request,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     user: dict = Depends(get_current_user)
 ):
     user_id = user.get("identity")
-    db_user = db.query(Users).filter(Users.id == user_id, Users.deleted_at == None).first()
+    result = await db.execute(select(Users).where(Users.id == user_id, Users.deleted_at == None))
+    db_user = result.scalar_one_or_none()
     if not db_user:
         raise WrextAuthenticationException(message="User not found", context={"user_id": user_id})
 
     try:
         # Verify workspace access
-        workspace = (
-            db.query(WorkspaceModel)
+        workspace_query = (
+            select(WorkspaceModel)
             .join(WorkspaceMembers, WorkspaceMembers.workspace_id == WorkspaceModel.id)
-            .filter(WorkspaceModel.id == workspace_id, WorkspaceMembers.user_id == user_id)
-            .first()
+            .where(WorkspaceModel.id == workspace_id, WorkspaceMembers.user_id == user_id)
         )
+        result = await db.execute(workspace_query)
+        workspace = result.scalar_one_or_none()
         if not workspace:
             raise ResourceNotFoundException(resource_type="workspace", resource_id=workspace_id)
 
         # Get or create brand voice
-        brand_voice = db.query(BrandVoice).filter(BrandVoice.workspace_id == workspace_id).first()
+        result = await db.execute(select(BrandVoice).where(BrandVoice.workspace_id == workspace_id))
+        brand_voice = result.scalar_one_or_none()
 
         if brand_voice:
             # Update existing brand voice
@@ -1283,8 +1351,8 @@ def update_brand_voice(
             )
             db.add(brand_voice)
 
-        db.commit()
-        db.refresh(brand_voice)
+        await db.commit()
+        await db.refresh(brand_voice)
 
         return success(
             data={
@@ -1306,7 +1374,7 @@ def update_brand_voice(
         raise
     except Exception as e:
         logger.exception(f"Error updating brand voice for workspace {workspace_id}")
-        db.rollback()
+        await db.rollback()
         return error(
             message="Failed to update brand voice",
             code=ErrorCode.INTERNAL_SERVER_ERROR,

@@ -11,8 +11,9 @@ from src.utils.utils import load_split_file_data
 from src.utils.response_utils import success, error
 from src.api.schema.response_schemas import ErrorCode, ErrorSeverity
 from src.api.security.auth import get_api_key, API_KEY
-from sqlalchemy.orm import Session
-from src.api.database.database import get_db
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
+from src.api.database.async_database import get_async_db
 from pathlib import Path
 import os
 from src.api.middleware.exceptions import (
@@ -35,7 +36,7 @@ router = APIRouter(
 
 # Health Check
 @router.get("/")
-def get_status(request: Request):
+async def get_status(request: Request):
     logger.info("File Knowledge Route health check called.")
     return success(
         data={"status": "operational", "service": "file_knowledge_service"},
@@ -45,9 +46,9 @@ def get_status(request: Request):
 
 # Get all file knowledges
 @router.get("/all")
-def get_file_knowledges(
+async def get_file_knowledges(
         request: Request,
-        db: Session = Depends(get_db),
+        db: AsyncSession = Depends(get_async_db),
         api_key: str = Depends(get_api_key)
 ):
     if api_key != API_KEY:
@@ -57,7 +58,8 @@ def get_file_knowledges(
         )
     try:
         logger.info("Fetching all file knowledges")
-        file_knowledges = db.query(KnowledgeFiles).all()
+        result = await db.execute(select(KnowledgeFiles))
+        file_knowledges = result.scalars().all()
         return success(data=[knowledge.to_dict() for knowledge in file_knowledges])
     except Exception as e:
         logger.error(f"Error fetching knowledges: {e}")
@@ -65,10 +67,10 @@ def get_file_knowledges(
     
 # get file knowledge by ID
 @router.get("/{file_id}")
-def get_file_knowledge(
+async def get_file_knowledge(
         file_id: str,
         request: Request,
-        db: Session = Depends(get_db),
+        db: AsyncSession = Depends(get_async_db),
         api_key: str = Depends(get_api_key)
 ):
     if api_key != API_KEY:
@@ -78,7 +80,8 @@ def get_file_knowledge(
         )
     try:
         logger.info(f"Fetching file knowledge with ID: {file_id}")
-        knowledge = db.query(KnowledgeFiles).filter(KnowledgeFiles.id == file_id).first()
+        result = await db.execute(select(KnowledgeFiles).where(KnowledgeFiles.id == file_id))
+        knowledge = result.scalar_one_or_none()
         if not knowledge:
             raise HTTPException(status_code=404, detail=f"File Knowledge with ID {file_id} not found")
         return success(data=knowledge.to_dict())
@@ -95,7 +98,7 @@ def get_file_knowledge(
 async def add_file_knowledge(
         request: Request,
         file: UploadFile = File(...),
-        db: Session = Depends(get_db),
+        db: AsyncSession = Depends(get_async_db),
         workspace_id: str = None,
         api_key: str = Depends(get_api_key)
 ):
@@ -106,15 +109,17 @@ async def add_file_knowledge(
         )
     try:
         # 1. Validate workspace
-        workspace = db.query(WorkspaceModel).filter(WorkspaceModel.id == workspace_id).first()
+        result = await db.execute(select(WorkspaceModel).where(WorkspaceModel.id == workspace_id))
+        workspace = result.scalar_one_or_none()
         if not workspace:
             raise HTTPException(status_code=404, detail=f"Workspace with ID {workspace_id} not found")
 
         # 2. Check duplicate
-        existing_knowledge = db.query(KnowledgeFiles).filter(
+        result = await db.execute(select(KnowledgeFiles).where(
             KnowledgeFiles.file_name == file.filename,
             KnowledgeFiles.workspace_id == workspace_id
-        ).first()
+        ))
+        existing_knowledge = result.scalar_one_or_none()
         if existing_knowledge:
             raise HTTPException(
                 status_code=400,
@@ -136,8 +141,8 @@ async def add_file_knowledge(
             file_path=str(file_path),
         )
         db.add(new_knowledge)
-        db.commit()
-        db.refresh(new_knowledge)
+        await db.commit()
+        await db.refresh(new_knowledge)
 
         # 4. Extract text from file
         chunks = load_split_file_data(str(file_path))
@@ -186,12 +191,12 @@ async def add_file_knowledge(
 
 # Update file knowledge (name only)
 @router.put("/update/{workspace_id}/{file_id}")
-def update_file_knowledge(
+async def update_file_knowledge(
         workspace_id: str,
         file_id: str,
         name: str,
         request: Request,
-        db: Session = Depends(get_db),
+        db: AsyncSession = Depends(get_async_db),
         api_key: str = Depends(get_api_key)
 ):
     if api_key != API_KEY:
@@ -201,10 +206,11 @@ def update_file_knowledge(
         )
     try:
         logger.info(f"Updating file knowledge ID: {file_id} in workspace: {workspace_id}")
-        knowledge = db.query(KnowledgeFiles).filter(
+        result = await db.execute(select(KnowledgeFiles).where(
             KnowledgeFiles.id == file_id,
             KnowledgeFiles.workspace_id == workspace_id
-        ).first()
+        ))
+        knowledge = result.scalar_one_or_none()
 
         if not knowledge:
             raise ResourceNotFoundException(
@@ -213,8 +219,8 @@ def update_file_knowledge(
             )
 
         knowledge.name = name
-        db.commit()
-        db.refresh(knowledge)
+        await db.commit()
+        await db.refresh(knowledge)
 
         return success(
             data={"file_knowledge": knowledge},
@@ -225,17 +231,17 @@ def update_file_knowledge(
         raise
     except Exception as e:
         logger.error(f"Error updating file knowledge: {e}")
-        db.rollback()
+        await db.rollback()
         raise HTTPException(status_code=500, detail="Internal Server Error")
 
 
 # Delete file knowledge
 @router.delete("/delete/{workspace_id}/{file_id}")
-def delete_file_knowledge(
+async def delete_file_knowledge(
         file_id: str,
         workspace_id:str,
         request: Request,
-        db: Session = Depends(get_db),
+        db: AsyncSession = Depends(get_async_db),
         api_key: str = Depends(get_api_key)
 ):
     if api_key != API_KEY:
@@ -245,11 +251,12 @@ def delete_file_knowledge(
         )
     try:
         logger.info(f"Deleting file knowledge with ID: {file_id}")
-        knowledge = db.query(KnowledgeFiles).filter(KnowledgeFiles.id == file_id, KnowledgeFiles.workspace_id == workspace_id).first()
+        result = await db.execute(select(KnowledgeFiles).where(KnowledgeFiles.id == file_id, KnowledgeFiles.workspace_id == workspace_id))
+        knowledge = result.scalar_one_or_none()
 
         if not knowledge:
             raise HTTPException(status_code=404, detail=f"File Knowledge with ID {file_id} not found")
-        
+
         # Delete the associated file from storage
         if os.path.exists(knowledge.file_path):
             os.remove(knowledge.file_path)
@@ -270,8 +277,8 @@ def delete_file_knowledge(
         else:
             logger.warning(f"File at path {knowledge.file_path} does not exist")
 
-        db.delete(knowledge)
-        db.commit()
+        await db.delete(knowledge)
+        await db.commit()
         logger.info(f"File knowledge with ID: {file_id} deleted successfully")
         return success(data={"file_id": file_id}, message="File Knowledge deleted successfully", request=request)
     except HTTPException as e:
