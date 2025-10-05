@@ -24,6 +24,7 @@ class ContentAIConfig(Base):
     generated_at = Column(DateTime(timezone=True), nullable=True)
 
     created_at = Column(DateTime(timezone=True), nullable=False, default=datetime.utcnow)
+    updated_at = Column(DateTime(timezone=True), nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     # Relationships
     content = relationship("Content", back_populates="ai_config")

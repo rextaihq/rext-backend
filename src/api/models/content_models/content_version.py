@@ -17,6 +17,7 @@ class ContentVersion(Base):
     is_current = Column(Boolean, default=False)
 
     created_at = Column(DateTime(timezone=True), nullable=False, default=datetime.utcnow)
+    updated_at = Column(DateTime(timezone=True), nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     # Relationships
     content = relationship("Content", back_populates="versions")
