@@ -21,6 +21,7 @@ from src.api.schema.response_schemas import ErrorCode, ErrorSeverity
 from datetime import datetime
 import uuid
 import os
+from src.api.middleware.rate_limiter import password_reset_rate_limit
 
 router = APIRouter()
 
@@ -30,8 +31,9 @@ def forgot_password(
     request: Request,
     forgot_request: ForgotPasswordRequest,
     background_tasks: BackgroundTasks,
-    db: Session = Depends(get_db)
-    ):
+    db: Session = Depends(get_db),
+    _rate_limit: None = Depends(password_reset_rate_limit())
+):
     """
     Initiate forgot password process
     """
@@ -87,7 +89,12 @@ def forgot_password(
 
 
 @router.post("/reset-password")
-def reset_password(payload:ResetPassword, request: Request, db: Session = Depends(get_db)):
+def reset_password(
+    payload: ResetPassword,
+    request: Request,
+    db: Session = Depends(get_db),
+    _rate_limit: None = Depends(password_reset_rate_limit())
+):
     """
     Reset user password
     """

@@ -38,6 +38,7 @@ from src.api.database.database import engine
 from src.api.middleware.request_tracker import RequestTrackerMiddleware
 from src.api.middleware.error_handler import ErrorHandlerMiddleware, setup_exception_handlers
 from src.api.middleware.security import SecurityHeadersMiddleware
+from src.api.middleware.rate_limiter import RateLimiterMiddleware
 from src.api.config import settings
 from src.utils.response_utils import success
 from src.utils.logger import logger
@@ -151,6 +152,15 @@ app.add_middleware(
 
 # Security headers middleware
 app.add_middleware(SecurityHeadersMiddleware)
+
+# Rate limiting middleware - protects against API abuse and DDoS
+app.add_middleware(
+    RateLimiterMiddleware,
+    requests_per_minute=int(os.getenv("RATE_LIMIT_PER_MINUTE", "100")),
+    requests_per_hour=int(os.getenv("RATE_LIMIT_PER_HOUR", "1000")),
+    requests_per_day=int(os.getenv("RATE_LIMIT_PER_DAY", "10000")),
+    enable=os.getenv("RATE_LIMITING_ENABLED", "true").lower() == "true"
+)
 
 # Setup global exception handlers
 setup_exception_handlers(app)

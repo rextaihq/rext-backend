@@ -31,6 +31,10 @@ from src.api.middleware.exceptions import (
 from datetime import datetime, timedelta
 from user_agents import parse as parse_user_agent
 import os
+from src.api.middleware.rate_limiter import (
+    login_rate_limit,
+    registration_rate_limit
+)
 
 router = APIRouter()
 
@@ -40,7 +44,8 @@ def create_user(
     user: RegisterUser,
     request: Request,
     background_tasks: BackgroundTasks,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    _rate_limit: None = Depends(registration_rate_limit())
 ):
     """
     Endpoint to create a new user.
@@ -171,8 +176,9 @@ def create_user(
 def login_user(
     user: LoginUser,
     request: Request,
-    db: Session = Depends(get_db)
-    ):
+    db: Session = Depends(get_db),
+    _rate_limit: None = Depends(login_rate_limit())
+):
     """
     Endpoint to log in a user with table updates.
     """
