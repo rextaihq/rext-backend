@@ -18,12 +18,13 @@ from src.api.models.subscription_models.plans import SubscriptionPlan
 from src.api.models.subscription_models.subscriptions import UserSubscription
 from src.api.models.user_models.roles import Role
 from src.api.models.user_models.user_roles import UserRole
-from src.api.schema.subscription_schema import (
+from src.api.schema.subscription import (
     SubscriptionPlanCreate,
     SubscriptionPlanUpdate,
     SubscriptionPlanResponse
 )
 from src.utils.response_utils import success, error, created
+from src.utils.db_utils import get_or_404
 from src.api.middleware.exceptions import (
     DuplicateResourceException,
     WrextValidationException,
@@ -228,18 +229,7 @@ async def get_plan(
         is_user_admin = await check_admin(db, user_id)
 
         # Get plan
-        result = await db.execute(
-            select(SubscriptionPlan).where(
-                SubscriptionPlan.id == plan_id
-            )
-        )
-        plan = result.scalar_one_or_none()
-
-        if not plan:
-            raise ResourceNotFoundException(
-                resource="subscription_plan",
-                identifier=plan_id
-            )
+        plan = await get_or_404(db, SubscriptionPlan, plan_id, "subscription_plan")
 
         # Check visibility (non-admin can only see public, active plans)
         if not is_user_admin and (not plan.is_public or not plan.is_active):
@@ -308,18 +298,7 @@ async def update_plan(
             )
 
         # Get plan
-        result = await db.execute(
-            select(SubscriptionPlan).where(
-                SubscriptionPlan.id == plan_id
-            )
-        )
-        plan = result.scalar_one_or_none()
-
-        if not plan:
-            raise ResourceNotFoundException(
-                resource="subscription_plan",
-                identifier=plan_id
-            )
+        plan = await get_or_404(db, SubscriptionPlan, plan_id, "subscription_plan")
 
         # Update fields (only if provided)
         update_data = plan_data.model_dump(exclude_unset=True)
@@ -391,18 +370,7 @@ async def delete_plan(
             )
 
         # Get plan
-        result = await db.execute(
-            select(SubscriptionPlan).where(
-                SubscriptionPlan.id == plan_id
-            )
-        )
-        plan = result.scalar_one_or_none()
-
-        if not plan:
-            raise ResourceNotFoundException(
-                resource="subscription_plan",
-                identifier=plan_id
-            )
+        plan = await get_or_404(db, SubscriptionPlan, plan_id, "subscription_plan")
 
         # Check for active subscriptions
         count_result = await db.execute(

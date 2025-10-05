@@ -11,6 +11,7 @@ from typing import Optional
 
 from src.utils.logger import logger
 from src.utils.response_utils import success, error, created
+from src.utils.db_utils import get_or_404, ensure_unique
 from src.utils.email_template_utils import (
     render_template,
     extract_variables,
@@ -332,15 +333,7 @@ async def update_email_template(
         user_id = current_user.get("identity")
 
         # Get template
-        result = await db.execute(select(EmailTemplate).where(EmailTemplate.id == template_id))
-        template = result.scalar_one_or_none()
-
-        if not template:
-            raise ResourceNotFoundException(
-                message="Email template not found",
-                resource_type="email_template",
-                resource_id=template_id
-            )
+        template = await get_or_404(db, EmailTemplate, template_id, "email_template")
 
         # Verify user has access to workspace
         result = await db.execute(
@@ -419,15 +412,7 @@ async def delete_email_template(
         user_id = current_user.get("identity")
 
         # Get template
-        result = await db.execute(select(EmailTemplate).where(EmailTemplate.id == template_id))
-        template = result.scalar_one_or_none()
-
-        if not template:
-            raise ResourceNotFoundException(
-                message="Email template not found",
-                resource_type="email_template",
-                resource_id=template_id
-            )
+        template = await get_or_404(db, EmailTemplate, template_id, "email_template")
 
         # Verify user has access to workspace
         result = await db.execute(

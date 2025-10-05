@@ -27,6 +27,7 @@ from src.api.schema.security_schema import (
     ResetFailedAttemptsRequest
 )
 from src.utils.response_utils import success, error
+from src.utils.db_utils import get_or_404
 from src.api.middleware.exceptions import ResourceNotFoundException
 from src.utils.logger import logger
 from src.utils.audit_helper import create_audit_log
@@ -204,14 +205,7 @@ async def unlock_account(
         admin_user_id = current_user.get("identity")
 
         # Get user
-        user_result = await db.execute(select(Users).where(Users.id == user_id))
-        user = user_result.scalar_one_or_none()
-
-        if not user:
-            raise ResourceNotFoundException(
-                resource="user",
-                identifier=user_id
-            )
+        user = await get_or_404(db, Users, user_id, "user")
 
         # Check if account is locked
         if not user.locked_until or user.locked_until <= datetime.utcnow():
@@ -296,14 +290,7 @@ async def reset_failed_attempts(
         admin_user_id = current_user.get("identity")
 
         # Get user
-        user_result = await db.execute(select(Users).where(Users.id == user_id))
-        user = user_result.scalar_one_or_none()
-
-        if not user:
-            raise ResourceNotFoundException(
-                resource="user",
-                identifier=user_id
-            )
+        user = await get_or_404(db, Users, user_id, "user")
 
         old_attempts = user.failed_login_attempts
 
@@ -547,14 +534,7 @@ async def get_user_login_history(
     """
     try:
         # Get user
-        user_result = await db.execute(select(Users).where(Users.id == user_id))
-        user = user_result.scalar_one_or_none()
-
-        if not user:
-            raise ResourceNotFoundException(
-                resource="user",
-                identifier=user_id
-            )
+        user = await get_or_404(db, Users, user_id, "user")
 
         # Get login events from audit log
         events_result = await db.execute(

@@ -21,7 +21,7 @@ from src.api.models.subscription_models.subscriptions import (
 )
 from src.api.models.workspace_models.workspace_model import WorkspaceModel as Workspace
 from src.api.models.topic_models.topic_models import TopicsModel as Topic
-from src.api.schema.subscription_schema import (
+from src.api.schema.subscription import (
     SubscriptionCreateRequest,
     SubscriptionUpgradeRequest,
     SubscriptionCancelRequest,
@@ -30,6 +30,7 @@ from src.api.schema.subscription_schema import (
     TrialStatusResponse
 )
 from src.utils.response_utils import success, error, created
+from src.utils.db_utils import get_or_404
 from src.api.middleware.exceptions import (
     DuplicateResourceException,
     WrextValidationException,
@@ -115,19 +116,13 @@ async def subscribe_to_plan(
             )
 
         # Get the plan
-        plan_result = await db.execute(
-            select(SubscriptionPlan).where(
-                SubscriptionPlan.id == subscription_data.plan_id,
-                SubscriptionPlan.is_active == True
-            )
+        plan = await get_or_404(
+            db,
+            SubscriptionPlan,
+            subscription_data.plan_id,
+            "subscription_plan",
+            additional_filters=[SubscriptionPlan.is_active == True]
         )
-        plan = plan_result.scalar_one_or_none()
-
-        if not plan:
-            raise ResourceNotFoundException(
-                resource="subscription_plan",
-                identifier=subscription_data.plan_id
-            )
 
         # Determine if this is a trial (first subscription gets 14 days trial for paid plans)
         is_trial = plan.price_monthly > 0 or plan.price_yearly > 0
@@ -328,19 +323,13 @@ async def upgrade_subscription(
         )
         current_plan = current_plan_result.scalar_one_or_none()
 
-        new_plan_result = await db.execute(
-            select(SubscriptionPlan).where(
-                SubscriptionPlan.id == upgrade_data.new_plan_id,
-                SubscriptionPlan.is_active == True
-            )
+        new_plan = await get_or_404(
+            db,
+            SubscriptionPlan,
+            upgrade_data.new_plan_id,
+            "subscription_plan",
+            additional_filters=[SubscriptionPlan.is_active == True]
         )
-        new_plan = new_plan_result.scalar_one_or_none()
-
-        if not new_plan:
-            raise ResourceNotFoundException(
-                resource="subscription_plan",
-                identifier=upgrade_data.new_plan_id
-            )
 
         # Check if it's the same plan
         if current_subscription.plan_id == upgrade_data.new_plan_id:
@@ -524,16 +513,7 @@ async def get_usage_stats(
             )
 
         # Get plan
-        plan_result = await db.execute(
-            select(SubscriptionPlan).where(SubscriptionPlan.id == subscription.plan_id)
-        )
-        plan = plan_result.scalar_one_or_none()
-
-        if not plan:
-            raise ResourceNotFoundException(
-                resource="subscription_plan",
-                identifier=subscription.plan_id
-            )
+        plan = await get_or_404(db, SubscriptionPlan, subscription.plan_id, "subscription_plan")
 
         # Calculate current usage
         current_usage = await calculate_usage(db, user_id)

@@ -18,8 +18,10 @@ from pathlib import Path
 import os
 from src.api.middleware.exceptions import (
     WrextExternalServiceException,
-    WrextAuthenticationException
+    WrextAuthenticationException,
+    ResourceNotFoundException
 )
+from src.utils.db_utils import get_or_404
 
 
 # for file storage
@@ -80,14 +82,11 @@ async def get_file_knowledge(
         )
     try:
         logger.info(f"Fetching file knowledge with ID: {file_id}")
-        result = await db.execute(select(KnowledgeFiles).where(KnowledgeFiles.id == file_id))
-        knowledge = result.scalar_one_or_none()
-        if not knowledge:
-            raise HTTPException(status_code=404, detail=f"File Knowledge with ID {file_id} not found")
+        knowledge = await get_or_404(db, KnowledgeFiles, file_id, "file_knowledge")
         return success(data=knowledge.to_dict())
-    except HTTPException as e:
+    except ResourceNotFoundException as e:
         logger.warning(str(e))
-        raise e
+        raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
         logger.error(f"Error fetching file knowledge: {e}")
         raise HTTPException(status_code=500, detail="Internal Server Error")
@@ -109,10 +108,7 @@ async def add_file_knowledge(
         )
     try:
         # 1. Validate workspace
-        result = await db.execute(select(WorkspaceModel).where(WorkspaceModel.id == workspace_id))
-        workspace = result.scalar_one_or_none()
-        if not workspace:
-            raise HTTPException(status_code=404, detail=f"Workspace with ID {workspace_id} not found")
+        workspace = await get_or_404(db, WorkspaceModel, workspace_id, "workspace")
 
         # 2. Check duplicate
         result = await db.execute(select(KnowledgeFiles).where(
@@ -206,17 +202,13 @@ async def update_file_knowledge(
         )
     try:
         logger.info(f"Updating file knowledge ID: {file_id} in workspace: {workspace_id}")
-        result = await db.execute(select(KnowledgeFiles).where(
-            KnowledgeFiles.id == file_id,
-            KnowledgeFiles.workspace_id == workspace_id
-        ))
-        knowledge = result.scalar_one_or_none()
-
-        if not knowledge:
-            raise ResourceNotFoundException(
-                resource_type="file_knowledge",
-                resource_id=file_id
-            )
+        knowledge = await get_or_404(
+            db,
+            KnowledgeFiles,
+            file_id,
+            "file_knowledge",
+            additional_filters=[KnowledgeFiles.workspace_id == workspace_id]
+        )
 
         knowledge.name = name
         await db.commit()
@@ -251,11 +243,13 @@ async def delete_file_knowledge(
         )
     try:
         logger.info(f"Deleting file knowledge with ID: {file_id}")
-        result = await db.execute(select(KnowledgeFiles).where(KnowledgeFiles.id == file_id, KnowledgeFiles.workspace_id == workspace_id))
-        knowledge = result.scalar_one_or_none()
-
-        if not knowledge:
-            raise HTTPException(status_code=404, detail=f"File Knowledge with ID {file_id} not found")
+        knowledge = await get_or_404(
+            db,
+            KnowledgeFiles,
+            file_id,
+            "file_knowledge",
+            additional_filters=[KnowledgeFiles.workspace_id == workspace_id]
+        )
 
         # Delete the associated file from storage
         if os.path.exists(knowledge.file_path):

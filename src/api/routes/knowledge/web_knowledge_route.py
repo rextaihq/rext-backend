@@ -21,6 +21,7 @@ from src.api.middleware.exceptions import (
     WrextValidationException,
     WrextAuthenticationException
 )
+from src.utils.db_utils import get_or_404
 
 router = APIRouter(
     prefix="/workspace/web_knowledge",
@@ -70,10 +71,7 @@ async def get_web_knowledge(
         )
     try:
         logger.info(f"Fetching knowledge with ID: {web_id}")
-        result = await db.execute(select(Website).where(Website.id == web_id))
-        knowledge = result.scalar_one_or_none()
-        if not knowledge:
-            raise ResourceNotFoundException(f"Knowledge with ID {web_id} not found")
+        knowledge = await get_or_404(db, Website, web_id, "knowledge")
         return success(data=knowledge.to_dict())
     except ResourceNotFoundException as e:
         logger.warning(str(e))
@@ -97,10 +95,7 @@ async def add_web_knowledge(
             )
         try:
             logger.info("Check the workspace exists")
-            result = await db.execute(select(WorkspaceModel).where(WorkspaceModel.id == data.workspace_id))
-            workspace = result.scalar_one_or_none()
-            if not workspace:
-                raise ResourceNotFoundException(f"Workspace with ID {data.workspace_id} not found")
+            workspace = await get_or_404(db, WorkspaceModel, data.workspace_id, "workspace")
 
             # check if the knowledge already exists
             result = await db.execute(select(Website).where(Website.url == str(data.url), Website.workspace_id == str(data.workspace_id)))
@@ -197,17 +192,13 @@ async def update_web_knowledge(
         )
     try:
         logger.info(f"Updating web knowledge ID: {web_id} in workspace: {workspace_id}")
-        result = await db.execute(select(Website).where(
-            Website.id == web_id,
-            Website.workspace_id == workspace_id
-        ))
-        knowledge = result.scalar_one_or_none()
-
-        if not knowledge:
-            raise ResourceNotFoundException(
-                resource_type="web_knowledge",
-                resource_id=web_id
-            )
+        knowledge = await get_or_404(
+            db,
+            Website,
+            web_id,
+            "web_knowledge",
+            additional_filters=[Website.workspace_id == workspace_id]
+        )
 
         knowledge.title = title
         await db.commit()
@@ -242,10 +233,13 @@ async def delete_web_knowledge(
         )
     try:
         logger.info(f"Deleting knowledge with ID: {web_id} from workspace: {workspace_id}")
-        result = await db.execute(select(Website).where(Website.id == web_id, Website.workspace_id == workspace_id))
-        knowledge = result.scalar_one_or_none()
-        if not knowledge:
-            raise ResourceNotFoundException(f"Knowledge with ID {web_id} not found in the specified workspace")
+        knowledge = await get_or_404(
+            db,
+            Website,
+            web_id,
+            "knowledge",
+            additional_filters=[Website.workspace_id == workspace_id]
+        )
 
         # delete vector from store
         success_status = delete_vectors(vector_id=f"{str(workspace_id)}_{str(web_id)}")

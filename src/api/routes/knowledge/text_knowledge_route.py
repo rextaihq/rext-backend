@@ -12,8 +12,10 @@ from sqlalchemy import select
 from src.api.security.auth import get_api_key, API_KEY
 from src.api.database.async_database import get_async_db
 from src.api.middleware.exceptions import (
-    WrextAuthenticationException
+    WrextAuthenticationException,
+    ResourceNotFoundException
 )
+from src.utils.db_utils import get_or_404
 
 router = APIRouter(
     prefix="/workspace/text",
@@ -68,14 +70,17 @@ async def get_file_knowledge(
         )
     try:
         logger.info(f"Fetching file knowledge with ID: {text_id}")
-        result = await db.execute(select(TextKnowledge).where(TextKnowledge.id == text_id,
-                                                   TextKnowledge.workspace_id==workspace_id))
-        knowledge = result.scalar_one_or_none()
-        if not knowledge:
-            raise HTTPException(status_code=404, detail=f"File Knowledge with ID {text_id} not found")
+        knowledge = await get_or_404(
+            db,
+            TextKnowledge,
+            text_id,
+            "text_knowledge",
+            additional_filters=[TextKnowledge.workspace_id == workspace_id]
+        )
         return success(data=knowledge.to_dict())
-    except HTTPException as e:
-        raise e
+    except ResourceNotFoundException as e:
+        logger.warning(str(e))
+        raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
         logger.error(f"Error fetching file knowledge: {e}")
         raise HTTPException(status_code=500, detail="Internal Server Error")
@@ -95,10 +100,7 @@ async def text_knowledge(
         )
     try:
         # 1. Validate workspace
-        result = await db.execute(select(WorkspaceModel).where(WorkspaceModel.id == payload.workspace_id))
-        workspace = result.scalar_one_or_none()
-        if not workspace:
-            raise HTTPException(status_code=404, detail=f"Workspace with ID {payload.workspace_id} not found")
+        workspace = await get_or_404(db, WorkspaceModel, payload.workspace_id, "workspace")
 
         # add the text content in the
         new_knowledge = TextKnowledge(
@@ -144,10 +146,13 @@ async def update_text_knowledge(
         )
     try:
         logger.info(f"Updating text knowledge with ID: {text_id}")
-        result = await db.execute(select(TextKnowledge).where(TextKnowledge.id == text_id,TextKnowledge.workspace_id==workspace_id))
-        text_knowledge = result.scalar_one_or_none()
-        if not text_knowledge:
-            raise HTTPException(status_code=404, detail=f"Text Knowledge with ID {text_id} not found")
+        text_knowledge = await get_or_404(
+            db,
+            TextKnowledge,
+            text_id,
+            "text_knowledge",
+            additional_filters=[TextKnowledge.workspace_id == workspace_id]
+        )
 
         # Update fields
         if new_content:
@@ -193,10 +198,13 @@ async def delete_text_knowledge(
         )
     try:
         logger.info(f"Deleting text knowledge with ID: {text_id}")
-        result = await db.execute(select(TextKnowledge).where(TextKnowledge.id == text_id,TextKnowledge.workspace_id==workspace_id))
-        text_knowledge = result.scalar_one_or_none()
-        if not text_knowledge:
-            raise HTTPException(status_code=404, detail=f"Text Knowledge with ID {text_id} not found")
+        text_knowledge = await get_or_404(
+            db,
+            TextKnowledge,
+            text_id,
+            "text_knowledge",
+            additional_filters=[TextKnowledge.workspace_id == workspace_id]
+        )
 
         await db.delete(text_knowledge)
         await db.commit()

@@ -18,6 +18,7 @@ from src.api.middleware.exceptions import (
     ResourceNotFoundException,
     WrextAuthenticationException
 )
+from src.utils.db_utils import get_or_404
 import uuid
 
 from src.api.lib.logger import auto_logger
@@ -285,18 +286,13 @@ async def get_topic(
             )
 
         logger.info(f"Fetching topic with ID: {topic_id} for workspace: {workspace_id} (resolved to {actual_workspace_id})")
-        result = await db.execute(select(Topics).where(
-            Topics.id == topic_id,
-            Topics.workspace_id == actual_workspace_id
-        ))
-        topic = result.scalar_one_or_none()
-
-        if not topic:
-            raise ResourceNotFoundException(
-                message=f"Topic with ID '{topic_id}' not found in workspace '{workspace_id}'",
-                resource_type="topic",
-                context={"topic_id": topic_id, "workspace_id": workspace_id}
-            )
+        topic = await get_or_404(
+            db,
+            Topics,
+            topic_id,
+            "topic",
+            additional_filters=[Topics.workspace_id == actual_workspace_id]
+        )
 
         logger.info(f"Found topic: {topic.title}")
 
@@ -531,18 +527,13 @@ async def update_topic(
             )
 
         # Fetch the topic - only from the specified workspace
-        result = await db.execute(select(Topics).where(
-            Topics.id == topic_id,
-            Topics.workspace_id == actual_workspace_id
-        ))
-        topic = result.scalar_one_or_none()
-
-        if not topic:
-            raise ResourceNotFoundException(
-                message=f"Topic with ID '{topic_id}' not found in workspace '{workspace_id}'",
-                resource_type="topic",
-                context={"topic_id": topic_id, "workspace_id": workspace_id}
-            )
+        topic = await get_or_404(
+            db,
+            Topics,
+            topic_id,
+            "topic",
+            additional_filters=[Topics.workspace_id == actual_workspace_id]
+        )
 
         # Track what fields are being updated
         updated_fields = []

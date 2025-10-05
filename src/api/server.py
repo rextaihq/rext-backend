@@ -16,21 +16,21 @@ from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 
 # Local application imports
-from src.api.routes.users.users_routes import router as users_router
+from src.api.routes.users import router as users_router
 from src.api.routes.topics.topic_generation_route import router as topic_router
-from src.api.routes.workspaces.workspace_route import router as workspace_router
+from src.api.routes.workspaces import router as workspace_router
 from src.api.routes.workspaces.members.members_routes import router as members_router
 from src.api.routes.workspaces.email_template_route import router as email_template_router
 from src.api.routes.knowledge.web_knowledge_route import router as web_router
 from src.api.routes.knowledge.file_knowledge_route import router as file_router
 from src.api.routes.knowledge.text_knowledge_route import router as text_router
-from src.api.routes.content.content_route import router as content_router
-from src.api.routes.roles.role_routes import router as roles_router
-from src.api.routes.permissions.permission_routes import router as permissions_router
+from src.api.routes.content.modules import router as content_router
+from src.api.routes.roles.modules import router as roles_router
+from src.api.routes.permissions.modules import router as permissions_router
 from src.api.routes.subscriptions.plan_routes import router as plan_routes_router
 from src.api.routes.subscriptions.subscription_routes import router as subscription_routes_router
-from src.api.routes.subscriptions.admin_subscription_routes import router as admin_subscription_routes_router
-from src.api.routes.audit.audit_routes import router as audit_router
+from src.api.routes.subscriptions.admin import router as admin_subscription_routes_router
+from src.api.routes.audit.modules import router as audit_router
 from src.api.routes.security.security_routes import router as security_router
 from src.api.database.database import engine
 
@@ -173,7 +173,7 @@ app.include_router(roles_router, prefix="/api/v1", tags=["Roles"])
 app.include_router(permissions_router, prefix="/api/v1", tags=["Permissions"])
 app.include_router(plan_routes_router, prefix="/api/v1", tags=["Subscription Plans"])
 app.include_router(subscription_routes_router, prefix="/api/v1", tags=["Subscriptions"])
-app.include_router(admin_subscription_routes_router, prefix="/api/v1", tags=["Admin Subscriptions"])
+app.include_router(admin_subscription_routes_router, prefix="/api/v1")
 app.include_router(audit_router, prefix="/api/v1", tags=["Audit Logs"])
 app.include_router(security_router, prefix="/api/v1", tags=["Security Monitoring"])
 
