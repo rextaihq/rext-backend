@@ -5,6 +5,10 @@ from src.states.schemas import BlogArticle
 from src.model.model import load_model
 from langgraph.types import Send
 
+from src.api.lib.logger import auto_logger
+
+logger = auto_logger()
+
 def blog_generation(state:AgentState):
     """
     Generates a blog article based on the current state, using an approved outline and selected article context.
@@ -19,18 +23,18 @@ def blog_generation(state:AgentState):
     
     """
     
-    print("\n🔁 === BlogGeneration Node Triggered ===")
+    logger.info("\n🔁 === BlogGeneration Node Triggered ===")
 
     refine_title = state.get("refine_title")
     docs = state.get("docs", [])
     reference_url = state.get("reference_url", [])
     blog_feedback = state.get("blog_feedback", [])
 
-    print(f"📝 Generating blog for: {refine_title}")
-    print(f"📚 Number of context docs: {len(docs)}")
+    logger.info(f"📝 Generating blog for: {refine_title}")
+    logger.info(f"📚 Number of context docs: {len(docs)}")
 
     # ✅ Construct prompt
-    print("🧠 Constructing prompt for the LLM...")
+    logger.info("🧠 Constructing prompt for the LLM...")
     combined_context = "\n\n".join([d.page_content if hasattr(d, "page_content") else str(d) for d in docs])
     
     prompt = blog_post_prompt_template().format(
@@ -41,10 +45,10 @@ def blog_generation(state:AgentState):
     )
 
     # ✅ Send to LLM
-    print("🤖 Sending prompt to LLM for blog generation...")
+    logger.info("🤖 Sending prompt to LLM for blog generation...")
     blog_model = load_model().with_structured_output(BlogArticle)
     blog_result: BlogArticle = blog_model.invoke(prompt)
-    print("✅ Blog content received from LLM.")
+    logger.info("✅ Blog content received from LLM.")
 
     # ✅ Fan out the state
     return Send(

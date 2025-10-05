@@ -5,21 +5,25 @@ import markdown
 from dotenv import load_dotenv
 import os
 
+from src.api.lib.logger import auto_logger
+
+logger = auto_logger()
+
 load_dotenv()
 
 def draft_blog(state: AgentState):
     approved_blogs = state.get("approved_blogs", [])
-    print(f"🧾 Total approved blogs to process: {len(approved_blogs)}")
+    logger.info(f"🧾 Total approved blogs to process: {len(approved_blogs)}")
 
     if len(approved_blogs) == 0:
-        print("⚠️ No approved blogs found in state.")
+        logger.info("⚠️ No approved blogs found in state.")
         return state
 
     wp_url = os.getenv("WP_URL")
     jwt_token = os.getenv("WP_TOKEN")
 
     for idx, blog_result in enumerate(approved_blogs):
-        print(f"\n📝 Posting blog {idx + 1}: {blog_result['title']}")
+        logger.info(f"\n📝 Posting blog {idx + 1}: {blog_result['title']}")
 
         try:
             # --- Format sections ---
@@ -100,16 +104,16 @@ def draft_blog(state: AgentState):
                 json=post_data
             )
 
-            print("📬 Response Status:", response.status_code)
+            logger.info("📬 Response Status:", response.status_code)
             if response.status_code == 201:
-                print("✅ Blog uploaded successfully.")
-                print("🔗 Link:", response.json().get("link"))
+                logger.info("✅ Blog uploaded successfully.")
+                logger.info("🔗 Link:", response.json().get("link"))
             else:
-                print("❌ Failed to upload blog.")
-                print("📦 Response:", response.text)
+                logger.info("❌ Failed to upload blog.")
+                logger.info("📦 Response:", response.text)
 
         except Exception as e:
-            print(f"❗ Error while processing blog '{blog_result['title']}': {e}")
+            logger.info(f"❗ Error while processing blog '{blog_result['title']}': {e}")
 
-    print("✅ All approved blogs processed.")
+    logger.info("✅ All approved blogs processed.")
     return state

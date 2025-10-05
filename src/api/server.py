@@ -2,39 +2,88 @@
 import os
 from typing import Union
 from contextlib import asynccontextmanager
-import src.api.models 
+import src.api.models
 from src.api.models.user_models.invitations import UserInvitations
 from src.api.models.user_models.role_permissions import RolePermission
 from src.api.models.user_models.roles import Role
 from src.api.models.user_models.user_roles import UserRole
 from src.api.models.user_models.permissions import Permission
+from src.api.models.subscription_models.plans import SubscriptionPlan
+from src.api.models.subscription_models.subscriptions import UserSubscription
 # Third-party imports
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 
 # Local application imports
-from src.api.routes.users.users_routes import router as users_router    
+from src.api.routes.users import router as users_router
 from src.api.routes.topics.topic_generation_route import router as topic_router
-from src.api.routes.workspaces.workspace_route import router as workspace_router
+from src.api.routes.workspaces import router as workspace_router
 from src.api.routes.workspaces.members.members_routes import router as members_router
+from src.api.routes.workspaces.email_template_route import router as email_template_router
 from src.api.routes.knowledge.web_knowledge_route import router as web_router
 from src.api.routes.knowledge.file_knowledge_route import router as file_router
 from src.api.routes.knowledge.text_knowledge_route import router as text_router
-from src.api.database.database import Base, engine
+from src.api.routes.content.modules import router as content_router
+from src.api.routes.roles.modules import router as roles_router
+from src.api.routes.permissions.modules import router as permissions_router
+from src.api.routes.subscriptions.plan_routes import router as plan_routes_router
+from src.api.routes.subscriptions.subscription_routes import router as subscription_routes_router
+from src.api.routes.subscriptions.admin import router as admin_subscription_routes_router
+from src.api.routes.audit.modules import router as audit_router
+from src.api.routes.security.security_routes import router as security_router
+from src.api.database.database import engine
 
 # Middleware imports
 from src.api.middleware.request_tracker import RequestTrackerMiddleware
 from src.api.middleware.error_handler import ErrorHandlerMiddleware, setup_exception_handlers
+from src.api.middleware.security import SecurityHeadersMiddleware
+from src.api.middleware.rate_limiter import RateLimiterMiddleware
+from src.api.config import settings
 from src.utils.response_utils import success
 from src.utils.logger import logger
 
+# Structured logging
+from src.api.lib.logging_config import configure_logging, RequestIDMiddleware
+
 load_dotenv()
+
+# Configure structured logging at startup
+configure_logging()
 
 DB_URI = os.getenv("POSTGRES_URI_CUSTOM")
 
-# Create the database tables
-Base.metadata.create_all(bind=engine)
+# Database tables are managed by Alembic migrations
+# Run migrations with: alembic upgrade head
+
+
+def check_migrations():
+    """Check if database migrations are up to date."""
+    try:
+        from alembic.config import Config
+        from alembic.script import ScriptDirectory
+        from alembic.runtime.migration import MigrationContext
+
+        alembic_cfg = Config("alembic.ini")
+        script = ScriptDirectory.from_config(alembic_cfg)
+
+        with engine.begin() as connection:
+            context = MigrationContext.configure(connection)
+            current_rev = context.get_current_revision()
+            head_rev = script.get_current_head()
+
+            if current_rev != head_rev:
+                logger.warning(
+                    f"Database migration out of date. "
+                    f"Current: {current_rev}, Expected: {head_rev}. "
+                    f"Run 'alembic upgrade head' to update."
+                )
+                return False
+            logger.info(f"Database migrations up to date (revision: {current_rev})")
+            return True
+    except Exception as e:
+        logger.error(f"Error checking migrations: {e}")
+        return False
 
 
 @asynccontextmanager
@@ -42,8 +91,15 @@ async def lifespan(app: FastAPI):
     """Application lifespan events."""
     # Startup
     logger.info("Starting Wrext API server...")
+    logger.info(f"Environment: {settings.ENVIRONMENT}")
     logger.info(f"Database URI: {DB_URI[:20]}..." if DB_URI else "No database URI configured")
-    logger.info("Middleware configured: RequestTracker, ErrorHandler")
+    logger.info("Database managed by Alembic migrations")
+    logger.info("Middleware configured: RequestTracker, ErrorHandler, SecurityHeaders")
+    logger.info(f"CORS allowed origins: {settings.allowed_origins_list}")
+
+    # Optional: Check migration status (uncomment to enable)
+    # check_migrations()
+
     yield
     # Shutdown
     logger.info("Shutting down Wrext API server...")
@@ -71,6 +127,9 @@ app.add_middleware(
     include_processing_time=True
 )
 
+# Structured logging request ID middleware
+app.add_middleware(RequestIDMiddleware)
+
 # Error handling middleware (second in chain)
 app.add_middleware(
     ErrorHandlerMiddleware,
@@ -80,17 +139,27 @@ app.add_middleware(
     max_error_details=10
 )
 
-# CORS middleware (last in chain)
+# CORS middleware - configured via environment variables
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        'http://localhost:3000',
-        'http://127.0.0.1:3000',
-        # Add production origins here
-    ],
+    allow_origins=settings.allowed_origins_list,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"]
+    allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH"],
+    allow_headers=["*"],
+    expose_headers=["X-Request-ID"],
+    max_age=3600,  # Cache preflight requests for 1 hour
+)
+
+# Security headers middleware
+app.add_middleware(SecurityHeadersMiddleware)
+
+# Rate limiting middleware - protects against API abuse and DDoS
+app.add_middleware(
+    RateLimiterMiddleware,
+    requests_per_minute=int(os.getenv("RATE_LIMIT_PER_MINUTE", "100")),
+    requests_per_hour=int(os.getenv("RATE_LIMIT_PER_HOUR", "1000")),
+    requests_per_day=int(os.getenv("RATE_LIMIT_PER_DAY", "10000")),
+    enable=os.getenv("RATE_LIMITING_ENABLED", "true").lower() == "true"
 )
 
 # Setup global exception handlers
@@ -100,15 +169,23 @@ setup_exception_handlers(app)
 # ROUTE REGISTRATION
 # ============================================================================
 
-# Include all API routes with consistent prefix
-app.include_router(users_router, prefix="/api", tags=["Authentication"])
-app.include_router(topic_router, prefix="/api", tags=["Topic Generation"])
-app.include_router(workspace_router, prefix="/api", tags=["Workspaces"])
-app.include_router(members_router, prefix="/api", tags=["Workspace Members"])
-app.include_router(web_router, prefix="/api", tags=["Web Knowledge"])
-app.include_router(file_router, prefix="/api", tags=["File Knowledge"])
-app.include_router(text_router, prefix="/api", tags=["Text Knowledge"])
-app.include_router(users_router, prefix="/api", tags=["Users"])
+# Include all API routes with consistent prefix (/api/v1)
+app.include_router(users_router, prefix="/api/v1", tags=["Authentication"])
+app.include_router(topic_router, prefix="/api/v1", tags=["Topic Generation"])
+app.include_router(workspace_router, prefix="/api/v1", tags=["Workspaces"])
+app.include_router(members_router, prefix="/api/v1", tags=["Workspace Members"])
+app.include_router(email_template_router, prefix="/api/v1", tags=["Email Templates"])
+app.include_router(web_router, prefix="/api/v1", tags=["Web Knowledge"])
+app.include_router(file_router, prefix="/api/v1", tags=["File Knowledge"])
+app.include_router(text_router, prefix="/api/v1", tags=["Text Knowledge"])
+app.include_router(content_router, prefix="/api/v1", tags=["Content"])
+app.include_router(roles_router, prefix="/api/v1", tags=["Roles"])
+app.include_router(permissions_router, prefix="/api/v1", tags=["Permissions"])
+app.include_router(plan_routes_router, prefix="/api/v1", tags=["Subscription Plans"])
+app.include_router(subscription_routes_router, prefix="/api/v1", tags=["Subscriptions"])
+app.include_router(admin_subscription_routes_router, prefix="/api/v1")
+app.include_router(audit_router, prefix="/api/v1", tags=["Audit Logs"])
+app.include_router(security_router, prefix="/api/v1", tags=["Security Monitoring"])
 
 # ============================================================================
 # ROOT ENDPOINTS
@@ -154,10 +231,11 @@ def api_status(request: Request):
         data={
             "api_status": "operational",
             "endpoints": {
-                "authentication": "/api/user",
-                "topics": "/api/topic",
-                "workspaces": "/api/workspace",
-                "knowledge": "/api/knowledge"
+                "authentication": "/api/v1/user",
+                "topics": "/api/v1/topic",
+                "workspaces": "/api/v1/workspace",
+                "content": "/api/v1/content",
+                "knowledge": "/api/v1/knowledge"
             },
             "features": {
                 "consistent_responses": True,

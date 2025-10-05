@@ -4,6 +4,10 @@ from email.mime.multipart import MIMEMultipart
 import os
 from dotenv import load_dotenv
 
+from src.api.lib.logger import auto_logger
+
+logger = auto_logger()
+
 load_dotenv()
 
 SMTP_SERVER = os.getenv("SMTP_SERVER")
@@ -16,7 +20,7 @@ def send_email(to: str, subject: str, body: str):
     """
     Send an email using SMTP
     """
-    print("Preparing to send email...")
+    logger.info("Preparing to send email...")
     msg = MIMEMultipart()
     msg['From'] = EMAIL_ADDRESS
     msg['To'] = to
@@ -31,9 +35,9 @@ def send_email(to: str, subject: str, body: str):
             server.starttls()
             server.login(EMAIL_ADDRESS, EMAIL_PASSWORD)
             server.sendmail(EMAIL_ADDRESS, to, msg.as_string())
-        print(f"Email sent to {to}")
+        logger.info(f"Email sent to {to}")
     except Exception as e:
-        print(f"Error sending email: {e}")
+        logger.info(f"Error sending email: {e}")
 
 
 # if __name__ == "__main__":

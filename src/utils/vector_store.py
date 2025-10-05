@@ -22,7 +22,7 @@ def load_yaml(file_path: str = "config/config.yaml") -> dict:
 
     with open(abs_path, "r") as f:
         content = yaml.safe_load(f) or {}
-        print("✅ Loaded config:", content)
+        logger.info("✅ Loaded config:", content)
         return content
 
 
@@ -45,14 +45,14 @@ def add_to_vector_store(
 
     vector_store_path= config["vectorStore"]["store_path"]
     if os.path.exists(vector_store_path):
-        print(">> Loading existing FAISS index <<")
+        logger.info(">> Loading existing FAISS index <<")
         vector_store = FAISS.load_local(
             vector_store_path,
             get_hf_embedding(),
             allow_dangerous_deserialization=True
         )
     else:
-        print(">> Creating new FAISS index <<")
+        logger.info(">> Creating new FAISS index <<")
         index = faiss.IndexFlatL2(dimension)
         vector_store = FAISS(
             embedding_function=get_hf_embedding(),
@@ -73,7 +73,7 @@ def add_to_vector_store(
     # Convert blog_context into LangChain Document objects
     uuids = [str(uuid4()) for _ in documents_with_metadata]
 
-    print(f"\n📦 Preparing to insert {len(documents_with_metadata)} documents into FAISS...\n")
+    logger.info(f"\n📦 Preparing to insert {len(documents_with_metadata)} documents into FAISS...\n")
 
     for i in tqdm(range(0, len(documents_with_metadata), batch_size), desc="🔍 Embedding & Inserting", unit="batch"):
         try:
@@ -81,14 +81,14 @@ def add_to_vector_store(
             batch_ids = uuids[i:i+batch_size]
             vector_store.add_documents(documents=batch_docs, ids=batch_ids)
         except Exception as e:
-            print(f"⚠️ Error during batch insertion: {str(e)}")
+            logger.info(f"⚠️ Error during batch insertion: {str(e)}")
             return False
 
-    print("✅ Documents successfully inserted into FAISS")
+    logger.info("✅ Documents successfully inserted into FAISS")
 
     # Save index
     vector_store.save_local(vector_store_path)
-    print(f"💾 Vector store saved at {vector_store_path}")
+    logger.info(f"💾 Vector store saved at {vector_store_path}")
     return True
 
 def load_vector_store(file_path: str = 'vector_store/content_store'):
@@ -120,7 +120,7 @@ def delete_vectors(vector_id: str):
             ids_to_delete.append(doc_id)
 
     if not ids_to_delete:
-        print(f"No vectors found for workspace {vector_id}")
+        logger.info(f"No vectors found for workspace {vector_id}")
         return False
     # Delete those ids
     logger.info(f"delete vector store ids: {ids_to_delete}")

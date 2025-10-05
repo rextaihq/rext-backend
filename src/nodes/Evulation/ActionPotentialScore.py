@@ -2,6 +2,10 @@ from src.states.State import AgentState
 from src.model.model import structure_model
 from src.prompts.prompt import create_actionable_potential_score_prompt
 
+from src.api.lib.logger import auto_logger
+
+logger = auto_logger()
+
 def score_actionable_potential(state: AgentState) -> dict:
     """
     Evaluate whether each topic can lead to actionable content like tutorials or guides.
@@ -14,7 +18,7 @@ def score_actionable_potential(state: AgentState) -> dict:
             - article_weight (List[List[int]]): A nested list of weights.
     """
     try:
-        print("Scoring actionable content potential...")
+        logger.info("Scoring actionable content potential...")
 
         ratings = []
         weights = []
@@ -52,5 +56,5 @@ def score_actionable_potential(state: AgentState) -> dict:
         }
 
     except Exception as e:
-        print("Actionable content scoring failed:", e)
+        logger.info("Actionable content scoring failed:", e)
         return {"error": [{"Actionable content scoring failed": str(e)}]}

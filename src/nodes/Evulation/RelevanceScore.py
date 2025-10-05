@@ -2,6 +2,10 @@ from src.states.State import AgentState
 from src.model.model import structure_model
 from src.prompts.prompt import create_relevance_score_prompt
 
+from src.api.lib.logger import auto_logger
+
+logger = auto_logger()
+
 def score_relevance(state: AgentState) -> dict:
     """
     Evaluate how relevant each article topic is to the WordPress ecosystem.
@@ -14,7 +18,7 @@ def score_relevance(state: AgentState) -> dict:
             - article_weight (List[List[int]]): Nested list of fixed weight = 2 for each article.
     """
     try:
-        print("Scoring relevance to WordPress...")
+        logger.info("Scoring relevance to WordPress...")
 
         ratings = []
         weights = []
@@ -50,5 +54,5 @@ def score_relevance(state: AgentState) -> dict:
         }
 
     except Exception as e:
-        print("Relevance scoring failed:", e)
+        logger.info("Relevance scoring failed:", e)
         return {"error": [{"Relevance scoring failed": str(e)}]}

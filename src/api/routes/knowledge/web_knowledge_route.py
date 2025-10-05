@@ -7,9 +7,10 @@ from src.utils.vector_store import add_to_vector_store, delete_vectors
 from src.api.models.knowledge_models.knowledge_model import Website
 from src.api.models.workspace_models.workspace_model import WorkspaceModel
 from src.api.schema.knowledge_schema import WebKnowledgeSchema
-from src.api.security.auth import get_api_key, API_KEY
-from sqlalchemy.orm import Session
-from src.api.database.database import get_db
+from src.api.security.dependencies import get_current_user
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
+from src.api.database.async_database import get_async_db
 from src.utils.helper import web_page_scraper
 from src.utils.response_utils import success, error, created
 from src.api.schema.response_schemas import ErrorCode, ErrorSeverity
@@ -20,6 +21,8 @@ from src.api.middleware.exceptions import (
     WrextValidationException,
     WrextAuthenticationException
 )
+from src.utils.db_utils import get_or_404
+from src.api.routes.content.modules.helpers import verify_workspace_access
 
 router = APIRouter(
     prefix="/workspace/web_knowledge",
@@ -28,50 +31,77 @@ router = APIRouter(
 )
 
 @router.get("/")
-def get_status():
+async def get_status():
     return success(data={"status": "Web Knowledge Route is operational"})
 
-# get knowledes
+# get web knowledges for a workspace
 @router.get("/all")
-def get_web_knowledges(
+async def get_web_knowledges(
         request: Request,
-        db: Session = Depends(get_db),
-        api_key: str = Depends(get_api_key)
+        workspace_id: str,
+        db: AsyncSession = Depends(get_async_db),
+        user: dict = Depends(get_current_user)
 ):
-    if api_key != API_KEY:
-        raise WrextAuthenticationException(
-            message="Invalid API key provided",
-            context={"api_key_provided": bool(api_key)}
-        )
+    """
+    Get all web knowledge entries for a workspace.
+
+    Requires:
+    - JWT authentication
+    - Workspace membership verification
+    """
+    user_id = user.get("identity")
+
+    # Verify workspace access
+    workspace, membership = await verify_workspace_access(db, workspace_id, user_id)
+
     try:
-        logger.info("Fetching all web knowledges")
-        print(request)
-        web_knowledges = db.query(Website).all()
-        return success(data=[knowledge.to_dict() for knowledge in web_knowledges])
+        logger.info(f"Fetching web knowledges for workspace {workspace_id}")
+        result = await db.execute(
+            select(Website).where(Website.workspace_id == workspace_id)
+        )
+        web_knowledges = result.scalars().all()
+        return success(
+            data={"web_knowledge": [knowledge.to_dict() for knowledge in web_knowledges]},
+            request=request
+        )
     except Exception as e:
-        logger.error(f"Error fetching knowledges: {e}")
+        logger.error(f"Error fetching web knowledges: {e}")
         raise HTTPException(status_code=500, detail="Internal Server Error")
     
 
 # Get knowledge by ID
 @router.get("/{web_id}")
-def get_web_knowledge(
+async def get_web_knowledge(
         web_id: str,
         request: Request,
-        db: Session = Depends(get_db),
-        api_key: str = Depends(get_api_key)
+        workspace_id: str,
+        db: AsyncSession = Depends(get_async_db),
+        user: dict = Depends(get_current_user)
 ):
-    if api_key != API_KEY:
-        raise WrextAuthenticationException(
-            message="Invalid API key provided",
-            context={"api_key_provided": bool(api_key)}
-        )
+    """
+    Get a specific web knowledge entry by ID.
+
+    Requires:
+    - JWT authentication
+    - Workspace membership verification
+    """
+    user_id = user.get("identity")
+
+    # Verify workspace access
+    workspace, membership = await verify_workspace_access(db, workspace_id, user_id)
+
     try:
-        logger.info(f"Fetching knowledge with ID: {web_id}")
-        knowledge = db.query(Website).filter(Website.id == web_id).first()
-        if not knowledge:
-            raise ResourceNotFoundException(f"Knowledge with ID {web_id} not found")
-        return success(data=knowledge.to_dict())
+        logger.info(f"Fetching knowledge with ID: {web_id} for workspace {workspace_id}")
+        knowledge = await get_or_404(db, Website, web_id, "web_knowledge")
+
+        # Verify the knowledge belongs to the workspace
+        if str(knowledge.workspace_id) != str(workspace_id):
+            raise ResourceNotFoundException(f"Web knowledge {web_id} not found in workspace {workspace_id}")
+
+        return success(
+            data={"web_knowledge": knowledge.to_dict()},
+            request=request
+        )
     except ResourceNotFoundException as e:
         logger.warning(str(e))
         raise HTTPException(status_code=404, detail=str(e))
@@ -82,24 +112,29 @@ def get_web_knowledge(
 # Add new knowledge
 @router.post("/add")
 async def add_web_knowledge(
-        data:WebKnowledgeSchema,
+        data: WebKnowledgeSchema,
         request: Request,
-        db: Session = Depends(get_db),
-        api_key: str = Depends(get_api_key)
+        db: AsyncSession = Depends(get_async_db),
+        user: dict = Depends(get_current_user)
 ):
-        if api_key != API_KEY:
-            raise WrextAuthenticationException(
-                message="Invalid API key provided",
-                context={"api_key_provided": bool(api_key)}
-            )
+        """
+        Add new web knowledge entry to a workspace.
+
+        Requires:
+        - JWT authentication
+        - Workspace membership verification
+        """
+        user_id = user.get("identity")
+
+        # Verify workspace access
+        workspace, membership = await verify_workspace_access(db, data.workspace_id, user_id)
+
         try:
-            logger.info("Check the workspace exists")
-            workspace = db.query(WorkspaceModel).filter(WorkspaceModel.id == data.workspace_id).first()
-            if not workspace:
-                raise ResourceNotFoundException(f"Workspace with ID {data.workspace_id} not found")
-            
+            logger.info(f"Adding web knowledge for workspace {data.workspace_id}")
+
             # check if the knowledge already exists
-            existing_knowledge = db.query(Website).filter(Website.url == str(data.url), Website.workspace_id == str(data.workspace_id)).first()
+            result = await db.execute(select(Website).where(Website.url == str(data.url), Website.workspace_id == str(data.workspace_id)))
+            existing_knowledge = result.scalar_one_or_none()
             if existing_knowledge:
                 raise DuplicateResourceException(f"Knowledge for URL {data.url} already exists in the workspace")
 
@@ -125,8 +160,8 @@ async def add_web_knowledge(
                 word_count=len(result.markdown.split()) if result else 0
             )
             db.add(new_knowledge)
-            db.commit()
-            db.refresh(new_knowledge)
+            await db.commit()
+            await db.refresh(new_knowledge)
 
             try:
                 logger.info(f"Inserting {len(chunks)} chunks into vector store for {result.url}")
@@ -176,36 +211,40 @@ async def add_web_knowledge(
 
 
 # Update web knowledge (title only, URL cannot be changed)
-@router.put("/update/{workspace_id}/{web_id}")
-def update_web_knowledge(
-        workspace_id: str,
+@router.put("/update/{web_id}")
+async def update_web_knowledge(
         web_id: str,
         title: str,
         request: Request,
-        db: Session = Depends(get_db),
-        api_key: str = Depends(get_api_key)
+        workspace_id: str,
+        db: AsyncSession = Depends(get_async_db),
+        user: dict = Depends(get_current_user)
 ):
-    if api_key != API_KEY:
-        raise WrextAuthenticationException(
-            message="Invalid API key provided",
-            context={"api_key_provided": bool(api_key)}
-        )
+    """
+    Update web knowledge entry title.
+
+    Requires:
+    - JWT authentication
+    - Workspace membership verification
+    """
+    user_id = user.get("identity")
+
+    # Verify workspace access
+    workspace, membership = await verify_workspace_access(db, workspace_id, user_id)
+
     try:
         logger.info(f"Updating web knowledge ID: {web_id} in workspace: {workspace_id}")
-        knowledge = db.query(Website).filter(
-            Website.id == web_id,
-            Website.workspace_id == workspace_id
-        ).first()
-
-        if not knowledge:
-            raise ResourceNotFoundException(
-                resource_type="web_knowledge",
-                resource_id=web_id
-            )
+        knowledge = await get_or_404(
+            db,
+            Website,
+            web_id,
+            "web_knowledge",
+            additional_filters=[Website.workspace_id == workspace_id]
+        )
 
         knowledge.title = title
-        db.commit()
-        db.refresh(knowledge)
+        await db.commit()
+        await db.refresh(knowledge)
 
         return success(
             data={"web_knowledge": knowledge},
@@ -216,29 +255,40 @@ def update_web_knowledge(
         raise
     except Exception as e:
         logger.error(f"Error updating web knowledge: {e}")
-        db.rollback()
+        await db.rollback()
         raise HTTPException(status_code=500, detail="Internal Server Error")
 
 
 # Delete knowledge by ID
-@router.delete("/delete/{workspace_id}/{web_id}")
-def delete_web_knowledge(
-        workspace_id: str,
+@router.delete("/delete/{web_id}")
+async def delete_web_knowledge(
         web_id: str,
         request: Request,
-        db: Session = Depends(get_db),
-        api_key: str = Depends(get_api_key)
+        workspace_id: str,
+        db: AsyncSession = Depends(get_async_db),
+        user: dict = Depends(get_current_user)
 ):
-    if api_key != API_KEY:
-        raise WrextAuthenticationException(
-            message="Invalid API key provided",
-            context={"api_key_provided": bool(api_key)}
-        )
+    """
+    Delete web knowledge entry from workspace.
+
+    Requires:
+    - JWT authentication
+    - Workspace membership verification
+    """
+    user_id = user.get("identity")
+
+    # Verify workspace access
+    workspace, membership = await verify_workspace_access(db, workspace_id, user_id)
+
     try:
         logger.info(f"Deleting knowledge with ID: {web_id} from workspace: {workspace_id}")
-        knowledge = db.query(Website).filter(Website.id == web_id, Website.workspace_id == workspace_id).first()
-        if not knowledge:
-            raise ResourceNotFoundException(f"Knowledge with ID {web_id} not found in the specified workspace")
+        knowledge = await get_or_404(
+            db,
+            Website,
+            web_id,
+            "web_knowledge",
+            additional_filters=[Website.workspace_id == workspace_id]
+        )
 
         # delete vector from store
         success_status = delete_vectors(vector_id=f"{str(workspace_id)}_{str(web_id)}")
@@ -251,9 +301,9 @@ def delete_web_knowledge(
                 context={"workspace_id": workspace_id, "error_details": "Unable to delete vectors"},
                 request=request
             )
-        
-        db.delete(knowledge)
-        db.commit()
+
+        await db.delete(knowledge)
+        await db.commit()
         logger.info(f"Knowledge with ID: {web_id} deleted successfully")
         return success(
             data={},

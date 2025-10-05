@@ -2,6 +2,10 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_core.documents import Document
 from typing import List, Union
 
+from src.api.lib.logger import auto_logger
+
+logger = auto_logger()
+
 def split_data(
     documents: Union[List[Document], str],
     chunk_size: int = 1000,
@@ -59,9 +63,9 @@ def split_data(
         else:
             raise ValueError("documents must be either a string or List[Document].")
 
-        print(f"Data split successfully! Total chunks: {len(chunked_docs)}")
+        logger.info(f"Data split successfully! Total chunks: {len(chunked_docs)}")
         return chunked_docs
 
     except Exception as e:
-        print("Error:", str(e))
+        logger.info("Error:", str(e))
         return []

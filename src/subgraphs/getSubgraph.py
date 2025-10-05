@@ -4,6 +4,10 @@ from langgraph.graph import StateGraph, START
 from langgraph.prebuilt import ToolNode, tools_condition
 from src.tools.searchTool import get_tools
 
+from src.api.lib.logger import auto_logger
+
+logger = auto_logger()
+
 
 def get_subgraph():
     """

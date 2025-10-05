@@ -10,6 +10,10 @@ from src.nodes.Interrupt.blogApproval import blog_approval
 from src.nodes.generation.parallarizm import continue_retrieval,continue_generation
 from src.states.State import AgentState
 
+from src.api.lib.logger import auto_logger
+
+logger = auto_logger()
+
 
 def blog_generator():
     builder = StateGraph(AgentState)

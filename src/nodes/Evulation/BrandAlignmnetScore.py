@@ -2,6 +2,10 @@ from src.states.State import AgentState
 from src.model.model import structure_model
 from src.prompts.prompt import create_brand_alignment_score_prompt
 
+from src.api.lib.logger import auto_logger
+
+logger = auto_logger()
+
 def score_brand_alignment(state: AgentState) -> dict:
     """
     Evaluate how well each topic aligns with your brand’s goals and content style.
@@ -14,7 +18,7 @@ def score_brand_alignment(state: AgentState) -> dict:
             - article_weight (List[List[int]]): Nested list of fixed weights (1).
     """
     try:
-        print("Scoring brand alignment...")
+        logger.info("Scoring brand alignment...")
 
         ratings = []
         weights = []
@@ -49,5 +53,5 @@ def score_brand_alignment(state: AgentState) -> dict:
         }
 
     except Exception as e:
-        print("Brand alignment scoring failed:", e)
+        logger.info("Brand alignment scoring failed:", e)
         return {"error": [{"Brand alignment scoring failed": str(e)}]}

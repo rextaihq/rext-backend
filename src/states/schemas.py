@@ -30,6 +30,7 @@ class BasicTopicGenerationList(BaseModel):
 class SaveTopicRequest(BaseModel):
     """Schema for topics being saved - includes basic topic data + suggested defaults from frontend"""
     id: str
+    workspace_id: str
     title: str
     angle: str
     description: str
