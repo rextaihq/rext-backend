@@ -35,6 +35,14 @@ def upgrade() -> None:
     """
     connection = op.get_bind()
 
+    # Check if email_templates table exists
+    from sqlalchemy import inspect
+    inspector = inspect(connection)
+    if 'email_templates' not in inspector.get_table_names():
+        print("⚠️ email_templates table does not exist. Skipping seed migration.")
+        print("   Please ensure migration g1h2i3j4k5l6_add_email_templates_table is applied first.")
+        return
+
     # Get a system workspace ID (we'll use the first workspace, or create templates with NULL workspace_id)
     # For system defaults, we'll use NULL workspace_id and set is_default=True
 
