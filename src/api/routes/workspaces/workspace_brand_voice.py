@@ -19,14 +19,25 @@ router = APIRouter()
 # -------------------------
 # Update brand voice
 # -------------------------
-@router.put("/{workspace_id}/brand-voice")
+@router.put("/brand-voice")
 async def update_brand_voice(
-    workspace_id: str,
     brand_data: BrandSchema,
     request: Request,
+    workspace_id: str,
     db: AsyncSession = Depends(get_async_db),
     user: dict = Depends(get_current_user)
 ):
+    """
+    Update brand voice for a workspace.
+
+    Args:
+        workspace_id: Workspace UUID or slug (query parameter)
+        brand_data: Brand voice data
+
+    Requires:
+        - JWT authentication
+        - Workspace membership verification
+    """
     user_id = user.get("identity")
 
     # Verify user exists (using auth_utils)

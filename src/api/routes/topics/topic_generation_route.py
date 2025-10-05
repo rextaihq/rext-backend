@@ -3,7 +3,7 @@ from src.api.schema.topic_schema import TopicGenerationInput, DeleteTopics, Upda
 from langchain_core.messages import SystemMessage
 from src.model.model import topic_generation_model
 from src.prompts.topic_generation_prompts import topic_generation_prompt
-from src.api.security.auth import get_api_key, API_KEY
+from src.api.security.dependencies import get_current_user
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import func, select
 from src.api.models.topic_models.topic_models import TopicsModel as Topics
@@ -11,7 +11,7 @@ from src.api.database.async_database import get_async_db
 from src.states.schemas import SaveTopicRequestList
 from src.services.topic_enrichment_service import TopicEnrichmentService
 from src.utils.response_utils import success, error, unauthorized, not_found, no_content
-from src.utils.workspace_utils import get_workspace_id_from_identifier
+from src.utils.workspace_utils import async_get_workspace_id_from_identifier, verify_workspace_membership, resolve_and_verify_workspace
 from src.api.schema.response_schemas import ErrorCode, ErrorSeverity
 from src.api.middleware.exceptions import (
     TopicGenerationException,
@@ -44,13 +44,22 @@ async def get_status(request: Request):
 async def generate_topic(
     data: TopicGenerationInput,
     request: Request,
-    api_key: str = Depends(get_api_key)
+    workspace_id: str,
+    db: AsyncSession = Depends(get_async_db),
+    user: dict = Depends(get_current_user)
 ):
-    if api_key != API_KEY:
-        raise WrextAuthenticationException(
-            message="Invalid API key provided",
-            context={"api_key_provided": bool(api_key)}
-        )
+    """
+    Generate content topics using AI based on workspace context.
+
+    Requires:
+    - JWT authentication
+    - Workspace membership verification
+    """
+    user_id = user.get("identity")
+
+    # Verify workspace access and membership in one call
+    workspace, membership = await resolve_and_verify_workspace(db, workspace_id, uuid.UUID(user_id))
+
     try:
         logger.info("Starting topic generation...")
 
@@ -150,17 +159,18 @@ async def generate_topic(
 async def save_topic(
     data: SaveTopicRequestList,
     request: Request,
-    api_key: str = Depends(get_api_key),
-    db: AsyncSession = Depends(get_async_db)
+    db: AsyncSession = Depends(get_async_db),
+    user: dict = Depends(get_current_user)
 ):
-    if api_key != API_KEY:
-        raise WrextAuthenticationException(
-            message="Invalid API key provided",
-            context={"api_key_provided": bool(api_key)}
-        )
+    """
+    Save topics to database
+
+    Requires user authentication. Verifies workspace membership for each topic's workspace.
+    """
+    user_id = user.get("identity")
 
     try:
-        logger.info(f"Enriching and saving {len(data.topics)} topics to DB...")
+        logger.info(f"Enriching and saving {len(data.topics)} topics to DB for user {user_id}...")
         enrichment_service = TopicEnrichmentService()
         saved = []
 
@@ -189,13 +199,16 @@ async def save_topic(
                 enriched_topic.id = topic_uuid
 
                 # Resolve workspace ID from either UUID or slug
-                actual_workspace_id = await get_workspace_id_from_identifier(db, save_topic_data.workspace_id)
+                actual_workspace_id = await async_get_workspace_id_from_identifier(db, save_topic_data.workspace_id)
                 if not actual_workspace_id:
                     raise ResourceNotFoundException(
                         message=f"Workspace '{save_topic_data.workspace_id}' not found",
                         resource_type="workspace",
                         context={"workspace_identifier": save_topic_data.workspace_id}
                     )
+
+                # Verify user has access to this workspace
+                workspace, membership = await verify_workspace_membership(db, actual_workspace_id, user_id)
 
                 # Create database record with fully enriched data
                 db_topic = Topics(
@@ -266,18 +279,19 @@ async def get_topic(
     topic_id: str,
     request: Request,
     workspace_id: str,
-    api_key: str = Depends(get_api_key),
-    db: AsyncSession = Depends(get_async_db)
+    db: AsyncSession = Depends(get_async_db),
+    user: dict = Depends(get_current_user)
 ):
-    if api_key != API_KEY:
-        raise WrextAuthenticationException(
-            message="Invalid API key provided",
-            context={"api_key_provided": bool(api_key)}
-        )
+    """
+    Get a single topic by ID
+
+    Requires user authentication and workspace membership.
+    """
+    user_id = user.get("identity")
 
     try:
         # Resolve workspace ID from either UUID or slug
-        actual_workspace_id = await get_workspace_id_from_identifier(db, workspace_id)
+        actual_workspace_id = await async_get_workspace_id_from_identifier(db, workspace_id)
         if not actual_workspace_id:
             raise ResourceNotFoundException(
                 message=f"Workspace '{workspace_id}' not found",
@@ -285,7 +299,10 @@ async def get_topic(
                 context={"workspace_identifier": workspace_id}
             )
 
-        logger.info(f"Fetching topic with ID: {topic_id} for workspace: {workspace_id} (resolved to {actual_workspace_id})")
+        # Verify user has access to this workspace
+        workspace, membership = await verify_workspace_membership(db, actual_workspace_id, user_id)
+
+        logger.info(f"Fetching topic with ID: {topic_id} for workspace: {workspace_id} (resolved to {actual_workspace_id}) for user {user_id}")
         topic = await get_or_404(
             db,
             Topics,
@@ -344,18 +361,20 @@ async def get_topic(
 async def get_topics(
     request: Request,
     workspace_id: str,
-    api_key: str = Depends(get_api_key),
-    db: AsyncSession = Depends(get_async_db)
+    db: AsyncSession = Depends(get_async_db),
+    user: dict = Depends(get_current_user)
 ):
-    if api_key != API_KEY:
-        raise WrextAuthenticationException(
-            message="Invalid API key provided",
-            context={"api_key_provided": bool(api_key)}
-        )
+    """
+    Get all topics for a workspace
+
+    Requires user authentication and workspace membership.
+    Accepts workspace UUID or slug.
+    """
+    user_id = user.get("identity")
 
     try:
         # Resolve workspace ID from either UUID or slug
-        actual_workspace_id = await get_workspace_id_from_identifier(db, workspace_id)
+        actual_workspace_id = await async_get_workspace_id_from_identifier(db, workspace_id)
         if not actual_workspace_id:
             raise ResourceNotFoundException(
                 message=f"Workspace '{workspace_id}' not found",
@@ -363,7 +382,10 @@ async def get_topics(
                 context={"workspace_identifier": workspace_id}
             )
 
-        logger.info(f"Fetching topics from DB for workspace {workspace_id} (resolved to {actual_workspace_id})...")
+        # Verify user has access to this workspace
+        workspace, membership = await verify_workspace_membership(db, actual_workspace_id, user_id)
+
+        logger.info(f"Fetching topics from DB for workspace {workspace_id} (resolved to {actual_workspace_id}) for user {user_id}...")
         # Filter by workspace_id and order by updated_at first (most recent updates), then by created_at (newest first)
         result = await db.execute(select(Topics).where(
             Topics.workspace_id == actual_workspace_id
@@ -421,27 +443,31 @@ async def delete_topics(
     topic_ids: DeleteTopics,
     request: Request,
     workspace_id: str,
-    api_key: str = Depends(get_api_key),
-    db: AsyncSession = Depends(get_async_db)
+    db: AsyncSession = Depends(get_async_db),
+    user: dict = Depends(get_current_user)
 ):
-    if api_key != API_KEY:
-        raise WrextAuthenticationException(
-            message="Invalid API key provided",
-            context={"api_key_provided": bool(api_key)}
-        )
+    """
+    Delete multiple topics by IDs
+
+    Requires user authentication and workspace membership.
+    """
+    user_id = user.get("identity")
 
     try:
         topic_id_list = topic_ids.topic_ids
-        logger.info(f"Attempting to delete {len(topic_id_list)} topics from workspace {workspace_id}...")
+        logger.info(f"Attempting to delete {len(topic_id_list)} topics from workspace {workspace_id} by user {user_id}...")
 
         # Resolve workspace ID from either UUID or slug
-        actual_workspace_id = await get_workspace_id_from_identifier(db, workspace_id)
+        actual_workspace_id = await async_get_workspace_id_from_identifier(db, workspace_id)
         if not actual_workspace_id:
             raise ResourceNotFoundException(
                 message=f"Workspace '{workspace_id}' not found",
                 resource_type="workspace",
                 context={"workspace_identifier": workspace_id}
             )
+
+        # Verify user has access to this workspace
+        workspace, membership = await verify_workspace_membership(db, actual_workspace_id, user_id)
 
         # Fetch topics - only from the specified workspace
         result = await db.execute(select(Topics).where(
@@ -504,27 +530,31 @@ async def update_topic(
     data: UpdateTopicRequest,
     request: Request,
     workspace_id: str,
-    api_key: str = Depends(get_api_key),
-    db: AsyncSession = Depends(get_async_db)
+    db: AsyncSession = Depends(get_async_db),
+    user: dict = Depends(get_current_user)
 ):
-    if api_key != API_KEY:
-        raise WrextAuthenticationException(
-            message="Invalid API key provided",
-            context={"api_key_provided": bool(api_key)}
-        )
+    """
+    Update a topic
+
+    Requires user authentication and workspace membership.
+    """
+    user_id = user.get("identity")
 
     try:
         topic_id = data.topic_id
-        logger.info(f"Attempting to update topic with ID: {topic_id} in workspace: {workspace_id}")
+        logger.info(f"Attempting to update topic with ID: {topic_id} in workspace: {workspace_id} by user {user_id}")
 
         # Resolve workspace ID from either UUID or slug
-        actual_workspace_id = await get_workspace_id_from_identifier(db, workspace_id)
+        actual_workspace_id = await async_get_workspace_id_from_identifier(db, workspace_id)
         if not actual_workspace_id:
             raise ResourceNotFoundException(
                 message=f"Workspace '{workspace_id}' not found",
                 resource_type="workspace",
                 context={"workspace_identifier": workspace_id}
             )
+
+        # Verify user has access to this workspace
+        workspace, membership = await verify_workspace_membership(db, actual_workspace_id, user_id)
 
         # Fetch the topic - only from the specified workspace
         topic = await get_or_404(

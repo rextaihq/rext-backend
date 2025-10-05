@@ -10,7 +10,7 @@ from src.utils.vector_store import add_to_vector_store, delete_vectors
 from src.utils.utils import load_split_file_data
 from src.utils.response_utils import success, error
 from src.api.schema.response_schemas import ErrorCode, ErrorSeverity
-from src.api.security.auth import get_api_key, API_KEY
+from src.api.security.dependencies import get_current_user
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from src.api.database.async_database import get_async_db
@@ -22,6 +22,7 @@ from src.api.middleware.exceptions import (
     ResourceNotFoundException
 )
 from src.utils.db_utils import get_or_404
+from src.api.routes.content.modules.helpers import verify_workspace_access
 
 
 # for file storage
@@ -46,25 +47,38 @@ async def get_status(request: Request):
         message="File Knowledge Route is working!"
     )
 
-# Get all file knowledges
+# Get all file knowledges for a workspace
 @router.get("/all")
 async def get_file_knowledges(
         request: Request,
+        workspace_id: str,
         db: AsyncSession = Depends(get_async_db),
-        api_key: str = Depends(get_api_key)
+        user: dict = Depends(get_current_user)
 ):
-    if api_key != API_KEY:
-        raise WrextAuthenticationException(
-            message="Invalid API key provided",
-            context={"api_key_provided": bool(api_key)}
-        )
+    """
+    Get all file knowledge entries for a workspace.
+
+    Requires:
+    - JWT authentication
+    - Workspace membership verification
+    """
+    user_id = user.get("identity")
+
+    # Verify workspace access
+    workspace, membership = await verify_workspace_access(db, workspace_id, user_id)
+
     try:
-        logger.info("Fetching all file knowledges")
-        result = await db.execute(select(KnowledgeFiles))
+        logger.info(f"Fetching file knowledges for workspace {workspace_id}")
+        result = await db.execute(
+            select(KnowledgeFiles).where(KnowledgeFiles.workspace_id == workspace_id)
+        )
         file_knowledges = result.scalars().all()
-        return success(data=[knowledge.to_dict() for knowledge in file_knowledges])
+        return success(
+            data={"file_knowledge": [knowledge.to_dict() for knowledge in file_knowledges]},
+            request=request
+        )
     except Exception as e:
-        logger.error(f"Error fetching knowledges: {e}")
+        logger.error(f"Error fetching file knowledges: {e}")
         raise HTTPException(status_code=500, detail="Internal Server Error")
     
 # get file knowledge by ID
@@ -72,18 +86,34 @@ async def get_file_knowledges(
 async def get_file_knowledge(
         file_id: str,
         request: Request,
+        workspace_id: str,
         db: AsyncSession = Depends(get_async_db),
-        api_key: str = Depends(get_api_key)
+        user: dict = Depends(get_current_user)
 ):
-    if api_key != API_KEY:
-        raise WrextAuthenticationException(
-            message="Invalid API key provided",
-            context={"api_key_provided": bool(api_key)}
-        )
+    """
+    Get a specific file knowledge entry by ID.
+
+    Requires:
+    - JWT authentication
+    - Workspace membership verification
+    """
+    user_id = user.get("identity")
+
+    # Verify workspace access
+    workspace, membership = await verify_workspace_access(db, workspace_id, user_id)
+
     try:
-        logger.info(f"Fetching file knowledge with ID: {file_id}")
+        logger.info(f"Fetching file knowledge with ID: {file_id} for workspace {workspace_id}")
         knowledge = await get_or_404(db, KnowledgeFiles, file_id, "file_knowledge")
-        return success(data=knowledge.to_dict())
+
+        # Verify the knowledge belongs to the workspace
+        if str(knowledge.workspace_id) != str(workspace_id):
+            raise ResourceNotFoundException(f"File knowledge {file_id} not found in workspace {workspace_id}")
+
+        return success(
+            data={"file_knowledge": knowledge.to_dict()},
+            request=request
+        )
     except ResourceNotFoundException as e:
         logger.warning(str(e))
         raise HTTPException(status_code=404, detail=str(e))
@@ -96,19 +126,25 @@ async def get_file_knowledge(
 @router.post("/add")
 async def add_file_knowledge(
         request: Request,
+        workspace_id: str,
         file: UploadFile = File(...),
         db: AsyncSession = Depends(get_async_db),
-        workspace_id: str = None,
-        api_key: str = Depends(get_api_key)
+        user: dict = Depends(get_current_user)
 ):
-    if api_key != API_KEY:
-        raise WrextAuthenticationException(
-            message="Invalid API key provided",
-            context={"api_key_provided": bool(api_key)}
-        )
+    """
+    Add new file knowledge entry to a workspace.
+
+    Requires:
+    - JWT authentication
+    - Workspace membership verification
+    """
+    user_id = user.get("identity")
+
+    # Verify workspace access
+    workspace, membership = await verify_workspace_access(db, workspace_id, user_id)
+
     try:
-        # 1. Validate workspace
-        workspace = await get_or_404(db, WorkspaceModel, workspace_id, "workspace")
+        logger.info(f"Adding file knowledge for workspace {workspace_id}")
 
         # 2. Check duplicate
         result = await db.execute(select(KnowledgeFiles).where(
@@ -186,20 +222,27 @@ async def add_file_knowledge(
 
 
 # Update file knowledge (name only)
-@router.put("/update/{workspace_id}/{file_id}")
+@router.put("/update/{file_id}")
 async def update_file_knowledge(
-        workspace_id: str,
         file_id: str,
         name: str,
         request: Request,
+        workspace_id: str,
         db: AsyncSession = Depends(get_async_db),
-        api_key: str = Depends(get_api_key)
+        user: dict = Depends(get_current_user)
 ):
-    if api_key != API_KEY:
-        raise WrextAuthenticationException(
-            message="Invalid API key provided",
-            context={"api_key_provided": bool(api_key)}
-        )
+    """
+    Update file knowledge entry name.
+
+    Requires:
+    - JWT authentication
+    - Workspace membership verification
+    """
+    user_id = user.get("identity")
+
+    # Verify workspace access
+    workspace, membership = await verify_workspace_access(db, workspace_id, user_id)
+
     try:
         logger.info(f"Updating file knowledge ID: {file_id} in workspace: {workspace_id}")
         knowledge = await get_or_404(
@@ -228,21 +271,28 @@ async def update_file_knowledge(
 
 
 # Delete file knowledge
-@router.delete("/delete/{workspace_id}/{file_id}")
+@router.delete("/delete/{file_id}")
 async def delete_file_knowledge(
         file_id: str,
-        workspace_id:str,
         request: Request,
+        workspace_id: str,
         db: AsyncSession = Depends(get_async_db),
-        api_key: str = Depends(get_api_key)
+        user: dict = Depends(get_current_user)
 ):
-    if api_key != API_KEY:
-        raise WrextAuthenticationException(
-            message="Invalid API key provided",
-            context={"api_key_provided": bool(api_key)}
-        )
+    """
+    Delete file knowledge entry from workspace.
+
+    Requires:
+    - JWT authentication
+    - Workspace membership verification
+    """
+    user_id = user.get("identity")
+
+    # Verify workspace access
+    workspace, membership = await verify_workspace_access(db, workspace_id, user_id)
+
     try:
-        logger.info(f"Deleting file knowledge with ID: {file_id}")
+        logger.info(f"Deleting file knowledge with ID: {file_id} from workspace: {workspace_id}")
         knowledge = await get_or_404(
             db,
             KnowledgeFiles,

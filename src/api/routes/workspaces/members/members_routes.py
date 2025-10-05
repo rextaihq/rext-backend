@@ -12,7 +12,6 @@ from src.api.schema.knowledge_schema import BrandSchema
 from src.model.model import load_model
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-from src.api.security.auth import get_api_key, API_KEY
 from src.api.database.async_database import get_async_db
 from src.utils.helper import web_page_scraper
 from src.utils.response_utils import success, error, created

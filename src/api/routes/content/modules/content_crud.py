@@ -37,15 +37,25 @@ router = APIRouter()
 # -------------------------
 # Create New Content
 # -------------------------
-@router.post("/{workspace_id}")
+@router.post("/")
 async def create_content(
-    workspace_id: str,  # Now accepts both UUID and slug
     data: ContentCreate,
     request: Request,
+    workspace_id: str,
     db: AsyncSession = Depends(get_async_db),
     user: dict = Depends(get_current_user)
 ):
-    """Create new content in a workspace"""
+    """
+    Create new content in a workspace.
+
+    Args:
+        workspace_id: Workspace UUID or slug (query parameter)
+        data: Content creation data
+
+    Requires:
+        - JWT authentication
+        - Workspace membership verification
+    """
     user_id = user.get("identity")
 
     # Verify workspace access and get the workspace
@@ -149,12 +159,12 @@ async def create_content(
 # -------------------------
 # Update Content
 # -------------------------
-@router.put("/{workspace_id}/{content_id}")
+@router.put("/{content_id}")
 async def update_content(
-    workspace_id: str,  # Now accepts both UUID and slug
     content_id: UUID,
     data: ContentUpdate,
     request: Request,
+    workspace_id: str,
     db: AsyncSession = Depends(get_async_db),
     user: dict = Depends(get_current_user)
 ):
@@ -296,11 +306,11 @@ async def update_content(
 # -------------------------
 # Delete Content (Soft Delete)
 # -------------------------
-@router.delete("/{workspace_id}/{content_id}")
+@router.delete("/{content_id}")
 async def delete_content(
-    workspace_id: str,  # Now accepts both UUID and slug
     content_id: UUID,
     request: Request,
+    workspace_id: str,
     db: AsyncSession = Depends(get_async_db),
     user: dict = Depends(get_current_user)
 ):

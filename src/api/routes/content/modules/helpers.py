@@ -3,7 +3,7 @@ from sqlalchemy import select
 from uuid import UUID
 import re
 
-from src.utils.workspace_utils import is_valid_uuid
+from src.utils.workspace_utils import is_valid_uuid, async_resolve_workspace
 from src.api.middleware.exceptions import (
     ResourceNotFoundException,
     WrextAuthorizationException,
@@ -44,25 +44,25 @@ async def generate_unique_slug(db: AsyncSession, base_slug: str) -> str:
 
 
 async def verify_workspace_access(db: AsyncSession, workspace_identifier: str, user_id: UUID) -> WorkspaceModel:
-    """Verify user has access to workspace (by UUID or slug)"""
-    # Resolve workspace ID from either UUID or slug
-    if is_valid_uuid(workspace_identifier):
-        workspace_id = UUID(workspace_identifier)
-        result = await db.execute(
-            select(WorkspaceModel).where(
-                WorkspaceModel.id == workspace_id,
-                WorkspaceModel.deleted_at == None
-            )
-        )
-        workspace = result.scalar_one_or_none()
-    else:
-        result = await db.execute(
-            select(WorkspaceModel).where(
-                WorkspaceModel.slug == workspace_identifier,
-                WorkspaceModel.deleted_at == None
-            )
-        )
-        workspace = result.scalar_one_or_none()
+    """
+    Verify user has access to workspace (by UUID or slug)
+
+    Uses centralized async_resolve_workspace from workspace_utils to avoid code duplication.
+
+    Args:
+        db: Database session
+        workspace_identifier: Workspace UUID or slug
+        user_id: User UUID
+
+    Returns:
+        WorkspaceModel if user has access
+
+    Raises:
+        ResourceNotFoundException: If workspace not found
+        WrextAuthorizationException: If user is not a member
+    """
+    # Resolve workspace using centralized utility
+    workspace = await async_resolve_workspace(db, workspace_identifier)
 
     if not workspace:
         raise ResourceNotFoundException(
@@ -82,7 +82,7 @@ async def verify_workspace_access(db: AsyncSession, workspace_identifier: str, u
     if not member:
         raise WrextAuthorizationException(
             message="User is not a member of this workspace",
-            context={"workspace_id": str(workspace_id), "user_id": str(user_id)}
+            context={"workspace_id": str(workspace.id), "user_id": str(user_id)}
         )
 
     return workspace

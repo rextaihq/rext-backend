@@ -9,13 +9,14 @@ from src.api.schema.knowledge_schema import TextKnowledgeSchema
 from src.utils.response_utils import success
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-from src.api.security.auth import get_api_key, API_KEY
+from src.api.security.dependencies import get_current_user
 from src.api.database.async_database import get_async_db
 from src.api.middleware.exceptions import (
     WrextAuthenticationException,
     ResourceNotFoundException
 )
 from src.utils.db_utils import get_or_404
+from src.api.routes.content.modules.helpers import verify_workspace_access
 
 router = APIRouter(
     prefix="/workspace/text",
@@ -34,42 +35,63 @@ async def get_status(request: Request):
         message="File Knowledge Route is working!"
     )
 
-# Get text knowledges
+# Get text knowledges for a workspace
 @router.get("/all")
-async def get_file_knowledges(
+async def get_text_knowledges(
         request: Request,
+        workspace_id: str,
         db: AsyncSession = Depends(get_async_db),
-        api_key: str = Depends(get_api_key)
+        user: dict = Depends(get_current_user)
 ):
-    if api_key != API_KEY:
-        raise WrextAuthenticationException(
-            message="Invalid API key provided",
-            context={"api_key_provided": bool(api_key)}
-        )
+    """
+    Get all text knowledge entries for a workspace.
+
+    Requires:
+    - JWT authentication
+    - Workspace membership verification
+    """
+    user_id = user.get("identity")
+
+    # Verify workspace access
+    workspace, membership = await verify_workspace_access(db, workspace_id, user_id)
+
     try:
-        logger.info("Fetching all file knowledges")
-        result = await db.execute(select(TextKnowledge))
-        file_knowledges = result.scalars().all()
-        return success(data=[knowledge.to_dict() for knowledge in file_knowledges])
+        logger.info(f"Fetching text knowledges for workspace {workspace_id}")
+        result = await db.execute(
+            select(TextKnowledge).where(TextKnowledge.workspace_id == workspace_id)
+        )
+        text_knowledges = result.scalars().all()
+        return success(
+            data={"text_knowledge": [knowledge.to_dict() for knowledge in text_knowledges]},
+            request=request
+        )
     except Exception as e:
-        logger.error(f"Error fetching knowledges: {e}")
+        logger.error(f"Error fetching text knowledges: {e}")
         raise HTTPException(status_code=500, detail="Internal Server Error")
     
-# get file knowledge by ID
-@router.get("/{workspace_id}/{text_id}")
-async def get_file_knowledge(
+# get text knowledge by ID
+@router.get("/{text_id}")
+async def get_text_knowledge(
         text_id: str,
-        workspace_id:str,
+        request: Request,
+        workspace_id: str,
         db: AsyncSession = Depends(get_async_db),
-        api_key: str = Depends(get_api_key)
+        user: dict = Depends(get_current_user)
 ):
-    if api_key != API_KEY:
-        raise WrextAuthenticationException(
-            message="Invalid API key provided",
-            context={"api_key_provided": bool(api_key)}
-        )
+    """
+    Get a specific text knowledge entry by ID.
+
+    Requires:
+    - JWT authentication
+    - Workspace membership verification
+    """
+    user_id = user.get("identity")
+
+    # Verify workspace access
+    workspace, membership = await verify_workspace_access(db, workspace_id, user_id)
+
     try:
-        logger.info(f"Fetching file knowledge with ID: {text_id}")
+        logger.info(f"Fetching text knowledge with ID: {text_id} for workspace {workspace_id}")
         knowledge = await get_or_404(
             db,
             TextKnowledge,
@@ -77,30 +99,44 @@ async def get_file_knowledge(
             "text_knowledge",
             additional_filters=[TextKnowledge.workspace_id == workspace_id]
         )
-        return success(data=knowledge.to_dict())
+
+        # Verify the knowledge belongs to the workspace
+        if str(knowledge.workspace_id) != str(workspace_id):
+            raise ResourceNotFoundException(f"Text knowledge {text_id} not found in workspace {workspace_id}")
+
+        return success(
+            data={"text_knowledge": knowledge.to_dict()},
+            request=request
+        )
     except ResourceNotFoundException as e:
         logger.warning(str(e))
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
-        logger.error(f"Error fetching file knowledge: {e}")
+        logger.error(f"Error fetching text knowledge: {e}")
         raise HTTPException(status_code=500, detail="Internal Server Error")
 
-# Create text knowledge not file
+# Create text knowledge
 @router.post("/add-text")
 async def text_knowledge(
-    payload:TextKnowledgeSchema,
+    payload: TextKnowledgeSchema,
     request: Request,
     db: AsyncSession = Depends(get_async_db),
-    api_key: str = Depends(get_api_key)
+    user: dict = Depends(get_current_user)
 ):
-    if api_key != API_KEY:
-        raise WrextAuthenticationException(
-            message="Invalid API key provided",
-            context={"api_key_provided": bool(api_key)}
-        )
+    """
+    Add new text knowledge entry to a workspace.
+
+    Requires:
+    - JWT authentication
+    - Workspace membership verification
+    """
+    user_id = user.get("identity")
+
+    # Verify workspace access
+    workspace, membership = await verify_workspace_access(db, payload.workspace_id, user_id)
+
     try:
-        # 1. Validate workspace
-        workspace = await get_or_404(db, WorkspaceModel, payload.workspace_id, "workspace")
+        logger.info(f"Adding text knowledge for workspace {payload.workspace_id}")
 
         # add the text content in the
         new_knowledge = TextKnowledge(
@@ -130,22 +166,29 @@ async def text_knowledge(
         raise HTTPException(status_code=500, detail="Internal Server Error")
 
 # Update text knowledge
-@router.put("/update/{workspace_id}/{text_id}")
+@router.put("/update/{text_id}")
 async def update_text_knowledge(
     text_id: str,
-    workspace_id:str,
     new_content: str,
-    request: Request = None,
+    request: Request,
+    workspace_id: str,
     db: AsyncSession = Depends(get_async_db),
-    api_key: str = Depends(get_api_key)
+    user: dict = Depends(get_current_user)
 ):
-    if api_key != API_KEY:
-        raise WrextAuthenticationException(
-            message="Invalid API key provided",
-            context={"api_key_provided": bool(api_key)}
-        )
+    """
+    Update text knowledge entry content.
+
+    Requires:
+    - JWT authentication
+    - Workspace membership verification
+    """
+    user_id = user.get("identity")
+
+    # Verify workspace access
+    workspace, membership = await verify_workspace_access(db, workspace_id, user_id)
+
     try:
-        logger.info(f"Updating text knowledge with ID: {text_id}")
+        logger.info(f"Updating text knowledge with ID: {text_id} in workspace: {workspace_id}")
         text_knowledge = await get_or_404(
             db,
             TextKnowledge,
@@ -154,50 +197,48 @@ async def update_text_knowledge(
             additional_filters=[TextKnowledge.workspace_id == workspace_id]
         )
 
-        # Update fields
-        if new_content:
-            text_knowledge.content = new_content
-        if workspace_id:
-            text_knowledge.workspace_id = workspace_id
-        if text_id:
-            text_knowledge.id = text_id
-
+        # Update content
+        text_knowledge.content = new_content
 
         await db.commit()
         await db.refresh(text_knowledge)
 
-        # make a success response
-        text_response = {
-            "text_id":str(text_knowledge.id),
-            "worspace_id":str(text_knowledge.workspace_id),
-            "message":"text Knowledge add successful"
-        } 
         return success(
-            data=text_response,
+            data={"text_knowledge": text_knowledge.to_dict()},
             request=request,
             message="Text knowledge updated successfully"
         )
+    except ResourceNotFoundException:
+        raise
     except Exception as e:
         logger.error(f"Error updating text knowledge: {e}")
+        await db.rollback()
         raise HTTPException(status_code=500, detail="Internal Server Error")
 
 
 # Delete text knowledge
-@router.delete("/delete/{workspace_id}/{text_id}")
+@router.delete("/delete/{text_id}")
 async def delete_text_knowledge(
     text_id: str,
-    workspace_id:str,
     request: Request,
+    workspace_id: str,
     db: AsyncSession = Depends(get_async_db),
-    api_key: str = Depends(get_api_key)
+    user: dict = Depends(get_current_user)
 ):
-    if api_key != API_KEY:
-        raise WrextAuthenticationException(
-            message="Invalid API key provided",
-            context={"api_key_provided": bool(api_key)}
-        )
+    """
+    Delete text knowledge entry from workspace.
+
+    Requires:
+    - JWT authentication
+    - Workspace membership verification
+    """
+    user_id = user.get("identity")
+
+    # Verify workspace access
+    workspace, membership = await verify_workspace_access(db, workspace_id, user_id)
+
     try:
-        logger.info(f"Deleting text knowledge with ID: {text_id}")
+        logger.info(f"Deleting text knowledge with ID: {text_id} from workspace: {workspace_id}")
         text_knowledge = await get_or_404(
             db,
             TextKnowledge,
@@ -210,10 +251,13 @@ async def delete_text_knowledge(
         await db.commit()
 
         return success(
-            data={"deleted_id": text_id},
+            data={"text_id": text_id},
             request=request,
             message="Text knowledge deleted successfully"
         )
+    except ResourceNotFoundException:
+        raise
     except Exception as e:
         logger.error(f"Error deleting text knowledge: {e}")
+        await db.rollback()
         raise HTTPException(status_code=500, detail="Internal Server Error")

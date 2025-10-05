@@ -19,10 +19,10 @@ router = APIRouter()
 # -------------------------
 # List Content for Workspace
 # -------------------------
-@router.get("/{workspace_id}")
+@router.get("/")
 async def list_content(
-    workspace_id: str,  # Now accepts both UUID and slug
     request: Request,
+    workspace_id: str,
     status: Optional[str] = Query(None, description="Filter by status"),
     include_metadata: bool = Query(False, description="Include metadata in response"),
     include_seo: bool = Query(False, description="Include SEO data in response"),
@@ -31,7 +31,16 @@ async def list_content(
     db: AsyncSession = Depends(get_async_db),
     user: dict = Depends(get_current_user)
 ):
-    """List all content for a workspace with optional filtering and pagination"""
+    """
+    List all content for a workspace with optional filtering and pagination.
+
+    Args:
+        workspace_id: Workspace UUID or slug (query parameter)
+
+    Requires:
+        - JWT authentication
+        - Workspace membership verification
+    """
     user_id = user.get("identity")
 
     # Verify access
@@ -96,11 +105,11 @@ async def list_content(
 # -------------------------
 # Get Single Content by ID
 # -------------------------
-@router.get("/{workspace_id}/{content_id}")
+@router.get("/{content_id}")
 async def get_content(
-    workspace_id: str,  # Now accepts both UUID and slug
     content_id: UUID,
     request: Request,
+    workspace_id: str,
     include_metadata: bool = Query(True, description="Include metadata in response"),
     include_seo: bool = Query(True, description="Include SEO data in response"),
     db: AsyncSession = Depends(get_async_db),
