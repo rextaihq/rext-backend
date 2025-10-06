@@ -1,17 +1,6 @@
-from src.states.State import URLCONFIF
-from src.workflow.workflow import CreateWorkflow
-import os
-os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
-my_config_instance = URLCONFIF(
-    category="technology",
-    language="en",
-    country="us",
-    WP_URL={
-        "WPTavern": "https://wptavern.com/feed",
-        "UserFeed2": "https://wordpress.org/news/feed"
-    }
-)
+# from src.langgraph_flow.flow import create_workflow
+from src.workflow.workflow import CreateWorkflow
 
 workflow = CreateWorkflow()
 graph = workflow.compile()

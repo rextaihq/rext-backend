@@ -1,0 +1,64 @@
+from src.langgraph_flow.states.content_state import ContentState
+from src.api.models.topic_models.topic_models import TopicsModel as Topics
+from src.api.database.database import get_db
+
+
+def fetch_topic(state: ContentState):
+    print("Fetching Topics.....")
+    request_payload = state.get("request_payload", {})
+    topic_id = request_payload.get("topicId")  # careful: "topicId" not "topic_id"
+
+    db = next(get_db())
+    try:
+        # if not topic_id:
+        #     return {
+        #         "node": "fetch_topic",
+        #         "error": "Missing required field: topicId",
+        #         "topics": None
+        #     }
+
+        print("Topic id: ",topic_id)
+        topic = db.query(Topics).filter(Topics.id == topic_id).first()
+
+        if not topic:
+            return {
+                "node": "fetch_topic",
+                "error": f"No topic found with id={topic_id}",
+                "topics": None
+            }
+
+        return {
+            "topics":[
+                {
+                    "id": topic.id,
+                    "title": topic.title,
+                    "angle": topic.angle,
+                    "description": topic.description,
+                    "channel_fit": topic.channel_fit,
+                    "audience_fit": topic.audience_fit,
+                    "why_it_works": topic.why_it_works,
+                    "scores": topic.scores,
+                    "tags": topic.tags,
+                    "suggested_defaults": topic.suggested_defaults,
+                    "goal_alignment": topic.goal_alignment,
+                    "content_guidance": topic.content_guidance,
+                    "audience_insights": topic.audience_insights,
+                    "internal_research_config": topic.internal_research_config,
+                    "approved": topic.approved,
+                    "approved_at": topic.approved_at,
+                    "user_settings": topic.user_settings,
+                    "created_at": topic.created_at,
+                    "updated_at": topic.updated_at
+                }
+            ]
+        }
+
+    except Exception as e:
+        return {
+            "node": "fetch_topic",
+            "error": f"Unexpected error occurred: {str(e)}",
+            "topics": None
+        }
+
+    finally:
+        db.close()
