@@ -2,6 +2,10 @@ from src.states.State import AgentState
 from src.model.model import structure_model
 from src.prompts.prompt import create_trend_level_prompt
 
+from src.api.lib.logger import auto_logger
+
+logger = auto_logger()
+
 def score_trend_level(state: AgentState) -> dict:
     """
     Assess how popular or trending each topic is currently in the WordPress or tech community.
@@ -14,7 +18,7 @@ def score_trend_level(state: AgentState) -> dict:
             - article_weight (List[List[int]]): Nested list of fixed weight = 2.
     """
     try:
-        print("Scoring trend level...")
+        logger.info("Scoring trend level...")
 
         ratings = []
         weights = []
@@ -50,5 +54,5 @@ def score_trend_level(state: AgentState) -> dict:
         }
 
     except Exception as e:
-        print("Trend level scoring failed:", e)
+        logger.info("Trend level scoring failed:", e)
         return {"error": [{"Trend level scoring failed": str(e)}]}

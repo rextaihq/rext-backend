@@ -2,6 +2,10 @@ from src.states.State import AgentState
 from langgraph.types import Command, interrupt
 from src.states.schemas import BlogArticle
 
+from src.api.lib.logger import auto_logger
+
+logger = auto_logger()
+
 # Blog Approval
 def blog_approval(state:AgentState):
     """
@@ -28,7 +32,7 @@ def blog_approval(state:AgentState):
     formatted_sections = "\n\n".join(
         [f"### {s.heading}\n{s.content}" for s in blog_result.sections]
     )
-    print("Formatted Sections:", formatted_sections)
+    logger.info("Formatted Sections:", formatted_sections)
     decision = interrupt(
         f"""
 📄 **Blog Title:** {blog_result.title}
@@ -52,7 +56,7 @@ def blog_approval(state:AgentState):
     )
 
     if decision.strip().lower() == "yes":
-        print("✅ Human approved the blog.")
+        logger.info("✅ Human approved the blog.")
 
         new_approved_blog = blog_result.model_dump()
         new_approved_blog["approved"] = True
@@ -65,7 +69,7 @@ def blog_approval(state:AgentState):
         )
 
     else:
-        print("❌ Human rejected the blog.")
+        logger.info("❌ Human rejected the blog.")
         feedback = interrupt("📝 Provide feedback for improving the blog:")
         return Command(
             update={"blog_feedback": [feedback]},

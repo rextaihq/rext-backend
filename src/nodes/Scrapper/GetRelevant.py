@@ -3,6 +3,10 @@ from crawl4ai import AsyncWebCrawler
 # from src.utils.helper import GetBrowserConfig
 from crawl4ai.async_configs import BrowserConfig, CrawlerRunConfig, CacheMode
 from langsmith import traceable
+
+from src.api.lib.logger import auto_logger
+
+logger = auto_logger()
 # import pandas as pd
 
 @traceable
@@ -11,11 +15,11 @@ async def get_relevant_articles(state: AgentState) -> AgentState:
     Get relevant articles based on user selection.
     """
     try:
-        print("Process Selectd Articles..")
+        logger.info("Process Selectd Articles..")
         # selected articles = state.get('selected_articles', [])
         
 
-        print("Scraping full content…")
+        logger.info("Scraping full content…")
         browser_config = BrowserConfig()
         run_config = CrawlerRunConfig(cache_mode=CacheMode.ENABLED)
 
@@ -25,7 +29,7 @@ async def get_relevant_articles(state: AgentState) -> AgentState:
         
         result_content = []
         for urls in urls_list:
-            print("Scrapping Content....",urls)
+            logger.info("Scrapping Content....",urls)
             async with AsyncWebCrawler(config=browser_config) as crawler:
                 results = await crawler.arun_many(urls=urls, config=run_config)
 

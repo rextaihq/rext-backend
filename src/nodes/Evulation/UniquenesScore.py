@@ -2,6 +2,10 @@ from src.states.State import AgentState
 from src.model.model import structure_model
 from src.prompts.prompt import create_uniqueness_score_prompt
 
+from src.api.lib.logger import auto_logger
+
+logger = auto_logger()
+
 def score_uniqueness(state: AgentState) -> dict:
     """
     Measure how unique or uncommon each topic is compared to typical WordPress content.
@@ -15,7 +19,7 @@ def score_uniqueness(state: AgentState) -> dict:
             - article_weight (List[List[int]]): Nested list of fixed weight = 1 (per article).
     """
     try:
-        print("Scoring uniqueness...")
+        logger.info("Scoring uniqueness...")
 
         ratings = []
         weights = []
@@ -53,5 +57,5 @@ def score_uniqueness(state: AgentState) -> dict:
             }
 
     except Exception as e:
-        print("Uniqueness scoring failed:", e)
+        logger.info("Uniqueness scoring failed:", e)
         return {"error": [{"Uniqueness scoring failed": str(e)}]}

@@ -1,6 +1,10 @@
 from src.states.State import AgentState
 from langgraph.types import Command, interrupt
 
+from src.api.lib.logger import auto_logger
+
+logger = auto_logger()
+
 def outline_approval(state:AgentState):
     """
     Handles the approval process for a generated article outline by interacting with a human user.
@@ -30,7 +34,7 @@ def outline_approval(state:AgentState):
         for bullet in section.bullet_points:
             section_texts += f"   - {bullet}\n"
 
-    print("🛑 Awaiting human approval...")
+    logger.info("🛑 Awaiting human approval...")
     decision = interrupt(
         {"name": "OutlineApproval", "value": f"""
     📄 **Title:** {result.title}
@@ -50,7 +54,7 @@ def outline_approval(state:AgentState):
     )
 
     if decision.strip().lower() == "yes":
-        print("✅ Outline approved.")
+        logger.info("✅ Outline approved.")
         approved.append({
             "title": result.title,
             "Intro": result.introduction,
@@ -69,12 +73,12 @@ def outline_approval(state:AgentState):
         )
 
     else:
-        print("❌ Outline rejected.")
+        logger.info("❌ Outline rejected.")
         # get user feedback
         user_fb = interrupt(
             {"name": "Feedback", "value": "📝 Provide feedback for improving the outline:"}
         )
-        print(f"User feedback: {user_fb}")
+        logger.info(f"User feedback: {user_fb}")
 
         return Command(
             update={"approval_feedback": user_fb},

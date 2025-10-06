@@ -2,6 +2,10 @@ from src.states.State import AgentState
 from src.model.model import structure_model
 from src.prompts.prompt import create_reader_interest_score_prompt
 
+from src.api.lib.logger import auto_logger
+
+logger = auto_logger()
+
 def score_reader_interest(state: AgentState) -> dict:
     """
     Estimate how interesting each topic might be to the average WordPress reader.
@@ -14,7 +18,7 @@ def score_reader_interest(state: AgentState) -> dict:
             - article_weight (List[List[int]]): Nested list of fixed weights (1).
     """
     try:
-        print("Scoring reader interest...")
+        logger.info("Scoring reader interest...")
 
         ratings = []
         weights = []
@@ -52,5 +56,5 @@ def score_reader_interest(state: AgentState) -> dict:
 
 
     except Exception as e:
-        print("Reader interest scoring failed:", e)
+        logger.info("Reader interest scoring failed:", e)
         return {"error": [{"Reader interest scoring failed": str(e)}]}

@@ -4,11 +4,12 @@ from sqlalchemy.dialects.postgresql import UUID, JSONB, INET
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from src.api.database.database import Base
+from src.api.models.base import SerializableMixin
 
-class UserInvitations(Base):
+class UserInvitations(Base, SerializableMixin):
     __tablename__ = "user_invitations"
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, unique=True, nullable=False)
-    email = Column(String(255), unique=True, nullable=False)
+    email = Column(String(255), nullable=False)
     workspace_id = Column(UUID(as_uuid=True), ForeignKey("workspace.id"), nullable=False)
     role_id = Column(UUID(as_uuid=True), ForeignKey("roles.id"), nullable=False)
     invited_by_user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
@@ -28,14 +29,4 @@ class UserInvitations(Base):
     invited_by = relationship("Users", foreign_keys=[invited_by_user_id], back_populates="sent_invitations")
     workspace_members = relationship("WorkspaceMembers", back_populates="invitation")
 
-    def to_dict(self):
-        return {
-            "id": str(self.id),
-            "email": self.email,
-            "role_id": str(self.role_id),
-            "invited_by_user_id": str(self.invited_by_user_id),
-            "invitation_token": self.invitation_token,
-            "status": self.status,
-            "created_at": self.created_at.isoformat() if self.created_at else None,
-            "expires_at": self.expires_at.isoformat() if self.expires_at else None,
-        }
+    # to_dict() inherited from SerializableMixin

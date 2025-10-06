@@ -19,6 +19,10 @@ from src.model.model import load_model
 from src.utils.splitter import split_data
 from src.utils.vector_store import load_vector_store
 
+from src.api.lib.logger import auto_logger
+
+logger = auto_logger()
+
 
 
 def loadYamlConfig(file_path="config/config.yaml"):
@@ -55,7 +59,7 @@ def GetBrowserConfig():
         )
         return config
     except Exception as e:
-        print(f"[ERROR] Failed to load browser configuration: {e}")
+        logger.info(f"[ERROR] Failed to load browser configuration: {e}")
         return None
     
 def GetCrawlerRunConfig():
@@ -77,7 +81,7 @@ def GetCrawlerRunConfig():
         )
         return config
     except Exception as e:
-        print(f"[ERROR] Failed to load crawler run configuration: {e}")
+        logger.info(f"[ERROR] Failed to load crawler run configuration: {e}")
         return None
 
 # merge evulation
@@ -129,7 +133,7 @@ async def web_page_scraper(urls: List[HttpUrl]) -> Tuple[List[Document], list]:
         Tuple[List[Document], list]: (Chunked Documents, Raw crawl results)
     """
 
-    print("Scrapping States")
+    logger.info("Scrapping States")
     browser_config = GetBrowserConfig()
     run_config = GetCrawlerRunConfig()
 
@@ -137,7 +141,7 @@ async def web_page_scraper(urls: List[HttpUrl]) -> Tuple[List[Document], list]:
     urls = [str(url) for url in urls]
     async with AsyncWebCrawler(config=browser_config) as crawler:
         results = await crawler.arun(url=urls[0], config=run_config)
-    print("DOne")
+    logger.info("DOne")
     documents = []
     for result in results:
         if result.success:
@@ -156,7 +160,7 @@ async def web_page_scraper(urls: List[HttpUrl]) -> Tuple[List[Document], list]:
             )
             documents.append(doc)
         else:
-            print(f"Scraping failed for {result.url}: {result.error_message}")
+            logger.info(f"Scraping failed for {result.url}: {result.error_message}")
 
     # Split into chunks
     chunks_data = split_data(documents)
@@ -179,7 +183,7 @@ def clean_blog_content_with_urls(raw_html: str) -> Tuple[str, List[str]]:
     Returns:
         Tuple[str, List[str]]: Cleaned text and list of unique URLs (excluding media).
     """
-    print("Text Cleaning.....")
+    logger.info("Text Cleaning.....")
     # Convert escaped '\n' sequences into actual newlines
     text = raw_html.replace("\\n", "\n")
 
@@ -215,7 +219,7 @@ def clean_blog_content_with_urls(raw_html: str) -> Tuple[str, List[str]]:
             seen.add(u)
             unique_urls.append(u)
 
-    print("Data Clean Successfully...")
+    logger.info("Data Clean Successfully...")
     return clean_text, unique_urls
 
 

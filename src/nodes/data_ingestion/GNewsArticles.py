@@ -3,6 +3,10 @@ from src.states.State import AgentState
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
 import os
+
+from src.api.lib.logger import auto_logger
+
+logger = auto_logger()
 load_dotenv()
 
 def gnews_articles(state: AgentState) -> AgentState:
@@ -15,21 +19,21 @@ def gnews_articles(state: AgentState) -> AgentState:
         AgentState: Updated state with 'articles' (list of dicts) or 'error' key.
     """
     try:
-        print("Fetching local articles from last 48 hours...")
+        logger.info("Fetching local articles from last 48 hours...")
 
         # Load API config
         config_instance = state['config']
         api_url =  "https://gnews.io/api/v4/top-headlines"
-        print("GNew API URL: ",api_url)
+        logger.info("GNew API URL: ",api_url)
         category = config_instance['category']
         language = config_instance['language']
         country = config_instance['country']
         api_key = os.getenv("GNEWS_API_KEY", "YOUR_GNEWS_API_KEY")
 
         # Calculate time range for last 48 hours in ISO 8601 format
-        print("Country: ",country)
-        print("Country: ",language)
-        print("Country: ",category)
+        logger.info("Country: ",country)
+        logger.info("Country: ",language)
+        logger.info("Country: ",category)
 
         now = datetime.utcnow()
         past_48_hours = now - timedelta(hours=48)
@@ -69,7 +73,7 @@ def gnews_articles(state: AgentState) -> AgentState:
                 })
                 break
             # Return the articles to the new top-level key
-            print("G News Articles Fethes")
+            logger.info("G News Articles Fethes")
             return {
             "articles": articles_list
         }

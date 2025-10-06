@@ -4,6 +4,10 @@ from datetime import datetime
 from typing import List
 from src.states.State import AgentState
 
+from src.api.lib.logger import auto_logger
+
+logger = auto_logger()
+
 def wordpress_articles(state:AgentState):
     """
     WordpressArticles
@@ -24,21 +28,21 @@ def wordpress_articles(state:AgentState):
     Example:
         articles = FetchWordpressArticles()
         for article in articles:
-            print(article['title'], article['link'])
+            logger.info(article['title'], article['link'])
     """
-    print("Fetching wordpress articles...")
+    logger.info("Fetching wordpress articles...")
     config_instance = state['config']
 
     rss_sources = config_instance['WP_URL']
     
-    print("RSS Sources:", rss_sources)
-    print("RSS Type:", type(rss_sources))
+    logger.info("RSS Sources:", rss_sources)
+    logger.info("RSS Type:", type(rss_sources))
     all_articles = []
 
     for source_name, url in rss_sources.items():
-        print("Loop Start...")
-        print("Source Name: ",source_name)
-        print("Source URL: ",url)
+        logger.info("Loop Start...")
+        logger.info("Source Name: ",source_name)
+        logger.info("Source URL: ",url)
         try:
             feed = feedparser.parse(url)
 
@@ -60,7 +64,7 @@ def wordpress_articles(state:AgentState):
                     "articles": all_articles
                 }
         except Exception as e:
-            print(f"[ERROR] Failed to fetch from {source_name}: {e}")
+            logger.info(f"[ERROR] Failed to fetch from {source_name}: {e}")
             return {
                 "error":str(e)
             }
