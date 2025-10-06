@@ -18,7 +18,7 @@ from dotenv import load_dotenv
 # Local application imports
 from src.api.routes.users import router as users_router
 from src.api.routes.topics.topic_generation_route import router as topic_router
-from src.api.routes.workspaces import router as workspace_router
+from src.api.routes.workspaces import router as workspace_router, workspaces_router
 from src.api.routes.workspaces.members.members_routes import router as members_router
 from src.api.routes.workspaces.email_template_route import router as email_template_router
 from src.api.routes.knowledge.web_knowledge_route import router as web_router
@@ -173,6 +173,7 @@ setup_exception_handlers(app)
 app.include_router(users_router, prefix="/api/v1", tags=["Authentication"])
 app.include_router(topic_router, prefix="/api/v1", tags=["Topic Generation"])
 app.include_router(workspace_router, prefix="/api/v1", tags=["Workspaces"])
+app.include_router(workspaces_router, prefix="/api/v1", tags=["Workspaces"])  # Alias for frontend compatibility
 app.include_router(members_router, prefix="/api/v1", tags=["Workspace Members"])
 app.include_router(email_template_router, prefix="/api/v1", tags=["Email Templates"])
 app.include_router(web_router, prefix="/api/v1", tags=["Web Knowledge"])
