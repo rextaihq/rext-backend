@@ -26,7 +26,6 @@ from src.api.models.content_models import (
 from .helpers import (
     slugify,
     generate_unique_slug,
-    _build_content_response,
 )
 from src.utils.workspace_utils import resolve_and_verify_workspace
 
@@ -137,7 +136,7 @@ async def create_content(
     await db.flush()
     await db.refresh(content)
 
-    content_data = _build_content_response(content, True, True)
+    content_data = content.to_dict(include_relationships=["content_metadata", "seo_data"])
 
     logger.info(f"Created content {content.id} in workspace {workspace_id}")
 
@@ -282,7 +281,7 @@ async def update_content(
         await db.flush()
         await db.refresh(content)
 
-        content_data = _build_content_response(content, True, True)
+        content_data = content.to_dict(include_relationships=["content_metadata", "seo_data"])
 
         logger.info(f"Updated content {content_id} in workspace {workspace_id}")
 

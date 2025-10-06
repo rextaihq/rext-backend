@@ -11,9 +11,10 @@ from sqlalchemy import Column, String, Boolean, TIMESTAMP, Text, Index, ForeignK
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import relationship
 from src.api.database.database import Base
+from src.api.models.base import SerializableMixin
 
 
-class UserSession(Base):
+class UserSession(Base, SerializableMixin):
     """Store active user login sessions with device and location metadata."""
     __tablename__ = "user_sessions"
 
@@ -52,19 +53,8 @@ class UserSession(Base):
         Index('idx_user_sessions_last_activity', 'last_activity_at'),
     )
 
-    def to_dict(self):
-        """Convert session to dictionary for API responses."""
-        return {
-            "id": str(self.id),
-            "user_id": str(self.user_id),
-            "device_name": self.device_name,
-            "device_type": self.device_type,
-            "ip_address": self.ip_address,
-            "country": self.country,
-            "city": self.city,
-            "is_active": self.is_active,
-            "is_current": False,  # Will be set by endpoint based on current token
-            "created_at": self.created_at.isoformat() if self.created_at else None,
-            "last_activity_at": self.last_activity_at.isoformat() if self.last_activity_at else None,
-            "expires_at": self.expires_at.isoformat() if self.expires_at else None,
-        }
+    def to_dict(self, **kwargs):
+        """Convert session to dictionary. Excludes jti and session_metadata by default."""
+        data = super().to_dict(exclude=['jti', 'user_agent', 'session_metadata'], **kwargs)
+        data['is_current'] = False  # Will be set by endpoint based on current token
+        return data

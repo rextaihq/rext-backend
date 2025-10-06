@@ -2,11 +2,12 @@ from sqlalchemy import Column, Text, Float, DateTime, ForeignKey
 from sqlalchemy.dialects.postgresql import UUID, ARRAY
 from sqlalchemy.orm import relationship
 from src.api.database.database import Base
+from src.api.models.base import SerializableMixin
 from datetime import datetime
 import uuid
 
 
-class ContentSEOData(Base):
+class ContentSEOData(Base, SerializableMixin):
     """SEO-specific data for content"""
     __tablename__ = "content_seo_data"
 

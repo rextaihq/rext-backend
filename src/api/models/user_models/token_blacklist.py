@@ -15,9 +15,10 @@ from datetime import datetime
 from sqlalchemy import Column, String, TIMESTAMP, Index
 from sqlalchemy.dialects.postgresql import UUID
 from src.api.database.database import Base
+from src.api.models.base import SerializableMixin
 
 
-class TokenBlacklist(Base):
+class TokenBlacklist(Base, SerializableMixin):
     """Store revoked/blacklisted tokens."""
     __tablename__ = "token_blacklist"
 
@@ -36,14 +37,4 @@ class TokenBlacklist(Base):
         Index('idx_token_blacklist_expires_at', 'expires_at'),  # For cleanup jobs
     )
 
-    def to_dict(self):
-        """Convert model to dictionary."""
-        return {
-            "id": str(self.id),
-            "jti": self.jti,
-            "token_type": self.token_type,
-            "user_id": str(self.user_id),
-            "revoked_at": self.revoked_at.isoformat() if self.revoked_at else None,
-            "expires_at": self.expires_at.isoformat() if self.expires_at else None,
-            "reason": self.reason,
-        }
+    # to_dict() inherited from SerializableMixin

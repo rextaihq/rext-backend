@@ -5,9 +5,10 @@ from sqlalchemy import Column, String, Integer, Numeric, Boolean, Text, TIMESTAM
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import relationship
 from src.api.database.database import Base
+from src.api.models.base import SerializableMixin
 
 
-class SubscriptionPlan(Base):
+class SubscriptionPlan(Base, SerializableMixin):
     """Subscription plan model defining available tiers."""
     __tablename__ = "subscription_plans"
 
@@ -42,21 +43,4 @@ class SubscriptionPlan(Base):
     # Relationships
     subscriptions = relationship("UserSubscription", back_populates="plan")
 
-    def to_dict(self):
-        """Convert model to dictionary."""
-        return {
-            "id": str(self.id),
-            "name": self.name,
-            "display_name": self.display_name,
-            "description": self.description,
-            "price_monthly": float(self.price_monthly) if self.price_monthly else 0.0,
-            "price_yearly": float(self.price_yearly) if self.price_yearly else 0.0,
-            "features": self.features,
-            "max_workspaces": self.max_workspaces,
-            "max_members_per_workspace": self.max_members_per_workspace,
-            "max_topics": self.max_topics,
-            "max_knowledge_items": self.max_knowledge_items,
-            "max_api_calls_per_month": self.max_api_calls_per_month,
-            "is_active": self.is_active,
-            "created_at": self.created_at.isoformat() if self.created_at else None,
-        }
+    # to_dict() inherited from SerializableMixin

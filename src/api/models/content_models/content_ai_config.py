@@ -2,11 +2,12 @@ from sqlalchemy import Column, Text, Integer, DateTime, Numeric, ForeignKey
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import relationship
 from src.api.database.database import Base
+from src.api.models.base import SerializableMixin
 from datetime import datetime
 import uuid
 
 
-class ContentAIConfig(Base):
+class ContentAIConfig(Base, SerializableMixin):
     """AI generation configuration and results"""
     __tablename__ = "content_ai_config"
 

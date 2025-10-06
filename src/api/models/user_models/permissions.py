@@ -4,12 +4,13 @@ from sqlalchemy.orm import relationship
 from datetime import datetime
 import uuid
 from src.api.database.database import Base
+from src.api.models.base import SerializableMixin
 
 
 # -------------------------
 # Permissions Model
 # -------------------------
-class Permission(Base):
+class Permission(Base, SerializableMixin):
     __tablename__ = "permissions"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, unique=True, nullable=False)
@@ -23,12 +24,4 @@ class Permission(Base):
     # Relationships
     roles = relationship("RolePermission", back_populates="permission")
 
-    def to_dict(self):
-        return {
-            "id": str(self.id),
-            "name": self.name,
-            "description": self.description,
-            "resource": self.resource,
-            "action": self.action,
-            "created_at": self.created_at.isoformat() if self.created_at else None,
-        }
+    # to_dict() inherited from SerializableMixin

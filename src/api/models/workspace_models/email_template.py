@@ -4,6 +4,7 @@ from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from src.api.database.database import Base
+from src.api.models.base import SerializableMixin
 import enum
 
 
@@ -16,7 +17,7 @@ class TemplateType(str, enum.Enum):
     WELCOME = "welcome"
 
 
-class EmailTemplate(Base):
+class EmailTemplate(Base, SerializableMixin):
     """
     Email templates for workspace notifications.
 
@@ -44,16 +45,10 @@ class EmailTemplate(Base):
     workspace = relationship("WorkspaceModel", foreign_keys=[workspace_id], back_populates="email_templates")
     created_by = relationship("Users", foreign_keys=[created_by_user_id])
 
-    def to_dict(self):
-        return {
-            "id": str(self.id),
-            "workspace_id": str(self.workspace_id),
-            "template_type": self.template_type.value if isinstance(self.template_type, TemplateType) else self.template_type,
-            "subject": self.subject,
-            "body": self.body,
-            "is_active": self.is_active,
-            "is_default": self.is_default,
-            "created_by_user_id": str(self.created_by_user_id) if self.created_by_user_id else None,
-            "created_at": self.created_at.isoformat() if self.created_at else None,
-            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
-        }
+    def to_dict(self, **kwargs):
+        """Custom serialization handling enum values"""
+        data = super().to_dict(**kwargs)
+        # Handle enum serialization
+        if isinstance(self.template_type, TemplateType):
+            data['template_type'] = self.template_type.value
+        return data

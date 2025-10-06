@@ -11,7 +11,6 @@ from src.api.database.async_database import get_async_db
 from src.api.security.dependencies import get_current_user
 from src.api.middleware.exceptions import ResourceNotFoundException
 from src.api.models.content_models import Content
-from .helpers import _build_content_response
 from src.utils.workspace_utils import resolve_and_verify_workspace
 
 
@@ -76,8 +75,14 @@ async def list_content(
     content_items = result.scalars().all()
 
     # Build response
+    relationships = []
+    if include_metadata:
+        relationships.append("content_metadata")
+    if include_seo:
+        relationships.append("seo_data")
+
     content_list = [
-        _build_content_response(content, include_metadata, include_seo)
+        content.to_dict(include_relationships=relationships if relationships else None)
         for content in content_items
     ]
 
@@ -129,7 +134,13 @@ async def get_content(
             resource_id=str(content_id)
         )
 
-    content_data = _build_content_response(content, include_metadata, include_seo)
+    relationships = []
+    if include_metadata:
+        relationships.append("content_metadata")
+    if include_seo:
+        relationships.append("seo_data")
+
+    content_data = content.to_dict(include_relationships=relationships if relationships else None)
 
     logger.info(f"Retrieved content {content_id} from workspace {workspace_id}")
 

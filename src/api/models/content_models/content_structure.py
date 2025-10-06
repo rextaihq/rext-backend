@@ -2,11 +2,12 @@ from sqlalchemy import Column, Boolean, DateTime, ForeignKey
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import relationship
 from src.api.database.database import Base
+from src.api.models.base import SerializableMixin
 from datetime import datetime
 import uuid
 
 
-class ContentStructure(Base):
+class ContentStructure(Base, SerializableMixin):
     """Content structure configuration"""
     __tablename__ = "content_structure"
 

@@ -4,9 +4,10 @@ from datetime import datetime
 from sqlalchemy import Column, String, Text, TIMESTAMP, ForeignKey, Index
 from sqlalchemy.dialects.postgresql import UUID, JSONB, INET
 from src.api.database.database import Base
+from src.api.models.base import SerializableMixin
 
 
-class AuditLog(Base):
+class AuditLog(Base, SerializableMixin):
     """Audit log model for tracking sensitive operations."""
     __tablename__ = "audit_logs"
 
@@ -51,18 +52,4 @@ class AuditLog(Base):
         Index('idx_audit_logs_created_at', 'created_at'),
     )
 
-    def to_dict(self):
-        """Convert model to dictionary."""
-        return {
-            "id": str(self.id),
-            "user_id": str(self.user_id) if self.user_id else None,
-            "username": self.username,
-            "user_email": self.user_email,
-            "action": self.action,
-            "resource_type": self.resource_type,
-            "resource_id": self.resource_id,
-            "workspace_id": str(self.workspace_id) if self.workspace_id else None,
-            "ip_address": str(self.ip_address) if self.ip_address else None,
-            "status": self.status,
-            "created_at": self.created_at.isoformat() if self.created_at else None,
-        }
+    # to_dict() inherited from SerializableMixin

@@ -2,9 +2,10 @@ from sqlalchemy import Column, String, func, DateTime, Boolean, ForeignKey
 from sqlalchemy.dialects.postgresql import UUID, ARRAY, JSONB
 from sqlalchemy.orm import relationship
 from src.api.database.database import Base
+from src.api.models.base import SerializableMixin
 import uuid
 
-class TopicsModel(Base):
+class TopicsModel(Base, SerializableMixin):
     __tablename__ = "topics"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, unique=True, nullable=False)  # Changed to String to match schema

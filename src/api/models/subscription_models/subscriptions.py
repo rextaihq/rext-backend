@@ -6,6 +6,7 @@ from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import relationship
 import enum
 from src.api.database.database import Base
+from src.api.models.base import SerializableMixin
 
 
 class SubscriptionStatus(str, enum.Enum):
@@ -24,7 +25,7 @@ class BillingPeriod(str, enum.Enum):
     LIFETIME = "lifetime"
 
 
-class UserSubscription(Base):
+class UserSubscription(Base, SerializableMixin):
     """User subscription model tracking active subscriptions."""
     __tablename__ = "user_subscriptions"
 
@@ -60,18 +61,12 @@ class UserSubscription(Base):
     user = relationship("Users", backref="subscriptions")
     plan = relationship("SubscriptionPlan", back_populates="subscriptions")
 
-    def to_dict(self):
-        """Convert model to dictionary."""
-        return {
-            "id": str(self.id),
-            "user_id": str(self.user_id),
-            "plan_id": str(self.plan_id),
-            "status": self.status.value,
-            "billing_period": self.billing_period.value,
-            "start_date": self.start_date.isoformat() if self.start_date else None,
-            "end_date": self.end_date.isoformat() if self.end_date else None,
-            "trial_end_date": self.trial_end_date.isoformat() if self.trial_end_date else None,
-            "cancelled_at": self.cancelled_at.isoformat() if self.cancelled_at else None,
-            "current_api_calls": self.current_api_calls,
-            "created_at": self.created_at.isoformat() if self.created_at else None,
-        }
+    def to_dict(self, **kwargs):
+        """Custom serialization handling enum values"""
+        data = super().to_dict(exclude=['stripe_subscription_id', 'stripe_customer_id', 'subscription_metadata'], **kwargs)
+        # Handle enum serialization
+        if isinstance(self.status, SubscriptionStatus):
+            data['status'] = self.status.value
+        if isinstance(self.billing_period, BillingPeriod):
+            data['billing_period'] = self.billing_period.value
+        return data

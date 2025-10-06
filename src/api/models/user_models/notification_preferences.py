@@ -4,9 +4,10 @@ from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from src.api.database.database import Base
+from src.api.models.base import SerializableMixin
 
 
-class NotificationPreferences(Base):
+class NotificationPreferences(Base, SerializableMixin):
     """
     User notification preferences model.
 
@@ -39,20 +40,20 @@ class NotificationPreferences(Base):
     # Relationships
     user = relationship("Users", back_populates="notification_preferences")
 
-    def to_dict(self):
-        """
-        Convert model to dictionary with camelCase keys for frontend.
-        """
+    def to_dict(self, **kwargs):
+        """Convert to dictionary with camelCase keys for frontend."""
+        data = super().to_dict(exclude=['id'], **kwargs)
+        # Convert snake_case to camelCase for frontend
         return {
-            "emailNotifications": self.email_notifications,
-            "emailDigestFrequency": self.email_digest_frequency,
-            "emailWorkspaceInvites": self.email_workspace_invites,
-            "emailComments": self.email_comments,
-            "emailMentions": self.email_mentions,
-            "emailUpdates": self.email_updates,
-            "inAppNotifications": self.in_app_notifications,
-            "inAppWorkspaceInvites": self.in_app_workspace_invites,
-            "inAppComments": self.in_app_comments,
-            "inAppMentions": self.in_app_mentions,
-            "inAppUpdates": self.in_app_updates,
+            "emailNotifications": data.get("email_notifications"),
+            "emailDigestFrequency": data.get("email_digest_frequency"),
+            "emailWorkspaceInvites": data.get("email_workspace_invites"),
+            "emailComments": data.get("email_comments"),
+            "emailMentions": data.get("email_mentions"),
+            "emailUpdates": data.get("email_updates"),
+            "inAppNotifications": data.get("in_app_notifications"),
+            "inAppWorkspaceInvites": data.get("in_app_workspace_invites"),
+            "inAppComments": data.get("in_app_comments"),
+            "inAppMentions": data.get("in_app_mentions"),
+            "inAppUpdates": data.get("in_app_updates"),
         }

@@ -2,11 +2,12 @@ from sqlalchemy import Column, DateTime, ForeignKey
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import relationship
 from src.api.database.database import Base
+from src.api.models.base import SerializableMixin
 from datetime import datetime
 import uuid
 
 
-class ContentTracking(Base):
+class ContentTracking(Base, SerializableMixin):
     """Content generation tracking and audit trail"""
     __tablename__ = "content_tracking"
 

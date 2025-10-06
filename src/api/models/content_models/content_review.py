@@ -2,11 +2,12 @@ from sqlalchemy import Column, String, DateTime, ForeignKey
 from sqlalchemy.dialects.postgresql import UUID, ARRAY
 from sqlalchemy.orm import relationship
 from src.api.database.database import Base
+from src.api.models.base import SerializableMixin
 from datetime import datetime
 import uuid
 
 
-class ContentReview(Base):
+class ContentReview(Base, SerializableMixin):
     """Content review and approval workflow"""
     __tablename__ = "content_review"
 

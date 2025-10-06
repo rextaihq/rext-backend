@@ -2,13 +2,14 @@ from sqlalchemy import Column, String,Text,DateTime, func,ForeignKey
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 from src.api.database.database import Base
+from src.api.models.base import SerializableMixin
 from datetime import datetime
 import uuid
 
 # -------------------------
 # Workspace
 # -------------------------
-class WorkspaceModel(Base):
+class WorkspaceModel(Base, SerializableMixin):
     __tablename__ = "workspace"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, unique=True, nullable=False)
@@ -35,14 +36,4 @@ class WorkspaceModel(Base):
     content_items = relationship("Content", back_populates="workspace", cascade="all, delete-orphan")
     topics = relationship("TopicsModel", back_populates="workspace", cascade="all, delete-orphan")
 
-    def to_dict(self):
-        return {
-            "id": str(self.id),
-            "user_id": str(self.user_id),
-            "name": self.name,
-            "slug": self.slug,  # Include slug in response
-            "description": self.description,
-            "url": self.url,
-            "created_at": self.created_at.isoformat() if self.created_at else None,
-            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
-        }
+    # to_dict() inherited from SerializableMixin

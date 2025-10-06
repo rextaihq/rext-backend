@@ -4,12 +4,13 @@ from sqlalchemy.dialects.postgresql import UUID, JSONB, INET
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from src.api.database.database import Base
+from src.api.models.base import SerializableMixin
 
 
 # -------------------------
 # UserRole
 # -------------------------
-class UserRole(Base):
+class UserRole(Base, SerializableMixin):
     __tablename__ = "user_roles"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, unique=True, nullable=False)
@@ -27,12 +28,4 @@ class UserRole(Base):
     workspace = relationship("WorkspaceModel", foreign_keys=[workspace_id], back_populates="user_roles")
     assigned_by = relationship("Users", foreign_keys=[assigned_by_user_id], back_populates="assigned_roles")
 
-    def to_dict(self):
-        return {
-            "id": str(self.id),
-            "user_id": str(self.user_id),
-            "role_id": str(self.role_id),
-            "workspace_id": str(self.workspace_id) if self.workspace_id else None,
-            "is_primary": self.is_primary,
-            "assigned_at": self.assigned_at.isoformat() if self.assigned_at else None,
-        }
+    # to_dict() inherited from SerializableMixin

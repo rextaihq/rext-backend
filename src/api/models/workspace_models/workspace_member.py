@@ -4,11 +4,12 @@ from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from src.api.database.database import Base
+from src.api.models.base import SerializableMixin
 
 # -------------------------
 # Workspace Members
 # -------------------------
-class WorkspaceMembers(Base):
+class WorkspaceMembers(Base, SerializableMixin):
     __tablename__ = "workspace_members"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, unique=True, nullable=False)
@@ -25,13 +26,4 @@ class WorkspaceMembers(Base):
     workspace = relationship("WorkspaceModel", foreign_keys=[workspace_id], back_populates="members")
     invitation = relationship("UserInvitations", foreign_keys=[invitation_id], back_populates="workspace_members")
 
-    def to_dict(self):
-        return {
-            "id": str(self.id),
-            "user_id": str(self.user_id),
-            "workspace_id": str(self.workspace_id),
-            "status": self.status,
-            "is_default": self.is_default,
-            "joined_at": self.joined_at.isoformat() if self.joined_at else None,
-            "last_activity_at": self.last_activity_at.isoformat() if self.last_activity_at else None,
-        }
+    # to_dict() inherited from SerializableMixin
