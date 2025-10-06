@@ -6,7 +6,7 @@ from uuid import UUID
 from src.utils.logger import logger
 from src.utils.response_utils import success, error
 from src.utils.route_decorators import db_transaction_handler
-from src.utils.workspace_utils import resolve_workspace, verify_workspace_membership, resolve_and_verify_workspace
+from src.utils.workspace_utils import resolve_and_verify_workspace
 from src.utils.auth_utils import verify_current_user
 from src.api.database.async_database import get_async_db
 from src.api.security.dependencies import get_current_user
@@ -82,8 +82,8 @@ async def get_workspace_web_knowledge(request: Request, workspace_id: str, db: A
     user_id = user.get("identity")
     db_user = await verify_current_user(db, user_id)
 
-    # Verify workspace access
-    workspace, membership = await verify_workspace_membership(db, UUID(workspace_id), user_id)
+    # Verify workspace access and membership in one call
+    workspace, membership = await resolve_and_verify_workspace(db, workspace_id, UUID(user_id))
 
     # Get web knowledge for this workspace
     result = await db.execute(select(Website).where(Website.workspace_id == workspace.id))
@@ -105,8 +105,8 @@ async def get_workspace_file_knowledge(request: Request, workspace_id: str, db: 
     user_id = user.get("identity")
     db_user = await verify_current_user(db, user_id)
 
-    # Verify workspace access
-    workspace, membership = await verify_workspace_membership(db, UUID(workspace_id), user_id)
+    # Verify workspace access and membership in one call
+    workspace, membership = await resolve_and_verify_workspace(db, workspace_id, UUID(user_id))
 
     # Get file knowledge for this workspace
     result = await db.execute(select(KnowledgeFiles).where(KnowledgeFiles.workspace_id == workspace.id))
@@ -128,8 +128,8 @@ async def get_workspace_text_knowledge(request: Request, workspace_id: str, db: 
     user_id = user.get("identity")
     db_user = await verify_current_user(db, user_id)
 
-    # Verify workspace access
-    workspace, membership = await verify_workspace_membership(db, UUID(workspace_id), user_id)
+    # Verify workspace access and membership in one call
+    workspace, membership = await resolve_and_verify_workspace(db, workspace_id, UUID(user_id))
 
     # Get text knowledge for this workspace
     result = await db.execute(select(TextKnowledge).where(TextKnowledge.workspace_id == workspace.id))

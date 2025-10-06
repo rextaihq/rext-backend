@@ -10,7 +10,7 @@ from src.utils.vector_store import add_to_vector_store, delete_vectors
 from src.utils.response_utils import success, error, created
 from src.utils.route_decorators import db_transaction_handler, require_permissions
 from src.utils.slug_utils import generate_workspace_slug, generate_unique_slug
-from src.utils.workspace_utils import resolve_workspace, verify_workspace_membership
+from src.utils.workspace_utils import resolve_workspace, resolve_and_verify_workspace
 from src.utils.auth_utils import verify_current_user
 from src.utils.db_utils import ensure_unique
 from src.api.database.async_database import get_async_db
@@ -132,7 +132,7 @@ async def get_workspace_by_id(workspace_id: str, request: Request, db: AsyncSess
     user_id = user.get("identity")
     db_user = await verify_current_user(db, user_id)
 
-    workspace, membership = await verify_workspace_membership(db, UUID(workspace_id), user_id)
+    workspace, membership = await resolve_and_verify_workspace(db, workspace_id, UUID(user_id))
 
     # Get brand voice data
     result = await db.execute(select(BrandVoice).where(BrandVoice.workspace_id == workspace_id))
@@ -541,7 +541,7 @@ async def update_workspace(workspace_id: str, data: WorkspaceSchema, request: Re
     db_user = await verify_current_user(db, user_id)
 
     try:
-        workspace, membership = await verify_workspace_membership(db, UUID(workspace_id), user_id)
+        workspace, membership = await resolve_and_verify_workspace(db, workspace_id, UUID(user_id))
 
         # Duplicate title check
         if data.name and data.name != workspace.name:
@@ -606,7 +606,7 @@ async def delete_workspace(workspace_id: str, request: Request, db: AsyncSession
     db_user = await verify_current_user(db, user_id)
 
     try:
-        workspace, membership = await verify_workspace_membership(db, UUID(workspace_id), user_id)
+        workspace, membership = await resolve_and_verify_workspace(db, workspace_id, UUID(user_id))
 
         try:
             delete_vectors(vector_id=str(workspace.id))

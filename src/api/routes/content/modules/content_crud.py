@@ -7,7 +7,6 @@ from uuid import UUID
 from src.utils.logger import logger
 from src.utils.response_utils import success, error, created
 from src.utils.db_utils import get_or_404
-from src.utils.workspace_utils import verify_workspace_membership
 from src.utils.route_decorators import db_transaction_handler, require_permissions
 from src.api.database.async_database import get_async_db
 from src.api.security.dependencies import get_current_user
@@ -25,11 +24,11 @@ from src.api.models.content_models import (
     ContentSEOData,
 )
 from .helpers import (
-    verify_workspace_access,
     slugify,
     generate_unique_slug,
     _build_content_response,
 )
+from src.utils.workspace_utils import resolve_and_verify_workspace
 
 
 router = APIRouter()
@@ -61,8 +60,8 @@ async def create_content(
     """
     user_id = user.get("identity")
 
-    # Verify workspace access and get the workspace
-    workspace = await verify_workspace_access(db, workspace_id, user_id)
+    # Verify workspace access and membership in one call
+    workspace, membership = await resolve_and_verify_workspace(db, workspace_id, UUID(user_id))
 
     # If workspace_id in body is provided, verify it matches
     if data.workspace_id:
@@ -163,8 +162,8 @@ async def update_content(
     """Update existing content"""
     user_id = user.get("identity")
 
-    # Verify workspace access
-    workspace = await verify_workspace_access(db, workspace_id, user_id)
+    # Verify workspace access and membership in one call
+    workspace, membership = await resolve_and_verify_workspace(db, workspace_id, UUID(user_id))
 
     # Get content
     result = await db.execute(
@@ -307,8 +306,8 @@ async def delete_content(
     """Soft delete content by setting deleted_at timestamp"""
     user_id = user.get("identity")
 
-    # Verify workspace access
-    workspace = await verify_workspace_access(db, workspace_id, user_id)
+    # Verify workspace access and membership in one call
+    workspace, membership = await resolve_and_verify_workspace(db, workspace_id, UUID(user_id))
 
     # Get content
     result = await db.execute(

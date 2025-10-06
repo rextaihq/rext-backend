@@ -69,6 +69,11 @@ class KnowledgeFiles(Base):
     word_count = Column(Integer, nullable=True)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
 
+    # Security fields
+    file_hash = Column(String(64), nullable=True, index=True)  # SHA-256 hash for duplicate detection
+    mime_type = Column(String(100), nullable=True)  # Detected MIME type (magic number)
+    chunk_count = Column(Integer, nullable=True)  # Number of vector chunks
+
     workspace = relationship("WorkspaceModel", back_populates="knowledge_files")
 
     def to_dict(self) -> dict:
@@ -88,12 +93,17 @@ class KnowledgeFiles(Base):
             'char_count': self.char_count,
             'word_count': self.word_count,
             'created_at': self.created_at.isoformat() if self.created_at else None,
+            'file_hash': self.file_hash,
+            'mime_type': self.mime_type,
+            'chunk_count': self.chunk_count,
             'file_metadata': {
                 'name': self.file_name,
                 'type': self.file_type,
                 'size_bytes': self.file_size,
                 'size_mb': round(self.file_size / (1024 * 1024), 2),
-                'path': self.file_path
+                'path': self.file_path,
+                'hash': self.file_hash,
+                'mime_type': self.mime_type
             }
         }
 

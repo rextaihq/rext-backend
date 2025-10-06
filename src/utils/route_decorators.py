@@ -91,8 +91,12 @@ def db_transaction_handler(
             db: AsyncSession = Depends(get_async_db),
             user: dict = Depends(get_current_user)
         ) -> dict:
-            # Verify workspace access
-            workspace = await verify_workspace_access(db, workspace_id, user["identity"])
+            # Verify workspace access and membership
+            from src.utils.workspace_utils import resolve_and_verify_workspace
+            from uuid import UUID
+            workspace, membership = await resolve_and_verify_workspace(
+                db, workspace_id, UUID(user["identity"])
+            )
 
             # Create content
             content = Content(workspace_id=workspace.id, title=data.title, ...)

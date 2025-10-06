@@ -7,7 +7,7 @@ from uuid import UUID
 from src.utils.logger import logger
 from src.utils.response_utils import success, error
 from src.utils.auth_utils import verify_current_user
-from src.utils.workspace_utils import verify_workspace_membership
+from src.utils.workspace_utils import resolve_and_verify_workspace
 from src.utils.route_decorators import db_transaction_handler, require_permissions
 from src.api.database.async_database import get_async_db
 from src.api.security.dependencies import get_current_user
@@ -37,7 +37,7 @@ async def get_workspace_members(workspace_id: str, request: Request, db: AsyncSe
     user_id = user.get("identity")
     db_user = await verify_current_user(db, user_id)
 
-    workspace, membership = await verify_workspace_membership(db, UUID(workspace_id), user_id)
+    workspace, membership = await resolve_and_verify_workspace(db, workspace_id, UUID(user_id))
 
     # Get all members of the workspace with user details
     members_query = (
@@ -88,7 +88,7 @@ async def add_workspace_member(
     user_id = user.get("identity")
     db_user = await verify_current_user(db, user_id)
 
-    workspace, membership = await verify_workspace_membership(db, UUID(workspace_id), user_id)
+    workspace, membership = await resolve_and_verify_workspace(db, workspace_id, UUID(user_id))
 
     # Find user by email
     result = await db.execute(select(Users).where(Users.email == email, Users.deleted_at == None))
@@ -153,7 +153,7 @@ async def remove_workspace_member(
     user_id = user.get("identity")
     db_user = await verify_current_user(db, user_id)
 
-    workspace, membership = await verify_workspace_membership(db, UUID(workspace_id), user_id)
+    workspace, membership = await resolve_and_verify_workspace(db, workspace_id, UUID(user_id))
 
     # Get member to remove
     result = await db.execute(select(WorkspaceMembers).where(
@@ -206,7 +206,7 @@ async def change_member_role(
     user_id = user.get("identity")
     db_user = await verify_current_user(db, user_id)
 
-    workspace, membership = await verify_workspace_membership(db, UUID(workspace_id), user_id)
+    workspace, membership = await resolve_and_verify_workspace(db, workspace_id, UUID(user_id))
 
     # Get member whose role will be changed
     result = await db.execute(select(WorkspaceMembers).where(

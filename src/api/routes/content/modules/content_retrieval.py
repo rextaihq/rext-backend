@@ -11,7 +11,8 @@ from src.api.database.async_database import get_async_db
 from src.api.security.dependencies import get_current_user
 from src.api.middleware.exceptions import ResourceNotFoundException
 from src.api.models.content_models import Content
-from .helpers import verify_workspace_access, _build_content_response
+from .helpers import _build_content_response
+from src.utils.workspace_utils import resolve_and_verify_workspace
 
 
 router = APIRouter()
@@ -45,8 +46,8 @@ async def list_content(
     """
     user_id = user.get("identity")
 
-    # Verify access
-    workspace = await verify_workspace_access(db, workspace_id, user_id)
+    # Verify workspace access and membership in one call
+    workspace, membership = await resolve_and_verify_workspace(db, workspace_id, UUID(user_id))
 
     # Build query
     query = select(Content).where(
@@ -109,8 +110,8 @@ async def get_content(
     """Get a single content item by ID"""
     user_id = user.get("identity")
 
-    # Verify workspace access
-    workspace = await verify_workspace_access(db, workspace_id, user_id)
+    # Verify workspace access and membership in one call
+    workspace, membership = await resolve_and_verify_workspace(db, workspace_id, UUID(user_id))
 
     # Get content
     result = await db.execute(

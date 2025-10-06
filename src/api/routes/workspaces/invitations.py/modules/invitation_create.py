@@ -28,7 +28,7 @@ from src.api.models.user_models.users import Users
 from src.api.models.user_models.invitations import UserInvitations
 from src.api.models.workspace_models.workspace_member import WorkspaceMembers
 from src.api.tasks.send_mail import send_email
-from src.utils.workspace_utils import verify_workspace_membership
+from src.utils.workspace_utils import resolve_and_verify_workspace
 from src.utils.db_utils import get_or_404
 from src.api.models.user_models.roles import Role
 from .helpers import verify_workspace_exists, verify_role_exists
@@ -72,7 +72,7 @@ async def create_invitation(
     logger.info(f"User {user_id} creating invitation for {invitation_data.email}")
 
     # Verify workspace exists and user has access
-    workspace, membership = await verify_workspace_membership(db, invitation_data.workspace_id, user_id)
+    workspace, membership = await resolve_and_verify_workspace(db, str(invitation_data.workspace_id), uuid.UUID(user_id))
 
     # TODO: Add permission check for user.invite or workspace admin role
 
@@ -242,7 +242,7 @@ async def create_bulk_invitations(
     workspace = await verify_workspace_exists(db, invitation_data.workspace_id)
 
     # Check if user has permission to invite to this workspace
-    await verify_workspace_membership(db, invitation_data.workspace_id, user_id)
+    workspace_check, membership_check = await resolve_and_verify_workspace(db, str(invitation_data.workspace_id), uuid.UUID(user_id))
 
     # Verify role exists
     role = await verify_role_exists(db, invitation_data.role_id)

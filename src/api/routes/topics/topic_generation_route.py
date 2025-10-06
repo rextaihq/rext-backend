@@ -11,7 +11,7 @@ from src.api.database.async_database import get_async_db
 from src.states.schemas import SaveTopicRequestList
 from src.services.topic_enrichment_service import TopicEnrichmentService
 from src.utils.response_utils import success, error, unauthorized, not_found, no_content
-from src.utils.workspace_utils import async_get_workspace_id_from_identifier, verify_workspace_membership, resolve_and_verify_workspace
+from src.utils.workspace_utils import resolve_and_verify_workspace
 from src.utils.route_decorators import db_transaction_handler, require_permissions
 from src.api.schema.response_schemas import ErrorCode, ErrorSeverity
 from src.api.middleware.exceptions import (
@@ -185,22 +185,13 @@ async def save_topic(
             topic_uuid = uuid.UUID(save_topic_data.id) if isinstance(save_topic_data.id, str) else save_topic_data.id
             enriched_topic.id = topic_uuid
 
-            # Resolve workspace ID from either UUID or slug
-            actual_workspace_id = await async_get_workspace_id_from_identifier(db, save_topic_data.workspace_id)
-            if not actual_workspace_id:
-                raise ResourceNotFoundException(
-                    message=f"Workspace '{save_topic_data.workspace_id}' not found",
-                    resource_type="workspace",
-                    context={"workspace_identifier": save_topic_data.workspace_id}
-                )
-
-            # Verify user has access to this workspace
-            workspace, membership = await verify_workspace_membership(db, actual_workspace_id, user_id)
+            # Verify workspace access and membership in one call
+            workspace, membership = await resolve_and_verify_workspace(db, save_topic_data.workspace_id, uuid.UUID(user_id))
 
             # Create database record with fully enriched data
             db_topic = Topics(
                 id=topic_uuid,
-                workspace_id=actual_workspace_id,
+                workspace_id=workspace.id,
                 title=enriched_topic.title,
                 angle=enriched_topic.angle,
                 description=enriched_topic.description,
@@ -258,25 +249,16 @@ async def get_topic(
     """
     user_id = user.get("identity")
 
-    # Resolve workspace ID from either UUID or slug
-    actual_workspace_id = await async_get_workspace_id_from_identifier(db, workspace_id)
-    if not actual_workspace_id:
-        raise ResourceNotFoundException(
-            message=f"Workspace '{workspace_id}' not found",
-            resource_type="workspace",
-            context={"workspace_identifier": workspace_id}
-        )
+    # Verify workspace access and membership in one call
+    workspace, membership = await resolve_and_verify_workspace(db, workspace_id, uuid.UUID(user_id))
 
-    # Verify user has access to this workspace
-    workspace, membership = await verify_workspace_membership(db, actual_workspace_id, user_id)
-
-    logger.info(f"Fetching topic with ID: {topic_id} for workspace: {workspace_id} (resolved to {actual_workspace_id}) for user {user_id}")
+    logger.info(f"Fetching topic with ID: {topic_id} for workspace: {workspace_id} (resolved to {workspace.id}) for user {user_id}")
     topic = await get_or_404(
         db,
         Topics,
         topic_id,
         "topic",
-        additional_filters=[Topics.workspace_id == actual_workspace_id]
+        additional_filters=[Topics.workspace_id == workspace.id]
     )
 
     logger.info(f"Found topic: {topic.title}")
@@ -322,22 +304,13 @@ async def get_topics(
     """
     user_id = user.get("identity")
 
-    # Resolve workspace ID from either UUID or slug
-    actual_workspace_id = await async_get_workspace_id_from_identifier(db, workspace_id)
-    if not actual_workspace_id:
-        raise ResourceNotFoundException(
-            message=f"Workspace '{workspace_id}' not found",
-            resource_type="workspace",
-            context={"workspace_identifier": workspace_id}
-        )
+    # Verify workspace access and membership in one call
+    workspace, membership = await resolve_and_verify_workspace(db, workspace_id, uuid.UUID(user_id))
 
-    # Verify user has access to this workspace
-    workspace, membership = await verify_workspace_membership(db, actual_workspace_id, user_id)
-
-    logger.info(f"Fetching topics from DB for workspace {workspace_id} (resolved to {actual_workspace_id}) for user {user_id}...")
+    logger.info(f"Fetching topics from DB for workspace {workspace_id} (resolved to {workspace.id}) for user {user_id}...")
     # Filter by workspace_id and order by updated_at first (most recent updates), then by created_at (newest first)
     result = await db.execute(select(Topics).where(
-        Topics.workspace_id == actual_workspace_id
+        Topics.workspace_id == workspace.id
     ).order_by(
         Topics.updated_at.desc().nulls_last(),
         Topics.created_at.desc()
@@ -392,22 +365,13 @@ async def delete_topics(
     topic_id_list = topic_ids.topic_ids
     logger.info(f"Attempting to delete {len(topic_id_list)} topics from workspace {workspace_id} by user {user_id}...")
 
-    # Resolve workspace ID from either UUID or slug
-    actual_workspace_id = await async_get_workspace_id_from_identifier(db, workspace_id)
-    if not actual_workspace_id:
-        raise ResourceNotFoundException(
-            message=f"Workspace '{workspace_id}' not found",
-            resource_type="workspace",
-            context={"workspace_identifier": workspace_id}
-        )
-
-    # Verify user has access to this workspace
-    workspace, membership = await verify_workspace_membership(db, actual_workspace_id, user_id)
+    # Verify workspace access and membership in one call
+    workspace, membership = await resolve_and_verify_workspace(db, workspace_id, uuid.UUID(user_id))
 
     # Fetch topics - only from the specified workspace
     result = await db.execute(select(Topics).where(
         Topics.id.in_(topic_id_list),
-        Topics.workspace_id == actual_workspace_id
+        Topics.workspace_id == workspace.id
     ))
     topics = result.scalars().all()
 
@@ -464,17 +428,8 @@ async def update_topic(
     topic_id = data.topic_id
     logger.info(f"Attempting to update topic with ID: {topic_id} in workspace: {workspace_id} by user {user_id}")
 
-    # Resolve workspace ID from either UUID or slug
-    actual_workspace_id = await async_get_workspace_id_from_identifier(db, workspace_id)
-    if not actual_workspace_id:
-        raise ResourceNotFoundException(
-            message=f"Workspace '{workspace_id}' not found",
-            resource_type="workspace",
-            context={"workspace_identifier": workspace_id}
-        )
-
-    # Verify user has access to this workspace
-    workspace, membership = await verify_workspace_membership(db, actual_workspace_id, user_id)
+    # Verify workspace access and membership in one call
+    workspace, membership = await resolve_and_verify_workspace(db, workspace_id, uuid.UUID(user_id))
 
     # Fetch the topic - only from the specified workspace
     topic = await get_or_404(
@@ -482,7 +437,7 @@ async def update_topic(
         Topics,
         topic_id,
         "topic",
-        additional_filters=[Topics.workspace_id == actual_workspace_id]
+        additional_filters=[Topics.workspace_id == workspace.id]
     )
 
     # Track what fields are being updated
@@ -527,7 +482,7 @@ async def update_topic(
                 db=db,
                 user_id=UUIDType(user_id),
                 permission_name="topic.approve",
-                workspace_id=actual_workspace_id,
+                workspace_id=workspace.id,
                 resource_name="topic"
             )
             topic.approved_at = func.now()

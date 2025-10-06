@@ -23,7 +23,7 @@ from src.api.middleware.exceptions import (
     WrextAuthenticationException
 )
 from src.utils.db_utils import get_or_404
-from src.api.routes.content.modules.helpers import verify_workspace_access
+from src.utils.workspace_utils import resolve_and_verify_workspace
 
 router = APIRouter(
     prefix="/workspace/web_knowledge",
@@ -54,7 +54,7 @@ async def get_web_knowledges(
     user_id = user.get("identity")
 
     # Verify workspace access
-    workspace, membership = await verify_workspace_access(db, workspace_id, user_id)
+    workspace, membership = await resolve_and_verify_workspace(db, workspace_id, UUID(user_id))
 
     logger.info(f"Fetching web knowledges for workspace {workspace_id}")
     result = await db.execute(
@@ -85,7 +85,7 @@ async def get_web_knowledge(
     user_id = user.get("identity")
 
     # Verify workspace access
-    workspace, membership = await verify_workspace_access(db, workspace_id, user_id)
+    workspace, membership = await resolve_and_verify_workspace(db, workspace_id, UUID(user_id))
 
     logger.info(f"Fetching knowledge with ID: {web_id} for workspace {workspace_id}")
     knowledge = await get_or_404(db, Website, web_id, "web_knowledge")
@@ -116,7 +116,7 @@ async def add_web_knowledge(
         user_id = user.get("identity")
 
         # Verify workspace access
-        workspace, membership = await verify_workspace_access(db, data.workspace_id, user_id)
+        workspace, membership = await resolve_and_verify_workspace(db, data.workspace_id, UUID(user_id))
 
         logger.info(f"Adding web knowledge for workspace {data.workspace_id}")
 
@@ -206,7 +206,7 @@ async def update_web_knowledge(
     user_id = user.get("identity")
 
     # Verify workspace access
-    workspace, membership = await verify_workspace_access(db, workspace_id, user_id)
+    workspace, membership = await resolve_and_verify_workspace(db, workspace_id, UUID(user_id))
 
     logger.info(f"Updating web knowledge ID: {web_id} in workspace: {workspace_id}")
     knowledge = await get_or_404(
@@ -245,7 +245,7 @@ async def delete_web_knowledge(
     user_id = user.get("identity")
 
     # Verify workspace access
-    workspace, membership = await verify_workspace_access(db, workspace_id, user_id)
+    workspace, membership = await resolve_and_verify_workspace(db, workspace_id, UUID(user_id))
 
     logger.info(f"Deleting knowledge with ID: {web_id} from workspace: {workspace_id}")
     knowledge = await get_or_404(

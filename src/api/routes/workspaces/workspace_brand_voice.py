@@ -1,12 +1,13 @@
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from uuid import UUID
 
 from src.utils.logger import logger
 from src.utils.response_utils import success, error
 from src.utils.route_decorators import db_transaction_handler, require_permissions
 from src.utils.auth_utils import verify_current_user
-from src.utils.workspace_utils import verify_workspace_membership
+from src.utils.workspace_utils import resolve_and_verify_workspace
 from src.api.database.async_database import get_async_db
 from src.api.security.dependencies import get_current_user
 from src.api.middleware.exceptions import ResourceNotFoundException
@@ -46,11 +47,11 @@ async def update_brand_voice(
     # Verify user exists (using auth_utils)
     db_user = await verify_current_user(db, user_id)
 
-    # Verify workspace access (using workspace_utils)
-    workspace, membership = await verify_workspace_membership(db, workspace_id, user_id)
+    # Verify workspace access and membership in one call
+    workspace, membership = await resolve_and_verify_workspace(db, workspace_id, UUID(user_id))
 
     # Get or create brand voice
-    result = await db.execute(select(BrandVoice).where(BrandVoice.workspace_id == workspace_id))
+    result = await db.execute(select(BrandVoice).where(BrandVoice.workspace_id == workspace.id))
     brand_voice = result.scalar_one_or_none()
 
     if brand_voice:
@@ -65,7 +66,7 @@ async def update_brand_voice(
     else:
         # Create new brand voice
         brand_voice = BrandVoice(
-            workspace_id=workspace_id,
+            workspace_id=workspace.id,
             about=brand_data.about,
             customer_profile=brand_data.customer_profile,
             selling_position=brand_data.selling_position,

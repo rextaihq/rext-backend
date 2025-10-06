@@ -3,14 +3,8 @@ from sqlalchemy import select
 from uuid import UUID
 import re
 
-from src.utils.workspace_utils import is_valid_uuid, async_resolve_workspace
-from src.api.middleware.exceptions import (
-    ResourceNotFoundException,
-    WrextAuthorizationException,
-)
+from src.api.middleware.exceptions import ResourceNotFoundException
 from src.api.models.content_models import Content
-from src.api.models.workspace_models.workspace_model import WorkspaceModel
-from src.api.models.workspace_models.workspace_member import WorkspaceMembers
 
 
 def slugify(text: str) -> str:
@@ -41,51 +35,6 @@ async def generate_unique_slug(db: AsyncSession, base_slug: str) -> str:
         counter += 1
 
     return slug
-
-
-async def verify_workspace_access(db: AsyncSession, workspace_identifier: str, user_id: UUID) -> WorkspaceModel:
-    """
-    Verify user has access to workspace (by UUID or slug)
-
-    Uses centralized async_resolve_workspace from workspace_utils to avoid code duplication.
-
-    Args:
-        db: Database session
-        workspace_identifier: Workspace UUID or slug
-        user_id: User UUID
-
-    Returns:
-        WorkspaceModel if user has access
-
-    Raises:
-        ResourceNotFoundException: If workspace not found
-        WrextAuthorizationException: If user is not a member
-    """
-    # Resolve workspace using centralized utility
-    workspace = await async_resolve_workspace(db, workspace_identifier)
-
-    if not workspace:
-        raise ResourceNotFoundException(
-            resource_type="Workspace",
-            resource_id=workspace_identifier
-        )
-
-    # Check membership
-    result = await db.execute(
-        select(WorkspaceMembers).where(
-            WorkspaceMembers.workspace_id == workspace.id,
-            WorkspaceMembers.user_id == user_id
-        )
-    )
-    member = result.scalar_one_or_none()
-
-    if not member:
-        raise WrextAuthorizationException(
-            message="User is not a member of this workspace",
-            context={"workspace_id": str(workspace.id), "user_id": str(user_id)}
-        )
-
-    return workspace
 
 
 def _build_content_response(content: Content, include_metadata: bool = False, include_seo: bool = False) -> dict:

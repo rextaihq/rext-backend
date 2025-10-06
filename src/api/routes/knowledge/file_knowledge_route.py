@@ -10,6 +10,7 @@ from src.utils.vector_store import add_to_vector_store, delete_vectors
 from src.utils.utils import load_split_file_data
 from src.utils.response_utils import success, error
 from src.utils.route_decorators import db_transaction_handler, require_permissions
+from src.utils.file_upload_utils import validate_and_store_file, delete_file
 from src.api.schema.response_schemas import ErrorCode, ErrorSeverity
 from src.api.security.dependencies import get_current_user
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -23,12 +24,8 @@ from src.api.middleware.exceptions import (
     ResourceNotFoundException
 )
 from src.utils.db_utils import get_or_404
-from src.api.routes.content.modules.helpers import verify_workspace_access
-
-
-# for file storage
-UPLOAD_DIR = Path("uploads")
-UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+from src.utils.workspace_utils import resolve_and_verify_workspace
+from src.api.middleware.exceptions import WrextValidationException, DuplicateResourceException
 
 
 router = APIRouter(
@@ -67,7 +64,7 @@ async def get_file_knowledges(
     user_id = user.get("identity")
 
     # Verify workspace access
-    workspace, membership = await verify_workspace_access(db, workspace_id, user_id)
+    workspace, membership = await resolve_and_verify_workspace(db, workspace_id, UUID(user_id))
 
     logger.info(f"Fetching file knowledges for workspace {workspace_id}")
     result = await db.execute(
@@ -98,7 +95,7 @@ async def get_file_knowledge(
     user_id = user.get("identity")
 
     # Verify workspace access
-    workspace, membership = await verify_workspace_access(db, workspace_id, user_id)
+    workspace, membership = await resolve_and_verify_workspace(db, workspace_id, UUID(user_id))
 
     logger.info(f"Fetching file knowledge with ID: {file_id} for workspace {workspace_id}")
     knowledge = await get_or_404(db, KnowledgeFiles, file_id, "file_knowledge")
@@ -131,43 +128,51 @@ async def add_file_knowledge(
     user_id = user.get("identity")
 
     # Verify workspace access
-    workspace, membership = await verify_workspace_access(db, workspace_id, user_id)
+    workspace, membership = await resolve_and_verify_workspace(db, workspace_id, UUID(user_id))
 
     logger.info(f"Adding file knowledge for workspace {workspace_id}")
 
-    # 2. Check duplicate
+    # 2. Validate and store file securely
+    file_metadata = await validate_and_store_file(
+        file=file,
+        workspace_id=str(workspace.id),
+        allowed_types=[
+            # Documents
+            "application/pdf",
+            "text/plain",
+            "application/msword",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            # Spreadsheets
+            "application/vnd.ms-excel",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            "text/csv",
+            # Images
+            "image/png",
+            "image/jpeg",
+            "image/gif",
+            "image/webp"
+        ],
+        max_size_mb=10,
+        enable_virus_scan=False  # Set to True if ClamAV installed
+    )
+
+    # 3. Check for duplicate by hash
     result = await db.execute(select(KnowledgeFiles).where(
-        KnowledgeFiles.file_name == file.filename,
+        KnowledgeFiles.file_hash == file_metadata["hash"],
         KnowledgeFiles.workspace_id == workspace_id
     ))
     existing_knowledge = result.scalar_one_or_none()
     if existing_knowledge:
+        # Delete uploaded file (duplicate)
+        await delete_file(file_metadata["secure_path"])
         raise DuplicateResourceException(
             resource="file_knowledge",
             identifier=file.filename,
-            message=f"File Knowledge for file {file.filename} already exists in the workspace"
+            message=f"File already exists in knowledge base (duplicate content detected)"
         )
 
-    # 3. Save file locally
-    file_path = UPLOAD_DIR / f"{workspace_id}_{file.filename}"
-    with open(file_path, "wb") as f:
-        f.write(await file.read())
-
-    # Save metadata in DB
-    file_size = os.path.getsize(file_path)
-    new_knowledge = KnowledgeFiles(
-        workspace_id=workspace_id,
-        file_name=file.filename,
-        file_type=file.content_type,
-            file_size=file_size,
-        file_path=str(file_path),
-    )
-    db.add(new_knowledge)
-    await db.flush()
-    await db.refresh(new_knowledge)
-
     # 4. Extract text from file
-    chunks = load_split_file_data(str(file_path))
+    chunks = load_split_file_data(file_metadata["secure_path"])
 
     if len(chunks) == 0:
         raise WrextValidationException(
@@ -175,9 +180,24 @@ async def add_file_knowledge(
             field_errors={"file": ["No content could be extracted from file"]}
         )
 
-    # 5. Add to vector store
+    # 5. Save metadata in DB
+    new_knowledge = KnowledgeFiles(
+        workspace_id=workspace_id,
+        file_name=file_metadata["safe_filename"],
+        file_type=file_metadata["mime_type"],
+        file_size=file_metadata["size"],
+        file_path=file_metadata["secure_path"],
+        file_hash=file_metadata["hash"],
+        mime_type=file_metadata["mime_type"],
+        chunk_count=len(chunks)
+    )
+    db.add(new_knowledge)
+    await db.flush()
+    await db.refresh(new_knowledge)
+
+    # 6. Add to vector store
     try:
-        logger.info(f"Inserting {len(chunks)} chunks into vector store for {file_path}")
+        logger.info(f"Inserting {len(chunks)} chunks into vector store for {file_metadata['secure_path']}")
         success_status = add_to_vector_store(blog_context=chunks, doc_id=f"{str(workspace.id)}_{str(new_knowledge.id)}")
         if not success_status:
             raise WrextExternalServiceException(
@@ -195,18 +215,8 @@ async def add_file_knowledge(
             service_error=str(e)
         )
 
-    # file data =
-    file_data = {
-        "id": str(new_knowledge.id),
-        "workspace_id": str(new_knowledge.workspace_id),
-        "file_name": new_knowledge.file_name,
-        "file_type": new_knowledge.file_type,
-        "file_size": new_knowledge.file_size,
-        "file_path": new_knowledge.file_path,
-    }
-
     # 7. Response
-    return file_data
+    return {"file_knowledge": new_knowledge.to_dict()}
 
 
 # Update file knowledge (name only)
@@ -230,7 +240,7 @@ async def update_file_knowledge(
     user_id = user.get("identity")
 
     # Verify workspace access
-    workspace, membership = await verify_workspace_access(db, workspace_id, user_id)
+    workspace, membership = await resolve_and_verify_workspace(db, workspace_id, UUID(user_id))
 
     logger.info(f"Updating file knowledge ID: {file_id} in workspace: {workspace_id}")
     knowledge = await get_or_404(
@@ -269,7 +279,7 @@ async def delete_file_knowledge(
     user_id = user.get("identity")
 
     # Verify workspace access
-    workspace, membership = await verify_workspace_access(db, workspace_id, user_id)
+    workspace, membership = await resolve_and_verify_workspace(db, workspace_id, UUID(user_id))
 
     logger.info(f"Deleting file knowledge with ID: {file_id} from workspace: {workspace_id}")
     knowledge = await get_or_404(
@@ -280,25 +290,18 @@ async def delete_file_knowledge(
         additional_filters=[KnowledgeFiles.workspace_id == workspace_id]
     )
 
-    # Delete the associated file from storage
-    if os.path.exists(knowledge.file_path):
-        os.remove(knowledge.file_path)
-        logger.info(f"Deleted file at path: {knowledge.file_path}")
+    # Delete from vector store
+    success_status = delete_vectors(vector_id=f"{str(workspace_id)}_{str(file_id)}")
+    if not success_status:
+        logger.warning(f"Failed to delete vectors for file {file_id}")
 
-        # delete vector from store
-        success_status = delete_vectors(vector_id=f"{str(workspace_id)}_{str(file_id)}")
-        if not success_status:
-            return error(
-                message="Failed to delete vector store",
-                code=ErrorCode.INTERNAL_SERVER_ERROR,
-                status_code=500,
-                severity=ErrorSeverity.HIGH,
-                context={"workspace_id": workspace_id, "error_details": "Unable to delete vectors"},
-                request=request
-            )
-
-    else:
-        logger.warning(f"File at path {knowledge.file_path} does not exist")
+    # Delete the physical file from storage
+    if knowledge.file_path:
+        file_deleted = await delete_file(knowledge.file_path)
+        if file_deleted:
+            logger.info(f"Deleted file at path: {knowledge.file_path}")
+        else:
+            logger.warning(f"File at path {knowledge.file_path} does not exist or could not be deleted")
 
     await db.delete(knowledge)
     logger.info(f"File knowledge with ID: {file_id} deleted successfully")
