@@ -8,6 +8,7 @@ from src.utils.logger import logger
 from src.utils.helper import web_page_scraper
 from src.utils.vector_store import add_to_vector_store, delete_vectors
 from src.utils.response_utils import success, error, created
+from src.utils.route_decorators import db_transaction_handler, require_permissions
 from src.utils.slug_utils import generate_workspace_slug, generate_unique_slug
 from src.utils.workspace_utils import resolve_workspace, verify_workspace_membership
 from src.utils.auth_utils import verify_current_user
@@ -54,6 +55,7 @@ async def get_status(request: Request):
 # Get all workspaces for user
 # -------------------------
 @router.get("/all")
+@db_transaction_handler("get workspaces", auto_commit=False)
 async def get_workspaces(
     request: Request,
     db: AsyncSession = Depends(get_async_db),
@@ -61,199 +63,166 @@ async def get_workspaces(
     user_id = user.get("identity")
     db_user = await verify_current_user(db, user_id)
 
-    try:
-        # Enhanced query to get workspace data with owner info and counts
-        workspaces_query = (
-            select(
-                WorkspaceModel,
-                Users.display_name.label('owner_name'),
-                Users.email.label('owner_email'),
-                func.count(distinct(Website.id)).label('web_knowledge_count'),
-                func.count(distinct(KnowledgeFiles.id)).label('files_count'),
-                func.count(distinct(TextKnowledge.id)).label('text_knowledge_count'),
-                func.count(distinct(WorkspaceMembers.id)).label('members_count')
-            )
-            .join(WorkspaceMembers, WorkspaceMembers.workspace_id == WorkspaceModel.id)
-            .join(Users, Users.id == WorkspaceModel.user_id)
-            .outerjoin(Website, Website.workspace_id == WorkspaceModel.id)
-            .outerjoin(KnowledgeFiles, KnowledgeFiles.workspace_id == WorkspaceModel.id)
-            .outerjoin(TextKnowledge, TextKnowledge.workspace_id == WorkspaceModel.id)
-            .where(WorkspaceMembers.user_id == user_id)
-            .group_by(WorkspaceModel.id, Users.id)
+    # Enhanced query to get workspace data with owner info and counts
+    workspaces_query = (
+        select(
+            WorkspaceModel,
+            Users.display_name.label('owner_name'),
+            Users.email.label('owner_email'),
+            func.count(distinct(Website.id)).label('web_knowledge_count'),
+            func.count(distinct(KnowledgeFiles.id)).label('files_count'),
+            func.count(distinct(TextKnowledge.id)).label('text_knowledge_count'),
+            func.count(distinct(WorkspaceMembers.id)).label('members_count')
         )
+        .join(WorkspaceMembers, WorkspaceMembers.workspace_id == WorkspaceModel.id)
+        .join(Users, Users.id == WorkspaceModel.user_id)
+        .outerjoin(Website, Website.workspace_id == WorkspaceModel.id)
+        .outerjoin(KnowledgeFiles, KnowledgeFiles.workspace_id == WorkspaceModel.id)
+        .outerjoin(TextKnowledge, TextKnowledge.workspace_id == WorkspaceModel.id)
+        .where(WorkspaceMembers.user_id == user_id)
+        .group_by(WorkspaceModel.id, Users.id)
+    )
 
-        result = await db.execute(workspaces_query)
-        workspaces_results = result.all()
+    result = await db.execute(workspaces_query)
+    workspaces_results = result.all()
 
-        workspace_data = []
-        for result_row in workspaces_results:
-            ws = result_row[0]  # WorkspaceModel
-            owner_name = result_row[1]
-            owner_email = result_row[2]
-            web_count = result_row[3] or 0
-            files_count = result_row[4] or 0
-            text_count = result_row[5] or 0
-            members_count = result_row[6] or 0
-            total_knowledge = web_count + files_count + text_count
+    workspace_data = []
+    for result_row in workspaces_results:
+        ws = result_row[0]  # WorkspaceModel
+        owner_name = result_row[1]
+        owner_email = result_row[2]
+        web_count = result_row[3] or 0
+        files_count = result_row[4] or 0
+        text_count = result_row[5] or 0
+        members_count = result_row[6] or 0
+        total_knowledge = web_count + files_count + text_count
 
-            workspace_data.append({
-                "id": str(ws.id),
-                "user_id": str(ws.user_id),
-                "name": ws.name,
-                "slug": ws.slug if hasattr(ws, 'slug') else None,  # Include slug
-                "description": ws.description,
-                "url": ws.url,
-                "created_at": ws.created_at.isoformat() if ws.created_at else None,
-                "updated_at": ws.updated_at.isoformat() if ws.updated_at else None,
-                "owner": {
-                    "name": owner_name,
-                    "email": owner_email
-                },
-                "knowledge_stats": {
-                    "web_knowledge": web_count,
-                    "files": files_count,
-                    "text_knowledge": text_count,
-                    "total": total_knowledge
-                },
-                "members_count": members_count,
-                "status": "active"  # Could be enhanced with actual status logic
-            })
+        workspace_data.append({
+            "id": str(ws.id),
+            "user_id": str(ws.user_id),
+            "name": ws.name,
+            "slug": ws.slug if hasattr(ws, 'slug') else None,
+            "description": ws.description,
+            "url": ws.url,
+            "created_at": ws.created_at.isoformat() if ws.created_at else None,
+            "updated_at": ws.updated_at.isoformat() if ws.updated_at else None,
+            "owner": {
+                "name": owner_name,
+                "email": owner_email
+            },
+            "knowledge_stats": {
+                "web_knowledge": web_count,
+                "files": files_count,
+                "text_knowledge": text_count,
+                "total": total_knowledge
+            },
+            "members_count": members_count,
+            "status": "active"
+        })
 
-        return success(
-            data={"workspaces": workspace_data, "total_count": len(workspace_data)},
-            request=request,
-            message=f"Retrieved {len(workspace_data)} workspaces successfully"
-        )
-
-    except Exception as e:
-        logger.exception("Error fetching workspaces")
-        return error(
-            message="Failed to retrieve workspaces",
-            code=ErrorCode.INTERNAL_SERVER_ERROR,
-            status_code=500,
-            severity=ErrorSeverity.HIGH,
-            request=request
-        )
+    # Return raw data - decorator handles success response
+    return {"workspaces": workspace_data, "total_count": len(workspace_data)}
 
 # -------------------------
 # Get workspace by ID
 # -------------------------
 @router.get("/{workspace_id}")
+@db_transaction_handler("get workspace by id", auto_commit=False)
 async def get_workspace_by_id(workspace_id: str, request: Request, db: AsyncSession = Depends(get_async_db), user: dict = Depends(get_current_user)):
     user_id = user.get("identity")
     db_user = await verify_current_user(db, user_id)
 
-    try:
-        workspace, membership = await verify_workspace_membership(db, UUID(workspace_id), user_id)
+    workspace, membership = await verify_workspace_membership(db, UUID(workspace_id), user_id)
 
-        # Get brand voice data
-        result = await db.execute(select(BrandVoice).where(BrandVoice.workspace_id == workspace_id))
-        brand_voice = result.scalar_one_or_none()
+    # Get brand voice data
+    result = await db.execute(select(BrandVoice).where(BrandVoice.workspace_id == workspace_id))
+    brand_voice = result.scalar_one_or_none()
 
-        # Get comprehensive analytics with knowledge counts and content metrics
-        # Knowledge counts
-        result = await db.execute(select(func.count(Website.id)).where(Website.workspace_id == workspace_id))
-        web_count = result.scalar() or 0
+    # Get comprehensive analytics
+    result = await db.execute(select(func.count(Website.id)).where(Website.workspace_id == workspace_id))
+    web_count = result.scalar() or 0
 
-        result = await db.execute(select(func.count(KnowledgeFiles.id)).where(KnowledgeFiles.workspace_id == workspace_id))
-        files_count = result.scalar() or 0
+    result = await db.execute(select(func.count(KnowledgeFiles.id)).where(KnowledgeFiles.workspace_id == workspace_id))
+    files_count = result.scalar() or 0
 
-        result = await db.execute(select(func.count(TextKnowledge.id)).where(TextKnowledge.workspace_id == workspace_id))
-        text_count = result.scalar() or 0
+    result = await db.execute(select(func.count(TextKnowledge.id)).where(TextKnowledge.workspace_id == workspace_id))
+    text_count = result.scalar() or 0
 
-        result = await db.execute(select(func.count(WorkspaceMembers.id)).where(WorkspaceMembers.workspace_id == workspace_id))
-        members_count = result.scalar() or 0
+    result = await db.execute(select(func.count(WorkspaceMembers.id)).where(WorkspaceMembers.workspace_id == workspace_id))
+    members_count = result.scalar() or 0
 
-        # Content analytics - word counts
-        web_word_query = select(
-            func.sum(Website.word_count).label('total_words'),
-            func.avg(Website.word_count).label('avg_words')
-        ).where(Website.workspace_id == workspace_id)
-        result = await db.execute(web_word_query)
-        web_word_stats = result.first()
+    # Content analytics - word counts
+    web_word_query = select(
+        func.sum(Website.word_count).label('total_words'),
+        func.avg(Website.word_count).label('avg_words')
+    ).where(Website.workspace_id == workspace_id)
+    result = await db.execute(web_word_query)
+    web_word_stats = result.first()
 
-        file_word_query = select(
-            func.sum(KnowledgeFiles.word_count).label('total_words'),
-            func.avg(KnowledgeFiles.word_count).label('avg_words')
-        ).where(KnowledgeFiles.workspace_id == workspace_id)
-        result = await db.execute(file_word_query)
-        file_word_stats = result.first()
+    file_word_query = select(
+        func.sum(KnowledgeFiles.word_count).label('total_words'),
+        func.avg(KnowledgeFiles.word_count).label('avg_words')
+    ).where(KnowledgeFiles.workspace_id == workspace_id)
+    result = await db.execute(file_word_query)
+    file_word_stats = result.first()
 
-        total_web_words = int(web_word_stats.total_words or 0)
-        avg_web_words = int(web_word_stats.avg_words or 0)
-        total_file_words = int(file_word_stats.total_words or 0)
-        avg_file_words = int(file_word_stats.avg_words or 0)
+    total_web_words = int(web_word_stats.total_words or 0)
+    avg_web_words = int(web_word_stats.avg_words or 0)
+    total_file_words = int(file_word_stats.total_words or 0)
+    avg_file_words = int(file_word_stats.avg_words or 0)
 
-        # Calculate total content metrics
-        total_words = total_web_words + total_file_words
-        estimated_reading_time = total_words // 200  # ~200 words per minute
+    total_words = total_web_words + total_file_words
+    estimated_reading_time = total_words // 200
 
-        workspace_data = {
-            "id": str(workspace.id),
-            "user_id": str(workspace.user_id),
-            "name": workspace.name,
-            "slug": workspace.slug if hasattr(workspace, 'slug') else None,  # Include slug
-            "description": workspace.description,
-            "url": workspace.url,
-            "created_at": workspace.created_at.isoformat() if workspace.created_at else None,
-            # Keep backward compatibility with knowledge_stats at root level
-            "knowledge_stats": {
+    workspace_data = {
+        "id": str(workspace.id),
+        "user_id": str(workspace.user_id),
+        "name": workspace.name,
+        "slug": workspace.slug if hasattr(workspace, 'slug') else None,
+        "description": workspace.description,
+        "url": workspace.url,
+        "created_at": workspace.created_at.isoformat() if workspace.created_at else None,
+        "knowledge_stats": {
+            "web_knowledge": web_count,
+            "files": files_count,
+            "text_knowledge": text_count,
+            "total": web_count + files_count + text_count
+        },
+        "analytics": {
+            "knowledge_counts": {
                 "web_knowledge": web_count,
                 "files": files_count,
                 "text_knowledge": text_count,
-                "total": web_count + files_count + text_count
+                "total_knowledge_items": web_count + files_count + text_count
             },
-            # Also provide detailed analytics
-            "analytics": {
-                "knowledge_counts": {
-                    "web_knowledge": web_count,
-                    "files": files_count,
-                    "text_knowledge": text_count,
-                    "total_knowledge_items": web_count + files_count + text_count
-                },
-                "content_metrics": {
-                    "total_words": total_words,
-                    "web_content_words": total_web_words,
-                    "file_content_words": total_file_words,
-                    "avg_web_article_words": avg_web_words,
-                    "avg_file_words": avg_file_words,
-                    "estimated_reading_time_minutes": estimated_reading_time
-                },
-                "team_metrics": {
-                    "total_members": members_count
-                }
+            "content_metrics": {
+                "total_words": total_words,
+                "web_content_words": total_web_words,
+                "file_content_words": total_file_words,
+                "avg_web_article_words": avg_web_words,
+                "avg_file_words": avg_file_words,
+                "estimated_reading_time_minutes": estimated_reading_time
+            },
+            "team_metrics": {
+                "total_members": members_count
             }
         }
+    }
 
-        # Add brand voice data if exists
-        if brand_voice:
-            workspace_data["brand_voice"] = {
-                "about": brand_voice.about,
-                "customer_profile": brand_voice.customer_profile,
-                "selling_position": brand_voice.selling_position,
-                "target_audience": brand_voice.target_audience,
-                "brand_voice": brand_voice.brand_voice,
-                "competitors": brand_voice.competitors,
-                "content_strategy": brand_voice.content_strategy,
-            }
+    # Add brand voice data if exists
+    if brand_voice:
+        workspace_data["brand_voice"] = {
+            "about": brand_voice.about,
+            "customer_profile": brand_voice.customer_profile,
+            "selling_position": brand_voice.selling_position,
+            "target_audience": brand_voice.target_audience,
+            "brand_voice": brand_voice.brand_voice,
+            "competitors": brand_voice.competitors,
+            "content_strategy": brand_voice.content_strategy,
+        }
 
-        return success(
-            data={"workspace": workspace_data},
-            request=request,
-            message="Workspace retrieved successfully"
-        )
-
-    except ResourceNotFoundException:
-        raise
-    except Exception as e:
-        logger.exception(f"Error fetching workspace {workspace_id}")
-        return error(
-            message="Failed to retrieve workspace",
-            code=ErrorCode.INTERNAL_SERVER_ERROR,
-            status_code=500,
-            severity=ErrorSeverity.HIGH,
-            request=request
-        )
+    # Return raw data - decorator handles success response
+    return {"workspace": workspace_data}
 
 
 # -------------------------
@@ -405,6 +374,7 @@ async def get_workspace_by_slug(
 # Create workspace
 # -------------------------
 @router.post("/create")
+@require_permissions("workspace.create", workspace_scoped=False)
 async def create_workspace(
     data: WorkspaceSchema,
     request: Request,
@@ -565,6 +535,7 @@ async def create_workspace(
 # Update workspace
 # -------------------------
 @router.put("/update/{workspace_id}")
+@require_permissions("workspace.update", workspace_scoped=True)
 async def update_workspace(workspace_id: str, data: WorkspaceSchema, request: Request, db: AsyncSession = Depends(get_async_db), user: dict = Depends(get_current_user)):
     user_id = user.get("identity")
     db_user = await verify_current_user(db, user_id)
@@ -629,6 +600,7 @@ async def update_workspace(workspace_id: str, data: WorkspaceSchema, request: Re
 # Delete workspace
 # -------------------------
 @router.delete("/delete/{workspace_id}")
+@require_permissions("workspace.delete", workspace_scoped=True)
 async def delete_workspace(workspace_id: str, request: Request, db: AsyncSession = Depends(get_async_db), user: dict = Depends(get_current_user)):
     user_id = user.get("identity")
     db_user = await verify_current_user(db, user_id)

@@ -4,6 +4,7 @@ from sqlalchemy import select
 
 from src.utils.logger import logger
 from src.utils.response_utils import success, error
+from src.utils.route_decorators import db_transaction_handler, require_permissions
 from src.utils.auth_utils import verify_current_user
 from src.utils.workspace_utils import verify_workspace_membership
 from src.api.database.async_database import get_async_db
@@ -20,6 +21,8 @@ router = APIRouter()
 # Update brand voice
 # -------------------------
 @router.put("/brand-voice")
+@db_transaction_handler("update brand voice", "Brand voice updated successfully")
+@require_permissions("workspace.update", workspace_scoped=True)
 async def update_brand_voice(
     brand_data: BrandSchema,
     request: Request,
@@ -43,66 +46,48 @@ async def update_brand_voice(
     # Verify user exists (using auth_utils)
     db_user = await verify_current_user(db, user_id)
 
-    try:
-        # Verify workspace access (using workspace_utils)
-        workspace, membership = await verify_workspace_membership(db, workspace_id, user_id)
+    # Verify workspace access (using workspace_utils)
+    workspace, membership = await verify_workspace_membership(db, workspace_id, user_id)
 
-        # Get or create brand voice
-        result = await db.execute(select(BrandVoice).where(BrandVoice.workspace_id == workspace_id))
-        brand_voice = result.scalar_one_or_none()
+    # Get or create brand voice
+    result = await db.execute(select(BrandVoice).where(BrandVoice.workspace_id == workspace_id))
+    brand_voice = result.scalar_one_or_none()
 
-        if brand_voice:
-            # Update existing brand voice
-            brand_voice.about = brand_data.about
-            brand_voice.customer_profile = brand_data.customer_profile
-            brand_voice.selling_position = brand_data.selling_position
-            brand_voice.target_audience = brand_data.target_audience
-            brand_voice.brand_voice = brand_data.brand_voice
-            brand_voice.competitors = brand_data.competitors
-            brand_voice.content_strategy = brand_data.content_pillar
-        else:
-            # Create new brand voice
-            brand_voice = BrandVoice(
-                workspace_id=workspace_id,
-                about=brand_data.about,
-                customer_profile=brand_data.customer_profile,
-                selling_position=brand_data.selling_position,
-                target_audience=brand_data.target_audience,
-                brand_voice=brand_data.brand_voice,
-                competitors=brand_data.competitors,
-                content_strategy=brand_data.content_pillar,
-            )
-            db.add(brand_voice)
-
-        await db.commit()
-        await db.refresh(brand_voice)
-
-        return success(
-            data={
-                "brand_voice": {
-                    "about": brand_voice.about,
-                    "customer_profile": brand_voice.customer_profile,
-                    "selling_position": brand_voice.selling_position,
-                    "target_audience": brand_voice.target_audience,
-                    "brand_voice": brand_voice.brand_voice,
-                    "competitors": brand_voice.competitors,
-                    "content_strategy": brand_voice.content_strategy,
-                }
-            },
-            request=request,
-            message="Brand voice updated successfully"
+    if brand_voice:
+        # Update existing brand voice
+        brand_voice.about = brand_data.about
+        brand_voice.customer_profile = brand_data.customer_profile
+        brand_voice.selling_position = brand_data.selling_position
+        brand_voice.target_audience = brand_data.target_audience
+        brand_voice.brand_voice = brand_data.brand_voice
+        brand_voice.competitors = brand_data.competitors
+        brand_voice.content_strategy = brand_data.content_pillar
+    else:
+        # Create new brand voice
+        brand_voice = BrandVoice(
+            workspace_id=workspace_id,
+            about=brand_data.about,
+            customer_profile=brand_data.customer_profile,
+            selling_position=brand_data.selling_position,
+            target_audience=brand_data.target_audience,
+            brand_voice=brand_data.brand_voice,
+            competitors=brand_data.competitors,
+            content_strategy=brand_data.content_pillar,
         )
+        db.add(brand_voice)
 
-    except ResourceNotFoundException:
-        raise
-    except Exception as e:
-        logger.exception(f"Error updating brand voice for workspace {workspace_id}")
-        await db.rollback()
-        return error(
-            message="Failed to update brand voice",
-            code=ErrorCode.INTERNAL_SERVER_ERROR,
-            status_code=500,
-            severity=ErrorSeverity.HIGH,
-            context={"workspace_id": workspace_id, "error_details": str(e)},
-            request=request
-        )
+    await db.flush()
+    await db.refresh(brand_voice)
+
+    # Return raw data - decorator handles commit and success response
+    return {
+        "brand_voice": {
+            "about": brand_voice.about,
+            "customer_profile": brand_voice.customer_profile,
+            "selling_position": brand_voice.selling_position,
+            "target_audience": brand_voice.target_audience,
+            "brand_voice": brand_voice.brand_voice,
+            "competitors": brand_voice.competitors,
+            "content_strategy": brand_voice.content_strategy,
+        }
+    }

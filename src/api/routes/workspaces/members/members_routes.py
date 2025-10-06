@@ -15,13 +15,15 @@ from sqlalchemy import select
 from src.api.database.async_database import get_async_db
 from src.utils.helper import web_page_scraper
 from src.utils.response_utils import success, error, created
+from src.utils.route_decorators import db_transaction_handler, require_permissions
 from src.api.schema.response_schemas import ErrorCode, ErrorSeverity
 from src.api.middleware.exceptions import (
     DuplicateResourceException,
     ResourceNotFoundException,
     WrextExternalServiceException,
     WrextValidationException,
-    WrextAuthenticationException
+    WrextAuthenticationException,
+    WrextAPIException
 )
 from datetime import datetime, timezone
 from src.api.security.dependencies import get_current_user
@@ -34,6 +36,8 @@ router = APIRouter(
 
 
 @router.post("/{workspace_id}/add", summary="Add a member to a workspace")
+@db_transaction_handler("add member to workspace", auto_commit=True)
+@require_permissions("member.invite", workspace_scoped=True)
 async def add_member_to_workspace(
     workspace_id: str,
     request: Request,
@@ -43,52 +47,50 @@ async def add_member_to_workspace(
     """
     Add a member to a workspace.
     """
-    try:
-        # Check if workspace exists
-        result = await db.execute(
-            select(WorkspaceModel).where(
-                WorkspaceModel.id == workspace_id,
-                WorkspaceModel.user_id == user.get("identity")
-            )
+    # Check if workspace exists
+    result = await db.execute(
+        select(WorkspaceModel).where(
+            WorkspaceModel.id == workspace_id,
+            WorkspaceModel.user_id == user.get("identity")
         )
-        workspace = result.scalar_one_or_none()
-        if not workspace:
-            raise ResourceNotFoundException(f"Workspace with id {workspace_id} not found")
+    )
+    workspace = result.scalar_one_or_none()
+    if not workspace:
+        raise ResourceNotFoundException(
+            message=f"Workspace with id {workspace_id} not found",
+            resource_type="workspace",
+            resource_id=workspace_id
+        )
 
-        # Check if user is already a member
-        result = await db.execute(
-            select(WorkspaceMembers).where(
-                WorkspaceMembers.workspace_id == workspace_id,
-                WorkspaceMembers.user_id == user.get("identity")
-            )
+    # Check if user is already a member
+    result = await db.execute(
+        select(WorkspaceMembers).where(
+            WorkspaceMembers.workspace_id == workspace_id,
+            WorkspaceMembers.user_id == user.get("identity")
         )
-        existing_member = result.scalar_one_or_none()
-        if existing_member:
-            raise DuplicateResourceException("User is already a member of this workspace")
+    )
+    existing_member = result.scalar_one_or_none()
+    if existing_member:
+        raise DuplicateResourceException(
+            message="User is already a member of this workspace",
+            resource_type="workspace_member",
+            conflicting_field="user_id",
+            conflicting_value=str(user.get("identity"))
+        )
 
-        # Add user as a member
-        new_member = WorkspaceMembers(
-            user_id=user.get("identity"),
-            workspace_id=workspace_id,
-            status="active",
-            joined_at=datetime.now(timezone.utc),
-            last_activity_at=datetime.now(timezone.utc)
-        )
-        db.add(new_member)
-        await db.commit()
-        await db.refresh(new_member)
+    # Add user as a member
+    new_member = WorkspaceMembers(
+        user_id=user.get("identity"),
+        workspace_id=workspace_id,
+        status="active",
+        joined_at=datetime.now(timezone.utc),
+        last_activity_at=datetime.now(timezone.utc)
+    )
+    db.add(new_member)
+    await db.flush()
+    await db.refresh(new_member)
 
-        return created(
-            message="User added to workspace successfully",
-            data={"user_id": str(user.get("identity")), "workspace_id": workspace_id},
-            request=request
-        )
-    except Exception as e:
-        logger.exception("Error fetching workspaces")
-        return error(
-            message="Failed to retrieve workspaces",
-            code=ErrorCode.INTERNAL_SERVER_ERROR,
-            status_code=500,
-            severity=ErrorSeverity.HIGH,
-            request=request
-        )
+    return {
+        "data": {"user_id": str(user.get("identity")), "workspace_id": workspace_id},
+        "message": "User added to workspace successfully"
+    }

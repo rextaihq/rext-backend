@@ -11,6 +11,7 @@ from src.api.schema.audit_schema import AuditStatus
 from src.utils.response_utils import success
 from src.api.middleware.exceptions import ResourceNotFoundException, WrextValidationException
 from src.utils.logger import logger
+from src.utils.route_decorators import db_transaction_handler
 from .helpers import build_audit_query, format_audit_log
 
 
@@ -18,6 +19,7 @@ router = APIRouter()
 
 
 @router.get("/", response_model=dict)
+@db_transaction_handler("list audit logs", "Audit logs retrieved successfully", auto_commit=False)
 async def list_audit_logs(
     request: Request,
     user_id: Optional[str] = Query(None, description="Filter by user ID"),
@@ -56,61 +58,48 @@ async def list_audit_logs(
     Returns:
     - Paginated list of audit logs
     """
-    try:
-        # Build query with filters
-        query = await build_audit_query(
-            db=db,
-            user_id=user_id,
-            username=username,
-            user_email=user_email,
-            action=action,
-            resource_type=resource_type,
-            resource_id=resource_id,
-            workspace_id=workspace_id,
-            status_filter=status_filter,
-            date_from=date_from,
-            date_to=date_to
-        )
+    # Build query with filters
+    query = await build_audit_query(
+        db=db,
+        user_id=user_id,
+        username=username,
+        user_email=user_email,
+        action=action,
+        resource_type=resource_type,
+        resource_id=resource_id,
+        workspace_id=workspace_id,
+        status_filter=status_filter,
+        date_from=date_from,
+        date_to=date_to
+    )
 
-        # Get total count
-        count_query = select(func.count()).select_from(AuditLog)
-        # Apply same filters for count
-        for whereclause in query.whereclause.clauses if hasattr(query.whereclause, 'clauses') else [query.whereclause] if query.whereclause is not None else []:
-            count_query = count_query.where(whereclause)
-        count_result = await db.execute(count_query)
-        total_count = count_result.scalar() or 0
+    # Get total count
+    count_query = select(func.count()).select_from(AuditLog)
+    # Apply same filters for count
+    for whereclause in query.whereclause.clauses if hasattr(query.whereclause, 'clauses') else [query.whereclause] if query.whereclause is not None else []:
+        count_query = count_query.where(whereclause)
+    count_result = await db.execute(count_query)
+    total_count = count_result.scalar() or 0
 
-        # Apply ordering and pagination
-        query = query.order_by(AuditLog.created_at.desc()).offset(offset).limit(limit)
-        result = await db.execute(query)
-        logs = result.scalars().all()
+    # Apply ordering and pagination
+    query = query.order_by(AuditLog.created_at.desc()).offset(offset).limit(limit)
+    result = await db.execute(query)
+    logs = result.scalars().all()
 
-        # Format response
-        logs_data = [format_audit_log(log, include_details=False) for log in logs]
+    # Format response
+    logs_data = [format_audit_log(log, include_details=False) for log in logs]
 
-        return success(
-            data={
-                "logs": logs_data,
-                "total": total_count,
-                "limit": limit,
-                "offset": offset,
-                "has_more": (offset + limit) < total_count
-            },
-            request=request,
-            message=f"Retrieved {len(logs_data)} audit log(s)"
-        )
-
-    except (WrextValidationException, HTTPException):
-        raise
-    except Exception as e:
-        logger.error(f"Error listing audit logs: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to retrieve audit logs"
-        )
+    return {
+        "logs": logs_data,
+        "total": total_count,
+        "limit": limit,
+        "offset": offset,
+        "has_more": (offset + limit) < total_count
+    }
 
 
 @router.get("/{audit_log_id}", response_model=dict)
+@db_transaction_handler("get audit log", "Audit log retrieved successfully", auto_commit=False)
 async def get_audit_log(
     request: Request,
     audit_log_id: str,
@@ -129,31 +118,17 @@ async def get_audit_log(
     Returns:
     - Complete audit log entry with change tracking
     """
-    try:
-        # Get audit log
-        result = await db.execute(select(AuditLog).where(AuditLog.id == audit_log_id))
-        log = result.scalar_one_or_none()
+    # Get audit log
+    result = await db.execute(select(AuditLog).where(AuditLog.id == audit_log_id))
+    log = result.scalar_one_or_none()
 
-        if not log:
-            raise ResourceNotFoundException(
-                resource="audit_log",
-                identifier=audit_log_id
-            )
-
-        # Format with full details
-        log_data = format_audit_log(log, include_details=True)
-
-        return success(
-            data=log_data,
-            request=request,
-            message="Audit log retrieved successfully"
+    if not log:
+        raise ResourceNotFoundException(
+            resource="audit_log",
+            identifier=audit_log_id
         )
 
-    except (ResourceNotFoundException, HTTPException):
-        raise
-    except Exception as e:
-        logger.error(f"Error retrieving audit log {audit_log_id}: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to retrieve audit log"
-        )
+    # Format with full details
+    log_data = format_audit_log(log, include_details=True)
+
+    return log_data

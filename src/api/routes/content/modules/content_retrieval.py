@@ -6,6 +6,7 @@ from uuid import UUID
 
 from src.utils.logger import logger
 from src.utils.response_utils import success, error
+from src.utils.route_decorators import db_transaction_handler
 from src.api.database.async_database import get_async_db
 from src.api.security.dependencies import get_current_user
 from src.api.middleware.exceptions import ResourceNotFoundException
@@ -20,6 +21,7 @@ router = APIRouter()
 # List Content for Workspace
 # -------------------------
 @router.get("/")
+@db_transaction_handler("list content", auto_commit=False)
 async def list_content(
     request: Request,
     workspace_id: str,
@@ -46,66 +48,55 @@ async def list_content(
     # Verify access
     workspace = await verify_workspace_access(db, workspace_id, user_id)
 
-    try:
-        # Build query
-        query = select(Content).where(
-            Content.workspace_id == workspace.id,
-            Content.deleted_at == None
-        )
+    # Build query
+    query = select(Content).where(
+        Content.workspace_id == workspace.id,
+        Content.deleted_at == None
+    )
 
-        # Filter by status if provided
-        if status:
-            query = query.where(Content.status == status)
+    # Filter by status if provided
+    if status:
+        query = query.where(Content.status == status)
 
-        # Get total count
-        count_query = select(func.count()).select_from(Content).where(
-            Content.workspace_id == workspace.id,
-            Content.deleted_at == None
-        )
-        if status:
-            count_query = count_query.where(Content.status == status)
+    # Get total count
+    count_query = select(func.count()).select_from(Content).where(
+        Content.workspace_id == workspace.id,
+        Content.deleted_at == None
+    )
+    if status:
+        count_query = count_query.where(Content.status == status)
 
-        count_result = await db.execute(count_query)
-        total_count = count_result.scalar()
+    count_result = await db.execute(count_query)
+    total_count = count_result.scalar()
 
-        # Apply pagination and ordering
-        query = query.order_by(desc(Content.created_at)).offset(offset).limit(limit)
-        result = await db.execute(query)
-        content_items = result.scalars().all()
+    # Apply pagination and ordering
+    query = query.order_by(desc(Content.created_at)).offset(offset).limit(limit)
+    result = await db.execute(query)
+    content_items = result.scalars().all()
 
-        # Build response
-        content_list = [
-            _build_content_response(content, include_metadata, include_seo)
-            for content in content_items
-        ]
+    # Build response
+    content_list = [
+        _build_content_response(content, include_metadata, include_seo)
+        for content in content_items
+    ]
 
-        logger.info(f"Listed {len(content_list)} content items for workspace {workspace_id}")
+    logger.info(f"Listed {len(content_list)} content items for workspace {workspace_id}")
 
-        return success(
-            data={
-                "content": content_list,
-                "total_count": total_count,
-                "workspace_id": str(workspace.id),
-                "limit": limit,
-                "offset": offset
-            },
-            request=request,
-            message=f"Retrieved {len(content_list)} content items"
-        )
-
-    except Exception as e:
-        logger.error(f"Error listing content for workspace {workspace_id}: {str(e)}")
-        return error(
-            message="Failed to retrieve content list",
-            request=request,
-            status_code=500
-        )
+    # Return raw data - decorator handles success response
+    return {
+        "content": content_list,
+        "total_count": total_count,
+        "workspace_id": str(workspace.id),
+        "limit": limit,
+        "offset": offset
+    }
 
 
 # -------------------------
 # Get Single Content by ID
 # -------------------------
 @router.get("/{content_id}")
+@db_transaction_handler("get content", "Content retrieved successfully", auto_commit=False)
 async def get_content(
     content_id: UUID,
     request: Request,
@@ -121,39 +112,25 @@ async def get_content(
     # Verify workspace access
     workspace = await verify_workspace_access(db, workspace_id, user_id)
 
-    try:
-        # Get content
-        result = await db.execute(
-            select(Content).where(
-                Content.id == content_id,
-                Content.workspace_id == workspace.id,
-                Content.deleted_at == None
-            )
+    # Get content
+    result = await db.execute(
+        select(Content).where(
+            Content.id == content_id,
+            Content.workspace_id == workspace.id,
+            Content.deleted_at == None
         )
-        content = result.scalar_one_or_none()
+    )
+    content = result.scalar_one_or_none()
 
-        if not content:
-            raise ResourceNotFoundException(
-                resource_type="Content",
-                resource_id=str(content_id)
-            )
-
-        content_data = _build_content_response(content, include_metadata, include_seo)
-
-        logger.info(f"Retrieved content {content_id} from workspace {workspace_id}")
-
-        return success(
-            data={"content": content_data},
-            request=request,
-            message="Content retrieved successfully"
+    if not content:
+        raise ResourceNotFoundException(
+            resource_type="Content",
+            resource_id=str(content_id)
         )
 
-    except ResourceNotFoundException:
-        raise
-    except Exception as e:
-        logger.error(f"Error retrieving content {content_id}: {str(e)}")
-        return error(
-            message="Failed to retrieve content",
-            request=request,
-            status_code=500
-        )
+    content_data = _build_content_response(content, include_metadata, include_seo)
+
+    logger.info(f"Retrieved content {content_id} from workspace {workspace_id}")
+
+    # Return raw data - decorator handles success response
+    return {"content": content_data}

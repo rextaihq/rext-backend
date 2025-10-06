@@ -9,6 +9,7 @@ from src.api.models.audit_models.audit_logs import AuditLog
 from src.utils.response_utils import success
 from src.api.middleware.exceptions import WrextValidationException
 from src.utils.logger import logger
+from src.utils.route_decorators import db_transaction_handler
 from .helpers import build_audit_query, format_audit_log
 
 
@@ -16,6 +17,7 @@ router = APIRouter()
 
 
 @router.get("/user/my-logs", response_model=dict)
+@db_transaction_handler("get user audit logs", "User audit logs retrieved successfully", auto_commit=False)
 async def get_my_audit_logs(
     request: Request,
     action: Optional[str] = Query(None, description="Filter by action"),
@@ -43,52 +45,38 @@ async def get_my_audit_logs(
     Returns:
     - Paginated list of user's audit logs
     """
-    try:
-        user_id = current_user.get("identity")
+    user_id = current_user.get("identity")
 
-        # Build query with user filter
-        query = await build_audit_query(
-            db=db,
-            user_id=user_id,
-            action=action,
-            resource_type=resource_type,
-            date_from=date_from,
-            date_to=date_to
-        )
+    # Build query with user filter
+    query = await build_audit_query(
+        db=db,
+        user_id=user_id,
+        action=action,
+        resource_type=resource_type,
+        date_from=date_from,
+        date_to=date_to
+    )
 
-        # Get total count
-        count_query = select(func.count()).select_from(AuditLog)
-        # Apply same filters for count
-        for whereclause in query.whereclause.clauses if hasattr(query.whereclause, 'clauses') else [query.whereclause] if query.whereclause is not None else []:
-            count_query = count_query.where(whereclause)
-        count_result = await db.execute(count_query)
-        total_count = count_result.scalar() or 0
+    # Get total count
+    count_query = select(func.count()).select_from(AuditLog)
+    # Apply same filters for count
+    for whereclause in query.whereclause.clauses if hasattr(query.whereclause, 'clauses') else [query.whereclause] if query.whereclause is not None else []:
+        count_query = count_query.where(whereclause)
+    count_result = await db.execute(count_query)
+    total_count = count_result.scalar() or 0
 
-        # Apply ordering and pagination
-        query = query.order_by(AuditLog.created_at.desc()).offset(offset).limit(limit)
-        result = await db.execute(query)
-        logs = result.scalars().all()
+    # Apply ordering and pagination
+    query = query.order_by(AuditLog.created_at.desc()).offset(offset).limit(limit)
+    result = await db.execute(query)
+    logs = result.scalars().all()
 
-        # Format response (no sensitive details for users)
-        logs_data = [format_audit_log(log, include_details=False) for log in logs]
+    # Format response (no sensitive details for users)
+    logs_data = [format_audit_log(log, include_details=False) for log in logs]
 
-        return success(
-            data={
-                "logs": logs_data,
-                "total": total_count,
-                "limit": limit,
-                "offset": offset,
-                "has_more": (offset + limit) < total_count
-            },
-            request=request,
-            message=f"Retrieved {len(logs_data)} audit log(s)"
-        )
-
-    except (WrextValidationException, HTTPException):
-        raise
-    except Exception as e:
-        logger.error(f"Error retrieving user audit logs: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to retrieve audit logs"
-        )
+    return {
+        "logs": logs_data,
+        "total": total_count,
+        "limit": limit,
+        "offset": offset,
+        "has_more": (offset + limit) < total_count
+    }

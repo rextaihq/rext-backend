@@ -68,10 +68,43 @@ def get_users(
 
 
 @router.delete("/delete/{user_id}")
-def delete_user(user_id: str, request: Request, db: Session = Depends(get_db)):
+def delete_user(
+    user_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
     """
     Soft delete a user by setting deleted_at timestamp
+    Requires user.delete permission (super_admin only)
     """
+    # Check if user has permission to delete users (sync permission check)
+    from src.api.models.user_models.permissions import Permission
+    from src.api.models.user_models.role_permissions import RolePermission
+    from src.api.models.user_models.user_roles import UserRole
+    from src.api.middleware.exceptions import WrextAuthorizationException
+
+    user_uuid = uuid.UUID(current_user.get("identity"))
+
+    # Check user.delete permission
+    permission_check = (
+        db.query(Permission)
+        .join(RolePermission, RolePermission.permission_id == Permission.id)
+        .join(UserRole, UserRole.role_id == RolePermission.role_id)
+        .filter(UserRole.user_id == user_uuid)
+        .filter(Permission.name == "user.delete")
+        .first()
+    )
+
+    if not permission_check:
+        return error(
+            message="Missing required permission: user.delete",
+            code=ErrorCode.AUTHORIZATION_ERROR,
+            status_code=403,
+            severity=ErrorSeverity.HIGH,
+            context={"required_permission": "user.delete"},
+            request=request
+        )
     try:
         db_user = db.query(Users).filter(Users.id == user_id).first()
         if not db_user:

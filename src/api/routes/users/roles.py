@@ -11,7 +11,8 @@ from src.api.models.user_models.role_permissions import RolePermission
 from src.api.models.workspace_models.workspace_model import WorkspaceModel
 from src.api.models.workspace_models.workspace_member import WorkspaceMembers
 from src.api.database.database import get_db
-from src.utils.response_utils import success
+from src.utils.response_utils import success, error
+from src.api.schema.response_schemas import ErrorCode, ErrorSeverity
 from datetime import datetime
 
 router = APIRouter()
@@ -216,22 +217,26 @@ def revoke_role_from_user(
         ).first() is not None
 
         if not is_user_admin:
-            # Check for user.revoke_role permission
+            # Check for user.manage_roles permission
             has_permission = (
                 db.query(Permission.name)
                 .join(RolePermission, RolePermission.permission_id == Permission.id)
                 .join(UserRole, UserRole.role_id == RolePermission.role_id)
                 .filter(
                     UserRole.user_id == assigner_id,
-                    Permission.name == "user.revoke_role"
+                    Permission.name == "user.manage_roles"
                 )
                 .first()
             )
 
             if not has_permission:
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail="Insufficient permissions. Required: user.revoke_role or admin role"
+                return error(
+                    message="Missing required permission: user.manage_roles",
+                    code=ErrorCode.AUTHORIZATION_ERROR,
+                    status_code=403,
+                    severity=ErrorSeverity.HIGH,
+                    context={"required_permission": "user.manage_roles"},
+                    request=request
                 )
 
         # Find the assignment
