@@ -1,4 +1,4 @@
-from src.model.model import load_model
+from src.langgraph_flow.model.model import load_model
 from src.utils.logger import logger
 from sqlalchemy.orm import Session
 from src.api.database.database import get_db

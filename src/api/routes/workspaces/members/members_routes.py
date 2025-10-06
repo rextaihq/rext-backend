@@ -9,7 +9,7 @@ from src.api.models.user_models.users import Users
 from src.utils.vector_store import add_to_vector_store,delete_vectors
 from src.api.models.knowledge_models.knowledge_model import BrandVoice
 from src.api.schema.knowledge_schema import BrandSchema
-from src.model.model import load_model
+from src.langgraph_flow.model.model import load_model
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from src.api.database.async_database import get_async_db

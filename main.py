@@ -1,6 +1,5 @@
 
-# from src.langgraph_flow.flow import create_workflow
-from src.workflow.workflow import CreateWorkflow
+from src.langgraph_flow.flow import create_workflow
 
-workflow = CreateWorkflow()
+workflow = create_workflow()
 graph = workflow.compile()

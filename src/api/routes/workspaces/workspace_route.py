@@ -26,7 +26,7 @@ from src.api.models.user_models.role_permissions import RolePermission
 from src.api.models.user_models.user_roles import UserRole
 from src.api.models.knowledge_models.knowledge_model import BrandVoice
 from src.api.schema.knowledge_schema import BrandSchema
-from src.model.model import load_model
+from src.langgraph_flow.model.model import load_model
 
 router = APIRouter(
     prefix="/workspace",

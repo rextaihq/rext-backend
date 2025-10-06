@@ -10,12 +10,11 @@ from bs4 import BeautifulSoup
 from crawl4ai import AsyncWebCrawler
 from crawl4ai.async_configs import BrowserConfig, CrawlerRunConfig, CacheMode
 from langchain_core.documents import Document
-from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain.retrievers.multi_query import MultiQueryRetriever
 from pydantic import HttpUrl
 
 # === Project-specific imports ===
-from src.model.model import load_model
+from src.langgraph_flow.model.model import load_model
 from src.utils.splitter import split_data
 from src.utils.vector_store import load_vector_store
 
