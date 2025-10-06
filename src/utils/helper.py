@@ -234,3 +234,12 @@ def get_multi_query():
     return MultiQueryRetriever.from_llm(
         retriever=load_vector_store().as_retriever(), llm=load_model()
     )
+
+
+from langchain_community.document_compressors import FlashrankRerank
+
+def get_compressor():
+    """
+    Returns a FlashrankRerank document compressor for reranking retrieved documents.
+    """
+    return FlashrankRerank()
