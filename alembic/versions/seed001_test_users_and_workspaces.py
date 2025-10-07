@@ -76,6 +76,7 @@ class UserRole(Base):
     role_id = sa.Column(sa.dialects.postgresql.UUID(as_uuid=True), nullable=False)
     workspace_id = sa.Column(sa.dialects.postgresql.UUID(as_uuid=True))
     assigned_by_user_id = sa.Column(sa.dialects.postgresql.UUID(as_uuid=True))
+    is_primary = sa.Column(sa.Boolean, default=True)
     assigned_at = sa.Column(sa.TIMESTAMP, nullable=False)
 
 
