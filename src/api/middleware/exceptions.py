@@ -191,7 +191,7 @@ class ResourceNotFoundException(WrextBusinessException):
             else:
                 message = f"{resource_type.title()} not found"
 
-        context = kwargs.get('context', {})
+        context = kwargs.pop('context', {})  # Use pop to remove from kwargs
         context.update({
             "resource_type": resource_type,
             "resource_id": resource_id
@@ -224,7 +224,7 @@ class DuplicateResourceException(WrextBusinessException):
             else:
                 message = f"{resource_type.title()} already exists"
 
-        context = kwargs.get('context', {})
+        context = kwargs.pop('context', {})
         context.update({
             "resource_type": resource_type,
             "conflicting_field": conflicting_field,

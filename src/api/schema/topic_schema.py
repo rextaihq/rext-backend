@@ -28,4 +28,5 @@ class UpdateTopicRequest(BaseModel):
     audience_fit: Optional[List[str]] = None
     why_it_works: Optional[str] = None
     tags: Optional[List[str]] = None
+    scores: Optional[dict] = None
     approved: Optional[bool] = None
