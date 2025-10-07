@@ -135,8 +135,26 @@ async def login_user(
         db.commit()
         db.refresh(db_user)
 
-        # Get role names for response
-        role_names = [ur.role.name for ur in db_user.user_roles if ur.is_primary]
+        # Get role names for response (get all roles, prioritize primary if exists)
+        primary_roles = [ur.role.name for ur in db_user.user_roles if ur.is_primary]
+        all_roles = [ur.role.name for ur in db_user.user_roles if ur.workspace_id is None]
+        role_names = primary_roles if primary_roles else all_roles
+
+        # Get user permissions (global permissions only, same as in auth_service.login_user)
+        from src.api.models.user_models.permissions import Permission
+        from src.api.models.user_models.role_permissions import RolePermission
+        from src.api.models.user_models.user_roles import UserRole
+        
+        permission_names = (
+            db.query(Permission.name)
+            .join(RolePermission, RolePermission.permission_id == Permission.id)
+            .join(UserRole, UserRole.role_id == RolePermission.role_id)
+            .filter(UserRole.user_id == db_user.id)
+            .filter(UserRole.workspace_id == None)  # Global permissions only
+            .distinct()
+            .all()
+        )
+        permissions = [p.name for p in permission_names]
 
         # Return successful login response
         return success(
@@ -146,9 +164,13 @@ async def login_user(
                     "id": str(db_user.id),
                     "username": db_user.username,
                     "email": db_user.email,
+                    "first_name": db_user.first_name,
+                    "last_name": db_user.last_name,
+                    "avatar_url": db_user.avatar_url,
                     "last_login_at": db_user.last_login_at,
                     "login_count": db_user.login_count,
-                    "roles": role_names
+                    "roles": role_names,
+                    "permissions": permissions
                 }
             },
             request=request,

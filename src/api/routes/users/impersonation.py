@@ -8,7 +8,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.api.database.async_database import get_async_db
 from src.api.middleware.exceptions import WrextValidationException
 from src.api.middleware.permissions import is_admin
-from src.api.schema.impersonation_schema import ImpersonateStartRequest
+from src.api.schema.impersonation_schema import (
+    ImpersonateStartRequest,
+    ImpersonationStatusResponse,
+)
 from src.api.security.dependencies import get_current_user
 from src.api.security.token_utils import create_access_token, create_refresh_token
 from src.services.impersonation_service import ImpersonationService
@@ -156,3 +159,41 @@ async def stop_impersonation(
         "roles": original_context["roles"],
         "permissions": original_context["permissions"],
     }
+
+
+@router.get("/impersonate/status", response_model=ImpersonationStatusResponse)
+async def get_impersonation_status(
+    current_user: dict = Depends(get_current_user)
+) -> dict:
+    """
+    Get the current impersonation status.
+    
+    Returns impersonation details if the current user is impersonating someone,
+    or a simple status response if not impersonating.
+    
+    This endpoint reads from the JWT token and does not require database access.
+    """
+    is_impersonating = current_user.get("is_impersonating", False)
+    
+    if not is_impersonating:
+        return {"is_impersonating": False}
+    
+    # Build response with impersonation details from JWT token
+    response = {
+        "is_impersonating": True,
+        "original_user_id": current_user.get("original_user_id"),
+        "impersonated_user_id": current_user.get("identity"),
+        "impersonated_user_email": current_user.get("email"),
+        "impersonated_user_name": current_user.get("username"),
+        "started_at": current_user.get("impersonation_started_at"),
+    }
+    
+    logger.debug(
+        "Impersonation status checked",
+        extra={
+            "is_impersonating": is_impersonating,
+            "impersonated_user_id": response.get("impersonated_user_id"),
+        },
+    )
+    
+    return response

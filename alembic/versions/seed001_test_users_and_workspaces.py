@@ -222,6 +222,7 @@ def upgrade() -> None:
                     user_id=user1_id,
                     role_id=admin_role.id,
                     workspace_id=None,
+                    is_primary=True,
                     assigned_by_user_id=user1_id,
                     assigned_at=now,
                 ))
