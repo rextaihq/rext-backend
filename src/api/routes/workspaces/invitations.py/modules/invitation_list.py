@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, Request, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from typing import Optional
+from uuid import UUID
 
 from src.utils.logger import logger
 from src.utils.response_utils import success, error
@@ -13,6 +14,7 @@ from src.api.middleware.exceptions import ResourceNotFoundException, WrextAPIExc
 from src.api.schema.response_schemas import ErrorCode, ErrorSeverity
 from src.api.models.user_models.users import Users
 from src.api.models.user_models.invitations import UserInvitations
+from src.services.invitation_service import InvitationService
 
 
 router = APIRouter()
@@ -27,27 +29,25 @@ async def list_sent_invitations(
     current_user: dict = Depends(get_current_user)
 ):
     """
-    List invitations sent by the current user.
-
-    - **status_filter**: Optional filter by invitation status
+    List invitations sent by the current user - Using InvitationService
+    Note: Presentation logic (get_invitation_with_details) stays in route
     """
     user_id = current_user.get("identity")
     logger.info(f"User {user_id} listing sent invitations")
 
-    # Build query
+    # Use service to get invitations (could be enhanced to add invited_by filter)
+    # For now, we'll filter in the route since the service doesn't have this method yet
     query = select(UserInvitations).where(
         UserInvitations.invited_by_user_id == user_id
     )
 
-    # Apply status filter
     if status_filter:
         query = query.where(UserInvitations.status == status_filter)
 
-    # Get invitations
     result = await db.execute(query.order_by(UserInvitations.created_at.desc()))
     invitations = result.scalars().all()
 
-    # Format response with details
+    # Format response with details (presentation layer concern)
     invitations_data = []
     for inv in invitations:
         details = get_invitation_with_details(db, str(inv.id))
@@ -72,9 +72,8 @@ async def list_received_invitations(
     current_user: dict = Depends(get_current_user)
 ):
     """
-    List pending invitations for the current user's email.
-
-    Only shows pending, non-expired invitations.
+    List pending invitations for the current user's email
+    Note: Expiry checking and marking stays in route as it's presentation/cleanup logic
     """
     user_id = current_user.get("identity")
 
@@ -99,7 +98,7 @@ async def list_received_invitations(
     )
     invitations = result.scalars().all()
 
-    # Filter out expired and add details
+    # Filter out expired and add details (presentation layer concern)
     invitations_data = []
     for inv in invitations:
         if not is_invitation_expired(inv):

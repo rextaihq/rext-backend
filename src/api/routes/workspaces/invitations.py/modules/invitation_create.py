@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, Request, HTTPException, status, Backgrou
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from datetime import datetime, timezone, timedelta
+from uuid import UUID
 import uuid
 import os
 
@@ -32,6 +33,7 @@ from src.utils.workspace_utils import resolve_and_verify_workspace
 from src.utils.db_utils import get_or_404
 from src.api.models.user_models.roles import Role
 from .helpers import verify_workspace_exists, verify_role_exists
+from src.services.invitation_service import InvitationService
 
 
 router = APIRouter()
@@ -59,14 +61,7 @@ async def create_invitation(
     current_user: dict = Depends(get_current_user)
 ):
     """
-    Create a new invitation for a user to join a workspace.
-
-    - **email**: Email address of the user to invite
-    - **workspace_id**: ID of the workspace
-    - **role_id**: Role to assign to the invited user
-    - **expiry_days**: Days until invitation expires (1-30, default 7)
-
-    Requires: workspace admin/owner OR user.invite permission
+    Create a new invitation for a user to join a workspace - Thin controller using InvitationService
     """
     user_id = current_user.get("identity")
     logger.info(f"User {user_id} creating invitation for {invitation_data.email}")
@@ -74,85 +69,26 @@ async def create_invitation(
     # Verify workspace exists and user has access
     workspace, membership = await resolve_and_verify_workspace(db, str(invitation_data.workspace_id), uuid.UUID(user_id))
 
-    # TODO: Add permission check for user.invite or workspace admin role
-
     # Verify role exists
     role = await get_or_404(db, Role, invitation_data.role_id, "role")
 
-    # Check if invitation already exists for this email + workspace
-    result = await db.execute(
-        select(UserInvitations).where(
-            UserInvitations.email == invitation_data.email.lower(),
-            UserInvitations.workspace_id == invitation_data.workspace_id,
-            UserInvitations.status == "pending"
-        )
-    )
-    existing_invitation = result.scalar_one_or_none()
-
-    if existing_invitation:
-        # Check if expired - if so, revoke it and create new one
-        if is_invitation_expired(existing_invitation):
-            existing_invitation.status = "expired"
-            await db.flush()
-        else:
-            raise DuplicateResourceException(
-                message="An active invitation already exists for this email and workspace",
-                resource_type="invitation",
-                conflicting_field="email",
-                conflicting_value=invitation_data.email
-            )
-
-    # Check if user is already a member
-    # First find if user exists with this email
-    result = await db.execute(
-        select(Users).where(Users.email == invitation_data.email.lower())
-    )
-    existing_user = result.scalar_one_or_none()
-    if existing_user:
-        result = await db.execute(
-            select(WorkspaceMembers).where(
-                WorkspaceMembers.user_id == existing_user.id,
-                WorkspaceMembers.workspace_id == invitation_data.workspace_id
-            )
-        )
-        existing_membership = result.scalar_one_or_none()
-
-        if existing_membership:
-            raise DuplicateResourceException(
-                message="User is already a member of this workspace",
-                resource_type="workspace_member",
-                conflicting_field="user_id",
-                conflicting_value=str(existing_user.id)
-            )
-
-    # Generate invitation token
-    invitation_token = str(uuid.uuid4())
-
-    # Calculate expiry
-    expires_at = datetime.utcnow() + timedelta(days=invitation_data.expiry_days)
-
-    # Create invitation
-    invitation = UserInvitations(
-        email=invitation_data.email.lower(),
-        workspace_id=invitation_data.workspace_id,
-        role_id=invitation_data.role_id,
-        invited_by_user_id=user_id,
-        invitation_token=invitation_token,
-        status="pending",
-        expires_at=expires_at
+    # Use InvitationService to create invitation
+    service = InvitationService(db)
+    invitation = await service.create_invitation(
+        email=invitation_data.email,
+        workspace_id=UUID(str(invitation_data.workspace_id)),
+        role_id=UUID(str(invitation_data.role_id)),
+        invited_by_user_id=UUID(user_id),
+        expiry_days=invitation_data.expiry_days
     )
 
-    db.add(invitation)
-    await db.flush()
-    await db.refresh(invitation)
-
-    # Get inviter details for email
+    # Get inviter details for email (external service concern - stays in route)
     result = await db.execute(select(Users).where(Users.id == user_id))
     inviter = result.scalar_one_or_none()
 
     # Send invitation email in background using custom or default template
     frontend_url = os.getenv("FRONTEND_URL", "http://localhost:3000")
-    invitation_link = f"{frontend_url}/invitations/accept?token={invitation_token}"
+    invitation_link = f"{frontend_url}/invitations/accept?token={invitation.invitation_token}"
 
     # Render email template
     email_content = render_workspace_email(
@@ -178,7 +114,7 @@ async def create_invitation(
 
     logger.info(f"Invitation created: {invitation.id} for {invitation_data.email} to workspace {workspace.name}")
 
-    # Create audit log
+    # Create audit log (audit concern - stays in route)
     create_audit_log(
         db=db,
         user_id=user_id,
@@ -225,23 +161,13 @@ async def create_bulk_invitations(
     current_user: dict = Depends(get_current_user)
 ):
     """
-    Create multiple invitations at once for users to join a workspace.
-
-    - **emails**: List of email addresses (max 50)
-    - **workspace_id**: ID of the workspace
-    - **role_id**: Role to assign to all invited users
-    - **expiry_days**: Days until invitations expire (1-30, default 7)
-
-    Returns a detailed report of successful and failed invitations.
-    Requires: workspace admin/owner OR user.invite permission
+    Create multiple invitations at once - Thin controller using InvitationService
     """
     user_id = current_user.get("identity")
     logger.info(f"User {user_id} creating bulk invitations for {len(invitation_data.emails)} emails")
 
-    # Verify workspace exists
+    # Verify workspace exists and user has access
     workspace = await verify_workspace_exists(db, invitation_data.workspace_id)
-
-    # Check if user has permission to invite to this workspace
     workspace_check, membership_check = await resolve_and_verify_workspace(db, str(invitation_data.workspace_id), uuid.UUID(user_id))
 
     # Verify role exists
@@ -252,83 +178,26 @@ async def create_bulk_invitations(
     inviter = result.scalar_one_or_none()
     inviter_name = inviter.display_name if inviter else "A workspace member"
 
-    # Process each email
+    # Use InvitationService to create invitations
+    service = InvitationService(db)
     results = []
     successful = 0
     failed = 0
 
     for email in invitation_data.emails:
         try:
-            email_lower = email.lower()
-
-            # Check if invitation already exists for this email + workspace
-            result = await db.execute(
-                select(UserInvitations).where(
-                    UserInvitations.email == email_lower,
-                    UserInvitations.workspace_id == invitation_data.workspace_id,
-                    UserInvitations.status == "pending"
-                )
-            )
-            existing_invitation = result.scalar_one_or_none()
-
-            if existing_invitation:
-                # Check if expired - if so, revoke it and create new one
-                if is_invitation_expired(existing_invitation):
-                    existing_invitation.status = "expired"
-                    await db.flush()
-                else:
-                    results.append(BulkInvitationResult(
-                        email=email,
-                        success=False,
-                        error_message="An active invitation already exists for this email"
-                    ))
-                    failed += 1
-                    continue
-
-            # Check if user is already a member
-            result = await db.execute(select(Users).where(Users.email == email_lower))
-            existing_user = result.scalar_one_or_none()
-            if existing_user:
-                result = await db.execute(
-                    select(WorkspaceMembers).where(
-                        WorkspaceMembers.user_id == existing_user.id,
-                        WorkspaceMembers.workspace_id == invitation_data.workspace_id
-                    )
-                )
-                existing_membership = result.scalar_one_or_none()
-
-                if existing_membership:
-                    results.append(BulkInvitationResult(
-                        email=email,
-                        success=False,
-                        error_message="User is already a member of this workspace"
-                    ))
-                    failed += 1
-                    continue
-
-            # Generate invitation token
-            invitation_token = str(uuid.uuid4())
-
-            # Calculate expiry
-            expires_at = datetime.utcnow() + timedelta(days=invitation_data.expiry_days)
-
-            # Create invitation
-            invitation = UserInvitations(
-                email=email_lower,
-                workspace_id=invitation_data.workspace_id,
-                role_id=invitation_data.role_id,
-                invited_by_user_id=user_id,
-                invitation_token=invitation_token,
-                status="pending",
-                expires_at=expires_at
+            # Use service to create invitation (handles all business logic)
+            invitation = await service.create_invitation(
+                email=email,
+                workspace_id=UUID(str(invitation_data.workspace_id)),
+                role_id=UUID(str(invitation_data.role_id)),
+                invited_by_user_id=UUID(user_id),
+                expiry_days=invitation_data.expiry_days
             )
 
-            db.add(invitation)
-            await db.flush()  # Get the ID without committing
-
-            # Send invitation email asynchronously
+            # Send invitation email asynchronously (external service - stays in route)
             frontend_url = os.getenv("FRONTEND_URL", "http://localhost:3000")
-            invitation_url = f"{frontend_url}/accept-invitation?token={invitation_token}"
+            invitation_url = f"{frontend_url}/accept-invitation?token={invitation.invitation_token}"
 
             background_tasks.add_task(
                 send_email,
@@ -353,7 +222,7 @@ async def create_bulk_invitations(
                 """
             )
 
-            # Audit log for each invitation
+            # Audit log for each invitation (audit concern - stays in route)
             create_audit_log(
                 db=db,
                 user_id=user_id,
@@ -364,7 +233,7 @@ async def create_bulk_invitations(
                     "email": email,
                     "workspace_id": str(invitation_data.workspace_id),
                     "role_id": str(invitation_data.role_id),
-                    "expires_at": expires_at.isoformat()
+                    "expires_at": invitation.expires_at.isoformat()
                 }
             )
 

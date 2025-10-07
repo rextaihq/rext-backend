@@ -10,6 +10,7 @@ from src.api.models.topic_models.topic_models import TopicsModel as Topics
 from src.api.database.async_database import get_async_db
 from src.states.schemas import SaveTopicRequestList
 from src.services.topic_enrichment_service import TopicEnrichmentService
+from src.services.topic_service import TopicService
 from src.utils.response_utils import success, error, unauthorized, not_found, no_content
 from src.utils.workspace_utils import resolve_and_verify_workspace
 from src.utils.route_decorators import db_transaction_handler, require_permissions
@@ -157,80 +158,27 @@ async def save_topic(
     """
     user_id = user.get("identity")
 
-    logger.info(f"Enriching and saving {len(data.topics)} topics to DB for user {user_id}...")
-    enrichment_service = TopicEnrichmentService()
-    saved = []
+    # Verify workspace access for first topic (all topics should be in same workspace)
+    if data.topics:
+        first_workspace_id = data.topics[0].workspace_id
+        workspace, membership = await resolve_and_verify_workspace(db, first_workspace_id, uuid.UUID(user_id))
 
-    for save_topic_data in data.topics:
-        try:
-            # Convert SaveTopicRequest to dict for enrichment
-            basic_topic_dict = {
-                "title": save_topic_data.title,
-                "angle": save_topic_data.angle,
-                "description": save_topic_data.description,
-                "channel_fit": save_topic_data.channel_fit,
-                "audience_fit": save_topic_data.audience_fit,
-                "why_it_works": save_topic_data.why_it_works,
-                "tags": save_topic_data.tags,
-                "scores": save_topic_data.scores
-            }
-
-            # Use input params if provided, otherwise use defaults
-            input_params = save_topic_data.input_params or {}
-
-            # Enrich the topic with full structured data
-            enriched_topic = enrichment_service.enrich_topic(basic_topic_dict, input_params)
-
-            # Use the provided ID from frontend, ensuring it's a proper UUID
-            topic_uuid = uuid.UUID(save_topic_data.id) if isinstance(save_topic_data.id, str) else save_topic_data.id
-            enriched_topic.id = topic_uuid
-
-            # Verify workspace access and membership in one call
-            workspace, membership = await resolve_and_verify_workspace(db, save_topic_data.workspace_id, uuid.UUID(user_id))
-
-            # Create database record with fully enriched data
-            db_topic = Topics(
-                id=topic_uuid,
-                workspace_id=workspace.id,
-                title=enriched_topic.title,
-                angle=enriched_topic.angle,
-                description=enriched_topic.description,
-                channel_fit=enriched_topic.channel_fit,
-                audience_fit=enriched_topic.audience_fit,
-                why_it_works=enriched_topic.why_it_works,
-                scores=enriched_topic.scores.model_dump(),
-                tags=enriched_topic.tags,
-                approved=False,  # Explicitly set to false - topics require manual approval
-                approved_at=None,  # Will be set when topic is approved
-                suggested_defaults=enriched_topic.suggested_defaults.model_dump(),
-                goal_alignment=enriched_topic.goal_alignment.model_dump(),
-                content_guidance=enriched_topic.content_guidance.model_dump(),
-                audience_insights=enriched_topic.audience_insights.model_dump(),
-                internal_research_config=enriched_topic.internal_research_config.model_dump(),
-                user_settings=enriched_topic.user_settings.model_dump()
-            )
-            db.add(db_topic)
-            saved.append(db_topic)
-
-        except Exception as topic_err:
-            logger.info(f"Failed to process topic {save_topic_data.id}: {topic_err}")
-            # Continue with other topics rather than failing entirely
-            continue
-
-    if not saved:
-        raise WrextValidationException(
-            message="No topics could be saved successfully",
-            field_errors={"topics": ["All topic saves failed"]}
+        # Use TopicService to create topics
+        service = TopicService(db)
+        saved = await service.create_topics(
+            workspace_id=workspace.id,
+            user_id=uuid.UUID(user_id),
+            topics_data=data.topics
         )
 
-    logger.info(f"Enriched and saved {len(saved)} topics")
+        # Return raw data - decorator handles success response and commit
+        return {
+            "saved_count": len(saved),
+            "saved_topic_ids": [str(topic.id) for topic in saved],
+            "total_requested": len(data.topics)
+        }
 
-    # Return raw data - decorator handles success response and commit
-    return {
-        "saved_count": len(saved),
-        "saved_topic_ids": [str(topic.id) for topic in saved],
-        "total_requested": len(data.topics)
-    }
+    return {"saved_count": 0, "saved_topic_ids": [], "total_requested": 0}
 
 
 @router.get("/get-topic/{topic_id}")
@@ -362,47 +310,25 @@ async def delete_topics(
     """
     user_id = user.get("identity")
 
-    topic_id_list = topic_ids.topic_ids
-    logger.info(f"Attempting to delete {len(topic_id_list)} topics from workspace {workspace_id} by user {user_id}...")
-
     # Verify workspace access and membership in one call
     workspace, membership = await resolve_and_verify_workspace(db, workspace_id, uuid.UUID(user_id))
 
-    # Fetch topics - only from the specified workspace
-    result = await db.execute(select(Topics).where(
-        Topics.id.in_(topic_id_list),
-        Topics.workspace_id == workspace.id
-    ))
-    topics = result.scalars().all()
-
-    if not topics:
-        raise ResourceNotFoundException(
-            message="No topics found for the provided IDs",
-            resource_type="topics",
-            context={"requested_ids": topic_id_list}
-        )
-
-    # Check if all requested topics were found
-    found_ids = [topic.id for topic in topics]
-    missing_ids = [tid for tid in topic_id_list if tid not in found_ids]
-
-    # Delete all found topics
-    deleted_count = 0
-    for topic in topics:
-        await db.delete(topic)
-        deleted_count += 1
-
-    logger.info(f"Successfully deleted {deleted_count} topics")
+    # Use TopicService to delete topics
+    service = TopicService(db)
+    result = await service.delete_topics(
+        topic_ids=topic_ids.topic_ids,
+        workspace_id=workspace.id
+    )
 
     response_data = {
-        "deleted_count": deleted_count,
-        "deleted_ids": found_ids,
-        "requested_count": len(topic_id_list)
+        "deleted_count": result["deleted_count"],
+        "deleted_ids": result["deleted_ids"],
+        "requested_count": len(topic_ids.topic_ids)
     }
 
     # Include missing IDs if any
-    if missing_ids:
-        response_data["missing_ids"] = missing_ids
+    if result["missing_ids"]:
+        response_data["missing_ids"] = result["missing_ids"]
 
     # Return raw data - decorator handles success response and commit
     return response_data
@@ -425,88 +351,32 @@ async def update_topic(
     """
     user_id = user.get("identity")
 
-    topic_id = data.topic_id
-    logger.info(f"Attempting to update topic with ID: {topic_id} in workspace: {workspace_id} by user {user_id}")
-
     # Verify workspace access and membership in one call
     workspace, membership = await resolve_and_verify_workspace(db, workspace_id, uuid.UUID(user_id))
 
-    # Fetch the topic - only from the specified workspace
-    topic = await get_or_404(
-        db,
-        Topics,
-        topic_id,
-        "topic",
-        additional_filters=[Topics.workspace_id == workspace.id]
+    # Check if user is trying to approve topic
+    if data.approved:
+        from src.utils.rbac_utils import require_permission
+        await require_permission(
+            db=db,
+            user_id=uuid.UUID(user_id),
+            permission_name="topic.approve",
+            workspace_id=workspace.id,
+            resource_name="topic"
+        )
+
+    # Use TopicService to update topic
+    service = TopicService(db)
+    topic = await service.update_topic(
+        topic_id=data.topic_id,
+        workspace_id=workspace.id,
+        data=data
     )
-
-    # Track what fields are being updated
-    updated_fields = []
-
-    # Update only the fields that are provided
-    if data.title is not None:
-        topic.title = data.title
-        updated_fields.append("title")
-
-    if data.angle is not None:
-        topic.angle = data.angle
-        updated_fields.append("angle")
-
-    if data.description is not None:
-        topic.description = data.description
-        updated_fields.append("description")
-
-    if data.channel_fit is not None:
-        topic.channel_fit = data.channel_fit
-        updated_fields.append("channel_fit")
-
-    if data.audience_fit is not None:
-        topic.audience_fit = data.audience_fit
-        updated_fields.append("audience_fit")
-
-    if data.why_it_works is not None:
-        topic.why_it_works = data.why_it_works
-        updated_fields.append("why_it_works")
-
-    if data.tags is not None:
-        topic.tags = data.tags
-        updated_fields.append("tags")
-
-    if data.approved is not None:
-        # If topic is being approved for the first time, set approved_at
-        if data.approved and not topic.approved:
-            # Check if user has permission to approve topics
-            from src.utils.rbac_utils import require_permission
-            from uuid import UUID as UUIDType
-            await require_permission(
-                db=db,
-                user_id=UUIDType(user_id),
-                permission_name="topic.approve",
-                workspace_id=workspace.id,
-                resource_name="topic"
-            )
-            topic.approved_at = func.now()
-            updated_fields.append("approved_at")
-        # If topic is being unapproved, clear approved_at
-        elif not data.approved and topic.approved:
-            topic.approved_at = None
-            updated_fields.append("approved_at")
-
-        topic.approved = data.approved
-        updated_fields.append("approved")
-
-    # Always update the timestamp when any field is modified
-    if updated_fields:
-        topic.updated_at = func.now()
-        updated_fields.append("updated_at")
-
-    logger.info(f"Successfully updated topic '{topic.title}' - fields: {', '.join(updated_fields)}")
 
     # Return raw data - decorator handles success response and commit
     return {
         "updated_count": 1,
-        "topic_id": topic_id,
+        "topic_id": data.topic_id,
         "topic_title": topic.title,
-        "updated_fields": updated_fields,
         "approved": topic.approved
     }

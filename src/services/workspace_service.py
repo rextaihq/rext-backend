@@ -26,7 +26,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.models.workspace_models.workspace_model import WorkspaceModel
 from src.api.models.workspace_models.workspace_member import WorkspaceMembers
-from src.api.models.knowledge_models.knowledge_model import Website, KnowledgeFiles, TextKnowledge
+from src.api.models.knowledge_models.knowledge_model import Website, KnowledgeFiles, TextKnowledge, BrandVoice
 from src.api.models.user_models.users import Users
 from src.api.models.content_models.content import Content
 from src.utils.logger import logger
@@ -131,16 +131,18 @@ class WorkspaceService:
 
     async def get_workspace_analytics(
         self,
-        workspace_id: UUID
+        workspace_id: UUID,
+        include_word_counts: bool = False
     ) -> Dict[str, Any]:
         """
         Get comprehensive analytics for a workspace.
 
         Uses optimized queries to fetch knowledge counts, content counts,
-        and member counts.
+        member counts, and optionally word counts.
 
         Args:
             workspace_id: Workspace UUID
+            include_word_counts: Whether to include detailed word count analytics
 
         Returns:
             Dict with analytics data
@@ -185,12 +187,99 @@ class WorkspaceService:
             "content_count": content_count
         }
 
+        # Add word count analytics if requested
+        if include_word_counts:
+            # Web content word stats
+            web_word_query = select(
+                func.sum(Website.word_count).label('total_words'),
+                func.avg(Website.word_count).label('avg_words')
+            ).where(Website.workspace_id == workspace_id)
+            result = await self.db.execute(web_word_query)
+            web_word_stats = result.first()
+
+            # File content word stats
+            file_word_query = select(
+                func.sum(KnowledgeFiles.word_count).label('total_words'),
+                func.avg(KnowledgeFiles.word_count).label('avg_words')
+            ).where(KnowledgeFiles.workspace_id == workspace_id)
+            result = await self.db.execute(file_word_query)
+            file_word_stats = result.first()
+
+            total_web_words = int(web_word_stats.total_words or 0)
+            avg_web_words = int(web_word_stats.avg_words or 0)
+            total_file_words = int(file_word_stats.total_words or 0)
+            avg_file_words = int(file_word_stats.avg_words or 0)
+
+            total_words = total_web_words + total_file_words
+            estimated_reading_time = total_words // 200
+
+            analytics["content_metrics"] = {
+                "total_words": total_words,
+                "web_content_words": total_web_words,
+                "file_content_words": total_file_words,
+                "avg_web_article_words": avg_web_words,
+                "avg_file_words": avg_file_words,
+                "estimated_reading_time_minutes": estimated_reading_time
+            }
+
         logger.info(
             f"Retrieved analytics for workspace",
             extra={"workspace_id": str(workspace_id), "total_knowledge": analytics["knowledge_stats"]["total"]}
         )
 
         return analytics
+
+    async def get_workspace_with_brand_voice(
+        self,
+        workspace_id: UUID
+    ) -> Dict[str, Any]:
+        """
+        Get workspace with brand voice data.
+
+        Args:
+            workspace_id: Workspace UUID
+
+        Returns:
+            Dict with workspace and brand voice data
+
+        Raises:
+            ResourceNotFoundException: If workspace not found
+        """
+        workspace = await self.get_workspace(workspace_id)
+
+        # Get brand voice data
+        result = await self.db.execute(
+            select(BrandVoice).where(BrandVoice.workspace_id == workspace_id)
+        )
+        brand_voice = result.scalar_one_or_none()
+
+        workspace_data = {
+            "id": str(workspace.id),
+            "user_id": str(workspace.user_id),
+            "name": workspace.name,
+            "slug": workspace.slug if hasattr(workspace, 'slug') else None,
+            "description": workspace.description,
+            "url": workspace.url,
+            "created_at": workspace.created_at.isoformat() if workspace.created_at else None,
+            "updated_at": workspace.updated_at.isoformat() if workspace.updated_at else None,
+        }
+
+        # Add brand voice if exists
+        if brand_voice:
+            workspace_data["brand_voice"] = {
+                "id": str(brand_voice.id),
+                "workspace_id": str(brand_voice.workspace_id),
+                "about": brand_voice.about,
+                "customer_profile": brand_voice.customer_profile,
+                "selling_position": brand_voice.selling_position,
+                "target_audience": brand_voice.target_audience,
+                "brand_voice": brand_voice.brand_voice,
+                "competitors": brand_voice.competitors,
+                "content_strategy": brand_voice.content_strategy,
+                "created_at": brand_voice.created_at.isoformat() if brand_voice.created_at else None,
+            }
+
+        return workspace_data
 
     async def get_workspace(
         self,
@@ -226,14 +315,15 @@ class WorkspaceService:
         user_id: UUID,
         name: str,
         description: Optional[str] = None,
-        url: Optional[str] = None
+        url: Optional[str] = None,
+        slug: Optional[str] = None
     ) -> WorkspaceModel:
         """
         Create new workspace with owner membership.
 
         Business Rules:
         - Workspace name must be unique per user
-        - Slug is auto-generated from name
+        - Slug is auto-generated from name (or provided)
         - Creator is automatically added as owner
 
         Args:
@@ -241,6 +331,7 @@ class WorkspaceService:
             name: Workspace name
             description: Workspace description
             url: Workspace URL
+            slug: Optional pre-generated slug
 
         Returns:
             Created WorkspaceModel object
@@ -248,15 +339,31 @@ class WorkspaceService:
         Raises:
             DuplicateResourceException: If workspace name already exists for user
         """
-        # Generate unique slug
-        base_slug = self._slugify(name)
-        unique_slug = await self._generate_unique_slug(base_slug, user_id)
+        # Check for duplicate name
+        result = await self.db.execute(
+            select(WorkspaceModel).where(
+                WorkspaceModel.name == name,
+                WorkspaceModel.user_id == user_id
+            )
+        )
+        if result.scalar_one_or_none():
+            raise DuplicateResourceException(
+                message=f"Workspace with name '{name}' already exists",
+                resource_type="workspace",
+                conflicting_field="name",
+                conflicting_value=name
+            )
+
+        # Generate unique slug if not provided
+        if not slug:
+            base_slug = self._slugify(name)
+            slug = await self._generate_unique_slug(base_slug, user_id)
 
         # Create workspace
         workspace = WorkspaceModel(
             user_id=user_id,
             name=name,
-            slug=unique_slug,
+            slug=slug,
             description=description,
             url=url,
             created_at=datetime.now(timezone.utc),
@@ -271,6 +378,43 @@ class WorkspaceService:
         )
 
         return workspace
+
+    async def create_workspace_member(
+        self,
+        workspace_id: UUID,
+        user_id: UUID,
+        is_default: bool = True,
+        status: str = "active"
+    ) -> WorkspaceMembers:
+        """
+        Add a member to workspace.
+
+        Args:
+            workspace_id: Workspace UUID
+            user_id: User UUID
+            is_default: Whether this is default workspace for user
+            status: Member status
+
+        Returns:
+            Created WorkspaceMembers object
+        """
+        member = WorkspaceMembers(
+            workspace_id=workspace_id,
+            user_id=user_id,
+            joined_at=datetime.now(timezone.utc),
+            is_default=is_default,
+            status=status,
+            invitation_id=None
+        )
+        self.db.add(member)
+        await self.db.flush()
+
+        logger.info(
+            f"Added member to workspace",
+            extra={"workspace_id": str(workspace_id), "user_id": str(user_id)}
+        )
+
+        return member
 
     async def update_workspace(
         self,

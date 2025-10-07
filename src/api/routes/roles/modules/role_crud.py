@@ -1,31 +1,18 @@
 """
 Role CRUD operations module.
+
+Routes handle HTTP concerns and delegate business logic to RoleService.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status, Request, Query
+from fastapi import APIRouter, Depends, status, Request, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import func, select
-from datetime import datetime
 
 from src.api.database.async_database import get_async_db
 from src.api.security.dependencies import get_current_user
-from src.api.models.user_models.roles import Role
-from src.api.models.user_models.role_permissions import RolePermission
-from src.api.models.user_models.permissions import Permission
-from src.api.models.user_models.user_roles import UserRole
-from src.api.schema.role_schema import (
-    RoleCreate,
-    RoleUpdate,
-)
-from src.utils.response_utils import success, error, created
-from src.utils.db_utils import get_or_404, ensure_unique
+from src.api.schema.role_schema import RoleCreate, RoleUpdate
+from src.services.role_service import RoleService
+from src.utils.response_utils import success, created
 from src.utils.route_decorators import db_transaction_handler, require_permissions
-from src.api.middleware.exceptions import (
-    DuplicateResourceException,
-    WrextValidationException,
-    ResourceNotFoundException,
-    WrextAPIException
-)
 from src.utils.logger import logger
 from .helpers import check_role_permission
 
@@ -56,34 +43,15 @@ async def list_roles(
     user_id = current_user.get("identity")
     await check_role_permission(db, user_id, "role.read")
 
-    # Query roles
-    result = await db.execute(select(Role).order_by(Role.hierarchy_level.desc()))
-    roles = result.scalars().all()
+    service = RoleService(db)
+    roles = await service.get_role_hierarchy()
 
     # Format response
     if include_permissions:
         roles_data = []
         for role in roles:
-            # Get permissions for this role
-            result = await db.execute(
-                select(Permission)
-                .join(RolePermission, RolePermission.permission_id == Permission.id)
-                .where(RolePermission.role_id == role.id)
-            )
-            permissions = result.scalars().all()
-
-            role_dict = role.to_dict()
-            role_dict["permissions"] = [
-                {
-                    "id": str(perm.id),
-                    "name": perm.name,
-                    "display_name": perm.display_name,
-                    "resource": perm.resource,
-                    "action": perm.action
-                }
-                for perm in permissions
-            ]
-            roles_data.append(role_dict)
+            role_data = await service.get_role_with_permissions(role.id)
+            roles_data.append(role_data)
     else:
         roles_data = [role.to_dict() for role in roles]
 
@@ -120,30 +88,14 @@ async def get_role(
     user_id = current_user.get("identity")
     await check_role_permission(db, user_id, "role.read")
 
-    # Get role
-    role = await get_or_404(db, Role, role_id, "role")
+    service = RoleService(db)
 
-    role_data = role.to_dict()
-
-    # Include permissions if requested
     if include_permissions:
-        result = await db.execute(
-            select(Permission)
-            .join(RolePermission, RolePermission.permission_id == Permission.id)
-            .where(RolePermission.role_id == role.id)
-        )
-        permissions = result.scalars().all()
-
-        role_data["permissions"] = [
-            {
-                "id": str(perm.id),
-                "name": perm.name,
-                "display_name": perm.display_name,
-                "resource": perm.resource,
-                "action": perm.action
-            }
-            for perm in permissions
-        ]
+        role_data = await service.get_role_with_permissions(role_id)
+    else:
+        from uuid import UUID
+        role = await service._get_role_or_404(UUID(role_id))
+        role_data = role.to_dict()
 
     return {
         "data": {"role": role_data},
@@ -179,33 +131,15 @@ async def create_role(
     user_id = current_user.get("identity")
     await check_role_permission(db, user_id, "role.create")
 
-    # Check uniqueness (using db_utils)
-    await ensure_unique(
-        db, Role, "name", role_data.name.lower(),
-        resource_type="role",
-        error_message="Role with this name already exists"
-    )
+    service = RoleService(db)
 
-    await ensure_unique(
-        db, Role, "display_name", role_data.display_name,
-        resource_type="role",
-        error_message="Role with this display name already exists"
-    )
-
-    # Create new role
-    new_role = Role(
-        name=role_data.name.lower(),  # Ensure lowercase
+    new_role = await service.create_role(
+        name=role_data.name,
         display_name=role_data.display_name,
         description=role_data.description,
         hierarchy_level=role_data.hierarchy_level,
         is_system_role=role_data.is_system_role
     )
-
-    db.add(new_role)
-    await db.flush()
-    await db.refresh(new_role)
-
-    logger.info(f"Role created: {new_role.name} by user {user_id}")
 
     return {
         "data": {"role": new_role.to_dict()},
@@ -247,52 +181,19 @@ async def update_role(
     user_id = current_user.get("identity")
     await check_role_permission(db, user_id, "role.update")
 
-    # Get role
-    role = await get_or_404(db, Role, role_id, "role")
+    service = RoleService(db)
+    from uuid import UUID
 
-    # Check if system role
-    if role.is_system_role:
-        raise WrextAPIException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            message="Cannot update system roles"
-        )
-
-    # Check if display_name already exists (if being updated)
-    if role_data.display_name and role_data.display_name != role.display_name:
-        result = await db.execute(
-            select(Role).where(
-                Role.display_name == role_data.display_name,
-                Role.id != role_id
-            )
-        )
-        existing_display = result.scalar_one_or_none()
-
-        if existing_display:
-            raise DuplicateResourceException(
-                message="Role with this display name already exists",
-                context={"display_name": role_data.display_name}
-            )
-
-    # Update fields
-    if role_data.display_name is not None:
-        role.display_name = role_data.display_name
-
-    if role_data.description is not None:
-        role.description = role_data.description
-
-    if role_data.hierarchy_level is not None:
-        role.hierarchy_level = role_data.hierarchy_level
-
-    role.updated_at = datetime.utcnow()
-
-    await db.flush()
-    await db.refresh(role)
-
-    logger.info(f"Role updated: {role.name} by user {user_id}")
+    updated_role = await service.update_role(
+        role_id=UUID(role_id),
+        display_name=role_data.display_name,
+        description=role_data.description,
+        hierarchy_level=role_data.hierarchy_level
+    )
 
     return {
-        "data": {"role": role.to_dict()},
-        "message": f"Role '{role.display_name}' updated successfully"
+        "data": {"role": updated_role.to_dict()},
+        "message": f"Role '{updated_role.display_name}' updated successfully"
     }
 
 
@@ -324,37 +225,14 @@ async def delete_role(
     user_id = current_user.get("identity")
     await check_role_permission(db, user_id, "role.delete")
 
-    # Get role
-    role = await get_or_404(db, Role, role_id, "role")
+    service = RoleService(db)
+    from uuid import UUID
 
-    # Check if system role
-    if role.is_system_role:
-        raise WrextAPIException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            message="Cannot delete system roles"
-        )
-
-    # Check if role is assigned to any users
-    result = await db.execute(select(UserRole).where(UserRole.role_id == role_id))
-    user_count = len(result.scalars().all())
-
-    if user_count > 0:
-        raise WrextValidationException(
-            message=f"Cannot delete role assigned to {user_count} user(s)",
-            context={"role_id": role_id, "user_count": user_count}
-        )
-
-    # Delete role permissions first (cascade)
-    result = await db.execute(select(RolePermission).where(RolePermission.role_id == role_id))
-    role_permissions = result.scalars().all()
-    for rp in role_permissions:
-        await db.delete(rp)
-
-    # Delete the role
+    # Get role name before deletion
+    role = await service._get_role_or_404(UUID(role_id))
     role_name = role.display_name
-    await db.delete(role)
 
-    logger.info(f"Role deleted: {role.name} by user {user_id}")
+    await service.delete_role(role_id=UUID(role_id))
 
     return {
         "data": {"role_id": role_id},

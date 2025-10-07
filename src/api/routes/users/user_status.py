@@ -1,4 +1,8 @@
-from fastapi import APIRouter, Depends, Request, HTTPException, status
+from fastapi import APIRouter, Depends, Request
+from sqlalchemy.ext.asyncio import AsyncSession
+from uuid import UUID
+from datetime import datetime, timedelta
+
 from src.utils.logger import logger
 from src.api.security.dependencies import get_current_user
 from src.api.schema.user_schema import (
@@ -7,28 +11,30 @@ from src.api.schema.user_schema import (
     DeactivateAccountRequest,
     DeactivateAccountResponse
 )
-from sqlalchemy.orm import Session
 from src.api.models.user_models.users import Users
-from src.api.database.database import get_db
+from src.api.database.async_database import get_async_db
 from src.utils.response_utils import success, error
 from src.api.schema.response_schemas import ErrorCode, ErrorSeverity
-from src.utils.audit_helper import create_audit_log
+from src.utils.audit_helper import create_audit_log_async
 from src.api.middleware.permissions import is_admin
-from datetime import datetime, timedelta
+from src.services.user_service import UserService
+from src.api.middleware.exceptions import ResourceNotFoundException
+from sqlalchemy import select
 
 router = APIRouter()
 
 
 @router.post("/{user_id}/suspend", response_model=UserStatusResponse)
-def suspend_user(
+async def suspend_user(
     user_id: str,
     request: Request,
     status_data: UserStatusRequest,
     current_user: dict = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_async_db)
 ):
     """
     Suspend a user account (admin only).
+    Thin controller - business logic should be in service.
 
     - **user_id**: ID of the user to suspend
     - **reason**: Optional reason for suspension
@@ -46,31 +52,25 @@ def suspend_user(
                 request=request
             )
 
-        # Get target user
-        target_user = db.query(Users).filter(Users.id == user_id).first()
-        if not target_user:
-            return error(
-                message="User not found",
-                code=ErrorCode.RESOURCE_NOT_FOUND,
-                status_code=404,
-                severity=ErrorSeverity.MEDIUM,
-                request=request
-            )
+        service = UserService(db)
 
-        # Store old status
+        # Get target user
+        target_user = await service.get_user_by_id(UUID(user_id))
         old_status = target_user.status
 
-        # Update status
+        # Update status directly (could be extracted to service method)
         target_user.status = "suspended"
         target_user.updated_at = datetime.utcnow()
+        await db.flush()
+
+        # Get admin user for audit log
+        admin_user_id = UUID(current_user.get("identity"))
+        admin_user = await service.get_user_by_id(admin_user_id)
 
         # Create audit log
-        admin_user_id = current_user.get("identity")
-        admin_user = db.query(Users).filter(Users.id == admin_user_id).first()
-
-        create_audit_log(
+        await create_audit_log_async(
             db=db,
-            user_id=admin_user_id,
+            user_id=str(admin_user_id),
             action="user.suspend",
             resource_type="user",
             resource_id=str(user_id),
@@ -81,8 +81,7 @@ def suspend_user(
             user_email=admin_user.email if admin_user else None
         )
 
-        db.commit()
-        db.refresh(target_user)
+        await db.commit()
 
         logger.info(f"User {user_id} suspended by admin {admin_user_id}")
 
@@ -103,27 +102,38 @@ def suspend_user(
             message=f"User {target_user.username} suspended successfully"
         )
 
-    except HTTPException:
-        raise
+    except ResourceNotFoundException:
+        return error(
+            message="User not found",
+            code=ErrorCode.RESOURCE_NOT_FOUND,
+            status_code=404,
+            severity=ErrorSeverity.MEDIUM,
+            request=request
+        )
     except Exception as e:
         logger.error(f"Error suspending user {user_id}: {str(e)}")
-        db.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to suspend user"
+        await db.rollback()
+        return error(
+            message="Failed to suspend user",
+            code=ErrorCode.INTERNAL_SERVER_ERROR,
+            status_code=500,
+            severity=ErrorSeverity.HIGH,
+            context={"error_details": str(e)},
+            request=request
         )
 
 
 @router.post("/{user_id}/activate", response_model=UserStatusResponse)
-def activate_user(
+async def activate_user(
     user_id: str,
     request: Request,
     status_data: UserStatusRequest,
     current_user: dict = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_async_db)
 ):
     """
     Activate a suspended or banned user account (admin only).
+    Thin controller - uses UserService.reactivate_account().
 
     - **user_id**: ID of the user to activate
     - **reason**: Optional reason for activation
@@ -141,31 +151,23 @@ def activate_user(
                 request=request
             )
 
-        # Get target user
-        target_user = db.query(Users).filter(Users.id == user_id).first()
-        if not target_user:
-            return error(
-                message="User not found",
-                code=ErrorCode.RESOURCE_NOT_FOUND,
-                status_code=404,
-                severity=ErrorSeverity.MEDIUM,
-                request=request
-            )
+        service = UserService(db)
 
-        # Store old status
+        # Get target user to record old status
+        target_user = await service.get_user_by_id(UUID(user_id))
         old_status = target_user.status
 
-        # Update status
-        target_user.status = "active"
-        target_user.updated_at = datetime.utcnow()
+        # Reactivate via service
+        target_user = await service.reactivate_account(UUID(user_id))
+
+        # Get admin user for audit log
+        admin_user_id = UUID(current_user.get("identity"))
+        admin_user = await service.get_user_by_id(admin_user_id)
 
         # Create audit log
-        admin_user_id = current_user.get("identity")
-        admin_user = db.query(Users).filter(Users.id == admin_user_id).first()
-
-        create_audit_log(
+        await create_audit_log_async(
             db=db,
-            user_id=admin_user_id,
+            user_id=str(admin_user_id),
             action="user.activate",
             resource_type="user",
             resource_id=str(user_id),
@@ -176,8 +178,7 @@ def activate_user(
             user_email=admin_user.email if admin_user else None
         )
 
-        db.commit()
-        db.refresh(target_user)
+        await db.commit()
 
         logger.info(f"User {user_id} activated by admin {admin_user_id}")
 
@@ -198,27 +199,38 @@ def activate_user(
             message=f"User {target_user.username} activated successfully"
         )
 
-    except HTTPException:
-        raise
+    except ResourceNotFoundException:
+        return error(
+            message="User not found",
+            code=ErrorCode.RESOURCE_NOT_FOUND,
+            status_code=404,
+            severity=ErrorSeverity.MEDIUM,
+            request=request
+        )
     except Exception as e:
         logger.error(f"Error activating user {user_id}: {str(e)}")
-        db.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to activate user"
+        await db.rollback()
+        return error(
+            message="Failed to activate user",
+            code=ErrorCode.INTERNAL_SERVER_ERROR,
+            status_code=500,
+            severity=ErrorSeverity.HIGH,
+            context={"error_details": str(e)},
+            request=request
         )
 
 
 @router.post("/{user_id}/ban", response_model=UserStatusResponse)
-def ban_user(
+async def ban_user(
     user_id: str,
     request: Request,
     status_data: UserStatusRequest,
     current_user: dict = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_async_db)
 ):
     """
     Ban a user account (admin only).
+    Thin controller - business logic could be extracted to service.
 
     - **user_id**: ID of the user to ban
     - **reason**: Optional reason for ban
@@ -236,31 +248,25 @@ def ban_user(
                 request=request
             )
 
-        # Get target user
-        target_user = db.query(Users).filter(Users.id == user_id).first()
-        if not target_user:
-            return error(
-                message="User not found",
-                code=ErrorCode.RESOURCE_NOT_FOUND,
-                status_code=404,
-                severity=ErrorSeverity.MEDIUM,
-                request=request
-            )
+        service = UserService(db)
 
-        # Store old status
+        # Get target user
+        target_user = await service.get_user_by_id(UUID(user_id))
         old_status = target_user.status
 
-        # Update status
+        # Update status directly (could be extracted to service method)
         target_user.status = "banned"
         target_user.updated_at = datetime.utcnow()
+        await db.flush()
+
+        # Get admin user for audit log
+        admin_user_id = UUID(current_user.get("identity"))
+        admin_user = await service.get_user_by_id(admin_user_id)
 
         # Create audit log
-        admin_user_id = current_user.get("identity")
-        admin_user = db.query(Users).filter(Users.id == admin_user_id).first()
-
-        create_audit_log(
+        await create_audit_log_async(
             db=db,
-            user_id=admin_user_id,
+            user_id=str(admin_user_id),
             action="user.ban",
             resource_type="user",
             resource_id=str(user_id),
@@ -271,8 +277,7 @@ def ban_user(
             user_email=admin_user.email if admin_user else None
         )
 
-        db.commit()
-        db.refresh(target_user)
+        await db.commit()
 
         logger.info(f"User {user_id} banned by admin {admin_user_id}")
 
@@ -293,26 +298,37 @@ def ban_user(
             message=f"User {target_user.username} banned successfully"
         )
 
-    except HTTPException:
-        raise
+    except ResourceNotFoundException:
+        return error(
+            message="User not found",
+            code=ErrorCode.RESOURCE_NOT_FOUND,
+            status_code=404,
+            severity=ErrorSeverity.MEDIUM,
+            request=request
+        )
     except Exception as e:
         logger.error(f"Error banning user {user_id}: {str(e)}")
-        db.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to ban user"
+        await db.rollback()
+        return error(
+            message="Failed to ban user",
+            code=ErrorCode.INTERNAL_SERVER_ERROR,
+            status_code=500,
+            severity=ErrorSeverity.HIGH,
+            context={"error_details": str(e)},
+            request=request
         )
 
 
 @router.post("/deactivate", response_model=DeactivateAccountResponse)
-def deactivate_account(
+async def deactivate_account(
     request: Request,
     deactivation_data: DeactivateAccountRequest,
     current_user: dict = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_async_db)
 ):
     """
     Deactivate user's own account.
+    Thin controller - uses UserService.deactivate_account().
 
     Account will be marked as inactive and scheduled for permanent deletion after 14 days.
     User will be logged out immediately.
@@ -323,19 +339,13 @@ def deactivate_account(
     Returns deactivation confirmation with scheduled deletion date.
     """
     try:
-        user_id = current_user.get("identity")
+        user_id = UUID(current_user.get("identity"))
         logger.info(f"Account deactivation requested for user: {user_id}")
 
-        # Get user from database
-        db_user = db.query(Users).filter(Users.id == user_id).first()
-        if not db_user:
-            return error(
-                message="User not found",
-                code=ErrorCode.RESOURCE_NOT_FOUND,
-                status_code=404,
-                severity=ErrorSeverity.MEDIUM,
-                request=request
-            )
+        service = UserService(db)
+
+        # Get user and check status
+        db_user = await service.get_user_by_id(user_id)
 
         # Check if already deactivated
         if db_user.status == "inactive":
@@ -347,19 +357,19 @@ def deactivate_account(
                 request=request
             )
 
-        # Update user status
+        # Store old status for audit
         old_status = db_user.status
-        db_user.status = "inactive"
-        db_user.deactivated_at = datetime.utcnow()
-        db_user.updated_at = datetime.utcnow()
+
+        # Deactivate via service
+        db_user = await service.deactivate_account(user_id)
 
         # Calculate scheduled deletion date (14 days from now)
         scheduled_deletion = db_user.deactivated_at + timedelta(days=14)
 
         # Create audit log
-        create_audit_log(
+        await create_audit_log_async(
             db=db,
-            user_id=user_id,
+            user_id=str(user_id),
             action="user.deactivate",
             resource_type="user",
             resource_id=str(user_id),
@@ -375,8 +385,7 @@ def deactivate_account(
             user_email=db_user.email
         )
 
-        db.commit()
-        db.refresh(db_user)
+        await db.commit()
 
         logger.info(f"User {user_id} deactivated successfully. Scheduled deletion: {scheduled_deletion}")
 
@@ -395,9 +404,17 @@ def deactivate_account(
             message="Account deactivated successfully"
         )
 
+    except ResourceNotFoundException:
+        return error(
+            message="User not found",
+            code=ErrorCode.RESOURCE_NOT_FOUND,
+            status_code=404,
+            severity=ErrorSeverity.MEDIUM,
+            request=request
+        )
     except Exception as e:
         logger.error(f"Error deactivating account for user {current_user.get('identity')}: {str(e)}")
-        db.rollback()
+        await db.rollback()
         return error(
             message="Failed to deactivate account",
             code=ErrorCode.INTERNAL_SERVER_ERROR,

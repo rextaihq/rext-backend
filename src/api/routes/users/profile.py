@@ -1,18 +1,20 @@
 from fastapi import APIRouter, Depends, Request, UploadFile, File, HTTPException, status
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from src.utils.logger import logger
 from src.api.security.dependencies import get_current_user
 from src.api.schema.user_schema import UpdateProfileRequest
 from src.api.schema.notification_schema import NotificationPreferencesResponse, UpdateNotificationPreferencesRequest
-from sqlalchemy.orm import Session
-from src.api.models.user_models.users import Users
 from src.api.models.user_models.notification_preferences import NotificationPreferences
-from src.api.database.database import get_db
+from src.api.database.async_database import get_async_db
 from src.utils.response_utils import success, error
 from src.api.schema.response_schemas import ErrorCode, ErrorSeverity
+from src.api.middleware.exceptions import ResourceNotFoundException
+from src.services.user_service import UserService
 from datetime import datetime
 from pathlib import Path
+from sqlalchemy import select
 import time
-import os
 
 router = APIRouter()
 
@@ -22,56 +24,55 @@ AVATAR_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 
 @router.get("/profile", response_model=dict)
-def get_profile(
+async def get_profile(
     request: Request,
     current_user: dict = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_async_db)
 ):
     """
-    Get current authenticated user's profile
-
-    Returns complete profile information for the logged-in user
+    Get current authenticated user's profile.
+    Uses UserService for business logic.
     """
     try:
         user_id = current_user.get("identity")
-        logger.info(f"Fetching profile for user: {user_id}")
+        service = UserService(db)
 
-        # Get user from database
-        db_user = db.query(Users).filter(Users.id == user_id).first()
-        if not db_user:
-            return error(
-                message="User not found",
-                code=ErrorCode.RESOURCE_NOT_FOUND,
-                status_code=404,
-                severity=ErrorSeverity.MEDIUM,
-                request=request
-            )
+        # Get user via service
+        user = await service.get_user_by_id(user_id)
 
         # Build profile response
         profile_data = {
-            "id": str(db_user.id),
-            "email": db_user.email,
-            "username": db_user.username,
-            "first_name": db_user.first_name,
-            "last_name": db_user.last_name,
-            "display_name": db_user.display_name,
-            "language": db_user.language or "en",
-            "timezone": db_user.timezone or "UTC",
-            "status": db_user.status,
-            "email_verified": db_user.email_verified,
-            "created_at": db_user.created_at.isoformat() if db_user.created_at else None,
-            "updated_at": db_user.updated_at.isoformat() if db_user.updated_at else None
+            "id": str(user.id),
+            "email": user.email,
+            "username": user.username,
+            "first_name": user.first_name,
+            "last_name": user.last_name,
+            "display_name": user.display_name,
+            "language": user.language or "en",
+            "timezone": user.timezone or "UTC",
+            "status": user.status,
+            "email_verified": user.email_verified,
+            "avatar_url": user.avatar_url,
+            "created_at": user.created_at.isoformat() if user.created_at else None,
+            "updated_at": user.updated_at.isoformat() if user.updated_at else None
         }
 
-        logger.info(f"Profile fetched successfully for user: {user_id}")
         return success(
             data={"profile": profile_data},
             request=request,
             message="Profile retrieved successfully"
         )
 
+    except ResourceNotFoundException:
+        return error(
+            message="User not found",
+            code=ErrorCode.RESOURCE_NOT_FOUND,
+            status_code=404,
+            severity=ErrorSeverity.MEDIUM,
+            request=request
+        )
     except Exception as e:
-        logger.error(f"Error fetching profile for user {current_user.get('identity')}: {str(e)}")
+        logger.error(f"Error fetching profile: {str(e)}")
         return error(
             message="Failed to fetch profile",
             code=ErrorCode.INTERNAL_SERVER_ERROR,
@@ -83,84 +84,59 @@ def get_profile(
 
 
 @router.patch("/profile")
-def update_profile(
+async def update_profile(
     request: Request,
     profile_data: UpdateProfileRequest,
     current_user: dict = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_async_db)
 ):
     """
-    Update current authenticated user's profile
-
-    - **first_name**: First name
-    - **last_name**: Last name
-    - **display_name**: Display name
-    - **language**: Language preference
-    - **timezone**: Timezone preference
-
-    Note: Email, username, and password cannot be changed via this endpoint
+    Update current authenticated user's profile.
+    Uses UserService for business logic.
     """
     try:
         user_id = current_user.get("identity")
-        logger.info(f"Profile update requested for user: {user_id}")
+        service = UserService(db)
 
-        # Get user from database
-        db_user = db.query(Users).filter(Users.id == user_id).first()
-        if not db_user:
-            return error(
-                message="User not found",
-                code=ErrorCode.RESOURCE_NOT_FOUND,
-                status_code=404,
-                severity=ErrorSeverity.MEDIUM,
-                request=request
-            )
-
-        # Track what was updated
+        # Track what was updated for response
         updated_fields = []
+        update_kwargs = {}
 
-        # Update fields if provided
         if profile_data.first_name is not None:
-            db_user.first_name = profile_data.first_name
+            update_kwargs["first_name"] = profile_data.first_name
             updated_fields.append("first_name")
-
         if profile_data.last_name is not None:
-            db_user.last_name = profile_data.last_name
+            update_kwargs["last_name"] = profile_data.last_name
             updated_fields.append("last_name")
-
         if profile_data.display_name is not None:
-            db_user.display_name = profile_data.display_name
+            update_kwargs["display_name"] = profile_data.display_name
             updated_fields.append("display_name")
-
         if profile_data.language is not None:
-            db_user.language = profile_data.language
+            update_kwargs["language"] = profile_data.language
             updated_fields.append("language")
-
         if profile_data.timezone is not None:
-            db_user.timezone = profile_data.timezone
+            update_kwargs["timezone"] = profile_data.timezone
             updated_fields.append("timezone")
 
-        # Update timestamp
-        db_user.updated_at = datetime.utcnow()
-
-        db.commit()
-        db.refresh(db_user)
+        # Update via service
+        user = await service.update_profile(user_id=user_id, **update_kwargs)
 
         # Build response
         profile_response = {
-            "id": str(db_user.id),
-            "email": db_user.email,
-            "username": db_user.username,
-            "first_name": db_user.first_name,
-            "last_name": db_user.last_name,
-            "display_name": db_user.display_name,
-            "language": db_user.language,
-            "timezone": db_user.timezone,
-            "status": db_user.status,
-            "email_verified": db_user.email_verified,
-            "updated_at": db_user.updated_at.isoformat()
+            "id": str(user.id),
+            "email": user.email,
+            "username": user.username,
+            "first_name": user.first_name,
+            "last_name": user.last_name,
+            "display_name": user.display_name,
+            "language": user.language,
+            "timezone": user.timezone,
+            "status": user.status,
+            "email_verified": user.email_verified,
+            "updated_at": user.updated_at.isoformat()
         }
 
-        logger.info(f"Profile updated successfully for user {user_id}. Updated fields: {', '.join(updated_fields)}")
+        logger.info(f"Profile updated for user {user_id}. Fields: {', '.join(updated_fields)}")
         return success(
             data={
                 "profile": profile_response,
@@ -170,9 +146,16 @@ def update_profile(
             message="Profile updated successfully"
         )
 
+    except ResourceNotFoundException:
+        return error(
+            message="User not found",
+            code=ErrorCode.RESOURCE_NOT_FOUND,
+            status_code=404,
+            severity=ErrorSeverity.MEDIUM,
+            request=request
+        )
     except Exception as e:
-        logger.error(f"Error updating profile for user {current_user.get('identity')}: {str(e)}")
-        db.rollback()
+        logger.error(f"Error updating profile: {str(e)}")
         return error(
             message="Failed to update profile",
             code=ErrorCode.INTERNAL_SERVER_ERROR,
@@ -188,29 +171,18 @@ async def upload_avatar(
     request: Request,
     file: UploadFile = File(...),
     current_user: dict = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_async_db)
 ):
     """
     Upload user avatar image.
-
-    - **file**: Image file (JPEG, PNG, GIF, WebP)
-    - Max size: 5MB
-    - Replaces existing avatar if present
+    Avatar management could be extracted to UserService in future.
     """
     try:
         user_id = current_user.get("identity")
-        logger.info(f"User {user_id} uploading avatar")
+        service = UserService(db)
 
-        # Get user
-        user = db.query(Users).filter(Users.id == user_id).first()
-        if not user:
-            return error(
-                message="User not found",
-                code=ErrorCode.RESOURCE_NOT_FOUND,
-                status_code=404,
-                severity=ErrorSeverity.MEDIUM,
-                request=request
-            )
+        # Get user via service
+        user = await service.get_user_by_id(user_id)
 
         # Validate file type
         allowed_types = ["image/jpeg", "image/png", "image/gif", "image/webp"]
@@ -223,15 +195,14 @@ async def upload_avatar(
                 request=request
             )
 
-        # Read file content
+        # Read and validate file
         file_content = await file.read()
         file_size = len(file_content)
-
-        # Validate file size (5MB max)
         max_size = 5 * 1024 * 1024  # 5MB
+
         if file_size > max_size:
             return error(
-                message=f"File too large. Max size: 5MB. Your file: {file_size / (1024 * 1024):.2f}MB",
+                message=f"File too large. Max: 5MB, Yours: {file_size / (1024 * 1024):.2f}MB",
                 code=ErrorCode.INVALID_INPUT,
                 status_code=400,
                 severity=ErrorSeverity.LOW,
@@ -248,45 +219,47 @@ async def upload_avatar(
             if old_avatar_path.exists():
                 try:
                     old_avatar_path.unlink()
-                    logger.info(f"Deleted old avatar: {old_avatar_path}")
                 except Exception as e:
                     logger.warning(f"Could not delete old avatar: {str(e)}")
 
-        # Generate unique filename
+        # Save new avatar
         file_extension = file.filename.split('.')[-1] if '.' in file.filename else 'jpg'
         timestamp = int(time.time())
         new_filename = f"{user_id}_{timestamp}.{file_extension}"
         file_path = user_avatar_dir / new_filename
 
-        # Save file
         with open(file_path, "wb") as f:
             f.write(file_content)
 
-        # Update user avatar_url (store relative path)
+        # Update user avatar via service
         relative_path = f"/avatars/{user_id}/{new_filename}"
-        user.avatar_url = relative_path
-        user.updated_at = datetime.utcnow()
+        updated_user = await service.update_profile(
+            user_id=user_id,
+            avatar_url=relative_path
+        )
 
-        db.commit()
-        db.refresh(user)
-
-        logger.info(f"Avatar uploaded successfully for user {user_id}: {relative_path}")
+        logger.info(f"Avatar uploaded for user {user_id}: {relative_path}")
 
         return success(
             data={
-                "avatar_url": user.avatar_url,
+                "avatar_url": updated_user.avatar_url,
                 "file_size": file_size,
-                "uploaded_at": user.updated_at.isoformat()
+                "uploaded_at": updated_user.updated_at.isoformat()
             },
             request=request,
             message="Avatar uploaded successfully"
         )
 
-    except HTTPException:
-        raise
+    except ResourceNotFoundException:
+        return error(
+            message="User not found",
+            code=ErrorCode.RESOURCE_NOT_FOUND,
+            status_code=404,
+            severity=ErrorSeverity.MEDIUM,
+            request=request
+        )
     except Exception as e:
-        logger.error(f"Error uploading avatar for user {current_user.get('identity')}: {str(e)}")
-        db.rollback()
+        logger.error(f"Error uploading avatar: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to upload avatar"
@@ -294,30 +267,20 @@ async def upload_avatar(
 
 
 @router.delete("/avatar")
-def delete_avatar(
+async def delete_avatar(
     request: Request,
     current_user: dict = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_async_db)
 ):
     """
     Delete user avatar.
-
-    Sets avatar_url to null and removes the file from storage.
     """
     try:
         user_id = current_user.get("identity")
-        logger.info(f"User {user_id} deleting avatar")
+        service = UserService(db)
 
-        # Get user
-        user = db.query(Users).filter(Users.id == user_id).first()
-        if not user:
-            return error(
-                message="User not found",
-                code=ErrorCode.RESOURCE_NOT_FOUND,
-                status_code=404,
-                severity=ErrorSeverity.MEDIUM,
-                request=request
-            )
+        # Get user via service
+        user = await service.get_user_by_id(user_id)
 
         # Check if user has avatar
         if not user.avatar_url:
@@ -334,34 +297,37 @@ def delete_avatar(
         if avatar_path.exists():
             try:
                 avatar_path.unlink()
-                logger.info(f"Deleted avatar file: {avatar_path}")
             except Exception as e:
                 logger.warning(f"Could not delete avatar file: {str(e)}")
 
-        # Update user
+        # Update user via service
         old_avatar_url = user.avatar_url
-        user.avatar_url = None
-        user.updated_at = datetime.utcnow()
+        updated_user = await service.update_profile(
+            user_id=user_id,
+            avatar_url=None
+        )
 
-        db.commit()
-        db.refresh(user)
-
-        logger.info(f"Avatar deleted successfully for user {user_id}")
+        logger.info(f"Avatar deleted for user {user_id}")
 
         return success(
             data={
                 "deleted_avatar_url": old_avatar_url,
-                "deleted_at": user.updated_at.isoformat()
+                "deleted_at": updated_user.updated_at.isoformat()
             },
             request=request,
             message="Avatar deleted successfully"
         )
 
-    except HTTPException:
-        raise
+    except ResourceNotFoundException:
+        return error(
+            message="User not found",
+            code=ErrorCode.RESOURCE_NOT_FOUND,
+            status_code=404,
+            severity=ErrorSeverity.MEDIUM,
+            request=request
+        )
     except Exception as e:
-        logger.error(f"Error deleting avatar for user {current_user.get('identity')}: {str(e)}")
-        db.rollback()
+        logger.error(f"Error deleting avatar: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to delete avatar"
@@ -369,37 +335,35 @@ def delete_avatar(
 
 
 @router.get("/preferences/notifications", response_model=None)
-def get_notification_preferences(
+async def get_notification_preferences(
     request: Request,
     current_user: dict = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_async_db)
 ):
     """
     Get current user's notification preferences.
+    Creates default preferences if none exist.
 
-    Returns default preferences if none exist yet.
-    Creates default preferences automatically on first access.
-
-    Returns:
-        NotificationPreferencesResponse: User's notification preferences
-
-    Raises:
-        500: If database operation fails
+    Note: Notification preferences logic kept in route for now.
+    Could be extracted to NotificationService in future refactor.
     """
     try:
         user_id = current_user.get("identity")
 
-        # Try to get existing preferences
-        preferences = db.query(NotificationPreferences).filter(
-            NotificationPreferences.user_id == user_id
-        ).first()
+        # Get existing preferences
+        result = await db.execute(
+            select(NotificationPreferences).where(
+                NotificationPreferences.user_id == user_id
+            )
+        )
+        preferences = result.scalar_one_or_none()
 
-        # If no preferences exist, create defaults
+        # Create defaults if needed
         if not preferences:
             preferences = NotificationPreferences(user_id=user_id)
             db.add(preferences)
-            db.commit()
-            db.refresh(preferences)
+            await db.flush()
+            await db.refresh(preferences)
             logger.info(f"Created default notification preferences for user {user_id}")
 
         return success(
@@ -407,8 +371,9 @@ def get_notification_preferences(
             request=request,
             message="Notification preferences retrieved successfully"
         )
+
     except Exception as e:
-        logger.error(f"Failed to get notification preferences for user {current_user.get('identity')}: {str(e)}")
+        logger.error(f"Failed to get notification preferences: {str(e)}")
         return error(
             message="Failed to retrieve notification preferences",
             code=ErrorCode.INTERNAL_SERVER_ERROR,
@@ -420,35 +385,26 @@ def get_notification_preferences(
 
 
 @router.patch("/preferences/notifications", response_model=None)
-def update_notification_preferences(
+async def update_notification_preferences(
     preferences_update: UpdateNotificationPreferencesRequest,
     request: Request,
     current_user: dict = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_async_db)
 ):
     """
     Update current user's notification preferences.
-
-    Creates preferences with default values if they don't exist yet.
-    All fields must be provided in the request body.
-
-    Args:
-        preferences_update: Notification preferences data
-
-    Returns:
-        NotificationPreferencesResponse: Updated notification preferences
-
-    Raises:
-        400: If validation fails
-        500: If database operation fails
+    Creates preferences with defaults if they don't exist.
     """
     try:
         user_id = current_user.get("identity")
 
         # Get or create preferences
-        preferences = db.query(NotificationPreferences).filter(
-            NotificationPreferences.user_id == user_id
-        ).first()
+        result = await db.execute(
+            select(NotificationPreferences).where(
+                NotificationPreferences.user_id == user_id
+            )
+        )
+        preferences = result.scalar_one_or_none()
 
         if not preferences:
             preferences = NotificationPreferences(user_id=user_id)
@@ -468,8 +424,8 @@ def update_notification_preferences(
         preferences.in_app_mentions = preferences_update.inAppMentions
         preferences.in_app_updates = preferences_update.inAppUpdates
 
-        db.commit()
-        db.refresh(preferences)
+        await db.flush()
+        await db.refresh(preferences)
 
         logger.info(f"Updated notification preferences for user {user_id}")
 
@@ -478,9 +434,9 @@ def update_notification_preferences(
             request=request,
             message="Notification preferences updated successfully"
         )
+
     except Exception as e:
-        db.rollback()
-        logger.error(f"Failed to update notification preferences for user {current_user.get('identity')}: {str(e)}")
+        logger.error(f"Failed to update notification preferences: {str(e)}")
         return error(
             message="Failed to update notification preferences",
             code=ErrorCode.INTERNAL_SERVER_ERROR,

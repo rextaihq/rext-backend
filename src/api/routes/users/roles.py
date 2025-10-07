@@ -1,29 +1,33 @@
-from fastapi import APIRouter, Depends, Request, HTTPException, status
-from src.utils.logger import logger
+"""
+User Role Assignment API endpoints.
+
+Routes handle HTTP concerns and delegate business logic to RoleService.
+"""
+
+from fastapi import APIRouter, Depends, Request, Query
+from sqlalchemy.ext.asyncio import AsyncSession
+from uuid import UUID
+
+from src.api.database.async_database import get_async_db
 from src.api.security.dependencies import get_current_user
 from src.api.schema.user_role_schema import AssignUserRoleRequest
-from sqlalchemy.orm import Session
-from src.api.models.user_models.users import Users
-from src.api.models.user_models.roles import Role
-from src.api.models.user_models.user_roles import UserRole
-from src.api.models.user_models.permissions import Permission
-from src.api.models.user_models.role_permissions import RolePermission
-from src.api.models.workspace_models.workspace_model import WorkspaceModel
-from src.api.models.workspace_models.workspace_member import WorkspaceMembers
-from src.api.database.database import get_db
-from src.utils.response_utils import success, error
-from src.api.schema.response_schemas import ErrorCode, ErrorSeverity
-from datetime import datetime
+from src.services.role_service import RoleService
+from src.utils.response_utils import success
+from src.utils.route_decorators import db_transaction_handler, require_permissions
+from src.utils.logger import logger
+
 
 router = APIRouter()
 
 
 @router.post("/{user_id}/roles")
-def assign_role_to_user(
+@db_transaction_handler("assign role to user", auto_commit=True)
+@require_permissions("user.assign_role", workspace_scoped=False)
+async def assign_role_to_user(
     request: Request,
     user_id: str,
     assignment_data: AssignUserRoleRequest,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user)
 ):
     """
@@ -42,162 +46,59 @@ def assign_role_to_user(
     Returns:
     - Assignment details
     """
-    try:
-        assigner_id = current_user.get("identity")
+    assigner_id = current_user.get("identity")
+    service = RoleService(db)
 
-        # Check if admin
-        is_user_admin = db.query(UserRole).join(Role).filter(
-            UserRole.user_id == assigner_id,
-            Role.name.in_(["admin", "super_admin"])
-        ).first() is not None
+    # Assign role
+    user_role = await service.assign_role(
+        user_id=UUID(user_id),
+        role_id=assignment_data.role_id,
+        workspace_id=assignment_data.workspace_id,
+        is_primary=assignment_data.is_primary,
+        assigned_by_user_id=UUID(assigner_id)
+    )
 
-        if not is_user_admin:
-            # Check for user.assign_role permission
-            has_permission = (
-                db.query(Permission.name)
-                .join(RolePermission, RolePermission.permission_id == Permission.id)
-                .join(UserRole, UserRole.role_id == RolePermission.role_id)
-                .filter(
-                    UserRole.user_id == assigner_id,
-                    Permission.name == "user.assign_role"
-                )
-                .first()
-            )
+    # Get role details for response
+    role = await service._get_role_or_404(assignment_data.role_id)
 
-            if not has_permission:
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail="Insufficient permissions. Required: user.assign_role or admin role"
-                )
-
-        # Verify user exists
-        user = db.query(Users).filter(Users.id == user_id).first()
-        if not user:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="User not found"
-            )
-
-        # Verify role exists
-        role = db.query(Role).filter(Role.id == assignment_data.role_id).first()
-        if not role:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Role not found"
-            )
-
-        # Check assigner's hierarchy level (must be >= role's hierarchy to assign it)
-        assigner_max_hierarchy = (
-            db.query(Role.hierarchy_level)
-            .join(UserRole, UserRole.role_id == Role.id)
-            .filter(UserRole.user_id == assigner_id)
-            .order_by(Role.hierarchy_level.desc())
-            .first()
+    # Get workspace name if applicable
+    workspace_name = None
+    if assignment_data.workspace_id:
+        from sqlalchemy import select
+        from src.api.models.workspace_models.workspace_model import WorkspaceModel
+        ws_result = await db.execute(
+            select(WorkspaceModel).where(WorkspaceModel.id == assignment_data.workspace_id)
         )
+        workspace = ws_result.scalar_one_or_none()
+        workspace_name = workspace.name if workspace else None
 
-        if assigner_max_hierarchy and assigner_max_hierarchy[0] < role.hierarchy_level:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"Cannot assign role with hierarchy level {role.hierarchy_level}. Your max level: {assigner_max_hierarchy[0]}"
-            )
-
-        # If workspace-scoped, verify workspace and membership
-        workspace = None
-        if assignment_data.workspace_id:
-            workspace = db.query(WorkspaceModel).filter(
-                WorkspaceModel.id == assignment_data.workspace_id
-            ).first()
-
-            if not workspace:
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail="Workspace not found"
-                )
-
-            # Check if user is member of workspace
-            is_member = db.query(WorkspaceMembers).filter(
-                WorkspaceMembers.workspace_id == assignment_data.workspace_id,
-                WorkspaceMembers.user_id == user_id
-            ).first()
-
-            if not is_member:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="User is not a member of this workspace"
-                )
-
-        # Check if already assigned (idempotent)
-        existing = db.query(UserRole).filter(
-            UserRole.user_id == user_id,
-            UserRole.role_id == assignment_data.role_id,
-            UserRole.workspace_id == assignment_data.workspace_id
-        ).first()
-
-        if existing:
-            return success(
-                data={
-                    "assignment": existing.to_dict(),
-                    "role_name": role.name,
-                    "already_assigned": True
-                },
-                request=request,
-                message=f"Role '{role.display_name}' already assigned to user"
-            )
-
-        # Create assignment
-        user_role = UserRole(
-            user_id=user_id,
-            role_id=assignment_data.role_id,
-            workspace_id=assignment_data.workspace_id,
-            assigned_by_user_id=assigner_id,
-            is_primary=assignment_data.is_primary,
-            assigned_at=datetime.utcnow()
-        )
-
-        db.add(user_role)
-        db.commit()
-        db.refresh(user_role)
-
-        logger.info(
-            f"Role '{role.name}' assigned to user {user_id} "
-            f"in workspace {assignment_data.workspace_id or 'global'} by {assigner_id}"
-        )
-
-        return success(
-            data={
-                "assignment": user_role.to_dict(),
-                "role_name": role.name,
-                "role_display_name": role.display_name,
-                "workspace_name": workspace.name if workspace else None
-            },
-            request=request,
-            message=f"Role '{role.display_name}' assigned successfully"
-        )
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        db.rollback()
-        logger.error(f"Error assigning role to user {user_id}: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to assign role"
-        )
+    return success(
+        data={
+            "assignment": user_role.to_dict(),
+            "role_name": role.name,
+            "role_display_name": role.display_name,
+            "workspace_name": workspace_name
+        },
+        request=request,
+        message=f"Role '{role.display_name}' assigned successfully"
+    )
 
 
 @router.delete("/{user_id}/roles/{role_id}")
-def revoke_role_from_user(
+@db_transaction_handler("revoke role from user", auto_commit=True)
+@require_permissions("user.manage_roles", workspace_scoped=False)
+async def revoke_role_from_user(
     request: Request,
     user_id: str,
     role_id: str,
-    workspace_id: str = None,
-    db: Session = Depends(get_db),
+    workspace_id: str = Query(None, description="Optional workspace UUID"),
+    db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user)
 ):
     """
     Revoke a role from a user.
 
-    Requires: user.revoke_role permission OR admin role
+    Requires: user.manage_roles permission OR admin role
 
     Parameters:
     - user_id: UUID of the user
@@ -207,98 +108,37 @@ def revoke_role_from_user(
     Returns:
     - Success message
     """
-    try:
-        assigner_id = current_user.get("identity")
+    service = RoleService(db)
 
-        # Check if admin
-        is_user_admin = db.query(UserRole).join(Role).filter(
-            UserRole.user_id == assigner_id,
-            Role.name.in_(["admin", "super_admin"])
-        ).first() is not None
+    # Get role for response before revoking
+    role = await service._get_role_or_404(UUID(role_id))
 
-        if not is_user_admin:
-            # Check for user.manage_roles permission
-            has_permission = (
-                db.query(Permission.name)
-                .join(RolePermission, RolePermission.permission_id == Permission.id)
-                .join(UserRole, UserRole.role_id == RolePermission.role_id)
-                .filter(
-                    UserRole.user_id == assigner_id,
-                    Permission.name == "user.manage_roles"
-                )
-                .first()
-            )
+    # Revoke role
+    await service.revoke_role(
+        user_id=UUID(user_id),
+        role_id=UUID(role_id),
+        workspace_id=UUID(workspace_id) if workspace_id else None
+    )
 
-            if not has_permission:
-                return error(
-                    message="Missing required permission: user.manage_roles",
-                    code=ErrorCode.AUTHORIZATION_ERROR,
-                    status_code=403,
-                    severity=ErrorSeverity.HIGH,
-                    context={"required_permission": "user.manage_roles"},
-                    request=request
-                )
-
-        # Find the assignment
-        query = db.query(UserRole).filter(
-            UserRole.user_id == user_id,
-            UserRole.role_id == role_id
-        )
-
-        # Add workspace filter if provided
-        if workspace_id:
-            query = query.filter(UserRole.workspace_id == workspace_id)
-        else:
-            query = query.filter(UserRole.workspace_id == None)
-
-        user_role = query.first()
-
-        if not user_role:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Role assignment not found"
-            )
-
-        # Get role and user for logging
-        role = db.query(Role).filter(Role.id == role_id).first()
-        user = db.query(Users).filter(Users.id == user_id).first()
-
-        db.delete(user_role)
-        db.commit()
-
-        logger.info(
-            f"Role '{role.name if role else role_id}' revoked from user "
-            f"{user.email if user else user_id} by {assigner_id}"
-        )
-
-        return success(
-            data={
-                "user_id": str(user_id),
-                "role_id": str(role_id),
-                "workspace_id": str(workspace_id) if workspace_id else None,
-                "role_name": role.name if role else None
-            },
-            request=request,
-            message=f"Role revoked successfully"
-        )
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        db.rollback()
-        logger.error(f"Error revoking role from user {user_id}: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to revoke role"
-        )
+    return success(
+        data={
+            "user_id": user_id,
+            "role_id": role_id,
+            "workspace_id": workspace_id,
+            "role_name": role.name
+        },
+        request=request,
+        message=f"Role '{role.display_name}' revoked successfully"
+    )
 
 
 @router.get("/{user_id}/roles")
-def list_user_roles(
+@db_transaction_handler("list user roles", auto_commit=False)
+async def list_user_roles(
     request: Request,
     user_id: str,
-    workspace_id: str = None,
-    db: Session = Depends(get_db),
+    workspace_id: str = Query(None, description="Optional workspace UUID filter"),
+    db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user)
 ):
     """
@@ -313,77 +153,23 @@ def list_user_roles(
     Returns:
     - List of user's roles with details
     """
-    try:
-        requester_id = current_user.get("identity")
+    requester_id = current_user.get("identity")
+    is_own_user = requester_id == user_id
 
-        # Allow if admin, has user.read permission, or requesting own roles
-        is_own_user = requester_id == user_id
+    # If not own user, check permissions
+    if not is_own_user:
+        from src.api.routes.roles.modules.helpers import check_role_permission
+        await check_role_permission(db, UUID(requester_id), "user.read")
 
-        if not is_own_user:
-            # Check if admin
-            is_user_admin = db.query(UserRole).join(Role).filter(
-                UserRole.user_id == requester_id,
-                Role.name.in_(["admin", "super_admin"])
-            ).first() is not None
+    service = RoleService(db)
 
-            if not is_user_admin:
-                # Check for user.read permission
-                has_permission = (
-                    db.query(Permission.name)
-                    .join(RolePermission, RolePermission.permission_id == Permission.id)
-                    .join(UserRole, UserRole.role_id == RolePermission.role_id)
-                    .filter(
-                        UserRole.user_id == requester_id,
-                        Permission.name == "user.read"
-                    )
-                    .first()
-                )
+    roles_data = await service.get_user_roles(
+        user_id=UUID(user_id),
+        workspace_id=UUID(workspace_id) if workspace_id else None
+    )
 
-                if not has_permission:
-                    raise HTTPException(
-                        status_code=status.HTTP_403_FORBIDDEN,
-                        detail="Insufficient permissions. Required: user.read or admin role"
-                    )
-
-        # Query user roles
-        query = (
-            db.query(UserRole, Role, WorkspaceModel)
-            .join(Role, UserRole.role_id == Role.id)
-            .outerjoin(WorkspaceModel, UserRole.workspace_id == WorkspaceModel.id)
-            .filter(UserRole.user_id == user_id)
-        )
-
-        # Filter by workspace if provided
-        if workspace_id:
-            query = query.filter(UserRole.workspace_id == workspace_id)
-
-        results = query.all()
-
-        roles_data = []
-        for user_role, role, workspace in results:
-            roles_data.append({
-                "id": str(user_role.id),
-                "role_id": str(role.id),
-                "role_name": role.name,
-                "role_display_name": role.display_name,
-                "hierarchy_level": role.hierarchy_level,
-                "workspace_id": str(user_role.workspace_id) if user_role.workspace_id else None,
-                "workspace_name": workspace.name if workspace else None,
-                "is_primary": user_role.is_primary,
-                "assigned_at": user_role.assigned_at.isoformat() if user_role.assigned_at else None
-            })
-
-        return success(
-            data={"roles": roles_data, "count": len(roles_data)},
-            request=request,
-            message=f"Retrieved {len(roles_data)} role(s) for user"
-        )
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error listing user roles for {user_id}: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to retrieve user roles"
-        )
+    return success(
+        data={"roles": roles_data, "count": len(roles_data)},
+        request=request,
+        message=f"Retrieved {len(roles_data)} role(s) for user"
+    )

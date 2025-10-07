@@ -1,6 +1,7 @@
 from fastapi import (
     APIRouter, Depends, Request,
 )
+from uuid import UUID
 from src.utils.logger import logger
 from src.api.schema.workspace_schema import WorkspaceSchema
 from src.api.models.workspace_models.workspace_model import WorkspaceModel
@@ -27,6 +28,7 @@ from src.api.middleware.exceptions import (
 )
 from datetime import datetime, timezone
 from src.api.security.dependencies import get_current_user
+from src.services.member_service import MemberService
 
 router = APIRouter(
     prefix="/workspace/members",
@@ -44,9 +46,7 @@ async def add_member_to_workspace(
     db: AsyncSession = Depends(get_async_db),
     user: str = Depends(get_current_user)
 ):
-    """
-    Add a member to a workspace.
-    """
+    """Add a member to a workspace - Thin controller using MemberService"""
     # Check if workspace exists
     result = await db.execute(
         select(WorkspaceModel).where(
@@ -62,33 +62,12 @@ async def add_member_to_workspace(
             resource_id=workspace_id
         )
 
-    # Check if user is already a member
-    result = await db.execute(
-        select(WorkspaceMembers).where(
-            WorkspaceMembers.workspace_id == workspace_id,
-            WorkspaceMembers.user_id == user.get("identity")
-        )
+    # Use MemberService to add member
+    service = MemberService(db)
+    new_member = await service.add_member(
+        workspace_id=UUID(workspace_id),
+        user_id=UUID(user.get("identity"))
     )
-    existing_member = result.scalar_one_or_none()
-    if existing_member:
-        raise DuplicateResourceException(
-            message="User is already a member of this workspace",
-            resource_type="workspace_member",
-            conflicting_field="user_id",
-            conflicting_value=str(user.get("identity"))
-        )
-
-    # Add user as a member
-    new_member = WorkspaceMembers(
-        user_id=user.get("identity"),
-        workspace_id=workspace_id,
-        status="active",
-        joined_at=datetime.now(timezone.utc),
-        last_activity_at=datetime.now(timezone.utc)
-    )
-    db.add(new_member)
-    await db.flush()
-    await db.refresh(new_member)
 
     return {
         "data": {"user_id": str(user.get("identity")), "workspace_id": workspace_id},

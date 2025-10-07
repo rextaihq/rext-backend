@@ -1,11 +1,13 @@
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy.orm import Session
 from datetime import datetime, timezone
+from uuid import UUID
 
 from src.utils.logger import logger
 from src.utils.helper import web_page_scraper
 from src.utils.vector_store import add_to_vector_store, delete_vectors
 from src.utils.response_utils import success, error, created
+from src.utils.slug_utils import generate_workspace_slug, generate_unique_slug
 from src.api.database.database import get_db
 from src.api.security.auth import get_current_user
 from src.api.middleware.exceptions import (
@@ -27,6 +29,7 @@ from src.api.models.user_models.user_roles import UserRole
 from src.api.models.knowledge_models.knowledge_model import BrandVoice
 from src.api.schema.knowledge_schema import BrandSchema
 from src.langgraph_flow.model.model import load_model
+from src.services.workspace_service import WorkspaceService
 
 router = APIRouter(
     prefix="/workspace",

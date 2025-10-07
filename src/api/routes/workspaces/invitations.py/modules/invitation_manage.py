@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, Request, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from datetime import datetime
+from uuid import UUID
 
 from src.utils.logger import logger
 from src.utils.response_utils import success, error
@@ -26,6 +27,7 @@ from src.api.models.user_models.users import Users
 from src.api.models.user_models.invitations import UserInvitations
 from src.api.models.workspace_models.workspace_member import WorkspaceMembers
 from src.api.models.workspace_models.workspace_model import WorkspaceModel
+from src.services.invitation_service import InvitationService
 
 
 router = APIRouter()
@@ -40,11 +42,7 @@ async def accept_invitation(
     current_user: dict = Depends(get_current_user)
 ):
     """
-    Accept an invitation to join a workspace.
-
-    - **token**: Invitation token from email
-
-    The user must be authenticated. The invitation email must match the user's email.
+    Accept an invitation to join a workspace - Thin controller using InvitationService
     """
     user_id = current_user.get("identity")
     logger.info(f"User {user_id} attempting to accept invitation with token")
@@ -59,93 +57,39 @@ async def accept_invitation(
             resource_id=str(user_id)
         )
 
-    # Find invitation by token
-    result = await db.execute(
-        select(UserInvitations).where(UserInvitations.invitation_token == invitation_data.token)
-    )
-    invitation = result.scalar_one_or_none()
+    # Use InvitationService to get invitation by token
+    service = InvitationService(db)
+    invitation = await service.get_invitation_by_token(invitation_data.token)
 
-    if not invitation:
-        raise ResourceNotFoundException(
-            message="Invalid invitation token",
-            resource_type="invitation",
-            resource_id=invitation_data.token
-        )
-
-    # Validate invitation email matches user email
+    # Validate invitation email matches user email (route-level validation)
     if invitation.email.lower() != user.email.lower():
         logger.warning(f"Invitation email mismatch: {invitation.email} vs {user.email}")
         raise WrextAuthenticationException(
             message="This invitation is for a different email address"
         )
 
-    # Check invitation status
-    if invitation.status != "pending":
-        raise WrextValidationException(
-            message=f"Invitation has already been {invitation.status}",
-            field_name="status"
-        )
-
-    # Check if expired
-    if is_invitation_expired(invitation):
-        invitation.status = "expired"
-        await db.flush()
-        raise WrextValidationException(
-            message="Invitation has expired",
-            field_name="expires_at"
-        )
-
-    # Check if user already has membership in this workspace
-    result = await db.execute(
-        select(WorkspaceMembers).where(
-            WorkspaceMembers.user_id == user_id,
-            WorkspaceMembers.workspace_id == invitation.workspace_id
-        )
+    # Use service to accept invitation (handles all business logic)
+    result = await service.accept_invitation(
+        invitation_id=invitation.id,
+        user_id=UUID(user_id)
     )
-    existing_membership = result.scalar_one_or_none()
-
-    if existing_membership:
-        raise DuplicateResourceException(
-            message="You are already a member of this workspace",
-            resource_type="workspace_member",
-            conflicting_field="user_id",
-            conflicting_value=str(user_id)
-        )
-
-    # Create workspace membership
-    membership = WorkspaceMembers(
-        user_id=user_id,
-        workspace_id=invitation.workspace_id,
-        role_id=invitation.role_id,
-        status="active",
-        joined_at=datetime.utcnow(),
-        invitation_id=invitation.id
-    )
-    db.add(membership)
-
-    # Update invitation status
-    invitation.status = "accepted"
 
     # Get workspace details for response
-    result = await db.execute(
+    workspace_result = await db.execute(
         select(WorkspaceModel).where(WorkspaceModel.id == invitation.workspace_id)
     )
-    workspace = result.scalar_one_or_none()
-
-    # Flush all changes
-    await db.flush()
-    await db.refresh(membership)
+    workspace = workspace_result.scalar_one_or_none()
 
     logger.info(f"User {user_id} accepted invitation to workspace {invitation.workspace_id}")
 
     return {
         "data": {
-            "invitation_id": str(invitation.id),
-            "workspace_id": str(invitation.workspace_id),
+            "invitation_id": result["invitation_id"],
+            "workspace_id": result["workspace_id"],
             "workspace_name": workspace.name if workspace else None,
             "role_id": str(invitation.role_id),
-            "membership_id": str(membership.id),
-            "joined_at": membership.joined_at.isoformat()
+            "membership_id": result["membership_id"],
+            "joined_at": datetime.utcnow().isoformat()
         },
         "message": "Successfully joined workspace"
     }
@@ -161,35 +105,21 @@ async def revoke_invitation(
     current_user: dict = Depends(get_current_user)
 ):
     """
-    Revoke an invitation (admin or invitation creator only).
-
-    - **invitation_id**: ID of the invitation to revoke
-    - **reason**: Optional reason for revocation
+    Revoke an invitation - Thin controller using InvitationService
     """
     user_id = current_user.get("identity")
     logger.info(f"User {user_id} attempting to revoke invitation {invitation_id}")
 
-    # Get invitation
-    result = await db.execute(
-        select(UserInvitations).where(UserInvitations.id == invitation_id)
-    )
-    invitation = result.scalar_one_or_none()
-
-    if not invitation:
-        raise ResourceNotFoundException(
-            message="Invitation not found",
-            resource_type="invitation",
-            resource_id=invitation_id
-        )
-
-    # Check permission: must be invitation creator or workspace admin
+    # Get user and invitation details for permission check
     result = await db.execute(select(Users).where(Users.id == user_id))
     user = result.scalar_one_or_none()
 
-    # Check if user created the invitation
-    is_creator = str(invitation.invited_by_user_id) == str(user_id)
+    # Use InvitationService to get invitation
+    service = InvitationService(db)
+    invitation = await service.get_invitation_by_id(UUID(invitation_id))
 
-    # Check if user is workspace admin (simplified check)
+    # Check permission: must be invitation creator or workspace admin (route-level authorization)
+    is_creator = str(invitation.invited_by_user_id) == str(user_id)
     # TODO: Implement proper workspace admin check
     is_admin = False  # Placeholder
 
@@ -198,20 +128,16 @@ async def revoke_invitation(
             message="Insufficient permissions to revoke this invitation"
         )
 
-    # Check if already revoked or accepted
-    if invitation.status in ["revoked", "accepted"]:
-        raise WrextValidationException(
-            message=f"Invitation has already been {invitation.status}",
-            field_name="status"
-        )
-
-    # Store old status
+    # Store old status for audit
     old_status = invitation.status
 
-    # Revoke invitation
-    invitation.status = "revoked"
+    # Use service to revoke invitation (handles business logic)
+    invitation = await service.revoke_invitation(
+        invitation_id=UUID(invitation_id),
+        revoked_by_user_id=UUID(user_id)
+    )
 
-    # Create audit log
+    # Create audit log (audit concern - stays in route)
     create_audit_log(
         db=db,
         user_id=user_id,

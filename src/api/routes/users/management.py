@@ -1,47 +1,55 @@
 from fastapi import APIRouter, Depends, Request, BackgroundTasks
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
+from uuid import UUID
+import uuid
+import os
+from datetime import datetime
+
 from src.utils.logger import logger
 from src.api.security.dependencies import get_current_user
 from src.api.schema.user_schema import UpdateUser, DataExportRequest, DataExportResponse
-from sqlalchemy.orm import Session
 from src.api.models.user_models.users import Users
 from src.api.models.workspace_models.workspace_member import WorkspaceMembers
 from src.api.tasks.send_mail import send_email
-from src.api.database.database import get_db
+from src.api.database.async_database import get_async_db
 from src.utils.response_utils import success, error
 from src.api.schema.response_schemas import ErrorCode, ErrorSeverity
-from datetime import datetime
-import uuid
-import os
+from src.services.user_service import UserService
+from src.api.middleware.exceptions import ResourceNotFoundException, WrextValidationException
 
 router = APIRouter()
 
 
 @router.get("/users")
-def get_users(
+async def get_users(
     request: Request,
     workspace_id: str = None,
     current_user: dict = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_async_db)
 ):
     """
-    Endpoint to retrieve users, optionally filtered by workspace.
+    Retrieve users, optionally filtered by workspace.
+    Thin controller - business logic could be extracted to service.
+
     Requires authentication.
     """
     try:
         logger.info(f"Fetching users for workspace: {workspace_id or 'all'}")
 
         # Base query
-        query = db.query(Users)
+        query = select(Users)
 
         if workspace_id:
             # Filter by workspace membership
-            query = query.join(WorkspaceMembers).filter(
+            query = query.join(WorkspaceMembers).where(
                 WorkspaceMembers.workspace_id == workspace_id,
                 WorkspaceMembers.status == "active"
             )
             logger.info(f"Filtering users by workspace_id: {workspace_id}")
 
-        users = query.all()
+        result = await db.execute(query)
+        users = result.scalars().all()
 
         # Convert users to dict format (excluding passwords)
         user_data = [user.to_dict() for user in users]
@@ -68,53 +76,50 @@ def get_users(
 
 
 @router.delete("/delete/{user_id}")
-def delete_user(
+async def delete_user(
     user_id: str,
     request: Request,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user)
 ):
     """
-    Soft delete a user by setting deleted_at timestamp
-    Requires user.delete permission (super_admin only)
+    Soft delete a user by setting deleted_at timestamp.
+    Thin controller - permission check inline, deletion logic simple.
+
+    Requires user.delete permission (super_admin only).
     """
-    # Check if user has permission to delete users (sync permission check)
-    from src.api.models.user_models.permissions import Permission
-    from src.api.models.user_models.role_permissions import RolePermission
-    from src.api.models.user_models.user_roles import UserRole
-    from src.api.middleware.exceptions import WrextAuthorizationException
-
-    user_uuid = uuid.UUID(current_user.get("identity"))
-
-    # Check user.delete permission
-    permission_check = (
-        db.query(Permission)
-        .join(RolePermission, RolePermission.permission_id == Permission.id)
-        .join(UserRole, UserRole.role_id == RolePermission.role_id)
-        .filter(UserRole.user_id == user_uuid)
-        .filter(Permission.name == "user.delete")
-        .first()
-    )
-
-    if not permission_check:
-        return error(
-            message="Missing required permission: user.delete",
-            code=ErrorCode.AUTHORIZATION_ERROR,
-            status_code=403,
-            severity=ErrorSeverity.HIGH,
-            context={"required_permission": "user.delete"},
-            request=request
-        )
     try:
-        db_user = db.query(Users).filter(Users.id == user_id).first()
-        if not db_user:
+        # Check if user has permission to delete users
+        from src.api.models.user_models.permissions import Permission
+        from src.api.models.user_models.role_permissions import RolePermission
+        from src.api.models.user_models.user_roles import UserRole
+
+        user_uuid = UUID(current_user.get("identity"))
+
+        # Check user.delete permission
+        permission_result = await db.execute(
+            select(Permission)
+            .join(RolePermission, RolePermission.permission_id == Permission.id)
+            .join(UserRole, UserRole.role_id == RolePermission.role_id)
+            .where(UserRole.user_id == user_uuid)
+            .where(Permission.name == "user.delete")
+        )
+        permission_check = permission_result.scalar_one_or_none()
+
+        if not permission_check:
             return error(
-                message="User not found",
-                code=ErrorCode.NOT_FOUND,
-                status_code=404,
-                severity=ErrorSeverity.MEDIUM,
+                message="Missing required permission: user.delete",
+                code=ErrorCode.AUTHORIZATION_ERROR,
+                status_code=403,
+                severity=ErrorSeverity.HIGH,
+                context={"required_permission": "user.delete"},
                 request=request
             )
+
+        service = UserService(db)
+
+        # Get user to delete
+        db_user = await service.get_user_by_id(UUID(user_id))
 
         # Prevent deleting an already deleted user
         if db_user.deleted_at:
@@ -128,7 +133,7 @@ def delete_user(
 
         # Soft delete
         db_user.deleted_at = datetime.utcnow()
-        db.commit()
+        await db.commit()
 
         return success(
             data={"id": str(db_user.id)},
@@ -136,8 +141,17 @@ def delete_user(
             message="User deleted successfully"
         )
 
+    except ResourceNotFoundException:
+        return error(
+            message="User not found",
+            code=ErrorCode.NOT_FOUND,
+            status_code=404,
+            severity=ErrorSeverity.MEDIUM,
+            request=request
+        )
     except Exception as e:
-        db.rollback()
+        await db.rollback()
+        logger.error(f"Failed to delete user {user_id}: {str(e)}")
         return error(
             message="Failed to delete user",
             code=ErrorCode.INTERNAL_SERVER_ERROR,
@@ -149,57 +163,83 @@ def delete_user(
 
 
 @router.put("/update/{user_id}")
-def update_user(user_id: str, user: UpdateUser, request: Request, db: Session = Depends(get_db)):
+async def update_user(
+    user_id: str,
+    user: UpdateUser,
+    request: Request,
+    db: AsyncSession = Depends(get_async_db)
+):
     """
-    Update user details
+    Update user details.
+    Thin controller - uses UserService for updates.
     """
     try:
-        db_user = db.query(Users).filter(Users.id == user_id).first()
-        if not db_user:
-            return error(
-                message="User not found",
-                code=ErrorCode.RESOURCE_NOT_FOUND,
-                status_code=404,
-                severity=ErrorSeverity.MEDIUM,
-                request=request
-            )
-         # Check for duplicate email
-        if user.email and db.query(Users).filter(Users.email == user.email, Users.id != user_id).first():
-            return error(
-                message="Email already exists",
-                code=ErrorCode.DUPLICATE_RESOURCE,
-                status_code=400,
-                severity=ErrorSeverity.MEDIUM,
-                request=request
-            )
-        # Check for duplicate username
-        if user.username and db.query(Users).filter(Users.username == user.username, Users.id != user_id).first():
-            return error(
-                message="Username already exists",
-                code=ErrorCode.DUPLICATE_RESOURCE,
-                status_code=400,
-                severity=ErrorSeverity.MEDIUM,
-                request=request
-            )
+        service = UserService(db)
 
-        # Update fields if provided
+        # Get user
+        db_user = await service.get_user_by_id(UUID(user_id))
+
+        # Check for duplicate email
+        if user.email:
+            email_result = await db.execute(
+                select(Users).where(
+                    Users.email == user.email,
+                    Users.id != UUID(user_id)
+                )
+            )
+            if email_result.scalar_one_or_none():
+                return error(
+                    message="Email already exists",
+                    code=ErrorCode.DUPLICATE_RESOURCE,
+                    status_code=400,
+                    severity=ErrorSeverity.MEDIUM,
+                    request=request
+                )
+
+        # Check for duplicate username
+        if user.username:
+            username_result = await db.execute(
+                select(Users).where(
+                    Users.username == user.username,
+                    Users.id != UUID(user_id)
+                )
+            )
+            if username_result.scalar_one_or_none():
+                return error(
+                    message="Username already exists",
+                    code=ErrorCode.DUPLICATE_RESOURCE,
+                    status_code=400,
+                    severity=ErrorSeverity.MEDIUM,
+                    request=request
+                )
+
+        # Update fields using service
+        update_kwargs = {}
+        if user.first_name is not None:
+            update_kwargs["first_name"] = user.first_name
+        if user.last_name is not None:
+            update_kwargs["last_name"] = user.last_name
+        if user.display_name is not None:
+            update_kwargs["display_name"] = user.display_name
+        if user.language is not None:
+            update_kwargs["language"] = user.language
+        if user.timezone is not None:
+            update_kwargs["timezone"] = user.timezone
+
+        # Email and username need direct update (not in update_profile)
         if user.email is not None:
             db_user.email = user.email
         if user.username is not None:
             db_user.username = user.username
-        if user.first_name is not None:
-            db_user.first_name = user.first_name
-        if user.last_name is not None:
-            db_user.last_name = user.last_name
-        if user.display_name is not None:
-            db_user.display_name = user.display_name
-        if user.language is not None:
-            db_user.language = user.language
-        if user.timezone is not None:
-            db_user.timezone = user.timezone
 
-        db.commit()
-        db.refresh(db_user)
+        # Update other fields via service
+        if update_kwargs:
+            db_user = await service.update_profile(user_id=UUID(user_id), **update_kwargs)
+        else:
+            db_user.updated_at = datetime.utcnow()
+
+        await db.commit()
+        await db.refresh(db_user)
 
         # Return updated user data (excluding password)
         user_data = {
@@ -212,7 +252,7 @@ def update_user(user_id: str, user: UpdateUser, request: Request, db: Session = 
             "language": db_user.language,
             "timezone": db_user.timezone,
             "status": db_user.status,
-            "updated_at": db_user.updated_at.isoformat() if hasattr(db_user, 'updated_at') else None
+            "updated_at": db_user.updated_at.isoformat() if db_user.updated_at else None
         }
 
         return success(
@@ -221,8 +261,17 @@ def update_user(user_id: str, user: UpdateUser, request: Request, db: Session = 
             message="User updated successfully"
         )
 
+    except ResourceNotFoundException:
+        return error(
+            message="User not found",
+            code=ErrorCode.RESOURCE_NOT_FOUND,
+            status_code=404,
+            severity=ErrorSeverity.MEDIUM,
+            request=request
+        )
     except Exception as e:
-        db.rollback()
+        await db.rollback()
+        logger.error(f"Failed to update user {user_id}: {str(e)}")
         return error(
             message="Failed to update user",
             code=ErrorCode.INTERNAL_SERVER_ERROR,
@@ -234,15 +283,16 @@ def update_user(user_id: str, user: UpdateUser, request: Request, db: Session = 
 
 
 @router.post("/export-data", response_model=DataExportResponse)
-def export_user_data(
+async def export_user_data(
     request: Request,
     export_request: DataExportRequest,
     background_tasks: BackgroundTasks,
     current_user: dict = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_async_db)
 ):
     """
     Request export of user's data.
+    Thin controller - data collection logic kept in route for now.
 
     Generates a comprehensive data export including:
     - Profile information
@@ -255,19 +305,13 @@ def export_user_data(
     Returns export request confirmation.
     """
     try:
-        user_id = current_user.get("identity")
+        user_id = UUID(current_user.get("identity"))
         logger.info(f"Data export requested for user: {user_id}")
 
+        service = UserService(db)
+
         # Get user from database
-        db_user = db.query(Users).filter(Users.id == user_id).first()
-        if not db_user:
-            return error(
-                message="User not found",
-                code=ErrorCode.RESOURCE_NOT_FOUND,
-                status_code=404,
-                severity=ErrorSeverity.MEDIUM,
-                request=request
-            )
+        db_user = await service.get_user_by_id(user_id)
 
         # Generate export ID
         export_id = str(uuid.uuid4())
@@ -376,6 +420,14 @@ def export_user_data(
             message="Data export request completed successfully"
         )
 
+    except ResourceNotFoundException:
+        return error(
+            message="User not found",
+            code=ErrorCode.RESOURCE_NOT_FOUND,
+            status_code=404,
+            severity=ErrorSeverity.MEDIUM,
+            request=request
+        )
     except Exception as e:
         logger.error(f"Error exporting data for user {current_user.get('identity')}: {str(e)}")
         return error(
