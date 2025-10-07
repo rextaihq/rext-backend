@@ -9,7 +9,7 @@ Tests cover:
 
 import pytest
 from uuid import uuid4
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.services.workspace_service import WorkspaceService
@@ -145,7 +145,7 @@ class TestWorkspaceServiceNewFlows:
         service._assign_permissions_to_role = AsyncMock()
         service._assign_role_to_user = AsyncMock()
         service._populate_brand_voice_and_vectors = AsyncMock()
-        service._serialize_workspace = AsyncMock(return_value={"id": "workspace-id"})
+        service._serialize_workspace = Mock(return_value={"id": "workspace-id"})
         mock_db.refresh = AsyncMock()
 
         result = await service.create_workspace_for_user(
@@ -204,7 +204,7 @@ class TestWorkspaceServiceNewFlows:
         )
         updated_workspace.id = workspace.id
         service.update_workspace = AsyncMock(return_value=updated_workspace)
-        service._serialize_workspace = AsyncMock(return_value={"id": str(workspace.id), "name": "New Name"})
+        service._serialize_workspace = Mock(return_value={"id": str(workspace.id), "name": "New Name"})
 
         result = await service.update_workspace_for_user(
             workspace_id=workspace.id,

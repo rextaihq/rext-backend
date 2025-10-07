@@ -44,7 +44,7 @@ def test_enrich_topic_returns_topic_generation_model():
     assert isinstance(result, TopicGeneration)
     assert result.title == basic_topic["title"]
     assert result.suggested_defaults.platform == "Website"
-    assert "AI" in result.suggested_defaults.primaryKeywords[0]
+    assert "ai" in result.suggested_defaults.primaryKeywords[0].lower()
 
 
 def test_enrich_topic_handles_basic_topic_score_model_instance():

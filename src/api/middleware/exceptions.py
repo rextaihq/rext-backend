@@ -131,9 +131,14 @@ class WrextAuthorizationException(WrextAPIException):
     """Exception for authorization errors."""
 
     def __init__(self, message: str = "Access forbidden", resource: str = None, **kwargs):
-        context = kwargs.get('context', {})
+        # Extract and remove parameters that shouldn't be passed to parent
+        required_permission = kwargs.pop('required_permission', None)
+        context = kwargs.pop('context', {})
+        
         if resource:
             context['resource'] = resource
+        if required_permission:
+            context['required_permission'] = required_permission
 
         super().__init__(
             message=message,

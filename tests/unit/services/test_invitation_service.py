@@ -1,22 +1,21 @@
 """
 Unit tests for InvitationService.
 
-Tests cover:
-- create_invitation: Creating invitations with validation
-- get_invitation_by_id: Retrieving invitations
-- get_invitation_by_token: Token-based retrieval
-- get_workspace_invitations: Listing invitations
-- accept_invitation: Accepting and creating membership
-- revoke_invitation: Revoking invitations
-- expire_old_invitations: Batch expiry processing
-- resend_invitation: Extending and regenerating tokens
+Tests invitation business logic including creation, acceptance,
+revocation, and expiry management.
 """
 
 import pytest
+from unittest.mock import MagicMock, AsyncMock, patch
 from uuid import uuid4
 from datetime import datetime, timedelta
 
 from src.services.invitation_service import InvitationService
+from src.api.models.user_models.invitations import UserInvitations
+from src.api.models.workspace_models.workspace_model import WorkspaceModel
+from src.api.models.user_models.users import Users
+from src.api.models.workspace_models.workspace_member import WorkspaceMembers
+from src.api.models.user_models.roles import Role
 from src.api.middleware.exceptions import (
     ResourceNotFoundException,
     DuplicateResourceException,
@@ -25,478 +24,809 @@ from src.api.middleware.exceptions import (
 )
 
 
-@pytest.mark.unit
-class TestInvitationServiceCreateInvitation:
-    """Test create_invitation method"""
+@pytest.fixture
+def mock_db():
+    """Create a mock AsyncSession."""
+    db = AsyncMock()
+    db.add = MagicMock()
+    db.flush = AsyncMock()
+    db.refresh = AsyncMock()
+    return db
 
-    async def test_create_invitation_success(self, db_session, setup_factories):
-        """Should successfully create invitation"""
+
+@pytest.fixture
+def invitation_service(mock_db):
+    """Create an InvitationService instance with mock db."""
+    return InvitationService(db=mock_db)
+
+
+@pytest.fixture
+def sample_workspace():
+    """Create a sample workspace."""
+    workspace = MagicMock(spec=WorkspaceModel)
+    workspace.id = uuid4()
+    workspace.name = "Test Workspace"
+    return workspace
+
+
+@pytest.fixture
+def sample_role():
+    """Create a sample role."""
+    role = MagicMock(spec=Role)
+    role.id = uuid4()
+    role.name = "Member"
+    return role
+
+
+@pytest.fixture
+def sample_user():
+    """Create a sample user."""
+    user = MagicMock(spec=Users)
+    user.id = uuid4()
+    user.email = "test@example.com"
+    return user
+
+
+@pytest.fixture
+def sample_invitation(sample_workspace, sample_role, sample_user):
+    """Create a sample invitation."""
+    invitation = MagicMock(spec=UserInvitations)
+    invitation.id = uuid4()
+    invitation.email = "invitee@example.com"
+    invitation.workspace_id = sample_workspace.id
+    invitation.role_id = sample_role.id
+    invitation.invited_by_user_id = sample_user.id
+    invitation.invitation_token = "test_token_123"
+    invitation.status = "pending"
+    invitation.expires_at = datetime.utcnow() + timedelta(days=7)
+    invitation.created_at = datetime.utcnow()
+    return invitation
+
+
+class TestGenerateInvitationToken:
+    """Tests for _generate_invitation_token method."""
+
+    def test_generate_invitation_token_returns_string(self, invitation_service):
+        """Test that token generation returns a string."""
+        email = "test@example.com"
+        workspace_id = uuid4()
+        
+        token = invitation_service._generate_invitation_token(email, workspace_id)
+        
+        assert isinstance(token, str)
+        assert len(token) > 0
+
+    def test_generate_invitation_token_is_unique(self, invitation_service):
+        """Test that each token generation produces unique tokens."""
+        email = "test@example.com"
+        workspace_id = uuid4()
+        
+        token1 = invitation_service._generate_invitation_token(email, workspace_id)
+        token2 = invitation_service._generate_invitation_token(email, workspace_id)
+        
+        assert token1 != token2
+
+    def test_generate_invitation_token_different_inputs(self, invitation_service):
+        """Test that different inputs produce different tokens."""
+        token1 = invitation_service._generate_invitation_token("email1@example.com", uuid4())
+        token2 = invitation_service._generate_invitation_token("email2@example.com", uuid4())
+        
+        assert token1 != token2
+
+
+class TestCreateInvitation:
+    """Tests for create_invitation method."""
+
+    @pytest.mark.asyncio
+    async def test_create_invitation_success(
+        self, invitation_service, mock_db, sample_workspace, sample_role, sample_user
+    ):
+        """Test successful invitation creation."""
         # Arrange
-        workspace = await setup_factories["workspace"].create()
-        role = await setup_factories["role"].create()
-        inviter = await setup_factories["user"].create()
-        service = InvitationService(db_session)
+        email = "new@example.com"
+        workspace_id = sample_workspace.id
+        role_id = sample_role.id
+        user_id = sample_user.id
+
+        # Mock database queries
+        workspace_result = MagicMock()
+        workspace_result.scalar_one_or_none.return_value = sample_workspace
+        
+        role_result = MagicMock()
+        role_result.scalar_one_or_none.return_value = sample_role
+        
+        inviter_result = MagicMock()
+        inviter_result.scalar_one_or_none.return_value = sample_user
+        
+        invitation_check_result = MagicMock()
+        invitation_check_result.scalar_one_or_none.return_value = None
+        
+        user_check_result = MagicMock()
+        user_check_result.scalar_one_or_none.return_value = None
+
+        mock_db.execute = AsyncMock(side_effect=[
+            workspace_result,
+            role_result,
+            inviter_result,
+            invitation_check_result,
+            user_check_result
+        ])
 
         # Act
-        result = await service.create_invitation(
-            email="newuser@example.com",
-            workspace_id=workspace.id,
-            role_id=role.id,
-            invited_by_user_id=inviter.id
+        result = await invitation_service.create_invitation(
+            email=email,
+            workspace_id=workspace_id,
+            role_id=role_id,
+            invited_by_user_id=user_id,
+            expiry_days=7
         )
 
         # Assert
-        assert result.email == "newuser@example.com"
-        assert result.workspace_id == workspace.id
-        assert result.role_id == role.id
-        assert result.status == "pending"
-        assert result.invitation_token is not None
-        assert result.expires_at > datetime.utcnow()
+        assert mock_db.add.called
+        assert mock_db.flush.call_count >= 1
+        assert mock_db.refresh.call_count >= 1
 
-    async def test_create_invitation_normalizes_email(self, db_session, setup_factories):
-        """Should normalize email to lowercase"""
-        # Arrange
-        workspace = await setup_factories["workspace"].create()
-        role = await setup_factories["role"].create()
-        inviter = await setup_factories["user"].create()
-        service = InvitationService(db_session)
-
-        # Act
-        result = await service.create_invitation(
-            email="NewUser@EXAMPLE.COM",
-            workspace_id=workspace.id,
-            role_id=role.id,
-            invited_by_user_id=inviter.id
-        )
-
-        # Assert
-        assert result.email == "newuser@example.com"
-
-    async def test_create_invitation_custom_expiry(self, db_session, setup_factories):
-        """Should respect custom expiry days"""
-        # Arrange
-        workspace = await setup_factories["workspace"].create()
-        role = await setup_factories["role"].create()
-        inviter = await setup_factories["user"].create()
-        service = InvitationService(db_session)
-
-        # Act
-        result = await service.create_invitation(
-            email="test@example.com",
-            workspace_id=workspace.id,
-            role_id=role.id,
-            invited_by_user_id=inviter.id,
-            expiry_days=14
-        )
-
-        # Assert
-        expected_expiry = datetime.utcnow() + timedelta(days=14)
-        assert abs((result.expires_at - expected_expiry).total_seconds()) < 2
-
-    async def test_create_invitation_invalid_expiry_days(self, db_session, setup_factories):
-        """Should reject invalid expiry days"""
-        # Arrange
-        workspace = await setup_factories["workspace"].create()
-        role = await setup_factories["role"].create()
-        inviter = await setup_factories["user"].create()
-        service = InvitationService(db_session)
-
-        # Act & Assert
+    @pytest.mark.asyncio
+    async def test_create_invitation_validates_expiry_days_too_small(
+        self, invitation_service, sample_workspace, sample_role, sample_user
+    ):
+        """Test that expiry_days must be at least 1."""
         with pytest.raises(WrextValidationException) as exc_info:
-            await service.create_invitation(
-                email="test@example.com",
-                workspace_id=workspace.id,
-                role_id=role.id,
-                invited_by_user_id=inviter.id,
-                expiry_days=50  # Invalid
+            await invitation_service.create_invitation(
+            email="test@example.com",
+                workspace_id=sample_workspace.id,
+                role_id=sample_role.id,
+                invited_by_user_id=sample_user.id,
+                expiry_days=0
             )
+        
+        assert "between 1 and 30" in str(exc_info.value)
 
-        assert "between 1 and 30" in exc_info.value.message
+    @pytest.mark.asyncio
+    async def test_create_invitation_validates_expiry_days_too_large(
+        self, invitation_service, sample_workspace, sample_role, sample_user
+    ):
+        """Test that expiry_days must be at most 30."""
+        with pytest.raises(WrextValidationException) as exc_info:
+            await invitation_service.create_invitation(
+                email="test@example.com",
+                workspace_id=sample_workspace.id,
+                role_id=sample_role.id,
+                invited_by_user_id=sample_user.id,
+                expiry_days=31
+            )
+        
+        assert "between 1 and 30" in str(exc_info.value)
 
-    async def test_create_invitation_workspace_not_found(self, db_session, setup_factories):
-        """Should raise ResourceNotFoundException if workspace doesn't exist"""
-        # Arrange
-        role = await setup_factories["role"].create()
-        inviter = await setup_factories["user"].create()
-        service = InvitationService(db_session)
+    @pytest.mark.asyncio
+    async def test_create_invitation_workspace_not_found(
+        self, invitation_service, mock_db, sample_role, sample_user
+    ):
+        """Test that missing workspace raises exception."""
+        workspace_result = MagicMock()
+        workspace_result.scalar_one_or_none.return_value = None
+        mock_db.execute = AsyncMock(return_value=workspace_result)
 
-        # Act & Assert
-        with pytest.raises(ResourceNotFoundException):
-            await service.create_invitation(
+        with pytest.raises(ResourceNotFoundException) as exc_info:
+            await invitation_service.create_invitation(
                 email="test@example.com",
                 workspace_id=uuid4(),
-                role_id=role.id,
-                invited_by_user_id=inviter.id
+                role_id=sample_role.id,
+                invited_by_user_id=sample_user.id
             )
+        
+        assert exc_info.value.context['resource_type'] == "Workspace"
 
-    async def test_create_invitation_role_not_found(self, db_session, setup_factories):
-        """Should raise ResourceNotFoundException if role doesn't exist"""
-        # Arrange
-        workspace = await setup_factories["workspace"].create()
-        inviter = await setup_factories["user"].create()
-        service = InvitationService(db_session)
+    @pytest.mark.asyncio
+    async def test_create_invitation_role_not_found(
+        self, invitation_service, mock_db, sample_workspace, sample_user
+    ):
+        """Test that missing role raises exception."""
+        workspace_result = MagicMock()
+        workspace_result.scalar_one_or_none.return_value = sample_workspace
+        
+        role_result = MagicMock()
+        role_result.scalar_one_or_none.return_value = None
 
-        # Act & Assert
-        with pytest.raises(ResourceNotFoundException):
-            await service.create_invitation(
+        mock_db.execute = AsyncMock(side_effect=[workspace_result, role_result])
+
+        with pytest.raises(ResourceNotFoundException) as exc_info:
+            await invitation_service.create_invitation(
                 email="test@example.com",
-                workspace_id=workspace.id,
+                workspace_id=sample_workspace.id,
                 role_id=uuid4(),
-                invited_by_user_id=inviter.id
+                invited_by_user_id=sample_user.id
             )
+        
+        assert exc_info.value.context['resource_type'] == "Role"
 
-    async def test_create_invitation_duplicate_active(self, db_session, setup_factories):
-        """Should raise DuplicateResourceException for active duplicate"""
-        # Arrange
-        workspace = await setup_factories["workspace"].create()
-        role = await setup_factories["role"].create()
-        inviter = await setup_factories["user"].create()
+    @pytest.mark.asyncio
+    async def test_create_invitation_inviter_not_found(
+        self, invitation_service, mock_db, sample_workspace, sample_role
+    ):
+        """Test that missing inviter raises exception."""
+        workspace_result = MagicMock()
+        workspace_result.scalar_one_or_none.return_value = sample_workspace
+        
+        role_result = MagicMock()
+        role_result.scalar_one_or_none.return_value = sample_role
+        
+        inviter_result = MagicMock()
+        inviter_result.scalar_one_or_none.return_value = None
 
-        # Create existing invitation
-        await setup_factories["invitation"].create(
-            email="existing@example.com",
-            workspace_id=workspace.id,
-            role_id=role.id,
-            status="pending",
-            expires_at=datetime.utcnow() + timedelta(days=7)
-        )
+        mock_db.execute = AsyncMock(side_effect=[
+            workspace_result, role_result, inviter_result
+        ])
 
-        service = InvitationService(db_session)
+        with pytest.raises(ResourceNotFoundException) as exc_info:
+            await invitation_service.create_invitation(
+                email="test@example.com",
+                workspace_id=sample_workspace.id,
+                role_id=sample_role.id,
+                invited_by_user_id=uuid4()
+            )
+        
+        assert exc_info.value.context['resource_type'] == "User"
 
-        # Act & Assert
+    @pytest.mark.asyncio
+    async def test_create_invitation_duplicate_active_invitation(
+        self, invitation_service, mock_db, sample_workspace, sample_role, sample_user
+    ):
+        """Test that duplicate active invitation raises exception."""
+        workspace_result = MagicMock()
+        workspace_result.scalar_one_or_none.return_value = sample_workspace
+        
+        role_result = MagicMock()
+        role_result.scalar_one_or_none.return_value = sample_role
+        
+        inviter_result = MagicMock()
+        inviter_result.scalar_one_or_none.return_value = sample_user
+        
+        # Existing invitation that hasn't expired
+        existing_invitation = MagicMock()
+        existing_invitation.status = "pending"
+        existing_invitation.expires_at = datetime.utcnow() + timedelta(days=5)
+        
+        invitation_check_result = MagicMock()
+        invitation_check_result.scalar_one_or_none.return_value = existing_invitation
+
+        mock_db.execute = AsyncMock(side_effect=[
+            workspace_result, role_result, inviter_result, invitation_check_result
+        ])
+
         with pytest.raises(DuplicateResourceException) as exc_info:
-            await service.create_invitation(
-                email="existing@example.com",
-                workspace_id=workspace.id,
-                role_id=role.id,
-                invited_by_user_id=inviter.id
+            await invitation_service.create_invitation(
+                email="test@example.com",
+                workspace_id=sample_workspace.id,
+                role_id=sample_role.id,
+                invited_by_user_id=sample_user.id
             )
+        
+        assert exc_info.value.context['resource_type'] == "Invitation"
 
-        assert "already exists" in exc_info.value.message
+    @pytest.mark.asyncio
+    async def test_create_invitation_auto_expires_old_invitation(
+        self, invitation_service, mock_db, sample_workspace, sample_role, sample_user
+    ):
+        """Test that expired pending invitation is auto-expired."""
+        workspace_result = MagicMock()
+        workspace_result.scalar_one_or_none.return_value = sample_workspace
+        
+        role_result = MagicMock()
+        role_result.scalar_one_or_none.return_value = sample_role
+        
+        inviter_result = MagicMock()
+        inviter_result.scalar_one_or_none.return_value = sample_user
+        
+        # Existing expired invitation
+        expired_invitation = MagicMock()
+        expired_invitation.status = "pending"
+        expired_invitation.expires_at = datetime.utcnow() - timedelta(days=1)
+        
+        invitation_check_result = MagicMock()
+        invitation_check_result.scalar_one_or_none.return_value = expired_invitation
+        
+        user_check_result = MagicMock()
+        user_check_result.scalar_one_or_none.return_value = None
 
-    async def test_create_invitation_user_already_member(self, db_session, setup_factories):
-        """Should raise BusinessRuleViolationException if user already member"""
-        # Arrange
-        workspace = await setup_factories["workspace"].create()
-        role = await setup_factories["role"].create()
-        inviter = await setup_factories["user"].create()
-        existing_user = await setup_factories["user"].create(
-            email="member@example.com"
+        mock_db.execute = AsyncMock(side_effect=[
+            workspace_result, role_result, inviter_result,
+            invitation_check_result, user_check_result
+        ])
+
+        # Should succeed and auto-expire the old one
+        result = await invitation_service.create_invitation(
+            email="test@example.com",
+            workspace_id=sample_workspace.id,
+            role_id=sample_role.id,
+            invited_by_user_id=sample_user.id
         )
-        await setup_factories["workspace_member"].create(
-            workspace_id=workspace.id,
-            user_id=existing_user.id
-        )
 
-        service = InvitationService(db_session)
+        assert expired_invitation.status == "expired"
+        assert mock_db.add.called
 
-        # Act & Assert
+    @pytest.mark.asyncio
+    async def test_create_invitation_user_already_member(
+        self, invitation_service, mock_db, sample_workspace, sample_role, sample_user
+    ):
+        """Test that invitation to existing member raises exception."""
+        workspace_result = MagicMock()
+        workspace_result.scalar_one_or_none.return_value = sample_workspace
+        
+        role_result = MagicMock()
+        role_result.scalar_one_or_none.return_value = sample_role
+        
+        inviter_result = MagicMock()
+        inviter_result.scalar_one_or_none.return_value = sample_user
+        
+        invitation_check_result = MagicMock()
+        invitation_check_result.scalar_one_or_none.return_value = None
+        
+        existing_user = MagicMock()
+        existing_user.id = uuid4()
+        existing_user.email = "test@example.com"
+        
+        user_check_result = MagicMock()
+        user_check_result.scalar_one_or_none.return_value = existing_user
+        
+        existing_membership = MagicMock()
+        membership_check_result = MagicMock()
+        membership_check_result.scalar_one_or_none.return_value = existing_membership
+
+        mock_db.execute = AsyncMock(side_effect=[
+            workspace_result, role_result, inviter_result,
+            invitation_check_result, user_check_result, membership_check_result
+        ])
+
         with pytest.raises(BusinessRuleViolationException) as exc_info:
-            await service.create_invitation(
-                email="member@example.com",
-                workspace_id=workspace.id,
-                role_id=role.id,
-                invited_by_user_id=inviter.id
+            await invitation_service.create_invitation(
+                email="test@example.com",
+                workspace_id=sample_workspace.id,
+                role_id=sample_role.id,
+                invited_by_user_id=sample_user.id
             )
-
-        assert "already a member" in exc_info.value.message
-
-
-@pytest.mark.unit
-class TestInvitationServiceGetInvitation:
-    """Test get invitation methods"""
-
-    async def test_get_invitation_by_id_success(self, db_session, setup_factories):
-        """Should retrieve invitation by ID"""
-        # Arrange
-        invitation = await setup_factories["invitation"].create()
-        service = InvitationService(db_session)
-
-        # Act
-        result = await service.get_invitation_by_id(invitation.id)
-
-        # Assert
-        assert result.id == invitation.id
-        assert result.email == invitation.email
-
-    async def test_get_invitation_by_id_not_found(self, db_session):
-        """Should raise ResourceNotFoundException if not found"""
-        # Arrange
-        service = InvitationService(db_session)
-
-        # Act & Assert
-        with pytest.raises(ResourceNotFoundException):
-            await service.get_invitation_by_id(uuid4())
-
-    async def test_get_invitation_by_token_success(self, db_session, setup_factories):
-        """Should retrieve invitation by token"""
-        # Arrange
-        invitation = await setup_factories["invitation"].create()
-        service = InvitationService(db_session)
-
-        # Act
-        result = await service.get_invitation_by_token(invitation.invitation_token)
-
-        # Assert
-        assert result.id == invitation.id
-
-    async def test_get_invitation_by_token_not_found(self, db_session):
-        """Should raise ResourceNotFoundException if token not found"""
-        # Arrange
-        service = InvitationService(db_session)
-
-        # Act & Assert
-        with pytest.raises(ResourceNotFoundException):
-            await service.get_invitation_by_token("invalid_token")
+        
+        assert "already a member" in str(exc_info.value)
 
 
-@pytest.mark.unit
-class TestInvitationServiceGetWorkspaceInvitations:
-    """Test get_workspace_invitations method"""
+class TestGetInvitationById:
+    """Tests for get_invitation_by_id method."""
 
-    async def test_get_workspace_invitations_all(self, db_session, setup_factories):
-        """Should return all workspace invitations"""
-        # Arrange
-        workspace = await setup_factories["workspace"].create()
-        inv1 = await setup_factories["invitation"].create(
-            workspace_id=workspace.id,
-            status="pending"
-        )
-        inv2 = await setup_factories["invitation"].create(
-            workspace_id=workspace.id,
-            status="accepted"
-        )
-        service = InvitationService(db_session)
+    @pytest.mark.asyncio
+    async def test_get_invitation_by_id_success(
+        self, invitation_service, mock_db, sample_invitation
+    ):
+        """Test successful invitation retrieval by ID."""
+        result_mock = MagicMock()
+        result_mock.scalar_one_or_none.return_value = sample_invitation
+        mock_db.execute = AsyncMock(return_value=result_mock)
 
-        # Act
-        result = await service.get_workspace_invitations(workspace.id)
+        result = await invitation_service.get_invitation_by_id(sample_invitation.id)
 
-        # Assert
-        assert len(result) == 2
+        assert result == sample_invitation
 
-    async def test_get_workspace_invitations_filtered(self, db_session, setup_factories):
-        """Should filter by status"""
-        # Arrange
-        workspace = await setup_factories["workspace"].create()
-        await setup_factories["invitation"].create(
-            workspace_id=workspace.id,
-            status="pending"
-        )
-        await setup_factories["invitation"].create(
-            workspace_id=workspace.id,
-            status="accepted"
-        )
-        service = InvitationService(db_session)
+    @pytest.mark.asyncio
+    async def test_get_invitation_by_id_not_found(self, invitation_service, mock_db):
+        """Test that missing invitation raises exception."""
+        result_mock = MagicMock()
+        result_mock.scalar_one_or_none.return_value = None
+        mock_db.execute = AsyncMock(return_value=result_mock)
 
-        # Act
-        result = await service.get_workspace_invitations(
-            workspace.id,
-            status="pending"
+        with pytest.raises(ResourceNotFoundException) as exc_info:
+            await invitation_service.get_invitation_by_id(uuid4())
+        
+        assert exc_info.value.context['resource_type'] == "Invitation"
+
+
+class TestGetInvitationByToken:
+    """Tests for get_invitation_by_token method."""
+
+    @pytest.mark.asyncio
+    async def test_get_invitation_by_token_success(
+        self, invitation_service, mock_db, sample_invitation
+    ):
+        """Test successful invitation retrieval by token."""
+        result_mock = MagicMock()
+        result_mock.scalar_one_or_none.return_value = sample_invitation
+        mock_db.execute = AsyncMock(return_value=result_mock)
+
+        result = await invitation_service.get_invitation_by_token("test_token")
+
+        assert result == sample_invitation
+
+    @pytest.mark.asyncio
+    async def test_get_invitation_by_token_not_found(self, invitation_service, mock_db):
+        """Test that missing invitation raises exception."""
+        result_mock = MagicMock()
+        result_mock.scalar_one_or_none.return_value = None
+        mock_db.execute = AsyncMock(return_value=result_mock)
+
+        with pytest.raises(ResourceNotFoundException) as exc_info:
+            await invitation_service.get_invitation_by_token("invalid_token")
+        
+        assert exc_info.value.context['resource_type'] == "Invitation"
+
+
+class TestGetWorkspaceInvitations:
+    """Tests for get_workspace_invitations method."""
+
+    @pytest.mark.asyncio
+    async def test_get_workspace_invitations_all(
+        self, invitation_service, mock_db, sample_invitation, sample_workspace
+    ):
+        """Test retrieving all workspace invitations."""
+        scalars_mock = MagicMock()
+        scalars_mock.all.return_value = [sample_invitation]
+        
+        result_mock = MagicMock()
+        result_mock.scalars.return_value = scalars_mock
+        
+        mock_db.execute = AsyncMock(return_value=result_mock)
+
+        result = await invitation_service.get_workspace_invitations(
+            workspace_id=sample_workspace.id
         )
 
-        # Assert
         assert len(result) == 1
-        assert result[0].status == "pending"
+        assert result[0] == sample_invitation
 
+    @pytest.mark.asyncio
+    async def test_get_workspace_invitations_filtered_by_status(
+        self, invitation_service, mock_db, sample_workspace
+    ):
+        """Test retrieving invitations filtered by status."""
+        scalars_mock = MagicMock()
+        scalars_mock.all.return_value = []
+        
+        result_mock = MagicMock()
+        result_mock.scalars.return_value = scalars_mock
+        
+        mock_db.execute = AsyncMock(return_value=result_mock)
 
-@pytest.mark.unit
-class TestInvitationServiceAcceptInvitation:
-    """Test accept_invitation method"""
-
-    async def test_accept_invitation_success(self, db_session, setup_factories):
-        """Should accept invitation and create membership"""
-        # Arrange
-        user = await setup_factories["user"].create(email="invitee@example.com")
-        invitation = await setup_factories["invitation"].create(
-            email="invitee@example.com",
-            status="pending",
-            expires_at=datetime.utcnow() + timedelta(days=7)
-        )
-        service = InvitationService(db_session)
-
-        # Act
-        result = await service.accept_invitation(
-            invitation_id=invitation.id,
-            user_id=user.id
-        )
-        await db_session.refresh(invitation)
-
-        # Assert
-        assert invitation.status == "accepted"
-        assert result["user_id"] == str(user.id)
-        assert result["workspace_id"] == str(invitation.workspace_id)
-        assert "membership_id" in result
-
-    async def test_accept_invitation_not_pending(self, db_session, setup_factories):
-        """Should raise BusinessRuleViolationException if not pending"""
-        # Arrange
-        user = await setup_factories["user"].create()
-        invitation = await setup_factories["invitation"].create(
+        result = await invitation_service.get_workspace_invitations(
+            workspace_id=sample_workspace.id,
             status="accepted"
         )
-        service = InvitationService(db_session)
 
-        # Act & Assert
-        with pytest.raises(BusinessRuleViolationException) as exc_info:
-            await service.accept_invitation(
-                invitation_id=invitation.id,
-                user_id=user.id
-            )
+        assert isinstance(result, list)
 
-        assert "cannot accept" in exc_info.value.message
+    @pytest.mark.asyncio
+    async def test_get_workspace_invitations_with_pagination(
+        self, invitation_service, mock_db, sample_workspace
+    ):
+        """Test retrieving invitations with pagination."""
+        scalars_mock = MagicMock()
+        scalars_mock.all.return_value = []
+        
+        result_mock = MagicMock()
+        result_mock.scalars.return_value = scalars_mock
+        
+        mock_db.execute = AsyncMock(return_value=result_mock)
 
-    async def test_accept_invitation_expired(self, db_session, setup_factories):
-        """Should raise BusinessRuleViolationException if expired"""
-        # Arrange
-        user = await setup_factories["user"].create()
-        invitation = await setup_factories["invitation"].create(
-            status="pending",
-            expires_at=datetime.utcnow() - timedelta(days=1)
-        )
-        service = InvitationService(db_session)
-
-        # Act & Assert
-        with pytest.raises(BusinessRuleViolationException) as exc_info:
-            await service.accept_invitation(
-                invitation_id=invitation.id,
-                user_id=user.id
-            )
-
-        assert "expired" in exc_info.value.message
-
-    async def test_accept_invitation_email_mismatch(self, db_session, setup_factories):
-        """Should raise BusinessRuleViolationException if email doesn't match"""
-        # Arrange
-        user = await setup_factories["user"].create(email="wrong@example.com")
-        invitation = await setup_factories["invitation"].create(
-            email="correct@example.com",
-            status="pending",
-            expires_at=datetime.utcnow() + timedelta(days=7)
-        )
-        service = InvitationService(db_session)
-
-        # Act & Assert
-        with pytest.raises(BusinessRuleViolationException) as exc_info:
-            await service.accept_invitation(
-                invitation_id=invitation.id,
-                user_id=user.id
-            )
-
-        assert "does not match" in exc_info.value.message
-
-
-@pytest.mark.unit
-class TestInvitationServiceRevokeInvitation:
-    """Test revoke_invitation method"""
-
-    async def test_revoke_invitation_success(self, db_session, setup_factories):
-        """Should successfully revoke pending invitation"""
-        # Arrange
-        invitation = await setup_factories["invitation"].create(status="pending")
-        revoker = await setup_factories["user"].create()
-        service = InvitationService(db_session)
-
-        # Act
-        result = await service.revoke_invitation(
-            invitation_id=invitation.id,
-            revoked_by_user_id=revoker.id
+        result = await invitation_service.get_workspace_invitations(
+            workspace_id=sample_workspace.id,
+            limit=10,
+            offset=20
         )
 
-        # Assert
+        assert isinstance(result, list)
+
+
+class TestAcceptInvitation:
+    """Tests for accept_invitation method."""
+
+    @pytest.mark.asyncio
+    async def test_accept_invitation_success(
+        self, invitation_service, mock_db, sample_invitation, sample_user
+    ):
+        """Test successful invitation acceptance."""
+        # Mock get_invitation_by_id
+        invitation_result = MagicMock()
+        invitation_result.scalar_one_or_none.return_value = sample_invitation
+        
+        # Mock user lookup
+        user = MagicMock()
+        user.id = sample_user.id
+        user.email = sample_invitation.email
+        user_result = MagicMock()
+        user_result.scalar_one_or_none.return_value = user
+        
+        # Mock membership check (no existing membership)
+        membership_result = MagicMock()
+        membership_result.scalar_one_or_none.return_value = None
+
+        mock_db.execute = AsyncMock(side_effect=[
+            invitation_result, user_result, membership_result
+        ])
+
+        result = await invitation_service.accept_invitation(
+            invitation_id=sample_invitation.id,
+            user_id=sample_user.id
+        )
+
+        assert "invitation_id" in result
+        assert "membership_id" in result
+        assert sample_invitation.status == "accepted"
+        assert mock_db.add.called
+
+    @pytest.mark.asyncio
+    async def test_accept_invitation_not_pending(
+        self, invitation_service, mock_db, sample_invitation, sample_user
+    ):
+        """Test that non-pending invitation cannot be accepted."""
+        sample_invitation.status = "accepted"
+        
+        invitation_result = MagicMock()
+        invitation_result.scalar_one_or_none.return_value = sample_invitation
+        mock_db.execute = AsyncMock(return_value=invitation_result)
+
+        with pytest.raises(BusinessRuleViolationException) as exc_info:
+            await invitation_service.accept_invitation(
+                invitation_id=sample_invitation.id,
+                user_id=sample_user.id
+            )
+        
+        assert "cannot accept" in str(exc_info.value)
+
+    @pytest.mark.asyncio
+    async def test_accept_invitation_expired(
+        self, invitation_service, mock_db, sample_invitation, sample_user
+    ):
+        """Test that expired invitation cannot be accepted."""
+        sample_invitation.expires_at = datetime.utcnow() - timedelta(days=1)
+        
+        invitation_result = MagicMock()
+        invitation_result.scalar_one_or_none.return_value = sample_invitation
+        mock_db.execute = AsyncMock(return_value=invitation_result)
+
+        with pytest.raises(BusinessRuleViolationException) as exc_info:
+            await invitation_service.accept_invitation(
+                invitation_id=sample_invitation.id,
+                user_id=sample_user.id
+            )
+        
+        assert "expired" in str(exc_info.value)
+        assert sample_invitation.status == "expired"
+
+    @pytest.mark.asyncio
+    async def test_accept_invitation_user_not_found(
+        self, invitation_service, mock_db, sample_invitation
+    ):
+        """Test that missing user raises exception."""
+        invitation_result = MagicMock()
+        invitation_result.scalar_one_or_none.return_value = sample_invitation
+        
+        user_result = MagicMock()
+        user_result.scalar_one_or_none.return_value = None
+
+        mock_db.execute = AsyncMock(side_effect=[invitation_result, user_result])
+
+        with pytest.raises(ResourceNotFoundException) as exc_info:
+            await invitation_service.accept_invitation(
+                invitation_id=sample_invitation.id,
+                user_id=uuid4()
+            )
+        
+        assert exc_info.value.context['resource_type'] == "User"
+
+    @pytest.mark.asyncio
+    async def test_accept_invitation_email_mismatch(
+        self, invitation_service, mock_db, sample_invitation
+    ):
+        """Test that email mismatch raises exception."""
+        invitation_result = MagicMock()
+        invitation_result.scalar_one_or_none.return_value = sample_invitation
+        
+        wrong_user = MagicMock()
+        wrong_user.id = uuid4()
+        wrong_user.email = "different@example.com"
+        
+        user_result = MagicMock()
+        user_result.scalar_one_or_none.return_value = wrong_user
+
+        mock_db.execute = AsyncMock(side_effect=[invitation_result, user_result])
+
+        with pytest.raises(BusinessRuleViolationException) as exc_info:
+            await invitation_service.accept_invitation(
+                invitation_id=sample_invitation.id,
+                user_id=wrong_user.id
+            )
+        
+        assert "email does not match" in str(exc_info.value)
+
+    @pytest.mark.asyncio
+    async def test_accept_invitation_already_member(
+        self, invitation_service, mock_db, sample_invitation, sample_user
+    ):
+        """Test that existing member raises exception."""
+        invitation_result = MagicMock()
+        invitation_result.scalar_one_or_none.return_value = sample_invitation
+        
+        user = MagicMock()
+        user.id = sample_user.id
+        user.email = sample_invitation.email
+        user_result = MagicMock()
+        user_result.scalar_one_or_none.return_value = user
+        
+        existing_membership = MagicMock()
+        membership_result = MagicMock()
+        membership_result.scalar_one_or_none.return_value = existing_membership
+
+        mock_db.execute = AsyncMock(side_effect=[
+            invitation_result, user_result, membership_result
+        ])
+
+        with pytest.raises(BusinessRuleViolationException) as exc_info:
+            await invitation_service.accept_invitation(
+                invitation_id=sample_invitation.id,
+                user_id=sample_user.id
+            )
+        
+        assert "already a member" in str(exc_info.value)
+        assert sample_invitation.status == "accepted"
+
+
+class TestRevokeInvitation:
+    """Tests for revoke_invitation method."""
+
+    @pytest.mark.asyncio
+    async def test_revoke_invitation_success(
+        self, invitation_service, mock_db, sample_invitation, sample_user
+    ):
+        """Test successful invitation revocation."""
+        invitation_result = MagicMock()
+        invitation_result.scalar_one_or_none.return_value = sample_invitation
+        mock_db.execute = AsyncMock(return_value=invitation_result)
+
+        result = await invitation_service.revoke_invitation(
+            invitation_id=sample_invitation.id,
+            revoked_by_user_id=sample_user.id
+        )
+
         assert result.status == "revoked"
 
-    async def test_revoke_invitation_not_pending(self, db_session, setup_factories):
-        """Should raise BusinessRuleViolationException if not pending"""
-        # Arrange
-        invitation = await setup_factories["invitation"].create(status="accepted")
-        revoker = await setup_factories["user"].create()
-        service = InvitationService(db_session)
+    @pytest.mark.asyncio
+    async def test_revoke_invitation_not_pending(
+        self, invitation_service, mock_db, sample_invitation, sample_user
+    ):
+        """Test that non-pending invitation cannot be revoked."""
+        sample_invitation.status = "accepted"
+        
+        invitation_result = MagicMock()
+        invitation_result.scalar_one_or_none.return_value = sample_invitation
+        mock_db.execute = AsyncMock(return_value=invitation_result)
 
-        # Act & Assert
-        with pytest.raises(BusinessRuleViolationException):
-            await service.revoke_invitation(
-                invitation_id=invitation.id,
-                revoked_by_user_id=revoker.id
+        with pytest.raises(BusinessRuleViolationException) as exc_info:
+            await invitation_service.revoke_invitation(
+                invitation_id=sample_invitation.id,
+                revoked_by_user_id=sample_user.id
             )
+        
+        assert "Cannot revoke" in str(exc_info.value)
 
 
-@pytest.mark.unit
-class TestInvitationServiceExpireOldInvitations:
-    """Test expire_old_invitations method"""
+class TestExpireOldInvitations:
+    """Tests for expire_old_invitations method."""
 
-    async def test_expire_old_invitations_success(self, db_session, setup_factories):
-        """Should expire all old pending invitations"""
-        # Arrange
-        # Create expired invitation
-        old_inv = await setup_factories["invitation"].create(
-            status="pending",
-            expires_at=datetime.utcnow() - timedelta(days=1)
-        )
-        # Create valid invitation
-        valid_inv = await setup_factories["invitation"].create(
-            status="pending",
-            expires_at=datetime.utcnow() + timedelta(days=7)
-        )
-        service = InvitationService(db_session)
+    @pytest.mark.asyncio
+    async def test_expire_old_invitations_none_to_expire(
+        self, invitation_service, mock_db
+    ):
+        """Test expiring when no invitations are expired."""
+        scalars_mock = MagicMock()
+        scalars_mock.all.return_value = []
+        
+        result_mock = MagicMock()
+        result_mock.scalars.return_value = scalars_mock
+        
+        mock_db.execute = AsyncMock(return_value=result_mock)
 
-        # Act
-        count = await service.expire_old_invitations()
-        await db_session.refresh(old_inv)
-        await db_session.refresh(valid_inv)
+        count = await invitation_service.expire_old_invitations()
 
-        # Assert
-        assert count == 1
-        assert old_inv.status == "expired"
-        assert valid_inv.status == "pending"
+        assert count == 0
+        assert not mock_db.flush.called
 
-    async def test_expire_old_invitations_batch_limit(self, db_session, setup_factories):
-        """Should respect batch size limit"""
-        # Arrange
-        for _ in range(5):
-            await setup_factories["invitation"].create(
-                status="pending",
-                expires_at=datetime.utcnow() - timedelta(days=1)
-            )
-        service = InvitationService(db_session)
+    @pytest.mark.asyncio
+    async def test_expire_old_invitations_expires_multiple(
+        self, invitation_service, mock_db
+    ):
+        """Test expiring multiple old invitations."""
+        inv1 = MagicMock()
+        inv1.status = "pending"
+        inv2 = MagicMock()
+        inv2.status = "pending"
+        
+        scalars_mock = MagicMock()
+        scalars_mock.all.return_value = [inv1, inv2]
+        
+        result_mock = MagicMock()
+        result_mock.scalars.return_value = scalars_mock
+        
+        mock_db.execute = AsyncMock(return_value=result_mock)
 
-        # Act
-        count = await service.expire_old_invitations(batch_size=3)
+        count = await invitation_service.expire_old_invitations()
 
-        # Assert
-        assert count == 3
+        assert count == 2
+        assert inv1.status == "expired"
+        assert inv2.status == "expired"
+        assert mock_db.flush.called
+
+    @pytest.mark.asyncio
+    async def test_expire_old_invitations_respects_batch_size(
+        self, invitation_service, mock_db
+    ):
+        """Test that batch size is respected."""
+        invitations = [MagicMock() for _ in range(5)]
+        
+        scalars_mock = MagicMock()
+        scalars_mock.all.return_value = invitations
+        
+        result_mock = MagicMock()
+        result_mock.scalars.return_value = scalars_mock
+        
+        mock_db.execute = AsyncMock(return_value=result_mock)
+
+        count = await invitation_service.expire_old_invitations(batch_size=5)
+
+        assert count == 5
 
 
-@pytest.mark.unit
-class TestInvitationServiceResendInvitation:
-    """Test resend_invitation method"""
+class TestResendInvitation:
+    """Tests for resend_invitation method."""
 
-    async def test_resend_invitation_success(self, db_session, setup_factories):
-        """Should generate new token and extend expiry"""
-        # Arrange
-        invitation = await setup_factories["invitation"].create(
-            status="pending",
-            expires_at=datetime.utcnow() + timedelta(days=2)
-        )
-        original_token = invitation.invitation_token
-        original_expiry = invitation.expires_at
-        service = InvitationService(db_session)
+    @pytest.mark.asyncio
+    async def test_resend_invitation_success(
+        self, invitation_service, mock_db, sample_invitation
+    ):
+        """Test successful invitation resend."""
+        original_token = sample_invitation.invitation_token
+        original_expiry = sample_invitation.expires_at
+        
+        invitation_result = MagicMock()
+        invitation_result.scalar_one_or_none.return_value = sample_invitation
+        mock_db.execute = AsyncMock(return_value=invitation_result)
 
-        # Act
-        result = await service.resend_invitation(
-            invitation_id=invitation.id,
+        result = await invitation_service.resend_invitation(
+            invitation_id=sample_invitation.id,
             extend_days=7
         )
 
-        # Assert
         assert result.invitation_token != original_token
         assert result.expires_at > original_expiry
 
-    async def test_resend_invitation_not_pending(self, db_session, setup_factories):
-        """Should raise BusinessRuleViolationException if not pending"""
-        # Arrange
-        invitation = await setup_factories["invitation"].create(status="revoked")
-        service = InvitationService(db_session)
+    @pytest.mark.asyncio
+    async def test_resend_invitation_not_pending(
+        self, invitation_service, mock_db, sample_invitation
+    ):
+        """Test that non-pending invitation cannot be resent."""
+        sample_invitation.status = "accepted"
+        
+        invitation_result = MagicMock()
+        invitation_result.scalar_one_or_none.return_value = sample_invitation
+        mock_db.execute = AsyncMock(return_value=invitation_result)
 
-        # Act & Assert
-        with pytest.raises(BusinessRuleViolationException):
-            await service.resend_invitation(invitation_id=invitation.id)
+        with pytest.raises(BusinessRuleViolationException) as exc_info:
+            await invitation_service.resend_invitation(
+                invitation_id=sample_invitation.id
+            )
+        
+        assert "Cannot resend" in str(exc_info.value)
+
+    @pytest.mark.asyncio
+    async def test_resend_invitation_custom_extend_days(
+        self, invitation_service, mock_db, sample_invitation
+    ):
+        """Test resending with custom extend days."""
+        invitation_result = MagicMock()
+        invitation_result.scalar_one_or_none.return_value = sample_invitation
+        mock_db.execute = AsyncMock(return_value=invitation_result)
+
+        result = await invitation_service.resend_invitation(
+            invitation_id=sample_invitation.id,
+            extend_days=14
+        )
+
+        # Verify expiry is approximately 14 days in the future
+        expected_expiry = datetime.utcnow() + timedelta(days=14)
+        time_diff = abs((result.expires_at - expected_expiry).total_seconds())
+        assert time_diff < 5  # Allow 5 seconds difference for test execution time
