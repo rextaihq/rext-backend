@@ -236,6 +236,7 @@ def upgrade() -> None:
                 "id": workspace1_id,
                 "user_id": user2_id,  # John Doe's workspace
                 "name": "Acme Corporation",
+                "slug": "acme-corporation",
                 "description": "Marketing and content workspace for Acme Corp",
                 "url": "https://acmecorp.com",
             },
@@ -243,6 +244,7 @@ def upgrade() -> None:
                 "id": workspace2_id,
                 "user_id": user3_id,  # Jane Smith's workspace
                 "name": "TechStartup Inc",
+                "slug": "techstartup-inc",
                 "description": "Product content and technical documentation",
                 "url": "https://techstartup.io",
             },
@@ -250,6 +252,7 @@ def upgrade() -> None:
                 "id": workspace3_id,
                 "user_id": user2_id,  # John Doe's second workspace
                 "name": "Personal Blog",
+                "slug": "personal-blog",
                 "description": "Personal blog and portfolio workspace",
                 "url": "https://johndoe.blog",
             },
@@ -265,6 +268,7 @@ def upgrade() -> None:
                 id=ws_data["id"],
                 user_id=ws_data["user_id"],
                 name=ws_data["name"],
+                slug=ws_data["slug"],
                 description=ws_data["description"],
                 url=ws_data["url"],
                 created_at=now,

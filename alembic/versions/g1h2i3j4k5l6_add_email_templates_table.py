@@ -18,7 +18,32 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    # Create enum type for template_type
+    # Create enum type for template_type (idempotent)
+    from sqlalchemy import inspect
+    bind = op.get_bind()
+    inspector = inspect(bind)
+    
+    # Check if enum type already exists
+    result = bind.execute(sa.text(
+        "SELECT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'templatetype')"
+    )).scalar()
+    
+    if not result:
+        template_type_enum = postgresql.ENUM(
+            'workspace_invitation',
+            'invitation_accepted',
+            'role_changed',
+            'member_removed',
+            'welcome',
+            name='templatetype',
+            create_type=False  # Don't auto-create, we'll do it manually
+        )
+        # Create the enum type explicitly
+        bind.execute(sa.text(
+            "CREATE TYPE templatetype AS ENUM ('workspace_invitation', 'invitation_accepted', 'role_changed', 'member_removed', 'welcome')"
+        ))
+    
+    # Reference the existing enum type
     template_type_enum = postgresql.ENUM(
         'workspace_invitation',
         'invitation_accepted',
@@ -26,9 +51,8 @@ def upgrade() -> None:
         'member_removed',
         'welcome',
         name='templatetype',
-        create_type=True
+        create_type=False
     )
-    template_type_enum.create(op.get_bind(), checkfirst=True)
 
     # Create email_templates table
     op.create_table(
