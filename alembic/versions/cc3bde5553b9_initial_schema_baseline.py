@@ -210,6 +210,71 @@ def upgrade() -> None:
             sa.UniqueConstraint('id')
         )
 
+    # Create brand_voice table if it doesn't exist
+    if 'brand_voice' not in tables:
+        op.create_table('brand_voice',
+            sa.Column('id', postgresql.UUID(as_uuid=True), nullable=False),
+            sa.Column('workspace_id', postgresql.UUID(as_uuid=True), nullable=False),
+            sa.Column('about', sa.Text(), nullable=True),
+            sa.Column('customer_profile', sa.Text(), nullable=True),
+            sa.Column('selling_position', sa.Text(), nullable=True),
+            sa.Column('target_audience', postgresql.JSONB(astext_type=sa.Text()), nullable=True),
+            sa.Column('brand_voice', postgresql.JSONB(astext_type=sa.Text()), nullable=True),
+            sa.Column('competitors', postgresql.JSONB(astext_type=sa.Text()), nullable=True),
+            sa.Column('content_strategy', postgresql.JSONB(astext_type=sa.Text()), nullable=True),
+            sa.ForeignKeyConstraint(['workspace_id'], ['workspace.id'], ondelete='CASCADE'),
+            sa.PrimaryKeyConstraint('id'),
+            sa.UniqueConstraint('id')
+        )
+
+    # Create website table if it doesn't exist
+    if 'website' not in tables:
+        op.create_table('website',
+            sa.Column('id', postgresql.UUID(as_uuid=True), nullable=False),
+            sa.Column('workspace_id', postgresql.UUID(as_uuid=True), nullable=False),
+            sa.Column('url', sa.String(), nullable=False),
+            sa.Column('status', sa.String(), nullable=False, server_default='process'),
+            sa.Column('char_count', sa.Integer(), nullable=True),
+            sa.Column('word_count', sa.Integer(), nullable=True),
+            sa.ForeignKeyConstraint(['workspace_id'], ['workspace.id'], ondelete='CASCADE'),
+            sa.PrimaryKeyConstraint('id'),
+            sa.UniqueConstraint('id')
+        )
+
+    # Create text_knowledge table if it doesn't exist (using custom_metadata, not metadata)
+    if 'text_knowledge' not in tables:
+        op.create_table('text_knowledge',
+            sa.Column('id', postgresql.UUID(as_uuid=True), nullable=False),
+            sa.Column('workspace_id', postgresql.UUID(as_uuid=True), nullable=False),
+            sa.Column('title', sa.String(), nullable=False, server_default='Untitled Note'),
+            sa.Column('content', sa.Text(), nullable=False),
+            sa.Column('tags', postgresql.JSONB(astext_type=sa.Text()), nullable=True),
+            sa.Column('custom_metadata', postgresql.JSONB(astext_type=sa.Text()), nullable=True),
+            sa.Column('created_at', sa.DateTime(timezone=True), nullable=False),
+            sa.Column('updated_at', sa.DateTime(timezone=True), nullable=True),
+            sa.ForeignKeyConstraint(['workspace_id'], ['workspace.id'], ondelete='CASCADE'),
+            sa.PrimaryKeyConstraint('id'),
+            sa.UniqueConstraint('id')
+        )
+
+    # Create knowledge_files table if it doesn't exist (without security fields - added in later migration)
+    if 'knowledge_files' not in tables:
+        op.create_table('knowledge_files',
+            sa.Column('id', postgresql.UUID(as_uuid=True), nullable=False),
+            sa.Column('workspace_id', postgresql.UUID(as_uuid=True), nullable=False),
+            sa.Column('file_name', sa.String(), nullable=False),
+            sa.Column('file_type', sa.String(), nullable=False),
+            sa.Column('file_size', sa.Integer(), nullable=False),
+            sa.Column('file_path', sa.String(), nullable=False),
+            sa.Column('status', sa.String(), nullable=False, server_default='completed'),
+            sa.Column('char_count', sa.Integer(), nullable=True),
+            sa.Column('word_count', sa.Integer(), nullable=True),
+            sa.Column('created_at', sa.DateTime(timezone=True), nullable=False),
+            sa.ForeignKeyConstraint(['workspace_id'], ['workspace.id'], ondelete='CASCADE'),
+            sa.PrimaryKeyConstraint('id'),
+            sa.UniqueConstraint('id')
+        )
+
     # Re-fetch table list after creation
     tables = inspector.get_table_names()
 
