@@ -44,12 +44,19 @@ class NotificationPreferences(Base):
     __tablename__ = 'notification_preferences'
     id = sa.Column(sa.dialects.postgresql.UUID(as_uuid=True), primary_key=True)
     user_id = sa.Column(sa.dialects.postgresql.UUID(as_uuid=True))
+    # Email Notifications
     email_notifications = sa.Column(sa.Boolean)
-    workspace_invites = sa.Column(sa.Boolean)
-    content_updates = sa.Column(sa.Boolean)
-    topic_generation = sa.Column(sa.Boolean)
-    weekly_digest = sa.Column(sa.Boolean)
-    security_alerts = sa.Column(sa.Boolean)
+    email_digest_frequency = sa.Column(sa.String(20))
+    email_workspace_invites = sa.Column(sa.Boolean)
+    email_comments = sa.Column(sa.Boolean)
+    email_mentions = sa.Column(sa.Boolean)
+    email_updates = sa.Column(sa.Boolean)
+    # In-App Notifications  
+    in_app_notifications = sa.Column(sa.Boolean)
+    in_app_workspace_invites = sa.Column(sa.Boolean)
+    in_app_comments = sa.Column(sa.Boolean)
+    in_app_mentions = sa.Column(sa.Boolean)
+    in_app_updates = sa.Column(sa.Boolean)
     created_at = sa.Column(sa.TIMESTAMP)
     updated_at = sa.Column(sa.TIMESTAMP)
 
