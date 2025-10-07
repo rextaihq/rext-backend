@@ -3,6 +3,7 @@ from fastapi import (
     HTTPException,
     UploadFile, File
 )
+from uuid import UUID
 from src.utils.logger import logger
 from src.api.models.knowledge_models.knowledge_model import KnowledgeFiles
 from src.api.models.workspace_models.workspace_model import WorkspaceModel
@@ -26,6 +27,7 @@ from src.api.middleware.exceptions import (
 from src.utils.db_utils import get_or_404
 from src.utils.workspace_utils import resolve_and_verify_workspace
 from src.api.middleware.exceptions import WrextValidationException, DuplicateResourceException
+from src.services.knowledge_service import KnowledgeService
 
 
 router = APIRouter(
@@ -119,11 +121,12 @@ async def add_file_knowledge(
         user: dict = Depends(get_current_user)
 ):
     """
-    Add new file knowledge entry to a workspace.
+    Add new file knowledge entry to a workspace - Thin controller using KnowledgeService.
 
     Requires:
     - JWT authentication
     - Workspace membership verification
+    - knowledge.create permission
     """
     user_id = user.get("identity")
 
@@ -132,10 +135,11 @@ async def add_file_knowledge(
 
     logger.info(f"Adding file knowledge for workspace {workspace_id}")
 
-    # 2. Validate and store file securely
-    file_metadata = await validate_and_store_file(
+    # Use service for business logic
+    service = KnowledgeService(db)
+    new_knowledge = await service.add_file_knowledge(
+        workspace_id=workspace.id,
         file=file,
-        workspace_id=str(workspace.id),
         allowed_types=[
             # Documents
             "application/pdf",
@@ -152,70 +156,10 @@ async def add_file_knowledge(
             "image/gif",
             "image/webp"
         ],
-        max_size_mb=10,
-        enable_virus_scan=False  # Set to True if ClamAV installed
+        max_size_mb=10
     )
 
-    # 3. Check for duplicate by hash
-    result = await db.execute(select(KnowledgeFiles).where(
-        KnowledgeFiles.file_hash == file_metadata["hash"],
-        KnowledgeFiles.workspace_id == workspace_id
-    ))
-    existing_knowledge = result.scalar_one_or_none()
-    if existing_knowledge:
-        # Delete uploaded file (duplicate)
-        await delete_file(file_metadata["secure_path"])
-        raise DuplicateResourceException(
-            resource="file_knowledge",
-            identifier=file.filename,
-            message=f"File already exists in knowledge base (duplicate content detected)"
-        )
-
-    # 4. Extract text from file
-    chunks = load_split_file_data(file_metadata["secure_path"])
-
-    if len(chunks) == 0:
-        raise WrextValidationException(
-            message="Failed to extract content from the file",
-            field_errors={"file": ["No content could be extracted from file"]}
-        )
-
-    # 5. Save metadata in DB
-    new_knowledge = KnowledgeFiles(
-        workspace_id=workspace_id,
-        file_name=file_metadata["safe_filename"],
-        file_type=file_metadata["mime_type"],
-        file_size=file_metadata["size"],
-        file_path=file_metadata["secure_path"],
-        file_hash=file_metadata["hash"],
-        mime_type=file_metadata["mime_type"],
-        chunk_count=len(chunks)
-    )
-    db.add(new_knowledge)
-    await db.flush()
-    await db.refresh(new_knowledge)
-
-    # 6. Add to vector store
-    try:
-        logger.info(f"Inserting {len(chunks)} chunks into vector store for {file_metadata['secure_path']}")
-        success_status = add_to_vector_store(blog_context=chunks, doc_id=f"{str(workspace.id)}_{str(new_knowledge.id)}")
-        if not success_status:
-            raise WrextExternalServiceException(
-                message="Failed to insert chunks into vector store",
-                service_name="vector_store",
-                service_error="Insertion returned False"
-            )
-    except WrextExternalServiceException:
-        raise
-    except Exception as e:
-        logger.error(f"Error building vector store: {e}")
-        raise WrextExternalServiceException(
-            message="Failed to build vector store from file content",
-            service_name="vector_store",
-            service_error=str(e)
-        )
-
-    # 7. Response
+    # Return raw data - decorator handles success response
     return {"file_knowledge": new_knowledge.to_dict()}
 
 
@@ -270,11 +214,12 @@ async def delete_file_knowledge(
         user: dict = Depends(get_current_user)
 ):
     """
-    Delete file knowledge entry from workspace.
+    Delete file knowledge entry from workspace - Thin controller using KnowledgeService.
 
     Requires:
     - JWT authentication
     - Workspace membership verification
+    - knowledge.delete permission
     """
     user_id = user.get("identity")
 
@@ -282,27 +227,13 @@ async def delete_file_knowledge(
     workspace, membership = await resolve_and_verify_workspace(db, workspace_id, UUID(user_id))
 
     logger.info(f"Deleting file knowledge with ID: {file_id} from workspace: {workspace_id}")
-    knowledge = await get_or_404(
-        db,
-        KnowledgeFiles,
-        file_id,
-        "file_knowledge",
-        additional_filters=[KnowledgeFiles.workspace_id == workspace_id]
+
+    # Use service for business logic
+    service = KnowledgeService(db)
+    await service.delete_file_knowledge(
+        file_id=UUID(file_id),
+        workspace_id=UUID(workspace_id)
     )
 
-    # Delete from vector store
-    success_status = delete_vectors(vector_id=f"{str(workspace_id)}_{str(file_id)}")
-    if not success_status:
-        logger.warning(f"Failed to delete vectors for file {file_id}")
-
-    # Delete the physical file from storage
-    if knowledge.file_path:
-        file_deleted = await delete_file(knowledge.file_path)
-        if file_deleted:
-            logger.info(f"Deleted file at path: {knowledge.file_path}")
-        else:
-            logger.warning(f"File at path {knowledge.file_path} does not exist or could not be deleted")
-
-    await db.delete(knowledge)
-    logger.info(f"File knowledge with ID: {file_id} deleted successfully")
+    # Return raw data - decorator handles success response
     return {"file_id": file_id}

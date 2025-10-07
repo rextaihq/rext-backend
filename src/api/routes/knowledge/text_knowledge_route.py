@@ -2,6 +2,7 @@ from fastapi import (
     APIRouter, Depends, Request,
     HTTPException
 )
+from uuid import UUID
 from src.utils.logger import logger
 from src.api.models.knowledge_models.knowledge_model import TextKnowledge
 from src.api.models.workspace_models.workspace_model import WorkspaceModel
@@ -18,6 +19,7 @@ from src.api.middleware.exceptions import (
 )
 from src.utils.db_utils import get_or_404
 from src.utils.workspace_utils import resolve_and_verify_workspace
+from src.services.knowledge_service import KnowledgeService
 
 router = APIRouter(
     prefix="/workspace/text",
@@ -104,7 +106,7 @@ async def get_text_knowledge(
 
 # Create text knowledge
 @router.post("/add-text")
-@db_transaction_handler("add text knowledge", auto_commit=True)
+@db_transaction_handler("add text knowledge", "Text knowledge added successfully")
 @require_permissions("knowledge.create", workspace_scoped=True)
 async def text_knowledge(
     payload: TextKnowledgeSchema,
@@ -113,11 +115,12 @@ async def text_knowledge(
     user: dict = Depends(get_current_user)
 ):
     """
-    Add new text knowledge entry to a workspace.
+    Add new text knowledge entry to a workspace - Thin controller using KnowledgeService.
 
     Requires:
     - JWT authentication
     - Workspace membership verification
+    - knowledge.create permission
     """
     user_id = user.get("identity")
 
@@ -126,25 +129,23 @@ async def text_knowledge(
 
     logger.info(f"Adding text knowledge for workspace {payload.workspace_id}")
 
-    # add the text content in the
-    new_knowledge = TextKnowledge(
-        workspace_id=payload.workspace_id,
+    # Use service for business logic
+    service = KnowledgeService(db)
+    new_knowledge = await service.add_text_knowledge(
+        workspace_id=UUID(payload.workspace_id),
+        title=payload.title if hasattr(payload, 'title') else "Untitled",
         content=payload.content
     )
 
-    db.add(new_knowledge)
-    await db.flush()
-    await db.refresh(new_knowledge)
-
-    logger.info(f"New text knowledge created in workspace {payload.workspace_id}")
-
-    # make a success response
-    text_response = {
-        "text_id":str(new_knowledge.id),
-        "worspace_id":str(new_knowledge.workspace_id),
-        "message":"text Knowledge add successfull"
+    # Return raw data - decorator handles success response
+    return {
+        "text_knowledge": {
+            "text_id": str(new_knowledge.id),
+            "workspace_id": str(new_knowledge.workspace_id),
+            "title": new_knowledge.title,
+            "content": new_knowledge.content
+        }
     }
-    return text_response
 
 # Update text knowledge
 @router.put("/update/{text_id}")
@@ -189,7 +190,7 @@ async def update_text_knowledge(
 
 # Delete text knowledge
 @router.delete("/delete/{text_id}")
-@db_transaction_handler("delete text knowledge", auto_commit=True)
+@db_transaction_handler("delete text knowledge", "Text knowledge deleted successfully")
 @require_permissions("knowledge.delete", workspace_scoped=True)
 async def delete_text_knowledge(
     text_id: str,
@@ -199,11 +200,12 @@ async def delete_text_knowledge(
     user: dict = Depends(get_current_user)
 ):
     """
-    Delete text knowledge entry from workspace.
+    Delete text knowledge entry from workspace - Thin controller using KnowledgeService.
 
     Requires:
     - JWT authentication
     - Workspace membership verification
+    - knowledge.delete permission
     """
     user_id = user.get("identity")
 
@@ -211,14 +213,13 @@ async def delete_text_knowledge(
     workspace, membership = await resolve_and_verify_workspace(db, workspace_id, UUID(user_id))
 
     logger.info(f"Deleting text knowledge with ID: {text_id} from workspace: {workspace_id}")
-    text_knowledge = await get_or_404(
-        db,
-        TextKnowledge,
-        text_id,
-        "text_knowledge",
-        additional_filters=[TextKnowledge.workspace_id == workspace_id]
+
+    # Use service for business logic
+    service = KnowledgeService(db)
+    await service.delete_text_knowledge(
+        text_id=UUID(text_id),
+        workspace_id=UUID(workspace_id)
     )
 
-    await db.delete(text_knowledge)
-
+    # Return raw data - decorator handles success response
     return {"text_id": text_id}
