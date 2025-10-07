@@ -173,9 +173,9 @@ class RoleService:
 
         # Check if system role
         if role.is_system_role:
-            raise WrextAPIException(
-                status_code=403,
-                message="Cannot update system roles"
+            raise WrextValidationException(
+                message="Cannot update system roles",
+                field_errors={"role_id": ["System roles are immutable"]}
             )
 
         # Check display_name uniqueness if being updated
@@ -248,9 +248,9 @@ class RoleService:
 
         # Check if system role
         if role.is_system_role:
-            raise WrextAPIException(
-                status_code=403,
-                message="Cannot delete system roles"
+            raise WrextValidationException(
+                message="Cannot delete system roles",
+                field_errors={"role_id": ["System roles cannot be deleted"]}
             )
 
         # Check if role is assigned to users
