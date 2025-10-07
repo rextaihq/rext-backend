@@ -21,30 +21,44 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    """Upgrade schema - add workspace_id to topics table."""
+    """Upgrade schema - add workspace_id to topics table (idempotent)."""
+    from sqlalchemy import inspect
+    
+    bind = op.get_bind()
+    inspector = inspect(bind)
+    
+    # Check if column already exists
+    columns = [c['name'] for c in inspector.get_columns('topics')]
+    
+    if 'workspace_id' not in columns:
+        # First, delete all existing topics since they're not workspace-scoped
+        # This is safe as per user confirmation
+        op.execute("DELETE FROM topics")
 
-    # First, delete all existing topics since they're not workspace-scoped
-    # This is safe as per user confirmation
-    op.execute("DELETE FROM topics")
-
-    # Add workspace_id column
-    op.add_column(
-        'topics',
-        sa.Column('workspace_id', postgresql.UUID(as_uuid=True), nullable=False)
-    )
-
-    # Add foreign key constraint
-    op.create_foreign_key(
-        'fk_topics_workspace_id',
-        'topics',
-        'workspace',
-        ['workspace_id'],
-        ['id'],
-        ondelete='CASCADE'
-    )
-
-    # Add index for better query performance
-    op.create_index('ix_topics_workspace_id', 'topics', ['workspace_id'])
+        # Add workspace_id column
+        op.add_column(
+            'topics',
+            sa.Column('workspace_id', postgresql.UUID(as_uuid=True), nullable=False)
+        )
+    
+    # Check if foreign key exists before adding
+    foreign_keys = [fk['name'] for fk in inspector.get_foreign_keys('topics')]
+    if 'fk_topics_workspace_id' not in foreign_keys:
+        # Add foreign key constraint
+        op.create_foreign_key(
+            'fk_topics_workspace_id',
+            'topics',
+            'workspace',
+            ['workspace_id'],
+            ['id'],
+            ondelete='CASCADE'
+        )
+    
+    # Check if index exists before adding
+    indexes = [idx['name'] for idx in inspector.get_indexes('topics')]
+    if 'ix_topics_workspace_id' not in indexes:
+        # Add index for better query performance
+        op.create_index('ix_topics_workspace_id', 'topics', ['workspace_id'])
 
 
 def downgrade() -> None:
