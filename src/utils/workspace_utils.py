@@ -10,20 +10,25 @@ from src.api.models.workspace_models.workspace_model import WorkspaceModel
 from src.api.middleware.exceptions import ResourceNotFoundException
 
 
-def is_valid_uuid(value: str) -> bool:
+def is_valid_uuid(value) -> bool:
     """
-    Check if a string is a valid UUID
+    Check if a value is a valid UUID or UUID object
 
     Args:
-        value: String to check
+        value: String or UUID object to check
 
     Returns:
         True if valid UUID, False otherwise
     """
-    try:
-        UUID(value)
+    # Already a UUID object
+    if isinstance(value, UUID):
         return True
-    except (ValueError, TypeError):
+
+    # Try to parse as UUID string
+    try:
+        UUID(str(value))
+        return True
+    except (ValueError, TypeError, AttributeError):
         return False
 
 

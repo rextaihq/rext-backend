@@ -32,11 +32,11 @@ async def get_web_knowledges(
     db: AsyncSession = Depends(get_async_db),
     user: dict = Depends(get_current_user),
 ):
-    workspace_uuid = UUID(workspace_id)
-    await resolve_and_verify_workspace(db, workspace_uuid, UUID(str(user.get("identity"))))
+    # Pass workspace_id as string to resolve_and_verify_workspace (supports both UUID and slug)
+    workspace, _ = await resolve_and_verify_workspace(db, workspace_id, UUID(str(user.get("identity"))))
 
     service = KnowledgeService(db)
-    knowledge = await service.list_web_knowledge(workspace_uuid)
+    knowledge = await service.list_web_knowledge(workspace.id)
 
     return success(
         data={"web_knowledge": knowledge},
@@ -54,11 +54,10 @@ async def get_web_knowledge(
     db: AsyncSession = Depends(get_async_db),
     user: dict = Depends(get_current_user),
 ):
-    workspace_uuid = UUID(workspace_id)
-    await resolve_and_verify_workspace(db, workspace_uuid, UUID(str(user.get("identity"))))
+    workspace, _ = await resolve_and_verify_workspace(db, workspace_id, UUID(str(user.get("identity"))))
 
     service = KnowledgeService(db)
-    knowledge = await service.get_web_knowledge(workspace_uuid, UUID(web_id))
+    knowledge = await service.get_web_knowledge(workspace.id, UUID(web_id))
 
     return success(
         data={"web_knowledge": knowledge},
@@ -76,11 +75,10 @@ async def add_web_knowledge(
     db: AsyncSession = Depends(get_async_db),
     user: dict = Depends(get_current_user),
 ):
-    workspace_uuid = data.workspace_id
-    await resolve_and_verify_workspace(db, workspace_uuid, UUID(str(user.get("identity"))))
+    workspace, _ = await resolve_and_verify_workspace(db, str(data.workspace_id), UUID(str(user.get("identity"))))
 
     service = KnowledgeService(db)
-    knowledge = await service.add_web_knowledge(workspace_uuid, str(data.url))
+    knowledge = await service.add_web_knowledge(workspace.id, str(data.url))
 
     return created(
         data={"knowledge": knowledge},
@@ -99,11 +97,10 @@ async def update_web_knowledge(
     db: AsyncSession = Depends(get_async_db),
     user: dict = Depends(get_current_user),
 ):
-    workspace_uuid = UUID(workspace_id)
-    await resolve_and_verify_workspace(db, workspace_uuid, UUID(str(user.get("identity"))))
+    workspace, _ = await resolve_and_verify_workspace(db, workspace_id, UUID(str(user.get("identity"))))
 
     service = KnowledgeService(db)
-    knowledge = await service.update_web_knowledge_title(workspace_uuid, UUID(web_id), title)
+    knowledge = await service.update_web_knowledge_title(workspace.id, UUID(web_id), title)
 
     return success(
         data={"web_knowledge": knowledge},
@@ -122,11 +119,10 @@ async def delete_web_knowledge(
     db: AsyncSession = Depends(get_async_db),
     user: dict = Depends(get_current_user),
 ):
-    workspace_uuid = UUID(workspace_id)
-    await resolve_and_verify_workspace(db, workspace_uuid, UUID(str(user.get("identity"))))
+    workspace, _ = await resolve_and_verify_workspace(db, workspace_id, UUID(str(user.get("identity"))))
 
     service = KnowledgeService(db)
-    await service.delete_web_knowledge(workspace_uuid, UUID(web_id))
+    await service.delete_web_knowledge(workspace.id, UUID(web_id))
 
     return success(
         data={},
