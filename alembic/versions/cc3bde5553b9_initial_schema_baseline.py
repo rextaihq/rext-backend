@@ -147,20 +147,19 @@ def upgrade() -> None:
             sa.Column('id', postgresql.UUID(as_uuid=True), nullable=False),
             sa.Column('email', sa.String(length=255), nullable=False),
             sa.Column('workspace_id', postgresql.UUID(as_uuid=True), nullable=False),
-            sa.Column('role_id', postgresql.UUID(as_uuid=True), nullable=True),
-            sa.Column('invited_by_id', postgresql.UUID(as_uuid=True), nullable=True),
-            sa.Column('token', sa.String(length=255), nullable=False),
+            sa.Column('role_id', postgresql.UUID(as_uuid=True), nullable=False),
+            sa.Column('invited_by_user_id', postgresql.UUID(as_uuid=True), nullable=False),
+            sa.Column('invitation_token', sa.String(length=255), nullable=False),
             sa.Column('status', sa.String(length=50), nullable=True),
             sa.Column('expires_at', sa.TIMESTAMP(), nullable=False),
             sa.Column('created_at', sa.TIMESTAMP(), nullable=False),
-            sa.Column('accepted_at', sa.TIMESTAMP(), nullable=True),
-            sa.ForeignKeyConstraint(['invited_by_id'], ['users.id'], ),
+            sa.ForeignKeyConstraint(['invited_by_user_id'], ['users.id'], ),
             sa.ForeignKeyConstraint(['role_id'], ['roles.id'], ),
             sa.ForeignKeyConstraint(['workspace_id'], ['workspace.id'], ),
             sa.PrimaryKeyConstraint('id'),
-            sa.UniqueConstraint('email', 'workspace_id'),
+            sa.UniqueConstraint('email', 'workspace_id', name='uq_email_workspace'),
             sa.UniqueConstraint('id'),
-            sa.UniqueConstraint('token')
+            sa.UniqueConstraint('invitation_token')
         )
 
     # Create user_roles table if it doesn't exist
