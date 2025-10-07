@@ -63,73 +63,11 @@ def upgrade() -> None:
         print("Seeding subscription plans and notification preferences...")
 
         # =================================================================
-        # SUBSCRIPTION PLANS
+        # SUBSCRIPTION PLANS  
         # =================================================================
-        plans_data = [
-            {
-                "id": "00000000-0000-0000-0000-000000000001",
-                "name": "free",
-                "display_name": "Free Plan",
-                "price_monthly": 0,
-                "price_yearly": 0,
-                "max_workspaces": 1,
-                "max_members_per_workspace": 1,
-                "max_topics": 10,
-                "max_knowledge_items": 50,
-                "max_api_calls_per_month": 1000,
-            },
-            {
-                "id": "00000000-0000-0000-0000-000000000002",
-                "name": "starter",
-                "display_name": "Starter Plan",
-                "price_monthly": 29,
-                "price_yearly": 290,
-                "max_workspaces": 3,
-                "max_members_per_workspace": 5,
-                "max_topics": 50,
-                "max_knowledge_items": 500,
-                "max_api_calls_per_month": 10000,
-            },
-            {
-                "id": "00000000-0000-0000-0000-000000000003",
-                "name": "professional",
-                "display_name": "Professional Plan",
-                "price_monthly": 99,
-                "price_yearly": 990,
-                "max_workspaces": 10,
-                "max_members_per_workspace": 20,
-                "max_topics": 200,
-                "max_knowledge_items": 2000,
-                "max_api_calls_per_month": 50000,
-            },
-        ]
-
-        for plan_data in plans_data:
-            plan_id = uuid.UUID(plan_data["id"])
-            existing = session.query(SubscriptionPlan).filter_by(id=plan_id).first()
-            if not existing:
-                plan = SubscriptionPlan(
-                    id=plan_id,
-                    name=plan_data["name"],
-                    display_name=plan_data["display_name"],
-                    description=f"{plan_data['display_name']} - Perfect for testing and development",
-                    price_monthly=plan_data["price_monthly"],
-                    price_yearly=plan_data["price_yearly"],
-                    max_workspaces=plan_data["max_workspaces"],
-                    max_members_per_workspace=plan_data["max_members_per_workspace"],
-                    max_topics=plan_data["max_topics"],
-                    max_knowledge_items=plan_data["max_knowledge_items"],
-                    max_api_calls_per_month=plan_data["max_api_calls_per_month"],
-                    features={},
-                    is_active=True,
-                    is_public=True,
-                    created_at=now,
-                    updated_at=now,
-                )
-                session.add(plan)
-                print(f"  ✓ Created plan: {plan_data['display_name']}")
-
-        session.flush()
+        # Note: Subscription plans are seeded by migration f9e8d7c6b5a4_seed_subscription_plans.py
+        # Skipping here to avoid duplicates
+        print("\nSkipping subscription plans (already seeded by f9e8d7c6b5a4)...")
 
         # =================================================================
         # NOTIFICATION PREFERENCES
