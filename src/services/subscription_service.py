@@ -330,7 +330,7 @@ class SubscriptionService:
         """
         # Count workspaces owned by user
         workspaces_result = await self.db.execute(
-            select(func.count(WorkspaceModel.id)).where(WorkspaceModel.creator_id == user_id)
+            select(func.count(WorkspaceModel.id)).where(WorkspaceModel.user_id == user_id)
         )
         workspaces_count = workspaces_result.scalar() or 0
 
@@ -338,7 +338,7 @@ class SubscriptionService:
         topics_result = await self.db.execute(
             select(func.count(TopicsModel.id))
             .join(WorkspaceModel)
-            .where(WorkspaceModel.creator_id == user_id)
+            .where(WorkspaceModel.user_id == user_id)
         )
         topics_count = topics_result.scalar() or 0
 
@@ -346,7 +346,7 @@ class SubscriptionService:
         files_result = await self.db.execute(
             select(func.count(KnowledgeFiles.id))
             .join(WorkspaceModel)
-            .where(WorkspaceModel.creator_id == user_id)
+            .where(WorkspaceModel.user_id == user_id)
         )
         knowledge_files_count = files_result.scalar() or 0
 
@@ -354,7 +354,7 @@ class SubscriptionService:
         text_result = await self.db.execute(
             select(func.count(TextKnowledge.id))
             .join(WorkspaceModel)
-            .where(WorkspaceModel.creator_id == user_id)
+            .where(WorkspaceModel.user_id == user_id)
         )
         knowledge_text_count = text_result.scalar() or 0
 
@@ -362,7 +362,7 @@ class SubscriptionService:
         web_result = await self.db.execute(
             select(func.count(Website.id))
             .join(WorkspaceModel)
-            .where(WorkspaceModel.creator_id == user_id)
+            .where(WorkspaceModel.user_id == user_id)
         )
         knowledge_web_count = web_result.scalar() or 0
 
