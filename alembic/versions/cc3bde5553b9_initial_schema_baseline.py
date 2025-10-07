@@ -49,7 +49,7 @@ def upgrade() -> None:
     inspector = inspect(bind)
     tables = inspector.get_table_names()
 
-    # Create users table if it doesn't exist
+    # Create users table if it doesn't exist (without avatar_url - added in later migration)
     if 'users' not in tables:
         op.create_table('users',
             sa.Column('id', postgresql.UUID(as_uuid=True), nullable=False),
@@ -70,10 +70,8 @@ def upgrade() -> None:
             sa.Column('failed_login_attempts', sa.Integer(), nullable=True),
             sa.Column('language', sa.String(length=10), nullable=True),
             sa.Column('timezone', sa.String(length=50), nullable=True),
-            sa.Column('avatar_url', sa.String(length=500), nullable=True),
             sa.Column('created_at', sa.TIMESTAMP(), nullable=False),
             sa.Column('updated_at', sa.TIMESTAMP(), nullable=True),
-            sa.Column('deactivated_at', sa.TIMESTAMP(), nullable=True),
             sa.Column('deleted_at', sa.TIMESTAMP(), nullable=True),
             sa.PrimaryKeyConstraint('id'),
             sa.UniqueConstraint('email'),
