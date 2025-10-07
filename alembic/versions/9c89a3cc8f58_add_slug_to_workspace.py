@@ -19,44 +19,60 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    """Upgrade schema."""
-    # Add slug column as nullable first
-    op.add_column('workspace', sa.Column('slug', sa.String(), nullable=True))
+    """Upgrade schema (idempotent)."""
+    from sqlalchemy import inspect
+    
+    bind = op.get_bind()
+    inspector = inspect(bind)
+    
+    # Check if column already exists
+    columns = [c['name'] for c in inspector.get_columns('workspace')]
+    
+    if 'slug' not in columns:
+        # Add slug column as nullable first
+        op.add_column('workspace', sa.Column('slug', sa.String(), nullable=True))
+        
+        # Populate existing workspaces with slugs
+        connection = op.get_bind()
+        result = connection.execute(sa.text("SELECT id, name FROM workspace"))
 
-    # Create index for slug
-    op.create_index('ix_workspace_slug', 'workspace', ['slug'])
+        from src.utils.slug_utils import generate_workspace_slug
 
-    # Populate existing workspaces with slugs
-    connection = op.get_bind()
-    result = connection.execute(sa.text("SELECT id, name FROM workspace"))
+        # Generate slugs for existing workspaces
+        for row in result:
+            workspace_id = row[0]
+            name = row[1]
+            base_slug = generate_workspace_slug(name)
 
-    from src.utils.slug_utils import generate_workspace_slug
+            # Check for uniqueness and append number if needed
+            slug = base_slug
+            counter = 1
+            while connection.execute(
+                sa.text("SELECT 1 FROM workspace WHERE slug = :slug AND id != :id"),
+                {"slug": slug, "id": workspace_id}
+            ).fetchone():
+                slug = f"{base_slug}-{counter}"
+                counter += 1
 
-    # Generate slugs for existing workspaces
-    for row in result:
-        workspace_id = row[0]
-        name = row[1]
-        base_slug = generate_workspace_slug(name)
+            # Update workspace with slug
+            connection.execute(
+                sa.text("UPDATE workspace SET slug = :slug WHERE id = :id"),
+                {"slug": slug, "id": workspace_id}
+            )
 
-        # Check for uniqueness and append number if needed
-        slug = base_slug
-        counter = 1
-        while connection.execute(
-            sa.text("SELECT 1 FROM workspace WHERE slug = :slug AND id != :id"),
-            {"slug": slug, "id": workspace_id}
-        ).fetchone():
-            slug = f"{base_slug}-{counter}"
-            counter += 1
-
-        # Update workspace with slug
-        connection.execute(
-            sa.text("UPDATE workspace SET slug = :slug WHERE id = :id"),
-            {"slug": slug, "id": workspace_id}
-        )
-
-    # Now make slug not nullable and unique
-    op.alter_column('workspace', 'slug', nullable=False)
-    op.create_unique_constraint('uq_workspace_slug', 'workspace', ['slug'])
+        # Now make slug not nullable
+        op.alter_column('workspace', 'slug', nullable=False)
+    
+    # Check if index exists before adding
+    indexes = [idx['name'] for idx in inspector.get_indexes('workspace')]
+    if 'ix_workspace_slug' not in indexes:
+        # Create index for slug
+        op.create_index('ix_workspace_slug', 'workspace', ['slug'])
+    
+    # Check if unique constraint exists before adding
+    unique_constraints = [uc['name'] for uc in inspector.get_unique_constraints('workspace')]
+    if 'uq_workspace_slug' not in unique_constraints:
+        op.create_unique_constraint('uq_workspace_slug', 'workspace', ['slug'])
 
 
 def downgrade() -> None:
