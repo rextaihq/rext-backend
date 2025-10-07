@@ -65,7 +65,7 @@ async def preview_email_template(
     )
 
 
-@router.get("/{workspace_id}")
+@router.get("/")
 @db_transaction_handler("list email templates", auto_commit=False)
 async def list_email_templates(
     workspace_id: str,
@@ -76,6 +76,10 @@ async def list_email_templates(
 ):
     """
     List all email templates for a workspace.
+    
+    Args:
+        workspace_id: Workspace UUID (query parameter)
+        template_type: Optional filter by template type
 
     Optionally filter by template type.
     """

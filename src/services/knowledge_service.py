@@ -283,6 +283,109 @@ class KnowledgeService:
             extra={"workspace_id": str(workspace_id)}
         )
 
+    async def list_web_knowledge(self, workspace_id: UUID) -> List[Dict[str, Any]]:
+        """Return all web knowledge entries for the workspace."""
+        result = await self.db.execute(
+            select(Website).where(Website.workspace_id == workspace_id)
+        )
+        return [knowledge.to_dict() for knowledge in result.scalars().all()]
+
+    async def get_web_knowledge(self, workspace_id: UUID, web_id: UUID) -> Dict[str, Any]:
+        """Return a single web knowledge entry."""
+        knowledge = await self._get_website_or_404(web_id, workspace_id)
+        return knowledge.to_dict()
+
+    async def add_web_knowledge(self, workspace_id: UUID, url: str) -> Dict[str, Any]:
+        """Create a new web knowledge entry by scraping the provided URL."""
+        result = await self.db.execute(
+            select(Website).where(
+                Website.workspace_id == workspace_id,
+                Website.url == url,
+            )
+        )
+        if result.scalar_one_or_none():
+            raise DuplicateResourceException(
+                resource_type="web_knowledge",
+                conflicting_field="url",
+                conflicting_value=url,
+                message=f"Knowledge for URL {url} already exists in the workspace",
+            )
+
+        chunks, results = await web_page_scraper(urls=[url])
+        result_entry = results[0] if results else None
+
+        if not result_entry or not getattr(result_entry, "success", False):
+            raise WrextValidationException(
+                message="Failed to scrape the provided URL",
+                field_errors={"url": ["URL could not be scraped or is inaccessible"]},
+            )
+
+        content = result_entry.markdown or ""
+
+        knowledge = Website(
+            workspace_id=workspace_id,
+            url=result_entry.url,
+            status="trained",
+            char_count=len(content),
+            word_count=len(content.split()),
+        )
+        self.db.add(knowledge)
+        await self.db.flush()
+        await self.db.refresh(knowledge)
+
+        try:
+            logger.info(
+                "Adding web knowledge chunks to vector store",
+                extra={"workspace_id": str(workspace_id), "url": result_entry.url, "chunks": len(chunks)},
+            )
+            success_status = add_to_vector_store(
+                blog_context=chunks,
+                doc_id=f"{str(workspace_id)}_{str(knowledge.id)}",
+            )
+            if not success_status:
+                raise WrextExternalServiceException(
+                    message="Failed to insert chunks into vector store",
+                    service_name="vector_store",
+                    service_error="Insertion returned False",
+                )
+        except WrextExternalServiceException:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("Vector store insertion failed", exc_info=exc)
+            raise WrextExternalServiceException(
+                message="Failed to process content in vector store",
+                service_name="vector_store",
+                service_error=str(exc),
+            )
+
+        logger.info(
+            "Web knowledge created",
+            extra={"workspace_id": str(workspace_id), "knowledge_id": str(knowledge.id)},
+        )
+
+        return knowledge.to_dict()
+
+    async def update_web_knowledge_title(self, workspace_id: UUID, web_id: UUID, title: str) -> Dict[str, Any]:
+        """Update the title for a web knowledge entry."""
+        knowledge = await self._get_website_or_404(web_id, workspace_id)
+        knowledge.title = title
+        await self.db.flush()
+        await self.db.refresh(knowledge)
+        return knowledge.to_dict()
+
+    async def delete_web_knowledge(self, workspace_id: UUID, web_id: UUID) -> None:
+        """Delete web knowledge entry and cleanup vector store."""
+        knowledge = await self._get_website_or_404(web_id, workspace_id)
+
+        success_status = delete_vectors(vector_id=f"{str(workspace_id)}_{str(web_id)}")
+        if not success_status:
+            logger.warning(
+                "Failed to delete vectors for web knowledge",
+                extra={"workspace_id": str(workspace_id), "knowledge_id": str(web_id)},
+            )
+
+        await self.db.delete(knowledge)
+
     # ========================================================================
     # Private Helper Methods
     # ========================================================================
@@ -317,6 +420,25 @@ class KnowledgeService:
             raise ResourceNotFoundException(
                 resource_type="FileKnowledge",
                 resource_id=str(file_id)
+            )
+
+        return knowledge
+
+    async def _get_website_or_404(
+        self,
+        web_id: UUID,
+        workspace_id: UUID
+    ) -> Website:
+        result = await self.db.execute(
+            select(Website).where(Website.id == web_id, Website.workspace_id == workspace_id)
+        )
+        knowledge = result.scalar_one_or_none()
+
+        if not knowledge:
+            raise ResourceNotFoundException(
+                resource_type="web_knowledge",
+                resource_id=str(web_id),
+                context={"workspace_id": str(workspace_id)}
             )
 
         return knowledge

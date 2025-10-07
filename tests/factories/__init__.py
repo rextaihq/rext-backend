@@ -127,6 +127,22 @@ class ContentFactory(AsyncFactory):
     created_at = LazyFunction(lambda: datetime.utcnow())
     updated_at = LazyFunction(lambda: datetime.utcnow())
 
+    @classmethod
+    async def create(cls, **kwargs):
+        """Create content with valid workspace and user foreign keys."""
+        if 'workspace_id' not in kwargs:
+            workspace = await WorkspaceFactory.create()
+            kwargs['workspace_id'] = workspace.id
+
+        if 'created_by_user_id' not in kwargs:
+            user = await UserFactory.create()
+            kwargs['created_by_user_id'] = user.id
+
+        # Default author to creator if not provided
+        kwargs.setdefault('author_id', kwargs['created_by_user_id'])
+
+        return await super().create(**kwargs)
+
 
 class TopicFactory(AsyncFactory):
     """Factory for TopicsModel"""
@@ -223,4 +239,3 @@ class InvitationFactory(AsyncFactory):
             kwargs["invited_by_user_id"] = user.id
         
         return await super().create(**kwargs)
-

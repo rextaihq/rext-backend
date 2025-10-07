@@ -126,13 +126,18 @@ class ImpersonationService:
             }
         )
 
+        target_context = await self._build_context_from_user(target_user)
+
         return {
-            "target_user_id": str(target_user_id),
-            "target_email": target_user.email,
-            "target_username": target_user.username,
+            "target_user_id": target_context["user_id"],
+            "target_email": target_context["email"],
+            "target_username": target_context["username"],
+            "target_display_name": target_context["display_name"],
             "impersonated_by": str(admin_user_id),
             "impersonated_by_email": admin_user.email,
-            "impersonation_started_at": datetime.utcnow().isoformat()
+            "impersonation_started_at": datetime.utcnow().isoformat(),
+            "roles": target_context["roles"],
+            "permissions": target_context["permissions"],
         }
 
     async def stop_impersonation(
@@ -271,3 +276,50 @@ class ImpersonationService:
         max_level = result.scalar_one_or_none()
 
         return max_level or 0
+
+    async def _get_auth_context(self, user_id: UUID) -> Dict[str, Any]:
+        """Fetch global roles and permissions for target user."""
+        roles_result = await self.db.execute(
+            select(Role.name)
+            .join(UserRole, UserRole.role_id == Role.id)
+            .where(
+                UserRole.user_id == user_id,
+                UserRole.workspace_id.is_(None)
+            )
+        )
+        roles = [row[0] for row in roles_result.all()]
+
+        permissions_result = await self.db.execute(
+            select(Permission.name)
+            .join(RolePermission, RolePermission.permission_id == Permission.id)
+            .join(UserRole, UserRole.role_id == RolePermission.role_id)
+            .where(
+                UserRole.user_id == user_id,
+                UserRole.workspace_id.is_(None)
+            )
+            .distinct()
+        )
+        permissions = [row[0] for row in permissions_result.all()]
+
+        return {
+            "roles": roles,
+            "permissions": permissions,
+        }
+
+    async def get_user_context(self, user_id: UUID) -> Dict[str, Any]:
+        """Public helper to retrieve full impersonation context for a user."""
+        user = await self._get_user_or_404(user_id)
+        return await self._build_context_from_user(user)
+
+    async def _build_context_from_user(self, user: Users) -> Dict[str, Any]:
+        """Build impersonation-friendly context for a user."""
+        auth_context = await self._get_auth_context(user.id)
+
+        return {
+            "user_id": str(user.id),
+            "email": user.email,
+            "username": user.username,
+            "display_name": user.display_name,
+            "roles": auth_context["roles"],
+            "permissions": auth_context["permissions"],
+        }

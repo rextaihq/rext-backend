@@ -32,7 +32,7 @@ router = APIRouter()
 # -------------------------
 # Get workspace members
 # -------------------------
-@router.get("/{workspace_id}/members")
+@router.get("/members")
 @db_transaction_handler("get workspace members", auto_commit=False)
 async def get_workspace_members(
     workspace_id: str,
@@ -40,7 +40,12 @@ async def get_workspace_members(
     db: AsyncSession = Depends(get_async_db),
     user: dict = Depends(get_current_user)
 ):
-    """Get workspace members - Thin controller using MemberService"""
+    """
+    Get workspace members - Thin controller using MemberService
+    
+    Args:
+        workspace_id: Workspace UUID (query parameter)
+    """
     user_id = user.get("identity")
     db_user = await verify_current_user(db, user_id)
     workspace, membership = await resolve_and_verify_workspace(db, workspace_id, UUID(user_id))
@@ -85,7 +90,7 @@ async def get_workspace_members(
 # -------------------------
 # Add workspace member
 # -------------------------
-@router.post("/{workspace_id}/members")
+@router.post("/members")
 @db_transaction_handler("add workspace member", auto_commit=True)
 @require_permissions("member.invite", workspace_scoped=True)
 async def add_workspace_member(
@@ -95,7 +100,13 @@ async def add_workspace_member(
     db: AsyncSession = Depends(get_async_db),
     user: dict = Depends(get_current_user)
 ):
-    """Add member to workspace - Thin controller using MemberService"""
+    """
+    Add member to workspace - Thin controller using MemberService
+    
+    Args:
+        workspace_id: Workspace UUID (query parameter)
+        email: Email of user to add
+    """
     user_id = user.get("identity")
     db_user = await verify_current_user(db, user_id)
     workspace, membership = await resolve_and_verify_workspace(db, workspace_id, UUID(user_id))
@@ -130,7 +141,7 @@ async def add_workspace_member(
 # -------------------------
 # Remove workspace member
 # -------------------------
-@router.delete("/{workspace_id}/members/{member_id}")
+@router.delete("/members/{member_id}")
 @db_transaction_handler("remove workspace member", auto_commit=True)
 @require_permissions("member.remove", workspace_scoped=True)
 async def remove_workspace_member(
@@ -140,7 +151,13 @@ async def remove_workspace_member(
     db: AsyncSession = Depends(get_async_db),
     user: dict = Depends(get_current_user)
 ):
-    """Remove member from workspace - Thin controller using MemberService"""
+    """
+    Remove member from workspace - Thin controller using MemberService
+    
+    Args:
+        workspace_id: Workspace UUID (query parameter)
+        member_id: Member UUID (path parameter)
+    """
     user_id = user.get("identity")
     db_user = await verify_current_user(db, user_id)
     workspace, membership = await resolve_and_verify_workspace(db, workspace_id, UUID(user_id))
@@ -178,7 +195,7 @@ async def remove_workspace_member(
 # -------------------------
 # Change workspace member role
 # -------------------------
-@router.put("/{workspace_id}/members/{member_id}/role")
+@router.put("/members/{member_id}/role")
 @db_transaction_handler("change member role", auto_commit=True)
 @require_permissions("member.update", workspace_scoped=True)
 async def change_member_role(
@@ -191,6 +208,10 @@ async def change_member_role(
 ):
     """
     Change the role of a workspace member.
+    
+    Args:
+        workspace_id: Workspace UUID (query parameter)
+        member_id: Member UUID (path parameter)
 
     Note: Role management stays in route as it involves UserRole table,
     which is separate from workspace membership business logic.

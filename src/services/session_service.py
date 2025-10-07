@@ -16,7 +16,7 @@ Does NOT:
 - Generate tokens (that's auth service)
 """
 
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Union
 from uuid import UUID
 from datetime import datetime
 
@@ -69,7 +69,8 @@ class SessionService:
                 "user_agent": session.user_agent,
                 "created_at": session.created_at.isoformat() if session.created_at else None,
                 "last_activity_at": session.last_activity_at.isoformat() if session.last_activity_at else None,
-                "is_current": False  # Will be determined by route based on current token
+                "is_current": False,  # Will be determined by route based on current token
+                "token_id": session.jti,
             })
 
         return sessions_data
@@ -117,7 +118,11 @@ class SessionService:
         if session.jti:
             blacklist_entry = TokenBlacklist(
                 jti=session.jti,
-                expires_at=datetime.utcfromtimestamp(session.expires_at) if session.expires_at else datetime.utcnow()
+                token_type="access",
+                user_id=user_id,
+                revoked_at=datetime.utcnow(),
+                expires_at=self._normalize_expiry(session.expires_at),
+                reason="session_revoked"
             )
             self.db.add(blacklist_entry)
 
@@ -134,13 +139,15 @@ class SessionService:
 
         return {
             "session_id": str(session_id),
+            "revoked": True,
             "revoked_at": session.revoked_at.isoformat()
         }
 
     async def revoke_all_sessions(
         self,
         user_id: UUID,
-        exclude_session_id: UUID = None
+        exclude_session_id: UUID = None,
+        exclude_session_jti: str = None
     ) -> int:
         """
         Revoke all sessions for a user.
@@ -165,6 +172,8 @@ class SessionService:
 
         if exclude_session_id:
             query = query.where(UserSession.id != exclude_session_id)
+        if exclude_session_jti:
+            query = query.where(UserSession.jti != exclude_session_jti)
 
         result = await self.db.execute(query)
         sessions = result.scalars().all()
@@ -177,7 +186,11 @@ class SessionService:
             if session.jti:
                 blacklist_entry = TokenBlacklist(
                     jti=session.jti,
-                    expires_at=datetime.utcfromtimestamp(session.expires_at) if session.expires_at else now
+                    token_type="access",
+                    user_id=user_id,
+                    revoked_at=now,
+                    expires_at=self._normalize_expiry(session.expires_at),
+                    reason="all_sessions_revoked"
                 )
                 self.db.add(blacklist_entry)
 
@@ -194,3 +207,12 @@ class SessionService:
         )
 
         return revoked_count
+
+    @staticmethod
+    def _normalize_expiry(expires_at: Union[datetime, float, int, None]) -> datetime:
+        """Coerce stored expiry value into a datetime object."""
+        if isinstance(expires_at, datetime):
+            return expires_at
+        if isinstance(expires_at, (int, float)):
+            return datetime.utcfromtimestamp(expires_at)
+        return datetime.utcnow()

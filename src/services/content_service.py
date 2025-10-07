@@ -85,7 +85,7 @@ class ContentService:
             topic_id=data.topic_id,
             created_by_user_id=user_id,
             assigned_to_user_id=data.assigned_to_user_id,
-            author_id=data.author_id or user_id,  # Default to creator
+            author_id=getattr(data, "author_id", None) or user_id,  # Default to creator
             title=data.title,
             slug=unique_slug,
             body_markdown=data.body_markdown,
@@ -303,6 +303,7 @@ class ContentService:
         content = await self._get_content_or_404(content_id, workspace_id)
 
         content.deleted_at = datetime.now(timezone.utc)
+        await self.db.flush()
 
         logger.info(
             f"Content deleted: {content_id}",

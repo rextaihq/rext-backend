@@ -15,20 +15,17 @@ Does NOT:
 - Validate workspace existence (assumes valid UUID)
 """
 
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Union
 from uuid import UUID
-from datetime import datetime
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
-from src.api.models.workspace_models.brand_voice import BrandVoice
+from src.api.models.knowledge_models.knowledge_model import BrandVoice
 from src.api.models.workspace_models.workspace_member import WorkspaceMembers
 from src.utils.logger import logger
-from src.api.middleware.exceptions import (
-    ResourceNotFoundException,
-    WrextAuthenticationException
-)
+from src.api.middleware.exceptions import WrextAuthenticationException
+from src.api.schema.knowledge_schema import BrandSchema
 
 
 class BrandVoiceService:
@@ -76,10 +73,7 @@ class BrandVoiceService:
         self,
         workspace_id: UUID,
         user_id: UUID,
-        tone: Optional[str] = None,
-        style: Optional[str] = None,
-        vocabulary: Optional[str] = None,
-        guidelines: Optional[str] = None
+        brand_data: Union[BrandSchema, Dict[str, Any]]
     ) -> BrandVoice:
         """
         Create or update brand voice for workspace.
@@ -88,15 +82,12 @@ class BrandVoiceService:
         - User must be workspace member
         - Creates new if doesn't exist
         - Updates existing if exists
-        - Only updates provided fields
+        - Supports data provided as BrandSchema or mapping
 
         Args:
             workspace_id: Workspace UUID
             user_id: User UUID (for membership check)
-            tone: Optional brand tone description
-            style: Optional writing style description
-            vocabulary: Optional vocabulary guidelines
-            guidelines: Optional additional guidelines
+            brand_data: Structured brand voice payload
 
         Returns:
             BrandVoice object (created or updated)
@@ -113,31 +104,19 @@ class BrandVoiceService:
         )
         brand_voice = result.scalar_one_or_none()
 
-        if brand_voice:
-            # Update existing
-            if tone is not None:
-                brand_voice.tone = tone
-            if style is not None:
-                brand_voice.style = style
-            if vocabulary is not None:
-                brand_voice.vocabulary = vocabulary
-            if guidelines is not None:
-                brand_voice.guidelines = guidelines
+        payload = self._normalize_brand_data(brand_data)
 
-            brand_voice.updated_at = datetime.utcnow()
-            brand_voice.updated_by_user_id = user_id
+        if brand_voice:
+            # Update existing record with latest brand data
+            for field, value in payload.items():
+                setattr(brand_voice, field, value)
 
             action = "updated"
         else:
-            # Create new
+            # Create new brand voice entry
             brand_voice = BrandVoice(
                 workspace_id=workspace_id,
-                tone=tone,
-                style=style,
-                vocabulary=vocabulary,
-                guidelines=guidelines,
-                created_by_user_id=user_id,
-                updated_by_user_id=user_id
+                **payload
             )
             self.db.add(brand_voice)
             action = "created"
@@ -189,3 +168,27 @@ class BrandVoiceService:
             )
 
         return membership
+
+    # --------------------------------------------------------------------
+    # Internal helpers
+    # --------------------------------------------------------------------
+
+    def _normalize_brand_data(
+        self,
+        brand_data: Union[BrandSchema, Dict[str, Any]]
+    ) -> Dict[str, Any]:
+        """Convert brand voice payload into model-compatible structure."""
+        if isinstance(brand_data, BrandSchema):
+            data = brand_data.model_dump()
+        else:
+            data = dict(brand_data)
+
+        return {
+            "about": data.get("about"),
+            "customer_profile": data.get("customer_profile"),
+            "selling_position": data.get("selling_position"),
+            "target_audience": data.get("target_audience"),
+            "brand_voice": data.get("brand_voice"),
+            "competitors": data.get("competitors"),
+            "content_strategy": data.get("content_strategy") or data.get("content_pillar"),
+        }

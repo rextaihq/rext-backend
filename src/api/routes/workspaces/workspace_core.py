@@ -51,9 +51,20 @@ async def get_workspaces(
 # -------------------------
 # Get workspace by ID
 # -------------------------
-@router.get("/{workspace_id}")
+@router.get("/detail")
 @db_transaction_handler("get workspace by id", auto_commit=False)
-async def get_workspace_by_id(workspace_id: str, request: Request, db: AsyncSession = Depends(get_async_db), user: dict = Depends(get_current_user)):
+async def get_workspace_by_id(
+    workspace_id: str,
+    request: Request,
+    db: AsyncSession = Depends(get_async_db),
+    user: dict = Depends(get_current_user)
+):
+    """
+    Get workspace by ID using query parameter.
+    
+    Args:
+        workspace_id: Workspace UUID (query parameter)
+    """
     user_id = user.get("identity")
     db_user = await verify_current_user(db, user_id)
 

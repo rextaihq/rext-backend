@@ -31,6 +31,8 @@ from src.api.middleware.exceptions import (
     WrextValidationException,
     DuplicateResourceException
 )
+from src.utils.account_cleanup import delete_deactivated_accounts, get_pending_deletions
+from src.utils.token_cleanup import cleanup_expired_tokens
 
 
 class UserService:
@@ -266,6 +268,18 @@ class UserService:
         )
 
         return user
+
+    async def cleanup_deactivated_accounts(self) -> int:
+        """Permanently delete accounts deactivated for 14 or more days."""
+        return delete_deactivated_accounts(self.db.sync_session)
+
+    async def get_pending_deletions(self) -> list:
+        """Return accounts scheduled for deletion."""
+        return get_pending_deletions(self.db.sync_session)
+
+    async def cleanup_expired_tokens(self) -> int:
+        """Remove expired tokens from the blacklist."""
+        return cleanup_expired_tokens(self.db.sync_session)
 
     async def update_last_login(
         self,

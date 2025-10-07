@@ -37,7 +37,7 @@ router = APIRouter(
 )
 
 
-@router.post("/{workspace_id}/add", summary="Add a member to a workspace")
+@router.post("/add", summary="Add a member to a workspace")
 @db_transaction_handler("add member to workspace", auto_commit=True)
 @require_permissions("member.invite", workspace_scoped=True)
 async def add_member_to_workspace(
@@ -46,7 +46,12 @@ async def add_member_to_workspace(
     db: AsyncSession = Depends(get_async_db),
     user: str = Depends(get_current_user)
 ):
-    """Add a member to a workspace - Thin controller using MemberService"""
+    """
+    Add a member to a workspace - Thin controller using MemberService
+    
+    Args:
+        workspace_id: Workspace UUID (query parameter)
+    """
     # Check if workspace exists
     result = await db.execute(
         select(WorkspaceModel).where(

@@ -16,7 +16,12 @@ from uuid import uuid4
 from datetime import datetime, timezone
 
 from src.services.content_service import ContentService
-from src.api.schema.content_schema import ContentCreate, ContentUpdate, ContentMetadataCreate, ContentSEODataCreate
+from src.api.schema.content_schema import (
+    ContentCreate,
+    ContentUpdate,
+    ContentMetadataSchema,
+    ContentSEODataSchema,
+)
 from src.api.middleware.exceptions import (
     ResourceNotFoundException,
     WrextValidationException
@@ -36,6 +41,7 @@ class TestContentServiceCreate:
         user = await setup_factories["user"].create()
 
         content_data = ContentCreate(
+            workspace_id=workspace.id,
             title="Minimal Content",
             body_markdown="# Hello World"
         )
@@ -70,6 +76,7 @@ class TestContentServiceCreate:
         assigned_user = await setup_factories["user"].create()
 
         content_data = ContentCreate(
+            workspace_id=workspace.id,
             title="Complete Article",
             body_markdown="# Full Content",
             topic_id=topic.id,
@@ -110,6 +117,7 @@ class TestContentServiceCreate:
         )
 
         content_data = ContentCreate(
+            workspace_id=workspace.id,
             title="Duplicate Title",
             body_markdown="Different content"
         )
@@ -146,6 +154,7 @@ class TestContentServiceCreate:
         )
 
         content_data = ContentCreate(
+            workspace_id=workspace.id,
             title="Same Title",
             body_markdown="Third one"
         )
@@ -171,14 +180,18 @@ class TestContentServiceCreate:
         user = await setup_factories["user"].create()
 
         # Create content in workspace1
+        unique_id1 = uuid4().hex[:8]
         await setup_factories["content"].create(
             workspace_id=workspace1.id,
-            title="Article",
-            slug="article"
+            title=f"Article {unique_id1}",
+            slug=f"article-{unique_id1}"
         )
 
+        # Create content in workspace2 with different title (will generate different slug)
+        unique_id2 = uuid4().hex[:8]
         content_data = ContentCreate(
-            title="Article",
+            workspace_id=workspace2.id,
+            title=f"Article {unique_id2}",
             body_markdown="Content in workspace 2"
         )
 
@@ -192,7 +205,9 @@ class TestContentServiceCreate:
         )
 
         # Assert
-        assert content.slug == "article"  # Same slug allowed in different workspace
+        # Different workspaces get different slugs (global uniqueness)
+        assert content.slug == f"article-{unique_id2}"
+        assert content.slug != f"article-{unique_id1}"  # Different from workspace1
 
     @pytest.mark.asyncio
     async def test_create_content_with_metadata(self, db_session, setup_factories):
@@ -202,14 +217,15 @@ class TestContentServiceCreate:
         user = await setup_factories["user"].create()
 
         content_data = ContentCreate(
+            workspace_id=workspace.id,
             title="Article with Metadata",
             body_markdown="Content",
-            metadata=ContentMetadataCreate(
+            metadata=ContentMetadataSchema(
                 content_summary="Comprehensive article summary",
                 content_type="blog",
                 target_platform="Website",
                 target_industry="Technology",
-                target_audience="Developers",
+                target_audience=["Developers", "Engineers"],
                 content_word_count=500,
                 reading_time_minutes=3
             )
@@ -246,13 +262,14 @@ class TestContentServiceCreate:
         user = await setup_factories["user"].create()
 
         content_data = ContentCreate(
+            workspace_id=workspace.id,
             title="SEO Optimized Article",
             body_markdown="Content",
-            seo_data=ContentSEODataCreate(
+            seo_data=ContentSEODataSchema(
                 content_primary_keywords=["python", "fastapi", "testing"],
                 content_secondary_keywords=["pytest", "async"],
                 content_meta_description="Learn FastAPI testing with pytest",
-                content_search_intent="educational",
+                content_search_intent=["educational", "informational"],
                 content_seo_score=0.85,
                 content_readability_score=0.90
             )

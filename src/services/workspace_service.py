@@ -28,13 +28,22 @@ from src.api.models.workspace_models.workspace_model import WorkspaceModel
 from src.api.models.workspace_models.workspace_member import WorkspaceMembers
 from src.api.models.knowledge_models.knowledge_model import Website, KnowledgeFiles, TextKnowledge, BrandVoice
 from src.api.models.user_models.users import Users
+from src.api.models.user_models.roles import Role
+from src.api.models.user_models.permissions import Permission
+from src.api.models.user_models.role_permissions import RolePermission
+from src.api.models.user_models.user_roles import UserRole
 from src.api.models.content_models.content import Content
-from src.utils.logger import logger
 from src.api.middleware.exceptions import (
     ResourceNotFoundException,
     WrextValidationException,
-    DuplicateResourceException
+    DuplicateResourceException,
+    WrextAuthenticationException,
 )
+from src.api.schema.knowledge_schema import BrandSchema
+from src.langgraph_flow.model.model import load_model
+from src.utils.helper import web_page_scraper
+from src.utils.vector_store import add_to_vector_store, delete_vectors
+from src.utils.logger import logger
 
 
 class WorkspaceService:
@@ -48,6 +57,79 @@ class WorkspaceService:
             db: Async database session
         """
         self.db = db
+
+    async def list_workspaces_for_user(self, user_id: UUID) -> Dict[str, Any]:
+        """Return workspace listing payload for a user."""
+        await self._ensure_active_user(user_id)
+        workspaces = await self.get_user_workspaces(user_id)
+        return {
+            "workspaces": workspaces,
+            "total_count": len(workspaces),
+        }
+
+    async def get_workspace_for_user(self, workspace_id: UUID, user_id: UUID) -> Dict[str, Any]:
+        """Fetch workspace details for a member including brand voice data."""
+        await self._ensure_active_user(user_id)
+        await self._ensure_membership(workspace_id, user_id)
+        return await self.get_workspace_with_brand_voice(workspace_id)
+
+    async def create_workspace_for_user(
+        self,
+        user_id: UUID,
+        name: str,
+        description: Optional[str],
+        url: str,
+    ) -> Dict[str, Any]:
+        """Create a workspace and perform onboarding tasks for the owner."""
+        await self._ensure_active_user(user_id)
+        workspace = await self.create_workspace(
+            user_id=user_id,
+            name=name,
+            description=description,
+            url=url,
+        )
+        await self.db.refresh(workspace)
+
+        await self.create_workspace_member(workspace.id, user_id, is_default=True, status="active")
+
+        admin_role = await self._ensure_workspace_admin_role(workspace.id)
+        await self._assign_permissions_to_role(admin_role.id, resources=["topic", "content"])
+        await self._assign_role_to_user(admin_role.id, user_id, workspace.id)
+
+        await self._populate_brand_voice_and_vectors(workspace.id, url)
+
+        return self._serialize_workspace(workspace)
+
+    async def delete_workspace_for_user(self, workspace_id: UUID, user_id: UUID) -> None:
+        """Delete workspace after verifying membership and cleanup."""
+        await self._ensure_active_user(user_id)
+        workspace = await self._ensure_membership(workspace_id, user_id)
+        self._delete_vectors_safe(workspace.id)
+        await self.delete_workspace(workspace_id)
+
+    async def update_workspace_for_user(
+        self,
+        workspace_id: UUID,
+        user_id: UUID,
+        name: Optional[str],
+        description: Optional[str],
+        url: Optional[str],
+    ) -> Dict[str, Any]:
+        """Update workspace metadata for a member."""
+        await self._ensure_active_user(user_id)
+        workspace = await self._ensure_membership(workspace_id, user_id)
+
+        if name and name != workspace.name:
+            await self._ensure_unique_workspace_name(name, user_id)
+
+        updated = await self.update_workspace(
+            workspace_id=workspace_id,
+            name=name,
+            description=description,
+            url=url,
+        )
+        await self.db.refresh(updated)
+        return self._serialize_workspace(updated)
 
     async def get_user_workspaces(
         self,
@@ -490,6 +572,182 @@ class WorkspaceService:
     # ========================================================================
     # Private Helper Methods
     # ========================================================================
+
+    async def _ensure_active_user(self, user_id: UUID) -> Users:
+        result = await self.db.execute(
+            select(Users).where(Users.id == user_id, Users.deleted_at.is_(None))
+        )
+        user = result.scalar_one_or_none()
+        if not user:
+            raise WrextAuthenticationException(
+                message="User not found",
+                context={"user_id": str(user_id)},
+            )
+        return user
+
+    async def _ensure_membership(self, workspace_id: UUID, user_id: UUID) -> WorkspaceModel:
+        query = (
+            select(WorkspaceModel)
+            .join(WorkspaceMembers, WorkspaceMembers.workspace_id == WorkspaceModel.id)
+            .where(
+                WorkspaceModel.id == workspace_id,
+                WorkspaceMembers.user_id == user_id,
+            )
+        )
+        result = await self.db.execute(query)
+        workspace = result.scalar_one_or_none()
+        if not workspace:
+            raise ResourceNotFoundException(
+                resource_type="workspace",
+                resource_id=str(workspace_id),
+            )
+        return workspace
+
+    async def _ensure_workspace_admin_role(self, workspace_id: UUID) -> Role:
+        role_name = f"{workspace_id}_admin"
+        result = await self.db.execute(select(Role).where(Role.name == role_name))
+        role = result.scalar_one_or_none()
+        if role:
+            return role
+
+        role = Role(
+            name=role_name,
+            display_name="Workspace Administrator",
+            description="Workspace admin with full content/topic permissions",
+            is_system_role=False,
+        )
+        self.db.add(role)
+        await self.db.flush()
+        await self.db.refresh(role)
+        return role
+
+    async def _assign_permissions_to_role(self, role_id: UUID, resources: List[str]) -> None:
+        if not resources:
+            return
+        result = await self.db.execute(
+            select(Permission).where(Permission.resource.in_(resources))
+        )
+        permissions = result.scalars().all()
+
+        for permission in permissions:
+            existing = await self.db.execute(
+                select(RolePermission).where(
+                    RolePermission.role_id == role_id,
+                    RolePermission.permission_id == permission.id,
+                )
+            )
+            if existing.scalar_one_or_none():
+                continue
+            self.db.add(RolePermission(role_id=role_id, permission_id=permission.id))
+
+    async def _assign_role_to_user(self, role_id: UUID, user_id: UUID, workspace_id: UUID) -> None:
+        result = await self.db.execute(
+            select(UserRole).where(
+                UserRole.role_id == role_id,
+                UserRole.user_id == user_id,
+                UserRole.workspace_id == workspace_id,
+            )
+        )
+        if result.scalar_one_or_none():
+            return
+
+        user_role = UserRole(
+            user_id=user_id,
+            role_id=role_id,
+            workspace_id=workspace_id,
+            is_primary=True,
+        )
+        self.db.add(user_role)
+
+    async def _populate_brand_voice_and_vectors(self, workspace_id: UUID, url: Optional[str]) -> None:
+        if not url:
+            return
+
+        chunks = []
+        content = ""
+
+        try:
+            scraped_chunks, results = await web_page_scraper(urls=[url])
+            chunks = scraped_chunks or []
+            if results:
+                first = results[0]
+                content = first.markdown if getattr(first, "success", False) else ""
+        except Exception as scrape_err:  # noqa: BLE001
+            logger.warning(
+                "Workspace scraping failed",
+                extra={"workspace_id": str(workspace_id), "error": str(scrape_err)},
+            )
+
+        try:
+            if chunks:
+                add_to_vector_store(blog_context=chunks, workspace_id=str(workspace_id))
+        except Exception as vector_err:  # noqa: BLE001
+            logger.warning(
+                "Vector store update failed",
+                extra={"workspace_id": str(workspace_id), "error": str(vector_err)},
+            )
+
+        if not content:
+            return
+
+        try:
+            model = load_model()
+            structure_model = model.with_structured_output(BrandSchema)
+            brand_data = structure_model.invoke(content)
+
+            brand_voice = BrandVoice(
+                workspace_id=workspace_id,
+                about=brand_data.about,
+                customer_profile=brand_data.customer_profile,
+                selling_position=brand_data.selling_position,
+                target_audience=brand_data.target_audience,
+                brand_voice=brand_data.brand_voice,
+                competitors=brand_data.competitors,
+                content_strategy=brand_data.content_pillar,
+            )
+            self.db.add(brand_voice)
+            await self.db.flush()
+        except Exception as llm_err:  # noqa: BLE001
+            logger.warning(
+                "Brand voice generation failed",
+                extra={"workspace_id": str(workspace_id), "error": str(llm_err)},
+            )
+
+    def _delete_vectors_safe(self, workspace_id: UUID) -> None:
+        try:
+            delete_vectors(vector_id=str(workspace_id))
+        except Exception as err:  # noqa: BLE001
+            logger.warning(
+                "Vector cleanup failed",
+                extra={"workspace_id": str(workspace_id), "error": str(err)},
+            )
+
+    async def _ensure_unique_workspace_name(self, name: str, user_id: UUID) -> None:
+        result = await self.db.execute(
+            select(WorkspaceModel).where(
+                WorkspaceModel.name == name,
+                WorkspaceModel.user_id == user_id,
+            )
+        )
+        if result.scalar_one_or_none():
+            raise DuplicateResourceException(
+                message=f"Workspace with name '{name}' already exists",
+                resource_type="workspace",
+                conflicting_field="name",
+                conflicting_value=name,
+            )
+
+    def _serialize_workspace(self, workspace: WorkspaceModel) -> Dict[str, Any]:
+        return {
+            "id": str(workspace.id),
+            "user_id": str(workspace.user_id),
+            "name": workspace.name,
+            "slug": workspace.slug if hasattr(workspace, "slug") else None,
+            "description": workspace.description,
+            "url": workspace.url,
+            "created_at": workspace.created_at.isoformat() if workspace.created_at else None,
+            "updated_at": workspace.updated_at.isoformat() if workspace.updated_at else None,
+        }
 
     def _slugify(self, text: str) -> str:
         """
