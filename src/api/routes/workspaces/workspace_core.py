@@ -154,3 +154,86 @@ async def get_workspace_by_slug(
 
     # Return raw data - decorator handles success response
     return {"workspace": workspace_data}
+
+
+# -------------------------
+# Get workspace by ID (RESTful endpoint)
+# -------------------------
+@router.get("/{workspace_id}")
+@db_transaction_handler("get workspace by id (path)", auto_commit=False)
+async def get_workspace_by_id_path(
+    workspace_id: str,
+    request: Request,
+    db: AsyncSession = Depends(get_async_db),
+    user: dict = Depends(get_current_user)
+):
+    """
+    Get workspace by ID using path parameter.
+    RESTful endpoint for frontend compatibility.
+
+    This endpoint handles both UUID and slug formats:
+    - If workspace_id is a UUID: fetch directly by ID
+    - If workspace_id is a slug: fetch by slug
+
+    Args:
+        workspace_id: Workspace UUID or slug (path parameter)
+    """
+    user_id = user.get("identity")
+    db_user = await verify_current_user(db, user_id)
+
+    # Check if workspace_id is a UUID or slug
+    from sqlalchemy import select
+    from src.api.models.workspace_models.workspace_model import WorkspaceModel
+    from src.api.models.workspace_models.workspace_member import WorkspaceMembers
+
+    is_uuid = False
+    try:
+        UUID(workspace_id)
+        is_uuid = True
+    except ValueError:
+        is_uuid = False
+
+    # Build query based on whether it's UUID or slug
+    if is_uuid:
+        workspace_query = (
+            select(WorkspaceModel)
+            .join(WorkspaceMembers, WorkspaceMembers.workspace_id == WorkspaceModel.id)
+            .where(WorkspaceModel.id == UUID(workspace_id), WorkspaceMembers.user_id == user_id)
+        )
+    else:
+        workspace_query = (
+            select(WorkspaceModel)
+            .join(WorkspaceMembers, WorkspaceMembers.workspace_id == WorkspaceModel.id)
+            .where(WorkspaceModel.slug == workspace_id, WorkspaceMembers.user_id == user_id)
+        )
+
+    result = await db.execute(workspace_query)
+    workspace = result.scalar_one_or_none()
+
+    if not workspace:
+        raise ResourceNotFoundException(resource_type="workspace", resource_id=workspace_id)
+
+    # Use workspace service for the rest
+    workspace_service = WorkspaceService(db)
+    workspace_data = await workspace_service.get_workspace_with_brand_voice(workspace.id)
+
+    # Get analytics with word counts
+    analytics = await workspace_service.get_workspace_analytics(workspace.id, include_word_counts=True)
+
+    # Merge analytics into workspace data
+    workspace_data["knowledge_stats"] = analytics["knowledge_stats"]
+    workspace_data["analytics"] = {
+        "knowledge_counts": {
+            "web_knowledge": analytics["knowledge_stats"]["web_knowledge"],
+            "files": analytics["knowledge_stats"]["files"],
+            "text_knowledge": analytics["knowledge_stats"]["text_knowledge"],
+            "total_knowledge_items": analytics["knowledge_stats"]["total"]
+        },
+        "content_metrics": analytics.get("content_metrics", {}),
+        "team_metrics": {
+            "total_members": analytics["members_count"]
+        }
+    }
+
+    # Return raw data - decorator handles success response
+    return {"workspace": workspace_data}

@@ -1,5 +1,5 @@
 from fastapi import APIRouter
-from .workspace_core import router as core_router, get_workspaces, get_workspace_by_slug
+from .workspace_core import router as core_router, get_workspaces, get_workspace_by_slug, get_workspace_by_id_path
 from .workspace_members import router as members_router
 from .workspace_knowledge import router as knowledge_router
 from .workspace_brand_voice import router as brand_voice_router
@@ -16,5 +16,6 @@ router.include_router(brand_voice_router)
 workspaces_router = APIRouter(prefix="/workspaces", tags=["workspace"])
 workspaces_router.add_api_route("", get_workspaces, methods=["GET"], name="get_workspaces_alias")
 workspaces_router.add_api_route("/slug/{workspace_slug}", get_workspace_by_slug, methods=["GET"], name="get_workspace_by_slug_alias")
+workspaces_router.add_api_route("/{workspace_id}", get_workspace_by_id_path, methods=["GET"], name="get_workspace_by_id_restful")
 
 __all__ = ["router", "workspaces_router"]
