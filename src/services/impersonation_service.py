@@ -1,0 +1,273 @@
+"""
+Impersonation Service - Business Logic for User Impersonation
+
+This service encapsulates all business logic related to admin user
+impersonation, including permission validation and token generation.
+
+Responsibilities:
+- Start impersonation (with permission checks)
+- Stop impersonation
+- Track impersonation status
+- Generate impersonation tokens
+
+Does NOT:
+- Handle HTTP requests/responses (that's routes)
+- Commit transactions (that's decorators/routes)
+- Create actual JWT tokens (that's token utils)
+"""
+
+from typing import Dict, Any, Optional
+from uuid import UUID
+from datetime import datetime
+
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
+
+from src.api.models.user_models.users import Users
+from src.api.models.user_models.user_roles import UserRole
+from src.api.models.user_models.roles import Role
+from src.api.models.user_models.permissions import Permission
+from src.api.models.user_models.role_permissions import RolePermission
+from src.utils.logger import logger
+from src.api.middleware.exceptions import (
+    ResourceNotFoundException,
+    WrextValidationException,
+    WrextAuthenticationException
+)
+
+
+class ImpersonationService:
+    """Service for user impersonation management"""
+
+    def __init__(self, db: AsyncSession):
+        """
+        Initialize ImpersonationService.
+
+        Args:
+            db: Async database session
+        """
+        self.db = db
+
+    async def start_impersonation(
+        self,
+        admin_user_id: UUID,
+        target_user_id: UUID
+    ) -> Dict[str, Any]:
+        """
+        Start impersonating a user.
+
+        Business Rules:
+        - Admin must have user.impersonate permission
+        - Cannot impersonate yourself
+        - Cannot impersonate another admin with higher/equal permissions
+        - Target user must exist and be active
+
+        Args:
+            admin_user_id: Admin user UUID
+            target_user_id: Target user UUID to impersonate
+
+        Returns:
+            Dict with target user info and impersonation metadata
+
+        Raises:
+            ResourceNotFoundException: If users not found
+            WrextValidationException: If validation fails
+            WrextAuthenticationException: If permission denied
+        """
+        # Get admin user
+        admin_user = await self._get_user_or_404(admin_user_id)
+
+        # Get target user
+        target_user = await self._get_user_or_404(target_user_id)
+
+        # Cannot impersonate yourself
+        if admin_user_id == target_user_id:
+            raise WrextValidationException(
+                message="Cannot impersonate yourself",
+                field_errors={"target_user_id": ["Self-impersonation not allowed"]}
+            )
+
+        # Check if admin has impersonation permission
+        has_permission = await self._has_impersonation_permission(admin_user_id)
+
+        if not has_permission:
+            raise WrextAuthenticationException(
+                message="You do not have permission to impersonate users",
+                context={"admin_user_id": str(admin_user_id)}
+            )
+
+        # Check target user status
+        if target_user.status != "active":
+            raise WrextValidationException(
+                message="Cannot impersonate inactive user",
+                field_errors={"target_user_id": ["User is not active"]}
+            )
+
+        # Prevent impersonating higher privilege users
+        admin_max_hierarchy = await self._get_max_hierarchy_level(admin_user_id)
+        target_max_hierarchy = await self._get_max_hierarchy_level(target_user_id)
+
+        if target_max_hierarchy >= admin_max_hierarchy:
+            raise WrextAuthenticationException(
+                message="Cannot impersonate user with equal or higher privilege level",
+                context={
+                    "admin_hierarchy": admin_max_hierarchy,
+                    "target_hierarchy": target_max_hierarchy
+                }
+            )
+
+        logger.info(
+            f"Admin {admin_user_id} started impersonating {target_user_id}",
+            extra={
+                "admin_user_id": str(admin_user_id),
+                "target_user_id": str(target_user_id),
+                "admin_email": admin_user.email,
+                "target_email": target_user.email
+            }
+        )
+
+        return {
+            "target_user_id": str(target_user_id),
+            "target_email": target_user.email,
+            "target_username": target_user.username,
+            "impersonated_by": str(admin_user_id),
+            "impersonated_by_email": admin_user.email,
+            "impersonation_started_at": datetime.utcnow().isoformat()
+        }
+
+    async def stop_impersonation(
+        self,
+        admin_user_id: UUID,
+        target_user_id: UUID
+    ) -> Dict[str, str]:
+        """
+        Stop impersonating a user.
+
+        Args:
+            admin_user_id: Admin user UUID
+            target_user_id: Target user UUID being impersonated
+
+        Returns:
+            Dict with impersonation stop info
+        """
+        logger.info(
+            f"Admin {admin_user_id} stopped impersonating {target_user_id}",
+            extra={
+                "admin_user_id": str(admin_user_id),
+                "target_user_id": str(target_user_id)
+            }
+        )
+
+        return {
+            "message": "Impersonation stopped",
+            "admin_user_id": str(admin_user_id),
+            "impersonation_stopped_at": datetime.utcnow().isoformat()
+        }
+
+    async def get_impersonation_status(
+        self,
+        user_id: UUID,
+        impersonating_user_id: Optional[UUID] = None
+    ) -> Dict[str, Any]:
+        """
+        Get current impersonation status.
+
+        Args:
+            user_id: Current user UUID
+            impersonating_user_id: Optional impersonating user UUID (from token)
+
+        Returns:
+            Dict with is_impersonating flag and details
+        """
+        if not impersonating_user_id:
+            return {
+                "is_impersonating": False,
+                "user_id": str(user_id)
+            }
+
+        # Get both users
+        user = await self._get_user_or_404(user_id)
+        impersonating_user = await self._get_user_or_404(impersonating_user_id)
+
+        return {
+            "is_impersonating": True,
+            "user_id": str(user_id),
+            "user_email": user.email,
+            "impersonated_by_user_id": str(impersonating_user_id),
+            "impersonated_by_email": impersonating_user.email
+        }
+
+    # ========================================================================
+    # Private Helper Methods
+    # ========================================================================
+
+    async def _get_user_or_404(self, user_id: UUID) -> Users:
+        """
+        Get user or raise 404.
+
+        Args:
+            user_id: User UUID
+
+        Returns:
+            Users object
+
+        Raises:
+            ResourceNotFoundException: If user not found
+        """
+        result = await self.db.execute(
+            select(Users).where(Users.id == user_id)
+        )
+        user = result.scalar_one_or_none()
+
+        if not user:
+            raise ResourceNotFoundException(
+                resource_type="User",
+                resource_id=str(user_id)
+            )
+
+        return user
+
+    async def _has_impersonation_permission(self, user_id: UUID) -> bool:
+        """
+        Check if user has user.impersonate permission.
+
+        Args:
+            user_id: User UUID
+
+        Returns:
+            True if has permission, False otherwise
+        """
+        result = await self.db.execute(
+            select(Permission)
+            .join(RolePermission, RolePermission.permission_id == Permission.id)
+            .join(Role, Role.id == RolePermission.role_id)
+            .join(UserRole, UserRole.role_id == Role.id)
+            .where(
+                UserRole.user_id == user_id,
+                Permission.name == "user.impersonate"
+            )
+        )
+        permission = result.scalar_one_or_none()
+
+        return permission is not None
+
+    async def _get_max_hierarchy_level(self, user_id: UUID) -> int:
+        """
+        Get maximum hierarchy level from user's roles.
+
+        Args:
+            user_id: User UUID
+
+        Returns:
+            Maximum hierarchy level (0 if no roles)
+        """
+        result = await self.db.execute(
+            select(Role.hierarchy_level)
+            .join(UserRole, UserRole.role_id == Role.id)
+            .where(UserRole.user_id == user_id)
+            .order_by(Role.hierarchy_level.desc())
+            .limit(1)
+        )
+        max_level = result.scalar_one_or_none()
+
+        return max_level or 0
