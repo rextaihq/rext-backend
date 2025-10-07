@@ -62,6 +62,7 @@ class WorkspaceModel(Base):
     id = sa.Column(sa.dialects.postgresql.UUID(as_uuid=True), primary_key=True)
     user_id = sa.Column(sa.dialects.postgresql.UUID(as_uuid=True), nullable=False)
     name = sa.Column(sa.String, nullable=False)
+    slug = sa.Column(sa.String, nullable=False)
     description = sa.Column(sa.Text)
     url = sa.Column(sa.String)
     created_at = sa.Column(sa.DateTime(timezone=True), nullable=False)
