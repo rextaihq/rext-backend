@@ -90,9 +90,9 @@ async def generate_topic(
     # Combine messages
     messages = [system_message] + human_messages
 
-    # Call the model
+    # Call the model (use async invoke to avoid blocking)
     try:
-        response = model.invoke(messages)
+        response = await model.ainvoke(messages)
         basic_topics = response.topics
         logger.info(f"Generated {len(basic_topics)} basic topics")
     except Exception as model_err:
@@ -148,6 +148,7 @@ async def generate_topic(
 async def save_topic(
     data: SaveTopicRequestList,
     request: Request,
+    workspace_id: str,
     db: AsyncSession = Depends(get_async_db),
     user: dict = Depends(get_current_user)
 ):
@@ -158,10 +159,11 @@ async def save_topic(
     """
     user_id = user.get("identity")
 
-    # Verify workspace access for first topic (all topics should be in same workspace)
+    # Verify workspace access and membership in one call
+    workspace, membership = await resolve_and_verify_workspace(db, workspace_id, uuid.UUID(user_id))
+
+    # Save topics if provided
     if data.topics:
-        first_workspace_id = data.topics[0].workspace_id
-        workspace, membership = await resolve_and_verify_workspace(db, first_workspace_id, uuid.UUID(user_id))
 
         # Use TopicService to create topics
         service = TopicService(db)

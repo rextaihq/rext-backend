@@ -411,7 +411,8 @@ class TopicGenerationException(WrextBusinessException):
         generation_params: Dict[str, Any] = None,
         **kwargs
     ):
-        context = kwargs.get('context', {})
+        # Extract context from kwargs to avoid duplicate keyword argument
+        context = kwargs.pop('context', {})
         if generation_params:
             context['generation_params'] = generation_params
 
