@@ -8,6 +8,7 @@ wheels/
 
 # Virtual environments
 .venv
+vector_store/
 .langgraph_api
 .env
 note.txt

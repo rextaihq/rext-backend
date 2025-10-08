@@ -1,9 +1,9 @@
-from src.langgraph_flow.model.model import load_model
+from src.langgraph_flow.model.llm_mamager import load_model
 from src.utils.logger import logger
 from sqlalchemy.orm import Session
 from src.api.database.database import get_db
 from src.utils.helper import web_page_scraper
-from src.nodes.vectorStore.buildVectorStore import build_vector_store
+from src.utils.vector_store import add_to_vector_store
 from src.api.models.knowledge_models.knowledge_model import Website,BrandVoice
 from pydantic import HttpUrl
 from src.api.schema.knowledge_schema import BrandSchema
@@ -35,7 +35,7 @@ async def scrape_web_content(url: HttpUrl, website_id: str):
 
             # Push chunks to vector store
             logger.info(f"Adding chunks for {result.url} to vector store")
-            build_vector_store(blog_context=chunks)
+            add_to_vector_store(blog_context=chunks)
 
             # Update DB with stats
             website.char_count = str(len(content))

@@ -1,6 +1,20 @@
 from src.langgraph_flow.states.content_state import ContentState
 from src.utils.vector_store import load_vector_store
+from langsmith import traceable, trace
 
+
+@traceable(
+    run_type="retriever",
+    name="Workspace Knowledge Context",
+    metadata={
+        "description": "Fetches relevant context from the FAISS vector store for a specific workspace.",
+        "inputs": ["workspace_id", "topics", "primaryKeywords"],
+        "outputs": ["context", "urls"],
+        "source": "FAISS Vector Store",
+    },
+    tags=["FAISS", "ContextRetrieval", "KnowledgeBase"],
+    project_name="WREXT"
+)
 def workspace_context(state: ContentState):
     node_name = "fetch_knowledge_context"
     print(f"\n🚀 [{node_name}] Starting...")
@@ -37,12 +51,23 @@ def workspace_context(state: ContentState):
         query = f"{title} {keywords}".strip() or "general context"
         print(f"🔍 Final query string: '{query}'")
 
-        # Do vector search
-        print("🔎 Running FAISS similarity search...")
-        raw_docs = vector_store.similarity_search(
-            query, k=5,
-            filter={"workspace_id": "workspace_id"}  #filter by 
-        )
+        # Run FAISS similarity search inside a sub-trace
+        with trace(
+            name="FAISS Similarity Search",
+            run_type="retriever",
+            metadata={
+                "query": query,
+                "workspace_id": workspace_id,
+            },
+        ) as span:
+            print("🔎 Running FAISS similarity search...")
+            raw_docs = vector_store.similarity_search(
+                query=query,
+                k=5,
+                filter={"workspace_id": workspace_id}  # Correct filter usage
+            )
+            span.end(outputs={"num_docs": len(raw_docs)})
+
         print(f"📚 Retrieved {len(raw_docs)} raw docs")
 
         for i, doc in enumerate(raw_docs[:3], start=1):  # show first 3 docs

@@ -14,7 +14,7 @@ from langchain.retrievers.multi_query import MultiQueryRetriever
 from pydantic import HttpUrl
 
 # === Project-specific imports ===
-from src.langgraph_flow.model.model import load_model
+from src.langgraph_flow.model.llm_mamager import load_model
 from src.utils.splitter import split_data
 from src.utils.vector_store import load_vector_store
 

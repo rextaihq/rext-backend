@@ -1,8 +1,21 @@
 from src.langgraph_flow.states.content_state import ContentState
 from src.api.models.topic_models.topic_models import TopicsModel as Topics
 from src.api.database.database import get_db
+from langsmith import traceable, trace
 
-
+@traceable(
+    run_type="retriever",
+    name="Fetch Topic from Database",
+    metadata={
+        "description": "Retrieves topic details by topicId from the SQLAlchemy database.",
+        "inputs": ["topicId"],
+        "outputs": ["topics"],
+        "dependencies": ["SQLAlchemy", "TopicsModel"],
+        "category": "database_retrieval"
+    },
+    tags=["Database", "TopicFetch", "SQLAlchemy"],
+    project_name="WREXT"
+)
 def fetch_topic(state: ContentState):
     print("Fetching Topics.....")
     request_payload = state.get("request_payload", {})

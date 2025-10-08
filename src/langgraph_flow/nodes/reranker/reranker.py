@@ -3,7 +3,21 @@ from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_core.documents import Document
 from src.langgraph_flow.states.content_state import ContentState
 from src.utils.helper import get_compressor
+from langsmith import traceable, trace
 
+
+@traceable(
+    run_type="chain",
+    name="Document Reranking",
+    metadata={
+        "description": "Reranks retrieved documents based on query relevance using CohereRerank.",
+        "inputs": ["topics", "primaryKeywords", "context"],
+        "outputs": ["relavant_context"],
+        "dependencies": ["CohereRerank", "RecursiveCharacterTextSplitter"],
+    },
+    tags=["Reranking", "Cohere", "ContextRefinement"],
+    project_name="WREXT"
+)
 def rerank_documents(state: ContentState) -> Dict[str, List[Document]]:
     """
     Rerank documents from context based on relevance to the query using CohereRerank.
@@ -34,9 +48,14 @@ def rerank_documents(state: ContentState) -> Dict[str, List[Document]]:
             print(f"⚠️ {error_msg}")
             return {"relavant_context": [], "error": [{"node": node_name, "message": error_msg}]}
 
-        # Split into smaller chunks
-        text_splitter = RecursiveCharacterTextSplitter(chunk_size=2000, chunk_overlap=200)
-        texts = text_splitter.split_documents(docs)
+        # -----------------------------
+        # 3️⃣ Text splitting
+        # -----------------------------
+        with trace(name="Text Chunking", run_type="data_processing") as chunk_trace:
+            text_splitter = RecursiveCharacterTextSplitter(chunk_size=2000, chunk_overlap=200)
+            texts = text_splitter.split_documents(docs)
+            chunk_trace.end(outputs={"num_chunks": len(texts)})
+
 
         if not texts:
             error_msg = "No text chunks produced from context documents"
@@ -45,7 +64,18 @@ def rerank_documents(state: ContentState) -> Dict[str, List[Document]]:
 
         print("📑 Total chunks:", len(texts))
 
-        compressor = get_compressor()
+        with trace(
+            name="Cohere Rerank",
+            run_type="reranker",
+            metadata={"model": "CohereRerank"},
+        ) as rerank_trace:
+            compressor = get_compressor()
+            ranked_docs = compressor.compress_documents(
+                query=query,
+                documents=texts
+            )
+            rerank_trace.end(outputs={"num_ranked_docs": len(ranked_docs)})
+
 
         # Rerank with Cohere
         ranked_docs = compressor.compress_documents(

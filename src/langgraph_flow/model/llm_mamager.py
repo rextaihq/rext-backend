@@ -2,6 +2,7 @@ from langchain.chat_models import init_chat_model
 from src.states.schemas import RewriterTitle, QueryDecomposer
 from sentence_transformers import SentenceTransformer
 from src.states.schemas import BasicTopicGenerationList
+from langsmith import trace, traceable, Client
 from dotenv import load_dotenv
 import os
 
