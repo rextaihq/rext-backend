@@ -24,6 +24,7 @@ import re
 
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from src.api.models.content_models.content import Content
 from src.api.models.content_models.content_metadata import ContentMetadata
@@ -137,7 +138,19 @@ class ContentService:
             self.db.add(seo_data)
 
         await self.db.flush()
-        await self.db.refresh(content)
+        
+        # Eagerly load relationships to avoid lazy loading in async context
+        # This prevents "greenlet_spawn has not been called" errors when to_dict() accesses relationships
+        query = (
+            select(Content)
+            .where(Content.id == content.id)
+            .options(
+                selectinload(Content.content_metadata),
+                selectinload(Content.seo_data)
+            )
+        )
+        result = await self.db.execute(query)
+        content = result.scalar_one()
 
         logger.info(
             f"Content created: {content.id}",

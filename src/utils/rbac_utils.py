@@ -89,6 +89,7 @@ async def check_permission(
         .join(UserRole, UserRole.role_id == RolePermission.role_id)
         .where(UserRole.user_id == user_id)
         .where(Permission.name == permission_name)
+        .distinct()  # Add distinct to handle multiple roles with same permission
     )
 
     # Workspace-scoped permissions: Check both workspace-specific roles AND global roles
@@ -101,7 +102,7 @@ async def check_permission(
         query = query.where(UserRole.workspace_id.is_(None))
 
     result = await db.execute(query)
-    permission = result.scalar_one_or_none()
+    permission = result.scalars().first()  # Use first() since we only need to know if permission exists
 
     has_permission = permission is not None
 

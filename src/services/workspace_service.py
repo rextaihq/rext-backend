@@ -483,7 +483,7 @@ class WorkspaceService:
         member = WorkspaceMembers(
             workspace_id=workspace_id,
             user_id=user_id,
-            joined_at=datetime.now(timezone.utc),
+            joined_at=datetime.utcnow(),
             is_default=is_default,
             status=status,
             invitation_id=None
