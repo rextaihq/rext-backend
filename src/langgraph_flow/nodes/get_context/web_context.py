@@ -1,11 +1,24 @@
 from perplexity import Perplexity
 from langchain_core.documents import Document
 from src.langgraph_flow.states.content_state import ContentState
+from langsmith import traceable,trace
 from dotenv import load_dotenv
 import os
 
 load_dotenv()
 
+@traceable(
+    run_type="retriever",
+    name="Web Context Retrieval",
+    metadata={
+        "description": "Fetches contextual documents from the web using Perplexity API.",
+        "inputs": ["topics", "primaryKeywords"],
+        "outputs": ["context", "urls"],
+        "source": "Perplexity API",
+    },
+    tags=["Perplexity", "WebSearch", "ContextGeneration"],
+    project_name="WREXT",
+)
 def web_context(state: ContentState):
     """
     Fetch supporting context from the web using Perplexity.
@@ -49,7 +62,14 @@ def web_context(state: ContentState):
         search = client.search.create(
             query=query,
             max_results=5,
-        )
+        )# ✅ Create sub-trace for the model call
+        with trace(
+            name="Perplexity Search",
+            run_type="llm",  # or "api_call"
+            metadata={"query": query},
+        ) as span:
+            search = client.search.create(query=query, max_results=5)
+            span.end(outputs={"results": len(search.results)})
 
         # ✅ Access results as objects
         web_results = getattr(search, "results", []) or []
