@@ -8,8 +8,8 @@ Tests cover:
 """
 
 import pytest
-from uuid import uuid4
-from unittest.mock import AsyncMock, Mock
+from uuid import UUID, uuid4
+from unittest.mock import AsyncMock, Mock, patch
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.services.workspace_service import WorkspaceService
@@ -126,7 +126,8 @@ class TestWorkspaceServiceAnalytics:
 
 @pytest.mark.asyncio
 class TestWorkspaceServiceNewFlows:
-    async def test_create_workspace_for_user_invokes_setup(self):
+    @patch("src.services.workspace_service.create_task")
+    async def test_create_workspace_for_user_invokes_setup(self, mock_create_task):
         mock_db = AsyncMock()
         mock_workspace = WorkspaceModel(
             user_id=uuid4(),
@@ -148,6 +149,10 @@ class TestWorkspaceServiceNewFlows:
         service._serialize_workspace = Mock(return_value={"id": "workspace-id"})
         mock_db.refresh = AsyncMock()
 
+        mock_task = Mock()
+        mock_task.add_done_callback = Mock()
+        mock_create_task.return_value = mock_task
+
         result = await service.create_workspace_for_user(
             user_id=uuid4(),
             name="Example",
@@ -155,10 +160,18 @@ class TestWorkspaceServiceNewFlows:
             url="https://example.com",
         )
 
-        assert result == {"id": "workspace-id"}
+        pipeline_coro = mock_create_task.call_args[0][0]
+        pipeline_coro.close()
+
+        assert result["workspace"] == {"id": "workspace-id"}
+        assert "operation_id" in result
+        assert isinstance(result["operation_id"], str)
+        UUID(result["operation_id"])
         service.create_workspace.assert_awaited_once()
         service.create_workspace_member.assert_awaited_once()
-        service._populate_brand_voice_and_vectors.assert_awaited_once()
+        service._populate_brand_voice_and_vectors.assert_not_called()
+        mock_create_task.assert_called_once()
+        mock_task.add_done_callback.assert_called_once()
 
     async def test_delete_workspace_for_user_performs_cleanup(self):
         mock_db = AsyncMock()

@@ -44,7 +44,10 @@ def add_to_vector_store(
     config = load_yaml()
 
     vector_store_path= config["vectorStore"]["store_path"]
-    if os.path.exists(vector_store_path):
+    index_file_path = os.path.join(vector_store_path, "index.faiss")
+    
+    # Check if the index file exists, not just the directory
+    if os.path.exists(index_file_path):
         logger.info(">> Loading existing FAISS index <<")
         vector_store = FAISS.load_local(
             vector_store_path,
@@ -53,6 +56,8 @@ def add_to_vector_store(
         )
     else:
         logger.info(">> Creating new FAISS index <<")
+        # Ensure the directory exists
+        os.makedirs(vector_store_path, exist_ok=True)
         index = faiss.IndexFlatL2(dimension)
         vector_store = FAISS(
             embedding_function=get_hf_embedding(),

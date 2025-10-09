@@ -17,9 +17,10 @@ Does NOT:
 """
 
 from typing import List, Optional, Dict, Any
-from uuid import UUID
+from uuid import UUID, uuid4
 from datetime import datetime, timezone
 import re
+from asyncio import create_task
 
 from sqlalchemy import select, func, distinct
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -40,10 +41,12 @@ from src.api.middleware.exceptions import (
     WrextAuthenticationException,
 )
 from src.api.schema.knowledge_schema import BrandSchema
-from src.langgraph_flow.model.llm_mamager import load_model
+from src.langgraph_flow.model.llm_manager import load_model
 from src.utils.helper import web_page_scraper
 from src.utils.vector_store import add_to_vector_store, delete_vectors
 from src.utils.logger import logger
+from src.api.database.async_database import get_async_db
+from src.services.workspace_pipeline import run_workspace_pipeline
 
 
 class WorkspaceService:
@@ -80,7 +83,11 @@ class WorkspaceService:
         description: Optional[str],
         url: str,
     ) -> Dict[str, Any]:
-        """Create a workspace and perform onboarding tasks for the owner."""
+        """
+        Create a workspace and trigger the background onboarding pipeline.
+
+        Returns immediately with workspace metadata and an SSE operation ID.
+        """
         await self._ensure_active_user(user_id)
         workspace = await self.create_workspace(
             user_id=user_id,
@@ -96,9 +103,57 @@ class WorkspaceService:
         await self._assign_permissions_to_role(admin_role.id, resources=["topic", "content"])
         await self._assign_role_to_user(admin_role.id, user_id, workspace.id)
 
-        await self._populate_brand_voice_and_vectors(workspace.id, url)
+        operation_id = str(uuid4())
 
-        return self._serialize_workspace(workspace)
+        async def run_pipeline() -> None:
+            async for bg_db in get_async_db():
+                try:
+                    await run_workspace_pipeline(
+                        db=bg_db,
+                        operation_id=operation_id,
+                        workspace_id=workspace.id,
+                        url=url,
+                    )
+                except Exception as exc:
+                    logger.error(
+                        "Workspace pipeline failed",
+                        extra={
+                            "operation_id": operation_id,
+                            "workspace_id": str(workspace.id),
+                            "error": str(exc),
+                        },
+                        exc_info=True,
+                    )
+                    raise
+                break
+
+        task = create_task(run_pipeline())
+
+        def handle_completion(pipeline_task) -> None:
+            try:
+                pipeline_task.result()
+            except Exception as exc:
+                logger.error(
+                    "Workspace pipeline task raised exception",
+                    extra={
+                        "operation_id": operation_id,
+                        "workspace_id": str(workspace.id),
+                        "error": str(exc),
+                    },
+                    exc_info=True,
+                )
+
+        task.add_done_callback(handle_completion)
+
+        logger.info(
+            "Workspace created and background pipeline scheduled",
+            extra={"workspace_id": str(workspace.id), "operation_id": operation_id},
+        )
+
+        return {
+            "workspace": self._serialize_workspace(workspace),
+            "operation_id": operation_id,
+        }
 
     async def delete_workspace_for_user(self, workspace_id: UUID, user_id: UUID) -> None:
         """Delete workspace after verifying membership and cleanup."""

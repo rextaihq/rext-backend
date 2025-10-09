@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Request
 from src.api.schema.topic_schema import TopicGenerationInput, DeleteTopics, UpdateTopicRequest
 from langchain_core.messages import SystemMessage
-from src.langgraph_flow.model.llm_mamager import topic_generation_model
+from src.langgraph_flow.model.llm_manager import topic_generation_model
 from src.langgraph_flow.prompts.topic_generation_prompts import topic_generation_prompt
 from src.api.security.dependencies import get_current_user
 from sqlalchemy.ext.asyncio import AsyncSession

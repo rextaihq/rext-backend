@@ -177,6 +177,8 @@ class TopicFactory(AsyncFactory):
     audience_insights = {}
     internal_research_config = {}
     user_settings = {}
+    created_at = LazyFunction(lambda: datetime.now(timezone.utc))
+    updated_at = LazyFunction(lambda: datetime.now(timezone.utc))
 
     @classmethod
     async def create(cls, **kwargs):

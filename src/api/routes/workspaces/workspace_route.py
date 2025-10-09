@@ -85,7 +85,13 @@ async def create_workspace(
     db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user),
 ):
-    """Create a new workspace for the current user."""
+    """
+    Create a new workspace for the current user.
+
+    Returns immediately with workspace metadata and an operation identifier that
+    can be used to subscribe to Server-Sent Events for background processing
+    progress.
+    """
     if not data.name:
         raise WrextValidationException(
             message="Workspace name is required",
@@ -100,7 +106,7 @@ async def create_workspace(
 
     user_id = UUID(str(current_user.get("identity")))
     service = WorkspaceService(db)
-    workspace = await service.create_workspace_for_user(
+    result = await service.create_workspace_for_user(
         user_id=user_id,
         name=data.name,
         description=data.description,
@@ -108,9 +114,9 @@ async def create_workspace(
     )
 
     return created(
-        data={"workspace": workspace},
+        data=result,
         request=request,
-        message="Workspace created successfully",
+        message="Workspace created successfully. Background processing initiated.",
     )
 
 

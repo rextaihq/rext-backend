@@ -102,7 +102,13 @@ async def check_permission(
         query = query.where(UserRole.workspace_id.is_(None))
 
     result = await db.execute(query)
-    permission = result.scalars().first()  # Use first() since we only need to know if permission exists
+
+    permission = None
+    if hasattr(result, "scalar_one_or_none"):
+        permission = result.scalar_one_or_none()
+    else:
+        scalar_result = result.scalars() if hasattr(result, "scalars") else None
+        permission = scalar_result.first() if scalar_result is not None else None
 
     has_permission = permission is not None
 

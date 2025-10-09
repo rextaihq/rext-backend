@@ -67,3 +67,4 @@ def title_refine_model():
 def query_decomposer_model():
     llm  = load_model()
     return llm.with_structured_output(QueryDecomposer)
+

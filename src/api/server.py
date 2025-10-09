@@ -32,6 +32,7 @@ from src.api.routes.subscriptions.subscription_routes import router as subscript
 from src.api.routes.subscriptions.admin import router as admin_subscription_routes_router
 from src.api.routes.audit.modules import router as audit_router
 from src.api.routes.security.security_routes import router as security_router
+from src.api.routes.events import router as events_router
 from src.api.database.database import engine
 
 # Middleware imports
@@ -144,9 +145,9 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.allowed_origins_list,
     allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
     allow_headers=["*"],
-    expose_headers=["X-Request-ID"],
+    expose_headers=["X-Request-ID", "Content-Type"],
     max_age=3600,  # Cache preflight requests for 1 hour
 )
 
@@ -174,6 +175,7 @@ app.include_router(users_router, prefix="/api/v1", tags=["Authentication"])
 app.include_router(topic_router, prefix="/api/v1", tags=["Topic Generation"])
 app.include_router(workspace_router, prefix="/api/v1", tags=["Workspaces"])
 app.include_router(workspaces_router, prefix="/api/v1", tags=["Workspaces"])  # Alias for frontend compatibility
+app.include_router(events_router, prefix="/api/v1", tags=["Events"])
 app.include_router(members_router, prefix="/api/v1", tags=["Workspace Members"])
 app.include_router(email_template_router, prefix="/api/v1", tags=["Email Templates"])
 app.include_router(web_router, prefix="/api/v1", tags=["Web Knowledge"])

@@ -1,7 +1,7 @@
 from src.langgraph_flow.states.content_state import ContentState
 from src.langgraph_flow.prompts.prompt import blog_prompt_template
 from src.langgraph_flow.states.blog_state import BlogArticle
-from src.langgraph_flow.model.llm_mamager import load_model
+from src.langgraph_flow.model.llm_manager import load_model
 
 
 def generate_blog(state: ContentState):

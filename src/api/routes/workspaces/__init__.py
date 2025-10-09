@@ -19,11 +19,11 @@ router = APIRouter(prefix="/workspace", tags=["workspace"])
 router.include_router(core_router)
 router.include_router(members_router)
 router.include_router(knowledge_router)
-router.include_router(brand_voice_router)
 
 # Add alias routes for frontend compatibility (plural "workspaces" vs singular "workspace")
 # This allows the frontend to call either endpoint with RESTful conventions
 workspaces_router = APIRouter(prefix="/workspaces", tags=["workspace"])
+workspaces_router.include_router(brand_voice_router)
 
 # GET endpoints
 workspaces_router.add_api_route("", get_workspaces, methods=["GET"], name="get_workspaces_alias")
@@ -40,7 +40,12 @@ async def create_workspace_restful(
     db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user),
 ):
-    """Create a new workspace for the current user (RESTful endpoint)."""
+    """
+    Create a new workspace for the current user (RESTful endpoint).
+
+    Returns immediately with workspace metadata and an operation identifier for
+    tracking background processing via SSE.
+    """
     if not data.name:
         raise WrextValidationException(
             message="Workspace name is required",
@@ -55,7 +60,7 @@ async def create_workspace_restful(
 
     user_id = UUID(str(current_user.get("identity")))
     service = WorkspaceService(db)
-    workspace = await service.create_workspace_for_user(
+    result = await service.create_workspace_for_user(
         user_id=user_id,
         name=data.name,
         description=data.description,
@@ -63,9 +68,9 @@ async def create_workspace_restful(
     )
 
     return created(
-        data={"workspace": workspace},
+        data=result,
         request=request,
-        message="Workspace created successfully",
+        message="Workspace created successfully. Background processing initiated.",
     )
 
 
