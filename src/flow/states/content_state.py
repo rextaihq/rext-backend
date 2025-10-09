@@ -3,8 +3,8 @@ from typing import Any,Annotated
 from langchain_core.documents import Document
 from typing_extensions import TypedDict
 from typing import Optional, List
-from src.langgraph_flow.states.blog_state import BlogArticle
-from src.langgraph_flow.states.payload_state import Payload
+from src.flow.states.blog_state import BlogArticle
+from src.flow.states.payload_state import Payload
 import operator
 
 def merge_document_lists(existing: List[Document], new: List[Document]) -> List[Document]:

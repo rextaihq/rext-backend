@@ -1,6 +1,6 @@
 from perplexity import Perplexity
 from langchain_core.documents import Document
-from src.langgraph_flow.states.content_state import ContentState
+from src.flow.states.content_state import ContentState
 from langsmith import traceable,trace
 from dotenv import load_dotenv
 import os

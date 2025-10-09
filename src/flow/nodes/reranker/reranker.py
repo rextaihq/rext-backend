@@ -1,7 +1,7 @@
 from typing import Dict, List
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_core.documents import Document
-from src.langgraph_flow.states.content_state import ContentState
+from src.flow.states.content_state import ContentState
 from src.utils.helper import get_compressor
 from langsmith import traceable, trace
 

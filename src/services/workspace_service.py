@@ -41,7 +41,7 @@ from src.api.middleware.exceptions import (
     WrextAuthenticationException,
 )
 from src.api.schema.knowledge_schema import BrandSchema
-from src.langgraph_flow.model.llm_manager import load_model
+from src.flow.model.llm_manager import load_model
 from src.utils.helper import web_page_scraper
 from src.utils.vector_store import add_to_vector_store, delete_vectors
 from src.utils.logger import logger

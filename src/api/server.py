@@ -44,6 +44,9 @@ from src.utils.logger import logger
 # Structured logging
 from src.api.lib.logging_config import configure_logging, RequestIDMiddleware
 
+# Prompts
+from src.flow.prompts.prompt_manager import PromptManager
+
 load_dotenv()
 
 # Configure structured logging at startup
@@ -94,6 +97,9 @@ async def lifespan(app: FastAPI):
     logger.info("Database managed by Alembic migrations")
     logger.info("Middleware configured: RequestTracker, ErrorHandler, SecurityHeaders")
     logger.info(f"CORS allowed origins: {settings.allowed_origins_list}")
+    logger.info("Registering Prompt")
+    PromptManager(auto_register=False)  
+    logger.info("✅ Prompts initialized successfully")
 
     # Optional: Check migration status (uncomment to enable)
     # check_migrations()
