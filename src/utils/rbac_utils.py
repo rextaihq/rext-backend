@@ -108,7 +108,14 @@ async def check_permission(
         permission = result.scalar_one_or_none()
     else:
         scalar_result = result.scalars() if hasattr(result, "scalars") else None
-        permission = scalar_result.first() if scalar_result is not None else None
+        if scalar_result is not None:
+            if hasattr(scalar_result, "first"):
+                permission = scalar_result.first()
+            elif hasattr(scalar_result, "all"):
+                items = scalar_result.all()
+                permission = items[0] if items else None
+            else:
+                permission = None
 
     has_permission = permission is not None
 

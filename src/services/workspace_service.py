@@ -155,6 +155,79 @@ class WorkspaceService:
             "operation_id": operation_id,
         }
 
+    async def refresh_brand_voice_for_user(
+        self,
+        workspace_id: UUID,
+        user_id: UUID,
+    ) -> str:
+        """
+        Re-run the workspace onboarding pipeline to refresh brand voice data.
+
+        Args:
+            workspace_id: Workspace UUID
+            user_id: User UUID requesting refresh
+
+        Returns:
+            Operation identifier for SSE tracking
+        """
+        await self._ensure_active_user(user_id)
+        workspace = await self._ensure_membership(workspace_id, user_id)
+
+        if not workspace.url:
+            raise WrextValidationException(
+                message="Workspace URL is required to refresh brand voice",
+                field_errors={"url": ["Workspace must have a valid URL before refreshing"]},
+            )
+
+        operation_id = str(uuid4())
+
+        async def run_pipeline() -> None:
+            async for bg_db in get_async_db():
+                try:
+                    await run_workspace_pipeline(
+                        db=bg_db,
+                        operation_id=operation_id,
+                        workspace_id=workspace.id,
+                        url=workspace.url,
+                    )
+                except Exception as exc:
+                    logger.error(
+                        "Workspace refresh pipeline failed",
+                        extra={
+                            "operation_id": operation_id,
+                            "workspace_id": str(workspace.id),
+                            "error": str(exc),
+                        },
+                        exc_info=True,
+                    )
+                    raise
+                break
+
+        task = create_task(run_pipeline())
+
+        def handle_completion(pipeline_task) -> None:
+            try:
+                pipeline_task.result()
+            except Exception as exc:
+                logger.error(
+                    "Workspace refresh pipeline raised exception",
+                    extra={
+                        "operation_id": operation_id,
+                        "workspace_id": str(workspace.id),
+                        "error": str(exc),
+                    },
+                    exc_info=True,
+                )
+
+        task.add_done_callback(handle_completion)
+
+        logger.info(
+            "Brand voice refresh scheduled",
+            extra={"workspace_id": str(workspace.id), "operation_id": operation_id},
+        )
+
+        return operation_id
+
     async def delete_workspace_for_user(self, workspace_id: UUID, user_id: UUID) -> None:
         """Delete workspace after verifying membership and cleanup."""
         await self._ensure_active_user(user_id)

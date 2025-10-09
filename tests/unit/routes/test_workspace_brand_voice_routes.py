@@ -130,3 +130,77 @@ async def test_update_brand_voice_restful_returns_serialized_payload(monkeypatch
     # Ensure original request payload surfaced through BrandSchema
     assert brand_data.about == "Updated about"
     assert brand_data.content_pillar == ["Strategy"]
+
+
+@pytest.mark.asyncio
+async def test_refresh_brand_voice_returns_operation_id(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Ensure refresh endpoint schedules pipeline and returns operation ID."""
+    workspace_identifier = uuid4()
+    user_identifier = uuid4()
+    operation_id = "test-operation"
+
+    async def override_get_db() -> AsyncGenerator[_DummyDB, None]:
+        yield _DummyDB()
+
+    def override_current_user() -> dict[str, str]:
+        return {"identity": str(user_identifier)}
+
+    app.dependency_overrides[get_async_db] = override_get_db
+    app.dependency_overrides[get_current_user] = override_current_user
+
+    # Patch decorators dependencies
+    monkeypatch.setattr(
+        "src.api.routes.workspaces.workspace_brand_voice.verify_current_user",
+        AsyncMock(return_value=None),
+    )
+    monkeypatch.setattr(
+        "src.api.routes.workspaces.workspace_brand_voice.resolve_and_verify_workspace",
+        AsyncMock(return_value=(SimpleNamespace(id=workspace_identifier), MagicMock())),
+    )
+    monkeypatch.setattr(
+        "src.utils.workspace_utils.async_get_workspace_id_from_identifier",
+        AsyncMock(return_value=workspace_identifier),
+    )
+    monkeypatch.setattr(
+        "src.utils.rbac_utils.check_all_permissions",
+        AsyncMock(return_value=True),
+    )
+
+    service_mock = AsyncMock()
+    service_mock.refresh_brand_voice_for_user = AsyncMock(return_value=operation_id)
+
+    class ServiceFactory:
+        def __init__(self, db: Any) -> None:
+            self.db = db
+
+        async def refresh_brand_voice_for_user(self, workspace_id: UUID, user_id: UUID):
+            return await service_mock.refresh_brand_voice_for_user(workspace_id, user_id)
+
+        async def upsert_brand_voice(self, *args: Any, **kwargs: Any) -> None:  # pragma: no cover - unused
+            raise NotImplementedError
+
+    monkeypatch.setattr(
+        "src.api.routes.workspaces.workspace_brand_voice.WorkspaceService",
+        ServiceFactory,
+    )
+
+    try:
+        async with AsyncClient(
+            transport=ASGITransport(app=app),
+            base_url="http://testserver",
+        ) as client:
+            response = await client.post(
+                f"/api/v1/workspaces/{workspace_identifier}/brand-voice/refresh",
+            )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["success"] is True
+    assert body["data"]["operation_id"] == operation_id
+
+    service_mock.refresh_brand_voice_for_user.assert_awaited_once_with(
+        workspace_identifier,
+        user_identifier,
+    )

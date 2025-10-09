@@ -3,9 +3,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from uuid import UUID
 
 from .workspace_core import router as core_router, get_workspaces, get_workspace_by_slug, get_workspace_by_id_path
-from .workspace_members import router as members_router
-from .workspace_knowledge import router as knowledge_router
 from .workspace_brand_voice import router as brand_voice_router
+from .workspace_members import router as members_router
+from .workspace_invitations import router as invitations_router
 from src.api.database.async_database import get_async_db
 from src.api.schema.workspace_schema import WorkspaceSchema
 from src.api.security.dependencies import get_current_user
@@ -17,13 +17,12 @@ from src.api.middleware.exceptions import WrextValidationException
 router = APIRouter(prefix="/workspace", tags=["workspace"])
 
 router.include_router(core_router)
-router.include_router(members_router)
-router.include_router(knowledge_router)
-
 # Add alias routes for frontend compatibility (plural "workspaces" vs singular "workspace")
 # This allows the frontend to call either endpoint with RESTful conventions
 workspaces_router = APIRouter(prefix="/workspaces", tags=["workspace"])
 workspaces_router.include_router(brand_voice_router)
+workspaces_router.include_router(members_router)
+workspaces_router.include_router(invitations_router)
 
 # GET endpoints
 workspaces_router.add_api_route("", get_workspaces, methods=["GET"], name="get_workspaces_alias")

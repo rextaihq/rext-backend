@@ -1,147 +1,155 @@
-from fastapi import APIRouter, Depends, Request
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
 from datetime import datetime, timezone
+from typing import Any, Dict, List
 from uuid import UUID
 
-from src.utils.logger import logger
-from src.utils.response_utils import success, error
-from src.utils.auth_utils import verify_current_user
-from src.utils.workspace_utils import resolve_and_verify_workspace
-from src.utils.route_decorators import db_transaction_handler, require_permissions
+from fastapi import APIRouter, Depends, Request, status
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from src.api.database.async_database import get_async_db
-from src.api.security.dependencies import get_current_user
 from src.api.middleware.exceptions import (
-    DuplicateResourceException,
     ResourceNotFoundException,
     WrextValidationException,
-    WrextAuthenticationException
 )
-from src.api.schema.response_schemas import ErrorCode, ErrorSeverity
-from src.api.schema.workspace_schema import ChangeMemberRoleRequest
-from src.api.models.workspace_models.workspace_model import WorkspaceModel
-from src.api.models.workspace_models.workspace_member import WorkspaceMembers
-from src.api.models.user_models.users import Users
 from src.api.models.user_models.roles import Role
 from src.api.models.user_models.user_roles import UserRole
+from src.api.models.user_models.users import Users
+from src.api.models.workspace_models.workspace_member import WorkspaceMembers
+from src.api.schema.workspace_schema import (
+    AddWorkspaceMemberRequest,
+    ChangeMemberRoleRequest,
+)
+from src.api.security.dependencies import get_current_user
+from src.api.schema.response_schemas import ErrorCode, ErrorSeverity
 from src.services.member_service import MemberService
+from src.utils.auth_utils import verify_current_user
+from src.utils.logger import logger
+from src.utils.response_utils import created, success
+from src.utils.route_decorators import db_transaction_handler, require_permissions
+from src.utils.workspace_utils import resolve_and_verify_workspace
 
-router = APIRouter()
+
+router = APIRouter(tags=["workspace-members"])
 
 
-# -------------------------
-# Get workspace members
-# -------------------------
-@router.get("/members")
-@db_transaction_handler("get workspace members", auto_commit=False)
-async def get_workspace_members(
-    workspace_id: str,
-    request: Request,
-    db: AsyncSession = Depends(get_async_db),
-    user: dict = Depends(get_current_user)
-):
-    """
-    Get workspace members - Thin controller using MemberService
-    
-    Args:
-        workspace_id: Workspace UUID (query parameter)
-    """
-    user_id = user.get("identity")
-    db_user = await verify_current_user(db, user_id)
-    workspace, membership = await resolve_and_verify_workspace(db, workspace_id, UUID(user_id))
-
-    # Use MemberService to get members
-    service = MemberService(db)
-    members = await service.get_workspace_members(UUID(workspace_id))
-
-    # Get user details for each member (presentation layer concern)
-    members_query = (
-        select(WorkspaceMembers, Users)
-        .join(Users, Users.id == WorkspaceMembers.user_id)
-        .where(WorkspaceMembers.workspace_id == workspace_id)
-    )
-    result = await db.execute(members_query)
-    members_with_users = result.all()
-
-    members_data = []
-    for member, user_info in members_with_users:
-        members_data.append({
-            "id": str(member.id),
-            "user_id": str(member.user_id),
-            "workspace_id": str(member.workspace_id),
-            "status": member.status,
-            "is_default": member.is_default,
-            "joined_at": member.joined_at.isoformat() if member.joined_at else None,
-            "last_activity_at": member.last_activity_at.isoformat() if member.last_activity_at else None,
-            "user": {
-                "id": str(user_info.id),
-                "email": user_info.email,
-                "display_name": user_info.display_name,
-                "is_verified": user_info.email_verified,
-            }
-        })
-
+def _serialize_member(member: WorkspaceMembers, user: Users) -> Dict[str, Any]:
+    """Transform member + user join row into API response structure."""
     return {
-        "data": {"members": members_data, "total_count": len(members_data)},
-        "message": f"Retrieved {len(members_data)} members successfully"
+        "id": str(member.id),
+        "user_id": str(member.user_id),
+        "workspace_id": str(member.workspace_id),
+        "status": member.status,
+        "is_default": member.is_default,
+        "joined_at": member.joined_at.isoformat() if member.joined_at else None,
+        "last_activity_at": (
+            member.last_activity_at.isoformat() if member.last_activity_at else None
+        ),
+        "user": {
+            "id": str(user.id),
+            "email": user.email,
+            "display_name": user.display_name,
+            "is_verified": getattr(user, "email_verified", False),
+        },
     }
 
 
-# -------------------------
-# Add workspace member
-# -------------------------
-@router.post("/members")
+@router.get(
+    "/{workspace_id}/members",
+    summary="List workspace members",
+)
+@db_transaction_handler("get workspace members", auto_commit=False)
+async def list_workspace_members(
+    workspace_id: str,
+    request: Request,
+    db: AsyncSession = Depends(get_async_db),
+    user: dict = Depends(get_current_user),
+):
+    """Return the members for the given workspace."""
+    user_id = user.get("identity")
+    await verify_current_user(db, user_id)
+    workspace, _membership = await resolve_and_verify_workspace(
+        db, workspace_id, UUID(user_id)
+    )
+
+    query = (
+        select(WorkspaceMembers, Users)
+        .join(Users, Users.id == WorkspaceMembers.user_id)
+        .where(WorkspaceMembers.workspace_id == workspace.id)
+        .order_by(WorkspaceMembers.joined_at.asc())
+    )
+    result = await db.execute(query)
+    rows: List[tuple[WorkspaceMembers, Users]] = result.all()
+
+    members = [_serialize_member(member, user) for member, user in rows]
+
+    return success(
+        data={"members": members, "total_count": len(members)},
+        request=request,
+        message=f"Retrieved {len(members)} member(s)",
+    )
+
+
+@router.post(
+    "/{workspace_id}/members",
+    status_code=status.HTTP_201_CREATED,
+    summary="Add member to workspace",
+)
 @db_transaction_handler("add workspace member", auto_commit=True)
 @require_permissions("member.invite", workspace_scoped=True)
 async def add_workspace_member(
     workspace_id: str,
-    email: str,
+    payload: AddWorkspaceMemberRequest,
     request: Request,
     db: AsyncSession = Depends(get_async_db),
-    user: dict = Depends(get_current_user)
+    user: dict = Depends(get_current_user),
 ):
-    """
-    Add member to workspace - Thin controller using MemberService
-    
-    Args:
-        workspace_id: Workspace UUID (query parameter)
-        email: Email of user to add
-    """
+    """Add a user (by email) to the workspace."""
     user_id = user.get("identity")
-    db_user = await verify_current_user(db, user_id)
-    workspace, membership = await resolve_and_verify_workspace(db, workspace_id, UUID(user_id))
-
-    # Find user by email
-    result = await db.execute(select(Users).where(Users.email == email, Users.deleted_at == None))
-    new_user = result.scalar_one_or_none()
-    if not new_user:
-        raise ResourceNotFoundException(resource_type="user", resource_id=email)
-
-    # Use MemberService to add member
-    service = MemberService(db)
-    new_member = await service.add_member(
-        workspace_id=UUID(workspace_id),
-        user_id=new_user.id
+    await verify_current_user(db, user_id)
+    workspace, _membership = await resolve_and_verify_workspace(
+        db, workspace_id, UUID(user_id)
     )
 
-    return {
-        "data": {
-            "member": {
-                "id": str(new_member.id),
-                "user_id": str(new_user.id),
-                "email": new_user.email,
-                "display_name": new_user.display_name,
-                "status": new_member.status,
-            }
+    result = await db.execute(
+        select(Users).where(
+            Users.email == payload.email.lower(),
+            Users.deleted_at.is_(None),
+        )
+    )
+    invited_user = result.scalar_one_or_none()
+    if not invited_user:
+        raise ResourceNotFoundException(
+            resource_type="user",
+            resource_id=payload.email,
+        )
+
+    service = MemberService(db)
+    new_member = await service.add_member(
+        workspace_id=workspace.id,
+        user_id=invited_user.id,
+    )
+
+    logger.info(
+        "User invited to workspace",
+        extra={
+            "workspace_id": str(workspace.id),
+            "invited_user_id": str(invited_user.id),
+            "invited_email": invited_user.email,
+            "invited_by": user_id,
         },
-        "message": f"User {email} added to workspace successfully"
-    }
+    )
+
+    return created(
+        data={"member": _serialize_member(new_member, invited_user)},
+        request=request,
+        message=f"User {invited_user.email} added to workspace",
+    )
 
 
-# -------------------------
-# Remove workspace member
-# -------------------------
-@router.delete("/members/{member_id}")
+@router.delete(
+    "/{workspace_id}/members/{member_id}",
+    summary="Remove workspace member",
+)
 @db_transaction_handler("remove workspace member", auto_commit=True)
 @require_permissions("member.remove", workspace_scoped=True)
 async def remove_workspace_member(
@@ -149,145 +157,156 @@ async def remove_workspace_member(
     member_id: str,
     request: Request,
     db: AsyncSession = Depends(get_async_db),
-    user: dict = Depends(get_current_user)
+    user: dict = Depends(get_current_user),
 ):
-    """
-    Remove member from workspace - Thin controller using MemberService
-    
-    Args:
-        workspace_id: Workspace UUID (query parameter)
-        member_id: Member UUID (path parameter)
-    """
+    """Remove a member from the workspace."""
     user_id = user.get("identity")
-    db_user = await verify_current_user(db, user_id)
-    workspace, membership = await resolve_and_verify_workspace(db, workspace_id, UUID(user_id))
+    await verify_current_user(db, user_id)
+    workspace, _membership = await resolve_and_verify_workspace(
+        db, workspace_id, UUID(user_id)
+    )
 
-    # Get member to check ownership status
-    result = await db.execute(select(WorkspaceMembers).where(
-        WorkspaceMembers.id == member_id,
-        WorkspaceMembers.workspace_id == workspace_id
-    ))
+    result = await db.execute(
+        select(WorkspaceMembers).where(
+            WorkspaceMembers.id == UUID(member_id),
+            WorkspaceMembers.workspace_id == workspace.id,
+        )
+    )
     member = result.scalar_one_or_none()
-
     if not member:
-        raise ResourceNotFoundException(resource_type="member", resource_id=member_id)
+        raise ResourceNotFoundException(
+            resource_type="member",
+            resource_id=member_id,
+        )
 
-    # Cannot remove workspace owner (is_default=True)
     if member.is_default:
         raise WrextValidationException(
             message="Cannot remove workspace owner",
-            validation_errors={"member_id": "This member is the workspace owner"}
+            field_errors={
+                "member_id": ["This member is the workspace owner and cannot be removed"]
+            },
+            error_code=ErrorCode.VALIDATION_ERROR,
+            error_severity=ErrorSeverity.ERROR,
         )
 
-    # Use MemberService to remove member
     service = MemberService(db)
-    await service.remove_member(
-        workspace_id=UUID(workspace_id),
-        user_id=member.user_id
+    await service.remove_member(workspace_id=workspace.id, user_id=member.user_id)
+
+    logger.info(
+        "Workspace member removed",
+        extra={
+            "workspace_id": str(workspace.id),
+            "member_id": member_id,
+            "removed_by": user_id,
+        },
     )
 
-    return {
-        "data": {"member_id": member_id},
-        "message": "Member removed from workspace successfully"
-    }
+    return success(
+        data={"member_id": member_id},
+        request=request,
+        message="Member removed successfully",
+    )
 
 
-# -------------------------
-# Change workspace member role
-# -------------------------
-@router.put("/members/{member_id}/role")
-@db_transaction_handler("change member role", auto_commit=True)
+@router.patch(
+    "/{workspace_id}/members/{member_id}/role",
+    summary="Update workspace member role",
+)
+@db_transaction_handler("change workspace member role", auto_commit=True)
 @require_permissions("member.update", workspace_scoped=True)
-async def change_member_role(
+async def update_workspace_member_role(
     workspace_id: str,
     member_id: str,
-    role_request: ChangeMemberRoleRequest,
+    payload: ChangeMemberRoleRequest,
     request: Request,
     db: AsyncSession = Depends(get_async_db),
-    user: dict = Depends(get_current_user)
+    user: dict = Depends(get_current_user),
 ):
-    """
-    Change the role of a workspace member.
-    
-    Args:
-        workspace_id: Workspace UUID (query parameter)
-        member_id: Member UUID (path parameter)
-
-    Note: Role management stays in route as it involves UserRole table,
-    which is separate from workspace membership business logic.
-    """
+    """Assign a new role to the given member."""
     user_id = user.get("identity")
-    db_user = await verify_current_user(db, user_id)
-    workspace, membership = await resolve_and_verify_workspace(db, workspace_id, UUID(user_id))
+    await verify_current_user(db, user_id)
+    workspace, _membership = await resolve_and_verify_workspace(
+        db, workspace_id, UUID(user_id)
+    )
 
-    # Get member whose role will be changed
-    result = await db.execute(select(WorkspaceMembers).where(
-        WorkspaceMembers.id == member_id,
-        WorkspaceMembers.workspace_id == workspace_id
-    ))
+    result = await db.execute(
+        select(WorkspaceMembers).where(
+            WorkspaceMembers.id == UUID(member_id),
+            WorkspaceMembers.workspace_id == workspace.id,
+        )
+    )
     member = result.scalar_one_or_none()
-
     if not member:
-        raise ResourceNotFoundException(resource_type="member", resource_id=member_id)
+        raise ResourceNotFoundException(
+            resource_type="member",
+            resource_id=member_id,
+        )
 
-    # Cannot change role of workspace owner
     if member.is_default:
         raise WrextValidationException(
             message="Cannot change role of workspace owner",
-            validation_errors={"member_id": "This member is the workspace owner"}
+            field_errors={"member_id": ["Workspace owner role is immutable"]},
+            error_code=ErrorCode.VALIDATION_ERROR,
+            error_severity=ErrorSeverity.ERROR,
         )
 
-    # Verify new role exists and is not a system role
-    result = await db.execute(select(Role).where(Role.id == role_request.role_id))
+    result = await db.execute(select(Role).where(Role.id == UUID(payload.role_id)))
     new_role = result.scalar_one_or_none()
     if not new_role:
-        raise ResourceNotFoundException(resource_type="role", resource_id=role_request.role_id)
-
-    if new_role.is_system_role:
-        raise WrextValidationException(
-            message="Cannot assign system roles to workspace members",
-            validation_errors={"role_id": "This is a system role"}
+        raise ResourceNotFoundException(
+            resource_type="role",
+            resource_id=payload.role_id,
         )
 
-    # Get or create user_role entry for this workspace
-    result = await db.execute(select(UserRole).where(
-        UserRole.user_id == member.user_id,
-        UserRole.workspace_id == workspace_id
-    ))
-    existing_role = result.scalar_one_or_none()
+    result = await db.execute(
+        select(UserRole).where(
+            UserRole.user_id == member.user_id,
+            UserRole.workspace_id == workspace.id,
+        )
+    )
+    user_role = result.scalar_one_or_none()
 
-    if existing_role:
-        old_role_id = existing_role.role_id
-        existing_role.role_id = role_request.role_id
-        existing_role.assigned_by_user_id = user_id
-        existing_role.assigned_at = datetime.now(timezone.utc)
+    previous_role_id = getattr(user_role, "role_id", None)
+    timestamp = datetime.now(timezone.utc)
+    if user_role:
+        user_role.role_id = UUID(payload.role_id)
+        user_role.assigned_by_user_id = UUID(user_id)
+        user_role.assigned_at = timestamp
     else:
-        old_role_id = None
-        new_user_role = UserRole(
-            user_id=member.user_id,
-            role_id=role_request.role_id,
-            workspace_id=workspace_id,
-            assigned_by_user_id=user_id,
-            is_primary=False
+        db.add(
+            UserRole(
+                user_id=member.user_id,
+                workspace_id=workspace.id,
+                role_id=UUID(payload.role_id),
+                assigned_by_user_id=UUID(user_id),
+                assigned_at=timestamp,
+                is_primary=False,
+            )
         )
-        db.add(new_user_role)
 
     await db.flush()
 
     logger.info(
-        f"User {user_id} changed role for member {member.user_id} in workspace {workspace_id} "
-        f"from {old_role_id} to {role_request.role_id}"
+        "Workspace member role updated",
+        extra={
+            "workspace_id": str(workspace.id),
+            "member_id": member_id,
+            "updated_by": user_id,
+            "old_role_id": str(previous_role_id) if previous_role_id else None,
+            "new_role_id": payload.role_id,
+        },
     )
 
-    return {
-        "data": {
-            "member_id": str(member.id),
-            "user_id": str(member.user_id),
-            "workspace_id": str(workspace_id),
-            "role_id": str(role_request.role_id),
-            "role_name": new_role.display_name,
-            "updated_by": str(user_id),
-            "updated_at": datetime.now(timezone.utc).isoformat()
+    return success(
+        data={
+            "member": {
+                "id": str(member.id),
+                "workspace_id": str(workspace.id),
+                "user_id": str(member.user_id),
+                "role_id": payload.role_id,
+                "updated_at": timestamp.isoformat(),
+            }
         },
-        "message": f"Role updated to {new_role.display_name} successfully"
-    }
+        request=request,
+        message=f"Role updated to {new_role.display_name}",
+    )

@@ -1,142 +1,582 @@
-from fastapi import APIRouter, Depends, Request
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from typing import Annotated, Any, Optional
 from uuid import UUID
 
-from src.utils.logger import logger
-from src.utils.response_utils import success, error
-from src.utils.route_decorators import db_transaction_handler
-from src.utils.workspace_utils import resolve_and_verify_workspace
-from src.utils.auth_utils import verify_current_user
+from fastapi import APIRouter, Body, Depends, File, Request, UploadFile
+from pydantic import BaseModel, HttpUrl, constr
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from src.api.database.async_database import get_async_db
+from src.api.middleware.exceptions import WrextValidationException
 from src.api.security.dependencies import get_current_user
-from src.api.middleware.exceptions import (
-    ResourceNotFoundException,
-    WrextAuthenticationException
+from src.services.knowledge_service import KnowledgeService
+from src.utils.auth_utils import verify_current_user
+from src.utils.logger import logger
+from src.utils.response_utils import created, success
+from src.utils.route_decorators import db_transaction_handler, require_permissions
+from src.utils.workspace_utils import resolve_and_verify_workspace
+
+
+class WebKnowledgeCreateRequest(BaseModel):
+    """Payload for creating a web knowledge entry."""
+
+    url: HttpUrl
+    title: Optional[constr(strip_whitespace=True, min_length=1, max_length=255)] = None
+
+
+class WebKnowledgeUpdateRequest(BaseModel):
+    """Payload for updating a web knowledge entry."""
+
+    title: constr(strip_whitespace=True, min_length=1, max_length=255)
+
+
+class TextKnowledgeCreateRequest(BaseModel):
+    """Payload for creating a text knowledge entry."""
+
+    title: constr(strip_whitespace=True, min_length=1, max_length=255)
+    content: constr(strip_whitespace=True, min_length=10, max_length=5000)
+    tags: Optional[list[constr(strip_whitespace=True, min_length=1, max_length=60)]] = None
+
+
+class TextKnowledgeUpdateRequest(BaseModel):
+    """Payload for updating a text knowledge entry."""
+
+    title: Optional[constr(strip_whitespace=True, min_length=1, max_length=255)] = None
+    content: Optional[constr(strip_whitespace=True, min_length=10, max_length=5000)] = None
+    tags: Optional[list[constr(strip_whitespace=True, min_length=1, max_length=60)]] = None
+
+
+class FileKnowledgeUpdateRequest(BaseModel):
+    """Payload for updating file knowledge metadata."""
+
+    name: constr(strip_whitespace=True, min_length=1, max_length=255)
+
+
+router = APIRouter(
+    prefix="/workspaces/{workspace_id}/knowledge",
+    tags=["workspace-knowledge"],
 )
-from src.api.schema.response_schemas import ErrorCode, ErrorSeverity
-from src.api.models.workspace_models.workspace_member import WorkspaceMembers
-from src.api.models.user_models.users import Users
-from src.api.models.knowledge_models.knowledge_model import Website, KnowledgeFiles, TextKnowledge
-
-router = APIRouter()
 
 
-# -------------------------
-# Get all knowledge for workspace
-# -------------------------
-@router.get("/knowledge/all")
-@db_transaction_handler("get workspace knowledge", "Retrieved all knowledge successfully", auto_commit=False)
-async def get_workspace_knowledge(request: Request, workspace_id: str, db: AsyncSession = Depends(get_async_db), user: dict = Depends(get_current_user)):
-    """
-    Get all knowledge (web, file, text) for a workspace.
+@router.get("")
+@db_transaction_handler("get workspace knowledge", auto_commit=False)
+async def get_workspace_knowledge(
+    workspace_id: str,
+    request: Request,
+    db: AsyncSession = Depends(get_async_db),
+    user: dict = Depends(get_current_user),
+):
+    """Return all knowledge categories for a workspace."""
+    workspace, _ = await _resolve_workspace(
+        db=db,
+        workspace_identifier=workspace_id,
+        user=user,
+    )
 
-    Args:
-        workspace_id: Workspace UUID or slug (query parameter)
+    service = KnowledgeService(db)
+    web_knowledge = await service.list_web_knowledge(workspace.id)
+    file_knowledge = await service.list_file_knowledge(workspace.id)
+    text_knowledge = await service.list_text_knowledge(workspace.id)
 
-    Requires:
-        - JWT authentication
-        - Workspace membership verification
-    """
-    user_id = user.get("identity")
-    db_user = await verify_current_user(db, user_id)
-
-    # Verify workspace access and membership in one call
-    workspace, membership = await resolve_and_verify_workspace(db, workspace_id, UUID(user_id))
-
-    # Get all knowledge types for this workspace
-    result = await db.execute(select(Website).where(Website.workspace_id == workspace.id))
-    web_knowledge = result.scalars().all()
-
-    result = await db.execute(select(KnowledgeFiles).where(KnowledgeFiles.workspace_id == workspace.id))
-    file_knowledge = result.scalars().all()
-
-    result = await db.execute(select(TextKnowledge).where(TextKnowledge.workspace_id == workspace.id))
-    text_knowledge = result.scalars().all()
-
-    # Use to_dict() for consistent structure with type annotation
-    web_data = [{"type": "web", **item.to_dict()} for item in web_knowledge]
-    file_data = [{"type": "file", **item.to_dict()} for item in file_knowledge]
-    text_data = [{"type": "text", **item.to_dict()} for item in text_knowledge]
-
-    # Return raw data - decorator handles success response
-    return {
-        "web_knowledge": web_data,
-        "file_knowledge": file_data,
-        "text_knowledge": text_data,
-        "summary": {
-            "web_count": len(web_data),
-            "file_count": len(file_data),
-            "text_count": len(text_data),
-            "total_count": len(web_data) + len(file_data) + len(text_data)
-        }
+    summary = {
+        "web_count": len(web_knowledge),
+        "file_count": len(file_knowledge),
+        "text_count": len(text_knowledge),
+        "total_count": len(web_knowledge) + len(file_knowledge) + len(text_knowledge),
     }
 
+    return success(
+        data={
+            "web_knowledge": web_knowledge,
+            "file_knowledge": file_knowledge,
+            "text_knowledge": text_knowledge,
+            "summary": summary,
+        },
+        request=request,
+        message="Workspace knowledge retrieved successfully",
+    )
 
-# -------------------------
-# Get web knowledge for workspace
-# -------------------------
-@router.get("/knowledge/web")
-@db_transaction_handler("get workspace web knowledge", auto_commit=False)
-async def get_workspace_web_knowledge(request: Request, workspace_id: str, db: AsyncSession = Depends(get_async_db), user: dict = Depends(get_current_user)):
+
+async def _resolve_workspace(
+    *,
+    db: AsyncSession,
+    workspace_identifier: str,
+    user: dict[str, Any],
+) -> tuple[Any, Any]:
+    """Resolve workspace and ensure the current user has access."""
     user_id = user.get("identity")
-    db_user = await verify_current_user(db, user_id)
-
-    # Verify workspace access and membership in one call
-    workspace, membership = await resolve_and_verify_workspace(db, workspace_id, UUID(user_id))
-
-    # Get web knowledge for this workspace
-    result = await db.execute(select(Website).where(Website.workspace_id == workspace.id))
-    web_knowledge = result.scalars().all()
-
-    # Use to_dict() to match the structure from /api/workspace/web_knowledge/all
-    web_data = [item.to_dict() for item in web_knowledge]
-
-    # Return raw data - decorator handles success response
-    return {"web_knowledge": web_data, "total_count": len(web_data)}
+    await verify_current_user(db, user_id)
+    return await resolve_and_verify_workspace(db, workspace_identifier, UUID(str(user_id)))
 
 
-# -------------------------
-# Get file knowledge for workspace
-# -------------------------
-@router.get("/knowledge/files")
-@db_transaction_handler("get workspace file knowledge", auto_commit=False)
-async def get_workspace_file_knowledge(request: Request, workspace_id: str, db: AsyncSession = Depends(get_async_db), user: dict = Depends(get_current_user)):
-    user_id = user.get("identity")
-    db_user = await verify_current_user(db, user_id)
-
-    # Verify workspace access and membership in one call
-    workspace, membership = await resolve_and_verify_workspace(db, workspace_id, UUID(user_id))
-
-    # Get file knowledge for this workspace
-    result = await db.execute(select(KnowledgeFiles).where(KnowledgeFiles.workspace_id == workspace.id))
-    file_knowledge = result.scalars().all()
-
-    # Use to_dict() to match the structure from /api/workspace/file/all
-    file_data = [item.to_dict() for item in file_knowledge]
-
-    # Return raw data - decorator handles success response
-    return {"file_knowledge": file_data, "total_count": len(file_data)}
+def _format_list_response(items: list[dict[str, Any]], key: str) -> dict[str, Any]:
+    """Return consistent list response payloads."""
+    return {key: items, "total_count": len(items)}
 
 
-# -------------------------
-# Get text knowledge for workspace
-# -------------------------
-@router.get("/knowledge/text")
-@db_transaction_handler("get workspace text knowledge", auto_commit=False)
-async def get_workspace_text_knowledge(request: Request, workspace_id: str, db: AsyncSession = Depends(get_async_db), user: dict = Depends(get_current_user)):
-    user_id = user.get("identity")
-    db_user = await verify_current_user(db, user_id)
+@router.get("/web")
+@db_transaction_handler("list web knowledge", auto_commit=False)
+async def list_web_knowledge(
+    workspace_id: str,
+    request: Request,
+    db: AsyncSession = Depends(get_async_db),
+    user: dict = Depends(get_current_user),
+):
+    """Return all web knowledge entries for a workspace."""
+    workspace, _ = await _resolve_workspace(
+        db=db,
+        workspace_identifier=workspace_id,
+        user=user,
+    )
 
-    # Verify workspace access and membership in one call
-    workspace, membership = await resolve_and_verify_workspace(db, workspace_id, UUID(user_id))
+    service = KnowledgeService(db)
+    knowledge = await service.list_web_knowledge(workspace.id)
+    payload = _format_list_response(knowledge, "web_knowledge")
 
-    # Get text knowledge for this workspace
-    result = await db.execute(select(TextKnowledge).where(TextKnowledge.workspace_id == workspace.id))
-    text_knowledge = result.scalars().all()
+    return success(
+        data=payload,
+        request=request,
+        message=f"Retrieved {payload['total_count']} web knowledge entr{'y' if payload['total_count'] == 1 else 'ies'}",
+    )
 
-    # Use to_dict() to match the structure from /api/workspace/text/all
-    text_data = [item.to_dict() for item in text_knowledge]
 
-    # Return raw data - decorator handles success response
-    return {"text_knowledge": text_data, "total_count": len(text_data)}
+@router.post("/web")
+@db_transaction_handler("create web knowledge", "Web knowledge created successfully")
+@require_permissions("knowledge.create", workspace_scoped=True)
+async def create_web_knowledge(
+    workspace_id: str,
+    request: Request,
+    payload: WebKnowledgeCreateRequest = Body(...),
+    db: AsyncSession = Depends(get_async_db),
+    user: dict = Depends(get_current_user),
+):
+    """Create a new web knowledge entry by scraping a URL."""
+    workspace, _ = await _resolve_workspace(
+        db=db,
+        workspace_identifier=workspace_id,
+        user=user,
+    )
+
+    service = KnowledgeService(db)
+    raw_url = str(payload.url)
+    if getattr(payload.url, "path", "/") == "/" and not getattr(payload.url, "query", "") and not getattr(payload.url, "fragment", ""):
+        raw_url = raw_url.rstrip("/")
+
+    knowledge = await service.add_web_knowledge(workspace.id, raw_url)
+
+    # Update title if provided
+    if payload.title:
+        knowledge = await service.update_web_knowledge_title(workspace.id, UUID(str(knowledge["id"])), payload.title)
+
+    return created(
+        data={"web_knowledge": knowledge},
+        request=request,
+        message="Web knowledge added and processed successfully",
+    )
+
+
+@router.get("/web/{web_id}")
+@db_transaction_handler("get web knowledge", auto_commit=False)
+async def get_web_knowledge(
+    workspace_id: str,
+    web_id: str,
+    request: Request,
+    db: AsyncSession = Depends(get_async_db),
+    user: dict = Depends(get_current_user),
+):
+    """Return a single web knowledge entry."""
+    workspace, _ = await _resolve_workspace(
+        db=db,
+        workspace_identifier=workspace_id,
+        user=user,
+    )
+
+    service = KnowledgeService(db)
+    knowledge = await service.get_web_knowledge(workspace.id, UUID(web_id))
+
+    return success(
+        data={"web_knowledge": knowledge},
+        request=request,
+        message="Web knowledge retrieved successfully",
+    )
+
+
+@router.patch("/web/{web_id}")
+@db_transaction_handler("update web knowledge", auto_commit=True)
+async def update_web_knowledge(
+    workspace_id: str,
+    web_id: str,
+    request: Request,
+    payload: WebKnowledgeUpdateRequest = Body(...),
+    db: AsyncSession = Depends(get_async_db),
+    user: dict = Depends(get_current_user),
+):
+    """Update metadata for an existing web knowledge entry."""
+    workspace, _ = await _resolve_workspace(
+        db=db,
+        workspace_identifier=workspace_id,
+        user=user,
+    )
+
+    service = KnowledgeService(db)
+    knowledge = await service.update_web_knowledge_title(
+        workspace.id,
+        UUID(web_id),
+        payload.title,
+    )
+
+    return success(
+        data={"web_knowledge": knowledge},
+        request=request,
+        message="Web knowledge updated successfully",
+    )
+
+
+@router.delete("/web/{web_id}")
+@db_transaction_handler("delete web knowledge", "Web knowledge deleted successfully")
+@require_permissions("knowledge.delete", workspace_scoped=True)
+async def delete_web_knowledge(
+    workspace_id: str,
+    web_id: str,
+    request: Request,
+    db: AsyncSession = Depends(get_async_db),
+    user: dict = Depends(get_current_user),
+):
+    """Delete a web knowledge entry."""
+    workspace, _ = await _resolve_workspace(
+        db=db,
+        workspace_identifier=workspace_id,
+        user=user,
+    )
+
+    service = KnowledgeService(db)
+    await service.delete_web_knowledge(workspace.id, UUID(web_id))
+
+    return success(
+        data={"web_id": web_id},
+        request=request,
+        message="Web knowledge deleted successfully",
+    )
+
+
+@router.get("/files")
+@db_transaction_handler("list file knowledge", auto_commit=False)
+async def list_file_knowledge(
+    workspace_id: str,
+    request: Request,
+    db: AsyncSession = Depends(get_async_db),
+    user: dict = Depends(get_current_user),
+):
+    """Return all file knowledge entries for a workspace."""
+    workspace, _ = await _resolve_workspace(
+        db=db,
+        workspace_identifier=workspace_id,
+        user=user,
+    )
+
+    service = KnowledgeService(db)
+    file_knowledge = await service.list_file_knowledge(workspace.id)
+    payload = _format_list_response(file_knowledge, "file_knowledge")
+
+    return success(
+        data=payload,
+        request=request,
+        message=f"Retrieved {payload['total_count']} file knowledge entr{'y' if payload['total_count'] == 1 else 'ies'}",
+    )
+
+
+@router.post("/files")
+@db_transaction_handler("create file knowledge", "File knowledge uploaded successfully")
+@require_permissions("knowledge.create", workspace_scoped=True)
+async def create_file_knowledge(
+    workspace_id: str,
+    request: Request,
+    file: Annotated[UploadFile, File(...)],
+    db: AsyncSession = Depends(get_async_db),
+    user: dict = Depends(get_current_user),
+):
+    """Upload a file and add it to workspace knowledge."""
+    workspace, _ = await _resolve_workspace(
+        db=db,
+        workspace_identifier=workspace_id,
+        user=user,
+    )
+
+    service = KnowledgeService(db)
+    knowledge = await service.add_file_knowledge(
+        workspace.id,
+        file,
+        allowed_types=[
+            # Documents
+            "application/pdf",
+            "text/plain",
+            "application/msword",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            # Spreadsheets
+            "application/vnd.ms-excel",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            "text/csv",
+            # Images
+            "image/png",
+            "image/jpeg",
+            "image/gif",
+            "image/webp",
+        ],
+        max_size_mb=10,
+    )
+
+    return created(
+        data={"file_knowledge": knowledge.to_dict()},
+        request=request,
+        message="File knowledge uploaded, processed, and stored successfully",
+    )
+
+
+@router.get("/files/{file_id}")
+@db_transaction_handler("get file knowledge", auto_commit=False)
+async def get_file_knowledge(
+    workspace_id: str,
+    file_id: str,
+    request: Request,
+    db: AsyncSession = Depends(get_async_db),
+    user: dict = Depends(get_current_user),
+):
+    """Return a single file knowledge entry."""
+    workspace, _ = await _resolve_workspace(
+        db=db,
+        workspace_identifier=workspace_id,
+        user=user,
+    )
+
+    service = KnowledgeService(db)
+    knowledge = await service.get_file_knowledge(workspace.id, UUID(file_id))
+
+    return success(
+        data={"file_knowledge": knowledge},
+        request=request,
+        message="File knowledge retrieved successfully",
+    )
+
+
+@router.patch("/files/{file_id}")
+@db_transaction_handler("update file knowledge", auto_commit=True)
+async def update_file_knowledge(
+    workspace_id: str,
+    file_id: str,
+    request: Request,
+    payload: FileKnowledgeUpdateRequest = Body(...),
+    db: AsyncSession = Depends(get_async_db),
+    user: dict = Depends(get_current_user),
+):
+    """Update metadata (name) for a file knowledge entry."""
+    workspace, _ = await _resolve_workspace(
+        db=db,
+        workspace_identifier=workspace_id,
+        user=user,
+    )
+
+    service = KnowledgeService(db)
+    knowledge = await service.update_file_knowledge_name(
+        workspace.id,
+        UUID(file_id),
+        payload.name,
+    )
+
+    return success(
+        data={"file_knowledge": knowledge},
+        request=request,
+        message="File knowledge updated successfully",
+    )
+
+
+@router.delete("/files/{file_id}")
+@db_transaction_handler("delete file knowledge", "File knowledge deleted successfully")
+@require_permissions("knowledge.delete", workspace_scoped=True)
+async def delete_file_knowledge(
+    workspace_id: str,
+    file_id: str,
+    request: Request,
+    db: AsyncSession = Depends(get_async_db),
+    user: dict = Depends(get_current_user),
+):
+    """Delete a file knowledge entry and associated vector data."""
+    workspace, _ = await _resolve_workspace(
+        db=db,
+        workspace_identifier=workspace_id,
+        user=user,
+    )
+
+    service = KnowledgeService(db)
+    await service.delete_file_knowledge(
+        UUID(file_id),
+        workspace.id,
+    )
+
+    return success(
+        data={"file_id": file_id},
+        request=request,
+        message="File knowledge deleted successfully",
+    )
+
+
+@router.get("/text")
+@db_transaction_handler("list text knowledge", auto_commit=False)
+async def list_text_knowledge(
+    workspace_id: str,
+    request: Request,
+    db: AsyncSession = Depends(get_async_db),
+    user: dict = Depends(get_current_user),
+):
+    """Return all text knowledge entries for a workspace."""
+    workspace, _ = await _resolve_workspace(
+        db=db,
+        workspace_identifier=workspace_id,
+        user=user,
+    )
+
+    service = KnowledgeService(db)
+    text_knowledge = await service.list_text_knowledge(workspace.id)
+    payload = _format_list_response(text_knowledge, "text_knowledge")
+
+    return success(
+        data=payload,
+        request=request,
+        message=f"Retrieved {payload['total_count']} text knowledge entr{'y' if payload['total_count'] == 1 else 'ies'}",
+    )
+
+
+@router.post("/text")
+@db_transaction_handler("create text knowledge", "Text knowledge created successfully")
+@require_permissions("knowledge.create", workspace_scoped=True)
+async def create_text_knowledge(
+    workspace_id: str,
+    request: Request,
+    payload: TextKnowledgeCreateRequest = Body(...),
+    db: AsyncSession = Depends(get_async_db),
+    user: dict = Depends(get_current_user),
+):
+    """Create a new text knowledge entry."""
+    workspace, _ = await _resolve_workspace(
+        db=db,
+        workspace_identifier=workspace_id,
+        user=user,
+    )
+
+    service = KnowledgeService(db)
+    knowledge = await service.add_text_knowledge(
+        workspace.id,
+        payload.title,
+        payload.content,
+    )
+
+    if payload.tags:
+        logger.warning("Tags provided for text knowledge are currently ignored", extra={"tags": payload.tags})
+
+    return created(
+        data={
+            "text_knowledge": {
+                "text_id": str(knowledge.id),
+                "workspace_id": str(knowledge.workspace_id),
+                "title": knowledge.title,
+                "content": knowledge.content,
+            }
+        },
+        request=request,
+        message="Text knowledge added successfully",
+    )
+
+
+@router.get("/text/{text_id}")
+@db_transaction_handler("get text knowledge", auto_commit=False)
+async def get_text_knowledge(
+    workspace_id: str,
+    text_id: str,
+    request: Request,
+    db: AsyncSession = Depends(get_async_db),
+    user: dict = Depends(get_current_user),
+):
+    """Return a single text knowledge entry."""
+    workspace, _ = await _resolve_workspace(
+        db=db,
+        workspace_identifier=workspace_id,
+        user=user,
+    )
+
+    service = KnowledgeService(db)
+    knowledge = await service.get_text_knowledge(workspace.id, UUID(text_id))
+
+    return success(
+        data={"text_knowledge": knowledge},
+        request=request,
+        message="Text knowledge retrieved successfully",
+    )
+
+
+@router.patch("/text/{text_id}")
+@db_transaction_handler("update text knowledge", auto_commit=True)
+async def update_text_knowledge(
+    workspace_id: str,
+    text_id: str,
+    request: Request,
+    payload: TextKnowledgeUpdateRequest = Body(...),
+    db: AsyncSession = Depends(get_async_db),
+    user: dict = Depends(get_current_user),
+):
+    """Update title/content for a text knowledge entry."""
+    if not any([payload.title, payload.content, payload.tags]):
+        raise WrextValidationException(
+            message="At least one field (title, content, tags) must be provided",
+            field_errors={"payload": ["No fields supplied for update"]},
+        )
+
+    workspace, _ = await _resolve_workspace(
+        db=db,
+        workspace_identifier=workspace_id,
+        user=user,
+    )
+
+    service = KnowledgeService(db)
+    knowledge = await service.update_text_knowledge(
+        UUID(text_id),
+        workspace.id,
+        title=payload.title,
+        content=payload.content,
+    )
+
+    if payload.tags:
+        logger.warning("Tags update for text knowledge is not yet supported", extra={"tags": payload.tags})
+
+    return success(
+        data={"text_knowledge": knowledge},
+        request=request,
+        message="Text knowledge updated successfully",
+    )
+
+
+@router.delete("/text/{text_id}")
+@db_transaction_handler("delete text knowledge", "Text knowledge deleted successfully")
+@require_permissions("knowledge.delete", workspace_scoped=True)
+async def delete_text_knowledge(
+    workspace_id: str,
+    text_id: str,
+    request: Request,
+    db: AsyncSession = Depends(get_async_db),
+    user: dict = Depends(get_current_user),
+):
+    """Delete a text knowledge entry."""
+    workspace, _ = await _resolve_workspace(
+        db=db,
+        workspace_identifier=workspace_id,
+        user=user,
+    )
+
+    service = KnowledgeService(db)
+    await service.delete_text_knowledge(
+        UUID(text_id),
+        workspace.id,
+    )
+
+    return success(
+        data={"text_id": text_id},
+        request=request,
+        message="Text knowledge deleted successfully",
+    )

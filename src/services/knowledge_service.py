@@ -200,6 +200,48 @@ class KnowledgeService:
             extra={"workspace_id": str(workspace_id)}
         )
 
+    async def list_file_knowledge(self, workspace_id: UUID) -> List[Dict[str, Any]]:
+        """Return all file knowledge entries for a workspace."""
+        result = await self.db.execute(
+            select(KnowledgeFiles).where(KnowledgeFiles.workspace_id == workspace_id)
+        )
+        return [knowledge.to_dict() for knowledge in result.scalars().all()]
+
+    async def get_file_knowledge(self, workspace_id: UUID, file_id: UUID) -> Dict[str, Any]:
+        """Return a single file knowledge entry."""
+        knowledge = await self._get_file_knowledge_or_404(file_id, workspace_id)
+        return knowledge.to_dict()
+
+    async def update_file_knowledge_name(
+        self,
+        workspace_id: UUID,
+        file_id: UUID,
+        name: str,
+    ) -> Dict[str, Any]:
+        """
+        Update the display name for a file knowledge entry.
+
+        Args:
+            workspace_id: Workspace UUID
+            file_id: Knowledge file UUID
+            name: New display name
+        """
+        knowledge = await self._get_file_knowledge_or_404(file_id, workspace_id)
+        knowledge.name = name
+        await self.db.flush()
+        await self.db.refresh(knowledge)
+
+        logger.info(
+            "File knowledge name updated",
+            extra={
+                "workspace_id": str(workspace_id),
+                "file_id": str(file_id),
+                "name": name,
+            },
+        )
+
+        return knowledge.to_dict()
+
     async def add_text_knowledge(
         self,
         workspace_id: UUID,
@@ -242,6 +284,81 @@ class KnowledgeService:
         )
 
         return new_knowledge
+
+    async def list_text_knowledge(self, workspace_id: UUID) -> List[Dict[str, Any]]:
+        """Return all text knowledge entries for a workspace."""
+        result = await self.db.execute(
+            select(TextKnowledge).where(TextKnowledge.workspace_id == workspace_id)
+        )
+        return [knowledge.to_dict() for knowledge in result.scalars().all()]
+
+    async def get_text_knowledge(self, workspace_id: UUID, knowledge_id: UUID) -> Dict[str, Any]:
+        """Return a single text knowledge entry."""
+        result = await self.db.execute(
+            select(TextKnowledge).where(
+                TextKnowledge.id == knowledge_id,
+                TextKnowledge.workspace_id == workspace_id,
+            )
+        )
+        knowledge = result.scalar_one_or_none()
+
+        if not knowledge:
+            raise ResourceNotFoundException(
+                resource_type="TextKnowledge",
+                resource_id=str(knowledge_id),
+            )
+
+        return knowledge.to_dict()
+
+    async def update_text_knowledge(
+        self,
+        knowledge_id: UUID,
+        workspace_id: UUID,
+        *,
+        title: Optional[str] = None,
+        content: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        Update metadata for a text knowledge entry.
+
+        Args:
+            knowledge_id: Text knowledge UUID
+            workspace_id: Workspace UUID
+            title: Optional new title
+            content: Optional new content
+        """
+        result = await self.db.execute(
+            select(TextKnowledge).where(
+                TextKnowledge.id == knowledge_id,
+                TextKnowledge.workspace_id == workspace_id,
+            )
+        )
+        knowledge = result.scalar_one_or_none()
+
+        if not knowledge:
+            raise ResourceNotFoundException(
+                resource_type="TextKnowledge",
+                resource_id=str(knowledge_id),
+            )
+
+        if title:
+            knowledge.title = title
+
+        if content:
+            knowledge.content = content
+
+        await self.db.flush()
+        await self.db.refresh(knowledge)
+
+        logger.info(
+            "Text knowledge updated",
+            extra={
+                "workspace_id": str(workspace_id),
+                "knowledge_id": str(knowledge_id),
+            },
+        )
+
+        return knowledge.to_dict()
 
     async def delete_text_knowledge(
         self,

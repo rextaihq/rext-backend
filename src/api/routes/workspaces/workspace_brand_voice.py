@@ -1,12 +1,15 @@
+from uuid import UUID
+
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
-from uuid import UUID
 
 from src.api.database.async_database import get_async_db
 from src.api.schema.knowledge_schema import BrandSchema
 from src.api.security.dependencies import get_current_user
 from src.services.brand_voice_service import BrandVoiceService
+from src.services.workspace_service import WorkspaceService
 from src.utils.auth_utils import verify_current_user
+from src.utils.response_utils import success
 from src.utils.route_decorators import db_transaction_handler, require_permissions
 from src.utils.workspace_utils import resolve_and_verify_workspace
 
@@ -72,5 +75,31 @@ async def update_brand_voice_restful(
         brand_data=brand_data,
         workspace_identifier=workspace_id,
         user=user,
+    )
+
+
+@router.post("/{workspace_id}/brand-voice/refresh")
+@db_transaction_handler("refresh brand voice", "Brand voice refresh initiated", auto_commit=True)
+@require_permissions("workspace.update", workspace_scoped=True)
+async def refresh_brand_voice(
+    workspace_id: str,
+    request: Request,
+    db: AsyncSession = Depends(get_async_db),
+    user: dict = Depends(get_current_user),
+):
+    """Trigger brand voice refresh via background pipeline and return operation ID."""
+    user_id = UUID(str(user.get("identity")))
+    workspace_uuid = UUID(workspace_id)
+
+    service = WorkspaceService(db)
+    operation_id = await service.refresh_brand_voice_for_user(
+        workspace_id=workspace_uuid,
+        user_id=user_id,
+    )
+
+    return success(
+        data={"operation_id": operation_id},
+        request=request,
+        message="Brand voice refresh initiated",
     )
 __all__ = ["router"]
