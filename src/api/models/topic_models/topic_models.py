@@ -1,4 +1,5 @@
 from sqlalchemy import Column, String, func, DateTime, Boolean, ForeignKey
+from src.api.models.content_models import Content
 from sqlalchemy.dialects.postgresql import UUID, ARRAY, JSONB
 from sqlalchemy.orm import relationship
 from src.api.database.database import Base

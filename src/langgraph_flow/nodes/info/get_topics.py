@@ -1,5 +1,5 @@
 from src.langgraph_flow.states.content_state import ContentState
-from src.api.models.topic_models.topic_models import TopicsModel as Topics
+from src.api.models.topic_models.topic_models import TopicsModel
 from src.api.database.database import get_db
 from langsmith import traceable, trace
 
@@ -17,21 +17,29 @@ from langsmith import traceable, trace
     project_name="WREXT"
 )
 def fetch_topic(state: ContentState):
-    print("Fetching Topics.....")
+    print("Fetching Topic.....")
     request_payload = state.get("request_payload", {})
-    topic_id = request_payload.get("topicId")  # careful: "topicId" not "topic_id"
+
+    topic_id = request_payload.get("topic_id")
+    workspace_id = request_payload.get("workspace_id")
+
+    print("topic id: ",topic_id)
+    print("workspace id: ",workspace_id)
+    if not topic_id or not workspace_id:
+        print("⚠️ Missing topic_id or workspace_id in payload")
+        return {"topics": None, "error": "Missing topic_id or workspace_id"}
+
 
     db = next(get_db())
     try:
-        # if not topic_id:
-        #     return {
-        #         "node": "fetch_topic",
-        #         "error": "Missing required field: topicId",
-        #         "topics": None
-        #     }
-
-        print("Topic id: ",topic_id)
-        topic = db.query(Topics).filter(Topics.id == topic_id).first()
+        topic = (
+            db.query(TopicsModel)
+            .filter(
+                TopicsModel.id == topic_id,
+                TopicsModel.workspace_id == workspace_id
+            )
+            .first()
+        )
 
         if not topic:
             return {
@@ -41,9 +49,10 @@ def fetch_topic(state: ContentState):
             }
 
         return {
-            "topics":[
+            "topics": [
                 {
-                    "id": topic.id,
+                    "id": str(topic.id),
+                    "workspace_id": str(topic.workspace_id),
                     "title": topic.title,
                     "angle": topic.angle,
                     "description": topic.description,

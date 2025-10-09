@@ -8,7 +8,7 @@ from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 from src.api.database.database import Base
 from src.api.models.base import SerializableMixin
-
+from src.api.models.workspace_models.workspace_member import WorkspaceMembers
 
 # -------------------------
 # Users

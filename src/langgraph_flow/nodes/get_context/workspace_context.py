@@ -64,7 +64,7 @@ def workspace_context(state: ContentState):
             raw_docs = vector_store.similarity_search(
                 query=query,
                 k=5,
-                filter={"workspace_id": workspace_id}  # Correct filter usage
+                # filter={"workspace_id": workspace_id}  # Correct filter usage
             )
             span.end(outputs={"num_docs": len(raw_docs)})
 
