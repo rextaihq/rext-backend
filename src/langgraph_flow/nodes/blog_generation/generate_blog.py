@@ -29,29 +29,42 @@ def generate_blog(state: ContentState):
     # ✅ Construct prompt safely
     try:
         print("🧠 Constructing prompt for the LLM...")
-        prompt = blog_prompt_template().format(
-            topic_title=title,
-            reference_content=combined_context,
-            blog_feedback=blog_feedback,
-            # unpack payload values with defaults
-            platform=payload.get("platform", "Website"),
-            contentType=payload.get("contentType", "Article"),
-            industry=payload.get("industry", "General"),
-            audienceSize=payload.get("audienceSize", "General"),
-            audienceType=", ".join(payload.get("audienceType", [])),
-            readingLevel=payload.get("readingLevel", "Intermediate"),
-            region=payload.get("region", "Global"),
-            language=payload.get("language", "English"),
-            goals=", ".join(payload.get("goals", [])),
-            tone=", ".join(payload.get("tone", [])),
-            primaryKeywords=", ".join(payload.get("primaryKeywords", [])),
-            contentLength=str(payload.get("contentLength", {})),
-            researchLevel=payload.get("researchLevel", "Basic"),
-            competitorAnalysis=payload.get("competitorAnalysis", False),
-            factChecking=payload.get("factChecking", "Standard"),
-            contentFreshness=payload.get("contentFreshness", "Recent"),
-            includeKeyTakeaways=payload.get("includeKeyTakeaways", False),
-        )
+        prompt_data = {
+            # Core details
+            "title": title,
+            "content_language": payload.get("content_language", "English"),
+            "content_format": payload.get("content_format", "Article"),
+            "status": payload.get("status", "draft"),
+            "author_id": payload.get("author_id", "N/A"),
+            "workspace_id": payload.get("workspace_id", "N/A"),
+            "topic_id": payload.get("topic_id", "N/A"),
+            "created_at": payload.get("created_at", "N/A"),
+            "updated_at": payload.get("updated_at", "N/A"),
+
+            # Metadata - Accessing directly from payload
+            "content_type": payload.get("content_metadata", {}).get("content_type", "Blog"),
+            "target_platform": payload.get("content_metadata", {}).get("target_platform", "Website"),
+            "target_industry": payload.get("content_metadata", {}).get("target_industry", "General"),
+            "target_audience": payload.get("content_metadata", {}).get("target_audience", "General Audience"),
+            "audience_size": payload.get("content_metadata", {}).get("audience_size", "Medium"),
+            "complexity_level": payload.get("content_metadata", {}).get("complexity_level", "Intermediate"),
+            "content_tone": payload.get("content_metadata", {}).get("content_tone", "Conversational"),
+            "target_region": payload.get("content_metadata", {}).get("target_region", "Global"),
+            "content_objectives": payload.get("content_metadata", {}).get("content_objectives", "Engage and Inform"),
+            "content_word_count": payload.get("content_metadata", {}).get("content_word_count", "1000"),
+
+            # SEO Data - Accessing directly from payload
+            "content_primary_keywords": ", ".join(payload.get("seo_data", {}).get("content_primary_keywords", [])),
+            "content_secondary_keywords": ", ".join(payload.get("seo_data", {}).get("content_secondary_keywords", [])),
+            "content_meta_description": payload.get("seo_data", {}).get("content_meta_description", ""),
+            "content_search_intent": payload.get("seo_data", {}).get("content_search_intent", "Informational"),
+
+
+            # Extra context
+            "reference_content": combined_context,
+            "blog_feedback": blog_feedback,
+        }
+        prompt = blog_prompt_template().format(**prompt_data)
     except Exception as e:
         print(f"❌ Error while constructing prompt: {e}")
         return [{"error": f"Prompt construction failed: {str(e)}"}]

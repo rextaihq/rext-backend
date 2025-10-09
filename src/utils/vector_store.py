@@ -91,7 +91,7 @@ def add_to_vector_store(
     logger.info(f"💾 Vector store saved at {vector_store_path}")
     return True
 
-def load_vector_store(file_path: str = 'vector_store/content_store'):
+def load_vector_store(file_path: str = 'vector_store'):
     """
     Load a FAISS vector store from a local file.
 
