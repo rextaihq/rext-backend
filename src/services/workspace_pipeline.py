@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.models.knowledge_models.knowledge_model import BrandVoice
 from src.api.schema.knowledge_schema import BrandSchema
-from src.langgraph_flow.model.llm_manager import load_model
+from src.flow.model.llm_manager import load_model
 from src.services.sse_service import (
     emit_pipeline_complete,
     emit_step_failure,

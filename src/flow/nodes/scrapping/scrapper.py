@@ -1,8 +1,8 @@
 from crawl4ai import AsyncWebCrawler
 from langchain_core.documents import Document
-from src.langgraph_flow.states.content_state import ContentState
+from src.flow.states.content_state import ContentState
 from src.utils.helper import GetBrowserConfig, GetCrawlerRunConfig
-from src.langgraph_flow.nodes.scrapping.clean_context import clean_content
+from src.flow.nodes.scrapping.clean_context import clean_content
 from langsmith import traceable, trace
 
 

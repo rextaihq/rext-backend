@@ -1,7 +1,7 @@
-from src.langgraph_flow.states.content_state import ContentState
-from src.langgraph_flow.prompts.prompt import blog_prompt_template
-from src.langgraph_flow.states.blog_state import BlogArticle
-from src.langgraph_flow.model.llm_manager import load_model
+from src.flow.states.content_state import ContentState
+from src.flow.prompts.prompt_manager import PromptManager
+from src.flow.states.blog_state import BlogArticle
+from src.flow.model.llm_manager import load_model
 
 
 def generate_blog(state: ContentState):
@@ -64,7 +64,14 @@ def generate_blog(state: ContentState):
             "reference_content": combined_context,
             "blog_feedback": blog_feedback,
         }
-        prompt = blog_prompt_template().format(**prompt_data)
+
+        prompt_manager = PromptManager()
+
+        prompt_template = prompt_manager.get_prompt('blog_generation_v1')
+
+        prompt_template = prompt_manager.get_prompt('blog_generation_v1')
+        prompt = prompt_template.format_prompt(**prompt_data).to_messages()
+
     except Exception as e:
         print(f"❌ Error while constructing prompt: {e}")
         return [{"error": f"Prompt construction failed: {str(e)}"}]

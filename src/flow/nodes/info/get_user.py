@@ -1,4 +1,4 @@
-from src.langgraph_flow.states.content_state import ContentState
+from src.flow.states.content_state import ContentState
 from src.api.models.user_models.users import Users
 from src.api.database.database import get_db
 from langsmith import traceable, trace

@@ -1,16 +1,16 @@
-from src.langgraph_flow.states.content_state import ContentState
+from src.flow.states.content_state import ContentState
 from langgraph.graph import StateGraph, START, END
 from langchain_core.runnables import RunnableLambda
 
 # --- Nodes ---
-from src.langgraph_flow.nodes.info.get_topics import fetch_topic
-from src.langgraph_flow.nodes.info.get_user import fetch_user
-from src.langgraph_flow.nodes.info.get_workspace import fetch_workspace
-from src.langgraph_flow.nodes.get_context.web_context import web_context
-from src.langgraph_flow.nodes.get_context.workspace_context import workspace_context
-from src.langgraph_flow.nodes.scrapping.scrapper import scrape_content
-from src.langgraph_flow.nodes.reranker.reranker import rerank_documents
-from src.langgraph_flow.nodes.blog_generation.generate_blog import generate_blog
+from src.flow.nodes.info.get_topics import fetch_topic
+from src.flow.nodes.info.get_user import fetch_user
+from src.flow.nodes.info.get_workspace import fetch_workspace
+from src.flow.nodes.get_context.web_context import web_context
+from src.flow.nodes.get_context.workspace_context import workspace_context
+from src.flow.nodes.scrapping.scrapper import scrape_content
+from src.flow.nodes.reranker.reranker import rerank_documents
+from src.flow.nodes.blog_generation.generate_blog import generate_blog
 
 
 def create_workflow() -> RunnableLambda[ContentState, ContentState]:
