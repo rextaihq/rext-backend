@@ -1,8 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException, Request
 from src.api.schema.topic_schema import TopicGenerationInput, DeleteTopics, UpdateTopicRequest
 from langchain_core.messages import SystemMessage
-from src.langgraph_flow.model.llm_manager import topic_generation_model
-from src.langgraph_flow.prompts.topic_generation_prompts import topic_generation_prompt
+from src.flow.prompts.prompt_manager import PromptManager
+from src.flow.model.llm_manager import topic_generation_model
 from src.api.security.dependencies import get_current_user
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import func, select
@@ -26,6 +26,7 @@ import uuid
 from src.api.lib.logger import auto_logger
 
 logger = auto_logger()
+prompt_manager = PromptManager()
 
 router = APIRouter(
     prefix="/topic",
@@ -75,24 +76,12 @@ async def generate_topic(
         )
 
     # Format the human message
-    human_messages = topic_generation_prompt().format_messages(**data.model_dump())
-
-    # Define system message separately
-    system_message = SystemMessage(
-        content=(
-            "You are a helpful content strategist. "
-            "Your task is to propose topic ideas. "
-            "Each topic must be useful for the specific audience, "
-            "fit the content goals, and suit the selected channels."
-        )
-    )
-
-    # Combine messages
-    messages = [system_message] + human_messages
+    prompt_template = prompt_manager.get_prompt("topic_generation_v1")
+    topic_prompt = prompt_template.format_prompt(**data.model_dump()).to_messages()
 
     # Call the model (use async invoke to avoid blocking)
     try:
-        response = await model.ainvoke(messages)
+        response = await model.ainvoke(topic_prompt)
         basic_topics = response.topics
         logger.info(f"Generated {len(basic_topics)} basic topics")
     except Exception as model_err:
