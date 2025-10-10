@@ -93,6 +93,7 @@ class ContentService:
             content_format=data.content_format or "Markdown",
             status=data.status or "draft",
             content_language=data.content_language or "English",
+            langgraph_thread_id=data.langgraph_thread_id,  # Store thread ID if provided
             created_at=datetime.now(timezone.utc),
             updated_at=datetime.now(timezone.utc)
         )
@@ -224,6 +225,10 @@ class ContentService:
 
         if data.topic_id is not None:
             content.topic_id = data.topic_id
+
+        # Update LangGraph thread ID if provided
+        if hasattr(data, 'langgraph_thread_id') and data.langgraph_thread_id is not None:
+            content.langgraph_thread_id = data.langgraph_thread_id
 
         content.updated_at = datetime.now(timezone.utc)
 

@@ -26,6 +26,10 @@ class Content(Base, SerializableMixin):
     status = Column(Text, nullable=True, default="draft")  # draft, generating, ready, published, archived
     content_language = Column(Text, nullable=True, default="English")
 
+    # LangGraph workflow tracking
+    langgraph_thread_id = Column(UUID(as_uuid=True), nullable=True, index=True,
+                                  comment="LangGraph workflow thread ID for content generation tracking")
+
     created_at = Column(DateTime(timezone=True), nullable=False, default=datetime.utcnow)
     updated_at = Column(DateTime(timezone=True), nullable=True, default=datetime.utcnow, onupdate=datetime.utcnow)
     deleted_at = Column(DateTime(timezone=True), nullable=True)
