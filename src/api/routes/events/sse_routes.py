@@ -43,6 +43,22 @@ async def subscribe_to_operation_events(
         extra={"operation_id": operation_id, "user_id": str(user_id)},
     )
 
+    # Check if operation is already completed
+    # If it is, return a special SSE stream with completion event
+    if await event_stream_manager.is_operation_completed(operation_id):
+        logger.info(
+            "SSE subscription to completed operation",
+            extra={"operation_id": operation_id, "user_id": str(user_id)},
+        )
+        return EventSourceResponse(
+            event_stream_manager.subscribe_completed(operation_id, user_id),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "X-Accel-Buffering": "no",
+            },
+        )
+
     # TODO: Verify requesting user owns the operation being accessed.
 
     return EventSourceResponse(

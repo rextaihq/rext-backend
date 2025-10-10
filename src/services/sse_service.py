@@ -5,7 +5,7 @@ from asyncio import Queue
 from collections import deque
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
-from typing import AsyncIterator, Deque, Dict, List, Optional
+from typing import Any, AsyncIterator, Deque, Dict, List, Optional
 from uuid import UUID, uuid4
 
 from pydantic import BaseModel, Field
@@ -37,6 +37,7 @@ class _OperationState:
     created_at: datetime = field(default_factory=_utcnow)
     last_event_at: datetime = field(default_factory=_utcnow)
     completed: bool = False
+    completion_payload: Optional[Dict[str, Any]] = None
 
 
 class OperationEvent(BaseModel):
@@ -140,6 +141,10 @@ class EventStreamManager:
             while len(state.pending_events) > self._pending_event_limit:
                 state.pending_events.popleft()
 
+            # Store completion payload if this is a terminal event
+            if event.step == "pipeline.completed":
+                state.completion_payload = event.payload
+
             subscribers = list(state.subscribers)
 
         if not subscribers:
@@ -198,6 +203,49 @@ class EventStreamManager:
         """Return active operation identifiers (intended for diagnostics/tests)."""
         async with self._lock:
             return list(self._operations.keys())
+
+    async def is_operation_completed(self, operation_id: str) -> bool:
+        """Check if an operation has been marked as completed."""
+        async with self._lock:
+            state = self._operations.get(operation_id)
+            return state.completed if state else False
+
+    async def subscribe_completed(self, operation_id: str, user_id: UUID) -> AsyncIterator[str]:
+        """
+        Subscribe to an already completed operation.
+        Immediately sends a completion event and closes.
+        """
+        # Get the stored completion payload
+        payload = None
+        async with self._lock:
+            state = self._operations.get(operation_id)
+            if state:
+                payload = state.completion_payload
+
+        # Send connection event
+        connection_event = OperationEvent(
+            operation_id=operation_id,
+            scope="connection",
+            step="connected",
+            status="connected",
+            message="SSE connection established (operation completed)",
+        )
+        yield self._format_event(connection_event)
+
+        # Send completion event with original payload
+        completion_event = OperationEvent(
+            operation_id=operation_id,
+            scope="workspace",
+            step="pipeline.completed",
+            status="completed",
+            message="Operation already completed",
+            progress=100,
+            payload=payload,
+        )
+        yield self._format_event(completion_event)
+
+        # End the stream
+        return
 
     async def shutdown(self) -> None:
         """Cancel the background cleanup task, if running."""
