@@ -21,3 +21,4 @@ venv/
 data/
 my_faiss_index3
 my_faiss_index
+logs
