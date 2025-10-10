@@ -4,7 +4,7 @@
     "agent": "main:graph"
   },
   "env": ".env",
-  "image_distro": "wolfi",
+  "image_distro": "debian",
   "pip_installer": "uv",
   "http": {
     "app": "src/api/server.py:app"
