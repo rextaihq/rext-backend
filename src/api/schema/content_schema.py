@@ -78,6 +78,9 @@ class ContentCreate(ContentBase):
     content_format: Optional[str] = Field(default="Markdown", description="Content format")
     assigned_to_user_id: Optional[UUID] = Field(None, description="User assigned to this content")
 
+    # LangGraph workflow tracking
+    langgraph_thread_id: Optional[UUID] = Field(None, description="LangGraph workflow thread ID for content generation tracking")
+
     # Metadata fields (optional, will create related records if provided)
     metadata: Optional[ContentMetadataSchema] = Field(None, description="Content metadata")
     seo_data: Optional[ContentSEODataSchema] = Field(None, description="SEO data")
@@ -92,6 +95,9 @@ class ContentUpdate(BaseModel):
     content_language: Optional[str] = Field(None, description="Content language")
     assigned_to_user_id: Optional[UUID] = Field(None, description="Assigned user ID")
     topic_id: Optional[UUID] = Field(None, description="Related topic ID")
+
+    # LangGraph workflow tracking
+    langgraph_thread_id: Optional[UUID] = Field(None, description="LangGraph workflow thread ID for content generation tracking")
 
     # Metadata and SEO updates
     metadata: Optional[ContentMetadataSchema] = Field(None, description="Content metadata")
@@ -129,6 +135,10 @@ class ContentResponse(BaseModel):
     content_format: str
     status: str
     content_language: str
+
+    # LangGraph workflow tracking
+    langgraph_thread_id: Optional[UUID] = None
+
     created_at: datetime
     updated_at: Optional[datetime] = None
     deleted_at: Optional[datetime] = None
