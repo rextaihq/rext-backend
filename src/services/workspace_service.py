@@ -80,7 +80,7 @@ class WorkspaceService:
         self,
         user_id: UUID,
         name: str,
-        description: Optional[str],
+        timezone: Optional[str],
         url: str,
     ) -> Dict[str, Any]:
         """
@@ -92,7 +92,7 @@ class WorkspaceService:
         workspace = await self.create_workspace(
             user_id=user_id,
             name=name,
-            description=description,
+            timezone=timezone,
             url=url,
         )
         await self.db.refresh(workspace)
@@ -240,7 +240,7 @@ class WorkspaceService:
         workspace_id: UUID,
         user_id: UUID,
         name: Optional[str],
-        description: Optional[str],
+        timezone: Optional[str],
         url: Optional[str],
     ) -> Dict[str, Any]:
         """Update workspace metadata for a member."""
@@ -253,7 +253,7 @@ class WorkspaceService:
         updated = await self.update_workspace(
             workspace_id=workspace_id,
             name=name,
-            description=description,
+            timezone=timezone,
             url=url,
         )
         await self.db.refresh(updated)
@@ -314,7 +314,7 @@ class WorkspaceService:
                 "user_id": str(ws.user_id),
                 "name": ws.name,
                 "slug": ws.slug if hasattr(ws, 'slug') else None,
-                "description": ws.description,
+                "timezone": ws.timezone if hasattr(ws, 'timezone') else None,
                 "url": ws.url,
                 "created_at": ws.created_at.isoformat() if ws.created_at else None,
                 "updated_at": ws.updated_at.isoformat() if ws.updated_at else None,
@@ -468,7 +468,7 @@ class WorkspaceService:
             "user_id": str(workspace.user_id),
             "name": workspace.name,
             "slug": workspace.slug if hasattr(workspace, 'slug') else None,
-            "description": workspace.description,
+            "timezone": workspace.timezone if hasattr(workspace, 'timezone') else None,
             "url": workspace.url,
             "created_at": workspace.created_at.isoformat() if workspace.created_at else None,
             "updated_at": workspace.updated_at.isoformat() if workspace.updated_at else None,
@@ -524,7 +524,7 @@ class WorkspaceService:
         self,
         user_id: UUID,
         name: str,
-        description: Optional[str] = None,
+        timezone: Optional[str] = None,
         url: Optional[str] = None,
         slug: Optional[str] = None
     ) -> WorkspaceModel:
@@ -539,7 +539,7 @@ class WorkspaceService:
         Args:
             user_id: User UUID (owner)
             name: Workspace name
-            description: Workspace description
+            timezone: IANA timezone identifier (e.g., 'America/New_York', 'UTC')
             url: Workspace URL
             slug: Optional pre-generated slug
 
@@ -574,7 +574,7 @@ class WorkspaceService:
             user_id=user_id,
             name=name,
             slug=slug,
-            description=description,
+            timezone=timezone,
             url=url,
             created_at=datetime.now(timezone.utc),
             updated_at=datetime.now(timezone.utc)
@@ -630,7 +630,7 @@ class WorkspaceService:
         self,
         workspace_id: UUID,
         name: Optional[str] = None,
-        description: Optional[str] = None,
+        timezone: Optional[str] = None,
         url: Optional[str] = None
     ) -> WorkspaceModel:
         """
@@ -639,7 +639,7 @@ class WorkspaceService:
         Args:
             workspace_id: Workspace UUID
             name: New workspace name (optional)
-            description: New description (optional)
+            timezone: New timezone (optional)
             url: New URL (optional)
 
         Returns:
@@ -656,8 +656,8 @@ class WorkspaceService:
             base_slug = self._slugify(name)
             workspace.slug = await self._generate_unique_slug(base_slug, workspace.user_id, exclude_id=workspace_id)
 
-        if description is not None:
-            workspace.description = description
+        if timezone is not None:
+            workspace.timezone = timezone
 
         if url is not None:
             workspace.url = url
@@ -871,7 +871,7 @@ class WorkspaceService:
             "user_id": str(workspace.user_id),
             "name": workspace.name,
             "slug": workspace.slug if hasattr(workspace, "slug") else None,
-            "description": workspace.description,
+            "timezone": workspace.timezone if hasattr(workspace, "timezone") else None,
             "url": workspace.url,
             "created_at": workspace.created_at.isoformat() if workspace.created_at else None,
             "updated_at": workspace.updated_at.isoformat() if workspace.updated_at else None,

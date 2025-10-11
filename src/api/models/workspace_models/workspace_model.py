@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String,Text,DateTime, func,ForeignKey
+from sqlalchemy import Column, String, DateTime, func, ForeignKey
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 from src.api.database.database import Base
@@ -15,8 +15,8 @@ class WorkspaceModel(Base, SerializableMixin):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, unique=True, nullable=False)
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
     name = Column(String, nullable=False)
-    slug = Column(String, unique=True, nullable=False, index=True)  # New slug field
-    description = Column(Text, nullable=True)
+    slug = Column(String, unique=True, nullable=False, index=True)
+    timezone = Column(String(50), nullable=True)  # IANA timezone identifier (e.g., America/New_York, UTC)
     url = Column(String, nullable=True)
     created_at = Column(DateTime(timezone=True), nullable=False, default=datetime.utcnow)
     updated_at = Column(DateTime(timezone=True), nullable=True, default=datetime.utcnow, onupdate=datetime.utcnow)

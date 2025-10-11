@@ -28,7 +28,7 @@ class AddWorkspaceMemberRequest(BaseModel):
 
 class WorkspaceSchema(BaseModel):
     name: Optional[str] = Field(None, description="Optional workspace title")
-    description: Optional[str] = Field(None, description="Workspace description")
+    timezone: Optional[str] = Field(None, description="IANA timezone identifier (e.g., 'America/New_York', 'UTC')")
     url: Optional[HttpUrl] = Field(None, description="Workspace URL")
 
     # Extra fields from brand_data

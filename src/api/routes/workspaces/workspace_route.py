@@ -109,7 +109,7 @@ async def create_workspace(
     result = await service.create_workspace_for_user(
         user_id=user_id,
         name=data.name,
-        description=data.description,
+        timezone=data.timezone,
         url=str(data.url),
     )
 
@@ -170,7 +170,7 @@ async def update_workspace(
         workspace_id=workspace_uuid,
         user_id=user_id,
         name=data.name,
-        description=data.description,
+        timezone=data.timezone,
         url=str(data.url) if data.url else None,
     )
 
