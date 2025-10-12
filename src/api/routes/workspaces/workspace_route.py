@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.database.async_database import get_async_db
 from src.api.middleware.exceptions import WrextValidationException
+from src.api.middleware.usage_limiter import check_workspace_limit
 from src.api.schema.workspace_schema import WorkspaceSchema
 from src.api.security.dependencies import get_current_user
 from src.services.workspace_service import WorkspaceService
@@ -84,6 +85,7 @@ async def create_workspace(
     request: Request,
     db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user),
+    _: None = Depends(check_workspace_limit()),
 ):
     """
     Create a new workspace for the current user.

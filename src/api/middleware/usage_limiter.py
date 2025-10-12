@@ -30,8 +30,8 @@ from src.api.models.subscription_models.subscriptions import (
     SubscriptionStatus
 )
 from src.api.models.subscription_models.plans import SubscriptionPlan
-from src.api.models.workspace_models.workspaces import Workspace
-from src.api.models.topic_models.topics import Topic
+from src.api.models.workspace_models.workspace_model import WorkspaceModel as Workspace
+from src.api.models.topic_models.topic_models import TopicsModel as Topic
 from src.utils.logger import logger
 
 

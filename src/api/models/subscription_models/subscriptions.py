@@ -43,9 +43,9 @@ class UserSubscription(Base, SerializableMixin):
     trial_end_date = Column(TIMESTAMP, nullable=True)
     cancelled_at = Column(TIMESTAMP, nullable=True)
 
-    # Payment integration
-    stripe_subscription_id = Column(String(255), unique=True)
-    stripe_customer_id = Column(String(255))
+    # Payment Provider Integration (provider-agnostic)
+    provider_subscription_id = Column(String(255), unique=True)
+    provider_customer_id = Column(String(255))
 
     # Usage tracking (reset monthly)
     current_api_calls = Column(Integer, default=0)
@@ -63,7 +63,7 @@ class UserSubscription(Base, SerializableMixin):
 
     def to_dict(self, **kwargs):
         """Custom serialization handling enum values"""
-        data = super().to_dict(exclude=['stripe_subscription_id', 'stripe_customer_id', 'subscription_metadata'], **kwargs)
+        data = super().to_dict(exclude=['provider_subscription_id', 'provider_customer_id', 'subscription_metadata'], **kwargs)
         # Handle enum serialization
         if isinstance(self.status, SubscriptionStatus):
             data['status'] = self.status.value

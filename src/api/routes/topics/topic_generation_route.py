@@ -20,6 +20,7 @@ from src.api.middleware.exceptions import (
     ResourceNotFoundException,
     WrextAuthenticationException
 )
+from src.api.middleware.usage_limiter import check_topic_limit, check_api_limit
 from src.utils.db_utils import get_or_404
 import uuid
 
@@ -51,7 +52,8 @@ async def generate_topic(
     request: Request,
     workspace_id: str,
     db: AsyncSession = Depends(get_async_db),
-    user: dict = Depends(get_current_user)
+    user: dict = Depends(get_current_user),
+    _api_limit: None = Depends(check_api_limit()),
 ):
     """
     Generate content topics using AI based on workspace context.
@@ -139,7 +141,8 @@ async def save_topic(
     request: Request,
     workspace_id: str,
     db: AsyncSession = Depends(get_async_db),
-    user: dict = Depends(get_current_user)
+    user: dict = Depends(get_current_user),
+    _topic_limit: None = Depends(check_topic_limit()),
 ):
     """
     Save topics to database

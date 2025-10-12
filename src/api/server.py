@@ -27,6 +27,8 @@ from src.api.routes.roles.modules import router as roles_router
 from src.api.routes.permissions.modules import router as permissions_router
 from src.api.routes.subscriptions.plan_routes import router as plan_routes_router
 from src.api.routes.subscriptions.subscription_routes import router as subscription_routes_router
+from src.api.routes.subscriptions.checkout_routes import router as checkout_routes_router
+from src.api.routes.subscriptions.webhook_routes import router as webhook_routes_router
 from src.api.routes.subscriptions.admin import router as admin_subscription_routes_router
 from src.api.routes.audit.modules import router as audit_router
 from src.api.routes.security.security_routes import router as security_router
@@ -191,6 +193,8 @@ app.include_router(roles_router, prefix="/api/v1", tags=["Roles"])
 app.include_router(permissions_router, prefix="/api/v1", tags=["Permissions"])
 app.include_router(plan_routes_router, prefix="/api/v1", tags=["Subscription Plans"])
 app.include_router(subscription_routes_router, prefix="/api/v1", tags=["Subscriptions"])
+app.include_router(checkout_routes_router, prefix="/api/v1", tags=["Subscriptions", "Checkout"])
+app.include_router(webhook_routes_router, prefix="/api/v1", tags=["Subscriptions", "Webhooks"])
 app.include_router(admin_subscription_routes_router, prefix="/api/v1")
 app.include_router(audit_router, prefix="/api/v1", tags=["Audit Logs"])
 app.include_router(security_router, prefix="/api/v1", tags=["Security Monitoring"])

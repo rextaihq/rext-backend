@@ -21,6 +21,7 @@ from src.api.models.knowledge_models.knowledge_model import (
 # Subscription models
 from src.api.models.subscription_models.plans import SubscriptionPlan
 from src.api.models.subscription_models.subscriptions import UserSubscription
+from src.api.models.subscription_models.payment_methods import PaymentMethod
 
 
 __all__ = [
@@ -35,4 +36,5 @@ __all__ = [
     "TextKnowledge",
     "SubscriptionPlan",
     "UserSubscription",
+    "PaymentMethod",
 ]

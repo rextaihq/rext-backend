@@ -13,6 +13,7 @@ from src.api.middleware.exceptions import (
     ResourceNotFoundException,
     WrextValidationException,
 )
+from src.api.middleware.usage_limiter import check_member_limit
 from src.api.models.user_models.invitations import UserInvitations
 from src.api.models.user_models.roles import Role
 from src.api.models.user_models.users import Users
@@ -181,6 +182,7 @@ async def create_workspace_invitation(
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_async_db),
     user: dict = Depends(get_current_user),
+    _: None = Depends(check_member_limit()),
 ):
     """Create an invitation tied to the workspace."""
     user_uuid = UUID(str(user.get("identity")))
@@ -317,6 +319,7 @@ async def create_bulk_workspace_invitations(
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_async_db),
     user: dict = Depends(get_current_user),
+    _: None = Depends(check_member_limit()),
 ):
     """Create invitations for multiple recipients."""
     user_uuid = UUID(str(user.get("identity")))

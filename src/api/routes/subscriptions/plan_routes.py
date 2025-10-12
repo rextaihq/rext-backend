@@ -25,6 +25,29 @@ router = APIRouter(
 )
 
 
+@router.get("/public", response_model=dict)
+@db_transaction_handler("list public plans", auto_commit=False)
+async def list_public_plans(
+    request: Request,
+    db: AsyncSession = Depends(get_async_db),
+):
+    """List public subscription plans (no authentication required)."""
+    service = SubscriptionPlanService(db)
+
+    # Only return active, public plans
+    data = await service.list_plans(
+        include_inactive=False,
+        include_private=False,
+        is_admin=False,
+    )
+
+    return success(
+        data=data,
+        request=request,
+        message=f"Retrieved {data['count']} public subscription plan(s)",
+    )
+
+
 @router.post("", response_model=dict, status_code=status.HTTP_201_CREATED)
 @db_transaction_handler("create plan", auto_commit=True)
 async def create_plan(

@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.database.async_database import get_async_db
 from src.api.middleware.exceptions import WrextValidationException
+from src.api.middleware.usage_limiter import check_knowledge_item_limit
 from src.api.security.dependencies import get_current_user
 from src.services.knowledge_service import KnowledgeService
 from src.utils.auth_utils import verify_current_user
@@ -150,6 +151,7 @@ async def create_web_knowledge(
     payload: WebKnowledgeCreateRequest = Body(...),
     db: AsyncSession = Depends(get_async_db),
     user: dict = Depends(get_current_user),
+    _: None = Depends(check_knowledge_item_limit()),
 ):
     """Create a new web knowledge entry by scraping a URL."""
     workspace, _ = await _resolve_workspace(
@@ -297,6 +299,7 @@ async def create_file_knowledge(
     workspace_id: str,
     request: Request,
     file: Annotated[UploadFile, File(...)],
+    _: None = Depends(check_knowledge_item_limit()),
     knowledge_base_id: Optional[str] = None,
     db: AsyncSession = Depends(get_async_db),
     user: dict = Depends(get_current_user),
@@ -464,6 +467,7 @@ async def create_text_knowledge(
     payload: TextKnowledgeCreateRequest = Body(...),
     db: AsyncSession = Depends(get_async_db),
     user: dict = Depends(get_current_user),
+    _: None = Depends(check_knowledge_item_limit()),
 ):
     """Create a new text knowledge entry."""
     workspace, _ = await _resolve_workspace(

@@ -35,6 +35,7 @@ class Users(Base, SerializableMixin):
     language = Column(String(10), default="en")
     timezone = Column(String(50), default="UTC")
     avatar_url = Column(String(500))
+    provider_customer_id = Column(String(255), unique=True, index=True)  # Payment provider customer ID
     created_at = Column(TIMESTAMP, nullable=False, default=datetime.utcnow)
     updated_at = Column(TIMESTAMP, default=datetime.utcnow, onupdate=datetime.utcnow)
     deactivated_at = Column(TIMESTAMP)

@@ -23,6 +23,7 @@ from datetime import datetime, timedelta
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_
+from sqlalchemy.orm import selectinload
 
 from src.api.models.subscription_models.plans import SubscriptionPlan
 from src.api.models.subscription_models.subscriptions import (
@@ -43,6 +44,7 @@ from src.api.middleware.exceptions import (
     WrextValidationException,
     ResourceNotFoundException
 )
+from src.services.payment.provider_factory import get_payment_provider_singleton
 
 
 class SubscriptionService:
@@ -56,6 +58,7 @@ class SubscriptionService:
             db: Async database session
         """
         self.db = db
+        self.payment_provider = get_payment_provider_singleton()
 
     async def subscribe(
         self,
@@ -486,7 +489,7 @@ class SubscriptionService:
 
     async def get_subscription_by_user(self, user_id: UUID) -> Optional[UserSubscription]:
         """
-        Get user's active subscription.
+        Get user's active subscription with plan eagerly loaded.
 
         Args:
             user_id: User UUID
@@ -495,7 +498,9 @@ class SubscriptionService:
             UserSubscription object or None
         """
         result = await self.db.execute(
-            select(UserSubscription).where(
+            select(UserSubscription).options(
+                selectinload(UserSubscription.plan)
+            ).where(
                 UserSubscription.user_id == user_id,
                 UserSubscription.status.in_([SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIAL])
             )

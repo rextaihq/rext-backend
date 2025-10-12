@@ -33,9 +33,9 @@ class SubscriptionPlan(Base, SerializableMixin):
     is_active = Column(Boolean, default=True)
     is_public = Column(Boolean, default=True)  # Public plans shown on pricing page
 
-    # Metadata
-    stripe_price_id_monthly = Column(String(255))  # Stripe integration
-    stripe_price_id_yearly = Column(String(255))
+    # Payment Provider Integration (provider-agnostic)
+    provider_price_id_monthly = Column(String(255))  # Payment provider price ID (monthly)
+    provider_price_id_yearly = Column(String(255))  # Payment provider price ID (yearly)
 
     created_at = Column(TIMESTAMP, default=datetime.utcnow, nullable=False)
     updated_at = Column(TIMESTAMP, default=datetime.utcnow, onupdate=datetime.utcnow)

@@ -40,6 +40,7 @@ Usage:
 from typing import Any, Dict, List, Optional
 from datetime import datetime
 from uuid import UUID
+from decimal import Decimal
 
 from sqlalchemy.orm import class_mapper
 
@@ -124,6 +125,8 @@ class SerializableMixin:
                 data[column.name] = str(value)
             elif isinstance(value, datetime):
                 data[column.name] = value.isoformat() if value else None
+            elif isinstance(value, Decimal):
+                data[column.name] = float(value)
             else:
                 data[column.name] = value
 
