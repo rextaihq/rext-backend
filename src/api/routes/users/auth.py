@@ -28,34 +28,70 @@ router = APIRouter()
 async def send_verification_email_task(
     email: str,
     first_name: str,
-    verification_link: str,
-    user_id: str
+    verification_token: str,
+    user_id: str,
+    frontend_url: str
 ):
     """
-    Background task to send email verification email using EmailService.
+    Background task to send email verification email using professional template.
 
     Args:
         email: Recipient email address
         first_name: User's first name for personalization
-        verification_link: URL for email verification
+        verification_token: Verification token (not full URL)
         user_id: User ID for email tracking
+        frontend_url: Frontend URL for constructing verification link
     """
     from src.api.database.async_database import get_async_db_context
+    from src.services.email_helpers import send_auth_email
 
     try:
         async with get_async_db_context() as async_db:
-            email_service = EmailService(async_db)
-            await email_service.send_email(
-                to=email,
-                subject="Verify Your Email Address",
-                html=f"<p>Welcome {first_name}!</p><p>Click the link to verify your email: <a href='{verification_link}'>Verify Email</a></p><p>This link will expire in 24 hours.</p>",
+            await send_auth_email(
+                db=async_db,
+                email_type="verification",
+                recipient_email=email,
+                user_name=first_name,
                 user_id=UUID(user_id),
-                template_type="email_verification",
-                tags={"type": "auth", "action": "verify"}
+                token=verification_token,
+                frontend_url=frontend_url
             )
             logger.info(f"Verification email sent successfully to {email}")
     except Exception as e:
         logger.error(f"Failed to send verification email to {email}: {str(e)}", exc_info=True)
+
+
+async def send_welcome_email_task(
+    email: str,
+    first_name: str,
+    user_id: str,
+    frontend_url: str
+):
+    """
+    Background task to send welcome email after email verification.
+
+    Args:
+        email: Recipient email address
+        first_name: User's first name for personalization
+        user_id: User ID for email tracking
+        frontend_url: Frontend URL
+    """
+    from src.api.database.async_database import get_async_db_context
+    from src.services.email_helpers import send_auth_email
+
+    try:
+        async with get_async_db_context() as async_db:
+            await send_auth_email(
+                db=async_db,
+                email_type="welcome",
+                recipient_email=email,
+                user_name=first_name,
+                user_id=UUID(user_id),
+                frontend_url=frontend_url
+            )
+            logger.info(f"Welcome email sent successfully to {email}")
+    except Exception as e:
+        logger.error(f"Failed to send welcome email to {email}: {str(e)}", exc_info=True)
 
 
 @router.post("/register")
@@ -82,15 +118,15 @@ async def create_user(
 
         # Get frontend URL from environment
         frontend_url = os.getenv("FRONTEND_URL", "http://localhost:3000")
-        verification_link = f"{frontend_url}/verify-email?token={verification_token}"
 
-        # Send verification email in background using EmailService
+        # Send verification email in background using professional template
         background_tasks.add_task(
             send_verification_email_task,
             email=new_user.email,
             first_name=new_user.first_name,
-            verification_link=verification_link,
-            user_id=str(new_user.id)
+            verification_token=verification_token,
+            user_id=str(new_user.id),
+            frontend_url=frontend_url
         )
 
         # Commit transaction
@@ -321,9 +357,14 @@ async def logout_user(
 
 
 @router.get("/verify-email")
-async def verify_email(token: str, request: Request, db: Session = Depends(get_db)):
+async def verify_email(
+    token: str,
+    request: Request,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db)
+):
     """
-    Verify user's email using the provided token
+    Verify user's email using the provided token and send welcome email
     """
     try:
         # Use auth service
@@ -332,6 +373,17 @@ async def verify_email(token: str, request: Request, db: Session = Depends(get_d
 
         # Commit transaction
         db.commit()
+
+        # Send welcome email after first-time verification
+        if user.email_verified:
+            frontend_url = os.getenv("FRONTEND_URL", "http://localhost:3000")
+            background_tasks.add_task(
+                send_welcome_email_task,
+                email=user.email,
+                first_name=user.first_name or user.username,
+                user_id=str(user.id),
+                frontend_url=frontend_url
+            )
 
         message = "Email verified successfully" if user.email_verified else "Email already verified"
 

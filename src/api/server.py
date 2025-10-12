@@ -33,6 +33,7 @@ from src.api.routes.security.security_routes import router as security_router
 from src.api.routes.events import router as events_router
 # Email routes (Phase 3 complete - Python-based templates)
 from src.api.routes.email import preview_router, webhook_router
+from src.api.routes.users.email_preferences import router as email_prefs_router
 from src.api.database.database import engine
 
 # Middleware imports
@@ -196,6 +197,7 @@ app.include_router(security_router, prefix="/api/v1", tags=["Security Monitoring
 # Email routes (Phase 3 complete - Python-based templates)
 app.include_router(preview_router, prefix="/api/v1/email", tags=["Email Preview"])
 app.include_router(webhook_router, prefix="/api/v1/email", tags=["Email Webhooks"])
+app.include_router(email_prefs_router, prefix="/api/v1", tags=["Email Preferences"])
 
 # ============================================================================
 # ROOT ENDPOINTS

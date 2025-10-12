@@ -1,8 +1,9 @@
 from datetime import datetime, timezone
 from typing import Any, Dict, List
 from uuid import UUID
+import os
 
-from fastapi import APIRouter, Depends, Request, status
+from fastapi import APIRouter, Depends, Request, status, BackgroundTasks
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -30,6 +31,78 @@ from src.utils.workspace_utils import resolve_and_verify_workspace
 
 
 router = APIRouter(tags=["workspace-members"])
+
+
+async def send_role_changed_notification(
+    workspace_id: str,
+    workspace_name: str,
+    member_email: str,
+    member_user_id: str,
+    member_name: str,
+    old_role_name: str,
+    new_role_name: str,
+    changed_by_name: str
+):
+    """Send role changed notification to member."""
+    from src.api.database.async_database import get_async_db_context
+    from src.services.email_helpers import send_workspace_email
+
+    try:
+        async with get_async_db_context() as async_db:
+            frontend_url = os.getenv("FRONTEND_URL", "http://localhost:3000")
+
+            await send_workspace_email(
+                db=async_db,
+                email_type="role_changed",
+                workspace_id=UUID(workspace_id),
+                recipient_email=member_email,
+                user_id=UUID(member_user_id),
+                workspace_name=workspace_name,
+                member_name=member_name,
+                old_role_name=old_role_name,
+                new_role_name=new_role_name,
+                changed_by_name=changed_by_name,
+                frontend_url=frontend_url
+            )
+
+            logger.info(f"Sent role changed notification to {member_email}")
+    except Exception as e:
+        logger.error(f"Failed to send role changed notification: {str(e)}", exc_info=True)
+
+
+async def send_member_removed_notification(
+    workspace_id: str,
+    workspace_name: str,
+    member_email: str,
+    member_user_id: str,
+    member_name: str,
+    removed_by_name: str,
+    reason: str = None
+):
+    """Send member removed notification."""
+    from src.api.database.async_database import get_async_db_context
+    from src.services.email_helpers import send_workspace_email
+
+    try:
+        async with get_async_db_context() as async_db:
+            frontend_url = os.getenv("FRONTEND_URL", "http://localhost:3000")
+
+            await send_workspace_email(
+                db=async_db,
+                email_type="member_removed",
+                workspace_id=UUID(workspace_id),
+                recipient_email=member_email,
+                user_id=UUID(member_user_id),
+                workspace_name=workspace_name,
+                member_name=member_name,
+                removed_by_name=removed_by_name,
+                reason=reason,
+                frontend_url=frontend_url
+            )
+
+            logger.info(f"Sent member removed notification to {member_email}")
+    except Exception as e:
+        logger.error(f"Failed to send member removed notification: {str(e)}", exc_info=True)
 
 
 def _serialize_member(member: WorkspaceMembers, user: Users) -> Dict[str, Any]:
@@ -156,6 +229,7 @@ async def remove_workspace_member(
     workspace_id: str,
     member_id: str,
     request: Request,
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_async_db),
     user: dict = Depends(get_current_user),
 ):
@@ -189,8 +263,28 @@ async def remove_workspace_member(
             error_severity=ErrorSeverity.ERROR,
         )
 
+    # Get member user details before removal
+    member_user_result = await db.execute(select(Users).where(Users.id == member.user_id))
+    member_user = member_user_result.scalar_one_or_none()
+
+    # Get current user details for notification
+    current_user_result = await db.execute(select(Users).where(Users.id == UUID(user_id)))
+    current_user_obj = current_user_result.scalar_one_or_none()
+
     service = MemberService(db)
     await service.remove_member(workspace_id=workspace.id, user_id=member.user_id)
+
+    # Send member removed notification
+    if member_user:
+        background_tasks.add_task(
+            send_member_removed_notification,
+            workspace_id=str(workspace.id),
+            workspace_name=workspace.name,
+            member_email=member_user.email,
+            member_user_id=str(member_user.id),
+            member_name=member_user.first_name or member_user.username,
+            removed_by_name=current_user_obj.first_name if current_user_obj else "Admin"
+        )
 
     logger.info(
         "Workspace member removed",
@@ -219,6 +313,7 @@ async def update_workspace_member_role(
     member_id: str,
     payload: ChangeMemberRoleRequest,
     request: Request,
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_async_db),
     user: dict = Depends(get_current_user),
 ):
@@ -267,6 +362,13 @@ async def update_workspace_member_role(
     user_role = result.scalar_one_or_none()
 
     previous_role_id = getattr(user_role, "role_id", None)
+
+    # Get old role details for notification
+    old_role = None
+    if previous_role_id:
+        old_role_result = await db.execute(select(Role).where(Role.id == previous_role_id))
+        old_role = old_role_result.scalar_one_or_none()
+
     timestamp = datetime.now(timezone.utc)
     if user_role:
         user_role.role_id = UUID(payload.role_id)
@@ -285,6 +387,28 @@ async def update_workspace_member_role(
         )
 
     await db.flush()
+
+    # Get member user details for notification
+    member_user_result = await db.execute(select(Users).where(Users.id == member.user_id))
+    member_user = member_user_result.scalar_one_or_none()
+
+    # Get current user details for notification
+    current_user_result = await db.execute(select(Users).where(Users.id == UUID(user_id)))
+    current_user_obj = current_user_result.scalar_one_or_none()
+
+    # Send role changed notification to the member
+    if member_user:
+        background_tasks.add_task(
+            send_role_changed_notification,
+            workspace_id=str(workspace.id),
+            workspace_name=workspace.name,
+            member_email=member_user.email,
+            member_user_id=str(member_user.id),
+            member_name=member_user.first_name or member_user.username,
+            old_role_name=old_role.display_name if old_role else "Member",
+            new_role_name=new_role.display_name,
+            changed_by_name=current_user_obj.first_name if current_user_obj else "Admin"
+        )
 
     logger.info(
         "Workspace member role updated",

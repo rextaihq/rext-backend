@@ -39,39 +39,51 @@ from src.services.invitation_service import InvitationService
 router = APIRouter()
 
 
-async def send_invitation_email_task(
+async def send_workspace_invitation_email_task(
     email: str,
-    subject: str,
-    body: str,
     workspace_id: str,
+    workspace_name: str,
+    inviter_name: str,
+    role_name: str,
+    invitation_token: str,
+    expiry_days: int,
+    frontend_url: str,
     invitation_id: str
 ):
     """
-    Background task to send invitation email using EmailService.
+    Background task to send workspace invitation email using professional template.
 
     Args:
         email: Recipient email address
-        subject: Email subject
-        body: HTML email body
         workspace_id: Workspace ID for tracking
+        workspace_name: Name of the workspace
+        inviter_name: Name of the person inviting
+        role_name: Role name for the invitation
+        invitation_token: Invitation token
+        expiry_days: Days until invitation expires
+        frontend_url: Frontend URL
         invitation_id: Invitation ID for reference
     """
     from src.api.database.async_database import get_async_db_context
+    from src.services.email_helpers import send_workspace_email
 
     try:
         async with get_async_db_context() as async_db:
-            email_service = EmailService(async_db)
-            await email_service.send_email(
-                to=email,
-                subject=subject,
-                html=body,
+            await send_workspace_email(
+                db=async_db,
+                email_type="invitation",
                 workspace_id=UUID(workspace_id),
-                template_type="workspace_invitation",
-                tags={"type": "workspace", "action": "invitation", "invitation_id": invitation_id}
+                recipient_email=email,
+                workspace_name=workspace_name,
+                inviter_name=inviter_name,
+                role_name=role_name,
+                invitation_token=invitation_token,
+                expiry_days=expiry_days,
+                frontend_url=frontend_url
             )
-            logger.info(f"Invitation email sent successfully to {email}")
+            logger.info(f"Workspace invitation email sent successfully to {email}")
     except Exception as e:
-        logger.error(f"Failed to send invitation email to {email}: {str(e)}", exc_info=True)
+        logger.error(f"Failed to send workspace invitation email to {email}: {str(e)}", exc_info=True)
 
 
 @router.get("/status")
@@ -232,27 +244,19 @@ async def create_bulk_invitations(
                 expiry_days=invitation_data.expiry_days
             )
 
-            # Send invitation email asynchronously (external service - stays in route)
+            # Send invitation email asynchronously using professional template
             frontend_url = os.getenv("FRONTEND_URL", "http://localhost:3000")
-            invitation_url = f"{frontend_url}/accept-invitation?token={invitation.invitation_token}"
-
-            body_html = f"""
-                <p>Hi there,</p>
-                <p>{inviter_name} has invited you to join the "{workspace.name}" workspace.</p>
-                <p><strong>Role:</strong> {role.display_name}</p>
-                <p>Click the link below to accept the invitation:<br>
-                <a href="{invitation_url}">Accept Invitation</a></p>
-                <p>This invitation will expire in {invitation_data.expiry_days} days.</p>
-                <p>If you don't want to join this workspace, you can ignore this email.</p>
-                <p>Best regards,<br>The Wrext Team</p>
-            """
 
             background_tasks.add_task(
-                send_invitation_email_task,
+                send_workspace_invitation_email_task,
                 email=email,
-                subject=f"You're invited to join {workspace.name}",
-                body=body_html,
                 workspace_id=str(invitation_data.workspace_id),
+                workspace_name=workspace.name,
+                inviter_name=inviter_name,
+                role_name=role.display_name or role.name,
+                invitation_token=invitation.invitation_token,
+                expiry_days=invitation_data.expiry_days,
+                frontend_url=frontend_url,
                 invitation_id=str(invitation.id)
             )
 

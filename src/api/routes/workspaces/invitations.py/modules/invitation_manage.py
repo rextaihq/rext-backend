@@ -1,8 +1,9 @@
-from fastapi import APIRouter, Depends, Request, HTTPException, status
+from fastapi import APIRouter, Depends, Request, HTTPException, status, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from datetime import datetime
 from uuid import UUID
+import os
 
 from src.utils.logger import logger
 from src.utils.response_utils import success, error
@@ -25,6 +26,7 @@ from src.api.schema.invitation_schema import (
 )
 from src.api.models.user_models.users import Users
 from src.api.models.user_models.invitations import UserInvitations
+from src.api.models.user_models.roles import Roles
 from src.api.models.workspace_models.workspace_member import WorkspaceMembers
 from src.api.models.workspace_models.workspace_model import WorkspaceModel
 from src.services.invitation_service import InvitationService
@@ -33,11 +35,60 @@ from src.services.invitation_service import InvitationService
 router = APIRouter()
 
 
+async def notify_workspace_admins_of_acceptance(
+    workspace_id: str,
+    workspace_name: str,
+    new_member_name: str,
+    new_member_email: str,
+    role_name: str
+):
+    """
+    Notify workspace admins when a new member accepts an invitation.
+    """
+    from src.api.database.async_database import get_async_db_context
+    from src.services.email_helpers import send_workspace_email
+
+    try:
+        async with get_async_db_context() as async_db:
+            # Get all workspace admins/owners
+            admin_members_result = await async_db.execute(
+                select(WorkspaceMembers, Users)
+                .join(Users, WorkspaceMembers.user_id == Users.id)
+                .join(Roles, WorkspaceMembers.role_id == Roles.id)
+                .where(WorkspaceMembers.workspace_id == UUID(workspace_id))
+                .where(Roles.name.in_(["owner", "admin"]))
+            )
+            admin_members = admin_members_result.all()
+
+            frontend_url = os.getenv("FRONTEND_URL", "http://localhost:3000")
+
+            # Send notification to each admin
+            for member, admin_user in admin_members:
+                await send_workspace_email(
+                    db=async_db,
+                    email_type="invitation_accepted",
+                    workspace_id=UUID(workspace_id),
+                    recipient_email=admin_user.email,
+                    user_id=admin_user.id,
+                    workspace_name=workspace_name,
+                    new_member_name=new_member_name,
+                    new_member_email=new_member_email,
+                    role_name=role_name,
+                    workspace_id_str=workspace_id,
+                    frontend_url=frontend_url
+                )
+
+            logger.info(f"Sent invitation accepted notifications to {len(admin_members)} admins")
+    except Exception as e:
+        logger.error(f"Failed to send invitation accepted notifications: {str(e)}", exc_info=True)
+
+
 @router.post("/accept")
 @db_transaction_handler("accept invitation", auto_commit=True)
 async def accept_invitation(
     request: Request,
     invitation_data: AcceptInvitationRequest,
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user)
 ):
@@ -74,11 +125,27 @@ async def accept_invitation(
         user_id=UUID(user_id)
     )
 
-    # Get workspace details for response
+    # Get workspace and role details
     workspace_result = await db.execute(
         select(WorkspaceModel).where(WorkspaceModel.id == invitation.workspace_id)
     )
     workspace = workspace_result.scalar_one_or_none()
+
+    role_result = await db.execute(
+        select(Roles).where(Roles.id == invitation.role_id)
+    )
+    role = role_result.scalar_one_or_none()
+
+    # Send invitation accepted notification to workspace admins
+    if workspace:
+        background_tasks.add_task(
+            notify_workspace_admins_of_acceptance,
+            workspace_id=str(workspace.id),
+            workspace_name=workspace.name,
+            new_member_name=user.first_name or user.username,
+            new_member_email=user.email,
+            role_name=role.display_name if role else "Member"
+        )
 
     logger.info(f"User {user_id} accepted invitation to workspace {invitation.workspace_id}")
 

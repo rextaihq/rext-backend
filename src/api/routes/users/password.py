@@ -35,29 +35,34 @@ router = APIRouter()
 
 async def send_password_reset_email_task(
     email: str,
-    reset_link: str,
-    user_id: str
+    user_name: str,
+    reset_token: str,
+    user_id: str,
+    frontend_url: str
 ):
     """
-    Background task to send password reset email using EmailService.
+    Background task to send password reset email using professional template.
 
     Args:
         email: Recipient email address
-        reset_link: URL for password reset
+        user_name: User's name for personalization
+        reset_token: Password reset token (not full URL)
         user_id: User ID for email tracking
+        frontend_url: Frontend URL for constructing reset link
     """
     from src.api.database.async_database import get_async_db_context
+    from src.services.email_helpers import send_auth_email
 
     try:
         async with get_async_db_context() as async_db:
-            email_service = EmailService(async_db)
-            await email_service.send_email(
-                to=email,
-                subject="Reset Your Password",
-                html=f"<p>Click the link to reset your password: <a href='{reset_link}'>Reset Password</a></p><p>This link will expire in 1 hour.</p><p>If you didn't request this, please ignore this email.</p>",
+            await send_auth_email(
+                db=async_db,
+                email_type="password_reset",
+                recipient_email=email,
+                user_name=user_name,
                 user_id=UUID(user_id),
-                template_type="password_reset",
-                tags={"type": "auth", "action": "password_reset"}
+                token=reset_token,
+                frontend_url=frontend_url
             )
             logger.info(f"Password reset email sent successfully to {email}")
     except Exception as e:
@@ -108,16 +113,17 @@ async def forgot_password(
         db_user.reset_token = reset_token
         await db.flush()
 
-        # Get frontend URL and create reset link
+        # Get frontend URL
         frontend_url = os.getenv("FRONTEND_URL", "http://localhost:3000")
-        reset_link = f"{frontend_url}/reset-password?token={reset_token}"
 
-        # Send email in background using EmailService
+        # Send email in background using professional template
         background_tasks.add_task(
             send_password_reset_email_task,
             email=user.email,
-            reset_link=reset_link,
-            user_id=str(user.id)
+            user_name=user.first_name or user.username,
+            reset_token=reset_token,
+            user_id=str(user.id),
+            frontend_url=frontend_url
         )
 
         logger.info(f"Password reset email sent to: {user.email}")

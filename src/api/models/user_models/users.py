@@ -48,6 +48,7 @@ class Users(Base, SerializableMixin):
     assigned_roles = relationship("UserRole", back_populates="assigned_by", foreign_keys="UserRole.assigned_by_user_id")
     notification_preferences = relationship("NotificationPreferences", back_populates="user", uselist=False)
     sessions = relationship("UserSession", back_populates="user", cascade="all, delete-orphan")
+    email_preferences = relationship("EmailPreferences", back_populates="user", uselist=False, foreign_keys="EmailPreferences.user_id")
 
     def to_dict(self, **kwargs):
         """Exclude sensitive fields from serialization"""
