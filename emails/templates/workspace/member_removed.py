@@ -1,0 +1,157 @@
+"""
+Member Removed Notification Template
+
+Sent when a member is removed from a workspace.
+"""
+from typing import Optional
+from emails.components import simple_header, primary_button, secondary_button, simple_footer
+from emails.utils.renderer import compose_email
+
+
+def render_member_removed_email(
+    workspace_name: str,
+    member_name: str,
+    removed_by_name: str,
+    reason: Optional[str] = None,
+    support_url: Optional[str] = None,
+    frontend_url: str = "https://app.wrext.com"
+) -> str:
+    """
+    Render member removed notification email template.
+
+    Sent to member when they are removed from a workspace.
+
+    Args:
+        workspace_name: Name of the workspace
+        member_name: Name of removed member
+        removed_by_name: Name of person who removed the member
+        reason: Optional reason for removal
+        support_url: URL to support/contact page
+        frontend_url: Base frontend URL
+
+    Returns:
+        Complete HTML email string
+
+    Example:
+        >>> html = render_member_removed_email(
+        ...     workspace_name="Acme Inc",
+        ...     member_name="Jane",
+        ...     removed_by_name="John Doe",
+        ...     reason="Project concluded"
+        ... )
+    """
+    if support_url is None:
+        support_url = f"{frontend_url}/support"
+
+    reason_html = ""
+    if reason:
+        reason_html = f"""
+        <div style="margin: 24px 0; padding: 16px; background-color: #fffbeb; border-radius: 6px; border-left: 4px solid #fbbf24;">
+            <p style="color: #92400e; font-size: 14px; line-height: 20px; margin: 0 0 8px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
+                <strong>Reason for removal:</strong>
+            </p>
+            <p style="color: #92400e; font-size: 14px; line-height: 20px; margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
+                {reason}
+            </p>
+        </div>
+        """
+
+    email_html = compose_email([
+        simple_header(),
+        f"""
+        <h1 style="color: #111827; font-size: 28px; font-weight: 700; margin: 0 0 16px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
+            You've been removed from {workspace_name}
+        </h1>
+        """,
+        f"""
+        <p style="color: #374151; font-size: 16px; line-height: 24px; margin: 0 0 16px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
+            Hi {member_name},
+        </p>
+        """,
+        f"""
+        <p style="color: #374151; font-size: 16px; line-height: 24px; margin: 0 0 24px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
+            <strong>{removed_by_name}</strong> has removed you from the <strong>{workspace_name}</strong> workspace.
+        </p>
+        """,
+        reason_html,
+        """
+        <div style="margin: 24px 0; padding: 20px; background-color: #fef2f2; border-radius: 8px; border: 1px solid #fecaca;">
+            <p style="color: #991b1b; font-size: 15px; line-height: 22px; margin: 0 0 12px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
+                <strong>⚠️ What this means:</strong>
+            </p>
+            <ul style="color: #991b1b; font-size: 14px; line-height: 20px; margin: 0; padding-left: 20px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
+                <li style="margin-bottom: 8px;">You no longer have access to this workspace</li>
+                <li style="margin-bottom: 8px;">You cannot view or edit workspace content</li>
+                <li>You will not receive notifications about this workspace</li>
+            </ul>
+        </div>
+        """,
+        """
+        <p style="color: #374151; font-size: 16px; line-height: 24px; margin: 0 0 24px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
+            Your other workspaces remain unaffected, and you can continue using WREXT normally.
+        </p>
+        """,
+        """
+        <div style="text-align: center; margin: 32px 0;">
+        """,
+        primary_button("View My Workspaces", f"{frontend_url}/workspaces"),
+        """
+        </div>
+        """,
+        f"""
+        <div style="margin-top: 32px; padding: 16px; background-color: #f3f4f6; border-radius: 6px;">
+            <p style="color: #374151; font-size: 14px; line-height: 20px; margin: 0 0 12px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
+                <strong>Have questions or concerns?</strong>
+            </p>
+            <p style="color: #6b7280; font-size: 14px; line-height: 20px; margin: 0 0 16px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
+                If you believe this was a mistake or have questions about this removal, please contact {removed_by_name} or reach out to our support team.
+            </p>
+            <a href="{support_url}" style="color: #3b82f6; text-decoration: none; font-size: 14px; font-weight: 600; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
+                Contact Support →
+            </a>
+        </div>
+        """,
+        """
+        <div style="margin-top: 32px; border-top: 1px solid #e5e7eb; padding-top: 24px;">
+            <p style="color: #6b7280; font-size: 14px; line-height: 20px; margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
+                This is an automated notification. No action is required from you unless you wish to discuss this change.
+            </p>
+        </div>
+        """,
+        simple_footer()
+    ], preview_text=f"You've been removed from {workspace_name}")
+
+    return email_html
+
+
+# Convenience function for use with EmailService
+def create_member_removed_email(
+    workspace_name: str,
+    member_name: str,
+    removed_by_name: str,
+    reason: Optional[str] = None,
+    frontend_url: str = "https://app.wrext.com"
+) -> str:
+    """
+    Create member removed notification email.
+
+    Args:
+        workspace_name: Name of the workspace
+        member_name: Name of removed member
+        removed_by_name: Name of person who removed the member
+        reason: Optional reason for removal
+        frontend_url: Base frontend URL
+
+    Returns:
+        Complete HTML email string
+    """
+    support_url = f"{frontend_url}/support"
+
+    return render_member_removed_email(
+        workspace_name=workspace_name,
+        member_name=member_name,
+        removed_by_name=removed_by_name,
+        reason=reason,
+        support_url=support_url,
+        frontend_url=frontend_url
+    )

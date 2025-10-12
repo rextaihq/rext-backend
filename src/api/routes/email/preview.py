@@ -4,16 +4,10 @@ Email Preview Routes
 API endpoints for previewing email templates before sending.
 Useful for testing and debugging email designs.
 """
-import sys
-from pathlib import Path
 from fastapi import APIRouter, HTTPException, Depends
 from fastapi.responses import HTMLResponse
 from typing import Literal
 import os
-
-# Add emails directory to path
-emails_path = Path(__file__).parent.parent.parent.parent.parent / "emails"
-sys.path.insert(0, str(emails_path.parent))
 
 from src.api.schema.email_preview_schema import (
     AuthEmailPreviewRequest,
