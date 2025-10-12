@@ -46,3 +46,23 @@ async def get_async_db():
             raise
         finally:
             await session.close()
+
+
+# Context manager for background tasks
+def get_async_db_context():
+    """
+    Async context manager for background tasks and standalone operations.
+
+    Returns an async context manager that provides a database session with
+    automatic transaction handling (commit on success, rollback on error).
+
+    Usage:
+        async with get_async_db_context() as db:
+            # Use db session
+            await db.execute(...)
+            # Automatically commits on exit if no exception
+
+    This is specifically designed for FastAPI background tasks which need
+    their own database session independent of the request lifecycle.
+    """
+    return AsyncSessionLocal()

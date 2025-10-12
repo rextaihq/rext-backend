@@ -28,7 +28,7 @@ from src.api.schema.invitation_schema import (
 from src.api.models.user_models.users import Users
 from src.api.models.user_models.invitations import UserInvitations
 from src.api.models.workspace_models.workspace_member import WorkspaceMembers
-from src.api.tasks.send_mail import send_email
+from src.services.email_service import EmailService
 from src.utils.workspace_utils import resolve_and_verify_workspace
 from src.utils.db_utils import get_or_404
 from src.api.models.user_models.roles import Role
@@ -37,6 +37,41 @@ from src.services.invitation_service import InvitationService
 
 
 router = APIRouter()
+
+
+async def send_invitation_email_task(
+    email: str,
+    subject: str,
+    body: str,
+    workspace_id: str,
+    invitation_id: str
+):
+    """
+    Background task to send invitation email using EmailService.
+
+    Args:
+        email: Recipient email address
+        subject: Email subject
+        body: HTML email body
+        workspace_id: Workspace ID for tracking
+        invitation_id: Invitation ID for reference
+    """
+    from src.api.database.async_database import get_async_db_context
+
+    try:
+        async with get_async_db_context() as async_db:
+            email_service = EmailService(async_db)
+            await email_service.send_email(
+                to=email,
+                subject=subject,
+                html=body,
+                workspace_id=UUID(workspace_id),
+                template_type="workspace_invitation",
+                tags={"type": "workspace", "action": "invitation", "invitation_id": invitation_id}
+            )
+            logger.info(f"Invitation email sent successfully to {email}")
+    except Exception as e:
+        logger.error(f"Failed to send invitation email to {email}: {str(e)}", exc_info=True)
 
 
 @router.get("/status")
@@ -106,10 +141,12 @@ async def create_invitation(
     )
 
     background_tasks.add_task(
-        send_email,
-        to=invitation_data.email,
+        send_invitation_email_task,
+        email=invitation_data.email,
         subject=email_content["subject"],
-        body=email_content["body"]
+        body=email_content["body"],
+        workspace_id=str(invitation_data.workspace_id),
+        invitation_id=str(invitation.id)
     )
 
     logger.info(f"Invitation created: {invitation.id} for {invitation_data.email} to workspace {workspace.name}")
@@ -199,27 +236,24 @@ async def create_bulk_invitations(
             frontend_url = os.getenv("FRONTEND_URL", "http://localhost:3000")
             invitation_url = f"{frontend_url}/accept-invitation?token={invitation.invitation_token}"
 
+            body_html = f"""
+                <p>Hi there,</p>
+                <p>{inviter_name} has invited you to join the "{workspace.name}" workspace.</p>
+                <p><strong>Role:</strong> {role.display_name}</p>
+                <p>Click the link below to accept the invitation:<br>
+                <a href="{invitation_url}">Accept Invitation</a></p>
+                <p>This invitation will expire in {invitation_data.expiry_days} days.</p>
+                <p>If you don't want to join this workspace, you can ignore this email.</p>
+                <p>Best regards,<br>The Wrext Team</p>
+            """
+
             background_tasks.add_task(
-                send_email,
-                to_email=email,
+                send_invitation_email_task,
+                email=email,
                 subject=f"You're invited to join {workspace.name}",
-                body=f"""
-                Hi there,
-
-                {inviter_name} has invited you to join the "{workspace.name}" workspace.
-
-                Role: {role.display_name}
-
-                Click the link below to accept the invitation:
-                {invitation_url}
-
-                This invitation will expire in {invitation_data.expiry_days} days.
-
-                If you don't want to join this workspace, you can ignore this email.
-
-                Best regards,
-                The Wrext Team
-                """
+                body=body_html,
+                workspace_id=str(invitation_data.workspace_id),
+                invitation_id=str(invitation.id)
             )
 
             # Audit log for each invitation (audit concern - stays in route)

@@ -53,7 +53,7 @@ async def scrape_web_content(url: HttpUrl, website_id: str):
             
             logger.info(f"Extracted Brand Voice: {brand_data}")
             brand_voice = BrandVoice(
-                knowledge_id=website.knowledge_id,
+                workspace_id=website.workspace_id,  # Fixed: BrandVoice uses workspace_id, not knowledge_id
                 about=brand_data.about,
                 customer_profile=brand_data.customer_profile,
                 selling_position=brand_data.selling_position,

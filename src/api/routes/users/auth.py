@@ -4,7 +4,7 @@ from src.api.security.dependencies import get_current_user
 from src.api.schema.user_schema import LoginUser, RegisterUser
 from src.api.security.token_utils import verify_token
 from sqlalchemy.orm import Session
-from src.api.tasks.send_mail import send_email
+from src.services.email_service import EmailService
 from src.api.database.database import get_db
 from src.utils.response_utils import success, error, created
 from src.api.schema.response_schemas import ErrorCode, ErrorSeverity
@@ -20,8 +20,42 @@ from src.api.middleware.rate_limiter import (
     registration_rate_limit
 )
 from src.services.auth_service import AuthService
+from uuid import UUID
 
 router = APIRouter()
+
+
+async def send_verification_email_task(
+    email: str,
+    first_name: str,
+    verification_link: str,
+    user_id: str
+):
+    """
+    Background task to send email verification email using EmailService.
+
+    Args:
+        email: Recipient email address
+        first_name: User's first name for personalization
+        verification_link: URL for email verification
+        user_id: User ID for email tracking
+    """
+    from src.api.database.async_database import get_async_db_context
+
+    try:
+        async with get_async_db_context() as async_db:
+            email_service = EmailService(async_db)
+            await email_service.send_email(
+                to=email,
+                subject="Verify Your Email Address",
+                html=f"<p>Welcome {first_name}!</p><p>Click the link to verify your email: <a href='{verification_link}'>Verify Email</a></p><p>This link will expire in 24 hours.</p>",
+                user_id=UUID(user_id),
+                template_type="email_verification",
+                tags={"type": "auth", "action": "verify"}
+            )
+            logger.info(f"Verification email sent successfully to {email}")
+    except Exception as e:
+        logger.error(f"Failed to send verification email to {email}: {str(e)}", exc_info=True)
 
 
 @router.post("/register")
@@ -50,12 +84,13 @@ async def create_user(
         frontend_url = os.getenv("FRONTEND_URL", "http://localhost:3000")
         verification_link = f"{frontend_url}/verify-email?token={verification_token}"
 
-        # Send verification email in background
+        # Send verification email in background using EmailService
         background_tasks.add_task(
-            send_email,
-            to=new_user.email,
-            subject="Verify Your Email Address",
-            body=f"<p>Welcome {new_user.first_name}!</p><p>Click the link to verify your email: <a href='{verification_link}'>Verify Email</a></p><p>This link will expire in 24 hours.</p>"
+            send_verification_email_task,
+            email=new_user.email,
+            first_name=new_user.first_name,
+            verification_link=verification_link,
+            user_id=str(new_user.id)
         )
 
         # Commit transaction

@@ -19,7 +19,7 @@ from src.api.security.token_utils import (
     verify_token
 )
 from src.api.models.user_models.users import Users
-from src.api.tasks.send_mail import send_email
+from src.services.email_service import EmailService
 from src.api.database.async_database import get_async_db
 from src.utils.response_utils import success, error
 from src.api.schema.response_schemas import ErrorCode, ErrorSeverity
@@ -31,6 +31,37 @@ from src.services.user_service import UserService
 from src.api.middleware.rate_limiter import password_reset_rate_limit
 
 router = APIRouter()
+
+
+async def send_password_reset_email_task(
+    email: str,
+    reset_link: str,
+    user_id: str
+):
+    """
+    Background task to send password reset email using EmailService.
+
+    Args:
+        email: Recipient email address
+        reset_link: URL for password reset
+        user_id: User ID for email tracking
+    """
+    from src.api.database.async_database import get_async_db_context
+
+    try:
+        async with get_async_db_context() as async_db:
+            email_service = EmailService(async_db)
+            await email_service.send_email(
+                to=email,
+                subject="Reset Your Password",
+                html=f"<p>Click the link to reset your password: <a href='{reset_link}'>Reset Password</a></p><p>This link will expire in 1 hour.</p><p>If you didn't request this, please ignore this email.</p>",
+                user_id=UUID(user_id),
+                template_type="password_reset",
+                tags={"type": "auth", "action": "password_reset"}
+            )
+            logger.info(f"Password reset email sent successfully to {email}")
+    except Exception as e:
+        logger.error(f"Failed to send password reset email to {email}: {str(e)}", exc_info=True)
 
 
 @router.post("/forgot-password")
@@ -81,12 +112,12 @@ async def forgot_password(
         frontend_url = os.getenv("FRONTEND_URL", "http://localhost:3000")
         reset_link = f"{frontend_url}/reset-password?token={reset_token}"
 
-        # Send email in background
+        # Send email in background using EmailService
         background_tasks.add_task(
-            send_email,
-            to=user.email,
-            subject="Reset Your Password",
-            body=f"<p>Click the link to reset your password: <a href='{reset_link}'>Reset Password</a></p>"
+            send_password_reset_email_task,
+            email=user.email,
+            reset_link=reset_link,
+            user_id=str(user.id)
         )
 
         logger.info(f"Password reset email sent to: {user.email}")

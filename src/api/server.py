@@ -20,6 +20,7 @@ from src.api.routes.users import router as users_router
 from src.api.routes.topics.topic_generation_route import router as topic_router
 from src.api.routes.workspaces import router as workspace_router, workspaces_router
 from src.api.routes.workspaces.workspace_knowledge import router as workspace_knowledge_router
+from src.api.routes.workspaces.workspace_knowledge_bases import router as workspace_knowledge_bases_router
 from src.api.routes.workspaces.email_template_route import router as email_template_router
 from src.api.routes.content.modules import router as content_router
 from src.api.routes.roles.modules import router as roles_router
@@ -30,6 +31,8 @@ from src.api.routes.subscriptions.admin import router as admin_subscription_rout
 from src.api.routes.audit.modules import router as audit_router
 from src.api.routes.security.security_routes import router as security_router
 from src.api.routes.events import router as events_router
+# Email routes temporarily disabled until Phase 3 (React Email templates) is complete
+# from src.api.routes.email import preview_router, webhook_router
 from src.api.database.database import engine
 
 # Middleware imports
@@ -179,6 +182,7 @@ app.include_router(topic_router, prefix="/api/v1", tags=["Topic Generation"])
 app.include_router(workspace_router, prefix="/api/v1", tags=["Workspaces"])
 app.include_router(workspaces_router, prefix="/api/v1", tags=["Workspaces"])  # Alias for frontend compatibility
 app.include_router(workspace_knowledge_router, prefix="/api/v1", tags=["Workspace Knowledge"])
+app.include_router(workspace_knowledge_bases_router, prefix="/api/v1", tags=["Knowledge Bases"])
 app.include_router(events_router, prefix="/api/v1", tags=["Events"])
 app.include_router(email_template_router, prefix="/api/v1", tags=["Email Templates"])
 app.include_router(content_router, prefix="/api/v1", tags=["Content"])
@@ -189,6 +193,9 @@ app.include_router(subscription_routes_router, prefix="/api/v1", tags=["Subscrip
 app.include_router(admin_subscription_routes_router, prefix="/api/v1")
 app.include_router(audit_router, prefix="/api/v1", tags=["Audit Logs"])
 app.include_router(security_router, prefix="/api/v1", tags=["Security Monitoring"])
+# Email routes temporarily disabled until Phase 3 (React Email templates) is complete
+# app.include_router(preview_router, prefix="/api/v1/email", tags=["Email Preview"])
+# app.include_router(webhook_router, prefix="/api/v1/email", tags=["Email Webhooks"])
 
 # ============================================================================
 # ROOT ENDPOINTS

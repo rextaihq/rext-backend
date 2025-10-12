@@ -11,7 +11,7 @@ from src.api.security.dependencies import get_current_user
 from src.api.schema.user_schema import UpdateUser, DataExportRequest, DataExportResponse
 from src.api.models.user_models.users import Users
 from src.api.models.workspace_models.workspace_member import WorkspaceMembers
-from src.api.tasks.send_mail import send_email
+from src.services.email_service import EmailService
 from src.api.database.async_database import get_async_db
 from src.utils.response_utils import success, error
 from src.api.schema.response_schemas import ErrorCode, ErrorSeverity
@@ -19,6 +19,70 @@ from src.services.user_service import UserService
 from src.api.middleware.exceptions import ResourceNotFoundException, WrextValidationException
 
 router = APIRouter()
+
+
+async def send_data_export_email_task(
+    email: str,
+    name: str,
+    export_id: str,
+    export_json: str,
+    export_request,
+    frontend_url: str,
+    user_id: str
+):
+    """
+    Background task to send data export email using EmailService.
+
+    Args:
+        email: Recipient email address
+        name: User's name for personalization
+        export_id: Unique export ID
+        export_json: JSON export data
+        export_request: Export request details
+        frontend_url: Frontend URL for links
+        user_id: User ID for email tracking
+    """
+    from src.api.database.async_database import get_async_db_context
+
+    try:
+        async with get_async_db_context() as async_db:
+            email_service = EmailService(async_db)
+
+            body_html = f"""
+            <h2>Your Data Export is Ready</h2>
+            <p>Hello {name},</p>
+            <p>Your requested data export has been generated.</p>
+            <p><strong>Export ID:</strong> {export_id}</p>
+            <p><strong>Generated at:</strong> {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}</p>
+
+            <h3>Export Contents:</h3>
+            <ul>
+                <li>Profile Information: {'✓' if export_request.include_profile else '✗'}</li>
+                <li>Role Assignments: {'✓' if export_request.include_roles else '✗'}</li>
+                <li>Workspace Memberships: {'✓' if export_request.include_workspaces else '✗'}</li>
+                <li>Activity Logs: {'✓' if export_request.include_activity else '✗'}</li>
+            </ul>
+
+            <p>Your data is included below as JSON.</p>
+            <p><a href="{frontend_url}">Return to WREXT</a></p>
+
+            <hr>
+            <pre style="background: #f4f4f4; padding: 15px; border-radius: 5px; overflow-x: auto;">
+{export_json}
+            </pre>
+            """
+
+            await email_service.send_email(
+                to=email,
+                subject="Your WREXT Data Export",
+                html=body_html,
+                user_id=UUID(user_id),
+                template_type="data_export",
+                tags={"type": "user_management", "action": "data_export"}
+            )
+            logger.info(f"Data export email sent successfully to {email}")
+    except Exception as e:
+        logger.error(f"Failed to send data export email to {email}: {str(e)}", exc_info=True)
 
 
 @router.get("/users")
@@ -374,34 +438,16 @@ async def export_user_data(
         # Get frontend URL
         frontend_url = os.getenv("FRONTEND_URL", "http://localhost:3000")
 
-        # Send email with data export in background
+        # Send email with data export in background using EmailService
         background_tasks.add_task(
-            send_email,
-            to=db_user.email,
-            subject="Your WREXT Data Export",
-            body=f"""
-            <h2>Your Data Export is Ready</h2>
-            <p>Hello {db_user.first_name or db_user.username},</p>
-            <p>Your requested data export has been generated.</p>
-            <p><strong>Export ID:</strong> {export_id}</p>
-            <p><strong>Generated at:</strong> {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}</p>
-
-            <h3>Export Contents:</h3>
-            <ul>
-                <li>Profile Information: {'✓' if export_request.include_profile else '✗'}</li>
-                <li>Role Assignments: {'✓' if export_request.include_roles else '✗'}</li>
-                <li>Workspace Memberships: {'✓' if export_request.include_workspaces else '✗'}</li>
-                <li>Activity Logs: {'✓' if export_request.include_activity else '✗'}</li>
-            </ul>
-
-            <p>Your data is attached as a JSON file to this email.</p>
-            <p><a href="{frontend_url}">Return to WREXT</a></p>
-
-            <hr>
-            <pre style="background: #f4f4f4; padding: 15px; border-radius: 5px; overflow-x: auto;">
-{export_json}
-            </pre>
-            """
+            send_data_export_email_task,
+            email=db_user.email,
+            name=db_user.first_name or db_user.username,
+            export_id=export_id,
+            export_json=export_json,
+            export_request=export_request,
+            frontend_url=frontend_url,
+            user_id=str(user_id)
         )
 
         logger.info(f"Data export {export_id} generated for user {user_id}")

@@ -264,37 +264,74 @@ def get_default_template(template_type: str) -> Optional[Dict[str, str]]:
     return DEFAULT_TEMPLATES.get(template_type)
 
 
-def get_workspace_template(db, workspace_id: str, template_type: str) -> Dict[str, str]:
+async def get_workspace_template(db, workspace_id: str, template_type: str) -> Dict[str, str]:
     """
     Get email template for a workspace, falling back to default if not found.
 
+    Lookup order:
+    1. Workspace-specific custom template (workspace_id matches, is_default=False)
+    2. Database default template (is_default=True)
+    3. Hardcoded default template
+    4. Generic fallback
+
     Args:
-        db: Database session
+        db: Async database session
         workspace_id: ID of the workspace
-        template_type: Type of template
+        template_type: Type of template (string value like "workspace_invitation")
 
     Returns:
         Dictionary with 'subject' and 'body' keys
     """
-    from src.api.models.workspace_models.email_template import EmailTemplate
+    from sqlalchemy import select, or_
+    from src.api.models.workspace_models.email_template import EmailTemplate, TemplateType
 
-    # Try to find active custom template for workspace
-    custom_template = db.query(EmailTemplate).filter(
-        EmailTemplate.workspace_id == workspace_id,
-        EmailTemplate.template_type == template_type,
-        EmailTemplate.is_active == True
-    ).first()
+    try:
+        # Convert string to TemplateType enum for proper database comparison
+        enum_value = TemplateType(template_type)
 
-    if custom_template:
-        return {
-            "subject": custom_template.subject,
-            "body": custom_template.body
-        }
+        # First, try to find active custom template for this specific workspace
+        query = select(EmailTemplate).where(
+            EmailTemplate.workspace_id == workspace_id,
+            EmailTemplate.template_type == enum_value,
+            EmailTemplate.is_active == True,
+            EmailTemplate.is_default == False
+        )
+        result = await db.execute(query)
+        custom_template = result.scalar_one_or_none()
 
-    # Fall back to default template
-    default = get_default_template(template_type)
-    if default:
-        return default
+        if custom_template:
+            return {
+                "subject": custom_template.subject,
+                "body": custom_template.body
+            }
+
+        # Second, try to find database default template (is_default=True)
+        default_query = select(EmailTemplate).where(
+            EmailTemplate.workspace_id == workspace_id,
+            EmailTemplate.template_type == enum_value,
+            EmailTemplate.is_active == True,
+            EmailTemplate.is_default == True
+        )
+        result = await db.execute(default_query)
+        db_default_template = result.scalar_one_or_none()
+
+        if db_default_template:
+            return {
+                "subject": db_default_template.subject,
+                "body": db_default_template.body
+            }
+    except ValueError:
+        # If enum conversion fails, continue to hardcoded defaults
+        pass
+    except Exception as e:
+        # If database query fails, rollback and continue to hardcoded defaults
+        await db.rollback()
+        pass
+
+    # Third, fall back to hardcoded default template
+    hardcoded_default = get_default_template(template_type)
+    if hardcoded_default:
+        return hardcoded_default
 
     # Ultimate fallback
     return {
@@ -303,7 +340,7 @@ def get_workspace_template(db, workspace_id: str, template_type: str) -> Dict[st
     }
 
 
-def render_workspace_email(
+async def render_workspace_email(
     db,
     workspace_id: str,
     template_type: str,
@@ -313,7 +350,7 @@ def render_workspace_email(
     Get and render an email template for a workspace.
 
     Args:
-        db: Database session
+        db: Async database session
         workspace_id: ID of the workspace
         template_type: Type of template
         variables: Dictionary of variable values to substitute
@@ -321,7 +358,7 @@ def render_workspace_email(
     Returns:
         Dictionary with rendered 'subject' and 'body'
     """
-    template = get_workspace_template(db, workspace_id, template_type)
+    template = await get_workspace_template(db, workspace_id, template_type)
 
     return {
         "subject": render_template(template["subject"], variables),

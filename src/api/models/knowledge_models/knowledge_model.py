@@ -6,6 +6,38 @@ from src.api.models.base import SerializableMixin
 import uuid
 from datetime import datetime, timezone
 
+
+# Knowledge Base (new model)
+class KnowledgeBase(Base, SerializableMixin):
+    """Knowledge Base model - Groups knowledge items (web, file, text)."""
+    __tablename__ = "knowledge_base"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, unique=True, nullable=False)
+    workspace_id = Column(UUID(as_uuid=True), ForeignKey("workspace.id", ondelete="CASCADE"), nullable=False)
+
+    name = Column(String(255), nullable=False)
+    description = Column(Text, nullable=True)
+    type = Column(String(50), nullable=False, default="custom")  # 'default' or 'custom'
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
+    updated_at = Column(DateTime(timezone=True), onupdate=lambda: datetime.now(timezone.utc), nullable=True)
+
+    # Relationships
+    workspace = relationship("WorkspaceModel", back_populates="knowledge_bases")
+    websites = relationship("Website", back_populates="knowledge_base", cascade="all, delete-orphan")
+    knowledge_files = relationship("KnowledgeFiles", back_populates="knowledge_base", cascade="all, delete-orphan")
+    text_knowledge = relationship("TextKnowledge", back_populates="knowledge_base", cascade="all, delete-orphan")
+
+    def to_dict(self, **kwargs) -> dict:
+        """Custom serialization with computed fields"""
+        data = super().to_dict(**kwargs)
+        # Add items count
+        data['items_count'] = (
+            len(self.websites or []) +
+            len(self.knowledge_files or []) +
+            len(self.text_knowledge or [])
+        )
+        return data
+
 # Brand Voice
 class BrandVoice(Base, SerializableMixin):
     __tablename__ = "brand_voice"
@@ -31,6 +63,7 @@ class Website(Base, SerializableMixin):
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, unique=True, nullable=False)
     workspace_id = Column(UUID(as_uuid=True), ForeignKey("workspace.id", ondelete="CASCADE"), nullable=False)
+    knowledge_base_id = Column(UUID(as_uuid=True), ForeignKey("knowledge_base.id", ondelete="CASCADE"), nullable=False)
 
     url = Column(String, nullable=False)
     status = Column(String, nullable=False, default="process")
@@ -38,6 +71,7 @@ class Website(Base, SerializableMixin):
     word_count = Column(Integer, nullable=True)
 
     workspace = relationship("WorkspaceModel", back_populates="websites")
+    knowledge_base = relationship("KnowledgeBase", back_populates="websites")
 
     def to_dict(self, **kwargs) -> dict:
         """Custom serialization with computed fields"""
@@ -57,6 +91,7 @@ class KnowledgeFiles(Base, SerializableMixin):
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, unique=True, nullable=False)
     workspace_id = Column(UUID(as_uuid=True), ForeignKey("workspace.id", ondelete="CASCADE"), nullable=False)
+    knowledge_base_id = Column(UUID(as_uuid=True), ForeignKey("knowledge_base.id", ondelete="CASCADE"), nullable=False)
 
     file_name = Column(String, nullable=False)
     file_type = Column(String, nullable=False)
@@ -73,6 +108,7 @@ class KnowledgeFiles(Base, SerializableMixin):
     chunk_count = Column(Integer, nullable=True)  # Number of vector chunks
 
     workspace = relationship("WorkspaceModel", back_populates="knowledge_files")
+    knowledge_base = relationship("KnowledgeBase", back_populates="knowledge_files")
 
     def to_dict(self, **kwargs) -> dict:
         """Custom serialization with computed fields and aliases"""
@@ -101,6 +137,7 @@ class TextKnowledge(Base, SerializableMixin):
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, unique=True, nullable=False)
     workspace_id = Column(UUID(as_uuid=True), ForeignKey("workspace.id", ondelete="CASCADE"), nullable=False)
+    knowledge_base_id = Column(UUID(as_uuid=True), ForeignKey("knowledge_base.id", ondelete="CASCADE"), nullable=False)
 
     title = Column(String, nullable=False, default="Untitled Note")
     content = Column(Text, nullable=False)
@@ -110,6 +147,7 @@ class TextKnowledge(Base, SerializableMixin):
     updated_at = Column(DateTime(timezone=True), onupdate=lambda: datetime.now(timezone.utc), nullable=True)
 
     workspace = relationship("WorkspaceModel", back_populates="text_knowledge")
+    knowledge_base = relationship("KnowledgeBase", back_populates="text_knowledge")
 
     def to_dict(self, **kwargs) -> dict:
         """Custom serialization with computed content analysis"""

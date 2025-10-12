@@ -25,7 +25,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi import UploadFile
 
-from src.api.models.knowledge_models.knowledge_model import KnowledgeFiles, TextKnowledge, Website
+from src.api.models.knowledge_models.knowledge_model import KnowledgeFiles, TextKnowledge, Website, KnowledgeBase
 from src.utils.logger import logger
 from src.utils.file_upload_utils import validate_and_store_file, delete_file
 from src.utils.utils import load_split_file_data
@@ -37,6 +37,7 @@ from src.api.middleware.exceptions import (
     DuplicateResourceException,
     WrextExternalServiceException
 )
+from src.services.knowledge_base_service import KnowledgeBaseService
 
 
 class KnowledgeService:
@@ -56,7 +57,8 @@ class KnowledgeService:
         workspace_id: UUID,
         file: UploadFile,
         allowed_types: List[str],
-        max_size_mb: int = 10
+        max_size_mb: int = 10,
+        knowledge_base_id: Optional[UUID] = None
     ) -> KnowledgeFiles:
         """
         Add file knowledge to workspace.
@@ -72,6 +74,7 @@ class KnowledgeService:
             file: Uploaded file
             allowed_types: List of allowed MIME types
             max_size_mb: Maximum file size in MB
+            knowledge_base_id: Optional knowledge base UUID (uses default if None)
 
         Returns:
             Created KnowledgeFiles object
@@ -81,6 +84,11 @@ class KnowledgeService:
             WrextValidationException: If file validation fails
             WrextExternalServiceException: If vector store fails
         """
+        # Get or use default knowledge base
+        if knowledge_base_id is None:
+            kb_service = KnowledgeBaseService(self.db)
+            kb = await kb_service.get_default_knowledge_base(workspace_id)
+            knowledge_base_id = kb.id
         # Validate and store file securely
         file_metadata = await validate_and_store_file(
             file=file,
@@ -120,6 +128,7 @@ class KnowledgeService:
         # Save metadata in DB
         new_knowledge = KnowledgeFiles(
             workspace_id=workspace_id,
+            knowledge_base_id=knowledge_base_id,
             file_name=file_metadata["safe_filename"],
             file_type=file_metadata["mime_type"],
             file_size=file_metadata["size"],
@@ -246,7 +255,8 @@ class KnowledgeService:
         self,
         workspace_id: UUID,
         title: str,
-        content: str
+        content: str,
+        knowledge_base_id: Optional[UUID] = None
     ) -> TextKnowledge:
         """
         Add text knowledge to workspace.
@@ -255,16 +265,24 @@ class KnowledgeService:
             workspace_id: Workspace UUID
             title: Knowledge title
             content: Knowledge content
+            knowledge_base_id: Optional knowledge base UUID (uses default if None)
 
         Returns:
             Created TextKnowledge object
         """
+        # Get or use default knowledge base
+        if knowledge_base_id is None:
+            kb_service = KnowledgeBaseService(self.db)
+            kb = await kb_service.get_default_knowledge_base(workspace_id)
+            knowledge_base_id = kb.id
+
         # Split content into chunks
         chunks = [content]  # Simplified - should use proper chunking
 
         # Save to database
         new_knowledge = TextKnowledge(
             workspace_id=workspace_id,
+            knowledge_base_id=knowledge_base_id,
             title=title,
             content=content
         )
@@ -412,8 +430,19 @@ class KnowledgeService:
         knowledge = await self._get_website_or_404(web_id, workspace_id)
         return knowledge.to_dict()
 
-    async def add_web_knowledge(self, workspace_id: UUID, url: str) -> Dict[str, Any]:
+    async def add_web_knowledge(
+        self,
+        workspace_id: UUID,
+        url: str,
+        knowledge_base_id: Optional[UUID] = None
+    ) -> Dict[str, Any]:
         """Create a new web knowledge entry by scraping the provided URL."""
+        # Get or use default knowledge base
+        if knowledge_base_id is None:
+            kb_service = KnowledgeBaseService(self.db)
+            kb = await kb_service.get_default_knowledge_base(workspace_id)
+            knowledge_base_id = kb.id
+
         result = await self.db.execute(
             select(Website).where(
                 Website.workspace_id == workspace_id,
@@ -441,6 +470,7 @@ class KnowledgeService:
 
         knowledge = Website(
             workspace_id=workspace_id,
+            knowledge_base_id=knowledge_base_id,
             url=result_entry.url,
             status="trained",
             char_count=len(content),

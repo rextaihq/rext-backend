@@ -342,50 +342,162 @@ def get_trial_statistics(db: Session) -> Dict:
 
 
 # ============================================================================
-# EMAIL NOTIFICATION HELPERS (TO BE IMPLEMENTED WITH EMAIL SERVICE)
+# EMAIL NOTIFICATION HELPERS
 # ============================================================================
 
-def send_trial_expiring_notification(user_email: str, days_remaining: int, plan_name: str) -> bool:
+async def send_trial_expiring_notification_async(
+    user_email: str,
+    user_id: str,
+    days_remaining: int,
+    plan_name: str
+) -> bool:
     """
-    Send email notification that trial is expiring soon.
+    Send email notification that trial is expiring soon (async version).
 
     Args:
         user_email: User's email address
+        user_id: User ID for tracking
         days_remaining: Number of days until trial expires
         plan_name: Name of the subscription plan
 
     Returns:
         True if email sent successfully, False otherwise
-
-    Note:
-        This is a placeholder. Implement with actual email service (Task 5.4 or later).
     """
-    logger.info(f"TODO: Send trial expiring email to {user_email} (Plan: {plan_name}, Days: {days_remaining})")
-    # TODO: Integrate with email service
-    # Example:
-    # send_email(
-    #     to=user_email,
-    #     subject=f"Your {plan_name} trial expires in {days_remaining} days",
-    #     template="trial_expiring",
-    #     context={"days_remaining": days_remaining, "plan_name": plan_name}
-    # )
-    return False
+    from src.services.email_service import EmailService
+    from src.api.database.async_database import get_async_db_context
+    from uuid import UUID
+
+    try:
+        async with get_async_db_context() as db:
+            email_service = EmailService(db)
+
+            # Build HTML content
+            html_content = f"""
+                <h2>Your {plan_name} Trial is Expiring Soon</h2>
+                <p>Hello,</p>
+                <p>Your {plan_name} trial will expire in <strong>{days_remaining} day(s)</strong>.</p>
+                <p>To continue enjoying premium features, please add a payment method to convert your trial to an active subscription.</p>
+                <p>If you don't add a payment method, you'll be automatically downgraded to our free plan when your trial expires.</p>
+                <h3>What happens next?</h3>
+                <ul>
+                    <li><strong>Add Payment:</strong> Convert to paid subscription and keep all premium features</li>
+                    <li><strong>Do Nothing:</strong> Automatically downgrade to free plan with limited features</li>
+                </ul>
+                <p><a href="https://app.wrext.com/settings/subscription" style="background-color: #4CAF50; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">Manage Subscription</a></p>
+                <p>Thank you for trying WREXT!</p>
+            """
+
+            await email_service.send_email(
+                to=user_email,
+                subject=f"Your {plan_name} trial expires in {days_remaining} day(s)",
+                html=html_content,
+                user_id=UUID(user_id),
+                template_type="trial_expiring",
+                tags={"type": "subscription", "action": "trial_expiring", "days_remaining": str(days_remaining)}
+            )
+
+            logger.info(f"Trial expiring notification sent to {user_email}")
+            return True
+
+    except Exception as e:
+        logger.error(f"Failed to send trial expiring notification to {user_email}: {str(e)}", exc_info=True)
+        return False
 
 
-def send_trial_expired_notification(user_email: str, downgraded_to_free: bool) -> bool:
+async def send_trial_expired_notification_async(
+    user_email: str,
+    user_id: str,
+    downgraded_to_free: bool,
+    plan_name: str
+) -> bool:
     """
-    Send email notification that trial has expired.
+    Send email notification that trial has expired (async version).
 
     Args:
         user_email: User's email address
+        user_id: User ID for tracking
         downgraded_to_free: Whether user was downgraded to free plan
+        plan_name: Name of the subscription plan that expired
 
     Returns:
         True if email sent successfully, False otherwise
-
-    Note:
-        This is a placeholder. Implement with actual email service.
     """
-    logger.info(f"TODO: Send trial expired email to {user_email} (Downgraded: {downgraded_to_free})")
-    # TODO: Integrate with email service
-    return False
+    from src.services.email_service import EmailService
+    from src.api.database.async_database import get_async_db_context
+    from uuid import UUID
+
+    try:
+        async with get_async_db_context() as db:
+            email_service = EmailService(db)
+
+            if downgraded_to_free:
+                html_content = f"""
+                    <h2>Your {plan_name} Trial Has Ended</h2>
+                    <p>Hello,</p>
+                    <p>Your {plan_name} trial has expired and you've been moved to our <strong>Free Plan</strong>.</p>
+                    <p>You can still use WREXT with our free plan features, but some premium features are now unavailable.</p>
+                    <h3>Want to upgrade?</h3>
+                    <p>Unlock all premium features by subscribing to a paid plan:</p>
+                    <ul>
+                        <li>Unlimited workspaces</li>
+                        <li>Advanced analytics</li>
+                        <li>Priority support</li>
+                        <li>And much more!</li>
+                    </ul>
+                    <p><a href="https://app.wrext.com/settings/subscription" style="background-color: #4CAF50; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">Upgrade Now</a></p>
+                    <p>Thank you for using WREXT!</p>
+                """
+            else:
+                html_content = f"""
+                    <h2>Your {plan_name} Trial Has Ended</h2>
+                    <p>Hello,</p>
+                    <p>Your {plan_name} trial has expired.</p>
+                    <p>Your subscription is now active with the payment method on file. You'll continue to enjoy all premium features!</p>
+                    <p>Thank you for choosing WREXT!</p>
+                    <p><a href="https://app.wrext.com/settings/subscription" style="color: #4CAF50;">View Subscription Details</a></p>
+                """
+
+            await email_service.send_email(
+                to=user_email,
+                subject=f"Your {plan_name} trial has ended",
+                html=html_content,
+                user_id=UUID(user_id),
+                template_type="trial_expired",
+                tags={"type": "subscription", "action": "trial_expired", "downgraded": str(downgraded_to_free)}
+            )
+
+            logger.info(f"Trial expired notification sent to {user_email} (downgraded: {downgraded_to_free})")
+            return True
+
+    except Exception as e:
+        logger.error(f"Failed to send trial expired notification to {user_email}: {str(e)}", exc_info=True)
+        return False
+
+
+# Legacy sync wrappers for backwards compatibility
+def send_trial_expiring_notification(user_email: str, days_remaining: int, plan_name: str, user_id: Optional[str] = None) -> bool:
+    """
+    Send email notification that trial is expiring soon (sync wrapper).
+
+    Note: This is a synchronous wrapper for backwards compatibility.
+    For new code, use send_trial_expiring_notification_async directly.
+    """
+    import asyncio
+    if not user_id:
+        logger.warning(f"user_id not provided for trial expiring notification to {user_email}")
+        return False
+    return asyncio.run(send_trial_expiring_notification_async(user_email, user_id, days_remaining, plan_name))
+
+
+def send_trial_expired_notification(user_email: str, downgraded_to_free: bool, plan_name: str = "Premium", user_id: Optional[str] = None) -> bool:
+    """
+    Send email notification that trial has expired (sync wrapper).
+
+    Note: This is a synchronous wrapper for backwards compatibility.
+    For new code, use send_trial_expired_notification_async directly.
+    """
+    import asyncio
+    if not user_id:
+        logger.warning(f"user_id not provided for trial expired notification to {user_email}")
+        return False
+    return asyncio.run(send_trial_expired_notification_async(user_email, user_id, downgraded_to_free, plan_name))

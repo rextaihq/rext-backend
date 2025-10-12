@@ -92,7 +92,7 @@ class WorkspaceService:
         workspace = await self.create_workspace(
             user_id=user_id,
             name=name,
-            timezone=timezone,
+            tz=timezone,
             url=url,
         )
         await self.db.refresh(workspace)
@@ -253,7 +253,7 @@ class WorkspaceService:
         updated = await self.update_workspace(
             workspace_id=workspace_id,
             name=name,
-            timezone=timezone,
+            tz=timezone,
             url=url,
         )
         await self.db.refresh(updated)
@@ -524,7 +524,7 @@ class WorkspaceService:
         self,
         user_id: UUID,
         name: str,
-        timezone: Optional[str] = None,
+        tz: Optional[str] = None,
         url: Optional[str] = None,
         slug: Optional[str] = None
     ) -> WorkspaceModel:
@@ -539,7 +539,7 @@ class WorkspaceService:
         Args:
             user_id: User UUID (owner)
             name: Workspace name
-            timezone: IANA timezone identifier (e.g., 'America/New_York', 'UTC')
+            tz: IANA timezone identifier (e.g., 'America/New_York', 'UTC')
             url: Workspace URL
             slug: Optional pre-generated slug
 
@@ -574,7 +574,7 @@ class WorkspaceService:
             user_id=user_id,
             name=name,
             slug=slug,
-            timezone=timezone,
+            timezone=tz,
             url=url,
             created_at=datetime.now(timezone.utc),
             updated_at=datetime.now(timezone.utc)
@@ -630,7 +630,7 @@ class WorkspaceService:
         self,
         workspace_id: UUID,
         name: Optional[str] = None,
-        timezone: Optional[str] = None,
+        tz: Optional[str] = None,
         url: Optional[str] = None
     ) -> WorkspaceModel:
         """
@@ -639,7 +639,7 @@ class WorkspaceService:
         Args:
             workspace_id: Workspace UUID
             name: New workspace name (optional)
-            timezone: New timezone (optional)
+            tz: New timezone (optional)
             url: New URL (optional)
 
         Returns:
@@ -656,8 +656,8 @@ class WorkspaceService:
             base_slug = self._slugify(name)
             workspace.slug = await self._generate_unique_slug(base_slug, workspace.user_id, exclude_id=workspace_id)
 
-        if timezone is not None:
-            workspace.timezone = timezone
+        if tz is not None:
+            workspace.timezone = tz
 
         if url is not None:
             workspace.url = url

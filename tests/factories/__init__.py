@@ -18,6 +18,7 @@ from src.api.models.content_models.content import Content
 from src.api.models.topic_models.topic_models import TopicsModel
 from src.api.models.user_models.invitations import UserInvitations
 from src.api.models.user_models.roles import Role
+from src.api.models.knowledge_models.knowledge_model import KnowledgeBase, Website, KnowledgeFiles, TextKnowledge
 
 
 # Base async factory
@@ -77,8 +78,8 @@ class WorkspaceFactory(AsyncFactory):
     user_id = LazyFunction(uuid4)  # Override this in tests with actual user.id
     name = Faker("company")
     slug = LazyAttribute(lambda o: o.name.lower().replace(" ", "-").replace(",", "").replace(".", ""))
-    description = Faker("catch_phrase")
     url = Faker("url")
+    timezone = "UTC"
     created_at = LazyFunction(lambda: datetime.utcnow())
     updated_at = LazyFunction(lambda: datetime.utcnow())
 
@@ -239,5 +240,119 @@ class InvitationFactory(AsyncFactory):
         if "invited_by_user_id" not in kwargs:
             user = await UserFactory.create()
             kwargs["invited_by_user_id"] = user.id
-        
+
+        return await super().create(**kwargs)
+
+
+class KnowledgeBaseFactory(AsyncFactory):
+    """Factory for KnowledgeBase model"""
+
+    class Meta:
+        model = KnowledgeBase
+
+    id = LazyFunction(uuid4)
+    workspace_id = LazyFunction(uuid4)
+    name = Faker("catch_phrase")
+    description = Faker("text", max_nb_chars=200)
+    type = "custom"
+    created_at = LazyFunction(lambda: datetime.now(timezone.utc))
+    updated_at = None
+
+    @classmethod
+    async def create(cls, **kwargs):
+        """Create knowledge base, automatically creating workspace if workspace_id not provided"""
+        if 'workspace_id' not in kwargs:
+            workspace = await WorkspaceFactory.create()
+            kwargs['workspace_id'] = workspace.id
+        return await super().create(**kwargs)
+
+
+class WebsiteFactory(AsyncFactory):
+    """Factory for Website model"""
+
+    class Meta:
+        model = Website
+
+    id = LazyFunction(uuid4)
+    workspace_id = LazyFunction(uuid4)
+    knowledge_base_id = LazyFunction(uuid4)
+    url = Faker("url")
+    status = "trained"
+    char_count = 1000
+    word_count = 200
+
+    @classmethod
+    async def create(cls, **kwargs):
+        """Create website with auto-dependencies"""
+        if 'workspace_id' not in kwargs:
+            workspace = await WorkspaceFactory.create()
+            kwargs['workspace_id'] = workspace.id
+
+        if 'knowledge_base_id' not in kwargs:
+            kb = await KnowledgeBaseFactory.create(workspace_id=kwargs['workspace_id'])
+            kwargs['knowledge_base_id'] = kb.id
+
+        return await super().create(**kwargs)
+
+
+class KnowledgeFilesFactory(AsyncFactory):
+    """Factory for KnowledgeFiles model"""
+
+    class Meta:
+        model = KnowledgeFiles
+
+    id = LazyFunction(uuid4)
+    workspace_id = LazyFunction(uuid4)
+    knowledge_base_id = LazyFunction(uuid4)
+    file_name = Faker("file_name")
+    file_type = "application/pdf"
+    file_size = 1024000
+    file_path = LazyAttribute(lambda o: f"/uploads/{o.file_name}")
+    status = "completed"
+    file_hash = LazyFunction(lambda: f"hash_{uuid4().hex}")
+    mime_type = "application/pdf"
+    chunk_count = 10
+    created_at = LazyFunction(lambda: datetime.now(timezone.utc))
+
+    @classmethod
+    async def create(cls, **kwargs):
+        """Create knowledge file with auto-dependencies"""
+        if 'workspace_id' not in kwargs:
+            workspace = await WorkspaceFactory.create()
+            kwargs['workspace_id'] = workspace.id
+
+        if 'knowledge_base_id' not in kwargs:
+            kb = await KnowledgeBaseFactory.create(workspace_id=kwargs['workspace_id'])
+            kwargs['knowledge_base_id'] = kb.id
+
+        return await super().create(**kwargs)
+
+
+class TextKnowledgeFactory(AsyncFactory):
+    """Factory for TextKnowledge model"""
+
+    class Meta:
+        model = TextKnowledge
+
+    id = LazyFunction(uuid4)
+    workspace_id = LazyFunction(uuid4)
+    knowledge_base_id = LazyFunction(uuid4)
+    title = Faker("sentence", nb_words=5)
+    content = Faker("text", max_nb_chars=500)
+    tags = None
+    custom_metadata = None
+    created_at = LazyFunction(lambda: datetime.now(timezone.utc))
+    updated_at = None
+
+    @classmethod
+    async def create(cls, **kwargs):
+        """Create text knowledge with auto-dependencies"""
+        if 'workspace_id' not in kwargs:
+            workspace = await WorkspaceFactory.create()
+            kwargs['workspace_id'] = workspace.id
+
+        if 'knowledge_base_id' not in kwargs:
+            kb = await KnowledgeBaseFactory.create(workspace_id=kwargs['workspace_id'])
+            kwargs['knowledge_base_id'] = kb.id
+
         return await super().create(**kwargs)

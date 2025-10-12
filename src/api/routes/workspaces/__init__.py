@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, Request
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from uuid import UUID
 
@@ -7,6 +8,7 @@ from .workspace_brand_voice import router as brand_voice_router
 from .workspace_members import router as members_router
 from .workspace_invitations import router as invitations_router
 from src.api.database.async_database import get_async_db
+from src.api.models.user_models.roles import Role
 from src.api.schema.workspace_schema import WorkspaceSchema
 from src.api.security.dependencies import get_current_user
 from src.services.workspace_service import WorkspaceService
@@ -24,10 +26,10 @@ workspaces_router.include_router(brand_voice_router)
 workspaces_router.include_router(members_router)
 workspaces_router.include_router(invitations_router)
 
-# GET endpoints
+# GET endpoints - ORDER MATTERS! More specific routes must come before parameterized routes
 workspaces_router.add_api_route("", get_workspaces, methods=["GET"], name="get_workspaces_alias")
 workspaces_router.add_api_route("/slug/{workspace_slug}", get_workspace_by_slug, methods=["GET"], name="get_workspace_by_slug_alias")
-workspaces_router.add_api_route("/{workspace_id}", get_workspace_by_id_path, methods=["GET"], name="get_workspace_by_id_restful")
+# Note: /{workspace_id} must be added AFTER all other specific routes to avoid capturing them
 
 
 # POST/PUT/DELETE endpoints - RESTful wrappers
@@ -122,5 +124,51 @@ async def delete_workspace_restful(
         request=request,
         message="Workspace deleted successfully",
     )
+
+
+@workspaces_router.get("/available-roles")
+@db_transaction_handler("get available roles", auto_commit=False)
+async def get_available_roles(
+    request: Request,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Get available roles for workspace member invitations.
+
+    Returns non-system roles that can be assigned to workspace members.
+    """
+    # Fetch all non-system roles ordered by hierarchy
+    query = (
+        select(Role)
+        .where(Role.is_system_role == False)
+        .order_by(Role.hierarchy_level.desc())
+    )
+    result = await db.execute(query)
+    roles = result.scalars().all()
+
+    roles_data = [
+        {
+            "id": str(role.id),
+            "name": role.name,
+            "display_name": role.display_name,
+            "description": role.description,
+            "is_system_role": role.is_system_role,
+            "hierarchy_level": role.hierarchy_level,
+            "created_at": role.created_at.isoformat() if role.created_at else None,
+            "updated_at": role.updated_at.isoformat() if role.updated_at else None,
+        }
+        for role in roles
+    ]
+
+    return success(
+        data={"roles": roles_data, "total_count": len(roles_data)},
+        request=request,
+        message=f"Retrieved {len(roles_data)} available role(s)",
+    )
+
+
+# Add parameterized routes LAST to avoid capturing specific routes
+workspaces_router.add_api_route("/{workspace_id}", get_workspace_by_id_path, methods=["GET"], name="get_workspace_by_id_restful")
 
 __all__ = ["router", "workspaces_router"]

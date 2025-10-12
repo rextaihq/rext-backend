@@ -21,6 +21,7 @@ class WebKnowledgeCreateRequest(BaseModel):
 
     url: HttpUrl
     title: Optional[constr(strip_whitespace=True, min_length=1, max_length=255)] = None
+    knowledge_base_id: Optional[UUID] = None
 
 
 class WebKnowledgeUpdateRequest(BaseModel):
@@ -35,6 +36,7 @@ class TextKnowledgeCreateRequest(BaseModel):
     title: constr(strip_whitespace=True, min_length=1, max_length=255)
     content: constr(strip_whitespace=True, min_length=10, max_length=5000)
     tags: Optional[list[constr(strip_whitespace=True, min_length=1, max_length=60)]] = None
+    knowledge_base_id: Optional[UUID] = None
 
 
 class TextKnowledgeUpdateRequest(BaseModel):
@@ -161,7 +163,11 @@ async def create_web_knowledge(
     if getattr(payload.url, "path", "/") == "/" and not getattr(payload.url, "query", "") and not getattr(payload.url, "fragment", ""):
         raw_url = raw_url.rstrip("/")
 
-    knowledge = await service.add_web_knowledge(workspace.id, raw_url)
+    knowledge = await service.add_web_knowledge(
+        workspace.id,
+        raw_url,
+        knowledge_base_id=payload.knowledge_base_id
+    )
 
     # Update title if provided
     if payload.title:
@@ -291,6 +297,7 @@ async def create_file_knowledge(
     workspace_id: str,
     request: Request,
     file: Annotated[UploadFile, File(...)],
+    knowledge_base_id: Optional[str] = None,
     db: AsyncSession = Depends(get_async_db),
     user: dict = Depends(get_current_user),
 ):
@@ -301,10 +308,14 @@ async def create_file_knowledge(
         user=user,
     )
 
+    # Parse knowledge_base_id if provided
+    kb_id = UUID(knowledge_base_id) if knowledge_base_id else None
+
     service = KnowledgeService(db)
     knowledge = await service.add_file_knowledge(
         workspace.id,
         file,
+        knowledge_base_id=kb_id,
         allowed_types=[
             # Documents
             "application/pdf",
@@ -466,6 +477,7 @@ async def create_text_knowledge(
         workspace.id,
         payload.title,
         payload.content,
+        knowledge_base_id=payload.knowledge_base_id,
     )
 
     if payload.tags:

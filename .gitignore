@@ -52,3 +52,7 @@ profile_default/
 alembic/__pycache__/
 alembic/versions/__pycache__/            
 uv.lock
+
+# Email (React Email templates)
+.react-email/
+emails/.react-email/

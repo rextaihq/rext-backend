@@ -87,7 +87,7 @@ class TestKnowledgeServiceAddFileKnowledge:
 
         # Create existing file knowledge with same hash
         existing_hash = "duplicate_hash_123"
-        existing = KnowledgeFiles(
+        existing = await setup_factories["knowledge_files"].create(
             workspace_id=workspace.id,
             file_name="existing.pdf",
             file_hash=existing_hash,
@@ -97,8 +97,6 @@ class TestKnowledgeServiceAddFileKnowledge:
             mime_type="application/pdf",
             chunk_count=5
         )
-        db_session.add(existing)
-        await db_session.flush()
 
         # Create mock file with same hash
         file = UploadFile(filename="duplicate.pdf", file=BytesIO(b"content"))
@@ -203,8 +201,8 @@ class TestKnowledgeServiceDeleteFileKnowledge:
         # Arrange
         workspace = await setup_factories["workspace"].create()
 
-        # Create file knowledge
-        knowledge = KnowledgeFiles(
+        # Create file knowledge using factory
+        knowledge = await setup_factories["knowledge_files"].create(
             workspace_id=workspace.id,
             file_name="test.pdf",
             file_hash="hash123",
@@ -214,9 +212,6 @@ class TestKnowledgeServiceDeleteFileKnowledge:
             mime_type="application/pdf",
             chunk_count=5
         )
-        db_session.add(knowledge)
-        await db_session.flush()
-        await db_session.refresh(knowledge)
 
         service = KnowledgeService(db_session)
 
@@ -256,7 +251,7 @@ class TestKnowledgeServiceDeleteFileKnowledge:
         workspace1 = await setup_factories["workspace"].create()
         workspace2 = await setup_factories["workspace"].create()
 
-        knowledge = KnowledgeFiles(
+        knowledge = await setup_factories["knowledge_files"].create(
             workspace_id=workspace1.id,
             file_name="test.pdf",
             file_hash="hash123",
@@ -266,9 +261,6 @@ class TestKnowledgeServiceDeleteFileKnowledge:
             mime_type="application/pdf",
             chunk_count=5
         )
-        db_session.add(knowledge)
-        await db_session.flush()
-        await db_session.refresh(knowledge)
 
         service = KnowledgeService(db_session)
 

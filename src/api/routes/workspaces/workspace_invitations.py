@@ -22,9 +22,9 @@ from src.api.schema.invitation_schema import (
     WorkspaceInvitationCreateRequest,
 )
 from src.api.security.dependencies import get_current_user
-from src.api.tasks.send_mail import send_email
+from src.services.email_service import EmailService
 from src.services.invitation_service import InvitationService
-from src.utils.audit_helper import create_audit_log
+from src.utils.audit_helper import create_audit_log_async
 from src.utils.auth_utils import verify_current_user
 from src.utils.invitation_utils import is_invitation_expired
 from src.utils.logger import logger
@@ -35,6 +35,41 @@ from src.utils.email_template_utils import render_workspace_email
 
 
 router = APIRouter(tags=["workspace-invitations"])
+
+
+async def send_workspace_invitation_email_task(
+    email: str,
+    subject: str,
+    body: str,
+    workspace_id: str,
+    invitation_id: str
+):
+    """
+    Background task to send workspace invitation email using EmailService.
+
+    Args:
+        email: Recipient email address
+        subject: Email subject
+        body: HTML email body
+        workspace_id: Workspace ID for tracking
+        invitation_id: Invitation ID for reference
+    """
+    from src.api.database.async_database import get_async_db_context
+
+    try:
+        async with get_async_db_context() as async_db:
+            email_service = EmailService(async_db)
+            await email_service.send_email(
+                to=email,
+                subject=subject,
+                html=body,
+                workspace_id=UUID(workspace_id),
+                template_type="workspace_invitation",
+                tags={"type": "workspace", "action": "invitation", "invitation_id": invitation_id}
+            )
+            logger.info(f"Workspace invitation email sent successfully to {email}")
+    except Exception as e:
+        logger.error(f"Failed to send workspace invitation email to {email}: {str(e)}", exc_info=True)
 
 
 async def _load_role_map(db: AsyncSession, role_ids: Set[UUID]) -> Dict[UUID, Role]:
@@ -183,61 +218,85 @@ async def create_workspace_invitation(
 
     frontend_url = os.getenv("FRONTEND_URL", "http://localhost:3000")
 
-    invitation_link = f"{frontend_url}/invitations/accept?token={invitation.invitation_token}"
+    # Serialize invitation BEFORE async operations to avoid lazy-load issues
+    invitation_data = _serialize_invitation(invitation, role, inviter)
 
-    email_content = render_workspace_email(
+    # Eagerly load attributes before async operations to avoid lazy-load issues
+    workspace_id = workspace.id
+    workspace_name = workspace.name
+    role_id = role.id
+    role_display_name = role.display_name or role.name
+    invitation_id = invitation.id
+    invitation_email = invitation.email
+    invitation_token = invitation.invitation_token
+
+    # Safely access inviter attributes
+    if inviter:
+        inviter_display_name = inviter.display_name
+        inviter_username = inviter.username
+        inviter_email = inviter.email
+    else:
+        inviter_display_name = "A teammate"
+        inviter_username = None
+        inviter_email = None
+
+    invitation_link = f"{frontend_url}/invitations/accept?token={invitation_token}"
+
+    email_content = await render_workspace_email(
         db=db,
-        workspace_id=workspace.id,
+        workspace_id=workspace_id,
         template_type="workspace_invitation",
         variables={
-            "workspace_name": workspace.name,
-            "inviter_name": inviter.display_name if inviter else "A teammate",
-            "recipient_email": invitation.email,
-            "role_name": role.display_name or role.name,
+            "workspace_name": workspace_name,
+            "inviter_name": inviter_display_name,
+            "invitee_name": invitation_email.split('@')[0],  # Use email username as name
+            "invitee_email": invitation_email,
+            "recipient_email": invitation_email,  # Keep for backward compatibility
+            "role_name": role_display_name,
             "invitation_url": invitation_link,
             "expiry_days": str(payload.expiry_days or 7),
         },
     )
 
     background_tasks.add_task(
-        send_email,
-        to=invitation.email,
+        send_workspace_invitation_email_task,
+        email=invitation_email,
         subject=email_content["subject"],
         body=email_content["body"],
+        workspace_id=str(workspace_id),
+        invitation_id=str(invitation_id)
     )
 
-    create_audit_log(
+    await create_audit_log_async(
         db=db,
         user_id=str(user_uuid),
         action="invitation.create",
         resource_type="invitation",
-        resource_id=str(invitation.id),
+        resource_id=str(invitation_id),
         new_values={
-            "email": invitation.email,
-            "workspace_id": str(workspace.id),
-            "role_id": str(role.id),
+            "email": invitation_email,
+            "workspace_id": str(workspace_id),
+            "role_id": str(role_id),
         },
         request=request,
-        workspace_id=workspace.id,
-        username=inviter.username if inviter else None,
-        user_email=inviter.email if inviter else None,
+        workspace_id=workspace_id,
+        username=inviter_username,
+        user_email=inviter_email,
     )
 
     logger.info(
         "Workspace invitation created",
         extra={
-            "workspace_id": str(workspace.id),
-            "invitation_id": str(invitation.id),
-            "invited_email": invitation.email,
+            "workspace_id": str(workspace_id),
+            "invitation_id": str(invitation_id),
+            "invited_email": invitation_email,
             "invited_by": str(user_uuid),
         },
     )
 
     return created(
         data={
-            "invitation": _serialize_invitation(
-                invitation, role, inviter
-            )
+            "invitation": invitation_data
         },
         request=request,
         message="Invitation created successfully",
@@ -321,7 +380,7 @@ async def create_bulk_workspace_invitations(
         except (DuplicateResourceException, BusinessRuleViolationException) as exc:
             failures.append({"email": email, "error": str(exc)})
 
-    create_audit_log(
+    await create_audit_log_async(
         db=db,
         user_id=str(user_uuid),
         action="invitation.bulk_create",
@@ -403,7 +462,7 @@ async def revoke_workspace_invitation(
         revoked_by_user_id=user_uuid,
     )
 
-    create_audit_log(
+    await create_audit_log_async(
         db=db,
         user_id=str(user_uuid),
         action="invitation.revoke",

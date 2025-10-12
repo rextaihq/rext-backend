@@ -1,6 +1,53 @@
 from pydantic import BaseModel, HttpUrl, Field, constr
 from typing import Optional, List
 from uuid import UUID
+from datetime import datetime
+
+# -------------------------------------
+# Knowledge Base Schema
+# -------------------------------------
+class KnowledgeBaseCreateSchema(BaseModel):
+    """Schema for creating a knowledge base"""
+    name: constr(min_length=1, max_length=255) = Field(
+        ...,
+        description="Name of the knowledge base",
+        example="Product Documentation"
+    )
+    description: Optional[str] = Field(
+        None,
+        description="Optional description of the knowledge base",
+        example="Contains all product-related documentation and guides"
+    )
+
+
+class KnowledgeBaseUpdateSchema(BaseModel):
+    """Schema for updating a knowledge base"""
+    name: Optional[constr(min_length=1, max_length=255)] = Field(
+        None,
+        description="Name of the knowledge base",
+        example="Updated Product Documentation"
+    )
+    description: Optional[str] = Field(
+        None,
+        description="Description of the knowledge base",
+        example="Updated description"
+    )
+
+
+class KnowledgeBaseResponseSchema(BaseModel):
+    """Schema for knowledge base response"""
+    id: UUID = Field(..., description="Knowledge base ID")
+    workspace_id: UUID = Field(..., description="Workspace ID")
+    name: str = Field(..., description="Knowledge base name")
+    description: Optional[str] = Field(None, description="Knowledge base description")
+    type: str = Field(..., description="Type: default or custom")
+    items_count: int = Field(0, description="Total number of knowledge items")
+    created_at: datetime = Field(..., description="Creation timestamp")
+    updated_at: Optional[datetime] = Field(None, description="Last update timestamp")
+
+    class Config:
+        from_attributes = True
+
 
 # -------------------------------------
 # Brand Voice Schema
