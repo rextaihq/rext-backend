@@ -30,6 +30,9 @@ from src.api.routes.subscriptions.subscription_routes import router as subscript
 from src.api.routes.subscriptions.checkout_routes import router as checkout_routes_router
 from src.api.routes.subscriptions.webhook_routes import router as webhook_routes_router
 from src.api.routes.subscriptions.admin import router as admin_subscription_routes_router
+from src.api.routes.admin.customer_routes import router as admin_customer_routes_router
+from src.api.routes.admin.monitoring_routes import router as admin_monitoring_routes_router
+from src.api.routes.admin.reports_routes import router as admin_reports_routes_router
 from src.api.routes.audit.modules import router as audit_router
 from src.api.routes.security.security_routes import router as security_router
 from src.api.routes.events import router as events_router
@@ -196,6 +199,9 @@ app.include_router(subscription_routes_router, prefix="/api/v1", tags=["Subscrip
 app.include_router(checkout_routes_router, prefix="/api/v1", tags=["Subscriptions", "Checkout"])
 app.include_router(webhook_routes_router, prefix="/api/v1", tags=["Subscriptions", "Webhooks"])
 app.include_router(admin_subscription_routes_router, prefix="/api/v1")
+app.include_router(admin_customer_routes_router, prefix="/api/v1/admin", tags=["Admin - Customers"])
+app.include_router(admin_monitoring_routes_router, prefix="/api/v1/admin", tags=["Admin - Monitoring"])
+app.include_router(admin_reports_routes_router, prefix="/api/v1/admin", tags=["Admin - Reports"])
 app.include_router(audit_router, prefix="/api/v1", tags=["Audit Logs"])
 app.include_router(security_router, prefix="/api/v1", tags=["Security Monitoring"])
 # Email routes (Phase 3 complete - Python-based templates)
