@@ -348,6 +348,305 @@ class SubscriptionAnalyticsService:
             return 0.0
         return round(sum(lengths) / len(lengths), 1)
 
+    async def get_analytics_overview(self) -> Dict[str, Any]:
+        """Return comprehensive analytics overview combining all key metrics."""
+        # Get basic stats
+        counts = await self._count_by_status(
+            [
+                SubscriptionStatus.ACTIVE,
+                SubscriptionStatus.TRIAL,
+                SubscriptionStatus.CANCELLED,
+                SubscriptionStatus.EXPIRED,
+                SubscriptionStatus.SUSPENDED,
+            ]
+        )
+        total_subscriptions = await self._count_all_subscriptions()
+
+        # Calculate revenue metrics
+        mrr = await self._calculate_mrr(include_trial=True)
+        arr = mrr * 12
+
+        # Calculate churn rate
+        thirty_days_ago = datetime.utcnow() - timedelta(days=30)
+        cancellations_last_month = await self._count_cancellations(thirty_days_ago)
+        churn_rate = self._safe_percentage(cancellations_last_month, counts[SubscriptionStatus.ACTIVE])
+
+        # Calculate trial conversion
+        total_trials_ever = await self._count_trials_ever()
+        converted_trials = await self._count_converted_trials()
+        trial_conversion_rate = self._safe_percentage(converted_trials, total_trials_ever)
+
+        # Get revenue by plan
+        revenue_by_plan = await self._calculate_plan_revenue()
+
+        # Get recent subscriptions
+        recent_subscriptions = await self._get_recent_subscriptions(limit=10)
+
+        # Calculate growth metrics
+        new_revenue_30d = await self._calculate_new_revenue(days=30)
+        growth_rate = self._safe_percentage(new_revenue_30d, mrr)
+
+        return {
+            "data": {
+                "stats": {
+                    "total_subscriptions": total_subscriptions,
+                    "active_subscriptions": counts[SubscriptionStatus.ACTIVE],
+                    "trial_subscriptions": counts[SubscriptionStatus.TRIAL],
+                    "mrr": round(mrr, 2),
+                    "arr": round(arr, 2),
+                    "churn_rate_monthly": round(churn_rate, 2),
+                    "trial_conversion_rate": round(trial_conversion_rate, 2),
+                },
+                "revenue_by_plan": revenue_by_plan,
+                "growth_metrics": {
+                    "new_revenue_30d": round(new_revenue_30d, 2),
+                    "growth_rate": round(growth_rate, 2),
+                },
+                "recent_subscriptions": recent_subscriptions,
+            },
+            "message": "Analytics overview retrieved successfully",
+        }
+
+    async def get_revenue_history(self, period: str = "12_months") -> Dict[str, Any]:
+        """Return historical revenue data for charts."""
+        period_map = {
+            "3_months": 3,
+            "6_months": 6,
+            "12_months": 12,
+        }
+        months = period_map.get(period, 12)
+
+        history_data = []
+        current_date = datetime.utcnow()
+
+        for i in range(months, -1, -1):
+            month_date = current_date - timedelta(days=30 * i)
+            month_start = month_date.replace(day=1)
+
+            # Calculate next month for range
+            if month_date.month == 12:
+                next_month = month_date.replace(year=month_date.year + 1, month=1, day=1)
+            else:
+                next_month = month_date.replace(month=month_date.month + 1, day=1)
+
+            # Get MRR for this month
+            mrr = await self._calculate_mrr_for_period(month_start, next_month)
+
+            # Get new revenue
+            new_revenue = await self._calculate_new_revenue_for_period(month_start, next_month)
+
+            # Get churned revenue
+            churned_revenue = await self._calculate_churned_revenue_for_period(month_start, next_month)
+
+            history_data.append({
+                "month": month_start.strftime("%Y-%m"),
+                "mrr": round(mrr, 2),
+                "new_revenue": round(new_revenue, 2),
+                "churned_revenue": round(churned_revenue, 2),
+                "net_revenue": round(new_revenue - churned_revenue, 2),
+            })
+
+        return {
+            "data": history_data,
+            "message": "Revenue history retrieved successfully",
+        }
+
+    async def get_plan_distribution(self) -> Dict[str, Any]:
+        """Return subscription distribution by plan with percentages."""
+        total_active = await self._count_active_now()
+        plan_data = await self._calculate_plan_revenue()
+
+        # Add percentage to each plan
+        for plan in plan_data:
+            plan["percentage"] = self._safe_percentage(plan["subscription_count"], total_active)
+
+        return {
+            "data": plan_data,
+            "total_subscriptions": total_active,
+            "message": "Plan distribution retrieved successfully",
+        }
+
+    async def get_cohort_retention(self, cohort_months: int = 6) -> Dict[str, Any]:
+        """Return cohort retention analysis."""
+        cohorts = []
+        current_date = datetime.utcnow()
+
+        for i in range(cohort_months, -1, -1):
+            cohort_date = current_date - timedelta(days=30 * i)
+            cohort_month = cohort_date.replace(day=1)
+
+            # Calculate next month
+            if cohort_month.month == 12:
+                next_month = cohort_month.replace(year=cohort_month.year + 1, month=1, day=1)
+            else:
+                next_month = cohort_month.replace(month=cohort_month.month + 1, day=1)
+
+            # Get cohort size (subscriptions started in this month)
+            cohort_size = await self._count_subscriptions_started_in_period(cohort_month, next_month)
+
+            if cohort_size == 0:
+                continue
+
+            cohort_data = {
+                "cohort": cohort_month.strftime("%Y-%m"),
+                "size": cohort_size,
+                "month_0": 100,  # Always 100% at start
+            }
+
+            # Calculate retention for subsequent months
+            for month_offset in range(1, min(6, cohort_months + 1 - i)):
+                retention_date = cohort_month + timedelta(days=30 * month_offset)
+                retained = await self._count_retained_from_cohort(cohort_month, next_month, retention_date)
+                retention_percentage = self._safe_percentage(retained, cohort_size)
+                cohort_data[f"month_{month_offset}"] = round(retention_percentage, 1)
+
+            cohorts.append(cohort_data)
+
+        return {
+            "data": {"cohorts": cohorts},
+            "message": "Cohort retention analysis retrieved successfully",
+        }
+
+    # Helper methods for new endpoints
+    async def _get_recent_subscriptions(self, limit: int = 10) -> List[Dict[str, Any]]:
+        """Get recent subscriptions with user and plan details."""
+        from src.api.models.user_models.user import User
+
+        query = (
+            select(
+                UserSubscription,
+                User.email,
+                User.display_name,
+                SubscriptionPlan.display_name.label("plan_name"),
+            )
+            .join(User, UserSubscription.user_id == User.id)
+            .join(SubscriptionPlan, UserSubscription.plan_id == SubscriptionPlan.id)
+            .order_by(UserSubscription.start_date.desc())
+            .limit(limit)
+        )
+
+        result = await self.db.execute(query)
+        records = result.all()
+
+        subscriptions = []
+        for sub, user_email, user_name, plan_name in records:
+            subscriptions.append({
+                "subscription_id": str(sub.id),
+                "user_email": user_email,
+                "user_name": user_name or user_email,
+                "plan_name": plan_name,
+                "status": sub.status.value,
+                "start_date": sub.start_date.isoformat() if sub.start_date else None,
+            })
+
+        return subscriptions
+
+    async def _calculate_mrr_for_period(self, start: datetime, end: datetime) -> float:
+        """Calculate MRR for a specific time period."""
+        query = (
+            select(
+                func.sum(
+                    case(
+                        (UserSubscription.billing_period == BillingPeriod.MONTHLY, SubscriptionPlan.price_monthly),
+                        (
+                            UserSubscription.billing_period == BillingPeriod.YEARLY,
+                            SubscriptionPlan.price_yearly / 12,
+                        ),
+                        else_=0,
+                    )
+                )
+            )
+            .join(SubscriptionPlan, UserSubscription.plan_id == SubscriptionPlan.id)
+            .where(
+                UserSubscription.start_date < end,
+                or_(
+                    UserSubscription.end_date.is_(None),
+                    UserSubscription.end_date >= start,
+                ),
+                UserSubscription.status.in_([SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIAL]),
+            )
+        )
+        result = await self.db.execute(query)
+        value = result.scalar()
+        return float(value) if value else 0.0
+
+    async def _calculate_new_revenue_for_period(self, start: datetime, end: datetime) -> float:
+        """Calculate new revenue for a specific time period."""
+        query = (
+            select(
+                func.sum(
+                    case(
+                        (UserSubscription.billing_period == BillingPeriod.MONTHLY, SubscriptionPlan.price_monthly),
+                        (
+                            UserSubscription.billing_period == BillingPeriod.YEARLY,
+                            SubscriptionPlan.price_yearly / 12,
+                        ),
+                        else_=0,
+                    )
+                )
+            )
+            .join(SubscriptionPlan, UserSubscription.plan_id == SubscriptionPlan.id)
+            .where(
+                UserSubscription.start_date >= start,
+                UserSubscription.start_date < end,
+            )
+        )
+        result = await self.db.execute(query)
+        value = result.scalar()
+        return float(value) if value else 0.0
+
+    async def _calculate_churned_revenue_for_period(self, start: datetime, end: datetime) -> float:
+        """Calculate churned revenue for a specific time period."""
+        query = (
+            select(
+                func.sum(
+                    case(
+                        (UserSubscription.billing_period == BillingPeriod.MONTHLY, SubscriptionPlan.price_monthly),
+                        (
+                            UserSubscription.billing_period == BillingPeriod.YEARLY,
+                            SubscriptionPlan.price_yearly / 12,
+                        ),
+                        else_=0,
+                    )
+                )
+            )
+            .join(SubscriptionPlan, UserSubscription.plan_id == SubscriptionPlan.id)
+            .where(
+                UserSubscription.cancelled_at >= start,
+                UserSubscription.cancelled_at < end,
+            )
+        )
+        result = await self.db.execute(query)
+        value = result.scalar()
+        return float(value) if value else 0.0
+
+    async def _count_subscriptions_started_in_period(self, start: datetime, end: datetime) -> int:
+        """Count subscriptions started in a specific period."""
+        result = await self.db.execute(
+            select(func.count(UserSubscription.id)).where(
+                UserSubscription.start_date >= start,
+                UserSubscription.start_date < end,
+            )
+        )
+        return result.scalar() or 0
+
+    async def _count_retained_from_cohort(
+        self, cohort_start: datetime, cohort_end: datetime, retention_date: datetime
+    ) -> int:
+        """Count how many from a cohort are still active at a retention date."""
+        result = await self.db.execute(
+            select(func.count(UserSubscription.id)).where(
+                UserSubscription.start_date >= cohort_start,
+                UserSubscription.start_date < cohort_end,
+                or_(
+                    UserSubscription.end_date.is_(None),
+                    UserSubscription.end_date > retention_date,
+                ),
+                UserSubscription.status.in_([SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIAL]),
+            )
+        )
+        return result.scalar() or 0
+
     @staticmethod
     def _safe_percentage(numerator: float, denominator: float) -> float:
         if not denominator:

@@ -117,3 +117,94 @@ async def get_trial_conversion_metrics(
 
     service = SubscriptionAnalyticsService(db)
     return await service.get_trial_conversion_metrics(period_days)
+
+
+@router.get("/analytics/overview", response_model=dict)
+@db_transaction_handler("get analytics overview", auto_commit=False)
+async def get_analytics_overview(
+    request: Request,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Get comprehensive analytics overview (super admin only).
+
+    Returns:
+    - Subscription statistics (total, active, trial, MRR, ARR, churn, conversion)
+    - Revenue by plan breakdown
+    - Growth metrics (30-day new revenue, growth rate)
+    - Recent subscriptions (last 10)
+    """
+    admin_user_id = current_user.get("identity")
+    await require_super_admin(db, admin_user_id)
+
+    service = SubscriptionAnalyticsService(db)
+    return await service.get_analytics_overview()
+
+
+@router.get("/analytics/revenue-history", response_model=dict)
+@db_transaction_handler("get revenue history", auto_commit=False)
+async def get_revenue_history(
+    request: Request,
+    period: str = Query("12_months", regex="^(3_months|6_months|12_months)$", description="Time period"),
+    db: AsyncSession = Depends(get_async_db),
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Get historical revenue data for charts (super admin only).
+
+    Query Parameters:
+    - period: 3_months, 6_months, or 12_months (default 12_months)
+
+    Returns:
+    - Monthly revenue history with MRR, new revenue, churned revenue, net revenue
+    """
+    admin_user_id = current_user.get("identity")
+    await require_super_admin(db, admin_user_id)
+
+    service = SubscriptionAnalyticsService(db)
+    return await service.get_revenue_history(period)
+
+
+@router.get("/analytics/plan-distribution", response_model=dict)
+@db_transaction_handler("get plan distribution", auto_commit=False)
+async def get_plan_distribution(
+    request: Request,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Get subscription distribution by plan (super admin only).
+
+    Returns:
+    - Plan breakdown with subscription counts, revenue, and percentages
+    """
+    admin_user_id = current_user.get("identity")
+    await require_super_admin(db, admin_user_id)
+
+    service = SubscriptionAnalyticsService(db)
+    return await service.get_plan_distribution()
+
+
+@router.get("/analytics/cohort-retention", response_model=dict)
+@db_transaction_handler("get cohort retention", auto_commit=False)
+async def get_cohort_retention(
+    request: Request,
+    cohort_months: int = Query(6, ge=1, le=12, description="Number of cohort months to analyze"),
+    db: AsyncSession = Depends(get_async_db),
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Get cohort retention analysis (super admin only).
+
+    Query Parameters:
+    - cohort_months: Number of cohorts to analyze (default 6, max 12)
+
+    Returns:
+    - Cohort retention matrix with month-over-month retention percentages
+    """
+    admin_user_id = current_user.get("identity")
+    await require_super_admin(db, admin_user_id)
+
+    service = SubscriptionAnalyticsService(db)
+    return await service.get_cohort_retention(cohort_months)
