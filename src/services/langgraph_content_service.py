@@ -24,6 +24,7 @@ from src.api.models.content_models.content import Content
 from src.api.models.topic_models.topic_models import TopicsModel
 from src.api.models.knowledge_models.knowledge_model import BrandVoice
 from src.api.models.workspace_models.workspace_model import WorkspaceModel
+from src.api.models.user_models.user_model import Users
 from src.flow.flow import create_workflow
 from src.flow.states.content_state import ContentState
 from src.utils.logger import logger
@@ -31,6 +32,7 @@ from src.api.middleware.exceptions import (
     WrextValidationException,
     ResourceNotFoundException
 )
+from src.services.email_service import EmailService
 
 
 class LangGraphContentService:
@@ -89,6 +91,15 @@ class LangGraphContentService:
             regenerate
         )
 
+        # Send "generation started" email
+        try:
+            await self._send_generation_started_email(
+                content_id, workspace_id, content_data
+            )
+        except Exception as e:
+            logger.error(f"Failed to send generation started email: {str(e)}")
+            # Don't fail workflow if email fails
+
         # Execute workflow
         try:
             logger.info(f"Starting LangGraph workflow for content {content_id} with thread {thread_id}")
@@ -123,6 +134,15 @@ class LangGraphContentService:
                     thread_id
                 )
 
+                # Send "generation completed" email
+                try:
+                    await self._send_generation_completed_email(
+                        content_id, workspace_id, content_data, generated_blog
+                    )
+                except Exception as e:
+                    logger.error(f"Failed to send generation completed email: {str(e)}")
+                    # Don't fail workflow if email fails
+
                 return {
                     "success": True,
                     "thread_id": str(thread_id),
@@ -144,6 +164,16 @@ class LangGraphContentService:
             logger.error(f"LangGraph workflow failed for thread {thread_id}: {str(e)}")
             # Store thread ID even on failure for debugging
             await self._update_content_thread_id(content_id, thread_id, status="failed")
+
+            # Send "generation failed" email
+            try:
+                await self._send_generation_failed_email(
+                    content_id, workspace_id, content_data, str(e)
+                )
+            except Exception as email_error:
+                logger.error(f"Failed to send generation failed email: {str(email_error)}")
+                # Don't fail workflow if email fails
+
             raise WrextValidationException(
                 message=f"Content generation failed: {str(e)}",
                 context={"thread_id": str(thread_id), "error": str(e)}
@@ -385,3 +415,110 @@ class LangGraphContentService:
             "history": [],
             "message": "Thread history tracking will be implemented with LangGraph persistence"
         }
+
+    async def _send_generation_started_email(
+        self,
+        content_id: UUID,
+        workspace_id: UUID,
+        content_data: Dict[str, Any]
+    ) -> None:
+        """Send email notification when content generation starts."""
+        email_service = EmailService(self.db)
+
+        content = content_data.get("content")
+        workspace = content_data.get("workspace")
+        user_id = content.created_by_user_id
+
+        # Fetch user details
+        result = await self.db.execute(select(Users).where(Users.id == user_id))
+        user = result.scalar_one_or_none()
+        if not user:
+            logger.warning(f"User {user_id} not found, skipping email")
+            return
+
+        await email_service.send_email(
+            template_type="content_generation_started",
+            to_email=user.email,
+            context={
+                "user_name": user.username or user.email.split("@")[0],
+                "content_title": content.title,
+                "workspace_name": workspace.name,
+                "content_type": content.content_format or "Blog Post",
+                "estimated_time": "5-10 minutes"
+            },
+            user_id=user_id,
+            workspace_id=workspace_id
+        )
+
+    async def _send_generation_completed_email(
+        self,
+        content_id: UUID,
+        workspace_id: UUID,
+        content_data: Dict[str, Any],
+        generated_blog: Any
+    ) -> None:
+        """Send email notification when content generation completes."""
+        email_service = EmailService(self.db)
+
+        content = content_data.get("content")
+        workspace = content_data.get("workspace")
+        user_id = content.created_by_user_id
+
+        # Fetch user details
+        result = await self.db.execute(select(Users).where(Users.id == user_id))
+        user = result.scalar_one_or_none()
+        if not user:
+            logger.warning(f"User {user_id} not found, skipping email")
+            return
+
+        # Calculate word count
+        word_count = len(generated_blog.content.split()) if hasattr(generated_blog, 'content') else 0
+
+        await email_service.send_email(
+            template_type="content_generation_completed",
+            to_email=user.email,
+            context={
+                "user_name": user.username or user.email.split("@")[0],
+                "content_title": content.title,
+                "workspace_name": workspace.name,
+                "word_count": word_count,
+                "ai_model": "Claude 3.5 Sonnet",
+                "generation_time": datetime.now(timezone.utc).isoformat()
+            },
+            user_id=user_id,
+            workspace_id=workspace_id
+        )
+
+    async def _send_generation_failed_email(
+        self,
+        content_id: UUID,
+        workspace_id: UUID,
+        content_data: Dict[str, Any],
+        error_message: str
+    ) -> None:
+        """Send email notification when content generation fails."""
+        email_service = EmailService(self.db)
+
+        content = content_data.get("content")
+        workspace = content_data.get("workspace")
+        user_id = content.created_by_user_id
+
+        # Fetch user details
+        result = await self.db.execute(select(Users).where(Users.id == user_id))
+        user = result.scalar_one_or_none()
+        if not user:
+            logger.warning(f"User {user_id} not found, skipping email")
+            return
+
+        await email_service.send_email(
+            template_type="content_generation_failed",
+            to_email=user.email,
+            context={
+                "user_name": user.username or user.email.split("@")[0],
+                "content_title": content.title,
+                "workspace_name": workspace.name,
+                "error_message": error_message[:200]  # Truncate long errors
+            },
+            user_id=user_id,
+            workspace_id=workspace_id
+        )

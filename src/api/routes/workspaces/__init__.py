@@ -7,6 +7,7 @@ from .workspace_core import router as core_router, get_workspaces, get_workspace
 from .workspace_brand_voice import router as brand_voice_router
 from .workspace_members import router as members_router
 from .workspace_invitations import router as invitations_router
+from .workspace_permissions import router as permissions_router
 from src.api.database.async_database import get_async_db
 from src.api.models.user_models.roles import Role
 from src.api.schema.workspace_schema import WorkspaceSchema
@@ -25,6 +26,7 @@ workspaces_router = APIRouter(prefix="/workspaces", tags=["workspace"])
 workspaces_router.include_router(brand_voice_router)
 workspaces_router.include_router(members_router)
 workspaces_router.include_router(invitations_router)
+workspaces_router.include_router(permissions_router)
 
 # GET endpoints - ORDER MATTERS! More specific routes must come before parameterized routes
 workspaces_router.add_api_route("", get_workspaces, methods=["GET"], name="get_workspaces_alias")

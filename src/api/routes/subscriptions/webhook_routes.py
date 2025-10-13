@@ -12,11 +12,14 @@ from uuid import UUID
 
 from src.api.database.async_database import get_async_db
 from src.api.models.subscription_models.subscriptions import BillingPeriod
+from src.api.models.user_models.user_model import Users
 from src.services.subscription_service import SubscriptionService
+from src.services.email_service import EmailService
 from src.services.payment.provider_factory import get_payment_provider_singleton as get_payment_provider
 from src.utils.response_utils import success
 from src.utils.route_decorators import db_transaction_handler
 from src.utils.logger import logger
+from sqlalchemy import select
 
 
 router = APIRouter(
@@ -141,6 +144,33 @@ async def handle_mock_checkout_complete(
         logger.info(
             f"Subscription created successfully for user {user_id}: {subscription.id}"
         )
+
+        # Send subscription created email
+        try:
+            email_service = EmailService(db)
+
+            # Fetch user
+            user_result = await db.execute(select(Users).where(Users.id == user_id))
+            user = user_result.scalar_one_or_none()
+
+            # Fetch plan details
+            plan = await subscription_service.get_plan_by_id(plan_id)
+
+            if user and plan:
+                await email_service.send_email(
+                    template_type="subscription_created",
+                    to_email=user.email,
+                    context={
+                        "user_name": user.username or user.email.split("@")[0],
+                        "plan_name": plan.display_name,
+                        "billing_period": billing_period.value,
+                        "amount": f"${plan.price_monthly if billing_period == BillingPeriod.MONTHLY else plan.price_yearly}"
+                    },
+                    user_id=user_id
+                )
+        except Exception as email_error:
+            logger.error(f"Failed to send subscription created email: {str(email_error)}")
+            # Don't fail webhook if email fails
 
         return success(
             data={

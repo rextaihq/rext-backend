@@ -24,10 +24,36 @@ router = APIRouter(
 
 class UpdatePreferencesRequest(BaseModel):
     """Request model for updating email preferences."""
+    # Workspace notifications
     workspace_invitation: Optional[bool] = None
     invitation_accepted: Optional[bool] = None
     role_changed: Optional[bool] = None
     member_removed: Optional[bool] = None
+
+    # Content generation
+    content_generation_started: Optional[bool] = None
+    content_generation_completed: Optional[bool] = None
+    content_generation_failed: Optional[bool] = None
+    content_published: Optional[bool] = None
+
+    # Billing
+    payment_succeeded: Optional[bool] = None
+    payment_failed: Optional[bool] = None
+    subscription_cancelled: Optional[bool] = None
+    subscription_expiring_soon: Optional[bool] = None
+    trial_ending_soon: Optional[bool] = None
+    usage_limit_warning: Optional[bool] = None
+    usage_limit_exceeded: Optional[bool] = None
+
+    # Knowledge base
+    kb_processing_completed: Optional[bool] = None
+    kb_processing_failed: Optional[bool] = None
+
+    # Digest
+    digest_enabled: Optional[bool] = None
+    digest_frequency: Optional[str] = None
+
+    # Marketing
     marketing: Optional[bool] = None
 
 
