@@ -17,9 +17,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.api.database.async_database import get_async_db
 from src.api.models.admin_models.error_log import ErrorLog
 from src.api.models.content_models.content import Content
-from src.api.models.user_models.user import User
-from src.api.models.workspace_models.workspace import Workspace
-from src.api.security.dependencies import get_current_user, require_permissions
+from src.api.models.user_models.users import Users
+from src.api.models.workspace_models.workspace_model import WorkspaceModel
+from src.api.security.dependencies import get_current_user
+from src.api.middleware.permissions import require_permissions
 from src.utils.route_decorators import db_transaction_handler
 
 
@@ -53,7 +54,7 @@ async def get_system_health(
     # Database health check
     db_start = time.time()
     try:
-        await db.execute(select(func.count(User.id)))
+        await db.execute(select(func.count(Users.id)))
         db_response_time = int((time.time() - db_start) * 1000)
         db_status = "healthy" if db_response_time < 100 else "degraded"
 
@@ -317,22 +318,22 @@ async def get_usage_stats(
 
     # User activity stats
     # Active users (logged in during period)
-    active_users_query = select(func.count(func.distinct(User.id))).where(
-        User.last_login_at >= period_start
+    active_users_query = select(func.count(func.distinct(Users.id))).where(
+        Users.last_login_at >= period_start
     )
     active_users_result = await db.execute(active_users_query)
     active_users = active_users_result.scalar() or 0
 
     # New users (created during period)
-    new_users_query = select(func.count(User.id)).where(
-        User.created_at >= period_start
+    new_users_query = select(func.count(Users.id)).where(
+        Users.created_at >= period_start
     )
     new_users_result = await db.execute(new_users_query)
     new_users = new_users_result.scalar() or 0
 
     # New workspaces
-    new_workspaces_query = select(func.count(Workspace.id)).where(
-        Workspace.created_at >= period_start
+    new_workspaces_query = select(func.count(WorkspaceModel.id)).where(
+        WorkspaceModel.created_at >= period_start
     )
     new_workspaces_result = await db.execute(new_workspaces_query)
     new_workspaces = new_workspaces_result.scalar() or 0
@@ -391,17 +392,17 @@ async def get_usage_trends(
         content_count = content_result.scalar() or 0
 
         # Active users
-        users_query = select(func.count(func.distinct(User.id))).where(
-            User.last_login_at >= day_start,
-            User.last_login_at < day_end
+        users_query = select(func.count(func.distinct(Users.id))).where(
+            Users.last_login_at >= day_start,
+            Users.last_login_at < day_end
         )
         users_result = await db.execute(users_query)
         users_count = users_result.scalar() or 0
 
         # Workspaces created
-        workspaces_query = select(func.count(Workspace.id)).where(
-            Workspace.created_at >= day_start,
-            Workspace.created_at < day_end
+        workspaces_query = select(func.count(WorkspaceModel.id)).where(
+            WorkspaceModel.created_at >= day_start,
+            WorkspaceModel.created_at < day_end
         )
         workspaces_result = await db.execute(workspaces_query)
         workspaces_count = workspaces_result.scalar() or 0

@@ -35,7 +35,7 @@ from enum import Enum
 from typing import Any, Dict, List, Optional, Union
 from uuid import uuid4
 
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator, model_serializer
 
 
 # ============================================================================
@@ -153,12 +153,6 @@ class ErrorDetail(BaseModel):
         description="The invalid value that caused the error (sanitized)"
     )
 
-    class Config:
-        json_encoders = {
-            # Ensure sensitive data is not exposed
-            str: lambda v: v if len(str(v)) < 100 else str(v)[:97] + "..."
-        }
-
 
 class ResponseMeta(BaseModel):
     """Metadata included in all responses for tracking and debugging"""
@@ -169,7 +163,7 @@ class ResponseMeta(BaseModel):
         example="req_1234567890_abc123"
     )
     timestamp: datetime = Field(
-        default_factory=datetime.utcnow,
+        default_factory=lambda: datetime.utcnow(),
         description="ISO timestamp when the response was generated",
         example="2024-01-15T10:30:00.123456Z"
     )
@@ -190,7 +184,8 @@ class ResponseMeta(BaseModel):
         example="server-01"
     )
 
-    @validator('request_id')
+    @field_validator('request_id')
+    @classmethod
     def validate_request_id(cls, v):
         if not v or len(v) < 5:
             raise ValueError('request_id must be at least 5 characters long')
@@ -208,12 +203,6 @@ class BaseResponse(BaseModel):
         ...,
         description="Response metadata"
     )
-
-    class Config:
-        # Ensure consistent JSON output
-        json_encoders = {
-            datetime: lambda v: v.isoformat() + 'Z' if v.tzinfo is None else v.isoformat()
-        }
 
 
 class SuccessResponse(BaseResponse):
@@ -268,7 +257,8 @@ class ErrorResponse(BaseResponse):
         description="Error information object"
     )
 
-    @validator('error')
+    @field_validator('error')
+    @classmethod
     def validate_error_structure(cls, v):
         required_fields = ['code', 'message', 'severity', 'status_code']
         for field in required_fields:
@@ -277,9 +267,6 @@ class ErrorResponse(BaseResponse):
         return v
 
     class Config:
-        json_encoders = {
-            datetime: lambda v: v.isoformat() + 'Z' if v.tzinfo is None else v.isoformat()
-        }
         schema_extra = {
             "example": {
                 "success": False,

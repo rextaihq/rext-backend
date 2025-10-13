@@ -510,16 +510,16 @@ class SubscriptionAnalyticsService:
     # Helper methods for new endpoints
     async def _get_recent_subscriptions(self, limit: int = 10) -> List[Dict[str, Any]]:
         """Get recent subscriptions with user and plan details."""
-        from src.api.models.user_models.user import User
+        from src.api.models.user_models.users import Users
 
         query = (
             select(
                 UserSubscription,
-                User.email,
-                User.display_name,
+                Users.email,
+                Users.display_name,
                 SubscriptionPlan.display_name.label("plan_name"),
             )
-            .join(User, UserSubscription.user_id == User.id)
+            .join(User, UserSubscription.user_id == Users.id)
             .join(SubscriptionPlan, UserSubscription.plan_id == SubscriptionPlan.id)
             .order_by(UserSubscription.start_date.desc())
             .limit(limit)

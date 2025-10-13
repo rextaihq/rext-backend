@@ -11,7 +11,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.api.models.audit_models.audit_logs import AuditLog
 from src.api.schema.audit_schema import AuditLogExportFormat, AuditStatus
 from src.api.middleware.exceptions import WrextValidationException
-from src.api.routes.audit.modules.helpers import build_audit_query, format_audit_log
 
 
 class AuditService:
@@ -36,6 +35,8 @@ class AuditService:
         limit: int = 1000,
     ) -> Iterable[AuditLog]:
         """Retrieve audit logs using shared query helper."""
+        # Lazy import to avoid circular dependency
+        from src.api.routes.audit.modules.helpers import build_audit_query
 
         status_enum = None
         if status_filter:
@@ -73,6 +74,9 @@ class AuditService:
         requested_by: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Prepare structured payload for JSON export."""
+        # Lazy import to avoid circular dependency
+        from src.api.routes.audit.modules.helpers import format_audit_log
+
         if format is not AuditLogExportFormat.JSON:
             raise ValueError("format must be AuditLogExportFormat.JSON for JSON payloads")
 
@@ -87,6 +91,9 @@ class AuditService:
 
     async def get_statistics(self, days: int) -> Dict[str, Any]:
         """Return summary statistics for audit logs over the provided window."""
+        # Lazy import to avoid circular dependency
+        from src.api.routes.audit.modules.helpers import format_audit_log
+
         if days < 1 or days > 365:
             raise WrextValidationException(
                 message="Analysis period must be between 1 and 365 days",

@@ -177,7 +177,7 @@ async def send_workspace_email(
 
         # Try to render email using DB template first, fallback to Python template
         try:
-            from src.api.models.workspace_models.email_template import render_workspace_email
+            from src.utils.email_template_utils import render_workspace_email
 
             email_data = await render_workspace_email(
                 workspace_id=str(workspace_id),

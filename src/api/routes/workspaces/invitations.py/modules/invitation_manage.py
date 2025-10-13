@@ -26,7 +26,7 @@ from src.api.schema.invitation_schema import (
 )
 from src.api.models.user_models.users import Users
 from src.api.models.user_models.invitations import UserInvitations
-from src.api.models.user_models.roles import Roles
+from src.api.models.user_models.roles import Role
 from src.api.models.workspace_models.workspace_member import WorkspaceMembers
 from src.api.models.workspace_models.workspace_model import WorkspaceModel
 from src.services.invitation_service import InvitationService
@@ -54,9 +54,9 @@ async def notify_workspace_admins_of_acceptance(
             admin_members_result = await async_db.execute(
                 select(WorkspaceMembers, Users)
                 .join(Users, WorkspaceMembers.user_id == Users.id)
-                .join(Roles, WorkspaceMembers.role_id == Roles.id)
+                .join(Role, WorkspaceMembers.role_id == Role.id)
                 .where(WorkspaceMembers.workspace_id == UUID(workspace_id))
-                .where(Roles.name.in_(["owner", "admin"]))
+                .where(Role.name.in_(["owner", "admin"]))
             )
             admin_members = admin_members_result.all()
 
@@ -132,7 +132,7 @@ async def accept_invitation(
     workspace = workspace_result.scalar_one_or_none()
 
     role_result = await db.execute(
-        select(Roles).where(Roles.id == invitation.role_id)
+        select(Role).where(Role.id == invitation.role_id)
     )
     role = role_result.scalar_one_or_none()
 

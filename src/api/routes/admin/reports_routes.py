@@ -16,7 +16,8 @@ from fastapi import APIRouter, Depends, Query, Request, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.database.async_database import get_async_db
-from src.api.security.dependencies import get_current_user, require_permissions
+from src.api.security.dependencies import get_current_user
+from src.api.middleware.permissions import require_permissions
 from src.services.subscription_analytics_service import SubscriptionAnalyticsService
 from src.utils.route_decorators import db_transaction_handler
 

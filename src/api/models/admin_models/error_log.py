@@ -30,7 +30,7 @@ class ErrorLog(Base):
     )
     request_id = Column(String(100))
     stack_trace = Column(Text)
-    metadata = Column(JSONB, default=dict)
+    error_metadata = Column("metadata", JSONB, default=dict)
     resolved = Column(Boolean, default=False, index=True)
     resolved_at = Column(DateTime, nullable=True)
     resolved_by = Column(
@@ -50,7 +50,7 @@ class ErrorLog(Base):
             "user_id": str(self.user_id) if self.user_id else None,
             "request_id": self.request_id,
             "stack_trace": self.stack_trace,
-            "metadata": self.metadata,
+            "metadata": self.error_metadata,
             "resolved": self.resolved,
             "resolved_at": self.resolved_at.isoformat() if self.resolved_at else None,
             "resolved_by": str(self.resolved_by) if self.resolved_by else None

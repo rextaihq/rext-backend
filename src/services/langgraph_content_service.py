@@ -24,7 +24,7 @@ from src.api.models.content_models.content import Content
 from src.api.models.topic_models.topic_models import TopicsModel
 from src.api.models.knowledge_models.knowledge_model import BrandVoice
 from src.api.models.workspace_models.workspace_model import WorkspaceModel
-from src.api.models.user_models.user_model import Users
+from src.api.models.user_models.users import Users
 from src.flow.flow import create_workflow
 from src.flow.states.content_state import ContentState
 from src.utils.logger import logger

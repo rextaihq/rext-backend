@@ -18,10 +18,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.database.async_database import get_async_db
 from src.api.models.subscription_models.subscriptions import UserSubscription
-from src.api.models.user_models.user import User
-from src.api.models.workspace_models.workspace import Workspace
-from src.api.security.dependencies import get_current_user, require_permissions
-from src.services.audit_log_service import AuditLogService
+from src.api.models.user_models.users import Users
+from src.api.models.workspace_models.workspace_model import WorkspaceModel
+from src.api.security.dependencies import get_current_user
+from src.api.middleware.permissions import require_permissions
+from src.services.audit_service import AuditService
 from src.utils.route_decorators import db_transaction_handler
 
 
@@ -88,27 +89,27 @@ async def list_customers(
     # Build query
     query = (
         select(
-            User.id,
-            User.email,
-            User.display_name,
-            User.created_at,
-            User.is_active,
-            User.last_login_at,
+            Users.id,
+            Users.email,
+            Users.display_name,
+            Users.created_at,
+            Users.is_active,
+            Users.last_login_at,
             UserSubscription.id.label("subscription_id"),
-            func.count(Workspace.id).label("workspaces_count")
+            func.count(WorkspaceModel.id).label("workspaces_count")
         )
         .outerjoin(UserSubscription, and_(
-            UserSubscription.user_id == User.id,
+            UserSubscription.user_id == Users.id,
             UserSubscription.status.in_(["active", "trial"])
         ))
-        .outerjoin(Workspace, Workspace.created_by == User.id)
+        .outerjoin(Workspace, WorkspaceModel.created_by == Users.id)
         .group_by(
-            User.id,
-            User.email,
-            User.display_name,
-            User.created_at,
-            User.is_active,
-            User.last_login_at,
+            Users.id,
+            Users.email,
+            Users.display_name,
+            Users.created_at,
+            Users.is_active,
+            Users.last_login_at,
             UserSubscription.id
         )
     )
@@ -116,8 +117,8 @@ async def list_customers(
     # Apply search filter
     if search:
         search_filter = or_(
-            User.email.ilike(f"%{search}%"),
-            User.display_name.ilike(f"%{search}%")
+            Users.email.ilike(f"%{search}%"),
+            Users.display_name.ilike(f"%{search}%")
         )
         query = query.where(search_filter)
 
@@ -140,7 +141,7 @@ async def list_customers(
     total = total_result.scalar() or 0
 
     # Apply sorting
-    sort_column = getattr(User, sort_by, User.created_at)
+    sort_column = getattr(User, sort_by, Users.created_at)
     if sort_order == "desc":
         query = query.order_by(sort_column.desc())
     else:
@@ -240,7 +241,7 @@ async def get_customer_detail(
     - Customer notes
     """
     # Get user
-    user_query = select(User).where(User.id == UUID(user_id))
+    user_query = select(User).where(Users.id == UUID(user_id))
     user_result = await db.execute(user_query)
     user = user_result.scalar_one_or_none()
 
@@ -283,9 +284,9 @@ async def get_customer_detail(
 
     # Get workspaces
     workspaces_query = (
-        select(Workspace.id, Workspace.name, Workspace.created_at)
-        .where(Workspace.created_by == user.id)
-        .order_by(Workspace.created_at.desc())
+        select(WorkspaceModel.id, WorkspaceModel.name, WorkspaceModel.created_at)
+        .where(WorkspaceModel.created_by == user.id)
+        .order_by(WorkspaceModel.created_at.desc())
     )
     workspaces_result = await db.execute(workspaces_query)
     workspaces_rows = workspaces_result.all()
@@ -308,17 +309,17 @@ async def get_customer_detail(
 
     # Activity summary
     from src.api.models.content_models.content import Content
-    from src.api.models.knowledge_models.knowledge_base import KnowledgeBase
+    from src.api.models.knowledge_models.knowledge_model import KnowledgeBase
 
     content_count_query = select(func.count(Content.id)).join(
-        Workspace, Content.workspace_id == Workspace.id
-    ).where(Workspace.created_by == user.id)
+        Workspace, Content.workspace_id == WorkspaceModel.id
+    ).where(WorkspaceModel.created_by == user.id)
     content_count_result = await db.execute(content_count_query)
     content_count = content_count_result.scalar() or 0
 
     kb_count_query = select(func.count(KnowledgeBase.id)).join(
-        Workspace, KnowledgeBase.workspace_id == Workspace.id
-    ).where(Workspace.created_by == user.id)
+        Workspace, KnowledgeBase.workspace_id == WorkspaceModel.id
+    ).where(WorkspaceModel.created_by == user.id)
     kb_count_result = await db.execute(kb_count_query)
     kb_count = kb_count_result.scalar() or 0
 
@@ -330,14 +331,14 @@ async def get_customer_detail(
     }
 
     # Get recent audit events
-    audit_service = AuditLogService(db)
+    audit_service = AuditService(db)
     audit_events = await audit_service.get_recent_user_events(str(user.id), limit=10)
 
     # Get customer notes
     from src.api.models.admin_models.customer_note import CustomerNote
     notes_query = (
-        select(CustomerNote, User.email.label("admin_email"))
-        .join(User, CustomerNote.admin_id == User.id)
+        select(CustomerNote, Users.email.label("admin_email"))
+        .join(User, CustomerNote.admin_id == Users.id)
         .where(CustomerNote.user_id == user.id)
         .order_by(CustomerNote.created_at.desc())
         .limit(20)
@@ -405,7 +406,7 @@ async def perform_customer_action(
     admin_user_id = current_user.get("identity")
 
     # Get user
-    user_query = select(User).where(User.id == UUID(user_id))
+    user_query = select(User).where(Users.id == UUID(user_id))
     user_result = await db.execute(user_query)
     user = user_result.scalar_one_or_none()
 
@@ -506,7 +507,7 @@ async def perform_customer_action(
         result = {"status": "subscription_cancelled"}
 
     # Log to audit
-    audit_service = AuditLogService(db)
+    audit_service = AuditService(db)
     await audit_service.log_admin_action(
         admin_id=admin_user_id,
         action=action_request.action,
@@ -550,7 +551,7 @@ async def add_customer_note(
     admin_user_id = current_user.get("identity")
 
     # Verify user exists
-    user_query = select(User).where(User.id == UUID(user_id))
+    user_query = select(User).where(Users.id == UUID(user_id))
     user_result = await db.execute(user_query)
     user = user_result.scalar_one_or_none()
 
@@ -571,7 +572,7 @@ async def add_customer_note(
     await db.refresh(note)
 
     # Log to audit
-    audit_service = AuditLogService(db)
+    audit_service = AuditService(db)
     await audit_service.log_admin_action(
         admin_id=admin_user_id,
         action="add_customer_note",

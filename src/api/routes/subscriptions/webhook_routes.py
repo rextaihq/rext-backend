@@ -12,7 +12,7 @@ from uuid import UUID
 
 from src.api.database.async_database import get_async_db
 from src.api.models.subscription_models.subscriptions import BillingPeriod
-from src.api.models.user_models.user_model import Users
+from src.api.models.user_models.users import Users
 from src.services.subscription_service import SubscriptionService
 from src.services.email_service import EmailService
 from src.services.payment.provider_factory import get_payment_provider_singleton as get_payment_provider

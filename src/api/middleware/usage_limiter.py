@@ -81,7 +81,7 @@ class WorkspaceLimitChecker:
         if not subscription or not plan:
             # No subscription = default free tier (allow 1 workspace)
             current_count = db.query(func.count(Workspace.id)).filter(
-                Workspace.creator_id == user_id
+                Workspace.user_id == user_id
             ).scalar() or 0
 
             if current_count >= 1:
@@ -97,7 +97,7 @@ class WorkspaceLimitChecker:
             return
 
         current_count = db.query(func.count(Workspace.id)).filter(
-            Workspace.creator_id == user_id
+            Workspace.user_id == user_id
         ).scalar() or 0
 
         if current_count >= plan.max_workspaces:
@@ -194,7 +194,7 @@ class TopicLimitChecker:
         if not subscription or not plan:
             # Default free tier (allow 50 topics)
             current_count = db.query(func.count(Topic.id)).join(Workspace).filter(
-                Workspace.creator_id == user_id
+                Workspace.user_id == user_id
             ).scalar() or 0
 
             if current_count >= 50:
@@ -210,7 +210,7 @@ class TopicLimitChecker:
             return
 
         current_count = db.query(func.count(Topic.id)).join(Workspace).filter(
-            Workspace.creator_id == user_id
+            Workspace.user_id == user_id
         ).scalar() or 0
 
         if current_count >= plan.max_topics:
@@ -251,7 +251,7 @@ class KnowledgeItemLimitChecker:
 
         # TODO: Implement actual knowledge item count when models are available
         # current_count = db.query(func.count(KnowledgeItem.id)).join(Workspace).filter(
-        #     Workspace.creator_id == user_id
+        #     Workspace.user_id == user_id
         # ).scalar() or 0
         #
         # if current_count >= plan.max_knowledge_items:

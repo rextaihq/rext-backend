@@ -13,7 +13,7 @@ from fastapi import BackgroundTasks
 
 from src.api.models.user_models.users import Users
 from src.api.models.user_models.email_preferences import EmailPreferences
-from src.providers.email.email_provider import get_email_provider
+from src.providers.email.factory import get_email_provider
 from src.utils.logger import logger
 
 # Import email templates
