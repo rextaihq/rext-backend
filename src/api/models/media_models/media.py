@@ -34,7 +34,7 @@ class Media(Base, SerializableMixin):
     # Foreign keys
     workspace_id = Column(
         UUID(as_uuid=True),
-        ForeignKey("workspaces.id", ondelete="CASCADE"),
+        ForeignKey("workspace.id", ondelete="CASCADE"),
         nullable=False,
         index=True
     )
@@ -53,9 +53,9 @@ class Media(Base, SerializableMixin):
     file_extension = Column(String(10), comment="File extension (e.g., .jpg)")
 
     # Storage
-    storage_backend = Column(String(20), default="s3", comment="Storage backend: s3, local")
-    storage_path = Column(String(500), nullable=False, comment="S3 key or local path")
-    storage_bucket = Column(String(100), comment="S3 bucket name")
+    storage_backend = Column(String(20), default="r2", comment="Storage backend: r2 (Cloudflare), local")
+    storage_path = Column(String(500), nullable=False, comment="R2 key or local path")
+    storage_bucket = Column(String(100), comment="R2 bucket name")
     cdn_url = Column(String(500), comment="CDN URL if available")
     public_url = Column(String(500), comment="Public access URL")
 
@@ -63,7 +63,7 @@ class Media(Base, SerializableMixin):
     title = Column(String(255), comment="User-provided title")
     description = Column(Text, comment="User-provided description")
     alt_text = Column(String(500), comment="Alt text for images (accessibility)")
-    metadata = Column(
+    file_metadata = Column(
         JSONB,
         default=dict,
         comment="Additional metadata: {width, height, duration, format, etc.}"
