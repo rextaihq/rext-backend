@@ -52,9 +52,12 @@ def create_workflow() -> RunnableLambda[ContentState, ContentState]:
     workflow.add_edge("KnowledgeContext", "ScrapeContent")
     workflow.add_edge("WebContext", "ScrapeContent")
 
-    workflow.add_edge("ScrapeContent", "RerankContent")
-    workflow.add_edge("RerankContent", "BlogGeneration")
+    # workflow.add_edge("ScrapeContent", "RerankContent")
+    # workflow.add_edge("RerankContent", "BlogGeneration")
 
-    workflow.add_edge("BlogGeneration", END)
+    # workflow.add_edge("BlogGeneration", END)
+
+    # workflow.add_edge("KnowledgeContext", END)
+    # workflow.add_edge("WebContext", END)
 
     return workflow

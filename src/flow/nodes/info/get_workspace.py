@@ -24,7 +24,7 @@ def fetch_workspace(state: ContentState):
 
     print("workspace id: ",workspace_id)
     print("User idL ",user_id)
-    
+    print("Paylaod: ",payload)
     if not user_id or not workspace_id:
         print("⚠️ Missing user_id or workspace_id in payload")
         return {

@@ -20,10 +20,11 @@ def fetch_topic(state: ContentState):
     print("Fetching Topic.....")
     request_payload = state.get("request_payload", {})
 
-    topic_id = request_payload.get("topic_id")
+    topic_id = request_payload.get("topicId")
     workspace_id = request_payload.get("workspace_id")
 
     print("topic id: ",topic_id)
+    print("Payload: ",request_payload)
     print("workspace id: ",workspace_id)
     if not topic_id or not workspace_id:
         print("⚠️ Missing topic_id or workspace_id in payload")
