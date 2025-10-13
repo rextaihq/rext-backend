@@ -12,7 +12,7 @@ from src.services.workspace_service import WorkspaceService
 from src.utils.logger import logger
 from src.utils.response_utils import created, success
 from src.utils.route_decorators import db_transaction_handler
-
+from langsmith import traceable, trace
 
 router = APIRouter(
     prefix="/workspace",
@@ -80,6 +80,12 @@ async def get_workspace_by_id(
 
 @router.post("/create")
 @db_transaction_handler("create workspace", auto_commit=True)
+@traceable(
+    name="Create Workspace",
+    metadata={"description": "Creates a new workspace and launches onboarding pipeline."},
+    tags=["Workspace", "Create", "Pipeline", "WREXT"],
+    project_name="WREXT"
+)
 async def create_workspace(
     data: WorkspaceSchema,
     request: Request,
@@ -107,13 +113,14 @@ async def create_workspace(
         )
 
     user_id = UUID(str(current_user.get("identity")))
-    service = WorkspaceService(db)
-    result = await service.create_workspace_for_user(
-        user_id=user_id,
-        name=data.name,
-        timezone=data.timezone,
-        url=str(data.url),
-    )
+    with trace(name="Workspace Creation", inputs=data.model_dump()):
+        service = WorkspaceService(db)
+        result = await service.create_workspace_for_user(
+            user_id=user_id,
+            name=data.name,
+            timezone=data.timezone,
+            url=str(data.url),
+        )
 
     return created(
         data=result,
