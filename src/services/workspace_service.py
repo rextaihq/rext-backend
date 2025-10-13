@@ -47,7 +47,7 @@ from src.utils.vector_store import add_to_vector_store, delete_vectors
 from src.utils.logger import logger
 from src.api.database.async_database import get_async_db
 from src.services.workspace_pipeline import run_workspace_pipeline
-
+from langsmith import traceable, trace
 
 class WorkspaceService:
     """Service for workspace business logic"""
@@ -76,6 +76,12 @@ class WorkspaceService:
         await self._ensure_membership(workspace_id, user_id)
         return await self.get_workspace_with_brand_voice(workspace_id)
 
+    @traceable(
+        name="Create Workspace",
+        metadata={"operation": "workspace_create"},
+        tags=["WorkspaceService", "Create"],
+        project_name="WREXT"
+    )
     async def create_workspace_for_user(
         self,
         user_id: UUID,
@@ -89,34 +95,51 @@ class WorkspaceService:
         Returns immediately with workspace metadata and an SSE operation ID.
         """
         await self._ensure_active_user(user_id)
-        workspace = await self.create_workspace(
-            user_id=user_id,
-            name=name,
-            tz=timezone,
-            url=url,
-        )
-        await self.db.refresh(workspace)
+        with trace(name="Create Workspace Record"):
+            workspace = await self.create_workspace(user_id=user_id, name=name, tz=timezone, url=url)
+            await self.db.refresh(workspace)
+        
 
-        await self.create_workspace_member(workspace.id, user_id, is_default=True, status="active")
+        with trace(name="Assign Roles & Permissions"):
+            await self.create_workspace_member(workspace.id, user_id, is_default=True, status="active")
+            admin_role = await self._ensure_workspace_admin_role(workspace.id)
+            await self._assign_permissions_to_role(admin_role.id, resources=["topic", "content"])
+            await self._assign_role_to_user(admin_role.id, user_id, workspace.id)
 
-        admin_role = await self._ensure_workspace_admin_role(workspace.id)
-        await self._assign_permissions_to_role(admin_role.id, resources=["topic", "content"])
-        await self._assign_role_to_user(admin_role.id, user_id, workspace.id)
 
         operation_id = str(uuid4())
+        async def run_pipeline()->None:
+            with trace(name="Run Workspace Pipeline", inputs={"operation_id": operation_id, "url": url}):
+                async for bg_db in get_async_db():
+                    try:
+                        await run_workspace_pipeline(
+                            db=bg_db,
+                            operation_id=operation_id,
+                            workspace_id=workspace.id,
+                            url=url,
+                        )
+                    except Exception as exc:
+                        logger.error(
+                            "Workspace pipeline failed",
+                            extra={
+                                "operation_id": operation_id,
+                                "workspace_id": str(workspace.id),
+                                "error": str(exc),
+                            },
+                            exc_info=True,
+                        )
+                        raise
+                    break
 
-        async def run_pipeline() -> None:
-            async for bg_db in get_async_db():
+        task = create_task(run_pipeline())
+
+        def handle_completion(pipeline_task) -> None:
+            with trace(name="Worksapce Completion"):
                 try:
-                    await run_workspace_pipeline(
-                        db=bg_db,
-                        operation_id=operation_id,
-                        workspace_id=workspace.id,
-                        url=url,
-                    )
+                    pipeline_task.result()
                 except Exception as exc:
                     logger.error(
-                        "Workspace pipeline failed",
+                        "Workspace pipeline task raised exception",
                         extra={
                             "operation_id": operation_id,
                             "workspace_id": str(workspace.id),
@@ -124,26 +147,8 @@ class WorkspaceService:
                         },
                         exc_info=True,
                     )
-                    raise
-                break
 
-        task = create_task(run_pipeline())
-
-        def handle_completion(pipeline_task) -> None:
-            try:
-                pipeline_task.result()
-            except Exception as exc:
-                logger.error(
-                    "Workspace pipeline task raised exception",
-                    extra={
-                        "operation_id": operation_id,
-                        "workspace_id": str(workspace.id),
-                        "error": str(exc),
-                    },
-                    exc_info=True,
-                )
-
-        task.add_done_callback(handle_completion)
+            task.add_done_callback(handle_completion)
 
         logger.info(
             "Workspace created and background pipeline scheduled",
