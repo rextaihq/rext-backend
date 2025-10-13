@@ -19,7 +19,7 @@ from langsmith import traceable, trace
 def fetch_user(state: ContentState):
     print("Fetching User.....")
     payload = state.get("request_payload", {})
-    # print("Payload: ",payload)
+    print("Payload: ",payload)
     user_id = payload.get("author_id")
 
     print("User id: ",user_id)

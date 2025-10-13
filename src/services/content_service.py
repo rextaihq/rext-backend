@@ -30,24 +30,40 @@ from src.api.models.content_models.content import Content
 from src.api.models.content_models.content_metadata import ContentMetadata
 from src.api.models.content_models.content_seo_data import ContentSEOData
 from src.api.schema.content_schema import ContentCreate, ContentUpdate
+from src.flow.states.payload_state import Payload
+from src.flow.service.service import LangGraphService
 from src.utils.logger import logger
 from src.api.middleware.exceptions import (
     WrextValidationException,
     ResourceNotFoundException,
     DuplicateResourceException
 )
+from dotenv import load_dotenv
+import os
+load_dotenv()
 
-
-class ContentService:
+class ContentService(LangGraphService):
     """Service for content business logic"""
 
-    def __init__(self, db: AsyncSession):
+    def __init__(
+            self, 
+            db: AsyncSession,
+            url: str = os.getenv("LANGSMITH_DEV_URL"), 
+            api_key: Optional[str] = os.getenv('LANGSMITH_API_KEY')
+    ):
         """
         Initialize ContentService.
 
         Args:
             db: Async database session
         """
+        url = url or os.getenv("LANGSMITH_DEV_URL")
+        api_key = api_key or os.getenv("LANGSMITH_API_KEY")
+        super().__init__(
+            db=db,
+            url=url, 
+            api_key=api_key
+        )
         self.db = db
 
     async def create_content(
@@ -158,8 +174,42 @@ class ContentService:
             extra={"workspace_id": str(workspace_id), "user_id": str(user_id), "title": data.title}
         )
 
-        return content
+        # Prepare LangGraph input payload for workflow trigger
+        logger.info("Prepare LangGraph input payload for workflow trigger")
+        langgraph_input_payload = Payload(
+            content_id=str(content.id),
+            workspace_id=str(workspace_id),
+            topicId=str(data.topic_id),
+            author_id=str(getattr(data, "author_id", user_id)),
+            assigned_to_user_id=str(data.assigned_to_user_id or user_id),
+            title=data.title,
+            content_language=data.content_language or "English",
+            content_format=data.content_format or "Markdown",
+            content_metadata=data.metadata.model_dump(),
+            content_seo_data=data.seo_data.model_dump()
+        )
+        
+        logger.info(
+            f"LangGraph payload initialized for content: {content.id}",
+            extra={"payload": langgraph_input_payload}
+        )
 
+        # execute the flow for testing
+        assistant = await self.create_assistant(
+            graph_id="agent", name="my_content_assistant"
+        )
+        async for mode, chunk in self.run_assistant_stream(
+            assistant_id=assistant["assistant_id"],
+            input_payload={
+                "request_payload":langgraph_input_payload
+            },
+            metadata={"source": "local_test"}
+        ):
+            # print(f"Mode: [{mode.upper()}] — keys: {list(chunk.keys()) if isinstance(chunk, dict) else chunk}")
+
+            # print(f"Mode: [{mode.upper()}]")
+            pass
+        return content
     async def update_content(
         self,
         content_id: UUID,

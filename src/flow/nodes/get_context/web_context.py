@@ -33,6 +33,8 @@ def web_context(state: ContentState):
     topics = state.get("topics", [])
     print(f"📝 Topics in state: {len(topics)} found")
     title = topics[0]["title"] if topics else ""
+    if len(title)==0:
+        title = state.get("title")
     print(f"🏷️ Using title: '{title}'")
 
     # Build query → combine title + keywords
