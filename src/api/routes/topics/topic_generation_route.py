@@ -25,6 +25,7 @@ from src.utils.db_utils import get_or_404
 import uuid
 
 from src.api.lib.logger import auto_logger
+from langsmith import traceable, trace
 
 logger = auto_logger()
 prompt_manager = PromptManager()
@@ -47,6 +48,17 @@ async def get_status(request: Request):
 @router.post("/generate-topic")
 @db_transaction_handler("generate topics", auto_commit=False)
 @require_permissions("topic.create", workspace_scoped=True)
+@traceable(
+    name="Generate Topics",
+    metadata={
+        "description": "Generates AI-based content topics for a workspace.",
+        "inputs": ["industry", "num_topics", "workspace_id"],
+        "outputs": ["topics", "total_generated"],
+        "source": "LangGraph Content Workflow",
+    },
+    tags=["LLM", "TopicGeneration", "WREXT"],
+    project_name="WREXT"
+)
 async def generate_topic(
     data: TopicGenerationInput,
     request: Request,
@@ -70,51 +82,72 @@ async def generate_topic(
     logger.info("Starting topic generation...")
 
     # Load the model
-    model = topic_generation_model()
-    if not model:
+    try:
+        with trace(name="Load Topic Model") as model_trace:
+            model = topic_generation_model()
+            if not model:
+                raise TopicGenerationException(
+                    message="Failed to load topic generation model",
+                    generation_params=data.model_dump()
+                )
+            model_trace.outputs = {"model_loaded": True}
+    except Exception as model_load_err:
+        logger.error(f"❌ Model loading failed: {model_load_err}")
         raise TopicGenerationException(
-            message="Failed to load topic generation model",
-            generation_params=data.model_dump()
+            message="Model loading failed",
+            generation_params=data.model_dump(),
+            context={"error": str(model_load_err)}
         )
 
     # Format the human message
-    prompt_template = prompt_manager.get_prompt("topic_generation_v1")
-    topic_prompt = prompt_template.format_prompt(**data.model_dump()).to_messages()
+    try:
+        with trace(name="Topic Prompt Construction", inputs=data.model_dump()) as prompt_trace:
+            prompt_template = prompt_manager.get_prompt("topic_generation_v1")
+            topic_prompt = prompt_template.format_prompt(**data.model_dump()).to_messages()
+            prompt_trace.outputs = {"prompt_preview": str(topic_prompt)[:400]}
+    except Exception as e:
+        logger.error(f"❌ Prompt formatting failed: {e}")
+        raise TopicGenerationException(
+            message="Prompt formatting failed",
+            generation_params=data.model_dump(),
+            context={"error": str(e)}
+        )
 
     # Call the model (use async invoke to avoid blocking)
     try:
-        response = await model.ainvoke(topic_prompt)
-        basic_topics = response.topics
-        logger.info(f"Generated {len(basic_topics)} basic topics")
+        with trace(name="LLM Topic Generation") as llm_trace:
+            response = await model.ainvoke(topic_prompt)
+            basic_topics = response.topics
+            llm_trace.outputs = {"num_topics_generated": len(basic_topics)}
+            logger.info(f"✅ Generated {len(basic_topics)} topics via LLM")
     except Exception as model_err:
-        logger.info(f"Model invocation failed: {model_err}")
+        logger.error(f"❌ Model invocation failed: {model_err}")
         raise TopicGenerationException(
             message="Failed to generate topics using AI model",
             generation_params=data.model_dump(),
             context={"model_error": str(model_err)}
         )
 
+
     # Create lightweight enrichment for frontend display
     enrichment_service = TopicEnrichmentService()
     display_topics = []
-
     try:
-        for basic_topic in basic_topics:
-            # Convert basic topic to dict
-            basic_topic_dict = basic_topic.model_dump() if hasattr(basic_topic, 'model_dump') else basic_topic
+        with trace(name="Topic Enrichment", inputs={"num_topics": len(basic_topics)}) as enrich_trace:
+            for basic_topic in basic_topics:
+                basic_topic_dict = (
+                    basic_topic.model_dump() if hasattr(basic_topic, "model_dump") else basic_topic
+                )
+                basic_topic_dict["id"] = str(uuid.uuid4())
+                basic_topic_dict["suggested_defaults"] = enrichment_service._create_suggested_defaults(
+                    basic_topic_dict, data.model_dump()
+                ).model_dump()
+                display_topics.append(basic_topic_dict)
 
-            # Add ID and suggested defaults for frontend display
-            basic_topic_dict["id"] = str(uuid.uuid4())
-            basic_topic_dict["suggested_defaults"] = enrichment_service._create_suggested_defaults(
-                basic_topic_dict,
-                data.model_dump()
-            ).model_dump()
-
-            display_topics.append(basic_topic_dict)
-
-        logger.info(f"Prepared {len(display_topics)} topics for display")
+            enrich_trace.outputs = {"enriched_topics": len(display_topics)}
+            logger.info(f"✨ Enriched {len(display_topics)} topics")
     except Exception as enrichment_err:
-        logger.info(f"Topic enrichment failed: {enrichment_err}")
+        logger.error(f"❌ Topic enrichment failed: {enrichment_err}")
         raise TopicGenerationException(
             message="Failed to enrich generated topics",
             generation_params=data.model_dump(),
@@ -122,6 +155,18 @@ async def generate_topic(
         )
 
     # Return raw data - decorator handles success response
+    # === Return Trace ===
+    with trace(name="Finalize Response") as finalize_trace:
+        result = {
+            "topics": display_topics,
+            "total_generated": len(display_topics),
+            "generation_params": {
+                "industry": data.industry,
+                "num_topics": getattr(data, "num_topics", len(display_topics))
+            },
+        }
+        finalize_trace.outputs = {"response_size": len(display_topics)}
+        logger.info("✅ Topic generation completed successfully.")
     # Note: auto_commit=False because this doesn't modify database
     return {
         "topics": display_topics,
