@@ -43,6 +43,7 @@ from uuid import UUID
 from decimal import Decimal
 
 from sqlalchemy.orm import class_mapper
+from sqlalchemy.inspection import inspect
 
 
 class SerializableMixin:
@@ -132,22 +133,34 @@ class SerializableMixin:
 
         # Include relationships if requested
         if include_relationships:
-            for rel_name in include_relationships:
-                if hasattr(self, rel_name):
-                    rel_obj = getattr(self, rel_name)
+            # Use inspection to check if relationships are loaded without triggering lazy loading
+            inspector = inspect(self)
 
-                    if rel_obj is None:
-                        data[rel_name] = None
-                    elif isinstance(rel_obj, list):
-                        # One-to-many relationship
-                        data[rel_name] = [
-                            item.to_dict() if hasattr(item, 'to_dict') else str(item)
-                            for item in rel_obj
-                        ]
-                    else:
-                        # One-to-one or many-to-one relationship
-                        data[rel_name] = (
-                            rel_obj.to_dict() if hasattr(rel_obj, 'to_dict') else str(rel_obj)
-                        )
+            for rel_name in include_relationships:
+                # Check if the relationship exists on the model
+                if rel_name not in inspector.mapper.relationships:
+                    continue
+
+                # Check if the relationship is loaded (won't trigger lazy load)
+                rel_state = inspector.attrs.get(rel_name)
+                if rel_state is None or not rel_state.loaded_value:
+                    # Relationship not loaded, skip it
+                    continue
+
+                rel_obj = getattr(self, rel_name)
+
+                if rel_obj is None:
+                    data[rel_name] = None
+                elif isinstance(rel_obj, list):
+                    # One-to-many relationship
+                    data[rel_name] = [
+                        item.to_dict() if hasattr(item, 'to_dict') else str(item)
+                        for item in rel_obj
+                    ]
+                else:
+                    # One-to-one or many-to-one relationship
+                    data[rel_name] = (
+                        rel_obj.to_dict() if hasattr(rel_obj, 'to_dict') else str(rel_obj)
+                    )
 
         return data

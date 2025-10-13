@@ -97,6 +97,10 @@ class ContentService(LangGraphService):
         unique_slug = await self._generate_unique_slug(workspace_id, base_slug)
 
         # Create content entity
+        # Default status is "generating" for new content that will be auto-generated
+        # If body_markdown is provided, status can be "draft" (manual content)
+        default_status = "generating" if not data.body_markdown else "draft"
+
         content = Content(
             workspace_id=workspace_id,
             topic_id=data.topic_id,
@@ -107,7 +111,7 @@ class ContentService(LangGraphService):
             slug=unique_slug,
             body_markdown=data.body_markdown,
             content_format=data.content_format or "Markdown",
-            status=data.status or "draft",
+            status=data.status or default_status,  # Auto-set to "generating" if no body provided
             content_language=data.content_language or "English",
             langgraph_thread_id=data.langgraph_thread_id,  # Store thread ID if provided
             created_at=datetime.now(timezone.utc),
@@ -174,41 +178,8 @@ class ContentService(LangGraphService):
             extra={"workspace_id": str(workspace_id), "user_id": str(user_id), "title": data.title}
         )
 
-        # Prepare LangGraph input payload for workflow trigger
-        logger.info("Prepare LangGraph input payload for workflow trigger")
-        langgraph_input_payload = Payload(
-            content_id=str(content.id),
-            workspace_id=str(workspace_id),
-            topicId=str(data.topic_id),
-            author_id=str(getattr(data, "author_id", user_id)),
-            assigned_to_user_id=str(data.assigned_to_user_id or user_id),
-            title=data.title,
-            content_language=data.content_language or "English",
-            content_format=data.content_format or "Markdown",
-            content_metadata=data.metadata.model_dump(),
-            content_seo_data=data.seo_data.model_dump()
-        )
-        
-        logger.info(
-            f"LangGraph payload initialized for content: {content.id}",
-            extra={"payload": langgraph_input_payload}
-        )
-
-        # execute the flow for testing
-        assistant = await self.create_assistant(
-            graph_id="agent", name="my_content_assistant"
-        )
-        async for mode, chunk in self.run_assistant_stream(
-            assistant_id=assistant["assistant_id"],
-            input_payload={
-                "request_payload":langgraph_input_payload
-            },
-            metadata={"source": "local_test"}
-        ):
-            # print(f"Mode: [{mode.upper()}] — keys: {list(chunk.keys()) if isinstance(chunk, dict) else chunk}")
-
-            # print(f"Mode: [{mode.upper()}]")
-            pass
+        # Content generation will be triggered by background task in the route
+        # This allows immediate API response while generation runs in background
         return content
     async def update_content(
         self,

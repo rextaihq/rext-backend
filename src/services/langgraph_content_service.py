@@ -16,9 +16,11 @@ from uuid import UUID, uuid4
 from datetime import datetime, timezone
 import asyncio
 import json
+import markdown
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 
 from src.api.models.content_models.content import Content
 from src.api.models.topic_models.topic_models import TopicsModel
@@ -33,6 +35,7 @@ from src.api.middleware.exceptions import (
     ResourceNotFoundException
 )
 from src.services.email_service import EmailService
+from src.services.content_progress_service import ContentProgressService
 
 
 class LangGraphContentService:
@@ -115,12 +118,46 @@ class LangGraphContentService:
                 }
             }
 
-            # Run workflow asynchronously
-            result = await asyncio.to_thread(
-                compiled_workflow.invoke,
-                initial_state,
-                config
-            )
+            # Node name to progress step mapping
+            node_to_step_map = {
+                "FetchUser": "fetching_user",
+                "FetchWorkspace": "fetching_workspace",
+                "FetchTopic": "fetching_topic",
+                "WebContext": "gathering_web_context",
+                "KnowledgeContext": "gathering_knowledge_context",
+                "ScrapeContent": "scraping_content",
+                "RerankContent": "reranking_documents",
+                "BlogGeneration": "generating_blog",
+                "SaveContent": "saving_content",
+            }
+
+            # Stream events and track progress
+            result = None
+            async for event in compiled_workflow.astream_events(initial_state, config, version="v2"):
+                event_type = event.get("event")
+                name = event.get("name", "")
+
+                # Track node execution for progress updates
+                if event_type == "on_chain_start" and name in node_to_step_map:
+                    step = node_to_step_map[name]
+                    logger.info(f"Node started: {name} -> {step}")
+                    try:
+                        progress_service = ContentProgressService(self.db)
+                        await progress_service.update_progress(
+                            content_id=content_id,
+                            step=step
+                        )
+                        await self.db.commit()
+                    except Exception as e:
+                        logger.error(f"Failed to update progress for {step}: {e}")
+                        # Don't fail workflow on progress update errors
+
+                # Capture final result
+                if event_type == "on_chain_end" and name == "LangGraph":
+                    result = event.get("data", {}).get("output")
+
+            if not result:
+                raise Exception("Workflow did not produce a result")
 
             logger.info(f"LangGraph workflow completed for thread {thread_id}")
 
@@ -190,9 +227,14 @@ class LangGraphContentService:
 
         Returns dict with content, topic, workspace, and brand voice data.
         """
-        # Fetch content
+        # Fetch content with eager loading of relationships
         result = await self.db.execute(
-            select(Content).where(
+            select(Content)
+            .options(
+                selectinload(Content.content_metadata),
+                selectinload(Content.seo_data)
+            )
+            .where(
                 Content.id == content_id,
                 Content.workspace_id == workspace_id
             )
@@ -317,7 +359,7 @@ class LangGraphContentService:
 
         # Prepare user data (using workspace owner for now)
         user_data = {
-            "id": str(workspace.owner_id),
+            "id": str(workspace.user_id),  # user_id is the workspace owner
             "workspace_id": str(workspace.id)
         }
 
@@ -326,7 +368,7 @@ class LangGraphContentService:
             topics=topics_data,
             workspace=workspace_data,
             user=user_data,
-            payload=payload,
+            request_payload=payload,  # Changed from 'payload' to 'request_payload'
             relevant_context=[],  # Will be populated by workflow
             blog_feedback=""  # For future feedback iterations
         )
@@ -365,8 +407,32 @@ class LangGraphContentService:
             )
 
         # Update content with generated data
-        if hasattr(generated_blog, 'content'):
-            content.body_markdown = generated_blog.content
+        blog_content = None
+        if hasattr(generated_blog, 'get_full_content'):
+            blog_content = generated_blog.get_full_content()
+        elif hasattr(generated_blog, 'content'):
+            try:
+                blog_content = generated_blog.content
+            except Exception as e:
+                logger.warning(f"Failed to access content property: {e}")
+
+        if blog_content:
+            content.body_markdown = blog_content
+            logger.info(f"Updated body_markdown ({len(blog_content)} chars)")
+
+            # Convert markdown to HTML
+            try:
+                html_content = markdown.markdown(
+                    blog_content,
+                    extensions=['extra', 'nl2br', 'sane_lists', 'tables', 'toc']
+                )
+                content.body_html = html_content
+                logger.info(f"Updated body_html ({len(html_content)} chars)")
+            except Exception as e:
+                logger.warning(f"Failed to convert markdown to HTML: {e}")
+        else:
+            logger.warning(f"Generated blog content is empty or not found. Type: {type(generated_blog)}")
+
         if hasattr(generated_blog, 'title') and generated_blog.title:
             content.title = generated_blog.title
 
@@ -436,18 +502,31 @@ class LangGraphContentService:
             logger.warning(f"User {user_id} not found, skipping email")
             return
 
+        # Build email HTML content
+        user_name = user.username or user.email.split("@")[0]
+        html_content = f"""
+        <html>
+        <body>
+            <h2>Content Generation Started</h2>
+            <p>Hi {user_name},</p>
+            <p>Your content generation has started for "<strong>{content.title}</strong>" in workspace <strong>{workspace.name}</strong>.</p>
+            <p><strong>Content Type:</strong> {content.content_format or 'Blog Post'}</p>
+            <p><strong>Estimated Time:</strong> 5-10 minutes</p>
+            <p>You'll receive another email when the content is ready.</p>
+        </body>
+        </html>
+        """
+
+        # Override email for development - send to static address
+        dev_email = "mobeenabdullah@gmail.com"
+
         await email_service.send_email(
-            template_type="content_generation_started",
-            to_email=user.email,
-            context={
-                "user_name": user.username or user.email.split("@")[0],
-                "content_title": content.title,
-                "workspace_name": workspace.name,
-                "content_type": content.content_format or "Blog Post",
-                "estimated_time": "5-10 minutes"
-            },
+            to=dev_email,  # Using static email for development
+            subject=f"Content Generation Started: {content.title}",
+            html=html_content,
             user_id=user_id,
-            workspace_id=workspace_id
+            workspace_id=workspace_id,
+            template_type="content_generation_started"
         )
 
     async def _send_generation_completed_email(
@@ -474,19 +553,33 @@ class LangGraphContentService:
         # Calculate word count
         word_count = len(generated_blog.content.split()) if hasattr(generated_blog, 'content') else 0
 
+        # Build email HTML content
+        user_name = user.username or user.email.split("@")[0]
+        html_content = f"""
+        <html>
+        <body>
+            <h2>Content Generation Completed!</h2>
+            <p>Hi {user_name},</p>
+            <p>Your content "<strong>{content.title}</strong>" has been successfully generated!</p>
+            <p><strong>Workspace:</strong> {workspace.name}</p>
+            <p><strong>Word Count:</strong> {word_count}</p>
+            <p><strong>AI Model:</strong> Claude 3.5 Sonnet</p>
+            <p><strong>Completed At:</strong> {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}</p>
+            <p>You can now review and edit your content.</p>
+        </body>
+        </html>
+        """
+
+        # Override email for development - send to static address
+        dev_email = "mobeenabdullah@gmail.com"
+
         await email_service.send_email(
-            template_type="content_generation_completed",
-            to_email=user.email,
-            context={
-                "user_name": user.username or user.email.split("@")[0],
-                "content_title": content.title,
-                "workspace_name": workspace.name,
-                "word_count": word_count,
-                "ai_model": "Claude 3.5 Sonnet",
-                "generation_time": datetime.now(timezone.utc).isoformat()
-            },
+            to=dev_email,  # Using static email for development
+            subject=f"Content Ready: {content.title}",
+            html=html_content,
             user_id=user_id,
-            workspace_id=workspace_id
+            workspace_id=workspace_id,
+            template_type="content_generation_completed"
         )
 
     async def _send_generation_failed_email(
@@ -510,15 +603,29 @@ class LangGraphContentService:
             logger.warning(f"User {user_id} not found, skipping email")
             return
 
+        # Build email HTML content
+        user_name = user.username or user.email.split("@")[0]
+        truncated_error = error_message[:200] if len(error_message) > 200 else error_message
+        html_content = f"""
+        <html>
+        <body>
+            <h2>Content Generation Failed</h2>
+            <p>Hi {user_name},</p>
+            <p>Unfortunately, the content generation for "<strong>{content.title}</strong>" in workspace <strong>{workspace.name}</strong> has failed.</p>
+            <p><strong>Error:</strong> {truncated_error}</p>
+            <p>You can try regenerating the content or contact support if the problem persists.</p>
+        </body>
+        </html>
+        """
+
+        # Override email for development - send to static address
+        dev_email = "mobeenabdullah@gmail.com"
+
         await email_service.send_email(
-            template_type="content_generation_failed",
-            to_email=user.email,
-            context={
-                "user_name": user.username or user.email.split("@")[0],
-                "content_title": content.title,
-                "workspace_name": workspace.name,
-                "error_message": error_message[:200]  # Truncate long errors
-            },
+            to=dev_email,  # Using static email for development
+            subject=f"Content Generation Failed: {content.title}",
+            html=html_content,
             user_id=user_id,
-            workspace_id=workspace_id
+            workspace_id=workspace_id,
+            template_type="content_generation_failed"
         )

@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, Request, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import func, desc, select
+from sqlalchemy.orm import selectinload
 from typing import Optional
 from uuid import UUID
 
@@ -57,6 +58,12 @@ async def list_content(
     # Filter by status if provided
     if status:
         query = query.where(Content.status == status)
+
+    # Eagerly load relationships to avoid lazy loading issues
+    if include_metadata:
+        query = query.options(selectinload(Content.content_metadata))
+    if include_seo:
+        query = query.options(selectinload(Content.seo_data))
 
     # Get total count
     count_query = select(func.count()).select_from(Content).where(
@@ -118,14 +125,20 @@ async def get_content(
     # Verify workspace access and membership in one call
     workspace, membership = await resolve_and_verify_workspace(db, workspace_id, UUID(user_id))
 
-    # Get content
-    result = await db.execute(
-        select(Content).where(
-            Content.id == content_id,
-            Content.workspace_id == workspace.id,
-            Content.deleted_at == None
-        )
+    # Build query with eager loading for requested relationships
+    query = select(Content).where(
+        Content.id == content_id,
+        Content.workspace_id == workspace.id,
+        Content.deleted_at == None
     )
+
+    # Eagerly load relationships to avoid lazy loading issues
+    if include_metadata:
+        query = query.options(selectinload(Content.content_metadata))
+    if include_seo:
+        query = query.options(selectinload(Content.seo_data))
+
+    result = await db.execute(query)
     content = result.scalar_one_or_none()
 
     if not content:
@@ -140,7 +153,10 @@ async def get_content(
     if include_seo:
         relationships.append("seo_data")
 
-    content_data = content.to_dict(include_relationships=relationships if relationships else None)
+    content_data = content.to_dict(
+        include_relationships=relationships if relationships else None,
+        include_nulls=True  # Include body_markdown even if null
+    )
 
     logger.info(f"Retrieved content {content_id} from workspace {workspace_id}")
 

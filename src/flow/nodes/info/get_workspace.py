@@ -1,6 +1,7 @@
 from src.flow.states.content_state import ContentState
 from src.api.models.workspace_models.workspace_model import WorkspaceModel
 from src.api.database.database import get_db
+from src.flow.utils.progress_helper import update_node_progress
 from langsmith import traceable, trace
 
 @traceable(
@@ -19,6 +20,12 @@ from langsmith import traceable, trace
 def fetch_workspace(state: ContentState):
     print("Fetching Workspace.....")
     payload = state.get("request_payload", {})
+
+    # Update progress (15%)
+    content_id = payload.get("content_id")
+    if content_id:
+        update_node_progress(content_id, "fetching_workspace")
+
     user_id = payload.get("author_id") or payload.get("user_id")
     workspace_id = payload.get("workspace_id")
 
@@ -28,29 +35,25 @@ def fetch_workspace(state: ContentState):
     if not user_id or not workspace_id:
         print("⚠️ Missing user_id or workspace_id in payload")
         return {
-            "node": "fetch workspace",
-            "error": f"workfpace not found",
-            "workspace": None
+            "error": [{"node": "fetch_workspace", "message": "Missing user_id or workspace_id in payload"}]
         }
 
     db = next(get_db())
     try:
+        # Query workspace - user can be owner OR member
+        # Simple approach: just verify workspace exists
+        # Access control is already handled by API layer before workflow starts
         workspace = (
             db.query(WorkspaceModel)
-            .filter(
-                WorkspaceModel.id == workspace_id,
-                WorkspaceModel.user_id == user_id
-            )
+            .filter(WorkspaceModel.id == workspace_id)
             .first()
         )
 
         if not workspace:
-            print("⚠️ Workspace not found for this user")
+            print(f"⚠️ Workspace {workspace_id} not found")
             return {
-            "node": "fetch workspace",
-            "error": f"workfpace not found",
-            "workspace": None
-        }
+                "error": [{"node": "fetch_workspace", "message": f"Workspace {workspace_id} not found"}]
+            }
 
         return {
             "workspace": {
@@ -58,8 +61,8 @@ def fetch_workspace(state: ContentState):
                 "user_id": str(workspace.user_id),
                 "name": workspace.name,
                 "slug": workspace.slug,
-                "description": workspace.description,
                 "url": workspace.url,
+                "timezone": workspace.timezone,
                 "created_at": workspace.created_at,
                 "updated_at": workspace.updated_at
             }
@@ -67,9 +70,7 @@ def fetch_workspace(state: ContentState):
 
     except Exception as e:
         return {
-            "node": "fetch_workspace",
-            "error": f"Unexpected error occurred: {str(e)}",
-            "workspace": None
+            "error": [{"node": "fetch_workspace", "message": f"Unexpected error occurred: {str(e)}"}]
         }
 
     finally:

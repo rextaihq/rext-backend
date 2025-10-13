@@ -1,5 +1,6 @@
 from src.flow.states.content_state import ContentState
 from src.utils.vector_store import load_vector_store
+from src.flow.utils.progress_helper import update_node_progress
 from langsmith import traceable, trace
 
 
@@ -20,6 +21,12 @@ def workspace_context(state: ContentState):
     print(f"\n🚀 [{node_name}] Starting...")
 
     payload = state.get("request_payload", {})
+
+    # Update progress (40%)
+    content_id = payload.get("content_id")
+    if content_id:
+        update_node_progress(content_id, "gathering_knowledge_context")
+
     workspace_id = payload.get("workspace_id")
 
     print(f"🔎 Payload keys: {list(payload.keys())}")
@@ -46,7 +53,9 @@ def workspace_context(state: ContentState):
         print(f"🏷️ Using title: '{title}'")
 
         # Build query → combine title + keywords
-        keywords = " ".join(payload.get("primaryKeywords", []))
+        # Keywords are in seo_data.content_primary_keywords
+        primary_keywords = payload.get("seo_data", {}).get("content_primary_keywords", [])
+        keywords = " ".join(primary_keywords) if primary_keywords else ""
         print(f"🔑 Primary keywords: {keywords}")
         query = f"{title} {keywords}".strip() or "general context"
         print(f"🔍 Final query string: '{query}'")

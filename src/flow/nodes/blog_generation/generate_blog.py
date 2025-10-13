@@ -2,10 +2,18 @@ from src.flow.states.content_state import ContentState
 from src.flow.prompts.prompt_manager import PromptManager
 from src.flow.states.blog_state import BlogArticle
 from src.flow.model.llm_manager import load_model
+from src.flow.utils.progress_helper import update_node_progress
 
 
 def generate_blog(state: ContentState):
     print("\n🔁 === BlogGeneration Node Triggered ===")
+
+    payload = state.get("request_payload", {})  # ✅ FIXED: use request_payload not payload
+
+    # Update progress (75%)
+    content_id = payload.get("content_id")
+    if content_id:
+        update_node_progress(content_id, "generating_blog")
 
     # ✅ Topics
     topics = state.get("topics", [])
@@ -16,7 +24,6 @@ def generate_blog(state: ContentState):
     # ✅ Context docs
     docs = state.get("relavant_context", [])
     blog_feedback = state.get("blog_feedback", "")
-    payload = state.get("payload", {})  # ✅ full payload
 
     print(f"📝 Generating blog for: {title}")
     print(f"📚 Number of context docs: {len(docs)}")

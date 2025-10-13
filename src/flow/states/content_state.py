@@ -14,6 +14,9 @@ def merge_document_lists(existing: List[Document], new: List[Document]) -> List[
 class ContentState(TypedDict, total=False):
     request_payload: Payload
     topics: List[dict]
+    workspace: dict
+    user: dict
+    brand_voice: dict
     humanReviewers: List[dict]
     context: Annotated[List[Document], merge_document_lists]
     human_review_notes: Optional[str]
@@ -25,6 +28,7 @@ class ContentState(TypedDict, total=False):
     approved_blogs :list[dict]
     blog_feedback : str
     generated_blog: BlogArticle
+    content_saved: bool
 
     # Human feedback or error
     error: Annotated[List[dict], operator.add]

@@ -1,6 +1,7 @@
 from perplexity import Perplexity
 from langchain_core.documents import Document
 from src.flow.states.content_state import ContentState
+from src.flow.utils.progress_helper import update_node_progress
 from langsmith import traceable,trace
 from dotenv import load_dotenv
 import os
@@ -29,6 +30,11 @@ def web_context(state: ContentState):
 
     payload = state.get("request_payload", {})
 
+    # Update progress (30%)
+    content_id = payload.get("content_id")
+    if content_id:
+        update_node_progress(content_id, "gathering_web_context")
+
     # ✅ get title from topics in state
     topics = state.get("topics", [])
     print(f"📝 Topics in state: {len(topics)} found")
@@ -38,7 +44,9 @@ def web_context(state: ContentState):
     print(f"🏷️ Using title: '{title}'")
 
     # Build query → combine title + keywords
-    keywords = " ".join(payload.get("primaryKeywords", []))
+    # Keywords are in seo_data.content_primary_keywords
+    primary_keywords = payload.get("seo_data", {}).get("content_primary_keywords", [])
+    keywords = " ".join(primary_keywords) if primary_keywords else ""
     print(f"🔑 Primary keywords: {keywords}")
     query = f"{title} {keywords}".strip() or "general context"
     print(f"🔍 Final query string: '{query}'")

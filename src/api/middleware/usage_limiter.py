@@ -146,7 +146,7 @@ class MemberLimitChecker:
             return  # Workspace doesn't exist, let the endpoint handle it
 
         # Get workspace creator's subscription
-        subscription, plan = get_user_subscription_and_plan(db, workspace.creator_id)
+        subscription, plan = get_user_subscription_and_plan(db, workspace.user_id)
 
         if not subscription or not plan:
             # Default free tier limit

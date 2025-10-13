@@ -74,13 +74,15 @@ class EmailProviderFactory:
                     email_config.email_fallback_provider
                 )
             except Exception as e:
-                logger.error(
-                    f"Failed to create fallback provider: {str(e)}",
+                logger.warning(
+                    f"Fallback provider '{email_config.email_fallback_provider}' failed to initialize: {str(e)}. Email will use primary provider only.",
                     extra={
                         "fallback_provider": email_config.email_fallback_provider,
                         "error_type": type(e).__name__
                     }
                 )
+                # Set to a sentinel value to avoid retry attempts
+                cls._fallback_instance = None
                 return None
 
         return cls._fallback_instance
