@@ -3,6 +3,7 @@ from langchain_core.documents import Document
 from src.flow.states.content_state import ContentState
 from src.utils.helper import GetBrowserConfig, GetCrawlerRunConfig
 from src.flow.nodes.scrapping.clean_context import clean_content
+from src.flow.utils.progress_helper import update_node_progress
 from langsmith import traceable, trace
 
 
@@ -26,6 +27,13 @@ async def scrape_content(state: ContentState) -> dict:
     """
     node_name = "ScrapeFullContent"
     print(f"\n🕷️ [{node_name}] Starting scrape workflow...")
+
+    payload = state.get("request_payload", {})
+
+    # Update progress (50%)
+    content_id = payload.get("content_id")
+    if content_id:
+        update_node_progress(content_id, "scraping_content")
 
     urls = state.get("urls", [])
     if not urls:

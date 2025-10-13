@@ -15,7 +15,7 @@ class EmailConfig(BaseSettings):
     
     # Provider selection
     email_provider: Literal["resend", "smtp", "mock"] = "resend"
-    email_fallback_provider: Optional[Literal["resend", "smtp", "mock"]] = "smtp"
+    email_fallback_provider: Optional[Literal["resend", "smtp", "mock"]] = None  # No fallback by default
     
     # Resend configuration
     resend_api_key: Optional[str] = None

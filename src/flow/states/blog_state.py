@@ -19,3 +19,37 @@ class BlogArticle(BaseModel):
     conclusion: str = Field(..., description="A concluding paragraph that wraps up the article, also in Markdown format.")
     references: List[str] = Field(default_factory=list, description="A list of external references that are strictly relevant to the blog title and content.")
     final_image: ImagePlaceholder = Field(..., description="A single image to be placed at the end of the blog, with SEO alt text and an optional AI-generated prompt. Description should be in details simpel and easy to understand so that our ui team will easily understand and make a image")
+
+    def get_full_content(self) -> str:
+        """
+        Generate full markdown content from all blog parts.
+        Combines introduction, sections, and conclusion into a single markdown string.
+        """
+        parts = []
+
+        # Add introduction
+        if self.introduction:
+            parts.append(self.introduction)
+
+        # Add sections
+        for section in self.sections:
+            parts.append(f"\n## {section.heading}\n")
+            parts.append(section.content)
+
+        # Add conclusion
+        if self.conclusion:
+            parts.append(f"\n## Conclusion\n")
+            parts.append(self.conclusion)
+
+        # Add references if any
+        if self.references:
+            parts.append("\n## References\n")
+            for i, ref in enumerate(self.references, 1):
+                parts.append(f"{i}. {ref}")
+
+        return "\n\n".join(parts)
+
+    @property
+    def content(self) -> str:
+        """Alias for get_full_content() for backward compatibility"""
+        return self.get_full_content()

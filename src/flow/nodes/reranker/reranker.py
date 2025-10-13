@@ -3,6 +3,7 @@ from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_core.documents import Document
 from src.flow.states.content_state import ContentState
 from src.utils.helper import get_compressor
+from src.flow.utils.progress_helper import update_node_progress
 from langsmith import traceable, trace
 
 
@@ -29,6 +30,11 @@ def rerank_documents(state: ContentState) -> Dict[str, List[Document]]:
     try:
         payload = state.get("request_payload", {})
 
+        # Update progress (60%)
+        content_id = payload.get("content_id")
+        if content_id:
+            update_node_progress(content_id, "reranking_documents")
+
         # ✅ get title from topics in state
         topics = state.get("topics", [])
         print(f"📝 Topics in state: {len(topics)} found")
@@ -36,7 +42,9 @@ def rerank_documents(state: ContentState) -> Dict[str, List[Document]]:
         print(f"🏷️ Using title: '{title}'")
 
         # Build query → combine title + keywords
-        keywords = " ".join(payload.get("primaryKeywords", []))
+        # Keywords are in seo_data.content_primary_keywords
+        primary_keywords = payload.get("seo_data", {}).get("content_primary_keywords", [])
+        keywords = " ".join(primary_keywords) if primary_keywords else ""
         print(f"🔑 Primary keywords: {keywords}")
         query = f"{title} {keywords}".strip() or "general context"
         print(f"🔍 Final query string: '{query}'")

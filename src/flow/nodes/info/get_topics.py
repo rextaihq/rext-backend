@@ -1,6 +1,7 @@
 from src.flow.states.content_state import ContentState
 from src.api.models.topic_models.topic_models import TopicsModel
 from src.api.database.database import get_db
+from src.flow.utils.progress_helper import update_node_progress
 from langsmith import traceable, trace
 
 @traceable(
@@ -20,7 +21,12 @@ def fetch_topic(state: ContentState):
     print("Fetching Topic.....")
     request_payload = state.get("request_payload", {})
 
-    topic_id = request_payload.get("topicId")
+    # Update progress (20%)
+    content_id = request_payload.get("content_id")
+    if content_id:
+        update_node_progress(content_id, "fetching_topic")
+
+    topic_id = request_payload.get("topic_id")
     workspace_id = request_payload.get("workspace_id")
 
     print("topic id: ",topic_id)
@@ -28,7 +34,7 @@ def fetch_topic(state: ContentState):
     print("workspace id: ",workspace_id)
     if not topic_id or not workspace_id:
         print("⚠️ Missing topic_id or workspace_id in payload")
-        return {"topics": None, "error": "Missing topic_id or workspace_id"}
+        return {"error": [{"node": "fetch_topic", "message": "Missing topic_id or workspace_id"}]}
 
 
     db = next(get_db())
@@ -44,9 +50,7 @@ def fetch_topic(state: ContentState):
 
         if not topic:
             return {
-                "node": "fetch_topic",
-                "error": f"No topic found with id={topic_id}",
-                "topics": None
+                "error": [{"node": "fetch_topic", "message": f"No topic found with id={topic_id}"}]
             }
 
         return {
@@ -78,9 +82,7 @@ def fetch_topic(state: ContentState):
 
     except Exception as e:
         return {
-            "node": "fetch_topic",
-            "error": f"Unexpected error occurred: {str(e)}",
-            "topics": None
+            "error": [{"node": "fetch_topic", "message": f"Unexpected error occurred: {str(e)}"}]
         }
 
     finally:

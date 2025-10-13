@@ -1,6 +1,7 @@
 from src.flow.states.content_state import ContentState
 from src.api.models.user_models.users import Users
 from src.api.database.database import get_db
+from src.flow.utils.progress_helper import update_node_progress
 from langsmith import traceable, trace
 
 @traceable(
@@ -20,15 +21,18 @@ def fetch_user(state: ContentState):
     print("Fetching User.....")
     payload = state.get("request_payload", {})
     print("Payload: ",payload)
-    user_id = payload.get("author_id")
 
+    # Update progress (10%)
+    content_id = payload.get("content_id")
+    if content_id:
+        update_node_progress(content_id, "fetching_user")
+
+    user_id = payload.get("author_id")
     print("User id: ",user_id)
     if not user_id:
         print("⚠️ Missing author_id")
         return {
-            "node": "fetch user",
-            "error": f"User id {user_id} None",
-            "workspace": None
+            "error": [{"node": "fetch_user", "message": f"User id {user_id} None"}]
         }
 
     db = next(get_db())
@@ -37,10 +41,8 @@ def fetch_user(state: ContentState):
         if not user:
             print("⚠️ User not found")
             return {
-            "node": "fetch_user",
-            "error": f"user {user_id} not found",
-            "user": None
-        }
+                "error": [{"node": "fetch_user", "message": f"user {user_id} not found"}]
+            }
 
         return {
             "user": {
@@ -62,9 +64,7 @@ def fetch_user(state: ContentState):
 
     except Exception as e:
         return {
-            "node": "fetch_user",
-            "error": f"Unexpected error occurred: {str(e)}",
-            "user": None
+            "error": [{"node": "fetch_user", "message": f"Unexpected error occurred: {str(e)}"}]
         }
     
     finally:

@@ -228,10 +228,35 @@ class PromptManager:
         )
 
     def get_prompt(self, name: str) -> ChatPromptTemplate:
-        """Retrieve a prompt from memory."""
+        """
+        Retrieve a prompt from LangSmith or fall back to local creation.
+
+        Tries to pull from LangSmith first. If that fails (404 or any error),
+        creates the prompt locally and optionally pushes it to LangSmith.
+        """
         try:
+            # Try to pull from LangSmith
             prompt = self.client.pull_prompt(name, include_model=True)
             if prompt:
+                print(f"✅ Loaded prompt from LangSmith: {name}")
                 return prompt
         except Exception as e:
-            raise Exception(f"Error occurred while Loading {name} prompt: {str(e)}")
+            print(f"⚠️ Failed to load {name} from LangSmith: {str(e)}")
+            print(f"📝 Creating prompt locally: {name}")
+
+            # Fall back to creating prompt locally
+            if name == "topic_generation_v1":
+                prompt = self.create_topic_generation_prompt()
+            elif name == "blog_generation_v1":
+                prompt = self.create_blog_generation_prompt()
+            else:
+                raise Exception(f"Unknown prompt name: {name}. Cannot create locally.")
+
+            # Optionally push to LangSmith for future use
+            if self.auto_register:
+                try:
+                    self.register_prompt(name, prompt, f"Auto-created prompt: {name}")
+                except Exception as reg_error:
+                    print(f"⚠️ Failed to register {name} to LangSmith: {str(reg_error)}")
+
+            return prompt

@@ -27,14 +27,21 @@ class ContentSEODataSchema(TypedDict, total=False):
     content_readability_score: Optional[int]
 
 
-class Payload(TypedDict):
-    content_id:str
+class Payload(TypedDict, total=False):
+    content_id: str
     workspace_id: str
-    topicId: str
-    author_id: str
-    assigned_to_user_id: str
+    topic_id: Optional[str]
+    topicId: Optional[str]  # Legacy support
+    thread_id: Optional[str]
+    regenerate: Optional[bool]
+    author_id: Optional[str]
+    assigned_to_user_id: Optional[str]
     title: str
-    content_language: str
-    content_format: str
-    content_metadata: ContentMetadataSchema
-    content_seo_data: ContentSEODataSchema
+    content_language: Optional[str]
+    content_format: Optional[str]
+    status: Optional[str]
+    created_at: Optional[str]
+    updated_at: Optional[str]
+    content_metadata: Optional[ContentMetadataSchema]
+    content_seo_data: Optional[ContentSEODataSchema]
+    seo_data: Optional[ContentSEODataSchema]  # Legacy support
