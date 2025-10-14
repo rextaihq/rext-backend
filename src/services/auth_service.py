@@ -160,14 +160,11 @@ class AuthService:
             trial_subscription = UserSubscription(
                 user_id=new_user.id,
                 plan_id=trial_plan.id,
-                status=SubscriptionStatus.ACTIVE,
+                status=SubscriptionStatus.TRIAL,  # Use TRIAL status for trial subscriptions
                 billing_period=BillingPeriod.MONTHLY,
-                current_period_start=trial_start,
-                current_period_end=trial_end,
-                trial_start=trial_start,
-                trial_end=trial_end,
-                is_trial=True,
-                auto_renew=False,  # Trial doesn't auto-renew
+                start_date=trial_start,
+                end_date=trial_end,
+                trial_end_date=trial_end,
                 created_at=trial_start,
                 updated_at=trial_start
             )
@@ -238,9 +235,12 @@ class AuthService:
             # Increment failed attempts
             db_user.failed_login_attempts = (db_user.failed_login_attempts or 0) + 1
 
-            # Lock account if too many failures
-            if db_user.failed_login_attempts >= 3:
-                db_user.locked_until = datetime.utcnow() + timedelta(hours=1)
+            # Lock account if too many failures (configurable via env vars)
+            max_attempts = int(os.getenv("AUTH_MAX_LOGIN_ATTEMPTS", "3"))
+            lockout_hours = int(os.getenv("AUTH_LOCKOUT_DURATION_HOURS", "1"))
+
+            if db_user.failed_login_attempts >= max_attempts:
+                db_user.locked_until = datetime.utcnow() + timedelta(hours=lockout_hours)
 
             self.db.flush()
 
@@ -357,6 +357,57 @@ class AuthService:
         )
 
         return user
+
+    async def resend_verification_email(self, email: str) -> Tuple[Users, str]:
+        """
+        Resend email verification for a user.
+
+        Business Rules:
+        - User must exist
+        - Email must not be already verified
+        - Generates new verification token
+
+        Args:
+            email: User email address
+
+        Returns:
+            Tuple of (User object, new_verification_token)
+
+        Raises:
+            ResourceNotFoundException: If user not found
+            WrextAuthenticationException: If email already verified
+        """
+        # Find user by email
+        user = self.db.query(Users).filter(Users.email == email).first()
+
+        if not user:
+            raise ResourceNotFoundException(
+                resource_type="User",
+                resource_id=email
+            )
+
+        # Check if already verified
+        if user.email_verified:
+            raise WrextAuthenticationException(
+                message="Email is already verified",
+                context={"email": email}
+            )
+
+        # Generate new verification token
+        verification_token = create_verification_token(
+            data={"user_id": str(user.id)}
+        )
+
+        # Update user's verification token
+        user.verification_token = verification_token
+        self.db.flush()
+
+        logger.info(
+            f"Verification email resent for user: {user.id}",
+            extra={"email": email}
+        )
+
+        return user, verification_token
 
     async def refresh_token(self, refresh_token: str) -> Dict[str, str]:
         """
