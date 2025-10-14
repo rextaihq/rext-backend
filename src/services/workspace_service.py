@@ -103,7 +103,7 @@ class WorkspaceService:
         with trace(name="Assign Roles & Permissions"):
             await self.create_workspace_member(workspace.id, user_id, is_default=True, status="active")
             admin_role = await self._ensure_workspace_admin_role(workspace.id)
-            await self._assign_permissions_to_role(admin_role.id, resources=["topic", "content"])
+            await self._assign_permissions_to_role(admin_role.id, resources=["workspace", "topic", "content", "member", "knowledge"])
             await self._assign_role_to_user(admin_role.id, user_id, workspace.id)
 
 

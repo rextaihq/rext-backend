@@ -107,6 +107,13 @@ async def send_member_removed_notification(
 
 def _serialize_member(member: WorkspaceMembers, user: Users) -> Dict[str, Any]:
     """Transform member + user join row into API response structure."""
+    # Construct full name from first_name and last_name, fallback to display_name or email
+    full_name = None
+    if user.first_name or user.last_name:
+        full_name = f"{user.first_name or ''} {user.last_name or ''}".strip()
+    if not full_name:
+        full_name = user.display_name or user.email
+
     return {
         "id": str(member.id),
         "user_id": str(member.user_id),
@@ -119,8 +126,10 @@ def _serialize_member(member: WorkspaceMembers, user: Users) -> Dict[str, Any]:
         ),
         "user": {
             "id": str(user.id),
+            "name": full_name,  # Frontend expects "name" field
             "email": user.email,
-            "display_name": user.display_name,
+            "avatar": user.avatar_url,  # Include avatar URL
+            "display_name": user.display_name,  # Keep for backward compatibility
             "is_verified": getattr(user, "email_verified", False),
         },
     }

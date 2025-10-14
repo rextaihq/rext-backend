@@ -191,11 +191,20 @@ async def reset_password(
         user.password_changed_at = datetime.utcnow()
         await db.flush()
 
-        logger.info(f"Password reset successfully for user: {user.id}")
+        # SECURITY: Revoke all sessions after password reset
+        # This prevents attackers from maintaining access if they had stolen sessions
+        from src.services.session_service import SessionService
+        session_service = SessionService(db)
+        await session_service.revoke_all_sessions(user.id)
+
+        logger.info(f"Password reset successfully for user: {user.id}, all sessions revoked")
         return success(
-            data={"user_id": str(user.id)},
+            data={
+                "user_id": str(user.id),
+                "sessions_revoked": True
+            },
             request=request,
-            message="Password updated successfully"
+            message="Password updated successfully. Please login with your new password."
         )
 
     except Exception as e:
@@ -236,14 +245,21 @@ async def change_password(
             new_password=password_data.new_password
         )
 
-        logger.info(f"Password changed successfully for user: {user_id}")
+        # SECURITY: Revoke all other sessions when password changes
+        # This forces users to re-login on all devices, preventing stolen sessions
+        from src.services.session_service import SessionService
+        session_service = SessionService(db)
+        await session_service.revoke_all_sessions(user_id)
+
+        logger.info(f"Password changed successfully for user: {user_id}, all sessions revoked")
         return success(
             data={
                 "user_id": str(user.id),
-                "password_changed_at": user.password_changed_at.isoformat()
+                "password_changed_at": user.password_changed_at.isoformat(),
+                "sessions_revoked": True  # Inform frontend that re-login is needed
             },
             request=request,
-            message="Password changed successfully"
+            message="Password changed successfully. Please login again on all devices."
         )
 
     except ResourceNotFoundException:

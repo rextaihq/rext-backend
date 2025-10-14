@@ -7,6 +7,7 @@ from .invitations import UserInvitations
 from .token_blacklist import TokenBlacklist
 from .notification_preferences import NotificationPreferences
 from .user_sessions import UserSession
+from .oauth_accounts import OAuthAccount
 
 __all__ = [
     "Users",
@@ -18,4 +19,5 @@ __all__ = [
     "TokenBlacklist",
     "NotificationPreferences",
     "UserSession",
+    "OAuthAccount",
 ]
