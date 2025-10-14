@@ -34,6 +34,12 @@ from src.api.models.user_models.permissions import Permission
 from src.api.models.user_models.role_permissions import RolePermission
 from src.api.models.user_models.token_blacklist import TokenBlacklist
 from src.api.models.user_models.user_sessions import UserSession
+from src.api.models.subscription_models.plans import SubscriptionPlan
+from src.api.models.subscription_models.subscriptions import (
+    UserSubscription,
+    SubscriptionStatus,
+    BillingPeriod
+)
 from src.api.security.token_utils import (
     hash_password,
     verify_password,
@@ -73,12 +79,13 @@ class AuthService:
         last_name: str
     ) -> Tuple[Users, str]:
         """
-        Register new user with role assignment.
+        Register new user with role assignment and trial subscription.
 
         Business Rules:
         - Email and username must be unique
         - Password is hashed before storage
         - Default 'user' role is assigned
+        - Trial subscription is auto-assigned (14 days)
         - Verification token is generated (valid 24 hours)
 
         Args:
@@ -144,12 +151,40 @@ class AuthService:
         self.db.add(user_role)
         self.db.flush()
 
+        # Create trial subscription (auto-assigned on signup)
+        trial_plan = self._get_trial_plan()
+        if trial_plan:
+            trial_start = datetime.utcnow()
+            trial_end = trial_start + timedelta(days=14)
+
+            trial_subscription = UserSubscription(
+                user_id=new_user.id,
+                plan_id=trial_plan.id,
+                status=SubscriptionStatus.ACTIVE,
+                billing_period=BillingPeriod.MONTHLY,
+                current_period_start=trial_start,
+                current_period_end=trial_end,
+                trial_start=trial_start,
+                trial_end=trial_end,
+                is_trial=True,
+                auto_renew=False,  # Trial doesn't auto-renew
+                created_at=trial_start,
+                updated_at=trial_start
+            )
+            self.db.add(trial_subscription)
+            self.db.flush()
+
+            logger.info(
+                f"Trial subscription created for user: {new_user.id}",
+                extra={"plan_id": str(trial_plan.id), "trial_end": trial_end.isoformat()}
+            )
+
         # Generate verification token
         verification_token = create_verification_token({"user_id": str(new_user.id)})
 
         logger.info(
             f"User registered: {new_user.id}",
-            extra={"email": email, "username": username}
+            extra={"email": email, "username": username, "has_trial": trial_plan is not None}
         )
 
         return new_user, verification_token
@@ -572,3 +607,20 @@ class AuthService:
             logger.info("Created default user role")
 
         return default_role
+
+    def _get_trial_plan(self) -> Optional[SubscriptionPlan]:
+        """
+        Get trial subscription plan.
+
+        Returns:
+            SubscriptionPlan object for trial, or None if not found
+        """
+        trial_plan = self.db.query(SubscriptionPlan).filter(
+            SubscriptionPlan.name == "trial",
+            SubscriptionPlan.is_active == True
+        ).first()
+
+        if not trial_plan:
+            logger.warning("Trial subscription plan not found in database")
+
+        return trial_plan

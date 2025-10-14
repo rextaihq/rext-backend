@@ -15,7 +15,7 @@ from sqlalchemy.dialects.postgresql import UUID
 
 # revision identifiers, used by Alembic.
 revision: str = 'seed005'
-down_revision: Union[str, Sequence[str], None] = 'b2c3d4e5f6g7'
+down_revision: Union[str, Sequence[str], None] = 'cc6f7933fed1'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
@@ -123,60 +123,62 @@ The Wrext Team''',
         },
     ]
 
-    # Get the first workspace to associate these templates with (or use NULL for system-wide)
-    result = connection.execute(sa.text("SELECT id FROM workspace LIMIT 1"))
-    workspace_row = result.fetchone()
+    # Create system-wide email templates (workspace_id = NULL for global templates)
+    for template in templates:
+        # Check if template already exists
+        result = connection.execute(
+            sa.text("SELECT id FROM email_templates WHERE template_type = :type AND workspace_id IS NULL"),
+            {'type': template['template_type']}
+        )
+        existing = result.fetchone()
 
-    if workspace_row:
-        workspace_id = workspace_row[0]
+        if existing:
+            print(f"⚠️  Email template '{template['template_type']}' already exists, skipping...")
+            continue
 
-        for template in templates:
-            connection.execute(
-                sa.text("""
-                    INSERT INTO email_templates (
-                        id,
-                        workspace_id,
-                        template_type,
-                        subject,
-                        body,
-                        is_active,
-                        is_default,
-                        created_at,
-                        updated_at
-                    ) VALUES (
-                        gen_random_uuid(),
-                        :workspace_id,
-                        :template_type,
-                        :subject,
-                        :body,
-                        true,
-                        true,
-                        :created_at,
-                        :updated_at
-                    )
-                """),
-                {
-                    'workspace_id': workspace_id,
-                    'template_type': template['template_type'],
-                    'subject': template['subject'],
-                    'body': template['body'],
-                    'created_at': datetime.utcnow(),
-                    'updated_at': datetime.utcnow(),
-                }
-            )
+        connection.execute(
+            sa.text("""
+                INSERT INTO email_templates (
+                    id,
+                    workspace_id,
+                    template_type,
+                    subject,
+                    body,
+                    is_active,
+                    is_default,
+                    created_at,
+                    updated_at
+                ) VALUES (
+                    gen_random_uuid(),
+                    NULL,
+                    :template_type,
+                    :subject,
+                    :body,
+                    true,
+                    true,
+                    :created_at,
+                    :updated_at
+                )
+            """),
+            {
+                'template_type': template['template_type'],
+                'subject': template['subject'],
+                'body': template['body'],
+                'created_at': datetime.utcnow(),
+                'updated_at': datetime.utcnow(),
+            }
+        )
 
-        print(f"✅ Created {len(templates)} default email templates for workspace {workspace_id}")
-    else:
-        print("⚠️ No workspace found. Skipping email template seeding. Run this migration again after creating a workspace.")
+    print(f"✅ Created {len(templates)} system-wide email templates (global, not workspace-specific)")
 
 
 def downgrade() -> None:
     """Remove default email templates."""
     connection = op.get_bind()
 
-    # Delete all default templates
+    # Delete all system-wide default templates (workspace_id IS NULL)
     connection.execute(
-        sa.text("DELETE FROM email_templates WHERE is_default = true")
+        sa.text("DELETE FROM email_templates WHERE is_default = true AND workspace_id IS NULL")
     )
 
-    print("✅ Removed default email templates")
+    print("✅ Removed system-wide default email templates")

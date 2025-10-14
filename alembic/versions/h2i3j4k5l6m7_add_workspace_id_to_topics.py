@@ -1,8 +1,11 @@
 """add_workspace_id_to_topics
 
 Revision ID: h2i3j4k5l6m7
-Revises: 433637d4726c
+Revises: seed005
 Create Date: 2025-10-03 20:15:00.000000
+
+Note: Originally revised 433637d4726c (seed004 - test content data).
+      seed004 has been removed. Now depends on seed005 (email templates).
 
 Adds workspace_id column to topics table and deletes existing topics
 """
@@ -15,7 +18,7 @@ from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
 revision: str = 'h2i3j4k5l6m7'
-down_revision: Union[str, Sequence[str], None] = '433637d4726c'
+down_revision: Union[str, Sequence[str], None] = 'seed005'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
