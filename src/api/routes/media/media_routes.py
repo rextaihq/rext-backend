@@ -369,6 +369,52 @@ async def delete_media(
     )
 
 
+@router.post("/bulk-delete", response_model=dict)
+@db_transaction_handler("bulk delete media")
+@require_permissions("media.delete")
+async def bulk_delete_media(
+    request: Request,
+    workspace_id: str,
+    media_ids: list[str],
+    permanent: bool = Query(False, description="Permanently delete from storage"),
+    db: AsyncSession = Depends(get_async_db),
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Delete multiple media files at once.
+
+    By default, performs soft delete (sets deleted_at).
+    Use permanent=true to remove from storage and database.
+
+    Args:
+        workspace_id: Workspace UUID
+        media_ids: List of media UUIDs to delete
+        permanent: If true, permanently delete
+
+    Returns:
+        Bulk delete results with counts
+    """
+    # Get service
+    service = get_media_service(db)
+
+    # Bulk delete media
+    result = await service.bulk_delete_media(
+        media_ids=media_ids,
+        workspace_id=workspace_id,
+        permanent=permanent
+    )
+
+    delete_type = "permanently deleted" if permanent else "moved to trash"
+    message = f"{result['deleted']} media files {delete_type}"
+    if result['failed'] > 0:
+        message += f", {result['failed']} failed"
+
+    return success(
+        data=result,
+        message=message
+    )
+
+
 @router.get("/{media_id}/usage", response_model=dict)
 @db_transaction_handler("get media usage")
 @require_permissions("media.view")

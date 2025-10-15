@@ -451,6 +451,47 @@ class MediaService:
         logger.info(f"Media deleted: {media.id} (permanent={permanent})")
         return True
 
+    async def bulk_delete_media(
+        self,
+        media_ids: list[str],
+        workspace_id: str,
+        permanent: bool = False
+    ) -> Dict[str, Any]:
+        """
+        Delete multiple media files.
+
+        Args:
+            media_ids: List of media UUIDs to delete
+            workspace_id: Workspace UUID
+            permanent: If True, permanently delete from storage and DB
+
+        Returns:
+            Dictionary with deleted and failed counts
+        """
+        deleted_count = 0
+        failed_count = 0
+        errors = []
+
+        for media_id in media_ids:
+            try:
+                success = await self.delete_media(media_id, workspace_id, permanent)
+                if success:
+                    deleted_count += 1
+                else:
+                    failed_count += 1
+                    errors.append(f"Media {media_id} not found")
+            except Exception as e:
+                failed_count += 1
+                errors.append(f"Media {media_id}: {str(e)}")
+                logger.error(f"Error deleting media {media_id}: {e}")
+
+        logger.info(f"Bulk delete: {deleted_count} deleted, {failed_count} failed")
+        return {
+            "deleted": deleted_count,
+            "failed": failed_count,
+            "errors": errors
+        }
+
     async def get_workspace_storage_usage(self, workspace_id: str) -> Dict[str, Any]:
         """
         Calculate total storage usage for workspace with subscription limits.
