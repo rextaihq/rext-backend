@@ -1,0 +1,158 @@
+"""Onboarding routes."""
+
+from typing import Annotated
+from uuid import UUID
+
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.orm import Session
+
+from src.api.database.database import get_db
+from src.api.middleware.auth import get_current_user
+from src.api.models.user_models.users import Users
+from src.api.schema.onboarding_schemas import (
+    OnboardingReset,
+    OnboardingResponse,
+    OnboardingStepUpdate,
+)
+from src.services.onboarding_service import OnboardingService
+from src.utils.logger import log
+
+router = APIRouter(prefix="/onboarding", tags=["onboarding"])
+
+
+@router.get("", response_model=OnboardingResponse, status_code=status.HTTP_200_OK)
+async def get_onboarding_status(
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[Users, Depends(get_current_user)],
+):
+    """
+    Get current user's onboarding status.
+
+    Returns the user's onboarding progress including current step,
+    completed steps, and skipped steps.
+    """
+    try:
+        onboarding = await OnboardingService.get_or_create_onboarding(db, current_user.id)
+        return onboarding
+    except Exception as e:
+        log.error(f"[Onboarding] Failed to get status: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to retrieve onboarding status",
+        )
+
+
+@router.post("/update", response_model=OnboardingResponse, status_code=status.HTTP_200_OK)
+async def update_onboarding_step(
+    step_update: OnboardingStepUpdate,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[Users, Depends(get_current_user)],
+):
+    """
+    Update onboarding step.
+
+    Actions:
+    - complete: Mark step as completed
+    - skip: Mark step as skipped (not allowed for required steps)
+    - set_current: Set current step for navigation
+    """
+    try:
+        if step_update.action == "complete":
+            onboarding = await OnboardingService.complete_step(db, current_user.id, step_update.step)
+        elif step_update.action == "skip":
+            onboarding = await OnboardingService.skip_step(db, current_user.id, step_update.step)
+        elif step_update.action == "set_current":
+            onboarding = await OnboardingService.set_current_step(db, current_user.id, step_update.step)
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid action: {step_update.action}. Must be 'complete', 'skip', or 'set_current'",
+            )
+
+        return onboarding
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        )
+    except Exception as e:
+        log.error(f"[Onboarding] Failed to update step: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to update onboarding step",
+        )
+
+
+@router.post("/complete", response_model=OnboardingResponse, status_code=status.HTTP_200_OK)
+async def complete_onboarding(
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[Users, Depends(get_current_user)],
+):
+    """
+    Mark onboarding as fully completed.
+
+    This endpoint is called when the user completes the final step
+    or explicitly dismisses the onboarding flow.
+    """
+    try:
+        onboarding = await OnboardingService.complete_onboarding(db, current_user.id)
+        log.info(f"[Onboarding] User {current_user.id} completed onboarding")
+        return onboarding
+    except Exception as e:
+        log.error(f"[Onboarding] Failed to complete: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to complete onboarding",
+        )
+
+
+@router.post("/reset", response_model=OnboardingResponse, status_code=status.HTTP_200_OK)
+async def reset_onboarding(
+    reset_data: OnboardingReset,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[Users, Depends(get_current_user)],
+):
+    """
+    Reset onboarding to start from beginning.
+
+    This allows users to replay the onboarding flow if they want
+    to review the initial setup steps.
+    """
+    try:
+        if not reset_data.confirm:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Confirmation required to reset onboarding",
+            )
+
+        onboarding = await OnboardingService.reset_onboarding(db, current_user.id)
+        log.info(f"[Onboarding] User {current_user.id} reset onboarding")
+        return onboarding
+    except Exception as e:
+        log.error(f"[Onboarding] Failed to reset: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to reset onboarding",
+        )
+
+
+@router.get("/should-show", status_code=status.HTTP_200_OK)
+async def should_show_onboarding(
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[Users, Depends(get_current_user)],
+):
+    """
+    Check if onboarding should be shown to the current user.
+
+    Returns a boolean indicating whether the onboarding flow
+    should be displayed.
+    """
+    try:
+        should_show = await OnboardingService.should_show_onboarding(db, current_user.id)
+        return {"should_show": should_show}
+    except Exception as e:
+        log.error(f"[Onboarding] Failed to check should show: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to check onboarding status",
+        )

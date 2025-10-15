@@ -8,6 +8,7 @@ from .token_blacklist import TokenBlacklist
 from .notification_preferences import NotificationPreferences
 from .user_sessions import UserSession
 from .oauth_accounts import OAuthAccount
+from .onboarding import UserOnboarding
 
 __all__ = [
     "Users",
@@ -20,4 +21,5 @@ __all__ = [
     "NotificationPreferences",
     "UserSession",
     "OAuthAccount",
+    "UserOnboarding",
 ]
