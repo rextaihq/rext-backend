@@ -237,3 +237,166 @@ async def get_workspace_by_id_path(
 
     # Return raw data - decorator handles success response
     return {"workspace": workspace_data}
+
+
+# -------------------------
+# Update workspace
+# -------------------------
+@router.put("/{workspace_id}")
+@db_transaction_handler("update workspace", auto_commit=True)
+async def update_workspace(
+    workspace_id: str,
+    request: Request,
+    db: AsyncSession = Depends(get_async_db),
+    user: dict = Depends(get_current_user)
+):
+    """
+    Update workspace details (name, slug, description, url).
+
+    Args:
+        workspace_id: Workspace UUID or slug
+
+    Body:
+        {
+          "title": "New Name",
+          "slug": "new-slug",
+          "description": "New description",
+          "url": "https://example.com"
+        }
+    """
+    user_id = user.get("identity")
+    db_user = await verify_current_user(db, user_id)
+
+    # Parse request body
+    body = await request.json()
+
+    # Use workspace service
+    workspace_service = WorkspaceService(db)
+
+    # Get workspace first to verify access
+    from src.utils.workspace_utils import resolve_and_verify_workspace
+    workspace, _ = await resolve_and_verify_workspace(db, workspace_id, UUID(user_id))
+
+    # Update workspace
+    updated_workspace = await workspace_service.update_workspace(
+        workspace.id,
+        title=body.get("title"),
+        slug=body.get("slug"),
+        description=body.get("description"),
+        url=body.get("url")
+    )
+
+    logger.info(
+        f"Workspace updated: {workspace.id}",
+        extra={"workspace_id": str(workspace.id), "user_id": user_id}
+    )
+
+    # Return raw data - decorator handles success response
+    return {"workspace": updated_workspace}
+
+
+# -------------------------
+# Delete workspace
+# -------------------------
+@router.delete("/{workspace_id}")
+@db_transaction_handler("delete workspace", auto_commit=True)
+async def delete_workspace_endpoint(
+    workspace_id: str,
+    request: Request,
+    db: AsyncSession = Depends(get_async_db),
+    user: dict = Depends(get_current_user)
+):
+    """
+    Delete workspace permanently.
+
+    Only workspace owners can delete workspaces.
+    All related data (knowledge, topics, content) will be cascade deleted.
+
+    Args:
+        workspace_id: Workspace UUID or slug
+    """
+    user_id = user.get("identity")
+    db_user = await verify_current_user(db, user_id)
+
+    # Use workspace service
+    workspace_service = WorkspaceService(db)
+
+    # Verify workspace access and get workspace
+    from src.utils.workspace_utils import resolve_and_verify_workspace
+    workspace, membership = await resolve_and_verify_workspace(db, workspace_id, UUID(user_id))
+
+    # Check if user is workspace owner
+    from src.api.models.workspace_models.workspace_member import WorkspaceMembers
+    from sqlalchemy import select
+
+    # Get user's role in workspace
+    role_query = select(WorkspaceMembers).where(
+        WorkspaceMembers.workspace_id == workspace.id,
+        WorkspaceMembers.user_id == UUID(user_id)
+    )
+    result = await db.execute(role_query)
+    member = result.scalar_one_or_none()
+
+    # Check if user has workspace owner role
+    if member and member.role:
+        from src.api.models.role_models.role import Role
+        role_result = await db.execute(select(Role).where(Role.id == member.role_id))
+        role = role_result.scalar_one_or_none()
+
+        if not role or role.name not in ["workspace_owner", "super_admin"]:
+            from src.api.middleware.exceptions import ForbiddenException
+            raise ForbiddenException(
+                message="Only workspace owners can delete workspaces"
+            )
+    else:
+        from src.api.middleware.exceptions import ForbiddenException
+        raise ForbiddenException(
+            message="Only workspace owners can delete workspaces"
+        )
+
+    # Check remaining workspaces count
+    remaining_count = await workspace_service.count_user_workspaces(UUID(user_id))
+    # Subtract 1 because we're about to delete this one
+    remaining_after_delete = remaining_count - 1
+
+    # Soft delete workspace (30-day recovery period)
+    await workspace_service.delete_workspace(workspace.id, UUID(user_id))
+
+    logger.info(
+        f"Workspace soft deleted: {workspace.id}",
+        extra={"workspace_id": str(workspace.id), "user_id": user_id}
+    )
+
+    # Send confirmation email
+    try:
+        from src.services.email_service import EmailService
+        from datetime import datetime, timedelta
+
+        email_service = EmailService(db)
+        recovery_date = (datetime.utcnow() + timedelta(days=30)).strftime("%B %d, %Y")
+
+        await email_service.send_email(
+            to_email=db_user.email,
+            subject=f"Workspace '{workspace.name}' has been deleted",
+            template_type="workspace_deleted",
+            template_data={
+                "user_name": db_user.display_name or db_user.email,
+                "workspace_name": workspace.name,
+                "recovery_period_days": 30,
+                "recovery_deadline": recovery_date,
+                "remaining_workspaces": remaining_after_delete,
+                "is_last_workspace": remaining_after_delete == 0
+            }
+        )
+        logger.info(f"Deletion confirmation email sent to {db_user.email}")
+    except Exception as e:
+        # Don't fail the deletion if email fails
+        logger.error(f"Failed to send deletion confirmation email: {str(e)}")
+
+    # Return success message with workspace count
+    return {
+        "message": "Workspace deleted successfully. You have 30 days to recover it if needed.",
+        "recovery_period_days": 30,
+        "remaining_workspaces": remaining_after_delete,
+        "is_last_workspace": remaining_after_delete == 0
+    }

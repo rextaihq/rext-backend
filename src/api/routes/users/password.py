@@ -291,3 +291,69 @@ async def change_password(
             context={"error_details": str(e)},
             request=request
         )
+
+
+# -------------------------
+# Verify Password
+# -------------------------
+@router.post("/verify-password")
+async def verify_password(
+    request: Request,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Verify user's current password.
+    
+    Used for confirming sensitive operations like workspace deletion.
+    
+    Body:
+        {
+          "password": "user's current password"
+        }
+    
+    Returns:
+        200: Password is correct
+        400: Password is incorrect
+    """
+    user_id = UUID(current_user.get("identity"))
+    body = await request.json()
+    password = body.get("password")
+    
+    if not password:
+        return error(
+            message="Password is required",
+            request=request,
+            error_code=ErrorCode.VALIDATION_ERROR,
+            severity=ErrorSeverity.MEDIUM
+        )
+    
+    # Get user from database
+    result = await db.execute(
+        select(Users).where(Users.id == user_id)
+    )
+    user = result.scalar_one_or_none()
+    
+    if not user:
+        return error(
+            message="User not found",
+            request=request,
+            error_code=ErrorCode.NOT_FOUND,
+            severity=ErrorSeverity.HIGH
+        )
+    
+    # Verify password
+    from src.api.security.token_utils import verify_password as check_password
+    if not check_password(password, user.password):
+        return error(
+            message="Invalid password",
+            request=request,
+            error_code=ErrorCode.AUTHENTICATION_FAILED,
+            severity=ErrorSeverity.MEDIUM
+        )
+    
+    return success(
+        data={"verified": True},
+        request=request,
+        message="Password verified successfully"
+    )

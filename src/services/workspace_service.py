@@ -296,7 +296,10 @@ class WorkspaceService:
             .outerjoin(Website, Website.workspace_id == WorkspaceModel.id)
             .outerjoin(KnowledgeFiles, KnowledgeFiles.workspace_id == WorkspaceModel.id)
             .outerjoin(TextKnowledge, TextKnowledge.workspace_id == WorkspaceModel.id)
-            .where(WorkspaceMembers.user_id == user_id)
+            .where(
+                WorkspaceMembers.user_id == user_id,
+                WorkspaceModel.deleted_at.is_(None)  # Filter out soft-deleted workspaces
+            )
             .group_by(WorkspaceModel.id, Users.id)
         )
 
@@ -513,7 +516,10 @@ class WorkspaceService:
             ResourceNotFoundException: If workspace not found
         """
         result = await self.db.execute(
-            select(WorkspaceModel).where(WorkspaceModel.id == workspace_id)
+            select(WorkspaceModel).where(
+                WorkspaceModel.id == workspace_id,
+                WorkspaceModel.deleted_at.is_(None)  # Exclude soft-deleted workspaces
+            )
         )
         workspace = result.scalar_one_or_none()
 
@@ -678,29 +684,58 @@ class WorkspaceService:
 
     async def delete_workspace(
         self,
-        workspace_id: UUID
+        workspace_id: UUID,
+        user_id: UUID
     ) -> None:
         """
-        Delete workspace and all related data.
+        Soft delete workspace (30-day recovery period).
 
         Business Rules:
-        - Cascading delete of all workspace data (handled by DB)
+        - Soft delete: Sets deleted_at timestamp
+        - 30-day recovery period before permanent deletion
         - Only workspace owner can delete
+        - Related data remains intact for recovery
 
         Args:
             workspace_id: Workspace UUID
+            user_id: User performing the deletion
 
         Raises:
             ResourceNotFoundException: If workspace not found
         """
+        from datetime import datetime
+
         workspace = await self.get_workspace(workspace_id)
 
-        await self.db.delete(workspace)
+        # Soft delete: set deleted_at and deleted_by
+        workspace.deleted_at = datetime.utcnow()
+        workspace.deleted_by = user_id
 
         logger.info(
-            f"Workspace deleted: {workspace_id}",
-            extra={"workspace_id": str(workspace_id)}
+            f"Workspace soft deleted: {workspace_id} by user {user_id}",
+            extra={"workspace_id": str(workspace_id), "user_id": str(user_id)}
         )
+
+    async def count_user_workspaces(self, user_id: UUID) -> int:
+        """
+        Count the number of active workspaces a user has access to.
+
+        Args:
+            user_id: User UUID
+
+        Returns:
+            Number of active workspaces
+        """
+        result = await self.db.execute(
+            select(func.count(distinct(WorkspaceModel.id)))
+            .join(WorkspaceMembers, WorkspaceMembers.workspace_id == WorkspaceModel.id)
+            .where(
+                WorkspaceMembers.user_id == user_id,
+                WorkspaceModel.deleted_at.is_(None)
+            )
+        )
+        count = result.scalar() or 0
+        return count
 
     # ========================================================================
     # Private Helper Methods

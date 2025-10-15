@@ -20,6 +20,8 @@ class WorkspaceModel(Base, SerializableMixin):
     url = Column(String, nullable=True)
     created_at = Column(DateTime(timezone=True), nullable=False, default=datetime.utcnow)
     updated_at = Column(DateTime(timezone=True), nullable=True, default=datetime.utcnow, onupdate=datetime.utcnow)
+    deleted_at = Column(DateTime(timezone=True), nullable=True)  # Soft delete timestamp
+    deleted_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)  # User who deleted
 
     # Relationships
     owner = relationship("Users", back_populates="workspaces")
