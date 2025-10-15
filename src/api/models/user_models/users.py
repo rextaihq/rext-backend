@@ -50,6 +50,7 @@ class Users(Base, SerializableMixin):
     notification_preferences = relationship("NotificationPreferences", back_populates="user", uselist=False)
     sessions = relationship("UserSession", back_populates="user", cascade="all, delete-orphan")
     email_preferences = relationship("EmailPreferences", back_populates="user", uselist=False, foreign_keys="EmailPreferences.user_id")
+    preferences = relationship("UserPreferences", back_populates="user", uselist=False, cascade="all, delete-orphan")
     media = relationship("Media", back_populates="user", cascade="all, delete-orphan")
     oauth_accounts = relationship("OAuthAccount", back_populates="user", cascade="all, delete-orphan")
 
