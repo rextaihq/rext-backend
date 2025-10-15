@@ -265,7 +265,6 @@ async def login_user(
 @router.post("/refresh")
 async def refresh_access_token(
     request: Request,
-    refresh_token: str,
     db: Session = Depends(get_db)
 ):
     """
@@ -275,8 +274,29 @@ async def refresh_access_token(
     without requiring the user to log in again. Implements refresh
     token rotation for better security - old refresh token is
     blacklisted and a new pair is issued.
+
+    Request Body:
+    {
+        "refresh_token": "your-refresh-token-here"
+    }
+
+    Security Note: Refresh token is now sent in POST body instead of URL
+    to prevent token exposure in server logs and browser history.
     """
     try:
+        # Extract refresh token from request body
+        body = await request.json()
+        refresh_token = body.get("refresh_token")
+
+        if not refresh_token:
+            return error(
+                message="Refresh token is required",
+                code=ErrorCode.INVALID_INPUT,
+                status_code=400,
+                severity=ErrorSeverity.LOW,
+                request=request
+            )
+
         # Use auth service
         auth_service = AuthService(db)
         tokens = await auth_service.refresh_token(refresh_token)
