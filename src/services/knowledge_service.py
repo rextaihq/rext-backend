@@ -169,6 +169,18 @@ class KnowledgeService:
             extra={"workspace_id": str(workspace_id), "filename": file_metadata["safe_filename"]}
         )
 
+        # Send knowledge base processing completed email (async, don't block)
+        try:
+            await self._send_kb_processing_completed_email(
+                workspace_id=workspace_id,
+                knowledge_base_id=knowledge_base_id,
+                file_name=file_metadata["safe_filename"],
+                chunks_count=len(chunks)
+            )
+        except Exception as e:
+            logger.error(f"Failed to send KB processing completed email: {str(e)}")
+            # Don't fail the upload if email fails
+
         return new_knowledge
 
     async def delete_file_knowledge(
@@ -589,3 +601,81 @@ class KnowledgeService:
             )
 
         return knowledge
+
+    async def _send_kb_processing_completed_email(
+        self,
+        workspace_id: UUID,
+        knowledge_base_id: UUID,
+        file_name: str,
+        chunks_count: int
+    ) -> None:
+        """Send email notification when knowledge base file processing completes."""
+        from emails.templates.knowledge_base.kb_processing_completed import render_kb_processing_completed_email
+        from src.services.email_service import EmailService
+        from src.api.models.workspace_models.workspace_model import WorkspaceModel
+        from src.api.models.knowledge_models.knowledge_model import KnowledgeBase
+        from src.api.models.user_models.users import Users
+        import os
+
+        try:
+            # Fetch knowledge base
+            result = await self.db.execute(
+                select(KnowledgeBase).where(KnowledgeBase.id == knowledge_base_id)
+            )
+            kb = result.scalar_one_or_none()
+            if not kb:
+                logger.warning(f"Knowledge base {knowledge_base_id} not found, skipping email")
+                return
+
+            # Fetch workspace
+            result = await self.db.execute(
+                select(WorkspaceModel).where(WorkspaceModel.id == workspace_id)
+            )
+            workspace = result.scalar_one_or_none()
+            if not workspace:
+                logger.warning(f"Workspace {workspace_id} not found, skipping email")
+                return
+
+            # Fetch user who created the KB (owner)
+            result = await self.db.execute(
+                select(Users).where(Users.id == kb.created_by_user_id)
+            )
+            user = result.scalar_one_or_none()
+            if not user:
+                logger.warning(f"User {kb.created_by_user_id} not found, skipping email")
+                return
+
+            # Build URLs
+            frontend_url = os.getenv("FRONTEND_URL", "https://app.wrext.com")
+            dashboard_url = f"{frontend_url}/w/{workspace.slug}/knowledge/{knowledge_base_id}"
+            create_content_url = f"{frontend_url}/w/{workspace.slug}/content/new"
+
+            # Render professional email
+            user_name = user.first_name or user.username or user.email.split("@")[0]
+            html_content = render_kb_processing_completed_email(
+                user_name=user_name,
+                kb_name=kb.name,
+                items_processed=chunks_count,
+                processing_time="< 1 minute",  # File processing is fast
+                workspace_name=workspace.name,
+                dashboard_url=dashboard_url,
+                create_content_url=create_content_url,
+                frontend_url=frontend_url
+            )
+
+            # Send email
+            email_service = EmailService(self.db)
+            await email_service.send_email(
+                to=user.email,
+                subject=f"Knowledge Base Ready - {kb.name}",
+                html=html_content,
+                user_id=kb.created_by_user_id,
+                workspace_id=workspace_id,
+                template_type="kb_processing_completed"
+            )
+
+            logger.info(f"KB processing completed email sent for {file_name}")
+
+        except Exception as e:
+            logger.error(f"Error sending KB processing email: {str(e)}", exc_info=True)
+            # Don't fail the upload if email fails

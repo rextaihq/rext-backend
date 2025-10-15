@@ -251,6 +251,27 @@ async def change_password(
         session_service = SessionService(db)
         await session_service.revoke_all_sessions(user_id)
 
+        # Send password changed confirmation email
+        from src.services.email_helpers import send_auth_email
+        from datetime import datetime
+
+        try:
+            await send_auth_email(
+                db=db,
+                email_type="password_changed",
+                recipient_email=user.email,
+                user_name=user.first_name or user.email.split('@')[0],
+                user_id=user_id,
+                frontend_url=os.getenv("FRONTEND_URL", "https://app.wrext.com"),
+                changed_at=user.password_changed_at.strftime("%b %d, %Y %I:%M %p UTC"),
+                ip_address=request.client.host if request.client else None,
+                user_agent=request.headers.get("user-agent")
+            )
+            logger.info(f"Password changed email sent to {user.email}")
+        except Exception as e:
+            # Don't fail the password change if email fails
+            logger.error(f"Failed to send password changed email: {str(e)}", exc_info=True)
+
         logger.info(f"Password changed successfully for user: {user_id}, all sessions revoked")
         return success(
             data={
