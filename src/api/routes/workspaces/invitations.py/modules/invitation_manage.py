@@ -13,6 +13,7 @@ from src.utils.route_decorators import db_transaction_handler
 from src.api.database.async_database import get_async_db
 from src.api.security.dependencies import get_current_user
 from src.api.middleware.exceptions import (
+from src.api.config import get_settings
     ResourceNotFoundException,
     WrextAuthenticationException,
     WrextValidationException,
@@ -39,6 +40,9 @@ from src.services.role_service import RoleService
 router = APIRouter()
 
 
+# Get settings instance
+settings = get_settings()
+
 async def notify_workspace_admins_of_acceptance(
     workspace_id: str,
     workspace_name: str,
@@ -60,7 +64,7 @@ async def notify_workspace_admins_of_acceptance(
                 workspace_id=UUID(workspace_id)
             )
 
-            frontend_url = os.getenv("FRONTEND_URL", "http://localhost:3000")
+            frontend_url = settings.FRONTEND_URL
 
             # Send notification to each admin
             for member, admin_user in admin_members:

@@ -10,6 +10,7 @@ from typing import Literal
 import os
 
 from src.api.schema.email_preview_schema import (
+from src.api.config import get_settings
     AuthEmailPreviewRequest,
     WorkspaceEmailPreviewRequest,
     EmailPreviewResponse
@@ -35,6 +36,9 @@ router = APIRouter(
     tags=["email-preview"]
 )
 
+
+# Get settings instance
+settings = get_settings()
 
 def get_subject_for_template(template_type: str, **kwargs) -> str:
     """Get suggested subject line for template type."""
@@ -76,7 +80,7 @@ async def preview_auth_email(
     **Requires authentication** - Only accessible to logged-in users.
     """
     try:
-        frontend_url = request.frontend_url or os.getenv("FRONTEND_URL", "https://app.wrext.com")
+        frontend_url = request.frontend_url or settings.FRONTEND_URL
 
         # Generate HTML based on template type
         if request.template_type == "verification":
@@ -155,7 +159,7 @@ async def preview_workspace_email(
     **Requires authentication** - Only accessible to logged-in users.
     """
     try:
-        frontend_url = request.frontend_url or os.getenv("FRONTEND_URL", "https://app.wrext.com")
+        frontend_url = request.frontend_url or settings.FRONTEND_URL
 
         # Generate HTML based on template type
         if request.template_type == "invitation":

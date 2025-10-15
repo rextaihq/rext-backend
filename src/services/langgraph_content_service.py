@@ -31,6 +31,7 @@ from src.flow.flow import create_workflow
 from src.flow.states.content_state import ContentState
 from src.utils.logger import logger
 from src.api.middleware.exceptions import (
+from src.api.config import get_settings
     WrextValidationException,
     ResourceNotFoundException
 )
@@ -38,6 +39,9 @@ from src.services.email_service import EmailService
 from src.services.content_progress_service import ContentProgressService
 
 
+
+# Get settings instance
+settings = get_settings()
 class LangGraphContentService:
     """Service for managing LangGraph content generation workflows"""
 
@@ -506,7 +510,7 @@ class LangGraphContentService:
             return
 
         # Build content URL
-        frontend_url = os.getenv("FRONTEND_URL", "https://app.wrext.com")
+        frontend_url = settings.FRONTEND_URL
         content_url = f"{frontend_url}/w/{workspace.slug}/content/{content_id}"
 
         # Render professional email
@@ -561,7 +565,7 @@ class LangGraphContentService:
         content_excerpt = content_body[:200] if len(content_body) > 200 else content_body
 
         # Build content URL
-        frontend_url = os.getenv("FRONTEND_URL", "https://app.wrext.com")
+        frontend_url = settings.FRONTEND_URL
         content_url = f"{frontend_url}/w/{workspace.slug}/content/{content_id}"
 
         # Render professional email
@@ -611,7 +615,7 @@ class LangGraphContentService:
             return
 
         # Build URLs
-        frontend_url = os.getenv("FRONTEND_URL", "https://app.wrext.com")
+        frontend_url = settings.FRONTEND_URL
         retry_url = f"{frontend_url}/w/{workspace.slug}/content/{content_id}"
         support_url = f"{frontend_url}/support"
 

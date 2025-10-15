@@ -20,9 +20,12 @@ from src.api.models.media_models.media import Media
 from src.services.storage_service import StorageService
 from src.services.image_processing_service import ImageProcessingService
 from src.config.storage_config import storage_settings
+from src.utils.file_security import validate_file_upload
+from src.api.config import get_settings
 import logging
 
 logger = logging.getLogger(__name__)
+settings = get_settings()
 
 
 class MediaService:
@@ -117,8 +120,23 @@ class MediaService:
                 f"File size ({actual_size_mb:.2f}MB) exceeds maximum ({max_size_mb:.2f}MB)"
             )
 
-        # TODO: Check subscription storage limits
-        # await self._check_storage_limit(workspace_id, file_size)
+        # Comprehensive security validation (MIME type, storage quota, virus scanning)
+        # Get user's subscription tier (TODO: implement tier lookup, defaulting to 'free' for now)
+        subscription_tier = "free"  # TODO: Get from user_subscriptions table
+
+        validation_result = await validate_file_upload(
+            db=self.db,
+            settings=settings,
+            file_bytes=file_content,
+            filename=filename,
+            user_id=user_id,
+            workspace_id=workspace_id,
+            subscription_tier=subscription_tier
+        )
+
+        if not validation_result.is_valid:
+            logger.warning(f"File security validation failed: {validation_result.error_message}")
+            raise ValueError(validation_result.error_message)
 
         # Extract file extension
         _, ext = os.path.splitext(filename)

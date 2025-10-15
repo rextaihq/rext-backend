@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.database.async_database import get_async_db
 from src.api.middleware.exceptions import (
+from src.api.config import get_settings
     ResourceNotFoundException,
     WrextValidationException,
 )
@@ -34,6 +35,9 @@ from src.utils.workspace_utils import resolve_and_verify_workspace
 router = APIRouter(tags=["workspace-members"])
 
 
+# Get settings instance
+settings = get_settings()
+
 async def send_role_changed_notification(
     workspace_id: str,
     workspace_name: str,
@@ -50,7 +54,7 @@ async def send_role_changed_notification(
 
     try:
         async with get_async_db_context() as async_db:
-            frontend_url = os.getenv("FRONTEND_URL", "http://localhost:3000")
+            frontend_url = settings.FRONTEND_URL
 
             await send_workspace_email(
                 db=async_db,
@@ -86,7 +90,7 @@ async def send_member_removed_notification(
 
     try:
         async with get_async_db_context() as async_db:
-            frontend_url = os.getenv("FRONTEND_URL", "http://localhost:3000")
+            frontend_url = settings.FRONTEND_URL
 
             await send_workspace_email(
                 db=async_db,

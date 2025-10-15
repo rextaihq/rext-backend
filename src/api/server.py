@@ -34,6 +34,7 @@ from src.api.routes.admin.customer_routes import router as admin_customer_routes
 from src.api.routes.admin.monitoring_routes import router as admin_monitoring_routes_router
 from src.api.routes.admin.reports_routes import router as admin_reports_routes_router
 from src.api.routes.admin.email_analytics_routes import router as admin_email_analytics_routes_router
+from src.api.routes.admin.email_admin_routes import router as admin_email_routes_router
 from src.api.routes.audit.modules import router as audit_router
 from src.api.routes.security.security_routes import router as security_router
 from src.api.routes.events import router as events_router
@@ -55,6 +56,9 @@ from src.utils.logger import logger
 # Structured logging
 from src.api.lib.logging_config import configure_logging, RequestIDMiddleware
 
+# Sentry error monitoring
+from src.api.lib.sentry_config import init_sentry
+
 # Prompts
 from src.flow.prompts.prompt_manager import PromptManager
 
@@ -63,7 +67,7 @@ load_dotenv()
 # Configure structured logging at startup
 configure_logging()
 
-DB_URI = os.getenv("POSTGRES_URI_CUSTOM")
+DB_URI = settings.POSTGRES_URI_CUSTOM
 
 # Database tables are managed by Alembic migrations
 # Run migrations with: alembic upgrade head
@@ -104,12 +108,16 @@ async def lifespan(app: FastAPI):
     # Startup
     logger.info("Starting Wrext API server...")
     logger.info(f"Environment: {settings.ENVIRONMENT}")
+
+    # Initialize Sentry error monitoring
+    init_sentry(settings)
+
     logger.info(f"Database URI: {DB_URI[:20]}..." if DB_URI else "No database URI configured")
     logger.info("Database managed by Alembic migrations")
     logger.info("Middleware configured: RequestTracker, ErrorHandler, SecurityHeaders")
     logger.info(f"CORS allowed origins: {settings.allowed_origins_list}")
     logger.info("Registering Prompt")
-    PromptManager(auto_register=False)  
+    PromptManager(auto_register=False)
     logger.info("✅ Prompts initialized successfully")
 
     # Optional: Check migration status (uncomment to enable)
@@ -145,10 +153,14 @@ app.add_middleware(
 # Structured logging request ID middleware
 app.add_middleware(RequestIDMiddleware)
 
+# Sentry user context middleware (enrich errors with user info)
+from src.api.middleware.sentry_middleware import SentryUserContextMiddleware
+app.add_middleware(SentryUserContextMiddleware)
+
 # Error handling middleware (second in chain)
 app.add_middleware(
     ErrorHandlerMiddleware,
-    include_debug_info=os.getenv("DEBUG", "false").lower() == "true",
+    include_debug_info=settings.DEBUG,
     log_full_traceback=True,
     filter_sensitive_data=True,
     max_error_details=10
@@ -171,10 +183,10 @@ app.add_middleware(SecurityHeadersMiddleware)
 # Rate limiting middleware - protects against API abuse and DDoS
 app.add_middleware(
     RateLimiterMiddleware,
-    requests_per_minute=int(os.getenv("RATE_LIMIT_PER_MINUTE", "100")),
-    requests_per_hour=int(os.getenv("RATE_LIMIT_PER_HOUR", "1000")),
-    requests_per_day=int(os.getenv("RATE_LIMIT_PER_DAY", "10000")),
-    enable=os.getenv("RATE_LIMITING_ENABLED", "true").lower() == "true"
+    requests_per_minute=settings.RATE_LIMIT_PER_MINUTE,
+    requests_per_hour=settings.RATE_LIMIT_PER_HOUR,
+    requests_per_day=settings.RATE_LIMIT_PER_DAY,
+    enable=settings.RATE_LIMITING_ENABLED
 )
 
 # Setup global exception handlers
@@ -205,6 +217,7 @@ app.include_router(admin_customer_routes_router, prefix="/api/v1/admin", tags=["
 app.include_router(admin_monitoring_routes_router, prefix="/api/v1/admin", tags=["Admin - Monitoring"])
 app.include_router(admin_reports_routes_router, prefix="/api/v1/admin", tags=["Admin - Reports"])
 app.include_router(admin_email_analytics_routes_router, prefix="/api/v1", tags=["Admin - Email Analytics"])
+app.include_router(admin_email_routes_router)  # Prefix already defined in router
 app.include_router(audit_router, prefix="/api/v1", tags=["Audit Logs"])
 app.include_router(security_router, prefix="/api/v1", tags=["Security Monitoring"])
 # Email routes (Phase 3 complete - Python-based templates)
@@ -244,7 +257,7 @@ def health_check(request: Request):
             "service": "wrext-api",
             "version": "1.0.0",
             "database": "connected" if DB_URI else "not_configured",
-            "environment": os.getenv("ENVIRONMENT", "development")
+            "environment": settings.ENVIRONMENT
         },
         request=request,
         message="Service is healthy"
@@ -283,10 +296,10 @@ def api_status(request: Request):
 if __name__ == "__main__":
     import uvicorn
 
-    # Get configuration from environment
-    host = os.getenv("HOST", "0.0.0.0")
-    port = int(os.getenv("PORT", "8000"))
-    debug = os.getenv("DEBUG", "false").lower() == "true"
+    # Get configuration from settings
+    host = settings.HOST
+    port = settings.PORT
+    debug = settings.DEBUG
 
     logger.info(f"Starting server on {host}:{port} (debug={debug})")
 

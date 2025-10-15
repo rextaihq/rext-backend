@@ -235,9 +235,11 @@ class AuthService:
             # Increment failed attempts
             db_user.failed_login_attempts = (db_user.failed_login_attempts or 0) + 1
 
-            # Lock account if too many failures (configurable via env vars)
-            max_attempts = int(os.getenv("AUTH_MAX_LOGIN_ATTEMPTS", "3"))
-            lockout_hours = int(os.getenv("AUTH_LOCKOUT_DURATION_HOURS", "1"))
+            # Lock account if too many failures (configurable via settings)
+            from src.api.config import get_settings
+            settings = get_settings()
+            max_attempts = settings.AUTH_MAX_LOGIN_ATTEMPTS
+            lockout_hours = settings.AUTH_LOCKOUT_DURATION_HOURS
 
             if db_user.failed_login_attempts >= max_attempts:
                 db_user.locked_until = datetime.utcnow() + timedelta(hours=lockout_hours)

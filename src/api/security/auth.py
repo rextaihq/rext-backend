@@ -1,15 +1,15 @@
-import os
 from langgraph_sdk import Auth
 from fastapi import Security
 from fastapi.security.api_key import APIKeyHeader
 from src.api.middleware.exceptions import InvalidAPIKeyException
-from dotenv import load_dotenv
+from src.api.config import get_settings
 
-load_dotenv()
+# Get settings instance
+settings = get_settings()
 
 auth = Auth()
-API_KEY = os.getenv("API_KEY")
-API_KEY_NAME = os.getenv("API_KEY_NAME")
+API_KEY = settings.API_KEY
+API_KEY_NAME = settings.API_KEY_NAME
 api_key_header = APIKeyHeader(name=API_KEY_NAME, auto_error=False)
 
 

@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.database.async_database import get_async_db
 from src.api.middleware.exceptions import (
+from src.api.config import get_settings
     BusinessRuleViolationException,
     DuplicateResourceException,
     ResourceNotFoundException,
@@ -38,6 +39,9 @@ from src.utils.email_template_utils import render_workspace_email
 
 router = APIRouter(tags=["workspace-invitations"])
 
+
+# Get settings instance
+settings = get_settings()
 
 async def send_workspace_invitation_email_task(
     email: str,
@@ -203,7 +207,7 @@ async def create_workspace_invitation(
     user_service = UserService(db)
     inviter = await user_service.get_user_by_id(user_uuid)
 
-    frontend_url = os.getenv("FRONTEND_URL", "http://localhost:3000")
+    frontend_url = settings.FRONTEND_URL
 
     # Serialize invitation BEFORE async operations to avoid lazy-load issues
     invitation_data = _serialize_invitation(invitation, role, inviter)
@@ -323,7 +327,7 @@ async def create_bulk_workspace_invitations(
     user_service = UserService(db)
     inviter = await user_service.get_user_by_id(user_uuid)
 
-    frontend_url = os.getenv("FRONTEND_URL", "http://localhost:3000")
+    frontend_url = settings.FRONTEND_URL
 
     invitation_service = InvitationService(db)
     created_invitations = []

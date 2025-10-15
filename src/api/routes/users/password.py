@@ -7,6 +7,7 @@ import os
 from src.utils.logger import logger
 from src.api.security.dependencies import get_current_user
 from src.api.schema.user_schema import (
+from src.api.config import get_settings
     ResetPassword,
     ForgotPasswordRequest,
     ChangePasswordRequest
@@ -24,6 +25,9 @@ from src.api.middleware.rate_limiter import password_reset_rate_limit
 
 router = APIRouter()
 
+
+# Get settings instance
+settings = get_settings()
 
 async def send_password_reset_email_task(
     email: str,
@@ -100,7 +104,7 @@ async def forgot_password(
         await service.set_reset_token(user.id, reset_token)
 
         # Get frontend URL
-        frontend_url = os.getenv("FRONTEND_URL", "http://localhost:3000")
+        frontend_url = settings.FRONTEND_URL
 
         # Send email in background using professional template
         background_tasks.add_task(
@@ -227,7 +231,7 @@ async def change_password(
                 recipient_email=user.email,
                 user_name=user.first_name or user.email.split('@')[0],
                 user_id=user_id,
-                frontend_url=os.getenv("FRONTEND_URL", "https://app.wrext.com"),
+                frontend_url=settings.FRONTEND_URL,
                 changed_at=user.password_changed_at.strftime("%b %d, %Y %I:%M %p UTC"),
                 ip_address=request.client.host if request.client else None,
                 user_agent=request.headers.get("user-agent")

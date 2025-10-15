@@ -3,6 +3,7 @@ from src.utils.logger import logger
 from src.api.security.dependencies import get_current_user
 from src.api.schema.user_schema import LoginUser, RegisterUser
 from src.api.security.token_utils import verify_token
+from src.api.config import get_settings
 from sqlalchemy.orm import Session
 from src.services.email_service import EmailService
 from src.api.database.database import get_db
@@ -24,6 +25,9 @@ from uuid import UUID
 
 router = APIRouter()
 
+
+# Get settings instance
+settings = get_settings()
 
 async def send_verification_email_task(
     email: str,
@@ -117,7 +121,7 @@ async def create_user(
         )
 
         # Get frontend URL from environment
-        frontend_url = os.getenv("FRONTEND_URL", "http://localhost:3000")
+        frontend_url = settings.FRONTEND_URL
 
         # Send verification email in background using professional template
         background_tasks.add_task(
@@ -357,7 +361,7 @@ async def verify_email(
 
         # Send welcome email after first-time verification
         if user.email_verified:
-            frontend_url = os.getenv("FRONTEND_URL", "http://localhost:3000")
+            frontend_url = settings.FRONTEND_URL
             background_tasks.add_task(
                 send_welcome_email_task,
                 email=user.email,
@@ -420,7 +424,7 @@ async def resend_verification(
         user, verification_token = await auth_service.resend_verification_email(email)
 
         # Get frontend URL
-        frontend_url = os.getenv("FRONTEND_URL", "http://localhost:3000")
+        frontend_url = settings.FRONTEND_URL
 
         # Send verification email in background
         background_tasks.add_task(

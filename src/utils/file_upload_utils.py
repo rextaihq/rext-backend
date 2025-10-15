@@ -31,20 +31,24 @@ from PIL import Image
 
 from src.utils.logger import logger
 from src.api.middleware.exceptions import WrextValidationException
+from src.api.config import get_settings
+
+# Get settings instance
+settings = get_settings()
 
 # File Upload Configuration
 def get_upload_base_dir() -> Path:
-    """Get upload base directory from environment."""
-    return Path(os.getenv("UPLOAD_DIR", "/app/secure_uploads"))
+    """Get upload base directory from settings."""
+    return settings.upload_dir_path
 
-MAX_FILE_SIZE_MB = int(os.getenv("MAX_UPLOAD_SIZE_MB", "10"))
+MAX_FILE_SIZE_MB = settings.MAX_UPLOAD_SIZE_MB
 CHUNK_SIZE = 8192  # 8KB chunks for streaming
 
 # Image validation configuration
-MAX_IMAGE_WIDTH = int(os.getenv("MAX_IMAGE_WIDTH", "4096"))  # 4K width
-MAX_IMAGE_HEIGHT = int(os.getenv("MAX_IMAGE_HEIGHT", "4096"))  # 4K height
-MIN_IMAGE_WIDTH = int(os.getenv("MIN_IMAGE_WIDTH", "10"))  # Minimum 10px
-MIN_IMAGE_HEIGHT = int(os.getenv("MIN_IMAGE_HEIGHT", "10"))  # Minimum 10px
+MAX_IMAGE_WIDTH = settings.MAX_IMAGE_WIDTH
+MAX_IMAGE_HEIGHT = settings.MAX_IMAGE_HEIGHT
+MIN_IMAGE_WIDTH = settings.MIN_IMAGE_WIDTH
+MIN_IMAGE_HEIGHT = settings.MIN_IMAGE_HEIGHT
 
 # Allowed MIME types (magic number)
 ALLOWED_MIME_TYPES = {

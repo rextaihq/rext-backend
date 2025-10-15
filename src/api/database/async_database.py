@@ -1,13 +1,12 @@
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
-from dotenv import load_dotenv
-import os
+from src.api.config import get_settings
 from src.utils.logger import logger
 
-# Load environment variables
-load_dotenv()
+# Get settings instance
+settings = get_settings()
 
 # Get database URL and convert to async URL
-SQLALCHEMY_DATABASE_URL = os.getenv("POSTGRES_URI_CUSTOM")
+SQLALCHEMY_DATABASE_URL = settings.POSTGRES_URI_CUSTOM
 
 # Convert postgresql:// to postgresql+asyncpg://
 if SQLALCHEMY_DATABASE_URL and SQLALCHEMY_DATABASE_URL.startswith("postgresql://"):

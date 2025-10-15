@@ -46,19 +46,24 @@ class ContentService(LangGraphService):
     """Service for content business logic"""
 
     def __init__(
-            self, 
+            self,
             db: AsyncSession,
-            url: str = os.getenv("LANGSMITH_DEV_URL"), 
-            api_key: Optional[str] = os.getenv('LANGSMITH_API_KEY')
+            url: Optional[str] = None,
+            api_key: Optional[str] = None
     ):
         """
         Initialize ContentService.
 
         Args:
             db: Async database session
+            url: Optional LangSmith URL (defaults to settings)
+            api_key: Optional LangSmith API key (defaults to settings)
         """
-        url = url or os.getenv("LANGSMITH_DEV_URL")
-        api_key = api_key or os.getenv("LANGSMITH_API_KEY")
+        from src.api.config import get_settings
+        settings = get_settings()
+
+        url = url or settings.LANGSMITH_DEV_URL
+        api_key = api_key or settings.LANGSMITH_API_KEY
         super().__init__(
             db=db,
             url=url, 

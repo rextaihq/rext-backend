@@ -32,6 +32,7 @@ from src.utils.utils import load_split_file_data
 from src.utils.vector_store import add_to_vector_store, delete_vectors
 from src.utils.helper import web_page_scraper
 from src.api.middleware.exceptions import (
+from src.api.config import get_settings
     ResourceNotFoundException,
     WrextValidationException,
     DuplicateResourceException,
@@ -40,6 +41,9 @@ from src.api.middleware.exceptions import (
 from src.services.knowledge_base_service import KnowledgeBaseService
 
 
+
+# Get settings instance
+settings = get_settings()
 class KnowledgeService:
     """Service for knowledge business logic"""
 
@@ -646,7 +650,7 @@ class KnowledgeService:
                 return
 
             # Build URLs
-            frontend_url = os.getenv("FRONTEND_URL", "https://app.wrext.com")
+            frontend_url = settings.FRONTEND_URL
             dashboard_url = f"{frontend_url}/w/{workspace.slug}/knowledge/{knowledge_base_id}"
             create_content_url = f"{frontend_url}/w/{workspace.slug}/content/new"
 

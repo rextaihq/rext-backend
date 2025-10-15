@@ -14,9 +14,13 @@ from src.utils.response_utils import success, error
 from src.api.schema.response_schemas import ErrorCode, ErrorSeverity
 from src.services.user_service import UserService
 from src.api.middleware.exceptions import ResourceNotFoundException, WrextValidationException
+from src.api.config import get_settings
 
 router = APIRouter()
 
+
+# Get settings instance
+settings = get_settings()
 
 async def send_data_export_email_task(
     email: str,
@@ -339,7 +343,7 @@ async def export_user_data(
         export_json = json.dumps(export_data, indent=2)
 
         # Get frontend URL
-        frontend_url = os.getenv("FRONTEND_URL", "http://localhost:3000")
+        frontend_url = settings.FRONTEND_URL
 
         # Send email with data export in background using EmailService
         background_tasks.add_task(
