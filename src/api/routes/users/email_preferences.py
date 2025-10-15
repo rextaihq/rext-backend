@@ -113,7 +113,6 @@ async def update_preferences(
             )
 
         prefs = await service.update_preferences(user_id, updates, db)
-        await db.commit()
 
         return success(
             data=prefs.to_dict(),
@@ -121,7 +120,6 @@ async def update_preferences(
         )
     except Exception as e:
         logger.error(f"Failed to update email preferences: {str(e)}", exc_info=True)
-        await db.rollback()
         raise HTTPException(status_code=500, detail="Failed to update email preferences")
 
 

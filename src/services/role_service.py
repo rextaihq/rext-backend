@@ -169,7 +169,7 @@ class RoleService:
             WrextAPIException: If trying to update system role
             DuplicateResourceException: If display_name already exists
         """
-        role = await self._get_role_or_404(role_id)
+        role = await self.get_role_by_id(role_id)
 
         # Check if system role
         if role.is_system_role:
@@ -244,7 +244,7 @@ class RoleService:
             WrextAPIException: If system role
             WrextValidationException: If role in use and no reassignment
         """
-        role = await self._get_role_or_404(role_id)
+        role = await self.get_role_by_id(role_id)
 
         # Check if system role
         if role.is_system_role:
@@ -267,7 +267,7 @@ class RoleService:
                 )
 
             # Validate reassignment role exists
-            reassign_role = await self._get_role_or_404(reassign_to)
+            reassign_role = await self.get_role_by_id(reassign_to)
 
             # Reassign all users
             for user_role in user_roles:
@@ -330,7 +330,7 @@ class RoleService:
             WrextValidationException: If user not workspace member
         """
         # Validate role exists
-        role = await self._get_role_or_404(role_id)
+        role = await self.get_role_by_id(role_id)
 
         # If workspace-scoped, validate workspace and membership
         if workspace_id:
@@ -474,7 +474,7 @@ class RoleService:
         Raises:
             ResourceNotFoundException: If role or permissions not found
         """
-        role = await self._get_role_or_404(role_id)
+        role = await self.get_role_by_id(role_id)
 
         # Validate all permissions exist
         for perm_id in permission_ids:
@@ -592,7 +592,7 @@ class RoleService:
         Raises:
             ResourceNotFoundException: If role not found
         """
-        role = await self._get_role_or_404(role_id)
+        role = await self.get_role_by_id(role_id)
 
         # Get permissions
         permissions_result = await self.db.execute(
@@ -616,13 +616,36 @@ class RoleService:
 
         return role_data
 
+    async def get_roles_by_ids(
+        self,
+        role_ids: list[UUID]
+    ) -> Dict[UUID, Role]:
+        """
+        Batch load roles by IDs.
+
+        Args:
+            role_ids: List of role UUIDs
+
+        Returns:
+            Dict mapping role_id -> Role object
+        """
+        if not role_ids:
+            return {}
+
+        result = await self.db.execute(
+            select(Role).where(Role.id.in_(role_ids))
+        )
+        roles = result.scalars().all()
+
+        return {role.id: role for role in roles}
+
     # ========================================================================
     # Private Helper Methods
     # ========================================================================
 
-    async def _get_role_or_404(self, role_id: UUID) -> Role:
+    async def get_role_by_id(self, role_id: UUID) -> Role:
         """
-        Get role or raise 404.
+        Get role by ID or raise 404.
 
         Args:
             role_id: Role UUID

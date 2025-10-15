@@ -73,14 +73,7 @@ async def get_profile(
         )
     except Exception as e:
         logger.error(f"Error fetching profile: {str(e)}")
-        return error(
-            message="Failed to fetch profile",
-            code=ErrorCode.INTERNAL_SERVER_ERROR,
-            status_code=500,
-            severity=ErrorSeverity.HIGH,
-            context={"error_details": str(e)},
-            request=request
-        )
+        raise
 
 
 @router.patch("/profile")
@@ -156,14 +149,7 @@ async def update_profile(
         )
     except Exception as e:
         logger.error(f"Error updating profile: {str(e)}")
-        return error(
-            message="Failed to update profile",
-            code=ErrorCode.INTERNAL_SERVER_ERROR,
-            status_code=500,
-            severity=ErrorSeverity.HIGH,
-            context={"error_details": str(e)},
-            request=request
-        )
+        raise
 
 
 @router.post("/avatar/upload")
@@ -362,8 +348,6 @@ async def get_notification_preferences(
         if not preferences:
             preferences = NotificationPreferences(user_id=user_id)
             db.add(preferences)
-            await db.flush()
-            await db.refresh(preferences)
             logger.info(f"Created default notification preferences for user {user_id}")
 
         return success(
@@ -374,14 +358,7 @@ async def get_notification_preferences(
 
     except Exception as e:
         logger.error(f"Failed to get notification preferences: {str(e)}")
-        return error(
-            message="Failed to retrieve notification preferences",
-            code=ErrorCode.INTERNAL_SERVER_ERROR,
-            status_code=500,
-            severity=ErrorSeverity.MEDIUM,
-            context={"error_details": str(e)},
-            request=request
-        )
+        raise
 
 
 @router.patch("/preferences/notifications", response_model=None)
@@ -424,9 +401,6 @@ async def update_notification_preferences(
         preferences.in_app_mentions = preferences_update.inAppMentions
         preferences.in_app_updates = preferences_update.inAppUpdates
 
-        await db.flush()
-        await db.refresh(preferences)
-
         logger.info(f"Updated notification preferences for user {user_id}")
 
         return success(
@@ -437,11 +411,4 @@ async def update_notification_preferences(
 
     except Exception as e:
         logger.error(f"Failed to update notification preferences: {str(e)}")
-        return error(
-            message="Failed to update notification preferences",
-            code=ErrorCode.INTERNAL_SERVER_ERROR,
-            status_code=500,
-            severity=ErrorSeverity.MEDIUM,
-            context={"error_details": str(e)},
-            request=request
-        )
+        raise

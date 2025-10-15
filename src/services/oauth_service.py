@@ -277,7 +277,9 @@ class OAuthService:
         tokens = {
             "access_token": access_token,
             "refresh_token": refresh_token,
-            "token_type": "bearer"
+            "token_type": "bearer",
+            "permissions": permissions,  # Include permissions for route response
+            "roles": role_names  # Include roles for route response
         }
 
         return user, tokens

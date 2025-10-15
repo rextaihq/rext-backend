@@ -30,6 +30,10 @@ from src.api.models.user_models.roles import Role
 from src.api.models.workspace_models.workspace_member import WorkspaceMembers
 from src.api.models.workspace_models.workspace_model import WorkspaceModel
 from src.services.invitation_service import InvitationService
+from src.services.user_service import UserService
+from src.services.member_service import MemberService
+from src.services.workspace_service import WorkspaceService
+from src.services.role_service import RoleService
 
 
 router = APIRouter()
@@ -50,15 +54,11 @@ async def notify_workspace_admins_of_acceptance(
 
     try:
         async with get_async_db_context() as async_db:
-            # Get all workspace admins/owners
-            admin_members_result = await async_db.execute(
-                select(WorkspaceMembers, Users)
-                .join(Users, WorkspaceMembers.user_id == Users.id)
-                .join(Role, WorkspaceMembers.role_id == Role.id)
-                .where(WorkspaceMembers.workspace_id == UUID(workspace_id))
-                .where(Role.name.in_(["owner", "admin"]))
+            # Get all workspace admins/owners using MemberService
+            member_service = MemberService(async_db)
+            admin_members = await member_service.get_admin_members_with_users(
+                workspace_id=UUID(workspace_id)
             )
-            admin_members = admin_members_result.all()
 
             frontend_url = os.getenv("FRONTEND_URL", "http://localhost:3000")
 
@@ -98,15 +98,9 @@ async def accept_invitation(
     user_id = current_user.get("identity")
     logger.info(f"User {user_id} attempting to accept invitation with token")
 
-    # Get user details
-    result = await db.execute(select(Users).where(Users.id == user_id))
-    user = result.scalar_one_or_none()
-    if not user:
-        raise ResourceNotFoundException(
-            message="User not found",
-            resource_type="user",
-            resource_id=str(user_id)
-        )
+    # Get user details using UserService
+    user_service = UserService(db)
+    user = await user_service.get_user_by_id(UUID(user_id))
 
     # Use InvitationService to get invitation by token
     service = InvitationService(db)
@@ -125,16 +119,12 @@ async def accept_invitation(
         user_id=UUID(user_id)
     )
 
-    # Get workspace and role details
-    workspace_result = await db.execute(
-        select(WorkspaceModel).where(WorkspaceModel.id == invitation.workspace_id)
-    )
-    workspace = workspace_result.scalar_one_or_none()
+    # Get workspace and role details using services
+    workspace_service = WorkspaceService(db)
+    workspace = await workspace_service.get_workspace_by_id(invitation.workspace_id)
 
-    role_result = await db.execute(
-        select(Role).where(Role.id == invitation.role_id)
-    )
-    role = role_result.scalar_one_or_none()
+    role_service = RoleService(db)
+    role = await role_service.get_role_by_id(invitation.role_id)
 
     # Send invitation accepted notification to workspace admins
     if workspace:
@@ -177,9 +167,9 @@ async def revoke_invitation(
     user_id = current_user.get("identity")
     logger.info(f"User {user_id} attempting to revoke invitation {invitation_id}")
 
-    # Get user and invitation details for permission check
-    result = await db.execute(select(Users).where(Users.id == user_id))
-    user = result.scalar_one_or_none()
+    # Get user using UserService
+    user_service = UserService(db)
+    user = await user_service.get_user_by_id(UUID(user_id))
 
     # Use InvitationService to get invitation
     service = InvitationService(db)
@@ -219,9 +209,7 @@ async def revoke_invitation(
         user_email=user.email if user else None
     )
 
-    await db.flush()
-    await db.refresh(invitation)
-
+    # No need for flush/refresh - service handles it
     logger.info(f"Invitation {invitation_id} revoked by user {user_id}")
 
     return {

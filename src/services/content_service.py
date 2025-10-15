@@ -395,6 +395,139 @@ class ContentService(LangGraphService):
 
         return content
 
+    async def list_content(
+        self,
+        workspace_id: UUID,
+        status: Optional[str] = None,
+        include_metadata: bool = False,
+        include_seo: bool = False,
+        limit: int = 100,
+        offset: int = 0
+    ) -> Dict[str, Any]:
+        """
+        List content for workspace with filtering and pagination.
+
+        Args:
+            workspace_id: Workspace UUID
+            status: Optional status filter
+            include_metadata: Include content metadata
+            include_seo: Include SEO data
+            limit: Maximum items to return
+            offset: Number of items to skip
+
+        Returns:
+            Dict with content list and total count
+        """
+        # Build query
+        query = select(Content).where(
+            Content.workspace_id == workspace_id,
+            Content.deleted_at == None
+        )
+
+        # Filter by status if provided
+        if status:
+            query = query.where(Content.status == status)
+
+        # Eagerly load relationships to avoid lazy loading issues
+        if include_metadata:
+            query = query.options(selectinload(Content.content_metadata))
+        if include_seo:
+            query = query.options(selectinload(Content.seo_data))
+
+        # Get total count
+        count_query = select(func.count()).select_from(Content).where(
+            Content.workspace_id == workspace_id,
+            Content.deleted_at == None
+        )
+        if status:
+            count_query = count_query.where(Content.status == status)
+
+        count_result = await self.db.execute(count_query)
+        total_count = count_result.scalar()
+
+        # Apply pagination and ordering
+        query = query.order_by(Content.created_at.desc()).offset(offset).limit(limit)
+        result = await self.db.execute(query)
+        content_items = result.scalars().all()
+
+        # Build relationships list
+        relationships = []
+        if include_metadata:
+            relationships.append("content_metadata")
+        if include_seo:
+            relationships.append("seo_data")
+
+        content_list = [
+            content.to_dict(include_relationships=relationships if relationships else None)
+            for content in content_items
+        ]
+
+        logger.info(f"Listed {len(content_list)} content items for workspace {workspace_id}")
+
+        return {
+            "content": content_list,
+            "total_count": total_count
+        }
+
+    async def get_content(
+        self,
+        content_id: UUID,
+        workspace_id: UUID,
+        include_metadata: bool = True,
+        include_seo: bool = True
+    ) -> Dict[str, Any]:
+        """
+        Get single content item by ID.
+
+        Args:
+            content_id: Content UUID
+            workspace_id: Workspace UUID
+            include_metadata: Include content metadata
+            include_seo: Include SEO data
+
+        Returns:
+            Content dict with requested relationships
+
+        Raises:
+            ResourceNotFoundException: If content not found
+        """
+        # Build query with eager loading for requested relationships
+        query = select(Content).where(
+            Content.id == content_id,
+            Content.workspace_id == workspace_id,
+            Content.deleted_at == None
+        )
+
+        # Eagerly load relationships to avoid lazy loading issues
+        if include_metadata:
+            query = query.options(selectinload(Content.content_metadata))
+        if include_seo:
+            query = query.options(selectinload(Content.seo_data))
+
+        result = await self.db.execute(query)
+        content = result.scalar_one_or_none()
+
+        if not content:
+            raise ResourceNotFoundException(
+                resource_type="Content",
+                resource_id=str(content_id)
+            )
+
+        relationships = []
+        if include_metadata:
+            relationships.append("content_metadata")
+        if include_seo:
+            relationships.append("seo_data")
+
+        content_data = content.to_dict(
+            include_relationships=relationships if relationships else None,
+            include_nulls=True  # Include body_markdown even if null
+        )
+
+        logger.info(f"Retrieved content {content_id} from workspace {workspace_id}")
+
+        return content_data
+
     # ========================================================================
     # Private Helper Methods
     # ========================================================================

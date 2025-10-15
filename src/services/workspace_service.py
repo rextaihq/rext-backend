@@ -531,6 +531,152 @@ class WorkspaceService:
 
         return workspace
 
+    async def get_workspace_by_slug_for_user(
+        self,
+        slug: str,
+        user_id: UUID
+    ) -> WorkspaceModel:
+        """
+        Get workspace by slug for a specific user (verifies membership).
+
+        Args:
+            slug: Workspace slug
+            user_id: User UUID
+
+        Returns:
+            WorkspaceModel object
+
+        Raises:
+            ResourceNotFoundException: If workspace not found or user not a member
+        """
+        result = await self.db.execute(
+            select(WorkspaceModel)
+            .join(WorkspaceMembers, WorkspaceMembers.workspace_id == WorkspaceModel.id)
+            .where(
+                WorkspaceModel.slug == slug,
+                WorkspaceMembers.user_id == user_id,
+                WorkspaceModel.deleted_at.is_(None)
+            )
+        )
+        workspace = result.scalar_one_or_none()
+
+        if not workspace:
+            raise ResourceNotFoundException(
+                resource_type="workspace",
+                resource_id=slug
+            )
+
+        return workspace
+
+    async def get_workspace_by_id_or_slug_for_user(
+        self,
+        identifier: str,
+        user_id: UUID
+    ) -> WorkspaceModel:
+        """
+        Get workspace by ID or slug for a specific user (verifies membership).
+        Automatically detects whether identifier is UUID or slug.
+
+        Args:
+            identifier: Workspace UUID or slug
+            user_id: User UUID
+
+        Returns:
+            WorkspaceModel object
+
+        Raises:
+            ResourceNotFoundException: If workspace not found or user not a member
+        """
+        # Check if identifier is a UUID or slug
+        is_uuid = False
+        try:
+            UUID(identifier)
+            is_uuid = True
+        except ValueError:
+            is_uuid = False
+
+        # Build query based on whether it's UUID or slug
+        if is_uuid:
+            query = (
+                select(WorkspaceModel)
+                .join(WorkspaceMembers, WorkspaceMembers.workspace_id == WorkspaceModel.id)
+                .where(
+                    WorkspaceModel.id == UUID(identifier),
+                    WorkspaceMembers.user_id == user_id,
+                    WorkspaceModel.deleted_at.is_(None)
+                )
+            )
+        else:
+            query = (
+                select(WorkspaceModel)
+                .join(WorkspaceMembers, WorkspaceMembers.workspace_id == WorkspaceModel.id)
+                .where(
+                    WorkspaceModel.slug == identifier,
+                    WorkspaceMembers.user_id == user_id,
+                    WorkspaceModel.deleted_at.is_(None)
+                )
+            )
+
+        result = await self.db.execute(query)
+        workspace = result.scalar_one_or_none()
+
+        if not workspace:
+            raise ResourceNotFoundException(
+                resource_type="workspace",
+                resource_id=identifier
+            )
+
+        return workspace
+
+    async def verify_user_is_workspace_owner(
+        self,
+        workspace_id: UUID,
+        user_id: UUID
+    ) -> bool:
+        """
+        Verify if user has workspace owner role.
+
+        Args:
+            workspace_id: Workspace UUID
+            user_id: User UUID
+
+        Returns:
+            True if user is workspace owner, False otherwise
+
+        Raises:
+            ForbiddenException: If user is not workspace owner
+        """
+        from src.api.models.user_models.roles import Role
+
+        # Get user's membership
+        member_result = await self.db.execute(
+            select(WorkspaceMembers).where(
+                WorkspaceMembers.workspace_id == workspace_id,
+                WorkspaceMembers.user_id == user_id
+            )
+        )
+        member = member_result.scalar_one_or_none()
+
+        if not member or not member.role_id:
+            from src.api.middleware.exceptions import ForbiddenException
+            raise ForbiddenException(
+                message="Only workspace owners can perform this action"
+            )
+
+        # Get role details
+        role_result = await self.db.execute(
+            select(Role).where(Role.id == member.role_id)
+        )
+        role = role_result.scalar_one_or_none()
+
+        if not role or role.name not in ["workspace_owner", "super_admin"]:
+            from src.api.middleware.exceptions import ForbiddenException
+            raise ForbiddenException(
+                message="Only workspace owners can perform this action"
+            )
+
+        return True
+
     async def create_workspace(
         self,
         user_id: UUID,

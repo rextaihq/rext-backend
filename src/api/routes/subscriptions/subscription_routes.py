@@ -7,12 +7,9 @@ Routes handle HTTP concerns and delegate business logic to SubscriptionService.
 
 from fastapi import APIRouter, Depends, status, Request, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
-from typing import Optional
 
 from src.api.database.async_database import get_async_db
 from src.api.security.dependencies import get_current_user
-from src.api.models.subscription_models.plans import SubscriptionPlan
 from src.api.schema.subscription import (
     SubscriptionCreateRequest,
     SubscriptionUpgradeRequest,
@@ -21,7 +18,6 @@ from src.api.schema.subscription import (
 from src.services.subscription_service import SubscriptionService
 from src.utils.response_utils import success, created
 from src.utils.route_decorators import db_transaction_handler, require_permissions
-from src.utils.logger import logger
 
 
 router = APIRouter(
@@ -64,21 +60,17 @@ async def subscribe_to_plan(
     )
 
     # Get plan name for response
-    plan_result = await db.execute(
-        select(SubscriptionPlan).where(SubscriptionPlan.id == subscription_data.plan_id)
-    )
-    plan = plan_result.scalar_one_or_none()
+    plan = await service.get_plan_by_id(subscription_data.plan_id)
 
     # Build response
     response_data = new_subscription.to_dict()
-    if plan:
-        response_data["plan_name"] = plan.name
-        response_data["plan_display_name"] = plan.display_name
+    response_data["plan_name"] = plan.name
+    response_data["plan_display_name"] = plan.display_name
 
     return created(
         data=response_data,
         request=request,
-        message=f"Successfully subscribed to {plan.display_name if plan else 'plan'}"
+        message=f"Successfully subscribed to {plan.display_name}"
     )
 
 
@@ -109,24 +101,20 @@ async def get_my_subscription(
         )
 
     # Get plan details
-    plan_result = await db.execute(
-        select(SubscriptionPlan).where(SubscriptionPlan.id == subscription.plan_id)
-    )
-    plan = plan_result.scalar_one_or_none()
+    plan = await service.get_plan_by_id(subscription.plan_id)
 
     # Build response
     response_data = subscription.to_dict()
-    if plan:
-        response_data["plan_name"] = plan.name
-        response_data["plan_display_name"] = plan.display_name
-        response_data["plan_features"] = plan.features
-        response_data["plan_limits"] = {
-            "max_workspaces": plan.max_workspaces,
-            "max_members_per_workspace": plan.max_members_per_workspace,
-            "max_topics": plan.max_topics,
-            "max_knowledge_items": plan.max_knowledge_items,
-            "max_api_calls_per_month": plan.max_api_calls_per_month
-        }
+    response_data["plan_name"] = plan.name
+    response_data["plan_display_name"] = plan.display_name
+    response_data["plan_features"] = plan.features
+    response_data["plan_limits"] = {
+        "max_workspaces": plan.max_workspaces,
+        "max_members_per_workspace": plan.max_members_per_workspace,
+        "max_topics": plan.max_topics,
+        "max_knowledge_items": plan.max_knowledge_items,
+        "max_api_calls_per_month": plan.max_api_calls_per_month
+    }
 
     return success(
         data=response_data,
@@ -153,29 +141,10 @@ async def get_subscription_history(
     - List of all subscriptions (past and present) ordered by most recent
     """
     user_id = current_user.get("identity")
+    service = SubscriptionService(db)
 
-    # Import here to avoid circular dependency
-    from src.api.models.subscription_models.subscriptions import UserSubscription
-
-    subscriptions_result = await db.execute(
-        select(UserSubscription).where(
-            UserSubscription.user_id == user_id
-        ).order_by(UserSubscription.created_at.desc()).limit(limit)
-    )
-    subscriptions = subscriptions_result.scalars().all()
-
-    subscriptions_data = []
-    for sub in subscriptions:
-        sub_data = sub.to_dict()
-        # Add plan name
-        plan_result = await db.execute(
-            select(SubscriptionPlan).where(SubscriptionPlan.id == sub.plan_id)
-        )
-        plan = plan_result.scalar_one_or_none()
-        if plan:
-            sub_data["plan_name"] = plan.name
-            sub_data["plan_display_name"] = plan.display_name
-        subscriptions_data.append(sub_data)
+    # Use service
+    subscriptions_data = await service.get_subscription_history(user_id, limit=limit)
 
     return success(
         data={
@@ -219,21 +188,17 @@ async def upgrade_subscription(
     )
 
     # Get new plan details
-    plan_result = await db.execute(
-        select(SubscriptionPlan).where(SubscriptionPlan.id == upgrade_data.new_plan_id)
-    )
-    plan = plan_result.scalar_one_or_none()
+    plan = await service.get_plan_by_id(upgrade_data.new_plan_id)
 
     # Build response
     response_data = updated_subscription.to_dict()
-    if plan:
-        response_data["plan_name"] = plan.name
-        response_data["plan_display_name"] = plan.display_name
+    response_data["plan_name"] = plan.name
+    response_data["plan_display_name"] = plan.display_name
 
     return success(
         data=response_data,
         request=request,
-        message=f"Successfully updated to {plan.display_name if plan else 'new plan'}"
+        message=f"Successfully updated to {plan.display_name}"
     )
 
 
@@ -308,10 +273,7 @@ async def get_usage_stats(
         )
 
     # Get plan
-    plan_result = await db.execute(
-        select(SubscriptionPlan).where(SubscriptionPlan.id == subscription.plan_id)
-    )
-    plan = plan_result.scalar_one_or_none()
+    plan = await service.get_plan_by_id(subscription.plan_id)
 
     # Calculate current usage
     current_usage = await service.calculate_usage(user_id)

@@ -1,6 +1,5 @@
 from fastapi import APIRouter, Depends, Request, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
 from uuid import UUID
 import uuid
 import os
@@ -9,8 +8,6 @@ from datetime import datetime
 from src.utils.logger import logger
 from src.api.security.dependencies import get_current_user
 from src.api.schema.user_schema import UpdateUser, DataExportRequest, DataExportResponse
-from src.api.models.user_models.users import Users
-from src.api.models.workspace_models.workspace_member import WorkspaceMembers
 from src.services.email_service import EmailService
 from src.api.database.async_database import get_async_db
 from src.utils.response_utils import success, error
@@ -99,21 +96,11 @@ async def get_users(
     Requires authentication.
     """
     try:
-        logger.info(f"Fetching users for workspace: {workspace_id or 'all'}")
+        service = UserService(db)
+        workspace_uuid = UUID(workspace_id) if workspace_id else None
 
-        # Base query
-        query = select(Users)
-
-        if workspace_id:
-            # Filter by workspace membership
-            query = query.join(WorkspaceMembers).where(
-                WorkspaceMembers.workspace_id == workspace_id,
-                WorkspaceMembers.status == "active"
-            )
-            logger.info(f"Filtering users by workspace_id: {workspace_id}")
-
-        result = await db.execute(query)
-        users = result.scalars().all()
+        # Get users via service
+        users = await service.get_users(workspace_id=workspace_uuid)
 
         # Convert users to dict format (excluding passwords)
         user_data = [user.to_dict() for user in users]
@@ -129,14 +116,7 @@ async def get_users(
         )
     except Exception as e:
         logger.error(f"Failed to retrieve users: {str(e)}")
-        return error(
-            message="Failed to retrieve users",
-            code=ErrorCode.INTERNAL_SERVER_ERROR,
-            status_code=500,
-            severity=ErrorSeverity.HIGH,
-            context={"error_details": str(e)},
-            request=request
-        )
+        raise
 
 
 @router.delete("/delete/{user_id}")
@@ -153,24 +133,16 @@ async def delete_user(
     Requires user.delete permission (super_admin only).
     """
     try:
-        # Check if user has permission to delete users
-        from src.api.models.user_models.permissions import Permission
-        from src.api.models.user_models.role_permissions import RolePermission
-        from src.api.models.user_models.user_roles import UserRole
+        service = UserService(db)
+        current_user_id = UUID(current_user.get("identity"))
 
-        user_uuid = UUID(current_user.get("identity"))
-
-        # Check user.delete permission
-        permission_result = await db.execute(
-            select(Permission)
-            .join(RolePermission, RolePermission.permission_id == Permission.id)
-            .join(UserRole, UserRole.role_id == RolePermission.role_id)
-            .where(UserRole.user_id == user_uuid)
-            .where(Permission.name == "user.delete")
+        # Check permission via service
+        has_permission = await service.check_user_permission(
+            user_id=current_user_id,
+            permission_name="user.delete"
         )
-        permission_check = permission_result.scalar_one_or_none()
 
-        if not permission_check:
+        if not has_permission:
             return error(
                 message="Missing required permission: user.delete",
                 code=ErrorCode.AUTHORIZATION_ERROR,
@@ -180,24 +152,8 @@ async def delete_user(
                 request=request
             )
 
-        service = UserService(db)
-
-        # Get user to delete
-        db_user = await service.get_user_by_id(UUID(user_id))
-
-        # Prevent deleting an already deleted user
-        if db_user.deleted_at:
-            return error(
-                message="User already deleted",
-                code=ErrorCode.DEPENDENCY_ERROR,
-                status_code=400,
-                severity=ErrorSeverity.MEDIUM,
-                request=request
-            )
-
-        # Soft delete
-        db_user.deleted_at = datetime.utcnow()
-        await db.commit()
+        # Delete user via service (includes validation)
+        db_user = await service.delete_user(UUID(user_id))
 
         return success(
             data={"id": str(db_user.id)},
@@ -213,17 +169,17 @@ async def delete_user(
             severity=ErrorSeverity.MEDIUM,
             request=request
         )
-    except Exception as e:
-        await db.rollback()
-        logger.error(f"Failed to delete user {user_id}: {str(e)}")
+    except WrextValidationException as e:
         return error(
-            message="Failed to delete user",
-            code=ErrorCode.INTERNAL_SERVER_ERROR,
-            status_code=500,
-            severity=ErrorSeverity.HIGH,
-            context={"error_details": str(e)},
+            message=str(e),
+            code=ErrorCode.DEPENDENCY_ERROR,
+            status_code=400,
+            severity=ErrorSeverity.MEDIUM,
             request=request
         )
+    except Exception as e:
+        logger.error(f"Failed to delete user {user_id}: {str(e)}")
+        raise
 
 
 @router.put("/update/{user_id}")
@@ -240,70 +196,17 @@ async def update_user(
     try:
         service = UserService(db)
 
-        # Get user
-        db_user = await service.get_user_by_id(UUID(user_id))
-
-        # Check for duplicate email
-        if user.email:
-            email_result = await db.execute(
-                select(Users).where(
-                    Users.email == user.email,
-                    Users.id != UUID(user_id)
-                )
-            )
-            if email_result.scalar_one_or_none():
-                return error(
-                    message="Email already exists",
-                    code=ErrorCode.DUPLICATE_RESOURCE,
-                    status_code=400,
-                    severity=ErrorSeverity.MEDIUM,
-                    request=request
-                )
-
-        # Check for duplicate username
-        if user.username:
-            username_result = await db.execute(
-                select(Users).where(
-                    Users.username == user.username,
-                    Users.id != UUID(user_id)
-                )
-            )
-            if username_result.scalar_one_or_none():
-                return error(
-                    message="Username already exists",
-                    code=ErrorCode.DUPLICATE_RESOURCE,
-                    status_code=400,
-                    severity=ErrorSeverity.MEDIUM,
-                    request=request
-                )
-
-        # Update fields using service
-        update_kwargs = {}
-        if user.first_name is not None:
-            update_kwargs["first_name"] = user.first_name
-        if user.last_name is not None:
-            update_kwargs["last_name"] = user.last_name
-        if user.display_name is not None:
-            update_kwargs["display_name"] = user.display_name
-        if user.language is not None:
-            update_kwargs["language"] = user.language
-        if user.timezone is not None:
-            update_kwargs["timezone"] = user.timezone
-
-        # Email and username need direct update (not in update_profile)
-        if user.email is not None:
-            db_user.email = user.email
-        if user.username is not None:
-            db_user.username = user.username
-
-        # Update other fields via service
-        if update_kwargs:
-            db_user = await service.update_profile(user_id=UUID(user_id), **update_kwargs)
-        else:
-            db_user.updated_at = datetime.utcnow()
-
-        await db.commit()
-        await db.refresh(db_user)
+        # Update user via service (handles all validation and updates)
+        db_user = await service.update_user(
+            user_id=UUID(user_id),
+            email=user.email,
+            username=user.username,
+            first_name=user.first_name,
+            last_name=user.last_name,
+            display_name=user.display_name,
+            language=user.language,
+            timezone=user.timezone
+        )
 
         # Return updated user data (excluding password)
         user_data = {
@@ -333,17 +236,17 @@ async def update_user(
             severity=ErrorSeverity.MEDIUM,
             request=request
         )
-    except Exception as e:
-        await db.rollback()
-        logger.error(f"Failed to update user {user_id}: {str(e)}")
+    except WrextValidationException as e:
         return error(
-            message="Failed to update user",
-            code=ErrorCode.INTERNAL_SERVER_ERROR,
-            status_code=500,
-            severity=ErrorSeverity.HIGH,
-            context={"error_details": str(e)},
+            message=str(e),
+            code=ErrorCode.DUPLICATE_RESOURCE,
+            status_code=400,
+            severity=ErrorSeverity.MEDIUM,
             request=request
         )
+    except Exception as e:
+        logger.error(f"Failed to update user {user_id}: {str(e)}")
+        raise
 
 
 @router.post("/export-data", response_model=DataExportResponse)

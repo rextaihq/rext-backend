@@ -1,9 +1,8 @@
 import os
-from typing import Dict, List, Optional, Set
+from typing import Dict, List, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Request, status
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.database.async_database import get_async_db
@@ -25,6 +24,8 @@ from src.api.schema.invitation_schema import (
 from src.api.security.dependencies import get_current_user
 from src.services.email_service import EmailService
 from src.services.invitation_service import InvitationService
+from src.services.role_service import RoleService
+from src.services.user_service import UserService
 from src.utils.audit_helper import create_audit_log_async
 from src.utils.auth_utils import verify_current_user
 from src.utils.invitation_utils import is_invitation_expired
@@ -73,20 +74,6 @@ async def send_workspace_invitation_email_task(
         logger.error(f"Failed to send workspace invitation email to {email}: {str(e)}", exc_info=True)
 
 
-async def _load_role_map(db: AsyncSession, role_ids: Set[UUID]) -> Dict[UUID, Role]:
-    if not role_ids:
-        return {}
-    result = await db.execute(select(Role).where(Role.id.in_(role_ids)))
-    roles = result.scalars().all()
-    return {role.id: role for role in roles}
-
-
-async def _load_user_map(db: AsyncSession, user_ids: Set[UUID]) -> Dict[UUID, Users]:
-    if not user_ids:
-        return {}
-    result = await db.execute(select(Users).where(Users.id.in_(user_ids)))
-    users = result.scalars().all()
-    return {user.id: user for user in users}
 
 
 def _serialize_invitation(
@@ -137,21 +124,21 @@ async def list_workspace_invitations(
         user_uuid,
     )
 
-    query = (
-        select(UserInvitations)
-        .where(UserInvitations.workspace_id == workspace.id)
-        .order_by(UserInvitations.created_at.desc())
-    )
-    result = await db.execute(query)
-    invitations: List[UserInvitations] = result.scalars().all()
+    # Get invitations via InvitationService
+    invitation_service = InvitationService(db)
+    invitations = await invitation_service.get_workspace_invitations(workspace.id)
 
+    # Collect IDs for batch loading
     role_ids = {inv.role_id for inv in invitations if inv.role_id}
     inviter_ids = {
         inv.invited_by_user_id for inv in invitations if inv.invited_by_user_id
     }
 
-    roles = await _load_role_map(db, role_ids)
-    inviters = await _load_user_map(db, inviter_ids)
+    # Load roles and users via services (batch optimization)
+    role_service = RoleService(db)
+    user_service = UserService(db)
+    roles = await role_service.get_roles_by_ids(list(role_ids))
+    inviters = await user_service.get_users_by_ids(list(inviter_ids))
 
     payload = [
         _serialize_invitation(inv, roles.get(inv.role_id), inviters.get(inv.invited_by_user_id))
@@ -193,17 +180,14 @@ async def create_workspace_invitation(
         user_uuid,
     )
 
-    result = await db.execute(select(Role).where(Role.id == UUID(payload.role_id)))
-    role = result.scalar_one_or_none()
-    if not role:
-        raise ResourceNotFoundException(
-            resource_type="role",
-            resource_id=payload.role_id,
-        )
+    # Get role via RoleService
+    role_service = RoleService(db)
+    role = await role_service.get_role_by_id(UUID(payload.role_id))
 
-    service = InvitationService(db)
+    # Create invitation via InvitationService
+    invitation_service = InvitationService(db)
     try:
-        invitation = await service.create_invitation(
+        invitation = await invitation_service.create_invitation(
             email=payload.email,
             workspace_id=workspace.id,
             role_id=role.id,
@@ -215,8 +199,9 @@ async def create_workspace_invitation(
     except BusinessRuleViolationException:
         raise
 
-    result = await db.execute(select(Users).where(Users.id == user_uuid))
-    inviter = result.scalar_one_or_none()
+    # Get inviter details via UserService
+    user_service = UserService(db)
+    inviter = await user_service.get_user_by_id(user_uuid)
 
     frontend_url = os.getenv("FRONTEND_URL", "http://localhost:3000")
 
@@ -330,26 +315,23 @@ async def create_bulk_workspace_invitations(
         user_uuid,
     )
 
-    result = await db.execute(select(Role).where(Role.id == UUID(payload.role_id)))
-    role = result.scalar_one_or_none()
-    if not role:
-        raise ResourceNotFoundException(
-            resource_type="role",
-            resource_id=payload.role_id,
-        )
+    # Get role via RoleService
+    role_service = RoleService(db)
+    role = await role_service.get_role_by_id(UUID(payload.role_id))
 
-    result = await db.execute(select(Users).where(Users.id == user_uuid))
-    inviter = result.scalar_one_or_none()
+    # Get inviter details via UserService
+    user_service = UserService(db)
+    inviter = await user_service.get_user_by_id(user_uuid)
 
     frontend_url = os.getenv("FRONTEND_URL", "http://localhost:3000")
 
-    service = InvitationService(db)
+    invitation_service = InvitationService(db)
     created_invitations = []
     failures = []
 
     for email in payload.emails:
         try:
-            invitation = await service.create_invitation(
+            invitation = await invitation_service.create_invitation(
                 email=email,
                 workspace_id=workspace.id,
                 role_id=role.id,
@@ -358,27 +340,38 @@ async def create_bulk_workspace_invitations(
             )
             created_invitations.append(invitation)
 
-            invitation_url = (
-                f"{frontend_url}/invitations/accept?token={invitation.invitation_token}"
-            )
-            email_content = render_workspace_email(
+            # Eagerly load attributes before async operations
+            invitation_id = invitation.id
+            invitation_token = invitation.invitation_token
+            workspace_id = workspace.id
+            workspace_name = workspace.name
+            role_display_name = role.display_name or role.name
+
+            invitation_url = f"{frontend_url}/invitations/accept?token={invitation_token}"
+
+            email_content = await render_workspace_email(
                 db=db,
-                workspace_id=workspace.id,
+                workspace_id=workspace_id,
                 template_type="workspace_invitation",
                 variables={
-                    "workspace_name": workspace.name,
+                    "workspace_name": workspace_name,
                     "inviter_name": inviter.display_name if inviter else "A teammate",
+                    "invitee_name": email.split('@')[0],
+                    "invitee_email": email,
                     "recipient_email": email,
-                    "role_name": role.display_name or role.name,
+                    "role_name": role_display_name,
                     "invitation_url": invitation_url,
                     "expiry_days": str(payload.expiry_days or 7),
                 },
             )
+
             background_tasks.add_task(
-                send_email,
-                to=email,
+                send_workspace_invitation_email_task,
+                email=email,
                 subject=email_content["subject"],
                 body=email_content["body"],
+                workspace_id=str(workspace_id),
+                invitation_id=str(invitation_id)
             )
         except (DuplicateResourceException, BusinessRuleViolationException) as exc:
             failures.append({"email": email, "error": str(exc)})

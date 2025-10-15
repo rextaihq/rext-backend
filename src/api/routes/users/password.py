@@ -1,10 +1,8 @@
 from fastapi import APIRouter, Depends, Request, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
 from uuid import UUID
 import uuid
 import os
-from datetime import datetime
 
 from src.utils.logger import logger
 from src.api.security.dependencies import get_current_user
@@ -13,13 +11,7 @@ from src.api.schema.user_schema import (
     ForgotPasswordRequest,
     ChangePasswordRequest
 )
-from src.api.security.token_utils import (
-    hash_password,
-    create_reset_token,
-    verify_token
-)
-from src.api.models.user_models.users import Users
-from src.services.email_service import EmailService
+from src.api.security.token_utils import create_reset_token, verify_token
 from src.api.database.async_database import get_async_db
 from src.utils.response_utils import success, error
 from src.api.schema.response_schemas import ErrorCode, ErrorSeverity
@@ -104,14 +96,8 @@ async def forgot_password(
         }
         reset_token = create_reset_token(data=reset_data)
 
-        # Update user with reset token (direct DB update for now)
-        # TODO: Could add set_reset_token() to UserService
-        result = await db.execute(
-            select(Users).where(Users.id == user.id)
-        )
-        db_user = result.scalar_one()
-        db_user.reset_token = reset_token
-        await db.flush()
+        # Set reset token via service
+        await service.set_reset_token(user.id, reset_token)
 
         # Get frontend URL
         frontend_url = os.getenv("FRONTEND_URL", "http://localhost:3000")
@@ -135,14 +121,7 @@ async def forgot_password(
 
     except Exception as e:
         logger.error(f"Forgot password error: {str(e)}")
-        return error(
-            message="Failed to initiate forgot password",
-            code=ErrorCode.INTERNAL_SERVER_ERROR,
-            status_code=500,
-            severity=ErrorSeverity.HIGH,
-            context={"error_details": str(e)},
-            request=request
-        )
+        raise
 
 
 @router.post("/reset-password")
@@ -156,22 +135,7 @@ async def reset_password(
     Reset user password using token from email.
     """
     try:
-        # Find user by reset token
-        result = await db.execute(
-            select(Users).where(Users.reset_token == payload.token)
-        )
-        user = result.scalar_one_or_none()
-
-        if not user:
-            return error(
-                message="Invalid or expired reset token",
-                code=ErrorCode.INVALID_INPUT,
-                status_code=400,
-                severity=ErrorSeverity.MEDIUM,
-                request=request
-            )
-
-        # Verify token validity
+        # Verify token validity first
         try:
             verify_token(payload.token)
         except Exception as e:
@@ -184,12 +148,12 @@ async def reset_password(
                 request=request
             )
 
-        # Update password (direct DB update for reset flow)
-        # Different from change_password which requires current password
-        user.password_hash = hash_password(payload.new_password)
-        user.reset_token = None
-        user.password_changed_at = datetime.utcnow()
-        await db.flush()
+        # Reset password via service
+        service = UserService(db)
+        user = await service.reset_password_with_token(
+            reset_token=payload.token,
+            new_password=payload.new_password
+        )
 
         # SECURITY: Revoke all sessions after password reset
         # This prevents attackers from maintaining access if they had stolen sessions
@@ -207,16 +171,17 @@ async def reset_password(
             message="Password updated successfully. Please login with your new password."
         )
 
-    except Exception as e:
-        logger.error(f"Password reset error: {str(e)}")
+    except ResourceNotFoundException as e:
         return error(
-            message="Failed to reset password",
-            code=ErrorCode.INTERNAL_SERVER_ERROR,
-            status_code=500,
-            severity=ErrorSeverity.HIGH,
-            context={"error_details": str(e)},
+            message=str(e),
+            code=ErrorCode.INVALID_INPUT,
+            status_code=400,
+            severity=ErrorSeverity.MEDIUM,
             request=request
         )
+    except Exception as e:
+        logger.error(f"Password reset error: {str(e)}")
+        raise
 
 
 @router.post("/change-password")
@@ -304,14 +269,7 @@ async def change_password(
         )
     except Exception as e:
         logger.error(f"Error changing password: {str(e)}")
-        return error(
-            message="Failed to change password",
-            code=ErrorCode.INTERNAL_SERVER_ERROR,
-            status_code=500,
-            severity=ErrorSeverity.HIGH,
-            context={"error_details": str(e)},
-            request=request
-        )
+        raise
 
 
 # -------------------------
@@ -337,44 +295,47 @@ async def verify_password(
         200: Password is correct
         400: Password is incorrect
     """
-    user_id = UUID(current_user.get("identity"))
-    body = await request.json()
-    password = body.get("password")
-    
-    if not password:
-        return error(
-            message="Password is required",
+    try:
+        user_id = UUID(current_user.get("identity"))
+        body = await request.json()
+        password = body.get("password")
+
+        if not password:
+            return error(
+                message="Password is required",
+                request=request,
+                code=ErrorCode.VALIDATION_ERROR,
+                status_code=400,
+                severity=ErrorSeverity.MEDIUM
+            )
+
+        # Verify password via service
+        service = UserService(db)
+        is_valid = await service.verify_user_password(user_id, password)
+
+        if not is_valid:
+            return error(
+                message="Invalid password",
+                request=request,
+                code=ErrorCode.AUTHENTICATION_FAILED,
+                status_code=401,
+                severity=ErrorSeverity.MEDIUM
+            )
+
+        return success(
+            data={"verified": True},
             request=request,
-            error_code=ErrorCode.VALIDATION_ERROR,
-            severity=ErrorSeverity.MEDIUM
+            message="Password verified successfully"
         )
-    
-    # Get user from database
-    result = await db.execute(
-        select(Users).where(Users.id == user_id)
-    )
-    user = result.scalar_one_or_none()
-    
-    if not user:
+
+    except ResourceNotFoundException:
         return error(
             message="User not found",
             request=request,
-            error_code=ErrorCode.NOT_FOUND,
+            code=ErrorCode.NOT_FOUND,
+            status_code=404,
             severity=ErrorSeverity.HIGH
         )
-    
-    # Verify password
-    from src.api.security.token_utils import verify_password as check_password
-    if not check_password(password, user.password):
-        return error(
-            message="Invalid password",
-            request=request,
-            error_code=ErrorCode.AUTHENTICATION_FAILED,
-            severity=ErrorSeverity.MEDIUM
-        )
-    
-    return success(
-        data={"verified": True},
-        request=request,
-        message="Password verified successfully"
-    )
+    except Exception as e:
+        logger.error(f"Error verifying password: {str(e)}")
+        raise

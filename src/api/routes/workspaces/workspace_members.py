@@ -23,6 +23,7 @@ from src.api.schema.workspace_schema import (
 from src.api.security.dependencies import get_current_user
 from src.api.schema.response_schemas import ErrorCode, ErrorSeverity
 from src.services.member_service import MemberService
+from src.services.user_service import UserService
 from src.utils.auth_utils import verify_current_user
 from src.utils.logger import logger
 from src.utils.response_utils import created, success
@@ -153,14 +154,9 @@ async def list_workspace_members(
         db, workspace_id, UUID(user_id)
     )
 
-    query = (
-        select(WorkspaceMembers, Users)
-        .join(Users, Users.id == WorkspaceMembers.user_id)
-        .where(WorkspaceMembers.workspace_id == workspace.id)
-        .order_by(WorkspaceMembers.joined_at.asc())
-    )
-    result = await db.execute(query)
-    rows: List[tuple[WorkspaceMembers, Users]] = result.all()
+    # Get members with user details via service
+    member_service = MemberService(db)
+    rows = await member_service.get_workspace_members_with_users(workspace.id)
 
     members = [_serialize_member(member, user) for member, user in rows]
 
@@ -192,21 +188,13 @@ async def add_workspace_member(
         db, workspace_id, UUID(user_id)
     )
 
-    result = await db.execute(
-        select(Users).where(
-            Users.email == payload.email.lower(),
-            Users.deleted_at.is_(None),
-        )
-    )
-    invited_user = result.scalar_one_or_none()
-    if not invited_user:
-        raise ResourceNotFoundException(
-            resource_type="user",
-            resource_id=payload.email,
-        )
+    # Get user by email via UserService
+    user_service = UserService(db)
+    invited_user = await user_service.get_user_by_email_or_404(payload.email)
 
-    service = MemberService(db)
-    new_member = await service.add_member(
+    # Add member via MemberService
+    member_service = MemberService(db)
+    new_member = await member_service.add_member(
         workspace_id=workspace.id,
         user_id=invited_user.id,
     )
@@ -249,19 +237,13 @@ async def remove_workspace_member(
         db, workspace_id, UUID(user_id)
     )
 
-    result = await db.execute(
-        select(WorkspaceMembers).where(
-            WorkspaceMembers.id == UUID(member_id),
-            WorkspaceMembers.workspace_id == workspace.id,
-        )
+    # Get member with user details via service
+    member_service = MemberService(db)
+    member, member_user = await member_service.get_member_with_user(
+        UUID(member_id), workspace.id
     )
-    member = result.scalar_one_or_none()
-    if not member:
-        raise ResourceNotFoundException(
-            resource_type="member",
-            resource_id=member_id,
-        )
 
+    # Validate member can be removed
     if member.is_default:
         raise WrextValidationException(
             message="Cannot remove workspace owner",
@@ -272,16 +254,12 @@ async def remove_workspace_member(
             error_severity=ErrorSeverity.ERROR,
         )
 
-    # Get member user details before removal
-    member_user_result = await db.execute(select(Users).where(Users.id == member.user_id))
-    member_user = member_user_result.scalar_one_or_none()
-
     # Get current user details for notification
-    current_user_result = await db.execute(select(Users).where(Users.id == UUID(user_id)))
-    current_user_obj = current_user_result.scalar_one_or_none()
+    user_service = UserService(db)
+    current_user_obj = await user_service.get_user_by_id(UUID(user_id))
 
-    service = MemberService(db)
-    await service.remove_member(workspace_id=workspace.id, user_id=member.user_id)
+    # Remove member via service
+    await member_service.remove_member(workspace_id=workspace.id, user_id=member.user_id)
 
     # Send member removed notification
     if member_user:
@@ -333,77 +311,18 @@ async def update_workspace_member_role(
         db, workspace_id, UUID(user_id)
     )
 
-    result = await db.execute(
-        select(WorkspaceMembers).where(
-            WorkspaceMembers.id == UUID(member_id),
-            WorkspaceMembers.workspace_id == workspace.id,
-        )
+    # Update member role via service
+    member_service = MemberService(db)
+    member, member_user, new_role, old_role = await member_service.update_member_role(
+        workspace_id=workspace.id,
+        member_id=UUID(member_id),
+        new_role_id=UUID(payload.role_id),
+        assigned_by_user_id=UUID(user_id)
     )
-    member = result.scalar_one_or_none()
-    if not member:
-        raise ResourceNotFoundException(
-            resource_type="member",
-            resource_id=member_id,
-        )
-
-    if member.is_default:
-        raise WrextValidationException(
-            message="Cannot change role of workspace owner",
-            field_errors={"member_id": ["Workspace owner role is immutable"]},
-            error_code=ErrorCode.VALIDATION_ERROR,
-            error_severity=ErrorSeverity.ERROR,
-        )
-
-    result = await db.execute(select(Role).where(Role.id == UUID(payload.role_id)))
-    new_role = result.scalar_one_or_none()
-    if not new_role:
-        raise ResourceNotFoundException(
-            resource_type="role",
-            resource_id=payload.role_id,
-        )
-
-    result = await db.execute(
-        select(UserRole).where(
-            UserRole.user_id == member.user_id,
-            UserRole.workspace_id == workspace.id,
-        )
-    )
-    user_role = result.scalar_one_or_none()
-
-    previous_role_id = getattr(user_role, "role_id", None)
-
-    # Get old role details for notification
-    old_role = None
-    if previous_role_id:
-        old_role_result = await db.execute(select(Role).where(Role.id == previous_role_id))
-        old_role = old_role_result.scalar_one_or_none()
-
-    timestamp = datetime.now(timezone.utc)
-    if user_role:
-        user_role.role_id = UUID(payload.role_id)
-        user_role.assigned_by_user_id = UUID(user_id)
-        user_role.assigned_at = timestamp
-    else:
-        db.add(
-            UserRole(
-                user_id=member.user_id,
-                workspace_id=workspace.id,
-                role_id=UUID(payload.role_id),
-                assigned_by_user_id=UUID(user_id),
-                assigned_at=timestamp,
-                is_primary=False,
-            )
-        )
-
-    await db.flush()
-
-    # Get member user details for notification
-    member_user_result = await db.execute(select(Users).where(Users.id == member.user_id))
-    member_user = member_user_result.scalar_one_or_none()
 
     # Get current user details for notification
-    current_user_result = await db.execute(select(Users).where(Users.id == UUID(user_id)))
-    current_user_obj = current_user_result.scalar_one_or_none()
+    user_service = UserService(db)
+    current_user_obj = await user_service.get_user_by_id(UUID(user_id))
 
     # Send role changed notification to the member
     if member_user:

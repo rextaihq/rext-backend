@@ -429,3 +429,229 @@ class MemberService:
                 "workspace_id": str(workspace_id)
             }
         )
+
+    async def get_member_by_id(
+        self,
+        member_id: UUID,
+        workspace_id: UUID
+    ) -> WorkspaceMembers:
+        """
+        Get workspace member by member ID.
+
+        Args:
+            member_id: Member UUID
+            workspace_id: Workspace UUID for validation
+
+        Returns:
+            WorkspaceMembers object
+
+        Raises:
+            ResourceNotFoundException: If member not found
+        """
+        result = await self.db.execute(
+            select(WorkspaceMembers).where(
+                WorkspaceMembers.id == member_id,
+                WorkspaceMembers.workspace_id == workspace_id
+            )
+        )
+        member = result.scalar_one_or_none()
+
+        if not member:
+            raise ResourceNotFoundException(
+                resource_type="member",
+                resource_id=str(member_id)
+            )
+
+        logger.debug(f"Retrieved member {member_id} from workspace {workspace_id}")
+        return member
+
+    async def get_member_with_user(
+        self,
+        member_id: UUID,
+        workspace_id: UUID
+    ) -> tuple[WorkspaceMembers, "Users"]:
+        """
+        Get workspace member with associated user details.
+
+        Args:
+            member_id: Member UUID
+            workspace_id: Workspace UUID
+
+        Returns:
+            Tuple of (WorkspaceMembers, Users)
+
+        Raises:
+            ResourceNotFoundException: If member not found
+        """
+        from src.api.models.user_models.users import Users
+
+        # Get member first
+        member = await self.get_member_by_id(member_id, workspace_id)
+
+        # Get associated user
+        result = await self.db.execute(
+            select(Users).where(Users.id == member.user_id)
+        )
+        user = result.scalar_one_or_none()
+
+        if not user:
+            raise ResourceNotFoundException(
+                resource_type="user",
+                resource_id=str(member.user_id)
+            )
+
+        logger.debug(f"Retrieved member {member_id} with user details")
+        return member, user
+
+    async def update_member_role(
+        self,
+        workspace_id: UUID,
+        member_id: UUID,
+        new_role_id: UUID,
+        assigned_by_user_id: UUID
+    ) -> tuple[WorkspaceMembers, "Users", "Role", "Role | None"]:
+        """
+        Update workspace member's role.
+
+        Args:
+            workspace_id: Workspace UUID
+            member_id: Member UUID
+            new_role_id: New role UUID to assign
+            assigned_by_user_id: User performing the role change
+
+        Returns:
+            Tuple of (member, member_user, new_role, old_role)
+
+        Raises:
+            ResourceNotFoundException: If member or role not found
+            WrextValidationException: If member is workspace owner
+        """
+        from src.api.models.user_models.users import Users
+        from src.api.models.user_models.roles import Role
+        from src.api.models.user_models.user_roles import UserRole
+        from datetime import datetime, timezone
+
+        # Get member with validation
+        member, member_user = await self.get_member_with_user(member_id, workspace_id)
+
+        # Validate member can be updated
+        if member.is_default:
+            raise WrextValidationException(
+                message="Cannot change role of workspace owner",
+                field_errors={"member_id": ["Workspace owner role is immutable"]},
+                error_code="VALIDATION_ERROR",
+                error_severity="ERROR"
+            )
+
+        # Get new role
+        result = await self.db.execute(
+            select(Role).where(Role.id == new_role_id)
+        )
+        new_role = result.scalar_one_or_none()
+        if not new_role:
+            raise ResourceNotFoundException(
+                resource_type="role",
+                resource_id=str(new_role_id)
+            )
+
+        # Get current user role
+        result = await self.db.execute(
+            select(UserRole).where(
+                UserRole.user_id == member.user_id,
+                UserRole.workspace_id == workspace_id
+            )
+        )
+        user_role = result.scalar_one_or_none()
+
+        # Track old role for response
+        old_role = None
+        if user_role and user_role.role_id:
+            old_role_result = await self.db.execute(
+                select(Role).where(Role.id == user_role.role_id)
+            )
+            old_role = old_role_result.scalar_one_or_none()
+
+        # Update or create user role
+        timestamp = datetime.now(timezone.utc)
+        if user_role:
+            user_role.role_id = new_role_id
+            user_role.assigned_by_user_id = assigned_by_user_id
+            user_role.assigned_at = timestamp
+        else:
+            self.db.add(
+                UserRole(
+                    user_id=member.user_id,
+                    workspace_id=workspace_id,
+                    role_id=new_role_id,
+                    assigned_by_user_id=assigned_by_user_id,
+                    assigned_at=timestamp,
+                    is_primary=False
+                )
+            )
+
+        logger.info(f"Updated role for member {member_id} in workspace {workspace_id}")
+        return member, member_user, new_role, old_role
+
+    async def get_workspace_members_with_users(
+        self,
+        workspace_id: UUID,
+        status: Optional[str] = None
+    ) -> List[tuple[WorkspaceMembers, "Users"]]:
+        """
+        Get workspace members with their user details.
+
+        Args:
+            workspace_id: Workspace UUID
+            status: Optional status filter
+
+        Returns:
+            List of (WorkspaceMembers, Users) tuples
+        """
+        from src.api.models.user_models.users import Users
+
+        query = (
+            select(WorkspaceMembers, Users)
+            .join(Users, Users.id == WorkspaceMembers.user_id)
+            .where(WorkspaceMembers.workspace_id == workspace_id)
+            .order_by(WorkspaceMembers.joined_at.asc())
+        )
+
+        if status:
+            query = query.where(WorkspaceMembers.status == status)
+
+        result = await self.db.execute(query)
+        rows = result.all()
+
+        logger.debug(f"Retrieved {len(rows)} members with user details for workspace {workspace_id}")
+        return rows
+
+    async def get_admin_members_with_users(
+        self,
+        workspace_id: UUID
+    ) -> List[tuple[WorkspaceMembers, "Users"]]:
+        """
+        Get workspace admin/owner members with their user details.
+
+        Args:
+            workspace_id: Workspace UUID
+
+        Returns:
+            List of (WorkspaceMembers, Users) tuples for admins and owners
+        """
+        from src.api.models.user_models.users import Users
+        from src.api.models.user_models.roles import Role
+
+        query = (
+            select(WorkspaceMembers, Users)
+            .join(Users, Users.id == WorkspaceMembers.user_id)
+            .join(Role, WorkspaceMembers.role_id == Role.id)
+            .where(WorkspaceMembers.workspace_id == workspace_id)
+            .where(Role.name.in_(["owner", "admin"]))
+            .order_by(WorkspaceMembers.joined_at.asc())
+        )
+
+        result = await self.db.execute(query)
+        rows = result.all()
+
+        logger.debug(f"Retrieved {len(rows)} admin members for workspace {workspace_id}")
+        return rows

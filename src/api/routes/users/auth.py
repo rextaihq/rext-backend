@@ -129,11 +129,8 @@ async def create_user(
             frontend_url=frontend_url
         )
 
-        # Commit transaction
-        db.commit()
-        db.refresh(new_user)
-
         # Return user data (excluding password)
+        # Note: Transaction will be committed by transaction decorator (Task 2.2)
         user_data = {
             "id": str(new_user.id),
             "username": new_user.username,
@@ -158,15 +155,9 @@ async def create_user(
         # Re-raise to be handled by middleware
         raise
     except Exception as e:
-        db.rollback()
-        return error(
-            message="Failed to create user",
-            code=ErrorCode.INTERNAL_SERVER_ERROR,
-            status_code=500,
-            severity=ErrorSeverity.HIGH,
-            context={"error_details": str(e)},
-            request=request
-        )
+        # Re-raise to be handled by middleware (transaction will be rolled back automatically)
+        logger.error(f"User registration failed: {str(e)}", exc_info=True)
+        raise
 
 
 @router.post("/login")
@@ -202,30 +193,9 @@ async def login_user(
             device_info=device_info
         )
 
-        # Commit transaction
-        db.commit()
-        db.refresh(db_user)
-
-        # Get role names for response (get all roles, prioritize primary if exists)
-        primary_roles = [ur.role.name for ur in db_user.user_roles if ur.is_primary]
-        all_roles = [ur.role.name for ur in db_user.user_roles if ur.workspace_id is None]
-        role_names = primary_roles if primary_roles else all_roles
-
-        # Get user permissions (global permissions only, same as in auth_service.login_user)
-        from src.api.models.user_models.permissions import Permission
-        from src.api.models.user_models.role_permissions import RolePermission
-        from src.api.models.user_models.user_roles import UserRole
-        
-        permission_names = (
-            db.query(Permission.name)
-            .join(RolePermission, RolePermission.permission_id == Permission.id)
-            .join(UserRole, UserRole.role_id == RolePermission.role_id)
-            .filter(UserRole.user_id == db_user.id)
-            .filter(UserRole.workspace_id == None)  # Global permissions only
-            .distinct()
-            .all()
-        )
-        permissions = [p.name for p in permission_names]
+        # Extract roles and permissions from service response
+        role_names = tokens.get("roles", [])
+        permissions = tokens.get("permissions", [])
 
         # Return successful login response
         return success(
@@ -301,9 +271,6 @@ async def refresh_access_token(
         auth_service = AuthService(db)
         tokens = await auth_service.refresh_token(refresh_token)
 
-        # Commit transaction
-        db.commit()
-
         return success(
             data=tokens,
             request=request,
@@ -352,9 +319,6 @@ async def logout_user(
         auth_service = AuthService(db)
         await auth_service.logout_user(user_id, jti, exp)
 
-        # Commit transaction
-        db.commit()
-
         return success(
             data={"message": "Logged out successfully"},
             request=request,
@@ -390,9 +354,6 @@ async def verify_email(
         # Use auth service
         auth_service = AuthService(db)
         user = await auth_service.verify_email(token)
-
-        # Commit transaction
-        db.commit()
 
         # Send welcome email after first-time verification
         if user.email_verified:
@@ -457,9 +418,6 @@ async def resend_verification(
         # Use auth service
         auth_service = AuthService(db)
         user, verification_token = await auth_service.resend_verification_email(email)
-
-        # Commit transaction
-        db.commit()
 
         # Get frontend URL
         frontend_url = os.getenv("FRONTEND_URL", "http://localhost:3000")
@@ -538,28 +496,9 @@ async def oauth_login(
             token_expires_at=body.get("token_expires_at")
         )
 
-        # Commit transaction
-        db.commit()
-        db.refresh(user)
-
-        # Get role names for response
-        role_names = [ur.role.name for ur in user.user_roles if ur.is_primary]
-
-        # Get user permissions
-        from src.api.models.user_models.permissions import Permission
-        from src.api.models.user_models.role_permissions import RolePermission
-        from src.api.models.user_models.user_roles import UserRole
-
-        permission_names = (
-            db.query(Permission.name)
-            .join(RolePermission, RolePermission.permission_id == Permission.id)
-            .join(UserRole, UserRole.role_id == RolePermission.role_id)
-            .filter(UserRole.user_id == user.id)
-            .filter(UserRole.workspace_id == None)
-            .distinct()
-            .all()
-        )
-        permissions = [p.name for p in permission_names]
+        # Extract roles and permissions from service response (same pattern as login)
+        role_names = tokens.get("roles", [])
+        permissions = tokens.get("permissions", [])
 
         return success(
             data={
@@ -640,9 +579,6 @@ async def link_oauth(
             token_expires_at=body.get("token_expires_at")
         )
 
-        # Commit transaction
-        db.commit()
-
         return success(
             data=oauth_account.to_dict(),
             request=request,
@@ -683,9 +619,6 @@ async def unlink_oauth(
 
         oauth_service = OAuthService(db)
         await oauth_service.unlink_oauth_account(user_id, provider)
-
-        # Commit transaction
-        db.commit()
 
         return success(
             data={"provider": provider},
