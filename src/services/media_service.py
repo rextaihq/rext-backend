@@ -453,20 +453,44 @@ class MediaService:
 
     async def get_workspace_storage_usage(self, workspace_id: str) -> Dict[str, Any]:
         """
-        Calculate total storage usage for workspace.
+        Calculate total storage usage for workspace with subscription limits.
 
         Args:
             workspace_id: Workspace UUID
 
         Returns:
-            Dictionary with usage statistics
+            Dictionary with usage statistics including:
+            - total_files: Total number of files
+            - total_size: Total size in bytes
+            - storage_limit: Storage limit from subscription plan (bytes)
+            - usage_percentage: Percentage of storage used
+            - by_type: Breakdown by file type (image, document, video)
         """
+        # Import subscription models here to avoid circular imports
+        from src.api.models.subscription_models.user_subscription import UserSubscription
+        from src.api.models.subscription_models.subscription_plan import SubscriptionPlan
+
+        # Get media usage
         result = await self.db.execute(
             select(
                 func.count(Media.id).label("file_count"),
                 func.sum(Media.file_size).label("total_bytes"),
                 func.count(Media.id).filter(Media.file_type.startswith("image/")).label("image_count"),
-                func.count(Media.id).filter(Media.file_type.startswith("application/")).label("document_count"),
+                func.sum(Media.file_size).filter(Media.file_type.startswith("image/")).label("image_bytes"),
+                func.count(Media.id).filter(
+                    or_(
+                        Media.file_type.startswith("application/"),
+                        Media.file_type.startswith("text/")
+                    )
+                ).label("document_count"),
+                func.sum(Media.file_size).filter(
+                    or_(
+                        Media.file_type.startswith("application/"),
+                        Media.file_type.startswith("text/")
+                    )
+                ).label("document_bytes"),
+                func.count(Media.id).filter(Media.file_type.startswith("video/")).label("video_count"),
+                func.sum(Media.file_size).filter(Media.file_type.startswith("video/")).label("video_bytes"),
             ).where(
                 and_(
                     Media.workspace_id == workspace_id,
@@ -481,7 +505,48 @@ class MediaService:
         total_mb = total_bytes / (1024 * 1024)
         total_gb = total_bytes / (1024 * 1024 * 1024)
 
+        # Get workspace subscription to determine storage limit
+        subscription_result = await self.db.execute(
+            select(SubscriptionPlan.storage_limit)
+            .join(UserSubscription, UserSubscription.plan_id == SubscriptionPlan.id)
+            .where(
+                and_(
+                    UserSubscription.workspace_id == workspace_id,
+                    UserSubscription.status.in_(["active", "trialing"])
+                )
+            )
+            .order_by(SubscriptionPlan.storage_limit.desc())  # Get highest limit if multiple
+            .limit(1)
+        )
+
+        subscription_row = subscription_result.one_or_none()
+
+        # Default to 1GB if no subscription found
+        storage_limit_bytes = subscription_row[0] if subscription_row else 1 * 1024 * 1024 * 1024  # 1GB default
+
+        # Calculate usage percentage
+        usage_percentage = (total_bytes / storage_limit_bytes * 100) if storage_limit_bytes > 0 else 0
+
         return {
+            "total_files": row.file_count or 0,
+            "total_size": total_bytes,
+            "storage_limit": storage_limit_bytes,
+            "usage_percentage": round(usage_percentage, 2),
+            "by_type": {
+                "image": {
+                    "count": row.image_count or 0,
+                    "size": row.image_bytes or 0
+                },
+                "document": {
+                    "count": row.document_count or 0,
+                    "size": row.document_bytes or 0
+                },
+                "video": {
+                    "count": row.video_count or 0,
+                    "size": row.video_bytes or 0
+                }
+            },
+            # Legacy fields for backward compatibility
             "file_count": row.file_count or 0,
             "image_count": row.image_count or 0,
             "document_count": row.document_count or 0,
@@ -507,3 +572,98 @@ class MediaService:
             return storage_settings.max_video_size
         else:
             return storage_settings.max_file_size
+
+    async def get_media_usage(
+        self,
+        media_id: str,
+        workspace_id: str
+    ) -> Dict[str, Any]:
+        """
+        Get information about where a media file is being used.
+
+        Args:
+            media_id: Media UUID
+            workspace_id: Workspace UUID
+
+        Returns:
+            Dictionary with usage information:
+            - is_used: Whether media is used anywhere
+            - featured_in: List of content using this as featured image
+            - used_in_content: List of content using this media inline
+            - total_usages: Total number of usages
+        """
+        from src.api.models.content_models.content import Content
+        from src.api.models.content_models.content_media import ContentMedia
+
+        # Check if media exists and belongs to workspace
+        media = await self.get_media(media_id, workspace_id)
+        if not media:
+            return {
+                "is_used": False,
+                "featured_in": [],
+                "used_in_content": [],
+                "total_usages": 0
+            }
+
+        # Find content using this as featured image
+        featured_result = await self.db.execute(
+            select(Content.id, Content.title, Content.slug, Content.status)
+            .where(
+                and_(
+                    Content.featured_image_id == media_id,
+                    Content.workspace_id == workspace_id,
+                    Content.deleted_at.is_(None)
+                )
+            )
+        )
+        featured_content = [
+            {
+                "id": str(row.id),
+                "title": row.title,
+                "slug": row.slug,
+                "status": row.status,
+                "usage_type": "featured_image"
+            }
+            for row in featured_result.all()
+        ]
+
+        # Find content using this media inline (via content_media junction)
+        inline_result = await self.db.execute(
+            select(
+                Content.id,
+                Content.title,
+                Content.slug,
+                Content.status,
+                ContentMedia.usage_type,
+                ContentMedia.position
+            )
+            .join(ContentMedia, ContentMedia.content_id == Content.id)
+            .where(
+                and_(
+                    ContentMedia.media_id == media_id,
+                    Content.workspace_id == workspace_id,
+                    Content.deleted_at.is_(None)
+                )
+            )
+            .order_by(Content.title)
+        )
+        inline_content = [
+            {
+                "id": str(row.id),
+                "title": row.title,
+                "slug": row.slug,
+                "status": row.status,
+                "usage_type": row.usage_type or "inline",
+                "position": row.position
+            }
+            for row in inline_result.all()
+        ]
+
+        total_usages = len(featured_content) + len(inline_content)
+
+        return {
+            "is_used": total_usages > 0,
+            "featured_in": featured_content,
+            "used_in_content": inline_content,
+            "total_usages": total_usages
+        }

@@ -17,6 +17,7 @@ class Content(Base, SerializableMixin):
     created_by_user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=False, index=True)
     assigned_to_user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
     author_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    featured_image_id = Column(UUID(as_uuid=True), ForeignKey("media.id", ondelete="SET NULL"), nullable=True, index=True)
 
     title = Column(Text, nullable=False)
     slug = Column(Text, unique=True, nullable=False, index=True)
@@ -40,6 +41,7 @@ class Content(Base, SerializableMixin):
     created_by = relationship("Users", foreign_keys=[created_by_user_id])
     assigned_to = relationship("Users", foreign_keys=[assigned_to_user_id])
     author = relationship("Users", foreign_keys=[author_id])
+    featured_image = relationship("Media", foreign_keys=[featured_image_id], lazy="joined")
 
     # Related tables
     progress = relationship("ContentProgress", back_populates="content", uselist=False, cascade="all, delete-orphan")

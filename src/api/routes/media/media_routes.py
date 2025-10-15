@@ -369,6 +369,41 @@ async def delete_media(
     )
 
 
+@router.get("/{media_id}/usage", response_model=dict)
+@db_transaction_handler("get media usage")
+@require_permissions("media.view")
+async def get_media_usage_info(
+    request: Request,
+    workspace_id: str,
+    media_id: str,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Get information about where a media file is being used.
+
+    Returns which content uses this media as featured image or inline.
+    Useful for preventing deletion of media that's in use.
+
+    Args:
+        workspace_id: Workspace UUID
+        media_id: Media UUID
+
+    Returns:
+        Usage information including content list
+    """
+    # Get service
+    service = get_media_service(db)
+
+    # Get usage info
+    usage = await service.get_media_usage(media_id, workspace_id)
+
+    return success(
+        data=usage,
+        message="Media usage retrieved successfully"
+    )
+
+
 @router.get("/usage/stats", response_model=dict)
 @db_transaction_handler("get storage usage")
 @require_permissions("media.view")
