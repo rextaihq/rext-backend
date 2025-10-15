@@ -203,6 +203,36 @@ class BillingEmailService:
             background_tasks=background_tasks
         )
 
+    async def send_trial_expired_email(
+        self,
+        user_id: UUID,
+        plan_name: str,
+        background_tasks: Optional[BackgroundTasks] = None
+    ) -> bool:
+        """Send trial expired email (trial has ended)."""
+        user = await self._get_user(user_id)
+        if not user:
+            return False
+
+        if not await self._check_preferences(user_id, 'billing_notifications'):
+            return False
+
+        from emails.templates.billing.subscription_expiring_soon import render_subscription_expiring_soon_email
+
+        html_content = render_subscription_expiring_soon_email(
+            user_name=user.first_name or user.display_name or user.email,
+            plan_name=plan_name,
+            expiry_date=datetime.utcnow().strftime("%B %d, %Y"),
+            days_remaining=0
+        )
+
+        return await self._send_email(
+            to_email=user.email,
+            subject="Your Trial Has Ended - WREXT",
+            html_content=html_content,
+            background_tasks=background_tasks
+        )
+
     async def send_subscription_renewed_email(
         self,
         user_id: UUID,
