@@ -80,7 +80,7 @@ def render_content_generation_failed_email(
             If this problem persists, our support team is here to help.
         </p>
         """,
-        simple_footer(frontend_url)
+        simple_footer()
     ])
 
     return email_html

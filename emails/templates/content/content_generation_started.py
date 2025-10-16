@@ -73,7 +73,7 @@ def render_content_generation_started_email(
             You'll receive another email when your content is ready.
         </p>
         """,
-        simple_footer(frontend_url)
+        simple_footer()
     ])
 
     return email_html
