@@ -124,12 +124,21 @@ async def lifespan(app: FastAPI):
     PromptManager(auto_register=False)
     logger.info("✅ Prompts initialized successfully")
 
+    # Start scheduled tasks (data cleanup)
+    from src.tasks.scheduled_tasks import start_scheduled_tasks
+    start_scheduled_tasks()
+
     # Optional: Check migration status (uncomment to enable)
     # check_migrations()
 
     yield
     # Shutdown
     logger.info("Shutting down Wrext API server...")
+
+    # Shutdown scheduled tasks
+    from src.tasks.scheduled_tasks import shutdown_scheduled_tasks
+    shutdown_scheduled_tasks()
+
     await cache.disconnect()
 
 app = FastAPI(
