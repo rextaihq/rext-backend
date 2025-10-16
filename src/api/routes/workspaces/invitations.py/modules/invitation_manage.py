@@ -28,6 +28,7 @@ from src.api.schema.invitation_schema import (
 from src.api.models.user_models.users import Users
 from src.api.models.user_models.invitations import UserInvitations
 from src.api.models.user_models.roles import Role
+from src.api.models.user_models.user_roles import UserRole
 from src.api.models.workspace_models.workspace_member import WorkspaceMembers
 from src.api.models.workspace_models.workspace_model import WorkspaceModel
 from src.services.invitation_service import InvitationService
@@ -181,8 +182,18 @@ async def revoke_invitation(
 
     # Check permission: must be invitation creator or workspace admin (route-level authorization)
     is_creator = str(invitation.invited_by_user_id) == str(user_id)
-    # TODO: Implement proper workspace admin check
-    is_admin = False  # Placeholder
+
+    # Check if user has admin role in the workspace
+    result = await db.execute(
+        select(UserRole)
+        .join(Role, UserRole.role_id == Role.id)
+        .where(
+            UserRole.user_id == UUID(user_id),
+            UserRole.workspace_id == invitation.workspace_id,
+            Role.name.in_(["admin", "owner", "workspace_admin"])
+        )
+    )
+    is_admin = result.first() is not None
 
     if not is_creator and not is_admin:
         raise WrextAuthenticationException(

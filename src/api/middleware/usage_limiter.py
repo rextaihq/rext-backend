@@ -32,7 +32,13 @@ from src.api.models.subscription_models.subscriptions import (
 )
 from src.api.models.subscription_models.plans import SubscriptionPlan
 from src.api.models.workspace_models.workspace_model import WorkspaceModel as Workspace
+from src.api.models.workspace_models.workspace_member import WorkspaceMembers
 from src.api.models.topic_models.topic_models import TopicsModel as Topic
+from src.api.models.knowledge_models.knowledge_model import (
+    Website,
+    KnowledgeFiles,
+    TextKnowledge
+)
 from src.utils.logger import logger
 
 
@@ -72,17 +78,18 @@ def get_user_subscription_and_plan(
     user_id: str
 ) -> tuple[Optional[UserSubscription], Optional[SubscriptionPlan]]:
     """
-    Get user's active subscription and associated plan.
+    DEPRECATED: Use _get_user_subscription_and_plan_async() instead.
 
-    NOTE: Temporarily disabled - returns None to skip subscription checks.
-    TODO: Convert entire middleware to async or use proper async->sync bridging
+    This synchronous version is kept for backward compatibility but returns None.
+    All middleware now uses the async version.
 
     Returns:
-        Tuple of (subscription, plan) or (None, None) if no active subscription
+        Tuple of (None, None) - deprecated, always returns None
     """
-    # Temporarily disabled - return None to skip all subscription limit checks
-    # This prevents AsyncSession.query() errors until proper async conversion is done
-    logger.warning("Subscription limit checking temporarily disabled")
+    logger.warning(
+        "get_user_subscription_and_plan() is deprecated. "
+        "Use _get_user_subscription_and_plan_async() instead."
+    )
     return None, None
 
 
@@ -179,10 +186,22 @@ class MemberLimitChecker:
         # Get workspace creator's subscription
         subscription, plan = await _get_user_subscription_and_plan_async(db, workspace.user_id)
 
+        # Count current active members
+        result = await db.execute(
+            select(func.count(WorkspaceMembers.id)).where(
+                WorkspaceMembers.workspace_id == workspace_id,
+                WorkspaceMembers.status == "active"
+            )
+        )
+        current_member_count = result.scalar() or 0
+
         if not subscription or not plan:
-            # Default free tier limit
-            # TODO: Count current members when member model is available
-            # For now, allow up to 3 members
+            # Default free tier limit: 3 members
+            if current_member_count >= 3:
+                raise HTTPException(
+                    status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                    detail=f"Member limit reached ({current_member_count}/3). Please subscribe to a plan to add more members."
+                )
             return
 
         # Check plan limit
@@ -190,18 +209,12 @@ class MemberLimitChecker:
             # Unlimited
             return
 
-        # TODO: Implement actual member count when workspace_members table is available
-        # current_member_count = db.query(func.count(WorkspaceMember.id)).filter(
-        #     WorkspaceMember.workspace_id == workspace_id
-        # ).scalar() or 0
-        #
-        # if current_member_count >= plan.max_members_per_workspace:
-        #     raise HTTPException(
-        #         status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-        #         detail=f"Member limit reached ({current_member_count}/{plan.max_members_per_workspace}). Upgrade your plan to add more members."
-        #     )
-
-        logger.info(f"Member limit check skipped: workspace_members table not available yet")
+        # Enforce plan limit
+        if current_member_count >= plan.max_members_per_workspace:
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail=f"Member limit reached ({current_member_count}/{plan.max_members_per_workspace}). Upgrade your plan to add more members."
+            )
 
 
 class TopicLimitChecker:
@@ -275,10 +288,39 @@ class KnowledgeItemLimitChecker:
 
         subscription, plan = await _get_user_subscription_and_plan_async(db, user_id)
 
+        # Count all knowledge items across all types
+        # Query count for each knowledge type that belongs to user's workspaces
+        website_result = await db.execute(
+            select(func.count(Website.id))
+            .join(Workspace, Website.workspace_id == Workspace.id)
+            .where(Workspace.user_id == user_id)
+        )
+        website_count = website_result.scalar() or 0
+
+        files_result = await db.execute(
+            select(func.count(KnowledgeFiles.id))
+            .join(Workspace, KnowledgeFiles.workspace_id == Workspace.id)
+            .where(Workspace.user_id == user_id)
+        )
+        files_count = files_result.scalar() or 0
+
+        text_result = await db.execute(
+            select(func.count(TextKnowledge.id))
+            .join(Workspace, TextKnowledge.workspace_id == Workspace.id)
+            .where(Workspace.user_id == user_id)
+        )
+        text_count = text_result.scalar() or 0
+
+        # Total knowledge items across all types
+        current_count = website_count + files_count + text_count
+
         if not subscription or not plan:
             # Default free tier (allow 100 knowledge items)
-            # TODO: Implement when knowledge item model is unified
-            logger.info("Knowledge item limit check: using default free tier limits")
+            if current_count >= 100:
+                raise HTTPException(
+                    status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                    detail=f"Knowledge item limit reached ({current_count}/100). Please subscribe to a plan to add more items."
+                )
             return
 
         # Check plan limit
@@ -286,18 +328,12 @@ class KnowledgeItemLimitChecker:
             # Unlimited
             return
 
-        # TODO: Implement actual knowledge item count when models are available
-        # current_count = db.query(func.count(KnowledgeItem.id)).join(Workspace).filter(
-        #     Workspace.user_id == user_id
-        # ).scalar() or 0
-        #
-        # if current_count >= plan.max_knowledge_items:
-        #     raise HTTPException(
-        #         status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-        #         detail=f"Knowledge item limit reached ({current_count}/{plan.max_knowledge_items}). Upgrade your plan to add more items."
-        #     )
-
-        logger.info(f"Knowledge item limit check skipped: unified knowledge model not available yet")
+        # Enforce plan limit
+        if current_count >= plan.max_knowledge_items:
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail=f"Knowledge item limit reached ({current_count}/{plan.max_knowledge_items}). Upgrade your plan to add more items."
+            )
 
 
 class APICallLimiter:
