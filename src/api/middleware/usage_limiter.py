@@ -93,7 +93,7 @@ class WorkspaceLimitChecker:
     Verifies that the user hasn't exceeded their plan's max_workspaces limit.
     """
 
-    def __call__(
+    async def __call__(
         self,
         request: Request,
         current_user: dict = Depends(get_current_user),
@@ -102,13 +102,14 @@ class WorkspaceLimitChecker:
         """Check if user can create another workspace."""
         user_id = current_user.get("identity")
 
-        subscription, plan = get_user_subscription_and_plan(db, user_id)
+        subscription, plan = await _get_user_subscription_and_plan_async(db, user_id)
 
         if not subscription or not plan:
             # No subscription = default free tier (allow 1 workspace)
-            current_count = db.query(func.count(Workspace.id)).filter(
-                Workspace.user_id == user_id
-            ).scalar() or 0
+            result = await db.execute(
+                select(func.count(Workspace.id)).where(Workspace.user_id == user_id)
+            )
+            current_count = result.scalar() or 0
 
             if current_count >= 1:
                 raise HTTPException(
@@ -122,9 +123,10 @@ class WorkspaceLimitChecker:
             # Unlimited
             return
 
-        current_count = db.query(func.count(Workspace.id)).filter(
-            Workspace.user_id == user_id
-        ).scalar() or 0
+        result = await db.execute(
+            select(func.count(Workspace.id)).where(Workspace.user_id == user_id)
+        )
+        current_count = result.scalar() or 0
 
         if current_count >= plan.max_workspaces:
             raise HTTPException(
@@ -149,7 +151,7 @@ class MemberLimitChecker:
         """
         self.workspace_id_param = workspace_id_param
 
-    def __call__(
+    async def __call__(
         self,
         request: Request,
         current_user: dict = Depends(get_current_user),
@@ -167,12 +169,15 @@ class MemberLimitChecker:
             return  # Skip check if workspace_id not available
 
         # Get workspace
-        workspace = db.query(Workspace).filter(Workspace.id == workspace_id).first()
+        result = await db.execute(
+            select(Workspace).where(Workspace.id == workspace_id)
+        )
+        workspace = result.scalar_one_or_none()
         if not workspace:
             return  # Workspace doesn't exist, let the endpoint handle it
 
         # Get workspace creator's subscription
-        subscription, plan = get_user_subscription_and_plan(db, workspace.user_id)
+        subscription, plan = await _get_user_subscription_and_plan_async(db, workspace.user_id)
 
         if not subscription or not plan:
             # Default free tier limit
@@ -206,7 +211,7 @@ class TopicLimitChecker:
     Verifies that the user hasn't exceeded their plan's max_topics limit.
     """
 
-    def __call__(
+    async def __call__(
         self,
         request: Request,
         current_user: dict = Depends(get_current_user),
@@ -215,13 +220,16 @@ class TopicLimitChecker:
         """Check if user can create another topic."""
         user_id = current_user.get("identity")
 
-        subscription, plan = get_user_subscription_and_plan(db, user_id)
+        subscription, plan = await _get_user_subscription_and_plan_async(db, user_id)
 
         if not subscription or not plan:
             # Default free tier (allow 50 topics)
-            current_count = db.query(func.count(Topic.id)).join(Workspace).filter(
-                Workspace.user_id == user_id
-            ).scalar() or 0
+            result = await db.execute(
+                select(func.count(Topic.id))
+                .join(Workspace)
+                .where(Workspace.user_id == user_id)
+            )
+            current_count = result.scalar() or 0
 
             if current_count >= 50:
                 raise HTTPException(
@@ -235,9 +243,12 @@ class TopicLimitChecker:
             # Unlimited
             return
 
-        current_count = db.query(func.count(Topic.id)).join(Workspace).filter(
-            Workspace.user_id == user_id
-        ).scalar() or 0
+        result = await db.execute(
+            select(func.count(Topic.id))
+            .join(Workspace)
+            .where(Workspace.user_id == user_id)
+        )
+        current_count = result.scalar() or 0
 
         if current_count >= plan.max_topics:
             raise HTTPException(
@@ -253,7 +264,7 @@ class KnowledgeItemLimitChecker:
     Verifies that the user hasn't exceeded their plan's max_knowledge_items limit.
     """
 
-    def __call__(
+    async def __call__(
         self,
         request: Request,
         current_user: dict = Depends(get_current_user),
@@ -262,7 +273,7 @@ class KnowledgeItemLimitChecker:
         """Check if user can create another knowledge item."""
         user_id = current_user.get("identity")
 
-        subscription, plan = get_user_subscription_and_plan(db, user_id)
+        subscription, plan = await _get_user_subscription_and_plan_async(db, user_id)
 
         if not subscription or not plan:
             # Default free tier (allow 100 knowledge items)
@@ -305,7 +316,7 @@ class APICallLimiter:
         """
         self.increment = increment
 
-    def __call__(
+    async def __call__(
         self,
         request: Request,
         current_user: dict = Depends(get_current_user),
@@ -314,7 +325,7 @@ class APICallLimiter:
         """Track and check API call limit."""
         user_id = current_user.get("identity")
 
-        subscription, plan = get_user_subscription_and_plan(db, user_id)
+        subscription, plan = await _get_user_subscription_and_plan_async(db, user_id)
 
         if not subscription or not plan:
             # No subscription = default free tier (1000 calls/month)
@@ -325,7 +336,7 @@ class APICallLimiter:
         if subscription.usage_reset_date and subscription.usage_reset_date < datetime.utcnow():
             subscription.current_api_calls = 0
             subscription.usage_reset_date = datetime.utcnow() + timedelta(days=30)
-            db.commit()
+            await db.commit()
 
         # Check limit (before incrementing)
         if plan.max_api_calls_per_month != -1:  # -1 = unlimited
@@ -338,7 +349,7 @@ class APICallLimiter:
         # Increment counter
         if self.increment:
             subscription.current_api_calls += 1
-            db.commit()
+            await db.commit()
 
 
 # ============================================================================

@@ -23,7 +23,8 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from datetime import datetime, timedelta
 from collections import defaultdict, deque
 import hashlib
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 from src.utils.logger import logger
 from src.api.security.dependencies import get_current_user
 
@@ -462,12 +463,12 @@ class AIEndpointRateLimiter:
         self.window_seconds = 3600  # 1 hour
         self.storage: Dict[str, deque] = defaultdict(deque)
 
-    def _get_user_tier(self, db: Session, user_id: str) -> str:
+    async def _get_user_tier(self, db: AsyncSession, user_id: str) -> str:
         """
         Get user's subscription tier.
 
         Args:
-            db: Database session
+            db: Async database session
             user_id: User UUID
 
         Returns:
@@ -480,18 +481,22 @@ class AIEndpointRateLimiter:
         from src.api.models.subscription_models.plans import SubscriptionPlan
 
         # Get active subscription
-        subscription = db.query(UserSubscription).filter(
+        stmt = select(UserSubscription).where(
             UserSubscription.user_id == user_id,
             UserSubscription.status.in_([SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIAL])
-        ).first()
+        )
+        result = await db.execute(stmt)
+        subscription = result.scalar_one_or_none()
 
         if not subscription:
             return "default"
 
         # Get plan
-        plan = db.query(SubscriptionPlan).filter(
+        stmt = select(SubscriptionPlan).where(
             SubscriptionPlan.id == subscription.plan_id
-        ).first()
+        )
+        result = await db.execute(stmt)
+        plan = result.scalar_one_or_none()
 
         if not plan:
             return "default"
@@ -514,7 +519,8 @@ class AIEndpointRateLimiter:
     async def __call__(
         self,
         request: Request,
-        current_user: dict = Depends(get_current_user)
+        current_user: dict = Depends(get_current_user),
+        db: AsyncSession = Depends(lambda: None)
     ):
         """
         Check AI operation rate limit based on user's subscription tier.
@@ -522,21 +528,19 @@ class AIEndpointRateLimiter:
         Args:
             request: FastAPI request
             current_user: Authenticated user
+            db: Async database session (will be injected by FastAPI)
 
         Raises:
             HTTPException: If rate limit exceeded
         """
-        from src.api.database.database import get_db as sync_get_db, SessionLocal
+        from src.api.database.async_database import get_async_db_context
 
         user_id = current_user.get("identity")
 
-        # Get user's subscription tier (using sync database session)
-        db = SessionLocal()
-        try:
-            tier = self._get_user_tier(db, user_id)
+        # Get user's subscription tier (using async database session)
+        async with get_async_db_context() as db:
+            tier = await self._get_user_tier(db, user_id)
             max_requests = self.limits.get(tier, self.limits["default"])
-        finally:
-            db.close()
 
         # Generate client key
         client_key = f"ai:{user_id}:{tier}"
