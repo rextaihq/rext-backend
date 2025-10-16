@@ -254,7 +254,7 @@ def verify_refresh_token(token: str) -> dict:
 
 
 # Check if Token is Blacklisted
-def is_token_blacklisted(jti: str, db) -> bool:
+async def is_token_blacklisted(jti: str, db) -> bool:
     """
     Check if a token JTI is blacklisted.
 
@@ -266,7 +266,9 @@ def is_token_blacklisted(jti: str, db) -> bool:
         bool: True if token is blacklisted, False otherwise.
     """
     from src.api.models.user_models.token_blacklist import TokenBlacklist
-    blacklisted = db.query(TokenBlacklist).filter(
-        TokenBlacklist.jti == jti
-    ).first()
+    from sqlalchemy import select
+    result = await db.execute(
+        select(TokenBlacklist).where(TokenBlacklist.jti == jti)
+    )
+    blacklisted = result.scalar_one_or_none()
     return blacklisted is not None

@@ -148,7 +148,56 @@ The project uses both CSV and database storage:
 
 ## Database Migrations
 
-This project uses Alembic for database schema management.
+This project uses Alembic for database schema management with asyncpg driver.
+
+### Quick Commands (npm-style)
+
+```bash
+# Fresh start (reset + migrate) - recommended for first setup
+.venv/bin/db seed
+
+# Reset database only (⚠️ destroys all data)
+.venv/bin/db reset
+
+# Run migrations only
+.venv/bin/db migrate
+
+# Check migration status
+.venv/bin/db status
+```
+
+### Manual Reset (if needed)
+
+To completely reset the database manually (⚠️ **destroys all data**):
+
+```bash
+.venv/bin/python -c "
+import asyncio
+from sqlalchemy.ext.asyncio import create_async_engine
+from sqlalchemy import text
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
+async def reset_db():
+    db_url = os.getenv('POSTGRES_URI_CUSTOM')
+    if not db_url.startswith('postgresql+asyncpg'):
+        db_url = db_url.replace('postgresql://', 'postgresql+asyncpg://')
+
+    engine = create_async_engine(db_url)
+    async with engine.begin() as conn:
+        await conn.execute(text('DROP SCHEMA public CASCADE'))
+        await conn.execute(text('CREATE SCHEMA public'))
+        print('✅ Database reset')
+    await engine.dispose()
+
+asyncio.run(reset_db())
+"
+
+# Then run migrations to recreate tables and seed data
+.venv/bin/alembic upgrade head
+```
 
 ### Common Commands
 

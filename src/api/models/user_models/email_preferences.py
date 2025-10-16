@@ -10,7 +10,7 @@ from datetime import datetime
 import secrets
 import uuid
 
-from src.api.database.database import Base
+from src.api.database.base import Base
 
 
 class EmailPreferences(Base):

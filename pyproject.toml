@@ -1,3 +1,7 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
 [project]
 name = "content-automation"
 version = "0.1.0"
@@ -23,7 +27,6 @@ dependencies = [
     "langgraph-sdk>=0.1.74",
     "markdown>=3.8.2",
     "numpy>=2.3.2",
-    "pandas>=2.3.1",
     "passlib[bcrypt]>=1.7.4",
     "perplexityai>=0.13.0",
     "pydantic>=2.0.0",
@@ -46,8 +49,13 @@ dependencies = [
     "tenacity>=8.2.0",
     "sentry-sdk[fastapi]>=2.0.0",
     "redis[hiredis]>=5.0.0",
-    "psycopg2-binary>=2.9.11",
 ]
+
+[project.scripts]
+db = "scripts.db:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src", "scripts"]
 
 [dependency-groups]
 dev = [

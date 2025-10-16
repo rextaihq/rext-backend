@@ -14,7 +14,7 @@ import uuid
 from datetime import datetime
 from sqlalchemy import Column, String, TIMESTAMP, Index
 from sqlalchemy.dialects.postgresql import UUID
-from src.api.database.database import Base
+from src.api.database.base import Base
 from src.api.models.base import SerializableMixin
 
 

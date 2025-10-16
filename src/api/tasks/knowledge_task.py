@@ -1,7 +1,7 @@
 from src.flow.model.llm_manager import load_model
 from src.utils.logger import logger
 from sqlalchemy.orm import Session
-from src.api.database.database import get_db
+from src.api.database.async_database import get_async_db as get_db
 from src.utils.helper import web_page_scraper
 from src.utils.vector_store import add_to_vector_store
 from src.api.models.knowledge_models.knowledge_model import Website,BrandVoice

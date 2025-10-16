@@ -175,13 +175,19 @@ class RateLimiterMiddleware(BaseHTTPMiddleware):
     Applies rate limits to all incoming requests based on IP or user ID.
     """
 
-    # Paths exempt from rate limiting (health checks, docs, etc.)
+    # Paths exempt from rate limiting (health checks, docs, monitoring, etc.)
     EXEMPT_PATHS = {
         "/",
         "/health",
+        "/health/live",
+        "/health/ready",
         "/docs",
         "/redoc",
-        "/openapi.json"
+        "/openapi.json",
+        "/api/status",
+        # LangGraph Studio polling endpoints
+        "/ok",
+        "/info"
     }
 
     def __init__(

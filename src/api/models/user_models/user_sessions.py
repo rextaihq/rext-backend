@@ -10,7 +10,7 @@ from datetime import datetime
 from sqlalchemy import Column, String, Boolean, TIMESTAMP, Text, Index, ForeignKey
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import relationship
-from src.api.database.database import Base
+from src.api.database.base import Base
 from src.api.models.base import SerializableMixin
 
 

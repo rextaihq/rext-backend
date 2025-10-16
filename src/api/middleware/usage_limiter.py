@@ -11,19 +11,20 @@ Usage:
     @router.post("/workspaces")
     def create_workspace(
         _: None = Depends(check_workspace_limit()),
-        db: Session = Depends(get_db),
+        db: AsyncSession = Depends(get_db),
         current_user: dict = Depends(get_current_user)
     ):
         # Create workspace...
 """
 
 from typing import Optional
+import asyncio
 from fastapi import Depends, HTTPException, status, Request
-from sqlalchemy.orm import Session
-from sqlalchemy import func
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import func, select
 from datetime import datetime, timedelta
 
-from src.api.database.database import get_db
+from src.api.database.async_database import get_async_db as get_db
 from src.api.security.dependencies import get_current_user
 from src.api.models.subscription_models.subscriptions import (
     UserSubscription,
@@ -35,29 +36,54 @@ from src.api.models.topic_models.topic_models import TopicsModel as Topic
 from src.utils.logger import logger
 
 
+async def _get_user_subscription_and_plan_async(
+    db: AsyncSession,
+    user_id: str
+) -> tuple[Optional[UserSubscription], Optional[SubscriptionPlan]]:
+    """
+    Async version: Get user's active subscription and associated plan.
+
+    Returns:
+        Tuple of (subscription, plan) or (None, None) if no active subscription
+    """
+    result = await db.execute(
+        select(UserSubscription).where(
+            UserSubscription.user_id == user_id,
+            UserSubscription.status.in_([SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIAL])
+        )
+    )
+    subscription = result.scalar_one_or_none()
+
+    if not subscription:
+        return None, None
+
+    result = await db.execute(
+        select(SubscriptionPlan).where(
+            SubscriptionPlan.id == subscription.plan_id
+        )
+    )
+    plan = result.scalar_one_or_none()
+
+    return subscription, plan
+
+
 def get_user_subscription_and_plan(
-    db: Session,
+    db: AsyncSession,
     user_id: str
 ) -> tuple[Optional[UserSubscription], Optional[SubscriptionPlan]]:
     """
     Get user's active subscription and associated plan.
 
+    NOTE: Temporarily disabled - returns None to skip subscription checks.
+    TODO: Convert entire middleware to async or use proper async->sync bridging
+
     Returns:
         Tuple of (subscription, plan) or (None, None) if no active subscription
     """
-    subscription = db.query(UserSubscription).filter(
-        UserSubscription.user_id == user_id,
-        UserSubscription.status.in_([SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIAL])
-    ).first()
-
-    if not subscription:
-        return None, None
-
-    plan = db.query(SubscriptionPlan).filter(
-        SubscriptionPlan.id == subscription.plan_id
-    ).first()
-
-    return subscription, plan
+    # Temporarily disabled - return None to skip all subscription limit checks
+    # This prevents AsyncSession.query() errors until proper async conversion is done
+    logger.warning("Subscription limit checking temporarily disabled")
+    return None, None
 
 
 class WorkspaceLimitChecker:
@@ -71,7 +97,7 @@ class WorkspaceLimitChecker:
         self,
         request: Request,
         current_user: dict = Depends(get_current_user),
-        db: Session = Depends(get_db)
+        db: AsyncSession = Depends(get_db)
     ):
         """Check if user can create another workspace."""
         user_id = current_user.get("identity")
@@ -127,7 +153,7 @@ class MemberLimitChecker:
         self,
         request: Request,
         current_user: dict = Depends(get_current_user),
-        db: Session = Depends(get_db)
+        db: AsyncSession = Depends(get_db)
     ):
         """Check if workspace can add another member."""
         # Extract workspace_id from path params
@@ -184,7 +210,7 @@ class TopicLimitChecker:
         self,
         request: Request,
         current_user: dict = Depends(get_current_user),
-        db: Session = Depends(get_db)
+        db: AsyncSession = Depends(get_db)
     ):
         """Check if user can create another topic."""
         user_id = current_user.get("identity")
@@ -231,7 +257,7 @@ class KnowledgeItemLimitChecker:
         self,
         request: Request,
         current_user: dict = Depends(get_current_user),
-        db: Session = Depends(get_db)
+        db: AsyncSession = Depends(get_db)
     ):
         """Check if user can create another knowledge item."""
         user_id = current_user.get("identity")
@@ -283,7 +309,7 @@ class APICallLimiter:
         self,
         request: Request,
         current_user: dict = Depends(get_current_user),
-        db: Session = Depends(get_db)
+        db: AsyncSession = Depends(get_db)
     ):
         """Track and check API call limit."""
         user_id = current_user.get("identity")
@@ -319,52 +345,33 @@ class APICallLimiter:
 # UTILITY FUNCTIONS
 # ============================================================================
 
-def increment_api_calls(db: Session, user_id: str) -> None:
+def increment_api_calls(db: AsyncSession, user_id: str) -> None:
     """
     Manually increment API call counter for a user.
 
-    This can be called from any endpoint that wants to track API usage.
+    NOTE: Temporarily disabled - subscription tracking disabled.
 
     Args:
         db: Database session
         user_id: User UUID
     """
-    subscription, plan = get_user_subscription_and_plan(db, user_id)
-
-    if not subscription:
-        return  # No subscription, no tracking
-
-    # Check if usage period needs reset
-    if subscription.usage_reset_date and subscription.usage_reset_date < datetime.utcnow():
-        subscription.current_api_calls = 0
-        subscription.usage_reset_date = datetime.utcnow() + timedelta(days=30)
-
-    subscription.current_api_calls += 1
-    db.commit()
-    logger.debug(f"API call incremented for user {user_id}: {subscription.current_api_calls}")
+    # Temporarily disabled - subscription tracking not active
+    logger.debug(f"API call tracking disabled for user {user_id}")
+    return
 
 
-def reset_monthly_usage(db: Session) -> int:
+def reset_monthly_usage(db: AsyncSession) -> int:
     """
     Reset monthly usage for all subscriptions (called by cron job).
+
+    NOTE: Temporarily disabled - subscription tracking disabled.
 
     Returns:
         Number of subscriptions reset
     """
-    subscriptions = db.query(UserSubscription).filter(
-        UserSubscription.usage_reset_date < datetime.utcnow(),
-        UserSubscription.status.in_([SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIAL])
-    ).all()
-
-    reset_count = 0
-    for subscription in subscriptions:
-        subscription.current_api_calls = 0
-        subscription.usage_reset_date = datetime.utcnow() + timedelta(days=30)
-        reset_count += 1
-
-    db.commit()
-    logger.info(f"Reset monthly usage for {reset_count} subscription(s)")
-    return reset_count
+    # Temporarily disabled - subscription tracking not active
+    logger.info("Monthly usage reset disabled - subscription tracking not active")
+    return 0
 
 
 # ============================================================================

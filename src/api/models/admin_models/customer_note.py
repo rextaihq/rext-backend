@@ -6,7 +6,7 @@ from uuid import UUID, uuid4
 from sqlalchemy import Column, DateTime, ForeignKey, String, Text
 from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
 
-from src.api.database.database import Base
+from src.api.database.base import Base
 
 
 class CustomerNote(Base):

@@ -1,6 +1,6 @@
 from src.flow.states.content_state import ContentState
 from src.api.models.content_models.content import Content
-from src.api.database.database import get_db
+from src.api.database.async_database import get_async_db as get_db
 from src.flow.utils.progress_helper import update_node_progress
 from langsmith import traceable, trace
 from datetime import datetime, timezone

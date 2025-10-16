@@ -65,9 +65,9 @@ class Settings(BaseSettings):
     PORT: int = Field(default=8000, description="Server port", ge=1, le=65535)
 
     # Rate Limiting
-    RATE_LIMIT_PER_MINUTE: int = Field(default=100, description="Rate limit: requests per minute", ge=1)
-    RATE_LIMIT_PER_HOUR: int = Field(default=1000, description="Rate limit: requests per hour", ge=1)
-    RATE_LIMIT_PER_DAY: int = Field(default=10000, description="Rate limit: requests per day", ge=1)
+    RATE_LIMIT_PER_MINUTE: int = Field(default=1000, description="Rate limit: requests per minute", ge=1)
+    RATE_LIMIT_PER_HOUR: int = Field(default=10000, description="Rate limit: requests per hour", ge=1)
+    RATE_LIMIT_PER_DAY: int = Field(default=100000, description="Rate limit: requests per day", ge=1)
     RATE_LIMITING_ENABLED: bool = Field(default=True, description="Enable rate limiting")
 
     # ============================================================================

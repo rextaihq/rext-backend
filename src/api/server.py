@@ -42,7 +42,7 @@ from src.api.routes.events import router as events_router
 from src.api.routes.email import preview_router, webhook_router
 from src.api.routes.users.email_preferences import router as email_prefs_router
 from src.api.routes.users.onboarding import router as onboarding_router
-from src.api.database.database import engine
+from src.api.database.async_database import async_engine
 
 # Middleware imports
 from src.api.middleware.request_tracker import RequestTrackerMiddleware
@@ -73,7 +73,7 @@ DB_URI = settings.POSTGRES_URI_CUSTOM
 # Run migrations with: alembic upgrade head
 
 
-def check_migrations():
+async def check_migrations():
     """Check if database migrations are up to date."""
     try:
         from alembic.config import Config
@@ -83,9 +83,13 @@ def check_migrations():
         alembic_cfg = Config("alembic.ini")
         script = ScriptDirectory.from_config(alembic_cfg)
 
-        with engine.begin() as connection:
+        # Use run_sync to execute sync Alembic code with async engine
+        def do_check(connection):
             context = MigrationContext.configure(connection)
-            current_rev = context.get_current_revision()
+            return context.get_current_revision()
+
+        async with async_engine.begin() as connection:
+            current_rev = await connection.run_sync(do_check)
             head_rev = script.get_current_head()
 
             if current_rev != head_rev:
@@ -263,19 +267,147 @@ def read_root(request: Request):
 
 
 @app.get("/health", tags=["Health"])
-def health_check(request: Request):
-    """Health check endpoint for monitoring."""
-    return success(
-        data={
-            "status": "healthy",
-            "service": "wrext-api",
-            "version": "1.0.0",
-            "database": "connected" if DB_URI else "not_configured",
-            "environment": settings.ENVIRONMENT
-        },
-        request=request,
-        message="Service is healthy"
-    )
+async def health_check(request: Request):
+    """
+    Comprehensive health check endpoint for monitoring.
+
+    Returns overall system health with detailed dependency checks.
+    Returns 200 if healthy, 503 if degraded.
+    """
+    from datetime import datetime
+    from fastapi.responses import JSONResponse
+    from sqlalchemy import text
+    import shutil
+
+    status = {
+        "status": "healthy",
+        "service": "wrext-api",
+        "version": "1.0.0",
+        "environment": settings.ENVIRONMENT,
+        "timestamp": datetime.utcnow().isoformat(),
+        "checks": {}
+    }
+
+    # Database check
+    try:
+        from src.api.database.async_database import get_async_db_context
+        async with get_async_db_context() as db:
+            await db.execute(text("SELECT 1"))
+            status["checks"]["database"] = "healthy"
+    except Exception as e:
+        status["checks"]["database"] = f"unhealthy: {str(e)}"
+        status["status"] = "degraded"
+
+    # Redis check (optional - graceful degradation)
+    try:
+        from src.api.cache.redis_client import cache
+        if cache.redis is not None:
+            await cache.redis.ping()
+            status["checks"]["redis"] = "healthy"
+        else:
+            status["checks"]["redis"] = "not_configured"
+    except ImportError:
+        status["checks"]["redis"] = "not_configured"
+    except Exception as e:
+        status["checks"]["redis"] = f"unhealthy: {str(e)}"
+        # Don't mark overall status as degraded - cache is optional
+
+    # Disk space check
+    try:
+        disk = shutil.disk_usage("/")
+        disk_percent = (disk.used / disk.total) * 100
+        status["checks"]["disk_space"] = {
+            "percent_used": round(disk_percent, 2),
+            "status": "healthy" if disk_percent < 90 else "warning"
+        }
+        if disk_percent >= 95:
+            status["status"] = "degraded"
+    except Exception as e:
+        status["checks"]["disk_space"] = f"error: {str(e)}"
+
+    # OpenAI check (optional - non-blocking)
+    try:
+        import httpx
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                "https://api.openai.com/v1/models",
+                headers={"Authorization": f"Bearer {settings.OPENAI_API_KEY}"},
+                timeout=5.0
+            )
+            status["checks"]["openai"] = "healthy" if response.status_code == 200 else "degraded"
+    except Exception:
+        status["checks"]["openai"] = "unavailable"
+        # Don't mark overall status as degraded for external service
+
+    # Return appropriate status code
+    status_code = 200 if status["status"] == "healthy" else 503
+    return JSONResponse(content=status, status_code=status_code)
+
+
+@app.get("/health/live", tags=["Health"])
+async def liveness_check(request: Request):
+    """
+    Kubernetes liveness probe endpoint.
+
+    Returns 200 if the application is running (even if dependencies are unavailable).
+    This endpoint should only fail if the application has crashed or is deadlocked.
+    Kubernetes will restart the pod if this returns non-200.
+    """
+    from datetime import datetime
+    return {
+        "status": "alive",
+        "service": "wrext-api",
+        "timestamp": datetime.utcnow().isoformat()
+    }
+
+
+@app.get("/health/ready", tags=["Health"])
+async def readiness_check(request: Request):
+    """
+    Kubernetes readiness probe endpoint.
+
+    Returns 200 if the application can accept traffic (all critical dependencies available).
+    Returns 503 if dependencies are unavailable.
+    Kubernetes will remove pod from load balancer if this returns non-200.
+    """
+    from datetime import datetime
+    from fastapi.responses import JSONResponse
+    from sqlalchemy import text
+
+    status = {
+        "status": "ready",
+        "service": "wrext-api",
+        "timestamp": datetime.utcnow().isoformat(),
+        "checks": {}
+    }
+
+    # Database check (critical - required for readiness)
+    try:
+        from src.api.database.async_database import get_async_db_context
+        async with get_async_db_context() as db:
+            await db.execute(text("SELECT 1"))
+            status["checks"]["database"] = "ready"
+    except Exception as e:
+        status["checks"]["database"] = f"not_ready: {str(e)}"
+        status["status"] = "not_ready"
+
+    # Redis check (optional - not required for readiness)
+    try:
+        from src.api.cache.redis_client import cache
+        if cache.redis is not None:
+            await cache.redis.ping()
+            status["checks"]["redis"] = "ready"
+        else:
+            status["checks"]["redis"] = "not_configured"
+    except ImportError:
+        status["checks"]["redis"] = "not_configured"
+    except Exception:
+        status["checks"]["redis"] = "not_ready"
+        # Don't mark overall as not_ready - cache is optional
+
+    # Return appropriate status code
+    status_code = 200 if status["status"] == "ready" else 503
+    return JSONResponse(content=status, status_code=status_code)
 
 
 @app.get("/api/status", tags=["Health"])

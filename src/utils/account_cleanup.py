@@ -27,7 +27,7 @@ def delete_deactivated_accounts(db: Session) -> int:
         int: Number of accounts deleted
 
     Example:
-        >>> from src.api.database.database import get_db
+        >>> from src.api.database.async_database import get_async_db as get_db
         >>> db = next(get_db())
         >>> deleted_count = delete_deactivated_accounts(db)
         >>> logger.info(f"Deleted {deleted_count} accounts")

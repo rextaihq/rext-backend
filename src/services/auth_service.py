@@ -215,9 +215,12 @@ class AuthService:
         Raises:
             WrextAuthenticationException: If credentials invalid or account locked
         """
-        # Find user
+        # Find user (eagerly load relationships to avoid lazy loading in async context)
+        from sqlalchemy.orm import selectinload
         result = await self.db.execute(
-            select(Users).where(Users.email == email)
+            select(Users)
+            .options(selectinload(Users.user_roles).selectinload(UserRole.role))
+            .where(Users.email == email)
         )
         db_user = result.scalar_one_or_none()
 
@@ -450,7 +453,7 @@ class AuthService:
                 context={"note": "Old token format not supported"}
             )
 
-        if is_token_blacklisted(jti, self.db):
+        if await is_token_blacklisted(jti, self.db):
             raise WrextAuthenticationException(
                 message="Refresh token has been revoked",
                 context={"reason": "Token blacklisted"}
@@ -458,10 +461,10 @@ class AuthService:
 
         # Get user
         user_id = payload.get("id")
-        db_result = await self.db.execute(
+        result = await self.db.execute(
             select(Users).where(Users.id == user_id)
         )
-        user = result.scalar_one_or_none()
+        db_user = result.scalar_one_or_none()
 
         if not db_user:
             raise WrextAuthenticationException(
@@ -541,7 +544,7 @@ class AuthService:
             )
 
         # Check if already blacklisted
-        if is_token_blacklisted(jti, self.db):
+        if await is_token_blacklisted(jti, self.db):
             logger.info(f"Token already blacklisted for user {user_id}")
             return
 
