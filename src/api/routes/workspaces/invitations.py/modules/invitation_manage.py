@@ -12,8 +12,8 @@ from src.utils.audit_helper import create_audit_log
 from src.utils.route_decorators import db_transaction_handler
 from src.api.database.async_database import get_async_db
 from src.api.security.dependencies import get_current_user
-from src.api.middleware.exceptions import (
 from src.api.config import get_settings
+from src.api.middleware.exceptions import (
     ResourceNotFoundException,
     WrextAuthenticationException,
     WrextValidationException,

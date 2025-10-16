@@ -8,6 +8,7 @@ All endpoints require admin permissions.
 """
 
 from datetime import datetime
+from typing import Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Request

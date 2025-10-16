@@ -31,8 +31,8 @@ from src.utils.file_upload_utils import validate_and_store_file, delete_file
 from src.utils.utils import load_split_file_data
 from src.utils.vector_store import add_to_vector_store, delete_vectors
 from src.utils.helper import web_page_scraper
-from src.api.middleware.exceptions import (
 from src.api.config import get_settings
+from src.api.middleware.exceptions import (
     ResourceNotFoundException,
     WrextValidationException,
     DuplicateResourceException,

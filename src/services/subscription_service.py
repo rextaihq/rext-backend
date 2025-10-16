@@ -17,7 +17,7 @@ Does NOT:
 - Process payments (that's payment service - future)
 """
 
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from uuid import UUID
 from datetime import datetime, timedelta
 
@@ -569,7 +569,9 @@ class SubscriptionService:
         active_only: bool = False
     ) -> SubscriptionPlan:
         """
-        Get subscription plan or raise 404.
+        Get subscription plan or raise 404 (cached).
+
+        Plans are cached for 15 minutes since they rarely change.
 
         Args:
             plan_id: Plan UUID
@@ -581,6 +583,18 @@ class SubscriptionService:
         Raises:
             ResourceNotFoundException: If plan not found or not active
         """
+        # Try cache first
+        from src.api.cache.redis_client import cache
+        cache_key = f"subscription:plan:{plan_id}:active={active_only}"
+
+        if cache.is_enabled:
+            cached_plan = await cache.get(cache_key)
+            if cached_plan is not None:
+                # Reconstruct the SubscriptionPlan object
+                plan = SubscriptionPlan(**cached_plan)
+                return plan
+
+        # Cache miss - query database
         query = select(SubscriptionPlan).where(SubscriptionPlan.id == plan_id)
 
         if active_only:
@@ -595,6 +609,26 @@ class SubscriptionService:
                 resource_id=str(plan_id),
                 message="Subscription plan not found" + (" or is inactive" if active_only else "")
             )
+
+        # Cache the result for 15 minutes (plans rarely change)
+        if cache.is_enabled:
+            plan_dict = {
+                "id": plan.id,
+                "name": plan.name,
+                "display_name": plan.display_name,
+                "price_monthly": plan.price_monthly,
+                "price_yearly": plan.price_yearly,
+                "max_workspaces": plan.max_workspaces,
+                "max_members_per_workspace": plan.max_members_per_workspace,
+                "max_topics": plan.max_topics,
+                "max_knowledge_items": plan.max_knowledge_items,
+                "max_content_per_month": plan.max_content_per_month,
+                "max_ai_generations_per_month": plan.max_ai_generations_per_month,
+                "is_active": plan.is_active,
+                "created_at": plan.created_at,
+                "updated_at": plan.updated_at
+            }
+            await cache.set(cache_key, plan_dict, ttl=900)  # 15 minutes
 
         return plan
 

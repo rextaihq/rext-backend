@@ -5,7 +5,7 @@ from typing import Optional
 from uuid import UUID, uuid4
 
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.models.user_models.onboarding import UserOnboarding
 from src.api.models.user_models.users import Users
@@ -15,7 +15,7 @@ class OnboardingService:
     """Service for managing user onboarding."""
 
     @staticmethod
-    async def get_or_create_onboarding(db: Session, user_id: UUID) -> UserOnboarding:
+    async def get_or_create_onboarding(db: AsyncSession, user_id: UUID) -> UserOnboarding:
         """
         Get user onboarding status or create if doesn't exist.
 
@@ -27,7 +27,7 @@ class OnboardingService:
             UserOnboarding object
         """
         stmt = select(UserOnboarding).where(UserOnboarding.user_id == user_id)
-        result = db.execute(stmt)
+        result = await db.execute(stmt)
         onboarding = result.scalar_one_or_none()
 
         if not onboarding:
@@ -41,13 +41,13 @@ class OnboardingService:
                 skipped_steps=[],
             )
             db.add(onboarding)
-            db.commit()
-            db.refresh(onboarding)
+            await db.commit()
+            await db.refresh(onboarding)
 
         return onboarding
 
     @staticmethod
-    async def get_onboarding_status(db: Session, user_id: UUID) -> Optional[UserOnboarding]:
+    async def get_onboarding_status(db: AsyncSession, user_id: UUID) -> Optional[UserOnboarding]:
         """
         Get user onboarding status.
 
@@ -59,11 +59,11 @@ class OnboardingService:
             UserOnboarding object or None
         """
         stmt = select(UserOnboarding).where(UserOnboarding.user_id == user_id)
-        result = db.execute(stmt)
+        result = await db.execute(stmt)
         return result.scalar_one_or_none()
 
     @staticmethod
-    async def complete_step(db: Session, user_id: UUID, step: int) -> UserOnboarding:
+    async def complete_step(db: AsyncSession, user_id: UUID, step: int) -> UserOnboarding:
         """
         Mark a step as completed.
 
@@ -101,12 +101,12 @@ class OnboardingService:
             onboarding.completed = True
             onboarding.completed_at = datetime.utcnow()
 
-        db.commit()
-        db.refresh(onboarding)
+        await db.commit()
+        await db.refresh(onboarding)
         return onboarding
 
     @staticmethod
-    async def skip_step(db: Session, user_id: UUID, step: int) -> UserOnboarding:
+    async def skip_step(db: AsyncSession, user_id: UUID, step: int) -> UserOnboarding:
         """
         Mark a step as skipped.
 
@@ -149,12 +149,12 @@ class OnboardingService:
             onboarding.completed = True
             onboarding.completed_at = datetime.utcnow()
 
-        db.commit()
-        db.refresh(onboarding)
+        await db.commit()
+        await db.refresh(onboarding)
         return onboarding
 
     @staticmethod
-    async def set_current_step(db: Session, user_id: UUID, step: int) -> UserOnboarding:
+    async def set_current_step(db: AsyncSession, user_id: UUID, step: int) -> UserOnboarding:
         """
         Set the current step (for navigation).
 
@@ -168,12 +168,12 @@ class OnboardingService:
         """
         onboarding = await OnboardingService.get_or_create_onboarding(db, user_id)
         onboarding.current_step = step
-        db.commit()
-        db.refresh(onboarding)
+        await db.commit()
+        await db.refresh(onboarding)
         return onboarding
 
     @staticmethod
-    async def complete_onboarding(db: Session, user_id: UUID) -> UserOnboarding:
+    async def complete_onboarding(db: AsyncSession, user_id: UUID) -> UserOnboarding:
         """
         Mark onboarding as fully completed.
 
@@ -195,12 +195,12 @@ class OnboardingService:
             if step not in onboarding.completed_steps:
                 onboarding.completed_steps = onboarding.completed_steps + [step]
 
-        db.commit()
-        db.refresh(onboarding)
+        await db.commit()
+        await db.refresh(onboarding)
         return onboarding
 
     @staticmethod
-    async def reset_onboarding(db: Session, user_id: UUID) -> UserOnboarding:
+    async def reset_onboarding(db: AsyncSession, user_id: UUID) -> UserOnboarding:
         """
         Reset onboarding to start from beginning.
 
@@ -219,12 +219,12 @@ class OnboardingService:
         onboarding.completed_at = None
         onboarding.started_at = datetime.utcnow()
 
-        db.commit()
-        db.refresh(onboarding)
+        await db.commit()
+        await db.refresh(onboarding)
         return onboarding
 
     @staticmethod
-    async def should_show_onboarding(db: Session, user_id: UUID) -> bool:
+    async def should_show_onboarding(db: AsyncSession, user_id: UUID) -> bool:
         """
         Determine if onboarding should be shown to user.
 

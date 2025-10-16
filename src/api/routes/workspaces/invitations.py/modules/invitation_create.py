@@ -14,8 +14,8 @@ from src.utils.email_template_utils import render_workspace_email
 from src.utils.route_decorators import db_transaction_handler, require_permissions
 from src.api.database.async_database import get_async_db
 from src.api.security.dependencies import get_current_user
-from src.api.middleware.exceptions import (
 from src.api.config import get_settings
+from src.api.middleware.exceptions import (
     DuplicateResourceException,
     ResourceNotFoundException,
     WrextAuthenticationException,

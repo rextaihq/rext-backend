@@ -112,6 +112,10 @@ async def lifespan(app: FastAPI):
     # Initialize Sentry error monitoring
     init_sentry(settings)
 
+    # Initialize Redis cache
+    from src.api.cache.redis_client import cache
+    await cache.connect()
+
     logger.info(f"Database URI: {DB_URI[:20]}..." if DB_URI else "No database URI configured")
     logger.info("Database managed by Alembic migrations")
     logger.info("Middleware configured: RequestTracker, ErrorHandler, SecurityHeaders")
@@ -126,6 +130,7 @@ async def lifespan(app: FastAPI):
     yield
     # Shutdown
     logger.info("Shutting down Wrext API server...")
+    await cache.disconnect()
 
 app = FastAPI(
     title="Wrext Content Automation API",

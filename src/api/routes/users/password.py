@@ -6,8 +6,8 @@ import os
 
 from src.utils.logger import logger
 from src.api.security.dependencies import get_current_user
-from src.api.schema.user_schema import (
 from src.api.config import get_settings
+from src.api.schema.user_schema import (
     ResetPassword,
     ForgotPasswordRequest,
     ChangePasswordRequest

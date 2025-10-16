@@ -73,12 +73,20 @@ class MonitoringService:
                 "error": str(e)
             }
 
-        # Cache health (placeholder - implement if Redis is added)
-        cache_health = {
-            "status": "not_configured",
-            "hit_rate": 0,
-            "memory_used_mb": 0
-        }
+        # Cache health check
+        try:
+            from src.api.cache.redis_client import cache
+            cache_health = await cache.get_stats()
+            if cache_health.get("enabled"):
+                cache_health["status"] = "healthy"
+            else:
+                cache_health["status"] = "disabled"
+        except Exception as e:
+            cache_health = {
+                "status": "unhealthy",
+                "enabled": False,
+                "error": str(e)
+            }
 
         # API health metrics (placeholder)
         api_health = {

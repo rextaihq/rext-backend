@@ -13,7 +13,7 @@ from datetime import datetime, timedelta
 from src.api.database.async_database import get_async_db
 from src.api.models.email_models.email_log import EmailLog
 from src.services.email_service import EmailService
-from src.api.middleware.rbac import require_permission
+from src.api.middleware.permissions import require_permissions
 from src.api.lib.logger import auto_logger
 from src.utils.response_utils import success, error
 from pydantic import BaseModel
@@ -53,7 +53,7 @@ class ResendEmailRequest(BaseModel):
 # ENDPOINTS
 # ============================================================================
 
-@router.get("/failed", dependencies=[Depends(require_permission("admin:emails:read"))])
+@router.get("/failed", dependencies=[Depends(require_permissions(["admin:emails:read"]))])
 async def get_failed_emails(
     db: AsyncSession = Depends(get_async_db),
     limit: int = Query(default=50, le=200),
@@ -129,7 +129,7 @@ async def get_failed_emails(
         )
 
 
-@router.post("/{email_log_id}/resend", dependencies=[Depends(require_permission("admin:emails:write"))])
+@router.post("/{email_log_id}/resend", dependencies=[Depends(require_permissions(["admin:emails:write"]))])
 async def resend_single_email(
     email_log_id: UUID,
     db: AsyncSession = Depends(get_async_db)
@@ -200,7 +200,7 @@ async def resend_single_email(
         )
 
 
-@router.post("/resend-batch", dependencies=[Depends(require_permission("admin:emails:write"))])
+@router.post("/resend-batch", dependencies=[Depends(require_permissions(["admin:emails:write"]))])
 async def resend_batch_emails(
     request: ResendEmailRequest,
     db: AsyncSession = Depends(get_async_db)

@@ -9,8 +9,8 @@ from fastapi.responses import HTMLResponse
 from typing import Literal
 import os
 
-from src.api.schema.email_preview_schema import (
 from src.api.config import get_settings
+from src.api.schema.email_preview_schema import (
     AuthEmailPreviewRequest,
     WorkspaceEmailPreviewRequest,
     EmailPreviewResponse

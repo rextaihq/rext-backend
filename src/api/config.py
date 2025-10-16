@@ -43,6 +43,13 @@ class Settings(BaseSettings):
     POSTGRES_URI_CUSTOM: str = Field(..., description="PostgreSQL database connection URI")
 
     # ============================================================================
+    # REDIS CACHE
+    # ============================================================================
+    REDIS_URL: str = Field(default="redis://localhost:6379/0", description="Redis connection URL for caching")
+    CACHE_ENABLED: bool = Field(default=True, description="Enable Redis caching")
+    CACHE_DEFAULT_TTL: int = Field(default=300, description="Default cache TTL in seconds (5 minutes)")
+
+    # ============================================================================
     # FRONTEND & CORS
     # ============================================================================
     FRONTEND_URL: str = Field(default="http://localhost:3000", description="Frontend application URL")

@@ -30,8 +30,8 @@ from src.api.models.user_models.users import Users
 from src.flow.flow import create_workflow
 from src.flow.states.content_state import ContentState
 from src.utils.logger import logger
-from src.api.middleware.exceptions import (
 from src.api.config import get_settings
+from src.api.middleware.exceptions import (
     WrextValidationException,
     ResourceNotFoundException
 )

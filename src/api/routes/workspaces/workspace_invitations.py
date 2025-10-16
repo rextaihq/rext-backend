@@ -6,8 +6,8 @@ from fastapi import APIRouter, BackgroundTasks, Depends, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.database.async_database import get_async_db
-from src.api.middleware.exceptions import (
 from src.api.config import get_settings
+from src.api.middleware.exceptions import (
     BusinessRuleViolationException,
     DuplicateResourceException,
     ResourceNotFoundException,

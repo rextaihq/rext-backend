@@ -7,7 +7,7 @@ including listing, filtering, viewing details, performing actions, and adding no
 All endpoints require admin permissions.
 """
 
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Request

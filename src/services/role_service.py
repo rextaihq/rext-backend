@@ -389,6 +389,10 @@ class RoleService:
         await self.db.flush()
         await self.db.refresh(user_role)
 
+        # Invalidate permissions cache for this user
+        from src.api.cache.decorators import invalidate_cache
+        await invalidate_cache(f"user:permissions:{user_id}:*")
+
         logger.info(
             f"Role {role.name} assigned to user {user_id}",
             extra={
@@ -440,6 +444,10 @@ class RoleService:
 
         # Delete the assignment
         await self.db.delete(user_role)
+
+        # Invalidate permissions cache for this user
+        from src.api.cache.decorators import invalidate_cache
+        await invalidate_cache(f"user:permissions:{user_id}:*")
 
         logger.info(
             f"Role revoked from user {user_id}",

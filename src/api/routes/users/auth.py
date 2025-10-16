@@ -4,9 +4,9 @@ from src.api.security.dependencies import get_current_user
 from src.api.schema.user_schema import LoginUser, RegisterUser
 from src.api.security.token_utils import verify_token
 from src.api.config import get_settings
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 from src.services.email_service import EmailService
-from src.api.database.database import get_db
+from src.api.database.async_database import get_async_db
 from src.utils.response_utils import success, error, created
 from src.api.schema.response_schemas import ErrorCode, ErrorSeverity
 from src.api.middleware.exceptions import (
@@ -103,7 +103,7 @@ async def create_user(
     user: RegisterUser,
     request: Request,
     background_tasks: BackgroundTasks,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     _rate_limit: None = Depends(registration_rate_limit())
 ):
     """
@@ -168,7 +168,7 @@ async def create_user(
 async def login_user(
     user: LoginUser,
     request: Request,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     _rate_limit: None = Depends(login_rate_limit())
 ):
     """
@@ -239,7 +239,7 @@ async def login_user(
 @router.post("/refresh")
 async def refresh_access_token(
     request: Request,
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_async_db)
 ):
     """
     Refresh access token using refresh token.
@@ -301,7 +301,7 @@ async def logout_user(
     request: Request,
     current_user: dict = Depends(get_current_user),
     authorization: str = Header(...),
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_async_db)
 ):
     """
     Logout user by blacklisting their access token.
@@ -349,7 +349,7 @@ async def verify_email(
     token: str,
     request: Request,
     background_tasks: BackgroundTasks,
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_async_db)
 ):
     """
     Verify user's email using the provided token and send welcome email
@@ -395,7 +395,7 @@ async def verify_email(
 async def resend_verification(
     request: Request,
     background_tasks: BackgroundTasks,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     _rate_limit: None = Depends(registration_rate_limit())
 ):
     """
@@ -460,7 +460,7 @@ async def resend_verification(
 @router.post("/oauth/login")
 async def oauth_login(
     request: Request,
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_async_db)
 ):
     """
     Login or register user via OAuth provider.
@@ -544,7 +544,7 @@ async def oauth_login(
 async def link_oauth(
     request: Request,
     current_user: dict = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_async_db)
 ):
     """
     Link an OAuth account to the current user.
@@ -608,7 +608,7 @@ async def unlink_oauth(
     provider: str,
     request: Request,
     current_user: dict = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_async_db)
 ):
     """
     Unlink an OAuth account from the current user.

@@ -4,10 +4,10 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.api.database.database import get_db
-from src.api.middleware.auth import get_current_user
+from src.api.database.async_database import get_async_db
+from src.api.security.dependencies import get_current_user
 from src.api.models.user_models.users import Users
 from src.api.schema.onboarding_schemas import (
     OnboardingReset,
@@ -15,14 +15,14 @@ from src.api.schema.onboarding_schemas import (
     OnboardingStepUpdate,
 )
 from src.services.onboarding_service import OnboardingService
-from src.utils.logger import log
+from src.utils.logger import logger
 
 router = APIRouter(prefix="/onboarding", tags=["onboarding"])
 
 
 @router.get("", response_model=OnboardingResponse, status_code=status.HTTP_200_OK)
 async def get_onboarding_status(
-    db: Annotated[Session, Depends(get_db)],
+    db: Annotated[AsyncSession, Depends(get_async_db)],
     current_user: Annotated[Users, Depends(get_current_user)],
 ):
     """
@@ -45,7 +45,7 @@ async def get_onboarding_status(
 @router.post("/update", response_model=OnboardingResponse, status_code=status.HTTP_200_OK)
 async def update_onboarding_step(
     step_update: OnboardingStepUpdate,
-    db: Annotated[Session, Depends(get_db)],
+    db: Annotated[AsyncSession, Depends(get_async_db)],
     current_user: Annotated[Users, Depends(get_current_user)],
 ):
     """
@@ -85,7 +85,7 @@ async def update_onboarding_step(
 
 @router.post("/complete", response_model=OnboardingResponse, status_code=status.HTTP_200_OK)
 async def complete_onboarding(
-    db: Annotated[Session, Depends(get_db)],
+    db: Annotated[AsyncSession, Depends(get_async_db)],
     current_user: Annotated[Users, Depends(get_current_user)],
 ):
     """
@@ -109,7 +109,7 @@ async def complete_onboarding(
 @router.post("/reset", response_model=OnboardingResponse, status_code=status.HTTP_200_OK)
 async def reset_onboarding(
     reset_data: OnboardingReset,
-    db: Annotated[Session, Depends(get_db)],
+    db: Annotated[AsyncSession, Depends(get_async_db)],
     current_user: Annotated[Users, Depends(get_current_user)],
 ):
     """
@@ -138,7 +138,7 @@ async def reset_onboarding(
 
 @router.get("/should-show", status_code=status.HTTP_200_OK)
 async def should_show_onboarding(
-    db: Annotated[Session, Depends(get_db)],
+    db: Annotated[AsyncSession, Depends(get_async_db)],
     current_user: Annotated[Users, Depends(get_current_user)],
 ):
     """

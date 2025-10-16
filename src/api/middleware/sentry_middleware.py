@@ -12,7 +12,7 @@ from starlette.responses import Response
 from typing import Callable
 
 from src.api.lib.sentry_config import set_user_context, clear_user_context, add_breadcrumb
-from src.api.security.token_utils import decode_access_token
+from src.api.security.token_utils import verify_token
 
 logger = logging.getLogger(__name__)
 
@@ -45,7 +45,7 @@ class SentryUserContextMiddleware(BaseHTTPMiddleware):
 
                 try:
                     # Decode token to get user info
-                    payload = decode_access_token(token)
+                    payload = verify_token(token)
 
                     if payload:
                         user_id = payload.get("sub")
