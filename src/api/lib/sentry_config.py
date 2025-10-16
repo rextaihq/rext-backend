@@ -63,7 +63,35 @@ def init_sentry(settings: Settings) -> None:
             # Debug Mode
             debug=settings.SENTRY_DEBUG,
 
-            # Integrations
+            # Integrations - Explicitly defined to prevent auto-enabling conflicts
+            #
+            # CRITICAL: OpenAI Integration Conflict with LangChain/LangGraph
+            # =============================================================
+            # The Sentry OpenAI integration (auto-enabled when `openai` package detected)
+            # conflicts with LangChain's `with_structured_output()` method, causing:
+            #   TypeError: object of type 'Omit' has no len()
+            #   at /sentry_sdk/integrations/openai.py:212 in _set_input_data()
+            #
+            # Root Cause:
+            # - Sentry tries to inspect `tools` parameter with `len(tools)`
+            # - LangChain passes an `Omit` type object (not a list) when using structured output
+            # - This breaks content generation with LangGraph workflows
+            #
+            # Solution:
+            # - Explicitly define integrations list (prevents auto-discovery)
+            # - Do NOT include OpenAIIntegration
+            # - Set default_integrations=False and auto_enabling_integrations=False
+            #
+            # Trade-off:
+            # - We lose OpenAI request tracing in Sentry
+            # - We keep all other monitoring (FastAPI, SQLAlchemy, logging)
+            # - Content generation works correctly
+            #
+            # References:
+            # - Sentry OpenAI Integration: https://docs.sentry.io/platforms/python/integrations/openai/
+            # - LangGraph Integration Note: "For correct token accounting, disable the
+            #   integration for the model provider you are using (e.g. OpenAI)"
+            # - Similar issues: BaseModel.model_dump() TypeError with structured output
             integrations=[
                 # FastAPI integration (automatic request tracking)
                 FastApiIntegration(
@@ -85,7 +113,13 @@ def init_sentry(settings: Settings) -> None:
                     level=logging.INFO,        # Capture info and above as breadcrumbs
                     event_level=logging.ERROR  # Send error logs as events
                 ),
+                # OpenAIIntegration - intentionally EXCLUDED (see comment above)
+                # LangGraphIntegration - not added to avoid double-tracking with LangSmith
             ],
+
+            # Disable auto-discovery to prevent OpenAI integration from being auto-enabled
+            default_integrations=False,
+            auto_enabling_integrations=False,
 
             # Error Filtering
             before_send=before_send_filter,
