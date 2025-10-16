@@ -43,6 +43,13 @@ async def get_onboarding_status(
         user_id = current_user.get("identity")
         onboarding = await OnboardingService.get_or_create_onboarding(db, user_id)
         return onboarding
+    except ValueError as e:
+        # User doesn't exist - likely invalid/stale token
+        logger.error(f"[Onboarding] User not found: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User not found or has been deleted",
+        )
     except Exception as e:
         logger.error(f"[Onboarding] Failed to get status: {e}")
         raise HTTPException(

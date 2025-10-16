@@ -25,12 +25,23 @@ class OnboardingService:
 
         Returns:
             UserOnboarding object
+
+        Raises:
+            ValueError: If user doesn't exist in the database
         """
         stmt = select(UserOnboarding).where(UserOnboarding.user_id == user_id)
         result = await db.execute(stmt)
         onboarding = result.scalar_one_or_none()
 
         if not onboarding:
+            # Verify user exists before creating onboarding record
+            user_stmt = select(Users).where(Users.id == user_id)
+            user_result = await db.execute(user_stmt)
+            user = user_result.scalar_one_or_none()
+
+            if not user:
+                raise ValueError(f"User with ID {user_id} not found")
+
             # Create new onboarding record
             onboarding = UserOnboarding(
                 id=uuid4(),
