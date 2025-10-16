@@ -9,6 +9,8 @@ from .notification_preferences import NotificationPreferences
 from .user_sessions import UserSession
 from .oauth_accounts import OAuthAccount
 from .onboarding import UserOnboarding
+from .email_preferences import EmailPreferences
+from .user_preferences import UserPreferences
 
 __all__ = [
     "Users",
@@ -22,4 +24,6 @@ __all__ = [
     "UserSession",
     "OAuthAccount",
     "UserOnboarding",
+    "EmailPreferences",
+    "UserPreferences",
 ]

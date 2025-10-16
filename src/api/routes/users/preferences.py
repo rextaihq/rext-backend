@@ -6,17 +6,16 @@ This module provides endpoints for managing user-specific preferences.
 
 from fastapi import APIRouter, Depends, Request, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
 from uuid import UUID
 from pydantic import BaseModel, Field
 from typing import Optional
 
 from src.api.database.async_database import get_async_db
 from src.api.security.dependencies import get_current_user
-from src.api.models.user_models.user_preferences import UserPreferences
 from src.utils.response_utils import success, error
 from src.api.schema.response_schemas import ErrorCode, ErrorSeverity
 from src.utils.logger import logger
+from src.services.user_preferences_service import UserPreferencesService
 
 router = APIRouter()
 
@@ -57,26 +56,10 @@ async def get_user_preferences(
     """
     try:
         user_id = UUID(current_user.get("identity"))
+        service = UserPreferencesService(db)
 
-        # Get or create preferences
-        query = select(UserPreferences).where(UserPreferences.user_id == user_id)
-        result = await db.execute(query)
-        preferences = result.scalar_one_or_none()
-
-        if not preferences:
-            # Create default preferences
-            preferences = UserPreferences(
-                user_id=user_id,
-                theme="system",
-                date_format="iso",
-                time_format="24h",
-                items_per_page=25,
-                sidebar_collapsed=False
-            )
-            db.add(preferences)
-            await db.commit()
-            await db.refresh(preferences)
-            logger.info(f"Created default preferences for user {user_id}")
+        # Get or create preferences via service
+        preferences = await service.get_or_create_preferences(user_id)
 
         return success(
             data={"preferences": preferences.to_dict()},
@@ -86,15 +69,7 @@ async def get_user_preferences(
 
     except Exception as e:
         logger.error(f"Error fetching preferences: {str(e)}")
-        await db.rollback()
-        return error(
-            message="Failed to fetch preferences",
-            code=ErrorCode.INTERNAL_SERVER_ERROR,
-            status_code=500,
-            severity=ErrorSeverity.HIGH,
-            context={"error_details": str(e)},
-            request=request
-        )
+        raise
 
 
 @router.patch("/preferences", response_model=dict)
@@ -121,28 +96,18 @@ async def update_user_preferences(
     """
     try:
         user_id = UUID(current_user.get("identity"))
+        service = UserPreferencesService(db)
 
-        # Get existing preferences or create new
-        query = select(UserPreferences).where(UserPreferences.user_id == user_id)
-        result = await db.execute(query)
-        preferences = result.scalar_one_or_none()
-
-        if not preferences:
-            # Create new preferences
-            preferences = UserPreferences(user_id=user_id)
-            db.add(preferences)
-
-        # Update only provided fields
+        # Update preferences via service
         update_data = preferences_data.model_dump(exclude_unset=True)
-
-        for field, value in update_data.items():
-            if value is not None:
-                setattr(preferences, field, value)
-
-        await db.commit()
-        await db.refresh(preferences)
-
-        logger.info(f"Updated preferences for user {user_id}: {update_data}")
+        preferences = await service.update_preferences(
+            user_id=user_id,
+            theme=update_data.get("theme"),
+            date_format=update_data.get("date_format"),
+            time_format=update_data.get("time_format"),
+            items_per_page=update_data.get("items_per_page"),
+            sidebar_collapsed=update_data.get("sidebar_collapsed")
+        )
 
         return success(
             data={"preferences": preferences.to_dict()},
@@ -152,12 +117,4 @@ async def update_user_preferences(
 
     except Exception as e:
         logger.error(f"Error updating preferences: {str(e)}")
-        await db.rollback()
-        return error(
-            message="Failed to update preferences",
-            code=ErrorCode.INTERNAL_SERVER_ERROR,
-            status_code=500,
-            severity=ErrorSeverity.HIGH,
-            context={"error_details": str(e)},
-            request=request
-        )
+        raise

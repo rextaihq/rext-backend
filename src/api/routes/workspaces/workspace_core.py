@@ -114,24 +114,9 @@ async def get_workspace_by_slug(
     user_id = user.get("identity")
     db_user = await verify_current_user(db, user_id)
 
-    # First, find workspace by slug (need to add this method to service or handle here)
-    from sqlalchemy import select
-    from src.api.models.workspace_models.workspace_model import WorkspaceModel
-    from src.api.models.workspace_models.workspace_member import WorkspaceMembers
-
-    workspace_query = (
-        select(WorkspaceModel)
-        .join(WorkspaceMembers, WorkspaceMembers.workspace_id == WorkspaceModel.id)
-        .where(WorkspaceModel.slug == workspace_slug, WorkspaceMembers.user_id == user_id)
-    )
-    result = await db.execute(workspace_query)
-    workspace = result.scalar_one_or_none()
-
-    if not workspace:
-        raise ResourceNotFoundException(resource_type="workspace", resource_id=workspace_slug)
-
-    # Use workspace service for the rest
+    # Use workspace service
     workspace_service = WorkspaceService(db)
+    workspace = await workspace_service.get_workspace_by_slug_for_user(workspace_slug, UUID(user_id))
     workspace_data = await workspace_service.get_workspace_with_brand_voice(workspace.id)
 
     # Get analytics with word counts
@@ -181,40 +166,9 @@ async def get_workspace_by_id_path(
     user_id = user.get("identity")
     db_user = await verify_current_user(db, user_id)
 
-    # Check if workspace_id is a UUID or slug
-    from sqlalchemy import select
-    from src.api.models.workspace_models.workspace_model import WorkspaceModel
-    from src.api.models.workspace_models.workspace_member import WorkspaceMembers
-
-    is_uuid = False
-    try:
-        UUID(workspace_id)
-        is_uuid = True
-    except ValueError:
-        is_uuid = False
-
-    # Build query based on whether it's UUID or slug
-    if is_uuid:
-        workspace_query = (
-            select(WorkspaceModel)
-            .join(WorkspaceMembers, WorkspaceMembers.workspace_id == WorkspaceModel.id)
-            .where(WorkspaceModel.id == UUID(workspace_id), WorkspaceMembers.user_id == user_id)
-        )
-    else:
-        workspace_query = (
-            select(WorkspaceModel)
-            .join(WorkspaceMembers, WorkspaceMembers.workspace_id == WorkspaceModel.id)
-            .where(WorkspaceModel.slug == workspace_id, WorkspaceMembers.user_id == user_id)
-        )
-
-    result = await db.execute(workspace_query)
-    workspace = result.scalar_one_or_none()
-
-    if not workspace:
-        raise ResourceNotFoundException(resource_type="workspace", resource_id=workspace_id)
-
-    # Use workspace service for the rest
+    # Use workspace service
     workspace_service = WorkspaceService(db)
+    workspace = await workspace_service.get_workspace_by_id_or_slug_for_user(workspace_id, UUID(user_id))
     workspace_data = await workspace_service.get_workspace_with_brand_voice(workspace.id)
 
     # Get analytics with word counts
@@ -321,38 +275,11 @@ async def delete_workspace_endpoint(
     # Use workspace service
     workspace_service = WorkspaceService(db)
 
-    # Verify workspace access and get workspace
-    from src.utils.workspace_utils import resolve_and_verify_workspace
-    workspace, membership = await resolve_and_verify_workspace(db, workspace_id, UUID(user_id))
+    # Get workspace and verify user is owner
+    workspace = await workspace_service.get_workspace_by_id_or_slug_for_user(workspace_id, UUID(user_id))
 
-    # Check if user is workspace owner
-    from src.api.models.workspace_models.workspace_member import WorkspaceMembers
-    from sqlalchemy import select
-
-    # Get user's role in workspace
-    role_query = select(WorkspaceMembers).where(
-        WorkspaceMembers.workspace_id == workspace.id,
-        WorkspaceMembers.user_id == UUID(user_id)
-    )
-    result = await db.execute(role_query)
-    member = result.scalar_one_or_none()
-
-    # Check if user has workspace owner role
-    if member and member.role:
-        from src.api.models.role_models.role import Role
-        role_result = await db.execute(select(Role).where(Role.id == member.role_id))
-        role = role_result.scalar_one_or_none()
-
-        if not role or role.name not in ["workspace_owner", "super_admin"]:
-            from src.api.middleware.exceptions import ForbiddenException
-            raise ForbiddenException(
-                message="Only workspace owners can delete workspaces"
-            )
-    else:
-        from src.api.middleware.exceptions import ForbiddenException
-        raise ForbiddenException(
-            message="Only workspace owners can delete workspaces"
-        )
+    # Verify user is workspace owner (raises ForbiddenException if not)
+    await workspace_service.verify_user_is_workspace_owner(workspace.id, UUID(user_id))
 
     # Check remaining workspaces count
     remaining_count = await workspace_service.count_user_workspaces(UUID(user_id))

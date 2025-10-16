@@ -1,7 +1,7 @@
 from sqlalchemy import Column, String, DateTime, func, ForeignKey
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
-from src.api.database.database import Base
+from src.api.database.base import Base
 from src.api.models.base import SerializableMixin
 from datetime import datetime
 import uuid
@@ -24,7 +24,7 @@ class WorkspaceModel(Base, SerializableMixin):
     deleted_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)  # User who deleted
 
     # Relationships
-    owner = relationship("Users", back_populates="workspaces")
+    owner = relationship("Users", foreign_keys=[user_id], back_populates="workspaces")
     user_roles = relationship("UserRole", back_populates="workspace")
     members = relationship("WorkspaceMembers", back_populates="workspace",cascade="all, delete-orphan")
     invitations = relationship("UserInvitations", back_populates="workspace")

@@ -1,13 +1,14 @@
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
-from dotenv import load_dotenv
-import os
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker, Session
+from src.api.config import get_settings
 from src.utils.logger import logger
 
-# Load environment variables
-load_dotenv()
+# Get settings instance
+settings = get_settings()
 
 # Get database URL and convert to async URL
-SQLALCHEMY_DATABASE_URL = os.getenv("POSTGRES_URI_CUSTOM")
+SQLALCHEMY_DATABASE_URL = settings.POSTGRES_URI_CUSTOM
 
 # Convert postgresql:// to postgresql+asyncpg://
 if SQLALCHEMY_DATABASE_URL and SQLALCHEMY_DATABASE_URL.startswith("postgresql://"):
@@ -66,3 +67,47 @@ def get_async_db_context():
     their own database session independent of the request lifecycle.
     """
     return AsyncSessionLocal()
+
+
+# ============================================================================
+# SYNC DATABASE (for LangGraph nodes running in thread pool)
+# ============================================================================
+
+# Create sync engine for LangGraph nodes
+sync_engine = create_engine(
+    SQLALCHEMY_DATABASE_URL,
+    echo=False,
+    pool_pre_ping=True,
+    pool_size=10,
+    max_overflow=5,
+    pool_recycle=3600,
+)
+
+# Create sync session factory
+SyncSessionLocal = sessionmaker(
+    autocommit=False,
+    autoflush=False,
+    bind=sync_engine,
+)
+
+
+def get_sync_db():
+    """
+    Synchronous database session generator for LangGraph nodes.
+
+    LangGraph nodes run in a thread pool executor (synchronous context),
+    so they need synchronous database sessions.
+
+    Usage:
+        db = next(get_sync_db())
+        try:
+            # Use db session
+            db.query(...)
+        finally:
+            db.close()
+    """
+    db = SyncSessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()

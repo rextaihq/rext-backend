@@ -91,7 +91,7 @@ def render_content_generation_completed_email(
             </table>
         </div>
         """,
-        simple_footer(frontend_url)
+        simple_footer()
     ])
 
     return email_html

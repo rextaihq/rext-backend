@@ -9,6 +9,14 @@ from uuid import UUID
 from datetime import datetime
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from tenacity import (
+    retry,
+    stop_after_attempt,
+    wait_exponential,
+    retry_if_exception_type,
+    before_sleep_log
+)
+import logging
 
 from src.providers.email.base import EmailMessage, EmailRecipient, EmailResult
 from src.providers.email.factory import get_email_provider, get_fallback_email_provider
@@ -17,6 +25,17 @@ from src.config.email_config import email_config
 from src.api.lib.logger import auto_logger
 
 logger = auto_logger()
+
+# Sentry integration (optional - only if SENTRY_DSN is configured)
+try:
+    import sentry_sdk
+    from src.api.lib.sentry_config import add_breadcrumb
+    SENTRY_AVAILABLE = True
+except ImportError:
+    SENTRY_AVAILABLE = False
+    # Dummy function if Sentry not available
+    def add_breadcrumb(*args, **kwargs):
+        pass
 
 
 class EmailService:
@@ -97,6 +116,21 @@ class EmailService:
             - Automatic fallback to secondary provider if primary fails
             - All operations logged to database for auditing
         """
+        # Add breadcrumb for Sentry
+        add_breadcrumb(
+            message=f"Preparing to send email: {subject} to {to}",
+            category="email",
+            level="info",
+            data={
+                "to": to,
+                "subject": subject,
+                "template_type": template_type,
+                "has_workspace": workspace_id is not None,
+                "has_user": user_id is not None,
+                "provider": self.primary_provider.get_provider_name()
+            }
+        )
+
         # Check if email sending is enabled
         if not email_config.email_enabled:
             logger.warning("Email sending is disabled via configuration")
@@ -206,7 +240,7 @@ class EmailService:
         email_log: EmailLog
     ) -> EmailResult:
         """
-        Send email using specific provider.
+        Send email using specific provider with exponential backoff retry.
 
         Args:
             message: Email message to send
@@ -216,24 +250,65 @@ class EmailService:
         Returns:
             EmailResult from provider
         """
+        # Create retry decorator with exponential backoff
+        @retry(
+            stop=stop_after_attempt(3),
+            wait=wait_exponential(multiplier=1, min=4, max=10),
+            before_sleep=before_sleep_log(logging.getLogger(__name__), logging.WARNING),
+            reraise=True
+        )
+        async def _send_with_retry():
+            # Increment retry count
+            email_log.retry_count += 1
+            await self.db.flush()
+
+            try:
+                result = await provider.send_email(message)
+                return result
+            except Exception as e:
+                logger.error(
+                    f"Provider send failed (attempt {email_log.retry_count}/3): {str(e)}",
+                    extra={
+                        "email_log_id": str(email_log.id),
+                        "provider": provider.get_provider_name(),
+                        "error_type": type(e).__name__,
+                        "retry_count": email_log.retry_count
+                    },
+                    exc_info=True
+                )
+
+                # Alert Sentry on 3rd+ failure (critical)
+                if email_log.retry_count >= 3 and SENTRY_AVAILABLE:
+                    sentry_sdk.capture_exception(e)
+                    logger.critical(
+                        "Email failed after 3 attempts - Sentry alert sent",
+                        extra={
+                            "email_log_id": str(email_log.id),
+                            "to_email": email_log.to_email,
+                            "subject": email_log.subject
+                        }
+                    )
+
+                # Re-raise to trigger retry
+                raise
+
         try:
-            result = await provider.send_email(message)
+            result = await _send_with_retry()
             return result
         except Exception as e:
+            # All retries exhausted, return failed result
             logger.error(
-                f"Provider send failed with exception: {str(e)}",
+                f"Provider send failed after all retries: {str(e)}",
                 extra={
                     "email_log_id": str(email_log.id),
                     "provider": provider.get_provider_name(),
-                    "error_type": type(e).__name__
-                },
-                exc_info=True
+                    "final_retry_count": email_log.retry_count
+                }
             )
-            # Return failed result instead of raising
             return EmailResult(
                 success=False,
-                error=f"Provider exception: {str(e)}",
-                provider_response={"exception": type(e).__name__, "error": str(e)}
+                error=f"Provider exception after {email_log.retry_count} attempts: {str(e)}",
+                provider_response={"exception": type(e).__name__, "error": str(e), "retry_count": email_log.retry_count}
             )
 
     def _update_log_with_result(self, email_log: EmailLog, result: EmailResult):

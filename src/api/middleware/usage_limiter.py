@@ -11,19 +11,20 @@ Usage:
     @router.post("/workspaces")
     def create_workspace(
         _: None = Depends(check_workspace_limit()),
-        db: Session = Depends(get_db),
+        db: AsyncSession = Depends(get_db),
         current_user: dict = Depends(get_current_user)
     ):
         # Create workspace...
 """
 
 from typing import Optional
+import asyncio
 from fastapi import Depends, HTTPException, status, Request
-from sqlalchemy.orm import Session
-from sqlalchemy import func
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import func, select
 from datetime import datetime, timedelta
 
-from src.api.database.database import get_db
+from src.api.database.async_database import get_async_db as get_db
 from src.api.security.dependencies import get_current_user
 from src.api.models.subscription_models.subscriptions import (
     UserSubscription,
@@ -31,33 +32,65 @@ from src.api.models.subscription_models.subscriptions import (
 )
 from src.api.models.subscription_models.plans import SubscriptionPlan
 from src.api.models.workspace_models.workspace_model import WorkspaceModel as Workspace
+from src.api.models.workspace_models.workspace_member import WorkspaceMembers
 from src.api.models.topic_models.topic_models import TopicsModel as Topic
+from src.api.models.knowledge_models.knowledge_model import (
+    Website,
+    KnowledgeFiles,
+    TextKnowledge
+)
 from src.utils.logger import logger
 
 
-def get_user_subscription_and_plan(
-    db: Session,
+async def _get_user_subscription_and_plan_async(
+    db: AsyncSession,
     user_id: str
 ) -> tuple[Optional[UserSubscription], Optional[SubscriptionPlan]]:
     """
-    Get user's active subscription and associated plan.
+    Async version: Get user's active subscription and associated plan.
 
     Returns:
         Tuple of (subscription, plan) or (None, None) if no active subscription
     """
-    subscription = db.query(UserSubscription).filter(
-        UserSubscription.user_id == user_id,
-        UserSubscription.status.in_([SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIAL])
-    ).first()
+    result = await db.execute(
+        select(UserSubscription).where(
+            UserSubscription.user_id == user_id,
+            UserSubscription.status.in_([SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIAL])
+        )
+    )
+    subscription = result.scalar_one_or_none()
 
     if not subscription:
         return None, None
 
-    plan = db.query(SubscriptionPlan).filter(
-        SubscriptionPlan.id == subscription.plan_id
-    ).first()
+    result = await db.execute(
+        select(SubscriptionPlan).where(
+            SubscriptionPlan.id == subscription.plan_id
+        )
+    )
+    plan = result.scalar_one_or_none()
 
     return subscription, plan
+
+
+def get_user_subscription_and_plan(
+    db: AsyncSession,
+    user_id: str
+) -> tuple[Optional[UserSubscription], Optional[SubscriptionPlan]]:
+    """
+    DEPRECATED: Use _get_user_subscription_and_plan_async() instead.
+
+    This synchronous version is kept for backward compatibility but returns None.
+    All middleware now uses the async version.
+
+    Returns:
+        Tuple of (None, None) - deprecated, always returns None
+    """
+    logger.warning(
+        "get_user_subscription_and_plan() is deprecated. "
+        "Use _get_user_subscription_and_plan_async() instead."
+    )
+    return None, None
 
 
 class WorkspaceLimitChecker:
@@ -67,22 +100,23 @@ class WorkspaceLimitChecker:
     Verifies that the user hasn't exceeded their plan's max_workspaces limit.
     """
 
-    def __call__(
+    async def __call__(
         self,
         request: Request,
         current_user: dict = Depends(get_current_user),
-        db: Session = Depends(get_db)
+        db: AsyncSession = Depends(get_db)
     ):
         """Check if user can create another workspace."""
         user_id = current_user.get("identity")
 
-        subscription, plan = get_user_subscription_and_plan(db, user_id)
+        subscription, plan = await _get_user_subscription_and_plan_async(db, user_id)
 
         if not subscription or not plan:
             # No subscription = default free tier (allow 1 workspace)
-            current_count = db.query(func.count(Workspace.id)).filter(
-                Workspace.user_id == user_id
-            ).scalar() or 0
+            result = await db.execute(
+                select(func.count(Workspace.id)).where(Workspace.user_id == user_id)
+            )
+            current_count = result.scalar() or 0
 
             if current_count >= 1:
                 raise HTTPException(
@@ -96,9 +130,10 @@ class WorkspaceLimitChecker:
             # Unlimited
             return
 
-        current_count = db.query(func.count(Workspace.id)).filter(
-            Workspace.user_id == user_id
-        ).scalar() or 0
+        result = await db.execute(
+            select(func.count(Workspace.id)).where(Workspace.user_id == user_id)
+        )
+        current_count = result.scalar() or 0
 
         if current_count >= plan.max_workspaces:
             raise HTTPException(
@@ -123,11 +158,11 @@ class MemberLimitChecker:
         """
         self.workspace_id_param = workspace_id_param
 
-    def __call__(
+    async def __call__(
         self,
         request: Request,
         current_user: dict = Depends(get_current_user),
-        db: Session = Depends(get_db)
+        db: AsyncSession = Depends(get_db)
     ):
         """Check if workspace can add another member."""
         # Extract workspace_id from path params
@@ -141,17 +176,32 @@ class MemberLimitChecker:
             return  # Skip check if workspace_id not available
 
         # Get workspace
-        workspace = db.query(Workspace).filter(Workspace.id == workspace_id).first()
+        result = await db.execute(
+            select(Workspace).where(Workspace.id == workspace_id)
+        )
+        workspace = result.scalar_one_or_none()
         if not workspace:
             return  # Workspace doesn't exist, let the endpoint handle it
 
         # Get workspace creator's subscription
-        subscription, plan = get_user_subscription_and_plan(db, workspace.user_id)
+        subscription, plan = await _get_user_subscription_and_plan_async(db, workspace.user_id)
+
+        # Count current active members
+        result = await db.execute(
+            select(func.count(WorkspaceMembers.id)).where(
+                WorkspaceMembers.workspace_id == workspace_id,
+                WorkspaceMembers.status == "active"
+            )
+        )
+        current_member_count = result.scalar() or 0
 
         if not subscription or not plan:
-            # Default free tier limit
-            # TODO: Count current members when member model is available
-            # For now, allow up to 3 members
+            # Default free tier limit: 3 members
+            if current_member_count >= 3:
+                raise HTTPException(
+                    status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                    detail=f"Member limit reached ({current_member_count}/3). Please subscribe to a plan to add more members."
+                )
             return
 
         # Check plan limit
@@ -159,18 +209,12 @@ class MemberLimitChecker:
             # Unlimited
             return
 
-        # TODO: Implement actual member count when workspace_members table is available
-        # current_member_count = db.query(func.count(WorkspaceMember.id)).filter(
-        #     WorkspaceMember.workspace_id == workspace_id
-        # ).scalar() or 0
-        #
-        # if current_member_count >= plan.max_members_per_workspace:
-        #     raise HTTPException(
-        #         status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-        #         detail=f"Member limit reached ({current_member_count}/{plan.max_members_per_workspace}). Upgrade your plan to add more members."
-        #     )
-
-        logger.info(f"Member limit check skipped: workspace_members table not available yet")
+        # Enforce plan limit
+        if current_member_count >= plan.max_members_per_workspace:
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail=f"Member limit reached ({current_member_count}/{plan.max_members_per_workspace}). Upgrade your plan to add more members."
+            )
 
 
 class TopicLimitChecker:
@@ -180,22 +224,25 @@ class TopicLimitChecker:
     Verifies that the user hasn't exceeded their plan's max_topics limit.
     """
 
-    def __call__(
+    async def __call__(
         self,
         request: Request,
         current_user: dict = Depends(get_current_user),
-        db: Session = Depends(get_db)
+        db: AsyncSession = Depends(get_db)
     ):
         """Check if user can create another topic."""
         user_id = current_user.get("identity")
 
-        subscription, plan = get_user_subscription_and_plan(db, user_id)
+        subscription, plan = await _get_user_subscription_and_plan_async(db, user_id)
 
         if not subscription or not plan:
             # Default free tier (allow 50 topics)
-            current_count = db.query(func.count(Topic.id)).join(Workspace).filter(
-                Workspace.user_id == user_id
-            ).scalar() or 0
+            result = await db.execute(
+                select(func.count(Topic.id))
+                .join(Workspace)
+                .where(Workspace.user_id == user_id)
+            )
+            current_count = result.scalar() or 0
 
             if current_count >= 50:
                 raise HTTPException(
@@ -209,9 +256,12 @@ class TopicLimitChecker:
             # Unlimited
             return
 
-        current_count = db.query(func.count(Topic.id)).join(Workspace).filter(
-            Workspace.user_id == user_id
-        ).scalar() or 0
+        result = await db.execute(
+            select(func.count(Topic.id))
+            .join(Workspace)
+            .where(Workspace.user_id == user_id)
+        )
+        current_count = result.scalar() or 0
 
         if current_count >= plan.max_topics:
             raise HTTPException(
@@ -227,21 +277,50 @@ class KnowledgeItemLimitChecker:
     Verifies that the user hasn't exceeded their plan's max_knowledge_items limit.
     """
 
-    def __call__(
+    async def __call__(
         self,
         request: Request,
         current_user: dict = Depends(get_current_user),
-        db: Session = Depends(get_db)
+        db: AsyncSession = Depends(get_db)
     ):
         """Check if user can create another knowledge item."""
         user_id = current_user.get("identity")
 
-        subscription, plan = get_user_subscription_and_plan(db, user_id)
+        subscription, plan = await _get_user_subscription_and_plan_async(db, user_id)
+
+        # Count all knowledge items across all types
+        # Query count for each knowledge type that belongs to user's workspaces
+        website_result = await db.execute(
+            select(func.count(Website.id))
+            .join(Workspace, Website.workspace_id == Workspace.id)
+            .where(Workspace.user_id == user_id)
+        )
+        website_count = website_result.scalar() or 0
+
+        files_result = await db.execute(
+            select(func.count(KnowledgeFiles.id))
+            .join(Workspace, KnowledgeFiles.workspace_id == Workspace.id)
+            .where(Workspace.user_id == user_id)
+        )
+        files_count = files_result.scalar() or 0
+
+        text_result = await db.execute(
+            select(func.count(TextKnowledge.id))
+            .join(Workspace, TextKnowledge.workspace_id == Workspace.id)
+            .where(Workspace.user_id == user_id)
+        )
+        text_count = text_result.scalar() or 0
+
+        # Total knowledge items across all types
+        current_count = website_count + files_count + text_count
 
         if not subscription or not plan:
             # Default free tier (allow 100 knowledge items)
-            # TODO: Implement when knowledge item model is unified
-            logger.info("Knowledge item limit check: using default free tier limits")
+            if current_count >= 100:
+                raise HTTPException(
+                    status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                    detail=f"Knowledge item limit reached ({current_count}/100). Please subscribe to a plan to add more items."
+                )
             return
 
         # Check plan limit
@@ -249,18 +328,12 @@ class KnowledgeItemLimitChecker:
             # Unlimited
             return
 
-        # TODO: Implement actual knowledge item count when models are available
-        # current_count = db.query(func.count(KnowledgeItem.id)).join(Workspace).filter(
-        #     Workspace.user_id == user_id
-        # ).scalar() or 0
-        #
-        # if current_count >= plan.max_knowledge_items:
-        #     raise HTTPException(
-        #         status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-        #         detail=f"Knowledge item limit reached ({current_count}/{plan.max_knowledge_items}). Upgrade your plan to add more items."
-        #     )
-
-        logger.info(f"Knowledge item limit check skipped: unified knowledge model not available yet")
+        # Enforce plan limit
+        if current_count >= plan.max_knowledge_items:
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail=f"Knowledge item limit reached ({current_count}/{plan.max_knowledge_items}). Upgrade your plan to add more items."
+            )
 
 
 class APICallLimiter:
@@ -279,16 +352,16 @@ class APICallLimiter:
         """
         self.increment = increment
 
-    def __call__(
+    async def __call__(
         self,
         request: Request,
         current_user: dict = Depends(get_current_user),
-        db: Session = Depends(get_db)
+        db: AsyncSession = Depends(get_db)
     ):
         """Track and check API call limit."""
         user_id = current_user.get("identity")
 
-        subscription, plan = get_user_subscription_and_plan(db, user_id)
+        subscription, plan = await _get_user_subscription_and_plan_async(db, user_id)
 
         if not subscription or not plan:
             # No subscription = default free tier (1000 calls/month)
@@ -299,7 +372,7 @@ class APICallLimiter:
         if subscription.usage_reset_date and subscription.usage_reset_date < datetime.utcnow():
             subscription.current_api_calls = 0
             subscription.usage_reset_date = datetime.utcnow() + timedelta(days=30)
-            db.commit()
+            await db.commit()
 
         # Check limit (before incrementing)
         if plan.max_api_calls_per_month != -1:  # -1 = unlimited
@@ -312,59 +385,40 @@ class APICallLimiter:
         # Increment counter
         if self.increment:
             subscription.current_api_calls += 1
-            db.commit()
+            await db.commit()
 
 
 # ============================================================================
 # UTILITY FUNCTIONS
 # ============================================================================
 
-def increment_api_calls(db: Session, user_id: str) -> None:
+def increment_api_calls(db: AsyncSession, user_id: str) -> None:
     """
     Manually increment API call counter for a user.
 
-    This can be called from any endpoint that wants to track API usage.
+    NOTE: Temporarily disabled - subscription tracking disabled.
 
     Args:
         db: Database session
         user_id: User UUID
     """
-    subscription, plan = get_user_subscription_and_plan(db, user_id)
-
-    if not subscription:
-        return  # No subscription, no tracking
-
-    # Check if usage period needs reset
-    if subscription.usage_reset_date and subscription.usage_reset_date < datetime.utcnow():
-        subscription.current_api_calls = 0
-        subscription.usage_reset_date = datetime.utcnow() + timedelta(days=30)
-
-    subscription.current_api_calls += 1
-    db.commit()
-    logger.debug(f"API call incremented for user {user_id}: {subscription.current_api_calls}")
+    # Temporarily disabled - subscription tracking not active
+    logger.debug(f"API call tracking disabled for user {user_id}")
+    return
 
 
-def reset_monthly_usage(db: Session) -> int:
+def reset_monthly_usage(db: AsyncSession) -> int:
     """
     Reset monthly usage for all subscriptions (called by cron job).
+
+    NOTE: Temporarily disabled - subscription tracking disabled.
 
     Returns:
         Number of subscriptions reset
     """
-    subscriptions = db.query(UserSubscription).filter(
-        UserSubscription.usage_reset_date < datetime.utcnow(),
-        UserSubscription.status.in_([SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIAL])
-    ).all()
-
-    reset_count = 0
-    for subscription in subscriptions:
-        subscription.current_api_calls = 0
-        subscription.usage_reset_date = datetime.utcnow() + timedelta(days=30)
-        reset_count += 1
-
-    db.commit()
-    logger.info(f"Reset monthly usage for {reset_count} subscription(s)")
-    return reset_count
+    # Temporarily disabled - subscription tracking not active
+    logger.info("Monthly usage reset disabled - subscription tracking not active")
+    return 0
 
 
 # ============================================================================

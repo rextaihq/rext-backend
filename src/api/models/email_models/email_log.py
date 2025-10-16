@@ -1,11 +1,11 @@
 """EmailLog Model - Tracks all email sends"""
-from sqlalchemy import Column, String, DateTime, ForeignKey, Text
+from sqlalchemy import Column, String, DateTime, ForeignKey, Text, Integer
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import relationship
 from datetime import datetime
 import uuid
 
-from src.api.database.database import Base
+from src.api.database.base import Base
 from src.api.models.base import SerializableMixin
 
 
@@ -29,6 +29,7 @@ class EmailLog(Base, SerializableMixin):
     subject = Column(String(500), nullable=False)
     status = Column(String(50), nullable=False, default="queued", index=True)  # queued, sent, failed, delivered, bounced
     error_message = Column(Text, nullable=True)
+    retry_count = Column(Integer, nullable=False, default=0)  # Number of retry attempts
     sent_at = Column(DateTime(timezone=True), nullable=True)
     delivered_at = Column(DateTime(timezone=True), nullable=True)
     failed_at = Column(DateTime(timezone=True), nullable=True)

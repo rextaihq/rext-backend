@@ -1,17 +1,13 @@
 from fastapi import APIRouter, Depends, Request, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import func, desc, select
-from sqlalchemy.orm import selectinload
 from typing import Optional
 from uuid import UUID
 
-from src.utils.logger import logger
 from src.utils.response_utils import success, error
 from src.utils.route_decorators import db_transaction_handler
 from src.api.database.async_database import get_async_db
 from src.api.security.dependencies import get_current_user
-from src.api.middleware.exceptions import ResourceNotFoundException
-from src.api.models.content_models import Content
+from src.services.content_service import ContentService
 from src.utils.workspace_utils import resolve_and_verify_workspace
 
 
@@ -49,56 +45,21 @@ async def list_content(
     # Verify workspace access and membership in one call
     workspace, membership = await resolve_and_verify_workspace(db, workspace_id, UUID(user_id))
 
-    # Build query
-    query = select(Content).where(
-        Content.workspace_id == workspace.id,
-        Content.deleted_at == None
+    # Use ContentService
+    service = ContentService(db)
+    result = await service.list_content(
+        workspace_id=workspace.id,
+        status=status,
+        include_metadata=include_metadata,
+        include_seo=include_seo,
+        limit=limit,
+        offset=offset
     )
-
-    # Filter by status if provided
-    if status:
-        query = query.where(Content.status == status)
-
-    # Eagerly load relationships to avoid lazy loading issues
-    if include_metadata:
-        query = query.options(selectinload(Content.content_metadata))
-    if include_seo:
-        query = query.options(selectinload(Content.seo_data))
-
-    # Get total count
-    count_query = select(func.count()).select_from(Content).where(
-        Content.workspace_id == workspace.id,
-        Content.deleted_at == None
-    )
-    if status:
-        count_query = count_query.where(Content.status == status)
-
-    count_result = await db.execute(count_query)
-    total_count = count_result.scalar()
-
-    # Apply pagination and ordering
-    query = query.order_by(desc(Content.created_at)).offset(offset).limit(limit)
-    result = await db.execute(query)
-    content_items = result.scalars().all()
-
-    # Build response
-    relationships = []
-    if include_metadata:
-        relationships.append("content_metadata")
-    if include_seo:
-        relationships.append("seo_data")
-
-    content_list = [
-        content.to_dict(include_relationships=relationships if relationships else None)
-        for content in content_items
-    ]
-
-    logger.info(f"Listed {len(content_list)} content items for workspace {workspace_id}")
 
     # Return raw data - decorator handles success response
     return {
-        "content": content_list,
-        "total_count": total_count,
+        "content": result["content"],
+        "total_count": result["total_count"],
         "workspace_id": str(workspace.id),
         "limit": limit,
         "offset": offset
@@ -125,40 +86,14 @@ async def get_content(
     # Verify workspace access and membership in one call
     workspace, membership = await resolve_and_verify_workspace(db, workspace_id, UUID(user_id))
 
-    # Build query with eager loading for requested relationships
-    query = select(Content).where(
-        Content.id == content_id,
-        Content.workspace_id == workspace.id,
-        Content.deleted_at == None
+    # Use ContentService
+    service = ContentService(db)
+    content_data = await service.get_content(
+        content_id=content_id,
+        workspace_id=workspace.id,
+        include_metadata=include_metadata,
+        include_seo=include_seo
     )
-
-    # Eagerly load relationships to avoid lazy loading issues
-    if include_metadata:
-        query = query.options(selectinload(Content.content_metadata))
-    if include_seo:
-        query = query.options(selectinload(Content.seo_data))
-
-    result = await db.execute(query)
-    content = result.scalar_one_or_none()
-
-    if not content:
-        raise ResourceNotFoundException(
-            resource_type="Content",
-            resource_id=str(content_id)
-        )
-
-    relationships = []
-    if include_metadata:
-        relationships.append("content_metadata")
-    if include_seo:
-        relationships.append("seo_data")
-
-    content_data = content.to_dict(
-        include_relationships=relationships if relationships else None,
-        include_nulls=True  # Include body_markdown even if null
-    )
-
-    logger.info(f"Retrieved content {content_id} from workspace {workspace_id}")
 
     # Return raw data - decorator handles success response
     return {"content": content_data}

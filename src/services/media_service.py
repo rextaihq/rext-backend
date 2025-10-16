@@ -17,12 +17,20 @@ import os
 import magic
 
 from src.api.models.media_models.media import Media
+from src.api.models.subscription_models.subscriptions import (
+    UserSubscription,
+    SubscriptionStatus
+)
+from src.api.models.subscription_models.plans import SubscriptionPlan
 from src.services.storage_service import StorageService
 from src.services.image_processing_service import ImageProcessingService
 from src.config.storage_config import storage_settings
+from src.utils.file_security import validate_file_upload
+from src.api.config import get_settings
 import logging
 
 logger = logging.getLogger(__name__)
+settings = get_settings()
 
 
 class MediaService:
@@ -54,6 +62,40 @@ class MediaService:
         self.db = db
         self.storage = storage_service
         self.image = image_service
+
+    async def _get_user_subscription_tier(self, user_id: str) -> str:
+        """
+        Get user's subscription tier for limit enforcement.
+
+        Args:
+            user_id: User UUID
+
+        Returns:
+            Subscription tier: 'free', 'pro', or 'enterprise'
+        """
+        result = await self.db.execute(
+            select(UserSubscription, SubscriptionPlan)
+            .join(SubscriptionPlan, UserSubscription.plan_id == SubscriptionPlan.id)
+            .where(
+                UserSubscription.user_id == user_id,
+                UserSubscription.status.in_([SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIAL])
+            )
+        )
+        subscription_data = result.first()
+
+        if not subscription_data:
+            return "free"
+
+        _, plan = subscription_data
+
+        # Map plan name to tier (case-insensitive)
+        plan_name_lower = plan.name.lower()
+        if "enterprise" in plan_name_lower:
+            return "enterprise"
+        elif "pro" in plan_name_lower or "premium" in plan_name_lower:
+            return "pro"
+        else:
+            return "free"
 
     async def upload_media(
         self,
@@ -117,8 +159,23 @@ class MediaService:
                 f"File size ({actual_size_mb:.2f}MB) exceeds maximum ({max_size_mb:.2f}MB)"
             )
 
-        # TODO: Check subscription storage limits
-        # await self._check_storage_limit(workspace_id, file_size)
+        # Comprehensive security validation (MIME type, storage quota, virus scanning)
+        # Get user's subscription tier
+        subscription_tier = await self._get_user_subscription_tier(user_id)
+
+        validation_result = await validate_file_upload(
+            db=self.db,
+            settings=settings,
+            file_bytes=file_content,
+            filename=filename,
+            user_id=user_id,
+            workspace_id=workspace_id,
+            subscription_tier=subscription_tier
+        )
+
+        if not validation_result.is_valid:
+            logger.warning(f"File security validation failed: {validation_result.error_message}")
+            raise ValueError(validation_result.error_message)
 
         # Extract file extension
         _, ext = os.path.splitext(filename)

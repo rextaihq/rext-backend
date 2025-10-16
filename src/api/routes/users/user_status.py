@@ -81,8 +81,6 @@ async def suspend_user(
             user_email=admin_user.email if admin_user else None
         )
 
-        await db.commit()
-
         logger.info(f"User {user_id} suspended by admin {admin_user_id}")
 
         response_data = UserStatusResponse(
@@ -112,7 +110,6 @@ async def suspend_user(
         )
     except Exception as e:
         logger.error(f"Error suspending user {user_id}: {str(e)}")
-        await db.rollback()
         return error(
             message="Failed to suspend user",
             code=ErrorCode.INTERNAL_SERVER_ERROR,
@@ -178,8 +175,6 @@ async def activate_user(
             user_email=admin_user.email if admin_user else None
         )
 
-        await db.commit()
-
         logger.info(f"User {user_id} activated by admin {admin_user_id}")
 
         response_data = UserStatusResponse(
@@ -209,7 +204,6 @@ async def activate_user(
         )
     except Exception as e:
         logger.error(f"Error activating user {user_id}: {str(e)}")
-        await db.rollback()
         return error(
             message="Failed to activate user",
             code=ErrorCode.INTERNAL_SERVER_ERROR,
@@ -277,8 +271,6 @@ async def ban_user(
             user_email=admin_user.email if admin_user else None
         )
 
-        await db.commit()
-
         logger.info(f"User {user_id} banned by admin {admin_user_id}")
 
         response_data = UserStatusResponse(
@@ -308,7 +300,6 @@ async def ban_user(
         )
     except Exception as e:
         logger.error(f"Error banning user {user_id}: {str(e)}")
-        await db.rollback()
         return error(
             message="Failed to ban user",
             code=ErrorCode.INTERNAL_SERVER_ERROR,
@@ -385,8 +376,6 @@ async def deactivate_account(
             user_email=db_user.email
         )
 
-        await db.commit()
-
         logger.info(f"User {user_id} deactivated successfully. Scheduled deletion: {scheduled_deletion}")
 
         response_data = DeactivateAccountResponse(
@@ -414,7 +403,6 @@ async def deactivate_account(
         )
     except Exception as e:
         logger.error(f"Error deactivating account for user {current_user.get('identity')}: {str(e)}")
-        await db.rollback()
         return error(
             message="Failed to deactivate account",
             code=ErrorCode.INTERNAL_SERVER_ERROR,

@@ -239,10 +239,12 @@ async def get_user_permissions(
     workspace_id: Optional[UUID] = None
 ) -> List[str]:
     """
-    Get all permissions for a user.
+    Get all permissions for a user (cached).
 
     Returns a list of all permission names that the user has access to,
     either through workspace-scoped roles or global roles.
+
+    This function is cached for 5 minutes to improve performance on permission checks.
 
     Args:
         db: AsyncSession database session
@@ -258,6 +260,17 @@ async def get_user_permissions(
         >>> permissions = await get_user_permissions(db, user_id, workspace_id)
         >>> # ["content.create", "content.read", "content.update", "content.delete", ...]
     """
+    # Try cache first
+    from src.api.cache.redis_client import cache
+    cache_key = f"user:permissions:{user_id}:{workspace_id or 'global'}"
+
+    if cache.is_enabled:
+        cached_perms = await cache.get(cache_key)
+        if cached_perms is not None:
+            logger.debug(f"Cache hit for permissions: user={user_id}, workspace={workspace_id}")
+            return cached_perms
+
+    # Cache miss - query database
     query = (
         select(Permission.name)
         .join(RolePermission, RolePermission.permission_id == Permission.id)
@@ -277,12 +290,17 @@ async def get_user_permissions(
 
     result = await db.execute(query)
     permissions = result.scalars().all()
+    permissions_list = list(permissions)
 
     logger.debug(
-        f"Retrieved {len(permissions)} permissions for user={user_id}, workspace={workspace_id}"
+        f"Retrieved {len(permissions_list)} permissions for user={user_id}, workspace={workspace_id}"
     )
 
-    return list(permissions)
+    # Cache the result for 5 minutes
+    if cache.is_enabled:
+        await cache.set(cache_key, permissions_list, ttl=300)
+
+    return permissions_list
 
 
 async def get_user_roles(

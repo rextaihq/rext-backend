@@ -9,7 +9,7 @@ Provides common functionality for all models:
 
 Usage:
     from src.api.models.base import SerializableMixin
-    from src.api.database.database import Base
+    from src.api.database.base import Base
 
     class MyModel(Base, SerializableMixin):
         __tablename__ = "my_table"

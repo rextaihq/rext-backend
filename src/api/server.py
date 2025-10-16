@@ -34,6 +34,7 @@ from src.api.routes.admin.customer_routes import router as admin_customer_routes
 from src.api.routes.admin.monitoring_routes import router as admin_monitoring_routes_router
 from src.api.routes.admin.reports_routes import router as admin_reports_routes_router
 from src.api.routes.admin.email_analytics_routes import router as admin_email_analytics_routes_router
+from src.api.routes.admin.email_admin_routes import router as admin_email_routes_router
 from src.api.routes.audit.modules import router as audit_router
 from src.api.routes.security.security_routes import router as security_router
 from src.api.routes.events import router as events_router
@@ -41,7 +42,7 @@ from src.api.routes.events import router as events_router
 from src.api.routes.email import preview_router, webhook_router
 from src.api.routes.users.email_preferences import router as email_prefs_router
 from src.api.routes.users.onboarding import router as onboarding_router
-from src.api.database.database import engine
+from src.api.database.async_database import async_engine
 
 # Middleware imports
 from src.api.middleware.request_tracker import RequestTrackerMiddleware
@@ -55,6 +56,9 @@ from src.utils.logger import logger
 # Structured logging
 from src.api.lib.logging_config import configure_logging, RequestIDMiddleware
 
+# Sentry error monitoring
+from src.api.lib.sentry_config import init_sentry
+
 # Prompts
 from src.flow.prompts.prompt_manager import PromptManager
 
@@ -63,13 +67,13 @@ load_dotenv()
 # Configure structured logging at startup
 configure_logging()
 
-DB_URI = os.getenv("POSTGRES_URI_CUSTOM")
+DB_URI = settings.POSTGRES_URI_CUSTOM
 
 # Database tables are managed by Alembic migrations
 # Run migrations with: alembic upgrade head
 
 
-def check_migrations():
+async def check_migrations():
     """Check if database migrations are up to date."""
     try:
         from alembic.config import Config
@@ -79,9 +83,13 @@ def check_migrations():
         alembic_cfg = Config("alembic.ini")
         script = ScriptDirectory.from_config(alembic_cfg)
 
-        with engine.begin() as connection:
+        # Use run_sync to execute sync Alembic code with async engine
+        def do_check(connection):
             context = MigrationContext.configure(connection)
-            current_rev = context.get_current_revision()
+            return context.get_current_revision()
+
+        async with async_engine.begin() as connection:
+            current_rev = await connection.run_sync(do_check)
             head_rev = script.get_current_head()
 
             if current_rev != head_rev:
@@ -104,13 +112,25 @@ async def lifespan(app: FastAPI):
     # Startup
     logger.info("Starting Wrext API server...")
     logger.info(f"Environment: {settings.ENVIRONMENT}")
+
+    # Initialize Sentry error monitoring
+    init_sentry(settings)
+
+    # Initialize Redis cache
+    from src.api.cache.redis_client import cache
+    await cache.connect()
+
     logger.info(f"Database URI: {DB_URI[:20]}..." if DB_URI else "No database URI configured")
     logger.info("Database managed by Alembic migrations")
     logger.info("Middleware configured: RequestTracker, ErrorHandler, SecurityHeaders")
     logger.info(f"CORS allowed origins: {settings.allowed_origins_list}")
     logger.info("Registering Prompt")
-    PromptManager(auto_register=False)  
+    PromptManager(auto_register=False)
     logger.info("✅ Prompts initialized successfully")
+
+    # Start scheduled tasks (data cleanup)
+    from src.tasks.scheduled_tasks import start_scheduled_tasks
+    start_scheduled_tasks()
 
     # Optional: Check migration status (uncomment to enable)
     # check_migrations()
@@ -118,6 +138,12 @@ async def lifespan(app: FastAPI):
     yield
     # Shutdown
     logger.info("Shutting down Wrext API server...")
+
+    # Shutdown scheduled tasks
+    from src.tasks.scheduled_tasks import shutdown_scheduled_tasks
+    shutdown_scheduled_tasks()
+
+    await cache.disconnect()
 
 app = FastAPI(
     title="Wrext Content Automation API",
@@ -145,10 +171,14 @@ app.add_middleware(
 # Structured logging request ID middleware
 app.add_middleware(RequestIDMiddleware)
 
+# Sentry user context middleware (enrich errors with user info)
+from src.api.middleware.sentry_middleware import SentryUserContextMiddleware
+app.add_middleware(SentryUserContextMiddleware)
+
 # Error handling middleware (second in chain)
 app.add_middleware(
     ErrorHandlerMiddleware,
-    include_debug_info=os.getenv("DEBUG", "false").lower() == "true",
+    include_debug_info=settings.DEBUG,
     log_full_traceback=True,
     filter_sensitive_data=True,
     max_error_details=10
@@ -171,10 +201,10 @@ app.add_middleware(SecurityHeadersMiddleware)
 # Rate limiting middleware - protects against API abuse and DDoS
 app.add_middleware(
     RateLimiterMiddleware,
-    requests_per_minute=int(os.getenv("RATE_LIMIT_PER_MINUTE", "100")),
-    requests_per_hour=int(os.getenv("RATE_LIMIT_PER_HOUR", "1000")),
-    requests_per_day=int(os.getenv("RATE_LIMIT_PER_DAY", "10000")),
-    enable=os.getenv("RATE_LIMITING_ENABLED", "true").lower() == "true"
+    requests_per_minute=settings.RATE_LIMIT_PER_MINUTE,
+    requests_per_hour=settings.RATE_LIMIT_PER_HOUR,
+    requests_per_day=settings.RATE_LIMIT_PER_DAY,
+    enable=settings.RATE_LIMITING_ENABLED
 )
 
 # Setup global exception handlers
@@ -205,6 +235,7 @@ app.include_router(admin_customer_routes_router, prefix="/api/v1/admin", tags=["
 app.include_router(admin_monitoring_routes_router, prefix="/api/v1/admin", tags=["Admin - Monitoring"])
 app.include_router(admin_reports_routes_router, prefix="/api/v1/admin", tags=["Admin - Reports"])
 app.include_router(admin_email_analytics_routes_router, prefix="/api/v1", tags=["Admin - Email Analytics"])
+app.include_router(admin_email_routes_router)  # Prefix already defined in router
 app.include_router(audit_router, prefix="/api/v1", tags=["Audit Logs"])
 app.include_router(security_router, prefix="/api/v1", tags=["Security Monitoring"])
 # Email routes (Phase 3 complete - Python-based templates)
@@ -236,19 +267,147 @@ def read_root(request: Request):
 
 
 @app.get("/health", tags=["Health"])
-def health_check(request: Request):
-    """Health check endpoint for monitoring."""
-    return success(
-        data={
-            "status": "healthy",
-            "service": "wrext-api",
-            "version": "1.0.0",
-            "database": "connected" if DB_URI else "not_configured",
-            "environment": os.getenv("ENVIRONMENT", "development")
-        },
-        request=request,
-        message="Service is healthy"
-    )
+async def health_check(request: Request):
+    """
+    Comprehensive health check endpoint for monitoring.
+
+    Returns overall system health with detailed dependency checks.
+    Returns 200 if healthy, 503 if degraded.
+    """
+    from datetime import datetime
+    from fastapi.responses import JSONResponse
+    from sqlalchemy import text
+    import shutil
+
+    status = {
+        "status": "healthy",
+        "service": "wrext-api",
+        "version": "1.0.0",
+        "environment": settings.ENVIRONMENT,
+        "timestamp": datetime.utcnow().isoformat(),
+        "checks": {}
+    }
+
+    # Database check
+    try:
+        from src.api.database.async_database import get_async_db_context
+        async with get_async_db_context() as db:
+            await db.execute(text("SELECT 1"))
+            status["checks"]["database"] = "healthy"
+    except Exception as e:
+        status["checks"]["database"] = f"unhealthy: {str(e)}"
+        status["status"] = "degraded"
+
+    # Redis check (optional - graceful degradation)
+    try:
+        from src.api.cache.redis_client import cache
+        if cache.redis is not None:
+            await cache.redis.ping()
+            status["checks"]["redis"] = "healthy"
+        else:
+            status["checks"]["redis"] = "not_configured"
+    except ImportError:
+        status["checks"]["redis"] = "not_configured"
+    except Exception as e:
+        status["checks"]["redis"] = f"unhealthy: {str(e)}"
+        # Don't mark overall status as degraded - cache is optional
+
+    # Disk space check
+    try:
+        disk = shutil.disk_usage("/")
+        disk_percent = (disk.used / disk.total) * 100
+        status["checks"]["disk_space"] = {
+            "percent_used": round(disk_percent, 2),
+            "status": "healthy" if disk_percent < 90 else "warning"
+        }
+        if disk_percent >= 95:
+            status["status"] = "degraded"
+    except Exception as e:
+        status["checks"]["disk_space"] = f"error: {str(e)}"
+
+    # OpenAI check (optional - non-blocking)
+    try:
+        import httpx
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                "https://api.openai.com/v1/models",
+                headers={"Authorization": f"Bearer {settings.OPENAI_API_KEY}"},
+                timeout=5.0
+            )
+            status["checks"]["openai"] = "healthy" if response.status_code == 200 else "degraded"
+    except Exception:
+        status["checks"]["openai"] = "unavailable"
+        # Don't mark overall status as degraded for external service
+
+    # Return appropriate status code
+    status_code = 200 if status["status"] == "healthy" else 503
+    return JSONResponse(content=status, status_code=status_code)
+
+
+@app.get("/health/live", tags=["Health"])
+async def liveness_check(request: Request):
+    """
+    Kubernetes liveness probe endpoint.
+
+    Returns 200 if the application is running (even if dependencies are unavailable).
+    This endpoint should only fail if the application has crashed or is deadlocked.
+    Kubernetes will restart the pod if this returns non-200.
+    """
+    from datetime import datetime
+    return {
+        "status": "alive",
+        "service": "wrext-api",
+        "timestamp": datetime.utcnow().isoformat()
+    }
+
+
+@app.get("/health/ready", tags=["Health"])
+async def readiness_check(request: Request):
+    """
+    Kubernetes readiness probe endpoint.
+
+    Returns 200 if the application can accept traffic (all critical dependencies available).
+    Returns 503 if dependencies are unavailable.
+    Kubernetes will remove pod from load balancer if this returns non-200.
+    """
+    from datetime import datetime
+    from fastapi.responses import JSONResponse
+    from sqlalchemy import text
+
+    status = {
+        "status": "ready",
+        "service": "wrext-api",
+        "timestamp": datetime.utcnow().isoformat(),
+        "checks": {}
+    }
+
+    # Database check (critical - required for readiness)
+    try:
+        from src.api.database.async_database import get_async_db_context
+        async with get_async_db_context() as db:
+            await db.execute(text("SELECT 1"))
+            status["checks"]["database"] = "ready"
+    except Exception as e:
+        status["checks"]["database"] = f"not_ready: {str(e)}"
+        status["status"] = "not_ready"
+
+    # Redis check (optional - not required for readiness)
+    try:
+        from src.api.cache.redis_client import cache
+        if cache.redis is not None:
+            await cache.redis.ping()
+            status["checks"]["redis"] = "ready"
+        else:
+            status["checks"]["redis"] = "not_configured"
+    except ImportError:
+        status["checks"]["redis"] = "not_configured"
+    except Exception:
+        status["checks"]["redis"] = "not_ready"
+        # Don't mark overall as not_ready - cache is optional
+
+    # Return appropriate status code
+    status_code = 200 if status["status"] == "ready" else 503
+    return JSONResponse(content=status, status_code=status_code)
 
 
 @app.get("/api/status", tags=["Health"])
@@ -283,10 +442,10 @@ def api_status(request: Request):
 if __name__ == "__main__":
     import uvicorn
 
-    # Get configuration from environment
-    host = os.getenv("HOST", "0.0.0.0")
-    port = int(os.getenv("PORT", "8000"))
-    debug = os.getenv("DEBUG", "false").lower() == "true"
+    # Get configuration from settings
+    host = settings.HOST
+    port = settings.PORT
+    debug = settings.DEBUG
 
     logger.info(f"Starting server on {host}:{port} (debug={debug})")
 

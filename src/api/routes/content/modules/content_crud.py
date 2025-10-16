@@ -81,9 +81,6 @@ async def create_content(
         step="initializing"
     )
 
-    # Commit the content and progress records before starting background task
-    await db.commit()
-
     # Trigger background content generation
     # Frontend should subscribe to SSE using content.id as operation_id
     # FastAPI BackgroundTasks supports async functions natively
@@ -283,9 +280,6 @@ async def retry_content_generation(
 
     # Clear existing progress data
     await progress_service.reset_progress(content_id)
-
-    # Commit the status change before triggering background task
-    await db.commit()
 
     logger.info(f"Retrying content generation for content {content_id}")
 

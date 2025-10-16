@@ -1,7 +1,7 @@
 from sqlalchemy import Column, String, Integer, ForeignKey, Text, CheckConstraint, DateTime
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import relationship
-from src.api.database.database import Base
+from src.api.database.base import Base
 from src.api.models.base import SerializableMixin
 import uuid
 from datetime import datetime, timezone

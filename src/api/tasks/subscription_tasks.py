@@ -12,10 +12,10 @@ These tasks should be run by a scheduler (e.g., cron, APScheduler, Celery).
 
 from datetime import datetime, timedelta
 from typing import Dict, List
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_
 
-from src.api.database.database import SessionLocal
+from src.api.database.async_database import get_async_db_context
 from src.api.models.subscription_models.subscriptions import (
     UserSubscription,
     SubscriptionStatus
@@ -35,78 +35,76 @@ async def check_and_notify_expiring_trials():
     Returns:
         Dict with notification counts
     """
-    db = SessionLocal()
-    try:
-        # Get trials expiring in exactly 3 days
-        three_days_from_now = datetime.utcnow() + timedelta(days=3)
-        start_of_day = three_days_from_now.replace(hour=0, minute=0, second=0, microsecond=0)
-        end_of_day = three_days_from_now.replace(hour=23, minute=59, second=59, microsecond=999999)
+    async with get_async_db_context() as db:
+        try:
+            # Get trials expiring in exactly 3 days
+            three_days_from_now = datetime.utcnow() + timedelta(days=3)
+            start_of_day = three_days_from_now.replace(hour=0, minute=0, second=0, microsecond=0)
+            end_of_day = three_days_from_now.replace(hour=23, minute=59, second=59, microsecond=999999)
 
-        # Find trials expiring in 3 days
-        query = select(UserSubscription).where(
-            and_(
-                UserSubscription.status == SubscriptionStatus.TRIAL,
-                UserSubscription.trial_end_date >= start_of_day,
-                UserSubscription.trial_end_date <= end_of_day
+            # Find trials expiring in 3 days
+            query = select(UserSubscription).where(
+                and_(
+                    UserSubscription.status == SubscriptionStatus.TRIAL,
+                    UserSubscription.trial_end_date >= start_of_day,
+                    UserSubscription.trial_end_date <= end_of_day
+                )
             )
-        )
 
-        result = await db.execute(query)
-        expiring_trials = result.scalars().all()
+            result = await db.execute(query)
+            expiring_trials = result.scalars().all()
 
-        logger.info(f"Found {len(expiring_trials)} trial(s) expiring in 3 days")
+            logger.info(f"Found {len(expiring_trials)} trial(s) expiring in 3 days")
 
-        # Send notifications
-        email_service = BillingEmailService(db)
-        success_count = 0
+            # Send notifications
+            email_service = BillingEmailService(db)
+            success_count = 0
 
-        for subscription in expiring_trials:
-            try:
-                # Get user and plan details
-                user_result = await db.execute(
-                    select(Users).where(Users.id == subscription.user_id)
-                )
-                user = user_result.scalar_one_or_none()
+            for subscription in expiring_trials:
+                try:
+                    # Get user and plan details
+                    user_result = await db.execute(
+                        select(Users).where(Users.id == subscription.user_id)
+                    )
+                    user = user_result.scalar_one_or_none()
 
-                plan_result = await db.execute(
-                    select(SubscriptionPlan).where(SubscriptionPlan.id == subscription.plan_id)
-                )
-                plan = plan_result.scalar_one_or_none()
+                    plan_result = await db.execute(
+                        select(SubscriptionPlan).where(SubscriptionPlan.id == subscription.plan_id)
+                    )
+                    plan = plan_result.scalar_one_or_none()
 
-                if not user or not plan:
+                    if not user or not plan:
+                        continue
+
+                    # Send trial ending email
+                    success = await email_service.send_trial_ending_email(
+                        user_id=user.id,
+                        plan_name=plan.display_name,
+                        days_remaining=3,
+                        trial_end_date=subscription.trial_end_date.strftime("%B %d, %Y")
+                    )
+
+                    if success:
+                        success_count += 1
+                        logger.info(f"Sent trial ending email to {user.email}")
+                    else:
+                        logger.warning(f"Failed to send trial ending email to {user.email}")
+
+                except Exception as e:
+                    logger.error(f"Error sending trial notification for subscription {subscription.id}: {e}")
                     continue
 
-                # Send trial ending email
-                success = await email_service.send_trial_ending_email(
-                    user_id=user.id,
-                    plan_name=plan.display_name,
-                    days_remaining=3,
-                    trial_end_date=subscription.trial_end_date.strftime("%B %d, %Y")
-                )
+            logger.info(f"Successfully sent {success_count}/{len(expiring_trials)} trial ending emails")
 
-                if success:
-                    success_count += 1
-                    logger.info(f"Sent trial ending email to {user.email}")
-                else:
-                    logger.warning(f"Failed to send trial ending email to {user.email}")
+            return {
+                "total_expiring": len(expiring_trials),
+                "emails_sent": success_count,
+                "timestamp": datetime.utcnow().isoformat()
+            }
 
-            except Exception as e:
-                logger.error(f"Error sending trial notification for subscription {subscription.id}: {e}")
-                continue
-
-        logger.info(f"Successfully sent {success_count}/{len(expiring_trials)} trial ending emails")
-
-        return {
-            "total_expiring": len(expiring_trials),
-            "emails_sent": success_count,
-            "timestamp": datetime.utcnow().isoformat()
-        }
-
-    except Exception as e:
-        logger.error(f"Error in check_and_notify_expiring_trials: {e}")
-        raise
-    finally:
-        await db.close()
+        except Exception as e:
+            logger.error(f"Error in check_and_notify_expiring_trials: {e}")
+            raise
 
 
 async def expire_ended_trials():
@@ -118,72 +116,70 @@ async def expire_ended_trials():
     Returns:
         Dict with conversion counts
     """
-    db = SessionLocal()
-    try:
-        now = datetime.utcnow()
+    async with get_async_db_context() as db:
+        try:
+            now = datetime.utcnow()
 
-        # Find trials that have ended
-        query = select(UserSubscription).where(
-            and_(
-                UserSubscription.status == SubscriptionStatus.TRIAL,
-                UserSubscription.trial_end_date < now
+            # Find trials that have ended
+            query = select(UserSubscription).where(
+                and_(
+                    UserSubscription.status == SubscriptionStatus.TRIAL,
+                    UserSubscription.trial_end_date < now
+                )
             )
-        )
 
-        result = await db.execute(query)
-        expired_trials = result.scalars().all()
+            result = await db.execute(query)
+            expired_trials = result.scalars().all()
 
-        logger.info(f"Found {len(expired_trials)} expired trial(s)")
+            logger.info(f"Found {len(expired_trials)} expired trial(s)")
 
-        expired_count = 0
+            expired_count = 0
 
-        for subscription in expired_trials:
-            try:
-                # Mark as expired
-                subscription.status = SubscriptionStatus.EXPIRED
-                subscription.end_date = subscription.trial_end_date
+            for subscription in expired_trials:
+                try:
+                    # Mark as expired
+                    subscription.status = SubscriptionStatus.EXPIRED
+                    subscription.end_date = subscription.trial_end_date
 
-                # Get user for email
-                user_result = await db.execute(
-                    select(Users).where(Users.id == subscription.user_id)
-                )
-                user = user_result.scalar_one_or_none()
-
-                plan_result = await db.execute(
-                    select(SubscriptionPlan).where(SubscriptionPlan.id == subscription.plan_id)
-                )
-                plan = plan_result.scalar_one_or_none()
-
-                if user and plan:
-                    # Send trial expired email
-                    email_service = BillingEmailService(db)
-                    await email_service.send_trial_expired_email(
-                        user_id=user.id,
-                        plan_name=plan.display_name
+                    # Get user for email
+                    user_result = await db.execute(
+                        select(Users).where(Users.id == subscription.user_id)
                     )
+                    user = user_result.scalar_one_or_none()
 
-                expired_count += 1
-                logger.info(f"Expired trial subscription {subscription.id}")
+                    plan_result = await db.execute(
+                        select(SubscriptionPlan).where(SubscriptionPlan.id == subscription.plan_id)
+                    )
+                    plan = plan_result.scalar_one_or_none()
 
-            except Exception as e:
-                logger.error(f"Error expiring trial {subscription.id}: {e}")
-                continue
+                    if user and plan:
+                        # Send trial expired email
+                        email_service = BillingEmailService(db)
+                        await email_service.send_trial_expired_email(
+                            user_id=user.id,
+                            plan_name=plan.display_name
+                        )
 
-        await db.commit()
+                    expired_count += 1
+                    logger.info(f"Expired trial subscription {subscription.id}")
 
-        logger.info(f"Expired {expired_count} trial subscription(s)")
+                except Exception as e:
+                    logger.error(f"Error expiring trial {subscription.id}: {e}")
+                    continue
 
-        return {
-            "trials_expired": expired_count,
-            "timestamp": datetime.utcnow().isoformat()
-        }
+            await db.commit()
 
-    except Exception as e:
-        logger.error(f"Error in expire_ended_trials: {e}")
-        await db.rollback()
-        raise
-    finally:
-        await db.close()
+            logger.info(f"Expired {expired_count} trial subscription(s)")
+
+            return {
+                "trials_expired": expired_count,
+                "timestamp": datetime.utcnow().isoformat()
+            }
+
+        except Exception as e:
+            logger.error(f"Error in expire_ended_trials: {e}")
+            await db.rollback()
+            raise
 
 
 async def reset_monthly_usage():
@@ -195,55 +191,53 @@ async def reset_monthly_usage():
     Returns:
         Dict with reset counts
     """
-    db = SessionLocal()
-    try:
-        now = datetime.utcnow()
-        today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-        today_end = now.replace(hour=23, minute=59, second=59, microsecond=999999)
+    async with get_async_db_context() as db:
+        try:
+            now = datetime.utcnow()
+            today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+            today_end = now.replace(hour=23, minute=59, second=59, microsecond=999999)
 
-        # Find subscriptions with usage reset date = today
-        query = select(UserSubscription).where(
-            and_(
-                UserSubscription.status.in_([SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIAL]),
-                UserSubscription.usage_reset_date >= today_start,
-                UserSubscription.usage_reset_date <= today_end
+            # Find subscriptions with usage reset date = today
+            query = select(UserSubscription).where(
+                and_(
+                    UserSubscription.status.in_([SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIAL]),
+                    UserSubscription.usage_reset_date >= today_start,
+                    UserSubscription.usage_reset_date <= today_end
+                )
             )
-        )
 
-        result = await db.execute(query)
-        subscriptions_to_reset = result.scalars().all()
+            result = await db.execute(query)
+            subscriptions_to_reset = result.scalars().all()
 
-        logger.info(f"Found {len(subscriptions_to_reset)} subscription(s) to reset usage")
+            logger.info(f"Found {len(subscriptions_to_reset)} subscription(s) to reset usage")
 
-        reset_count = 0
+            reset_count = 0
 
-        for subscription in subscriptions_to_reset:
-            try:
-                # Reset API call counter
-                subscription.current_api_calls = 0
-                subscription.usage_reset_date = now + timedelta(days=30)
+            for subscription in subscriptions_to_reset:
+                try:
+                    # Reset API call counter
+                    subscription.current_api_calls = 0
+                    subscription.usage_reset_date = now + timedelta(days=30)
 
-                reset_count += 1
+                    reset_count += 1
 
-            except Exception as e:
-                logger.error(f"Error resetting usage for subscription {subscription.id}: {e}")
-                continue
+                except Exception as e:
+                    logger.error(f"Error resetting usage for subscription {subscription.id}: {e}")
+                    continue
 
-        await db.commit()
+            await db.commit()
 
-        logger.info(f"Reset usage for {reset_count} subscription(s)")
+            logger.info(f"Reset usage for {reset_count} subscription(s)")
 
-        return {
-            "subscriptions_reset": reset_count,
-            "timestamp": datetime.utcnow().isoformat()
-        }
+            return {
+                "subscriptions_reset": reset_count,
+                "timestamp": datetime.utcnow().isoformat()
+            }
 
-    except Exception as e:
-        logger.error(f"Error in reset_monthly_usage: {e}")
-        await db.rollback()
-        raise
-    finally:
-        await db.close()
+        except Exception as e:
+            logger.error(f"Error in reset_monthly_usage: {e}")
+            await db.rollback()
+            raise
 
 
 # Convenience function to run all daily tasks

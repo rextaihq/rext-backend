@@ -1,7 +1,7 @@
 from sqlalchemy import Column, Text, DateTime, ForeignKey
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import relationship
-from src.api.database.database import Base
+from src.api.database.base import Base
 from src.api.models.base import SerializableMixin
 from datetime import datetime
 import uuid
@@ -21,4 +21,5 @@ class ContentResearchConfig(Base, SerializableMixin):
     updated_at = Column(DateTime(timezone=True), nullable=True, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     # Relationships
-    content = relationship("Content", back_populates="research_config")
+    # Deprecated: This model is being phased out in favor of Content.research_config_json
+    content = relationship("Content")

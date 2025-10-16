@@ -21,6 +21,7 @@ from src.api.middleware.exceptions import (
     WrextAuthenticationException
 )
 from src.api.middleware.usage_limiter import check_topic_limit, check_api_limit
+from src.api.middleware.rate_limiter import ai_topic_generation_rate_limit
 from src.utils.db_utils import get_or_404
 import uuid
 
@@ -66,6 +67,7 @@ async def generate_topic(
     db: AsyncSession = Depends(get_async_db),
     user: dict = Depends(get_current_user),
     _api_limit: None = Depends(check_api_limit()),
+    _rate_limit: None = Depends(ai_topic_generation_rate_limit())
 ):
     """
     Generate content topics using AI based on workspace context.

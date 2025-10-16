@@ -14,6 +14,7 @@ from src.utils.email_template_utils import render_workspace_email
 from src.utils.route_decorators import db_transaction_handler, require_permissions
 from src.api.database.async_database import get_async_db
 from src.api.security.dependencies import get_current_user
+from src.api.config import get_settings
 from src.api.middleware.exceptions import (
     DuplicateResourceException,
     ResourceNotFoundException,
@@ -38,6 +39,9 @@ from src.services.invitation_service import InvitationService
 
 router = APIRouter()
 
+
+# Get settings instance
+settings = get_settings()
 
 async def send_workspace_invitation_email_task(
     email: str,
@@ -134,7 +138,7 @@ async def create_invitation(
     inviter = result.scalar_one_or_none()
 
     # Send invitation email in background using custom or default template
-    frontend_url = os.getenv("FRONTEND_URL", "http://localhost:3000")
+    frontend_url = settings.FRONTEND_URL
     invitation_link = f"{frontend_url}/invitations/accept?token={invitation.invitation_token}"
 
     # Render email template
@@ -245,7 +249,7 @@ async def create_bulk_invitations(
             )
 
             # Send invitation email asynchronously using professional template
-            frontend_url = os.getenv("FRONTEND_URL", "http://localhost:3000")
+            frontend_url = settings.FRONTEND_URL
 
             background_tasks.add_task(
                 send_workspace_invitation_email_task,

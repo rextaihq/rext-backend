@@ -18,7 +18,7 @@ from typing import Tuple, Dict, Any, Optional
 from uuid import UUID
 from datetime import datetime, timedelta
 
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from src.api.models.user_models.users import Users
@@ -48,12 +48,12 @@ from src.api.middleware.exceptions import (
 class OAuthService:
     """Service for OAuth authentication business logic"""
 
-    def __init__(self, db: Session):
+    def __init__(self, db: AsyncSession):
         """
         Initialize OAuthService.
 
         Args:
-            db: Database session
+            db: Async database session
         """
         self.db = db
 
@@ -95,10 +95,13 @@ class OAuthService:
             WrextAuthenticationException: If OAuth flow fails
         """
         # Check if this OAuth account already exists
-        oauth_account = self.db.query(OAuthAccount).filter(
-            OAuthAccount.provider == provider,
-            OAuthAccount.provider_account_id == provider_account_id
-        ).first()
+        result = await self.db.execute(
+            select(OAuthAccount).where(
+                OAuthAccount.provider == provider,
+                OAuthAccount.provider_account_id == provider_account_id
+            )
+        )
+        oauth_account = result.scalar_one_or_none()
 
         if oauth_account:
             # OAuth account exists - login existing user
@@ -112,12 +115,12 @@ class OAuthService:
             oauth_account.refresh_token = refresh_token
             oauth_account.token_expires_at = token_expires_at
             oauth_account.last_used_at = datetime.utcnow()
-            self.db.flush()
+            await self.db.flush()
 
             # Update user's last login
             user.last_login_at = datetime.utcnow()
             user.login_count = (user.login_count or 0) + 1
-            self.db.flush()
+            await self.db.flush()
 
             logger.info(
                 f"OAuth login successful for existing user: {user.id}",
@@ -126,7 +129,10 @@ class OAuthService:
 
         else:
             # OAuth account doesn't exist - check if user with email exists
-            user = self.db.query(Users).filter(Users.email == provider_email).first()
+            result = await self.db.execute(
+                select(Users).where(Users.email == provider_email)
+            )
+            user = result.scalar_one_or_none()
 
             if user:
                 # User exists - link this OAuth account to their account
@@ -150,12 +156,12 @@ class OAuthService:
                     last_used_at=datetime.utcnow()
                 )
                 self.db.add(oauth_account)
-                self.db.flush()
+                await self.db.flush()
 
                 # Update user's last login
                 user.last_login_at = datetime.utcnow()
                 user.login_count = (user.login_count or 0) + 1
-                self.db.flush()
+                await self.db.flush()
 
             else:
                 # User doesn't exist - create new user with OAuth account
@@ -175,7 +181,8 @@ class OAuthService:
                 # Check if username exists, append number if needed
                 base_username = username
                 counter = 1
-                while self.db.query(Users).filter(Users.username == username).first():
+                result = await self.db.execute(select(Users).where(Users.username == username))
+                while result.scalar_one_or_none():
                     username = f"{base_username}{counter}"
                     counter += 1
 
@@ -192,10 +199,10 @@ class OAuthService:
                     created_at=datetime.utcnow()
                 )
                 self.db.add(user)
-                self.db.flush()
+                await self.db.flush()
 
                 # Assign default 'user' role
-                default_role = self._get_or_create_default_role()
+                default_role = await self._get_or_create_default_role()
                 user_role = UserRole(
                     user_id=user.id,
                     role_id=default_role.id,
@@ -205,7 +212,7 @@ class OAuthService:
                     assigned_by_user_id=user.id
                 )
                 self.db.add(user_role)
-                self.db.flush()
+                await self.db.flush()
 
                 # Create OAuth account link
                 oauth_account = OAuthAccount(
@@ -222,10 +229,10 @@ class OAuthService:
                     last_used_at=datetime.utcnow()
                 )
                 self.db.add(oauth_account)
-                self.db.flush()
+                await self.db.flush()
 
                 # Auto-assign trial subscription
-                trial_plan = self._get_trial_plan()
+                trial_plan = await self._get_trial_plan()
                 if trial_plan:
                     trial_start = datetime.utcnow()
                     trial_end = trial_start + timedelta(days=14)
@@ -242,7 +249,7 @@ class OAuthService:
                         updated_at=trial_start
                     )
                     self.db.add(trial_subscription)
-                    self.db.flush()
+                    await self.db.flush()
 
                 logger.info(
                     f"New user created via OAuth: {user.id}",
@@ -252,16 +259,15 @@ class OAuthService:
         # Generate JWT tokens
         role_names = [ur.role.name for ur in user.user_roles if ur.is_primary]
 
-        permission_names = (
-            self.db.query(Permission.name)
-            .join(RolePermission, RolePermission.permission_id == Permission.id)
-            .join(UserRole, UserRole.role_id == RolePermission.role_id)
-            .filter(UserRole.user_id == user.id)
-            .filter(UserRole.workspace_id == None)
-            .distinct()
-            .all()
-        )
-        permissions = [p.name for p in permission_names]
+        result = await self.db.execute(
+                select(Permission.name)
+                .join(RolePermission, RolePermission.permission_id == Permission.id)
+                .join(UserRole, UserRole.role_id == RolePermission.role_id)
+                .where(UserRole.user_id == user.id)
+                .where(UserRole.workspace_id == None)
+                .distinct()
+            )
+        permissions = [row[0] for row in result.all()]
 
         token_data = {
             "id": str(user.id),
@@ -277,7 +283,9 @@ class OAuthService:
         tokens = {
             "access_token": access_token,
             "refresh_token": refresh_token,
-            "token_type": "bearer"
+            "token_type": "bearer",
+            "permissions": permissions,  # Include permissions for route response
+            "roles": role_names  # Include roles for route response
         }
 
         return user, tokens
@@ -316,7 +324,10 @@ class OAuthService:
             ResourceNotFoundException: If user not found
         """
         # Check if user exists
-        user = self.db.query(Users).filter(Users.id == user_id).first()
+        result = await self.db.execute(
+            select(Users).where(Users.id == user_id)
+        )
+        user = result.scalar_one_or_none()
         if not user:
             raise ResourceNotFoundException(
                 resource_type="User",
@@ -324,10 +335,13 @@ class OAuthService:
             )
 
         # Check if this OAuth account is already linked to another user
-        existing_oauth = self.db.query(OAuthAccount).filter(
-            OAuthAccount.provider == provider,
-            OAuthAccount.provider_account_id == provider_account_id
-        ).first()
+        result = await self.db.execute(
+            select(OAuthAccount).where(
+                OAuthAccount.provider == provider,
+                OAuthAccount.provider_account_id == provider_account_id
+            )
+        )
+        existing_oauth = result.scalar_one_or_none()
 
         if existing_oauth:
             if existing_oauth.user_id != user_id:
@@ -345,7 +359,7 @@ class OAuthService:
             existing_oauth.refresh_token = refresh_token
             existing_oauth.token_expires_at = token_expires_at
             existing_oauth.updated_at = datetime.utcnow()
-            self.db.flush()
+            await self.db.flush()
             return existing_oauth
 
         # Create new OAuth account link
@@ -362,7 +376,7 @@ class OAuthService:
             created_at=datetime.utcnow()
         )
         self.db.add(oauth_account)
-        self.db.flush()
+        await self.db.flush()
 
         logger.info(
             f"OAuth account linked: {provider} for user {user_id}",
@@ -382,10 +396,13 @@ class OAuthService:
         Raises:
             ResourceNotFoundException: If OAuth account not found
         """
-        oauth_account = self.db.query(OAuthAccount).filter(
-            OAuthAccount.user_id == user_id,
-            OAuthAccount.provider == provider
-        ).first()
+        result = await self.db.execute(
+            select(OAuthAccount).where(
+                OAuthAccount.user_id == user_id,
+                OAuthAccount.provider == provider
+            )
+        )
+        oauth_account = result.scalar_one_or_none()
 
         if not oauth_account:
             raise ResourceNotFoundException(
@@ -393,8 +410,8 @@ class OAuthService:
                 resource_id=f"{user_id}:{provider}"
             )
 
-        self.db.delete(oauth_account)
-        self.db.flush()
+        await self.db.delete(oauth_account)
+        await self.db.flush()
 
         logger.info(
             f"OAuth account unlinked: {provider} from user {user_id}",
@@ -405,9 +422,12 @@ class OAuthService:
     # Private Helper Methods
     # ========================================================================
 
-    def _get_or_create_default_role(self) -> Role:
+    async def _get_or_create_default_role(self) -> Role:
         """Get or create default 'user' role."""
-        default_role = self.db.query(Role).filter(Role.name == "user").first()
+        result = await self.db.execute(
+            select(Role).where(Role.name == "user")
+        )
+        default_role = result.scalar_one_or_none()
 
         if not default_role:
             default_role = Role(
@@ -419,17 +439,20 @@ class OAuthService:
                 created_at=datetime.utcnow()
             )
             self.db.add(default_role)
-            self.db.flush()
+            await self.db.flush()
             logger.info("Created default user role")
 
         return default_role
 
-    def _get_trial_plan(self) -> Optional[SubscriptionPlan]:
+    async def _get_trial_plan(self) -> Optional[SubscriptionPlan]:
         """Get trial subscription plan."""
-        trial_plan = self.db.query(SubscriptionPlan).filter(
-            SubscriptionPlan.name == "trial",
-            SubscriptionPlan.is_active == True
-        ).first()
+        result = await self.db.execute(
+            select(SubscriptionPlan).where(
+                SubscriptionPlan.name == "trial",
+                SubscriptionPlan.is_active == True
+            )
+        )
+        trial_plan = result.scalar_one_or_none()
 
         if not trial_plan:
             logger.warning("Trial subscription plan not found in database")

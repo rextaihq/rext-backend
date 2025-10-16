@@ -4,38 +4,54 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.api.database.database import get_db
-from src.api.middleware.auth import get_current_user
+from src.api.database.async_database import get_async_db
+from src.api.security.dependencies import get_current_user, get_current_user_optional
 from src.api.models.user_models.users import Users
+from langgraph_sdk import Auth
 from src.api.schema.onboarding_schemas import (
     OnboardingReset,
     OnboardingResponse,
     OnboardingStepUpdate,
 )
 from src.services.onboarding_service import OnboardingService
-from src.utils.logger import log
+from src.utils.logger import logger
 
 router = APIRouter(prefix="/onboarding", tags=["onboarding"])
 
 
 @router.get("", response_model=OnboardingResponse, status_code=status.HTTP_200_OK)
 async def get_onboarding_status(
-    db: Annotated[Session, Depends(get_db)],
-    current_user: Annotated[Users, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_async_db)],
+    current_user: Annotated[Auth.types.MinimalUserDict | None, Depends(get_current_user_optional)],
 ):
     """
     Get current user's onboarding status.
 
     Returns the user's onboarding progress including current step,
     completed steps, and skipped steps.
+    Requires authentication.
     """
+    if not current_user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required",
+        )
+
     try:
-        onboarding = await OnboardingService.get_or_create_onboarding(db, current_user.id)
+        user_id = current_user.get("identity")
+        onboarding = await OnboardingService.get_or_create_onboarding(db, user_id)
         return onboarding
+    except ValueError as e:
+        # User doesn't exist - likely invalid/stale token
+        logger.error(f"[Onboarding] User not found: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User not found or has been deleted",
+        )
     except Exception as e:
-        log.error(f"[Onboarding] Failed to get status: {e}")
+        logger.error(f"[Onboarding] Failed to get status: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to retrieve onboarding status",
@@ -45,7 +61,7 @@ async def get_onboarding_status(
 @router.post("/update", response_model=OnboardingResponse, status_code=status.HTTP_200_OK)
 async def update_onboarding_step(
     step_update: OnboardingStepUpdate,
-    db: Annotated[Session, Depends(get_db)],
+    db: Annotated[AsyncSession, Depends(get_async_db)],
     current_user: Annotated[Users, Depends(get_current_user)],
 ):
     """
@@ -85,7 +101,7 @@ async def update_onboarding_step(
 
 @router.post("/complete", response_model=OnboardingResponse, status_code=status.HTTP_200_OK)
 async def complete_onboarding(
-    db: Annotated[Session, Depends(get_db)],
+    db: Annotated[AsyncSession, Depends(get_async_db)],
     current_user: Annotated[Users, Depends(get_current_user)],
 ):
     """
@@ -109,7 +125,7 @@ async def complete_onboarding(
 @router.post("/reset", response_model=OnboardingResponse, status_code=status.HTTP_200_OK)
 async def reset_onboarding(
     reset_data: OnboardingReset,
-    db: Annotated[Session, Depends(get_db)],
+    db: Annotated[AsyncSession, Depends(get_async_db)],
     current_user: Annotated[Users, Depends(get_current_user)],
 ):
     """
@@ -138,20 +154,25 @@ async def reset_onboarding(
 
 @router.get("/should-show", status_code=status.HTTP_200_OK)
 async def should_show_onboarding(
-    db: Annotated[Session, Depends(get_db)],
-    current_user: Annotated[Users, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_async_db)],
+    current_user: Annotated[Auth.types.MinimalUserDict | None, Depends(get_current_user_optional)],
 ):
     """
     Check if onboarding should be shown to the current user.
 
     Returns a boolean indicating whether the onboarding flow
-    should be displayed.
+    should be displayed. Returns false if not authenticated.
     """
+    # Return false if not authenticated (graceful degradation)
+    if not current_user:
+        return {"should_show": False}
+
     try:
-        should_show = await OnboardingService.should_show_onboarding(db, current_user.id)
+        user_id = current_user.get("identity")
+        should_show = await OnboardingService.should_show_onboarding(db, user_id)
         return {"should_show": should_show}
     except Exception as e:
-        log.error(f"[Onboarding] Failed to check should show: {e}")
+        logger.error(f"[Onboarding] Failed to check should show: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to check onboarding status",

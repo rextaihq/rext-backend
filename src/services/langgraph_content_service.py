@@ -30,6 +30,7 @@ from src.api.models.user_models.users import Users
 from src.flow.flow import create_workflow
 from src.flow.states.content_state import ContentState
 from src.utils.logger import logger
+from src.api.config import get_settings
 from src.api.middleware.exceptions import (
     WrextValidationException,
     ResourceNotFoundException
@@ -38,6 +39,9 @@ from src.services.email_service import EmailService
 from src.services.content_progress_service import ContentProgressService
 
 
+
+# Get settings instance
+settings = get_settings()
 class LangGraphContentService:
     """Service for managing LangGraph content generation workflows"""
 
@@ -231,7 +235,6 @@ class LangGraphContentService:
         result = await self.db.execute(
             select(Content)
             .options(
-                selectinload(Content.content_metadata),
                 selectinload(Content.seo_data)
             )
             .where(
@@ -323,20 +326,19 @@ class LangGraphContentService:
             "updated_at": content.updated_at.isoformat() if content.updated_at else None
         }
 
-        # Add content metadata if exists
-        if hasattr(content, 'content_metadata') and content.content_metadata:
-            metadata = content.content_metadata
+        # Add content metadata if exists (now in JSONB column)
+        if content.metadata_json:
             payload["content_metadata"] = {
-                "content_type": metadata.content_type,
-                "target_platform": metadata.target_platform,
-                "target_industry": metadata.target_industry,
-                "target_audience": metadata.target_audience,
-                "audience_size": metadata.audience_size,
-                "complexity_level": metadata.complexity_level,
-                "content_tone": metadata.content_tone,
-                "target_region": metadata.target_region,
-                "content_objectives": metadata.content_objectives,
-                "content_word_count": metadata.content_word_count
+                "content_type": content.metadata_json.get("content_type"),
+                "target_platform": content.metadata_json.get("target_platform"),
+                "target_industry": content.metadata_json.get("target_industry"),
+                "target_audience": content.metadata_json.get("target_audience"),
+                "audience_size": content.metadata_json.get("audience_size"),
+                "complexity_level": content.metadata_json.get("complexity_level"),
+                "content_tone": content.metadata_json.get("content_tone"),
+                "target_region": content.metadata_json.get("target_region"),
+                "content_objectives": content.metadata_json.get("content_objectives"),
+                "content_word_count": content.metadata_json.get("content_word_count")
             }
 
         # Add SEO data if exists
@@ -506,7 +508,7 @@ class LangGraphContentService:
             return
 
         # Build content URL
-        frontend_url = os.getenv("FRONTEND_URL", "https://app.wrext.com")
+        frontend_url = settings.FRONTEND_URL
         content_url = f"{frontend_url}/w/{workspace.slug}/content/{content_id}"
 
         # Render professional email
@@ -561,7 +563,7 @@ class LangGraphContentService:
         content_excerpt = content_body[:200] if len(content_body) > 200 else content_body
 
         # Build content URL
-        frontend_url = os.getenv("FRONTEND_URL", "https://app.wrext.com")
+        frontend_url = settings.FRONTEND_URL
         content_url = f"{frontend_url}/w/{workspace.slug}/content/{content_id}"
 
         # Render professional email
@@ -611,7 +613,7 @@ class LangGraphContentService:
             return
 
         # Build URLs
-        frontend_url = os.getenv("FRONTEND_URL", "https://app.wrext.com")
+        frontend_url = settings.FRONTEND_URL
         retry_url = f"{frontend_url}/w/{workspace.slug}/content/{content_id}"
         support_url = f"{frontend_url}/support"
 
