@@ -27,8 +27,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from src.api.models.content_models.content import Content
-from src.api.models.content_models.content_metadata import ContentMetadata
 from src.api.models.content_models.content_seo_data import ContentSEOData
+# Note: ContentMetadata table dropped in migration 40fd95ca1e8d - now uses Content.metadata_json
 from src.api.schema.content_schema import ContentCreate, ContentUpdate
 from src.flow.states.payload_state import Payload
 from src.flow.service.service import LangGraphService
@@ -125,29 +125,28 @@ class ContentService(LangGraphService):
         self.db.add(content)
         await self.db.flush()  # Get content.id without committing
 
-        # Create metadata if provided
+        # Create metadata JSONB if provided (consolidated from content_metadata table)
         if data.metadata:
-            metadata = ContentMetadata(
-                content_id=content.id,
-                content_summary=data.metadata.content_summary,
-                content_type=data.metadata.content_type,
-                target_platform=data.metadata.target_platform,
-                target_industry=data.metadata.target_industry,
-                target_audience=data.metadata.target_audience,
-                audience_size=data.metadata.audience_size,
-                complexity_level=data.metadata.complexity_level,
-                content_tone=data.metadata.content_tone,
-                target_region=data.metadata.target_region,
-                content_objectives=data.metadata.content_objectives,
-                source_references=data.metadata.source_references,
-                content_word_count=data.metadata.content_word_count,
-                reading_time_minutes=data.metadata.reading_time_minutes,
-                content_quality_scores=data.metadata.content_quality_scores,
-                featured_image_prompt=data.metadata.featured_image_prompt,
-                featured_image_alt_text=data.metadata.featured_image_alt_text,
-                created_at=datetime.now(timezone.utc)
-            )
-            self.db.add(metadata)
+            content.metadata_json = {
+                "content_summary": data.metadata.content_summary,
+                "content_type": data.metadata.content_type,
+                "target_platform": data.metadata.target_platform,
+                "target_industry": data.metadata.target_industry,
+                "target_audience": data.metadata.target_audience,
+                "audience_size": data.metadata.audience_size,
+                "complexity_level": data.metadata.complexity_level,
+                "content_tone": data.metadata.content_tone,
+                "target_region": data.metadata.target_region,
+                "content_objectives": data.metadata.content_objectives,
+                "source_references": data.metadata.source_references,
+                "content_word_count": data.metadata.content_word_count,
+                "reading_time_minutes": data.metadata.reading_time_minutes,
+                "content_quality_scores": data.metadata.content_quality_scores,
+                "featured_image_prompt": data.metadata.featured_image_prompt,
+                "featured_image_alt_text": data.metadata.featured_image_alt_text,
+                "created_at": datetime.now(timezone.utc).isoformat(),
+                "updated_at": datetime.now(timezone.utc).isoformat()
+            }
 
         # Create SEO data if provided
         if data.seo_data:
@@ -171,7 +170,6 @@ class ContentService(LangGraphService):
             select(Content)
             .where(Content.id == content.id)
             .options(
-                selectinload(Content.content_metadata),
                 selectinload(Content.seo_data)
             )
         )
@@ -258,40 +256,47 @@ class ContentService(LangGraphService):
 
         content.updated_at = datetime.now(timezone.utc)
 
-        # Update metadata if provided
+        # Update metadata JSONB if provided (consolidated from content_metadata table)
         if data.metadata:
-            result = await self.db.execute(
-                select(ContentMetadata).where(ContentMetadata.content_id == content_id)
-            )
-            metadata = result.scalar_one_or_none()
+            # Get existing metadata_json or create new dict
+            metadata_json = content.metadata_json or {}
 
-            if metadata:
-                # Update existing metadata
-                if data.metadata.content_summary is not None:
-                    metadata.content_summary = data.metadata.content_summary
-                if data.metadata.content_type is not None:
-                    metadata.content_type = data.metadata.content_type
-                if data.metadata.target_platform is not None:
-                    metadata.target_platform = data.metadata.target_platform
-                if data.metadata.target_industry is not None:
-                    metadata.target_industry = data.metadata.target_industry
-                if data.metadata.target_audience is not None:
-                    metadata.target_audience = data.metadata.target_audience
-                if data.metadata.content_word_count is not None:
-                    metadata.content_word_count = data.metadata.content_word_count
-                if data.metadata.reading_time_minutes is not None:
-                    metadata.reading_time_minutes = data.metadata.reading_time_minutes
-                metadata.updated_at = datetime.now(timezone.utc)
-            else:
-                # Create new metadata
-                metadata = ContentMetadata(
-                    content_id=content.id,
-                    content_summary=data.metadata.content_summary,
-                    content_type=data.metadata.content_type,
-                    target_platform=data.metadata.target_platform,
-                    created_at=datetime.now(timezone.utc)
-                )
-                self.db.add(metadata)
+            # Update only provided fields (partial update support)
+            if data.metadata.content_summary is not None:
+                metadata_json["content_summary"] = data.metadata.content_summary
+            if data.metadata.content_type is not None:
+                metadata_json["content_type"] = data.metadata.content_type
+            if data.metadata.target_platform is not None:
+                metadata_json["target_platform"] = data.metadata.target_platform
+            if data.metadata.target_industry is not None:
+                metadata_json["target_industry"] = data.metadata.target_industry
+            if data.metadata.target_audience is not None:
+                metadata_json["target_audience"] = data.metadata.target_audience
+            if data.metadata.content_word_count is not None:
+                metadata_json["content_word_count"] = data.metadata.content_word_count
+            if data.metadata.reading_time_minutes is not None:
+                metadata_json["reading_time_minutes"] = data.metadata.reading_time_minutes
+            if data.metadata.audience_size is not None:
+                metadata_json["audience_size"] = data.metadata.audience_size
+            if data.metadata.complexity_level is not None:
+                metadata_json["complexity_level"] = data.metadata.complexity_level
+            if data.metadata.content_tone is not None:
+                metadata_json["content_tone"] = data.metadata.content_tone
+            if data.metadata.target_region is not None:
+                metadata_json["target_region"] = data.metadata.target_region
+            if data.metadata.content_objectives is not None:
+                metadata_json["content_objectives"] = data.metadata.content_objectives
+            if data.metadata.source_references is not None:
+                metadata_json["source_references"] = data.metadata.source_references
+            if data.metadata.content_quality_scores is not None:
+                metadata_json["content_quality_scores"] = data.metadata.content_quality_scores
+            if data.metadata.featured_image_prompt is not None:
+                metadata_json["featured_image_prompt"] = data.metadata.featured_image_prompt
+            if data.metadata.featured_image_alt_text is not None:
+                metadata_json["featured_image_alt_text"] = data.metadata.featured_image_alt_text
+
+            metadata_json["updated_at"] = datetime.now(timezone.utc).isoformat()
+            content.metadata_json = metadata_json
 
         # Update SEO data if provided
         if data.seo_data:
@@ -434,8 +439,7 @@ class ContentService(LangGraphService):
             query = query.where(Content.status == status)
 
         # Eagerly load relationships to avoid lazy loading issues
-        if include_metadata:
-            query = query.options(selectinload(Content.content_metadata))
+        # Note: metadata_json is now a JSONB column, no relationship to load
         if include_seo:
             query = query.options(selectinload(Content.seo_data))
 
@@ -457,8 +461,7 @@ class ContentService(LangGraphService):
 
         # Build relationships list
         relationships = []
-        if include_metadata:
-            relationships.append("content_metadata")
+        # Note: metadata now in JSONB column (metadata_json), not a relationship
         if include_seo:
             relationships.append("seo_data")
 
@@ -504,8 +507,7 @@ class ContentService(LangGraphService):
         )
 
         # Eagerly load relationships to avoid lazy loading issues
-        if include_metadata:
-            query = query.options(selectinload(Content.content_metadata))
+        # Note: metadata_json is now a JSONB column, no relationship to load
         if include_seo:
             query = query.options(selectinload(Content.seo_data))
 
@@ -519,8 +521,7 @@ class ContentService(LangGraphService):
             )
 
         relationships = []
-        if include_metadata:
-            relationships.append("content_metadata")
+        # Note: metadata now in JSONB column (metadata_json), not a relationship
         if include_seo:
             relationships.append("seo_data")
 
