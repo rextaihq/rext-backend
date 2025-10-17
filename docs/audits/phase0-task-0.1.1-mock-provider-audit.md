@@ -92,15 +92,16 @@ from src.providers.payment.base_provider import (
 from src.utils.logger import logger
 ```
 
-**Action for LemonSqueezy:** Same imports needed, plus LemonSqueezy SDK
+**Action for LemonSqueezy:** Same imports needed, plus httpx for direct HTTP API
 
 ### 3.2 External Dependencies
 
 - **Current:** None (pure Python, stdlib only)
 - **LemonSqueezy Needs:**
-  - `lemonsqueezy` or `lemonsqueezy-py-api` Python package
-  - HTTP client (likely included in SDK)
-  - Async support (SDK must support async/await)
+  - ~~`lemonsqueezy` or `lemonsqueezy-py-api` Python package~~ **Using direct HTTP API**
+  - HTTP client: `httpx` (already installed in project)
+  - Async support: `httpx.AsyncClient` (built-in async/await support)
+  - **Decision (2025-10-17):** No official Python SDK exists; using direct API via httpx
 
 ### 3.3 Configuration
 
@@ -786,7 +787,7 @@ Good for its purpose (development/testing), but can't fully prepare for producti
 3. ⚠️ Set up sandbox environment
 
 **Dependencies:**
-1. Python package: `lemonsqueezy-py-api` or official SDK
+1. ~~Python package: `lemonsqueezy-py-api` or official SDK~~ **httpx for direct HTTP API** (already installed)
 2. Webhook testing tool (ngrok or similar)
 3. Test credit cards (from LemonSqueezy docs)
 

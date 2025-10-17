@@ -210,7 +210,7 @@ ALTER TYPE subscription_status ADD VALUE 'past_due';
 - `handle_webhook_event(event_type, data)` - Process webhook event
 
 **Dependencies:**
-- LemonSqueezy SDK: `pip install lemonsqueezy`
+- ~~LemonSqueezy SDK~~ **Using direct HTTP API via httpx** (already installed)
 - Environment variables: `LEMONSQUEEZY_API_KEY`, `LEMONSQUEEZY_STORE_ID`, `LEMONSQUEEZY_WEBHOOK_SECRET`
 
 **Source Files:**
@@ -1276,7 +1276,7 @@ LEMONSQUEEZY_API_URL=https://api.lemonsqueezy.com/v1
 
 #### 44. `wrext-backend/requirements.txt` (MODIFY)
 
-**Purpose:** Add LemonSqueezy SDK and test dependencies
+**Purpose:** ~~Add LemonSqueezy SDK~~ Verify httpx for direct API integration
 **Priority:** HIGH
 **Effort:** 5 minutes
 
@@ -1467,7 +1467,7 @@ freezegun>=1.2.0
 | File | Depends On | Blocks |
 |------|-----------|--------|
 | **Database Migrations** | None | All backend work |
-| `lemonsqueezy_provider.py` | Database, LemonSqueezy SDK | All services |
+| `lemonsqueezy_provider.py` | Database, httpx (direct API) | All services |
 | `subscription_service.py` | LemonSqueezy provider | API routes |
 | `lemonsqueezy_webhook_routes.py` | Provider, services | None |
 | `subscription_routes.py` | Services | Frontend API calls |

@@ -1482,35 +1482,44 @@ return redirect($checkout['data']['attributes']['url']);
 
 ### Community SDKs
 
-| Language | Package | Repository |
-|----------|---------|------------|
-| **Python** | `lemonsqueezy-py` | Community-maintained |
-| **Go** | `lemonsqueezy-go` | Community-maintained |
-| **Ruby** | `lemonsqueezy-ruby` | Community-maintained |
-| **Rust** | `lemonsqueezy-rust` | Community-maintained |
-| **Swift** | `LemonSqueezy-Swift` | Community-maintained |
-| **PHP** | `lemonsqueezy-php` | Community-maintained |
-| **Elixir** | `lemonsqueezy-elixir` | Community-maintained |
-| **Java** | `lemonsqueezy-java` | Community-maintained |
+| Language | Package | Repository | Status |
+|----------|---------|------------|--------|
+| **Python** | `lemonsqueezy-py` | Community-maintained | ⚠️ **Not Recommended** |
+| **Go** | `lemonsqueezy-go` | Community-maintained | Community |
+| **Ruby** | `lemonsqueezy-ruby` | Community-maintained | Community |
+| **Rust** | `lemonsqueezy-rust` | Community-maintained | Community |
+| **Swift** | `LemonSqueezy-Swift` | Community-maintained | Community |
+| **PHP** | `lemonsqueezy-php` | Community-maintained | Community |
+| **Elixir** | `lemonsqueezy-elixir` | Community-maintained | Community |
+| **Java** | `lemonsqueezy-java` | Community-maintained | Community |
 
-**Note:** Community SDKs may have varying levels of maintenance and feature completeness.
+**⚠️ Warning:** Community SDKs are unofficial and may have:
+- Limited maintenance and support
+- Incomplete API coverage
+- Security concerns
+- Breaking changes without notice
 
 ---
 
 ### For WREXT Integration
 
-**Recommendation:** Implement custom Python wrapper
+**✅ DECISION: Direct HTTP API Integration** (2025-10-17)
 
-**Reason:**
-- No official Python SDK from LemonSqueezy
-- Community SDKs may lack features or maintenance
-- Custom implementation provides full control
-- Can optimize for WREXT's specific needs
+**Approach:** Use `httpx` for direct API calls (no SDK)
+
+**Rationale:**
+- ❌ No official Python SDK from LemonSqueezy
+- ❌ Community packages (`lemonsqueezy-py`) are unmaintained/unofficial
+- ✅ Direct API provides full control and transparency
+- ✅ httpx already available in project dependencies
+- ✅ Better for production: no third-party dependency risk
+- ✅ Future-proof: works as long as API exists
+- ✅ Easy to debug and test
 
 **Implementation:**
 ```python
-# src/providers/payment/lemonsqueezy_provider.py
-import requests
+# src/providers/payment/providers/lemonsqueezy.py
+import httpx
 from typing import Dict, Optional
 
 class LemonSqueezyProvider:
@@ -1519,13 +1528,17 @@ class LemonSqueezyProvider:
     def __init__(self, api_key: str, store_id: str):
         self.api_key = api_key
         self.store_id = store_id
-        self.headers = {
-            "Authorization": f"Bearer {api_key}",
-            "Accept": "application/vnd.api+json",
-            "Content-Type": "application/vnd.api+json"
-        }
+        self.client = httpx.AsyncClient(
+            base_url=self.BASE_URL,
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Accept": "application/vnd.api+json",
+                "Content-Type": "application/vnd.api+json"
+            },
+            timeout=30.0
+        )
 
-    def create_checkout(
+    async def create_checkout(
         self,
         variant_id: str,
         email: Optional[str] = None,

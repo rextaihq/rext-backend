@@ -1241,7 +1241,10 @@ const { data: subscription } = useQuery({
 - [ ] Configure LemonSqueezy test products in dashboard
 
 #### 3. Development Environment Setup
-- [ ] Install LemonSqueezy Python SDK (research best option)
+- [x] ~~Install LemonSqueezy Python SDK~~ **Decision: Use direct HTTP API via httpx**
+  - **Rationale:** No official Python SDK exists; unofficial packages are unmaintained
+  - **Approach:** Direct API integration using httpx (already installed)
+  - **Benefit:** Better control, transparency, and future-proofing
 - [ ] Set up ngrok for webhook testing
 - [ ] Configure test credit cards from LemonSqueezy docs
 - [ ] Update `.env.example` with LemonSqueezy variables
