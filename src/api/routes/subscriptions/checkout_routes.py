@@ -67,7 +67,7 @@ async def create_checkout_session(
     Create checkout session with payment provider.
 
     This endpoint creates a checkout session for subscription purchase.
-    The actual checkout is handled by the payment provider (or mock provider in development).
+    The actual checkout is handled by the payment provider (LemonSqueezy or mock provider).
 
     Request Body:
     - plan_id: UUID of the subscription plan
@@ -112,33 +112,34 @@ async def create_checkout_session(
 
     # Get or create provider customer ID
     if not user.provider_customer_id:
+        customer_name = f"{user.first_name} {user.last_name}".strip() or user.display_name or user.email
         customer_id = await provider.create_customer(
             email=user.email,
-            name=user.display_name or user.email,
-            metadata={"user_id": str(user.id)}
+            name=customer_name,
+            metadata={"user_id": str(user.id), "username": user.username}
         )
         user.provider_customer_id = customer_id
         logger.info(f"Created payment provider customer for user {user.email}: {customer_id}")
     else:
         customer_id = user.provider_customer_id
 
-    # Get price ID based on billing period
-    price_id = (
-        plan.provider_price_id_monthly
-        if checkout_request.billing_period == "monthly"
-        else plan.provider_price_id_yearly
-    )
+    # Get variant ID based on billing period (LemonSqueezy) or fall back to price ID
+    variant_id = None
+    if checkout_request.billing_period == "monthly":
+        variant_id = plan.lemonsqueezy_variant_id_monthly or plan.provider_price_id_monthly
+    elif checkout_request.billing_period == "yearly":
+        variant_id = plan.lemonsqueezy_variant_id_yearly or plan.provider_price_id_yearly
 
-    if not price_id:
-        # For mock provider or plans without provider price IDs, use plan ID
-        price_id = f"price_{plan.id}_{checkout_request.billing_period}"
-        logger.warning(f"Using generated price ID for plan {plan.name}: {price_id}")
+    if not variant_id:
+        # For mock provider or plans without variant/price IDs configured
+        variant_id = f"price_{plan.id}_{checkout_request.billing_period}"
+        logger.warning(f"Using generated variant ID for plan {plan.name}: {variant_id}")
 
     # Create checkout session
     try:
         session = await provider.create_checkout_session(
             customer_id=customer_id,
-            price_id=price_id,
+            price_id=variant_id,  # This is variant_id for LemonSqueezy
             success_url=payment_settings.payment_success_url,
             cancel_url=payment_settings.payment_cancel_url,
             metadata={
@@ -256,7 +257,8 @@ async def get_subscription_status(
             data={
                 "subscription": None,
                 "plan": None,
-                "usage": usage
+                "usage": usage,
+                "portal_url": None
             },
             message="No active subscription"
         )
@@ -264,11 +266,30 @@ async def get_subscription_status(
     # Get usage metrics
     usage = await usage_service.get_usage_metrics(user_id)
 
+    # Get user to check for customer ID
+    user_query = select(Users).where(Users.id == user_id)
+    user_result = await db.execute(user_query)
+    user = user_result.scalar_one_or_none()
+
+    # Generate customer portal URL if customer exists
+    portal_url = None
+    if user and user.provider_customer_id:
+        try:
+            provider = get_payment_provider()
+            portal_url = await provider.create_portal_session(
+                customer_id=user.provider_customer_id,
+                return_url=payment_settings.payment_success_url
+            )
+        except Exception as e:
+            logger.warning(f"Failed to generate portal URL: {str(e)}")
+            # Continue without portal URL - not critical
+
     return success(
         data={
             "subscription": subscription.to_dict(),
             "plan": subscription.plan.to_dict() if subscription.plan else None,
-            "usage": usage
+            "usage": usage,
+            "portal_url": portal_url
         },
         message="Subscription status retrieved successfully"
     )

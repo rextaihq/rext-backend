@@ -44,6 +44,19 @@ from .checkout_schemas import (
     CheckoutSessionResponse,
 )
 
+# License validation schemas
+from .license_schemas import (
+    LicenseValidateRequest,
+    LicenseValidateResponse,
+)
+
+# Invoice schemas
+from .invoice_schemas import (
+    Invoice,
+    InvoiceItem,
+    InvoiceListResponse,
+)
+
 # Analytics schemas
 from .analytics_schemas import (
     SubscriptionStatsResponse,
@@ -81,6 +94,15 @@ __all__ = [
     # Payment checkout schemas (2)
     "CheckoutSessionRequest",
     "CheckoutSessionResponse",
+
+    # License validation schemas (2)
+    "LicenseValidateRequest",
+    "LicenseValidateResponse",
+
+    # Invoice schemas (3)
+    "Invoice",
+    "InvoiceItem",
+    "InvoiceListResponse",
 
     # Analytics schemas (5)
     "SubscriptionStatsResponse",

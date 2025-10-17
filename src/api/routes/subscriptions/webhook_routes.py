@@ -15,6 +15,8 @@ from src.api.models.subscription_models.subscriptions import BillingPeriod
 from src.api.models.user_models.users import Users
 from src.services.subscription_service import SubscriptionService
 from src.services.email_service import EmailService
+from src.services.lemonsqueezy_webhook_service import LemonSqueezyWebhookService
+from src.services.webhook_handlers import subscription_handlers, order_handlers
 from src.services.payment.provider_factory import get_payment_provider_singleton as get_payment_provider
 from src.utils.response_utils import success
 from src.utils.route_decorators import db_transaction_handler
@@ -187,4 +189,137 @@ async def handle_mock_checkout_complete(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to create subscription: {str(e)}"
+        )
+
+
+@router.post("/lemonsqueezy", status_code=status.HTTP_200_OK)
+async def handle_lemonsqueezy_webhook(
+    request: Request,
+    db: AsyncSession = Depends(get_async_db)
+):
+    """
+    Handle LemonSqueezy webhook events.
+
+    This endpoint receives webhook events from LemonSqueezy and processes them
+    according to the event type. All events are verified, logged, and routed
+    to appropriate handlers.
+
+    Supported Events (12 total):
+
+    Subscription Events (9):
+    - subscription_created: New recurring subscription
+    - subscription_updated: Subscription plan/status change
+    - subscription_cancelled: Subscription cancelled
+    - subscription_resumed: Paused subscription resumed
+    - subscription_expired: Subscription expired
+    - subscription_paused: Subscription paused
+    - subscription_payment_success: Payment successful
+    - subscription_payment_failed: Payment failed
+    - subscription_payment_recovered: Payment recovered after failure
+
+    Order/License Events (3):
+    - order_created: One-time purchase (LTD)
+    - order_refunded: Order refunded
+    - license_key_created: License key generated
+
+    Headers:
+    - X-Signature: HMAC signature for webhook verification
+
+    Returns:
+    - 200 OK if webhook processed successfully
+    - 400 Bad Request if signature invalid
+    - 500 Internal Server Error if processing fails
+    """
+    # Get raw body for signature verification
+    body = await request.body()
+
+    # Get signature from headers
+    signature = request.headers.get("X-Signature", "")
+
+    if not signature:
+        logger.warning("LemonSqueezy webhook received without signature")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Missing webhook signature"
+        )
+
+    # Initialize webhook service
+    webhook_service = LemonSqueezyWebhookService(db)
+
+    # Register all subscription handlers (9 total)
+    webhook_service.register_handler(
+        "subscription_created",
+        subscription_handlers.handle_subscription_created
+    )
+    webhook_service.register_handler(
+        "subscription_updated",
+        subscription_handlers.handle_subscription_updated
+    )
+    webhook_service.register_handler(
+        "subscription_cancelled",
+        subscription_handlers.handle_subscription_cancelled
+    )
+    webhook_service.register_handler(
+        "subscription_resumed",
+        subscription_handlers.handle_subscription_resumed
+    )
+    webhook_service.register_handler(
+        "subscription_expired",
+        subscription_handlers.handle_subscription_expired
+    )
+    webhook_service.register_handler(
+        "subscription_paused",
+        subscription_handlers.handle_subscription_paused
+    )
+    webhook_service.register_handler(
+        "subscription_payment_success",
+        subscription_handlers.handle_subscription_payment_success
+    )
+    webhook_service.register_handler(
+        "subscription_payment_failed",
+        subscription_handlers.handle_subscription_payment_failed
+    )
+    webhook_service.register_handler(
+        "subscription_payment_recovered",
+        subscription_handlers.handle_subscription_payment_recovered
+    )
+
+    # Register order and license handlers
+    webhook_service.register_handler(
+        "order_created",
+        order_handlers.handle_order_created
+    )
+    webhook_service.register_handler(
+        "order_refunded",
+        order_handlers.handle_order_refunded
+    )
+    webhook_service.register_handler(
+        "license_key_created",
+        order_handlers.handle_license_key_created
+    )
+
+    try:
+        # Process webhook
+        result = await webhook_service.process_webhook(body, signature)
+
+        logger.info(
+            f"LemonSqueezy webhook processed successfully: {result.get('event_type')}",
+            extra={"event_id": result.get("event_id")}
+        )
+
+        return {"status": "success", "message": "Webhook processed"}
+
+    except ValueError as e:
+        # Signature verification failed
+        logger.error(f"LemonSqueezy webhook signature verification failed: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid webhook signature: {str(e)}"
+        )
+    except Exception as e:
+        # Processing failed
+        logger.error(f"LemonSqueezy webhook processing failed: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Webhook processing failed: {str(e)}"
         )

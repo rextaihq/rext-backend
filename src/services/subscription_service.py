@@ -31,6 +31,7 @@ from src.api.models.subscription_models.subscriptions import (
     SubscriptionStatus,
     BillingPeriod
 )
+from src.api.models.user_models.users import Users
 from src.api.models.workspace_models.workspace_model import WorkspaceModel
 from src.api.models.topic_models.topic_models import TopicsModel
 from src.api.models.knowledge_models.knowledge_model import (
@@ -132,6 +133,130 @@ class SubscriptionService:
 
         return new_subscription
 
+    async def create_checkout(
+        self,
+        user_id: UUID,
+        plan_id: UUID,
+        billing_period: BillingPeriod,
+        success_url: str,
+        cancel_url: str
+    ) -> Dict[str, str]:
+        """
+        Create checkout session with LemonSqueezy.
+
+        Business Rules:
+        - User cannot have existing active subscription (they should upgrade instead)
+        - Plan must exist and be active
+        - Gets or creates LemonSqueezy customer for user
+        - Creates checkout session with appropriate variant
+        - Subscription is created later via webhook after successful payment
+
+        Args:
+            user_id: User UUID
+            plan_id: Subscription plan UUID
+            billing_period: monthly or yearly
+            success_url: URL to redirect after successful checkout
+            cancel_url: URL to redirect if checkout is cancelled
+
+        Returns:
+            Dict with checkout_url and session_id
+
+        Raises:
+            DuplicateResourceException: If user already has active subscription
+            ResourceNotFoundException: If plan not found or inactive
+            WrextValidationException: If variant ID not configured for plan
+        """
+        # Check if user already has an active subscription
+        existing_subscription = await self.get_subscription_by_user(user_id)
+        if existing_subscription:
+            raise DuplicateResourceException(
+                message="User already has an active subscription. Use upgrade endpoint to change plans.",
+                resource_type="subscription",
+                conflicting_field="user_id",
+                conflicting_value=str(user_id)
+            )
+
+        # Get and validate plan
+        plan = await self._get_plan_or_404(plan_id, active_only=True)
+
+        # Get variant ID based on billing period
+        variant_id = None
+        if billing_period == BillingPeriod.MONTHLY:
+            variant_id = plan.lemonsqueezy_variant_id_monthly
+        elif billing_period == BillingPeriod.YEARLY:
+            variant_id = plan.lemonsqueezy_variant_id_yearly
+
+        if not variant_id:
+            raise WrextValidationException(
+                message=f"Plan {plan.name} does not have a {billing_period.value} variant configured",
+                field_errors={"billing_period": [f"{billing_period.value} variant not available"]}
+            )
+
+        # Get user to retrieve/store customer ID
+        result = await self.db.execute(
+            select(Users).where(Users.id == user_id)
+        )
+        user = result.scalar_one_or_none()
+
+        if not user:
+            raise ResourceNotFoundException(
+                resource_type="User",
+                resource_id=str(user_id),
+                message="User not found"
+            )
+
+        # Get or create customer ID
+        customer_id = user.provider_customer_id
+
+        if not customer_id:
+            # Create customer in payment provider
+            customer_name = f"{user.first_name} {user.last_name}".strip() or user.username
+            customer_id = await self.payment_provider.create_customer(
+                email=user.email,
+                name=customer_name,
+                metadata={
+                    "user_id": str(user_id),
+                    "username": user.username
+                }
+            )
+
+            # Store customer ID in database
+            user.provider_customer_id = customer_id
+            await self.db.flush()
+
+            logger.info(
+                f"Created payment provider customer {customer_id} for user {user_id}",
+                extra={"user_id": str(user_id), "customer_id": customer_id}
+            )
+
+        # Create checkout session
+        checkout_session = await self.payment_provider.create_checkout_session(
+            customer_id=customer_id,
+            price_id=variant_id,
+            success_url=success_url,
+            cancel_url=cancel_url,
+            metadata={
+                "user_id": str(user_id),
+                "plan_id": str(plan_id),
+                "billing_period": billing_period.value
+            }
+        )
+
+        logger.info(
+            f"Created checkout session {checkout_session.session_id} for user {user_id}",
+            extra={
+                "user_id": str(user_id),
+                "plan_id": str(plan_id),
+                "billing_period": billing_period.value,
+                "session_id": checkout_session.session_id
+            }
+        )
+
+        return {
+            "checkout_url": checkout_session.checkout_url,
+            "session_id": checkout_session.session_id
+        }
+
     async def upgrade(
         self,
         user_id: UUID,
@@ -204,10 +329,58 @@ class SubscriptionService:
             # Check specific limits
             self._validate_downgrade_limits(new_plan, current_usage)
 
-        # Update subscription
+        # Get new variant ID based on billing period
+        new_billing_period = billing_period or current_subscription.billing_period
+        new_variant_id = None
+        if new_billing_period == BillingPeriod.MONTHLY:
+            new_variant_id = new_plan.lemonsqueezy_variant_id_monthly
+        elif new_billing_period == BillingPeriod.YEARLY:
+            new_variant_id = new_plan.lemonsqueezy_variant_id_yearly
+
+        # Update subscription with payment provider if provider subscription exists
+        if current_subscription.provider_subscription_id or current_subscription.lemonsqueezy_subscription_id:
+            if new_variant_id:
+                try:
+                    provider_sub_id = current_subscription.lemonsqueezy_subscription_id or current_subscription.provider_subscription_id
+
+                    # Update subscription with payment provider
+                    updated_provider_subscription = await self.payment_provider.update_subscription(
+                        subscription_id=provider_sub_id,
+                        price_id=new_variant_id
+                    )
+
+                    logger.info(
+                        f"Updated subscription {provider_sub_id} with payment provider to variant {new_variant_id}",
+                        extra={
+                            "user_id": str(user_id),
+                            "subscription_id": provider_sub_id,
+                            "new_variant_id": new_variant_id,
+                            "old_plan": current_plan.name,
+                            "new_plan": new_plan.name
+                        }
+                    )
+                except Exception as e:
+                    logger.error(
+                        f"Failed to update subscription with payment provider: {str(e)}",
+                        extra={"user_id": str(user_id), "error": str(e)}
+                    )
+                    # Continue with local update even if provider update fails
+                    # Webhook will sync the state eventually
+            else:
+                logger.warning(
+                    f"No variant ID found for plan {new_plan.name} with billing period {new_billing_period.value}",
+                    extra={"plan_id": str(new_plan_id), "billing_period": new_billing_period.value}
+                )
+
+        # Update local subscription
         current_subscription.plan_id = new_plan_id
         if billing_period:
             current_subscription.billing_period = billing_period
+
+        # Update variant ID if available
+        if new_variant_id:
+            current_subscription.lemonsqueezy_variant_id = new_variant_id
+
         current_subscription.updated_at = datetime.utcnow()
 
         await self.db.flush()
@@ -260,6 +433,7 @@ class SubscriptionService:
         Cancel subscription.
 
         Business Rules:
+        - Cancels subscription via payment provider (LemonSqueezy)
         - Immediate cancellation: End immediately, status set to CANCELLED
         - Deferred cancellation: End at billing period, status remains ACTIVE
         - Cancellation reason logged for analytics
@@ -284,8 +458,36 @@ class SubscriptionService:
                 message="No active subscription found"
             )
 
-        # Update subscription
+        # Cancel subscription with payment provider if provider subscription exists
+        if subscription.provider_subscription_id or subscription.lemonsqueezy_subscription_id:
+            try:
+                provider_sub_id = subscription.lemonsqueezy_subscription_id or subscription.provider_subscription_id
+
+                # Cancel with payment provider
+                cancelled_subscription = await self.payment_provider.cancel_subscription(
+                    subscription_id=provider_sub_id,
+                    at_period_end=not cancel_immediately
+                )
+
+                logger.info(
+                    f"Cancelled subscription {provider_sub_id} with payment provider",
+                    extra={
+                        "user_id": str(user_id),
+                        "subscription_id": provider_sub_id,
+                        "at_period_end": not cancel_immediately
+                    }
+                )
+            except Exception as e:
+                logger.error(
+                    f"Failed to cancel subscription with payment provider: {str(e)}",
+                    extra={"user_id": str(user_id), "error": str(e)}
+                )
+                # Continue with local cancellation even if provider cancellation fails
+                # This ensures we don't leave the user stuck
+
+        # Update local subscription
         subscription.cancelled_at = datetime.utcnow()
+        subscription.cancel_at_period_end = not cancel_immediately
 
         if cancel_immediately:
             subscription.status = SubscriptionStatus.CANCELLED
@@ -558,6 +760,70 @@ class SubscriptionService:
             subscriptions_data.append(sub_data)
 
         return subscriptions_data
+
+    async def get_customer_portal_url(
+        self,
+        user_id: UUID,
+        return_url: str
+    ) -> Optional[str]:
+        """
+        Get customer portal URL for subscription management.
+
+        Generates a LemonSqueezy customer portal URL where users can:
+        - Update payment methods
+        - View invoices
+        - Cancel subscription
+        - Update billing information
+
+        Args:
+            user_id: User UUID
+            return_url: URL to return to after portal session
+
+        Returns:
+            Customer portal URL if subscription exists with provider, None otherwise
+        """
+        # Get user to retrieve customer ID
+        result = await self.db.execute(
+            select(Users).where(Users.id == user_id)
+        )
+        user = result.scalar_one_or_none()
+
+        if not user or not user.provider_customer_id:
+            logger.warning(
+                f"Cannot generate portal URL: User {user_id} has no provider_customer_id",
+                extra={"user_id": str(user_id)}
+            )
+            return None
+
+        # Get current subscription to verify it exists
+        subscription = await self.get_subscription_by_user(user_id)
+        if not subscription or not subscription.lemonsqueezy_subscription_id:
+            logger.warning(
+                f"Cannot generate portal URL: User {user_id} has no active subscription",
+                extra={"user_id": str(user_id)}
+            )
+            return None
+
+        try:
+            # Generate portal session URL
+            portal_url = await self.payment_provider.create_portal_session(
+                customer_id=user.provider_customer_id,
+                return_url=return_url
+            )
+
+            logger.info(
+                f"Generated customer portal URL for user {user_id}",
+                extra={"user_id": str(user_id)}
+            )
+
+            return portal_url
+
+        except Exception as e:
+            logger.error(
+                f"Failed to create customer portal session: {str(e)}",
+                extra={"user_id": str(user_id), "error": str(e)}
+            )
+            return None
 
     # ========================================================================
     # Private Helper Methods

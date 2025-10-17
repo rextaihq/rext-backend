@@ -280,3 +280,63 @@ class PaymentProvider(ABC):
             Parsed event data as dictionary
         """
         pass
+
+    @abstractmethod
+    async def validate_license_key(
+        self,
+        license_key: str,
+        instance_id: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Validate a license key with the payment provider.
+
+        Args:
+            license_key: License key to validate
+            instance_id: Optional device/instance identifier for activation tracking
+
+        Returns:
+            Dictionary with validation result containing:
+            - valid: bool
+            - status: str (active, inactive, expired, etc.)
+            - activated: bool
+            - activation_limit: Optional[int]
+            - activation_usage: Optional[int]
+            - expires_at: Optional[datetime]
+            - customer_email: Optional[str]
+            - customer_name: Optional[str]
+            - product_name: Optional[str]
+            - variant_name: Optional[str]
+        """
+        pass
+
+    @abstractmethod
+    async def get_invoices(
+        self,
+        customer_id: str,
+        limit: int = 10
+    ) -> List[Dict[str, Any]]:
+        """
+        Get invoices for a customer from the payment provider.
+
+        Args:
+            customer_id: Payment provider customer ID
+            limit: Maximum number of invoices to return
+
+        Returns:
+            List of invoice dictionaries containing:
+            - invoice_id: str
+            - invoice_number: Optional[str]
+            - status: str (paid, unpaid, refunded, etc.)
+            - amount: float
+            - currency: str
+            - tax: Optional[float]
+            - subtotal: Optional[float]
+            - invoice_url: Optional[str]
+            - invoice_date: datetime
+            - due_date: Optional[datetime]
+            - paid_at: Optional[datetime]
+            - customer_email: Optional[str]
+            - customer_name: Optional[str]
+            - items: Optional[List[Dict]]
+        """
+        pass

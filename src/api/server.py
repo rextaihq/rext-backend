@@ -29,6 +29,7 @@ from src.api.routes.subscriptions.plan_routes import router as plan_routes_route
 from src.api.routes.subscriptions.subscription_routes import router as subscription_routes_router
 from src.api.routes.subscriptions.checkout_routes import router as checkout_routes_router
 from src.api.routes.subscriptions.webhook_routes import router as webhook_routes_router
+from src.api.routes.subscriptions.license_routes import router as license_routes_router
 from src.api.routes.subscriptions.admin import router as admin_subscription_routes_router
 from src.api.routes.admin.customer_routes import router as admin_customer_routes_router
 from src.api.routes.admin.monitoring_routes import router as admin_monitoring_routes_router
@@ -230,6 +231,7 @@ app.include_router(plan_routes_router, prefix="/api/v1", tags=["Subscription Pla
 app.include_router(subscription_routes_router, prefix="/api/v1", tags=["Subscriptions"])
 app.include_router(checkout_routes_router, prefix="/api/v1", tags=["Subscriptions", "Checkout"])
 app.include_router(webhook_routes_router, prefix="/api/v1", tags=["Subscriptions", "Webhooks"])
+app.include_router(license_routes_router, prefix="/api/v1", tags=["Licenses"])
 app.include_router(admin_subscription_routes_router, prefix="/api/v1")
 app.include_router(admin_customer_routes_router, prefix="/api/v1/admin", tags=["Admin - Customers"])
 app.include_router(admin_monitoring_routes_router, prefix="/api/v1/admin", tags=["Admin - Monitoring"])

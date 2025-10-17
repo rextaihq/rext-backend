@@ -239,6 +239,73 @@ class MockPaymentProvider(PaymentProvider):
         except json.JSONDecodeError:
             return {}
 
+    async def validate_license_key(
+        self,
+        license_key: str,
+        instance_id: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Mock license key validation.
+
+        Returns mock validation data for testing.
+        """
+        # For mock provider, always return valid for testing
+        return {
+            "valid": True,
+            "license_key": license_key,
+            "status": "active",
+            "activated": True,
+            "activation_limit": 5,
+            "activation_usage": 1 if instance_id else 0,
+            "expires_at": None,  # Lifetime license
+            "customer_email": "mock@example.com",
+            "customer_name": "Mock Customer",
+            "product_name": "Mock Lifetime Plan",
+            "variant_name": "Lifetime"
+        }
+
+    async def get_invoices(
+        self,
+        customer_id: str,
+        limit: int = 10
+    ) -> List[Dict[str, Any]]:
+        """
+        Mock invoice retrieval.
+
+        Returns mock invoice data for testing.
+        """
+        from datetime import datetime, timedelta
+
+        # Generate mock invoices
+        invoices = []
+        for i in range(min(3, limit)):  # Return up to 3 mock invoices
+            invoice_date = datetime.utcnow() - timedelta(days=30 * (i + 1))
+            invoices.append({
+                "invoice_id": f"inv_mock_{uuid.uuid4().hex[:8]}",
+                "invoice_number": f"INV-MOCK-{2025 - i:04d}-{i + 1:03d}",
+                "status": "paid",
+                "amount": 29.99,
+                "currency": "USD",
+                "tax": 2.60,
+                "subtotal": 27.39,
+                "invoice_url": f"https://mock-provider.com/invoice/mock_{i}",
+                "invoice_date": invoice_date,
+                "due_date": invoice_date + timedelta(days=15),
+                "paid_at": invoice_date + timedelta(days=2),
+                "customer_email": "mock@example.com",
+                "customer_name": "Mock Customer",
+                "items": [
+                    {
+                        "description": "Mock Plan - Monthly",
+                        "quantity": 1,
+                        "unit_price": 29.99,
+                        "total": 29.99
+                    }
+                ]
+            })
+
+        return invoices
+
     def reset(self):
         """Reset all mock data (useful for testing)."""
         self.customers.clear()
