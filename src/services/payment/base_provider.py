@@ -55,8 +55,8 @@ class PaymentProvider(ABC):
     """
     Abstract payment provider interface.
 
-    Any payment provider (Stripe, LemonSqueezy, Paddle, FastSpring) must implement this interface.
-    This allows swapping payment providers without changing business logic.
+    Payment providers (e.g., LemonSqueezy) must implement this interface.
+    This allows flexibility in payment provider implementation without changing business logic.
     """
 
     @abstractmethod

@@ -1,7 +1,7 @@
 """User subscription model."""
 import uuid
 from datetime import datetime
-from sqlalchemy import Column, String, Integer, TIMESTAMP, ForeignKey, Enum as SQLEnum
+from sqlalchemy import Column, String, Integer, Boolean, TIMESTAMP, ForeignKey, Enum as SQLEnum
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import relationship
 import enum
@@ -48,6 +48,16 @@ class UserSubscription(Base, SerializableMixin):
     # Payment Provider Integration (provider-agnostic)
     provider_subscription_id = Column(String(255), unique=True)
     provider_customer_id = Column(String(255))
+
+    # LemonSqueezy Integration Fields
+    lemonsqueezy_subscription_id = Column(String(255), nullable=True, unique=True, index=True)  # LemonSqueezy subscription ID
+    lemonsqueezy_customer_id = Column(String(255), nullable=True, index=True)  # LemonSqueezy customer ID
+    lemonsqueezy_order_id = Column(String(255), nullable=True)  # LemonSqueezy order ID
+    lemonsqueezy_product_id = Column(String(255), nullable=True)  # LemonSqueezy product ID
+    lemonsqueezy_variant_id = Column(String(255), nullable=True)  # LemonSqueezy variant ID
+    renews_at = Column(TIMESTAMP, nullable=True, index=True)  # Next renewal date
+    ends_at = Column(TIMESTAMP, nullable=True)  # Subscription end date
+    cancel_at_period_end = Column(Boolean, default=False, nullable=False)  # Cancel at period end flag
 
     # Usage tracking (reset monthly)
     current_api_calls = Column(Integer, default=0)

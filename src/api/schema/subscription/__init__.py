@@ -38,8 +38,8 @@ from .admin_schemas import (
     AdminUsageResetRequest,
 )
 
-# Stripe integration schemas
-from .stripe_schemas import (
+# Payment checkout schemas
+from .checkout_schemas import (
     CheckoutSessionRequest,
     CheckoutSessionResponse,
 )
@@ -78,7 +78,7 @@ __all__ = [
     "AdminSubscriptionExtendRequest",
     "AdminUsageResetRequest",
 
-    # Stripe integration schemas (2)
+    # Payment checkout schemas (2)
     "CheckoutSessionRequest",
     "CheckoutSessionResponse",
 

@@ -94,6 +94,7 @@ def upgrade() -> None:
     # 5. Create licenses table
     # ========================================
     # Create enum for license status (check if exists first)
+    # Using raw SQL to avoid SQLAlchemy attempting to create the type
     op.execute("""
         DO $$ BEGIN
             CREATE TYPE licensestatus AS ENUM ('active', 'inactive', 'expired', 'disabled');
@@ -101,27 +102,28 @@ def upgrade() -> None:
             WHEN duplicate_object THEN null;
         END $$;
     """)
-    license_status_enum = sa.Enum('active', 'inactive', 'expired', 'disabled', name='licensestatus', create_type=False)
 
-    op.create_table(
-        'licenses',
-        sa.Column('id', UUID(as_uuid=True), primary_key=True, server_default=sa.text('gen_random_uuid()')),
-        sa.Column('user_id', UUID(as_uuid=True), sa.ForeignKey('users.id', ondelete='SET NULL'), nullable=True),
-        sa.Column('license_key', sa.String(255), nullable=False),
-        sa.Column('lemonsqueezy_license_id', sa.String(255), nullable=False),
-        sa.Column('lemonsqueezy_order_id', sa.String(255), nullable=False),
-        sa.Column('lemonsqueezy_product_id', sa.String(255), nullable=False),
-        sa.Column('product_name', sa.String(255), nullable=False),
-        sa.Column('status', license_status_enum, nullable=False, default='inactive'),
-        sa.Column('activation_email', sa.String(255), nullable=False),
-        sa.Column('activation_limit', sa.Integer(), nullable=True),
-        sa.Column('activation_count', sa.Integer(), default=0, nullable=False),
-        sa.Column('activated_at', sa.TIMESTAMP(), nullable=True),
-        sa.Column('expires_at', sa.TIMESTAMP(), nullable=True),
-        sa.Column('license_metadata', JSONB, default={}, nullable=False, server_default='{}'),
-        sa.Column('created_at', sa.TIMESTAMP(), nullable=False, server_default=sa.text('now()')),
-        sa.Column('updated_at', sa.TIMESTAMP(), nullable=False, server_default=sa.text('now()'))
-    )
+    # Use raw SQL to create table to avoid SQLAlchemy enum creation issues
+    op.execute("""
+        CREATE TABLE IF NOT EXISTS licenses (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+            license_key VARCHAR(255) NOT NULL,
+            lemonsqueezy_license_id VARCHAR(255) NOT NULL,
+            lemonsqueezy_order_id VARCHAR(255) NOT NULL,
+            lemonsqueezy_product_id VARCHAR(255) NOT NULL,
+            product_name VARCHAR(255) NOT NULL,
+            status licensestatus NOT NULL DEFAULT 'inactive'::licensestatus,
+            activation_email VARCHAR(255) NOT NULL,
+            activation_limit INTEGER,
+            activation_count INTEGER NOT NULL DEFAULT 0,
+            activated_at TIMESTAMP,
+            expires_at TIMESTAMP,
+            license_metadata JSONB NOT NULL DEFAULT '{}',
+            created_at TIMESTAMP NOT NULL DEFAULT now(),
+            updated_at TIMESTAMP NOT NULL DEFAULT now()
+        )
+    """)
 
     # Create indexes for licenses
     op.create_index('ix_licenses_license_key', 'licenses', ['license_key'], unique=True)

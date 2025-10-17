@@ -17,15 +17,13 @@ def get_payment_provider() -> PaymentProvider:
 
     The provider is determined by the payment_settings.payment_provider value:
     - "mock": MockPaymentProvider (for development/testing)
-    - "lemonsqueezy": LemonSqueezyProvider (requires Plan 01B implementation)
-    - "paddle": PaddleProvider (requires Plan 01B implementation)
-    - "fastspring": FastSpringProvider (requires Plan 01B implementation)
+    - "lemonsqueezy": LemonSqueezyProvider (production payment processing)
 
     Returns:
         PaymentProvider: Configured payment provider instance
 
     Raises:
-        ValueError: If unknown payment provider is configured
+        ValueError: If unknown payment provider is configured or required config is missing
     """
     provider_name = payment_settings.payment_provider
 
@@ -37,42 +35,24 @@ def get_payment_provider() -> PaymentProvider:
     elif provider_name == "lemonsqueezy":
         try:
             from src.providers.payment.providers.lemonsqueezy import LemonSqueezyProvider
-            return LemonSqueezyProvider()
-        except ImportError:
-            logger.error(
-                "LemonSqueezy provider not implemented yet. "
-                "Please complete Plan 01B first or use mock provider."
-            )
-            raise ValueError(
-                "LemonSqueezy provider not implemented. "
-                "Set PAYMENT_PROVIDER=mock in .env to use mock provider."
-            )
 
-    elif provider_name == "paddle":
-        try:
-            from src.providers.payment.providers.paddle import PaddleProvider
-            return PaddleProvider()
-        except ImportError:
-            logger.error(
-                "Paddle provider not implemented yet. "
-                "Please complete Plan 01B first or use mock provider."
-            )
-            raise ValueError(
-                "Paddle provider not implemented. "
-                "Set PAYMENT_PROVIDER=mock in .env to use mock provider."
-            )
+            # Validate required configuration
+            if not payment_settings.lemonsqueezy_api_key:
+                raise ValueError("LEMONSQUEEZY_API_KEY is required in .env")
+            if not payment_settings.lemonsqueezy_store_id:
+                raise ValueError("LEMONSQUEEZY_STORE_ID is required in .env")
 
-    elif provider_name == "fastspring":
-        try:
-            from src.providers.payment.providers.fastspring import FastSpringProvider
-            return FastSpringProvider()
-        except ImportError:
-            logger.error(
-                "FastSpring provider not implemented yet. "
-                "Please complete Plan 01B first or use mock provider."
+            # Initialize with configuration from settings
+            return LemonSqueezyProvider(
+                api_key=payment_settings.lemonsqueezy_api_key,
+                store_id=payment_settings.lemonsqueezy_store_id,
+                webhook_secret=payment_settings.lemonsqueezy_webhook_secret,
+                sandbox_mode=(payment_settings.payment_provider == "lemonsqueezy_sandbox")
             )
+        except ImportError as e:
+            logger.error(f"LemonSqueezy provider import failed: {e}")
             raise ValueError(
-                "FastSpring provider not implemented. "
+                "LemonSqueezy provider not available. "
                 "Set PAYMENT_PROVIDER=mock in .env to use mock provider."
             )
 
@@ -80,7 +60,7 @@ def get_payment_provider() -> PaymentProvider:
         logger.error(f"Unknown payment provider: {provider_name}")
         raise ValueError(
             f"Unknown payment provider: {provider_name}. "
-            f"Supported providers: mock, lemonsqueezy, paddle, fastspring"
+            f"Supported providers: mock, lemonsqueezy"
         )
 
 

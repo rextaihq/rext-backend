@@ -81,7 +81,7 @@ class SubscriptionService:
             user_id: User UUID
             plan_id: Subscription plan UUID
             billing_period: monthly, yearly, or lifetime
-            payment_method_id: Optional payment method (for Stripe integration)
+            payment_method_id: Optional payment method (for payment provider integration)
 
         Returns:
             UserSubscription object

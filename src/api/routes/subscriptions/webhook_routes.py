@@ -53,7 +53,7 @@ async def handle_mock_checkout_complete(
     Handle mock checkout completion webhook.
 
     This endpoint simulates webhook events from payment providers in development.
-    In production, real payment providers (Stripe/LemonSqueezy) would call their
+    In production, payment providers (e.g., LemonSqueezy) would call their
     respective webhook endpoints.
 
     Request Body:
