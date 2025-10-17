@@ -109,7 +109,8 @@ class TestMockWebhookSecurity:
             "This is tested in integration tests."
         )
 
-    @pytest.mark.skipif(
+    # LemonSqueezy webhook implemented - test enabled
+    # @pytest.mark.skipif(
         condition=True,  # Set to False when production check is implemented
         reason="Production environment check not yet implemented"
     )
@@ -177,8 +178,9 @@ class TestLemonSqueezyWebhookSecurity:
         ).hexdigest()
         return signature
 
-    @pytest.mark.skipif(
-        condition=True,  # Set to False when LemonSqueezy webhook is implemented
+    # LemonSqueezy webhook implemented - test enabled
+    # @pytest.mark.skipif(
+        condition=False  # LemonSqueezy webhook IS implemented
         reason="LemonSqueezy webhook not yet implemented"
     )
     def test_lemonsqueezy_webhook_rejects_missing_signature(
@@ -196,7 +198,8 @@ class TestLemonSqueezyWebhookSecurity:
         assert response.status_code == 422  # FastAPI validation error
         # Or 401 if custom validation
 
-    @pytest.mark.skipif(
+    # LemonSqueezy webhook implemented - test enabled
+    # @pytest.mark.skipif(
         condition=True,
         reason="LemonSqueezy webhook not yet implemented"
     )
@@ -215,7 +218,8 @@ class TestLemonSqueezyWebhookSecurity:
         assert response.status_code == 401
         assert "signature" in response.json()["detail"].lower()
 
-    @pytest.mark.skipif(
+    # LemonSqueezy webhook implemented - test enabled
+    # @pytest.mark.skipif(
         condition=True,
         reason="LemonSqueezy webhook not yet implemented"
     )
@@ -242,7 +246,8 @@ class TestLemonSqueezyWebhookSecurity:
         assert response.status_code == 200
         assert response.json()["status"] == "ok"
 
-    @pytest.mark.skipif(
+    # LemonSqueezy webhook implemented - test enabled
+    # @pytest.mark.skipif(
         condition=True,
         reason="LemonSqueezy webhook not yet implemented"
     )
@@ -284,7 +289,8 @@ class TestLemonSqueezyWebhookSecurity:
 
         # TODO: Verify in database that event was only processed once
 
-    @pytest.mark.skipif(
+    # LemonSqueezy webhook implemented - test enabled
+    # @pytest.mark.skipif(
         condition=True,
         reason="LemonSqueezy webhook not yet implemented"
     )
