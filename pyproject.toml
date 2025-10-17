@@ -49,6 +49,7 @@ dependencies = [
     "tenacity>=8.2.0",
     "sentry-sdk[fastapi]>=2.0.0",
     "redis[hiredis]>=5.0.0",
+    "lemonsqueezy>=0.1.2",
 ]
 
 [project.scripts]

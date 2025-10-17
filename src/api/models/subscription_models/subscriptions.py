@@ -16,6 +16,8 @@ class SubscriptionStatus(str, enum.Enum):
     EXPIRED = "expired"
     TRIAL = "trial"
     SUSPENDED = "suspended"
+    PAST_DUE = "past_due"  # Payment failed, retrying
+    PAUSED = "paused"  # Subscription temporarily paused
 
 
 class BillingPeriod(str, enum.Enum):
