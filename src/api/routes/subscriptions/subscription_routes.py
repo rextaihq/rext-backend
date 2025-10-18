@@ -173,6 +173,10 @@ async def get_my_subscription(
         "max_api_calls_per_month": plan.max_api_calls_per_month
     }
 
+    # Add current_period_end as alias for renews_at (frontend compatibility)
+    if subscription.renews_at:
+        response_data["current_period_end"] = subscription.renews_at.isoformat() if hasattr(subscription.renews_at, 'isoformat') else subscription.renews_at
+
     # Add customer portal URL if subscription exists with payment provider
     portal_url = await service.get_customer_portal_url(
         user_id=user_id,
