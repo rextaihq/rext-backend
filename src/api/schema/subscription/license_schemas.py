@@ -5,7 +5,7 @@ This module defines Pydantic models for license validation operations.
 """
 
 from pydantic import BaseModel, Field
-from typing import Optional
+from typing import Optional, List
 from datetime import datetime
 
 
@@ -60,3 +60,101 @@ class LicenseValidateResponse(BaseModel):
                 "variant_name": "Lifetime"
             }
         }
+
+
+class LicenseActivateRequest(BaseModel):
+    """Schema for activating a license."""
+    license_key: str = Field(..., description="License key to activate")
+    instance_id: str = Field(..., description="Unique device/instance identifier", max_length=255)
+    instance_name: Optional[str] = Field(None, description="Human-readable instance name", max_length=255)
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "license_key": "XXXX-XXXX-XXXX-XXXX",
+                "instance_id": "device-12345",
+                "instance_name": "My Laptop"
+            }
+        }
+
+
+class LicenseDeactivateRequest(BaseModel):
+    """Schema for deactivating a license activation."""
+    instance_id: str = Field(..., description="Instance identifier to deactivate", max_length=255)
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "instance_id": "device-12345"
+            }
+        }
+
+
+class LicenseActivationResponse(BaseModel):
+    """Schema for license activation details."""
+    id: str
+    license_id: str
+    instance_id: str
+    instance_name: Optional[str]
+    is_active: bool
+    activated_at: str
+    deactivated_at: Optional[str]
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "id": "123e4567-e89b-12d3-a456-426614174000",
+                "license_id": "123e4567-e89b-12d3-a456-426614174001",
+                "instance_id": "device-12345",
+                "instance_name": "My Laptop",
+                "is_active": True,
+                "activated_at": "2025-10-18T10:30:00Z",
+                "deactivated_at": None
+            }
+        }
+
+
+class LicenseResponse(BaseModel):
+    """Schema for license details."""
+    id: str
+    license_key: str
+    product_name: str
+    status: str
+    activation_limit: Optional[int]
+    activation_count: int
+    activated_at: Optional[str]
+    expires_at: Optional[str]
+    created_at: str
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "id": "123e4567-e89b-12d3-a456-426614174000",
+                "license_key": "XXXX-XXXX-XXXX-XXXX",
+                "product_name": "WREXT Pro License",
+                "status": "active",
+                "activation_limit": 3,
+                "activation_count": 1,
+                "activated_at": "2025-10-18T10:30:00Z",
+                "expires_at": None,
+                "created_at": "2025-10-18T10:00:00Z"
+            }
+        }
+
+
+class LicenseListResponse(BaseModel):
+    """Schema for list of licenses."""
+    licenses: List[LicenseResponse]
+    total: int
+
+
+class LicenseActivationListResponse(BaseModel):
+    """Schema for list of license activations."""
+    activations: List[LicenseActivationResponse]
+    total: int
+    active_count: int
+
+
+class LicenseRevokeRequest(BaseModel):
+    """Schema for revoking a license (admin only)."""
+    reason: Optional[str] = Field(None, description="Reason for revocation", max_length=500)

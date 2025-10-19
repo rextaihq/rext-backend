@@ -50,6 +50,7 @@ class License(Base, SerializableMixin):
 
     # Relationships
     user = relationship("Users", backref="licenses")
+    activations = relationship("LicenseActivation", back_populates="license", cascade="all, delete-orphan")
 
     def __repr__(self):
         return f"<License(id={self.id}, key={self.license_key[:12]}..., status={self.status.value})>"

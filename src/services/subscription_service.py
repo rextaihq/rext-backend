@@ -139,7 +139,9 @@ class SubscriptionService:
         plan_id: UUID,
         billing_period: BillingPeriod,
         success_url: str,
-        cancel_url: str
+        cancel_url: str,
+        discount_code: Optional[str] = None,
+        affiliate_code: Optional[str] = None
     ) -> Dict[str, str]:
         """
         Create checkout session with LemonSqueezy.
@@ -157,6 +159,8 @@ class SubscriptionService:
             billing_period: monthly or yearly
             success_url: URL to redirect after successful checkout
             cancel_url: URL to redirect if checkout is cancelled
+            discount_code: Optional discount/promo code to apply
+            affiliate_code: Optional affiliate/referral code for tracking
 
         Returns:
             Dict with checkout_url and session_id
@@ -235,10 +239,13 @@ class SubscriptionService:
             price_id=variant_id,
             success_url=success_url,
             cancel_url=cancel_url,
+            discount_code=discount_code,
             metadata={
                 "user_id": str(user_id),
                 "plan_id": str(plan_id),
-                "billing_period": billing_period.value
+                "billing_period": billing_period.value,
+                "discount_code": discount_code if discount_code else None,
+                "affiliate_code": affiliate_code if affiliate_code else None
             }
         )
 
@@ -248,7 +255,9 @@ class SubscriptionService:
                 "user_id": str(user_id),
                 "plan_id": str(plan_id),
                 "billing_period": billing_period.value,
-                "session_id": checkout_session.session_id
+                "session_id": checkout_session.session_id,
+                "discount_code": discount_code if discount_code else None,
+                "affiliate_code": affiliate_code if affiliate_code else None
             }
         )
 

@@ -101,6 +101,8 @@ async def create_checkout_session(
     - billing_period: monthly or yearly
     - success_url: URL to redirect after successful checkout
     - cancel_url: URL to redirect if checkout is cancelled
+    - discount_code: Optional discount/promo code
+    - affiliate_code: Optional affiliate/referral code
 
     Returns:
     - checkout_url: LemonSqueezy checkout URL
@@ -115,7 +117,9 @@ async def create_checkout_session(
         plan_id=checkout_data.plan_id,
         billing_period=checkout_data.billing_period,
         success_url=checkout_data.success_url,
-        cancel_url=checkout_data.cancel_url
+        cancel_url=checkout_data.cancel_url,
+        discount_code=checkout_data.discount_code,
+        affiliate_code=checkout_data.affiliate_code
     )
 
     return success(

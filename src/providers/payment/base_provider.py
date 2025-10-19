@@ -90,6 +90,7 @@ class PaymentProvider(ABC):
         price_id: str,
         success_url: str,
         cancel_url: str,
+        discount_code: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None
     ) -> CheckoutSession:
         """
@@ -100,6 +101,7 @@ class PaymentProvider(ABC):
             price_id: Price/Plan ID from payment provider
             success_url: URL to redirect on successful payment
             cancel_url: URL to redirect on cancelled payment
+            discount_code: Optional discount/promo code to apply
             metadata: Additional metadata to store with checkout
 
         Returns:

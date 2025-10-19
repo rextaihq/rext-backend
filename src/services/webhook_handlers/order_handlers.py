@@ -33,6 +33,7 @@ from src.api.models.subscription_models.subscriptions import (
 from src.api.models.subscription_models.plans import SubscriptionPlan
 from src.api.models.subscription_models.webhooks import WebhookEvent
 from src.api.models.user_models.users import Users
+from src.services.refund_service import RefundService
 from src.utils.lemonsqueezy_webhook import (
     extract_order_data,
     extract_license_key_data,
@@ -263,6 +264,8 @@ async def handle_order_refunded(
     order_data = extract_order_data(webhook_data)
     lemonsqueezy_order_id = order_data.get("order_id")
     refunded_at = order_data.get("refunded_at")
+    total_amount = order_data.get("total", 0)
+    user_email = order_data.get("user_email")
 
     # Find license by order_id
     stmt = select(License).where(
@@ -271,20 +274,6 @@ async def handle_order_refunded(
     result = await db.execute(stmt)
     license_record = result.scalar_one_or_none()
 
-    if not license_record:
-        logger.warning(f"License not found for refunded order {lemonsqueezy_order_id}")
-        return  # Not an error - order might not have had a license
-
-    # Disable license
-    license_record.status = LicenseStatus.DISABLED
-    license_record.updated_at = datetime.utcnow()
-    await db.flush()
-
-    logger.info(
-        f"Disabled license {license_record.id} due to refund",
-        extra={"license_id": str(license_record.id)}
-    )
-
     # Find and expire associated subscription
     stmt = select(UserSubscription).where(
         UserSubscription.lemonsqueezy_order_id == lemonsqueezy_order_id
@@ -292,6 +281,49 @@ async def handle_order_refunded(
     result = await db.execute(stmt)
     subscription = result.scalar_one_or_none()
 
+    # Need at least one to process refund
+    if not license_record and not subscription:
+        logger.warning(f"No license or subscription found for refunded order {lemonsqueezy_order_id}")
+        return  # Not an error - order might not have had a license or subscription
+
+    user_id = license_record.user_id if license_record else subscription.user_id
+    subscription_id = subscription.id if subscription else None
+
+    # Create refund record
+    refund_service = RefundService(db)
+    try:
+        refund = await refund_service.create_refund_record(
+            user_id=user_id,
+            lemonsqueezy_order_id=lemonsqueezy_order_id,
+            refund_amount=total_amount,  # Full refund
+            original_amount=total_amount,
+            subscription_id=subscription_id,
+            reason="Refund processed via LemonSqueezy webhook"
+        )
+
+        # Mark as completed since webhook already processed
+        await refund_service.mark_refund_completed(refund.id)
+
+        logger.info(
+            f"Created refund record {refund.id} for order {lemonsqueezy_order_id}",
+            extra={"refund_id": str(refund.id), "order_id": lemonsqueezy_order_id}
+        )
+    except Exception as e:
+        logger.error(f"Failed to create refund record: {str(e)}")
+        # Continue processing even if refund record creation fails
+
+    # Disable license
+    if license_record:
+        license_record.status = LicenseStatus.DISABLED
+        license_record.updated_at = datetime.utcnow()
+        await db.flush()
+
+        logger.info(
+            f"Disabled license {license_record.id} due to refund",
+            extra={"license_id": str(license_record.id)}
+        )
+
+    # Cancel subscription
     if subscription:
         subscription.status = SubscriptionStatus.CANCELLED
         subscription.cancelled_at = datetime.utcnow()
@@ -304,12 +336,15 @@ async def handle_order_refunded(
             extra={"subscription_id": str(subscription.id)}
         )
 
-    # TODO: Send refund confirmation email (Task 1.5.6)
+    # TODO: Send refund confirmation email
+    # For now, logging that email should be sent
     logger.info(
-        f"Refund processed for order {lemonsqueezy_order_id}",
+        f"Refund processed for order {lemonsqueezy_order_id} - Email notification should be sent to {user_email}",
         extra={
             "order_id": lemonsqueezy_order_id,
-            "license_id": str(license_record.id) if license_record else None
+            "user_email": user_email,
+            "license_id": str(license_record.id) if license_record else None,
+            "subscription_id": str(subscription.id) if subscription else None
         }
     )
 

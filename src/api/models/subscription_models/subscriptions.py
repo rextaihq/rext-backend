@@ -59,6 +59,10 @@ class UserSubscription(Base, SerializableMixin):
     ends_at = Column(TIMESTAMP, nullable=True)  # Subscription end date
     cancel_at_period_end = Column(Boolean, default=False, nullable=False)  # Cancel at period end flag
 
+    # Payment failure & dunning management
+    grace_period_end = Column(TIMESTAMP, nullable=True, index=True)  # When to suspend after payment failure
+    payment_failed_at = Column(TIMESTAMP, nullable=True)  # When payment first failed
+
     # Usage tracking (reset monthly)
     current_api_calls = Column(Integer, default=0)
     usage_reset_date = Column(TIMESTAMP, default=datetime.utcnow)
@@ -72,6 +76,8 @@ class UserSubscription(Base, SerializableMixin):
     # Relationships
     user = relationship("Users", backref="subscriptions")
     plan = relationship("SubscriptionPlan", back_populates="subscriptions")
+    discount_usages = relationship("DiscountUsage", back_populates="subscription", cascade="all, delete-orphan")
+    refunds = relationship("Refund", back_populates="subscription")
 
     def to_dict(self, **kwargs):
         """Custom serialization handling enum values"""

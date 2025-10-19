@@ -74,6 +74,7 @@ class MockPaymentProvider(PaymentProvider):
         price_id: str,
         success_url: str,
         cancel_url: str,
+        discount_code: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None
     ) -> CheckoutSession:
         """Create mock checkout session"""
@@ -85,6 +86,7 @@ class MockPaymentProvider(PaymentProvider):
             "price_id": price_id,
             "success_url": success_url,
             "cancel_url": cancel_url,
+            "discount_code": discount_code,
             "metadata": metadata or {},
             "created_at": datetime.utcnow().isoformat()
         }
@@ -94,7 +96,10 @@ class MockPaymentProvider(PaymentProvider):
         # Mock checkout URL - in real provider, this would be provider's hosted checkout
         checkout_url = f"/mock-checkout/{session_id}"
 
-        logger.info(f"Mock: Created checkout session {session_id} for customer {customer_id}")
+        logger.info(
+            f"Mock: Created checkout session {session_id} for customer {customer_id}" +
+            (f" with discount code {discount_code}" if discount_code else "")
+        )
 
         return CheckoutSession(
             session_id=session_id,

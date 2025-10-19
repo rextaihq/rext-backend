@@ -233,6 +233,7 @@ class LemonSqueezyProvider(PaymentProvider):
         price_id: str,  # In LemonSqueezy, this is variant_id
         success_url: str,
         cancel_url: str,
+        discount_code: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None
     ) -> CheckoutSession:
         """
@@ -243,36 +244,44 @@ class LemonSqueezyProvider(PaymentProvider):
             price_id: LemonSqueezy variant ID
             success_url: Success redirect URL
             cancel_url: Cancel redirect URL
+            discount_code: Optional discount/promo code to pre-fill
             metadata: Custom data to attach
 
         Returns:
             CheckoutSession: Checkout session details
         """
+        # Build checkout attributes
+        checkout_attributes = {
+            "custom_price": None,
+            "product_options": {
+                "enabled_variants": [price_id],
+                "redirect_url": success_url,
+                "receipt_button_text": "Go to Dashboard",
+                "receipt_thank_you_note": "Thank you for your purchase!",
+            },
+            "checkout_options": {
+                "embed": True,
+                "media": False,
+                "logo": True,
+                "desc": True,
+                "discount": True,
+                "dark": False,
+                "subscription_preview": True,
+            },
+            "checkout_data": metadata or {},
+            "expires_at": None,
+            "preview": self.sandbox_mode,
+            "test_mode": self.sandbox_mode,
+        }
+
+        # Add discount code if provided
+        if discount_code:
+            checkout_attributes["discount_code"] = discount_code
+
         checkout_data = {
             "data": {
                 "type": "checkouts",
-                "attributes": {
-                    "custom_price": None,
-                    "product_options": {
-                        "enabled_variants": [price_id],
-                        "redirect_url": success_url,
-                        "receipt_button_text": "Go to Dashboard",
-                        "receipt_thank_you_note": "Thank you for your purchase!",
-                    },
-                    "checkout_options": {
-                        "embed": True,
-                        "media": False,
-                        "logo": True,
-                        "desc": True,
-                        "discount": True,
-                        "dark": False,
-                        "subscription_preview": True,
-                    },
-                    "checkout_data": metadata or {},
-                    "expires_at": None,
-                    "preview": self.sandbox_mode,
-                    "test_mode": self.sandbox_mode,
-                },
+                "attributes": checkout_attributes,
                 "relationships": {
                     "store": {
                         "data": {
@@ -695,6 +704,115 @@ class LemonSqueezyProvider(PaymentProvider):
         )
 
         return license_data
+
+    async def create_refund(
+        self,
+        order_id: str,
+        amount: Optional[int] = None,
+        reason: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Create a refund for an order.
+
+        Args:
+            order_id: LemonSqueezy order ID
+            amount: Refund amount in cents (optional, defaults to full refund)
+            reason: Refund reason (optional)
+
+        Returns:
+            Dict containing refund data
+
+        Raises:
+            LemonSqueezyAPIError: If API request fails
+        """
+        logger.info(
+            f"LemonSqueezy: Creating refund for order {order_id} "
+            f"(amount={amount if amount else 'full'}, reason={reason})"
+        )
+
+        # Build refund data
+        refund_data = {
+            "data": {
+                "type": "refunds",
+                "attributes": {},
+                "relationships": {
+                    "order": {
+                        "data": {
+                            "type": "orders",
+                            "id": order_id
+                        }
+                    }
+                }
+            }
+        }
+
+        # Add optional fields
+        if amount is not None:
+            refund_data["data"]["attributes"]["amount"] = amount
+
+        if reason:
+            refund_data["data"]["attributes"]["reason"] = reason
+
+        try:
+            response = await self._make_request(
+                "POST",
+                "/refunds",
+                data=refund_data
+            )
+
+            refund_info = response.get("data", {})
+            refund_id = refund_info.get("id")
+
+            logger.info(
+                f"LemonSqueezy: Refund created successfully "
+                f"(refund_id={refund_id}, order_id={order_id})"
+            )
+
+            return refund_info
+
+        except LemonSqueezyAPIError as e:
+            logger.error(
+                f"LemonSqueezy: Failed to create refund for order {order_id}: {e.message}",
+                extra={"status_code": e.status_code, "details": e.details}
+            )
+            raise
+
+    async def get_refund(self, refund_id: str) -> Dict[str, Any]:
+        """
+        Get refund details.
+
+        Args:
+            refund_id: LemonSqueezy refund ID
+
+        Returns:
+            Dict containing refund data
+
+        Raises:
+            LemonSqueezyAPIError: If API request fails
+        """
+        logger.info(f"LemonSqueezy: Retrieving refund {refund_id}")
+
+        try:
+            response = await self._make_request(
+                "GET",
+                f"/refunds/{refund_id}"
+            )
+
+            refund_data = response.get("data", {})
+
+            logger.info(
+                f"LemonSqueezy: Retrieved refund {refund_id} "
+                f"(status={refund_data.get('attributes', {}).get('status', 'unknown')})"
+            )
+
+            return refund_data
+
+        except LemonSqueezyAPIError as e:
+            logger.error(
+                f"LemonSqueezy: Failed to retrieve refund {refund_id}: {e.message}",
+                extra={"status_code": e.status_code}
+            )
+            raise
 
     async def close(self):
         """Close the HTTP client connection"""

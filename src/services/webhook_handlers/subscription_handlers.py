@@ -34,9 +34,12 @@ from src.api.models.subscription_models.subscriptions import (
 )
 from src.api.models.subscription_models.plans import SubscriptionPlan
 from src.api.models.subscription_models.webhooks import WebhookEvent
+from src.api.models.subscription_models.discount_usage import DiscountUsage
+from src.api.models.subscription_models.trial_conversions import TrialConversion
 from src.api.models.user_models.users import Users
 from src.utils.lemonsqueezy_webhook import extract_subscription_data, get_user_identifier
 from src.utils.logger import logger
+from src.services.trial_service import TrialService
 
 
 async def handle_subscription_created(
@@ -203,6 +206,49 @@ async def handle_subscription_created(
         await db.flush()
         logger.info(f"Updated user {user.id} provider_customer_id")
 
+    # Track discount usage if discount was applied
+    discount_data = webhook_data.get("meta", {}).get("custom_data", {})
+    if discount_data and discount_data.get("discount_code"):
+        # Extract discount information from webhook
+        discount_code = discount_data.get("discount_code")
+        affiliate_code = discount_data.get("affiliate_code")
+
+        # Extract discount details from attributes
+        attributes = webhook_data.get("data", {}).get("attributes", {})
+        first_subscription_item = attributes.get("first_subscription_item", {})
+
+        # Create discount usage record
+        discount_usage = DiscountUsage(
+            user_id=user.id,
+            subscription_id=subscription.id,
+            discount_code=discount_code,
+            discount_amount=first_subscription_item.get("discount_total"),
+            discount_amount_type="fixed",  # Will be updated based on actual data
+            lemonsqueezy_discount_id=first_subscription_item.get("discount_id"),
+            order_id=attributes.get("first_order_id"),
+            applied_at=datetime.utcnow(),
+            usage_metadata={
+                "subscription_id": lemonsqueezy_subscription_id,
+                "variant_id": lemonsqueezy_variant_id,
+                "webhook_event_id": webhook_data.get("event_id"),
+                "affiliate_code": affiliate_code if affiliate_code else None
+            }
+        )
+
+        db.add(discount_usage)
+        await db.flush()
+
+        logger.info(
+            f"Tracked discount usage: {discount_code} for user {user.id}" +
+            (f" (affiliate: {affiliate_code})" if affiliate_code else ""),
+            extra={
+                "user_id": str(user.id),
+                "discount_code": discount_code,
+                "subscription_id": str(subscription.id),
+                "affiliate_code": affiliate_code if affiliate_code else None
+            }
+        )
+
     # TODO: Send subscription_created email (Task 1.5.1)
     # This will be implemented when we update email templates
     logger.info(
@@ -305,6 +351,55 @@ async def handle_subscription_updated(
             plan_changed = True
             logger.info(f"Subscription plan changed to {new_plan.name}")
 
+    # Check for trial to paid conversion
+    trial_converted = False
+    if (subscription.status == SubscriptionStatus.TRIAL and
+        internal_status == SubscriptionStatus.ACTIVE and
+        subscription.trial_end_date):
+
+        trial_converted = True
+        trial_service = TrialService(db)
+
+        # Get payment amount from webhook if available
+        payment_amount = None
+        attributes = webhook_data.get("data", {}).get("attributes", {})
+        if attributes.get("first_subscription_item"):
+            first_item = attributes.get("first_subscription_item", {})
+            payment_amount = first_item.get("price")
+
+        # Track the conversion
+        try:
+            await trial_service.track_trial_conversion(
+                user_id=subscription.user_id,
+                subscription_id=subscription.id,
+                trial_started_at=subscription.start_date,
+                trial_ended_at=subscription.trial_end_date,
+                plan_id=subscription.plan_id,
+                billing_period=subscription.billing_period.value,
+                payment_amount=payment_amount,
+                metadata={
+                    "webhook_event_id": webhook_data.get("event_id"),
+                    "lemonsqueezy_subscription_id": lemonsqueezy_subscription_id,
+                    "conversion_source": "automatic"
+                }
+            )
+            logger.info(
+                f"Trial conversion tracked for subscription {subscription.id}",
+                extra={
+                    "subscription_id": str(subscription.id),
+                    "user_id": str(subscription.user_id)
+                }
+            )
+        except Exception as e:
+            # Log error but don't fail the webhook
+            logger.error(
+                f"Failed to track trial conversion: {str(e)}",
+                extra={
+                    "subscription_id": str(subscription.id),
+                    "error": str(e)
+                }
+            )
+
     # Update subscription fields
     subscription.status = internal_status
     subscription.lemonsqueezy_renews_at = datetime.fromisoformat(renews_at) if renews_at else None
@@ -320,7 +415,8 @@ async def handle_subscription_updated(
         extra={
             "subscription_id": str(subscription.id),
             "new_status": internal_status.value,
-            "plan_changed": plan_changed
+            "plan_changed": plan_changed,
+            "trial_converted": trial_converted
         }
     )
 
@@ -512,8 +608,16 @@ async def handle_subscription_payment_failed(
 
     Actions:
     1. Find subscription
-    2. Update status to PAST_DUE (grace period)
-    3. Send payment failed email with retry instructions
+    2. Set status to SUSPENDED (grace period)
+    3. Calculate and set grace period (7 days)
+    4. Track payment failure timestamp
+    5. Send payment failed email immediately with retry instructions
+
+    Grace Period Behavior:
+    - User retains access during grace period (7 days)
+    - LemonSqueezy will automatically retry payment
+    - Dunning emails sent at 1, 3, 6 days (Task 3.4.2)
+    - Auto-suspend after grace period (Task 3.4.3)
 
     Args:
         webhook_data: Parsed webhook data
@@ -540,16 +644,98 @@ async def handle_subscription_payment_failed(
         logger.error(error_msg)
         raise ValueError(error_msg)
 
-    # Update subscription - set to PAST_DUE (grace period)
-    subscription.status = SubscriptionStatus.PAST_DUE
-    subscription.updated_at = datetime.utcnow()
+    # Get user for email notification
+    stmt = select(Users).where(Users.id == subscription.user_id)
+    result = await db.execute(stmt)
+    user = result.scalar_one_or_none()
+
+    if not user:
+        error_msg = f"User {subscription.user_id} not found"
+        logger.error(error_msg)
+        raise ValueError(error_msg)
+
+    # Get plan details for email
+    stmt = select(SubscriptionPlan).where(SubscriptionPlan.id == subscription.plan_id)
+    result = await db.execute(stmt)
+    plan = result.scalar_one_or_none()
+
+    # Calculate grace period (7 days from now)
+    now = datetime.utcnow()
+    grace_period_days = 7
+    grace_period_end = now + timedelta(days=grace_period_days)
+
+    # Update subscription - set to SUSPENDED during grace period
+    subscription.status = SubscriptionStatus.SUSPENDED
+    subscription.grace_period_end = grace_period_end
+
+    # Only set payment_failed_at if not already set (track first failure)
+    if not subscription.payment_failed_at:
+        subscription.payment_failed_at = now
+
+    subscription.updated_at = now
 
     await db.flush()
 
-    # TODO: Send payment failed email (Task 1.5.4)
+    logger.info(
+        f"Payment failed for subscription {subscription.id} - grace period set until {grace_period_end.isoformat()}",
+        extra={
+            "subscription_id": str(subscription.id),
+            "grace_period_end": grace_period_end.isoformat(),
+            "grace_period_days": grace_period_days
+        }
+    )
+
+    # Send payment failed email immediately
+    try:
+        from src.services.billing_email_service import BillingEmailService
+
+        # Extract payment details from webhook
+        attributes = webhook_data.get("data", {}).get("attributes", {})
+        first_subscription_item = attributes.get("first_subscription_item", {})
+
+        # Format amount
+        amount_cents = first_subscription_item.get("price", 0)
+        amount = f"${amount_cents / 100:.2f}" if amount_cents else "N/A"
+
+        # Calculate retry date (LemonSqueezy typically retries in 3 days)
+        retry_date = (now + timedelta(days=3)).strftime("%B %d, %Y")
+
+        # Send email
+        email_service = BillingEmailService(db)
+        await email_service.send_payment_failed_email(
+            user_id=user.id,
+            plan_name=plan.name if plan else "Your Plan",
+            amount=amount,
+            retry_date=retry_date
+        )
+
+        logger.info(
+            f"Payment failed email sent to {user.email}",
+            extra={
+                "user_id": str(user.id),
+                "subscription_id": str(subscription.id),
+                "amount": amount
+            }
+        )
+    except Exception as e:
+        # Log error but don't fail the webhook - email is non-critical
+        logger.error(
+            f"Failed to send payment failed email: {str(e)}",
+            extra={
+                "user_id": str(user.id),
+                "subscription_id": str(subscription.id),
+                "error": str(e)
+            },
+            exc_info=True
+        )
+
     logger.warning(
-        f"Payment failed for subscription {subscription.id}",
-        extra={"subscription_id": str(subscription.id)}
+        f"Payment failed for subscription {subscription.id} - user has access until {grace_period_end.isoformat()}",
+        extra={
+            "subscription_id": str(subscription.id),
+            "user_id": str(user.id),
+            "grace_period_end": grace_period_end.isoformat()
+        }
     )
 
 
@@ -561,12 +747,20 @@ async def handle_subscription_payment_recovered(
     """
     Handle subscription_payment_recovered webhook event.
 
-    This event fires when a previously failed payment is recovered.
+    This event fires when a previously failed payment is successfully recovered.
 
     Actions:
     1. Find subscription
-    2. Update status back to ACTIVE
-    3. Send payment recovered email
+    2. Restore status to ACTIVE
+    3. Clear grace period tracking (payment resolved)
+    4. Update renewal date
+    5. Send payment recovered email with celebration message
+
+    Recovery Process:
+    - Payment fails → SUSPENDED status with grace period
+    - Dunning emails sent (days 1, 3, 6)
+    - User updates payment method OR automatic retry succeeds
+    - This handler → Restore to ACTIVE, clear grace period, send success email
 
     Args:
         webhook_data: Parsed webhook data
@@ -594,18 +788,109 @@ async def handle_subscription_payment_recovered(
         logger.error(error_msg)
         raise ValueError(error_msg)
 
+    # Get user for email
+    stmt = select(Users).where(Users.id == subscription.user_id)
+    result = await db.execute(stmt)
+    user = result.scalar_one_or_none()
+
+    if not user:
+        error_msg = f"User {subscription.user_id} not found"
+        logger.error(error_msg)
+        raise ValueError(error_msg)
+
+    # Get plan details for email
+    stmt = select(SubscriptionPlan).where(SubscriptionPlan.id == subscription.plan_id)
+    result = await db.execute(stmt)
+    plan = result.scalar_one_or_none()
+
+    # Track previous status for logging
+    previous_status = subscription.status
+
     # Update subscription - restore to ACTIVE
+    now = datetime.utcnow()
     subscription.status = SubscriptionStatus.ACTIVE
     subscription.lemonsqueezy_renews_at = datetime.fromisoformat(renews_at) if renews_at else None
-    subscription.updated_at = datetime.utcnow()
+    subscription.updated_at = now
+
+    # Clear grace period tracking (payment resolved)
+    subscription.grace_period_end = None
+    # Keep payment_failed_at for analytics/history
 
     await db.flush()
 
-    # TODO: Send payment recovered email
     logger.info(
-        f"Payment recovered for subscription {subscription.id}",
-        extra={"subscription_id": str(subscription.id)}
+        f"Payment recovered for subscription {subscription.id} - restored from {previous_status.value} to ACTIVE",
+        extra={
+            "subscription_id": str(subscription.id),
+            "user_id": str(user.id),
+            "previous_status": previous_status.value,
+            "new_status": "active"
+        }
     )
+
+    # Send payment recovered email
+    try:
+        from src.services.billing_email_service import BillingEmailService
+        from emails.templates.billing import render_payment_recovered_email
+
+        # Extract payment details from webhook
+        attributes = webhook_data.get("data", {}).get("attributes", {})
+        first_subscription_item = attributes.get("first_subscription_item", {})
+
+        # Format amount
+        amount_cents = first_subscription_item.get("price", 0)
+        if not amount_cents and plan:
+            # Fallback to plan price
+            if subscription.billing_period.value == "monthly":
+                amount_cents = plan.price_monthly
+            else:
+                amount_cents = plan.price_yearly
+        amount = f"${amount_cents / 100:.2f}" if amount_cents else "N/A"
+
+        # Format dates
+        recovery_date = now.strftime("%B %d, %Y")
+        next_billing_date = subscription.lemonsqueezy_renews_at.strftime("%B %d, %Y") if subscription.lemonsqueezy_renews_at else "N/A"
+
+        # Render email
+        user_name = user.first_name or user.display_name or user.email
+        plan_name = plan.name if plan else "Your Plan"
+
+        html_content = render_payment_recovered_email(
+            user_name=user_name,
+            plan_name=plan_name,
+            amount=amount,
+            recovery_date=recovery_date,
+            next_billing_date=next_billing_date
+        )
+
+        # Send email
+        email_service = BillingEmailService(db)
+        await email_service._send_email(
+            to_email=user.email,
+            subject=f"Payment Successful - {plan_name} Reactivated!",
+            html_content=html_content
+        )
+
+        logger.info(
+            f"Payment recovered email sent to {user.email}",
+            extra={
+                "user_id": str(user.id),
+                "subscription_id": str(subscription.id),
+                "amount": amount
+            }
+        )
+
+    except Exception as e:
+        # Log error but don't fail the webhook - email is non-critical
+        logger.error(
+            f"Failed to send payment recovered email: {str(e)}",
+            extra={
+                "user_id": str(user.id),
+                "subscription_id": str(subscription.id),
+                "error": str(e)
+            },
+            exc_info=True
+        )
 
 
 async def handle_subscription_paused(
