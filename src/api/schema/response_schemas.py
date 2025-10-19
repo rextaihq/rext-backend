@@ -222,7 +222,7 @@ class SuccessResponse(BaseResponse):
     )
 
     class Config:
-        schema_extra = {
+        json_schema_extra = {
             "example": {
                 "success": True,
                 "data": {
@@ -267,7 +267,7 @@ class ErrorResponse(BaseResponse):
         return v
 
     class Config:
-        schema_extra = {
+        json_schema_extra = {
             "example": {
                 "success": False,
                 "data": None,

@@ -32,7 +32,7 @@ from src.providers.payment.providers.lemonsqueezy import LemonSqueezyProvider
 from src.utils.route_decorators import db_transaction_handler
 from src.utils.logger import logger
 from .shared.auth import require_super_admin
-from src.config import settings
+from src.api.config import settings
 
 
 router = APIRouter()

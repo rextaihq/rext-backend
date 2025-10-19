@@ -45,7 +45,7 @@ from src.api.middleware.exceptions import (
     WrextValidationException,
     ResourceNotFoundException
 )
-from src.services.payment.provider_factory import get_payment_provider_singleton
+from src.providers.payment.provider_factory import get_payment_provider_singleton
 
 
 class SubscriptionService:

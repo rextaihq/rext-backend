@@ -17,7 +17,7 @@ from src.services.subscription_service import SubscriptionService
 from src.services.email_service import EmailService
 from src.services.lemonsqueezy_webhook_service import LemonSqueezyWebhookService
 from src.services.webhook_handlers import subscription_handlers, order_handlers
-from src.services.payment.provider_factory import get_payment_provider_singleton as get_payment_provider
+from src.providers.payment.provider_factory import get_payment_provider_singleton as get_payment_provider
 from src.utils.response_utils import success
 from src.utils.route_decorators import db_transaction_handler
 from src.utils.logger import logger

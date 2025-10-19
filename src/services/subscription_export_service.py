@@ -15,8 +15,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
 from src.api.models.subscription_models.subscriptions import UserSubscription
-from src.api.models.subscription_models.subscription_plans import SubscriptionPlan
-from src.api.models.subscription_models.invoices import Invoice
+from src.api.models.subscription_models.plans import SubscriptionPlan
+# Note: Invoice model does not exist - invoice export functionality is not implemented
+# from src.api.models.subscription_models.invoices import Invoice
 from src.api.models.user_models.users import Users
 from src.utils.logger import logger
 
@@ -171,112 +172,16 @@ class SubscriptionExportService:
 
         Returns:
             CSV string content
+
+        Raises:
+            NotImplementedError: Invoice model does not exist yet
         """
-        try:
-            logger.info("Exporting invoices to CSV")
-
-            # Build query conditions
-            conditions = []
-
-            if status:
-                conditions.append(Invoice.status == status)
-
-            if start_date:
-                conditions.append(Invoice.created_at >= start_date)
-
-            if end_date:
-                conditions.append(Invoice.created_at <= end_date)
-
-            if min_amount is not None:
-                conditions.append(Invoice.total >= min_amount)
-
-            # Query invoices with related data
-            stmt = select(
-                Invoice,
-                Users.email,
-                Users.display_name,
-                UserSubscription.lemonsqueezy_subscription_id
-            ).join(
-                UserSubscription,
-                Invoice.subscription_id == UserSubscription.id
-            ).join(
-                Users,
-                UserSubscription.user_id == Users.id
-            ).order_by(desc(Invoice.created_at))
-
-            if conditions:
-                stmt = stmt.where(and_(*conditions))
-
-            result = await self.db.execute(stmt)
-            rows = result.all()
-
-            # Create CSV in memory
-            output = io.StringIO()
-            writer = csv.writer(output)
-
-            # Write header
-            writer.writerow([
-                'Invoice ID',
-                'User Email',
-                'User Name',
-                'Subscription ID',
-                'LemonSqueezy Subscription ID',
-                'Status',
-                'Subtotal',
-                'Discount',
-                'Tax',
-                'Total',
-                'Currency',
-                'Billing Reason',
-                'Invoice URL',
-                'Invoice Number',
-                'Created At',
-                'Due Date',
-                'Paid At',
-                'LemonSqueezy Invoice ID'
-            ])
-
-            # Write data rows
-            for row in rows:
-                invoice = row[0]
-                user_email = row[1]
-                user_name = row[2]
-                ls_subscription_id = row[3]
-
-                writer.writerow([
-                    str(invoice.id),
-                    user_email,
-                    user_name or '',
-                    str(invoice.subscription_id),
-                    ls_subscription_id or '',
-                    invoice.status.value if invoice.status else '',
-                    f"${invoice.subtotal:.2f}" if invoice.subtotal else '',
-                    f"${invoice.discount:.2f}" if invoice.discount else '',
-                    f"${invoice.tax:.2f}" if invoice.tax else '',
-                    f"${invoice.total:.2f}" if invoice.total else '',
-                    invoice.currency or 'USD',
-                    invoice.billing_reason or '',
-                    invoice.invoice_url or '',
-                    invoice.invoice_number or '',
-                    invoice.created_at.isoformat() if invoice.created_at else '',
-                    invoice.due_date.isoformat() if invoice.due_date else '',
-                    invoice.paid_at.isoformat() if invoice.paid_at else '',
-                    invoice.lemonsqueezy_invoice_id or ''
-                ])
-
-            csv_content = output.getvalue()
-            output.close()
-
-            logger.info(f"Exported {len(rows)} invoices to CSV")
-
-            return csv_content
-
-        except Exception as e:
-            logger.error(
-                f"Failed to export invoices to CSV: {str(e)}",
-                extra={"error": str(e)}
-            )
-            raise
+        # TODO: Implement invoice export when Invoice model is created
+        # The Invoice database model does not exist in the codebase.
+        # This functionality requires creating the Invoice model and migration first.
+        raise NotImplementedError(
+            "Invoice export is not available. The Invoice database model has not been implemented yet."
+        )
 
     async def export_usage_data_csv(
         self,

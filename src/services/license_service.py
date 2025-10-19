@@ -23,11 +23,11 @@ from sqlalchemy.exc import IntegrityError
 from src.api.models.subscription_models.licenses import License, LicenseStatus
 from src.api.models.subscription_models.license_activations import LicenseActivation
 from src.utils.logger import logger
-from src.utils.exceptions import (
+from src.api.middleware.exceptions import (
     ResourceNotFoundException,
     WrextValidationException,
     DuplicateResourceException,
-    UnauthorizedException
+    WrextAuthorizationException as UnauthorizedException
 )
 
 

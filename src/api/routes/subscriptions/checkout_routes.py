@@ -16,7 +16,7 @@ from src.api.database.async_database import get_async_db
 from src.api.security.dependencies import get_current_user
 from src.api.models.user_models.users import Users
 from src.api.models.subscription_models.plans import SubscriptionPlan
-from src.services.payment.provider_factory import get_payment_provider_singleton as get_payment_provider
+from src.providers.payment.provider_factory import get_payment_provider_singleton as get_payment_provider
 from src.services.usage_tracking_service import UsageTrackingService
 from src.config.payment_config import payment_settings
 from src.utils.response_utils import success

@@ -10,7 +10,8 @@ from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.database.async_database import get_async_db
-from src.api.middleware.auth import get_current_user, require_permissions
+from src.api.security.dependencies import get_current_user
+from src.utils.route_decorators import require_permissions
 from src.api.schema.subscription import (
     LicenseValidateRequest,
     LicenseValidateResponse
@@ -20,7 +21,7 @@ from src.api.schema.subscription.license_schemas import (
     LicenseDeactivateRequest,
     LicenseRevokeRequest
 )
-from src.services.payment.provider_factory import get_payment_provider_singleton
+from src.providers.payment.provider_factory import get_payment_provider_singleton
 from src.services.license_service import LicenseService
 from src.utils.response_utils import success
 from src.utils.route_decorators import db_transaction_handler
@@ -346,7 +347,7 @@ async def get_license_endpoint(
     license_obj = await service.get_license_by_id(UUID(license_id))
 
     if not license_obj:
-        from src.utils.exceptions import ResourceNotFoundException
+        from src.api.middleware.exceptions import ResourceNotFoundException
         raise ResourceNotFoundException(
             resource_type="License",
             resource_id=license_id,
@@ -355,8 +356,8 @@ async def get_license_endpoint(
 
     # Check ownership
     if license_obj.user_id != user_id:
-        from src.utils.exceptions import UnauthorizedException
-        raise UnauthorizedException(
+        from src.api.middleware.exceptions import WrextAuthorizationException
+        raise WrextAuthorizationException(
             message="You do not own this license",
             required_permission="license.view"
         )

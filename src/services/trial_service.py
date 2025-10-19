@@ -16,11 +16,11 @@ from src.api.models.subscription_models.subscriptions import (
 )
 from src.api.models.subscription_models.trial_conversions import TrialConversion
 from src.api.models.subscription_models.plans import SubscriptionPlan
-from src.api.models.user_model import Users
-from src.utils.exceptions import (
+from src.api.models.user_models.users import Users
+from src.api.middleware.exceptions import (
     ResourceNotFoundException,
-    ValidationException,
-    UnauthorizedException
+    WrextValidationException as ValidationException,
+    WrextAuthorizationException as UnauthorizedException
 )
 from src.utils.logger import logger
 

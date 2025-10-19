@@ -21,7 +21,8 @@ from src.api.database.async_database import get_async_db
 from src.api.security.dependencies import get_current_user
 from src.api.models.subscription_models.subscriptions import UserSubscription
 from src.api.models.subscription_models.plans import SubscriptionPlan
-from src.api.models.subscription_models.invoices import Invoice
+# Note: Invoice model does not exist - invoice export functionality is not implemented
+# from src.api.models.subscription_models.invoices import Invoice
 from src.api.models.user_models.users import Users
 from src.utils.route_decorators import db_transaction_handler
 from .shared.auth import require_super_admin
@@ -174,107 +175,15 @@ async def export_invoices_csv(
 
     Returns:
     - CSV file with invoice data
+
+    Raises:
+        NotImplementedError: Invoice model does not exist yet
     """
-    admin_user_id = current_user.get("identity")
-    await require_super_admin(db, admin_user_id)
-
-    # Build filters
-    filters = []
-    if status:
-        from src.api.models.subscription_models.invoices import InvoiceStatus
-        try:
-            status_enum = InvoiceStatus(status.upper())
-            filters.append(Invoice.status == status_enum)
-        except ValueError:
-            pass  # Invalid status, ignore filter
-    if start_date:
-        filters.append(Invoice.invoice_date >= start_date)
-    if end_date:
-        filters.append(Invoice.invoice_date <= end_date)
-
-    # Query invoices with subscription and user details
-    query = (
-        select(
-            Invoice,
-            UserSubscription,
-            Users.email,
-            Users.display_name,
-            SubscriptionPlan.name.label("plan_name"),
-            SubscriptionPlan.display_name.label("plan_display_name"),
-        )
-        .join(UserSubscription, Invoice.subscription_id == UserSubscription.id)
-        .join(Users, UserSubscription.user_id == Users.id)
-        .join(SubscriptionPlan, UserSubscription.plan_id == SubscriptionPlan.id)
-        .order_by(desc(Invoice.invoice_date))
-    )
-
-    if filters:
-        query = query.where(and_(*filters))
-
-    result = await db.execute(query)
-    invoices = result.all()
-
-    # Create CSV in memory
-    output = io.StringIO()
-    writer = csv.writer(output)
-
-    # Write header
-    writer.writerow([
-        "Invoice ID",
-        "Invoice Number",
-        "User Email",
-        "User Name",
-        "Subscription ID",
-        "Plan Name",
-        "Status",
-        "Amount",
-        "Currency",
-        "Tax",
-        "Discount",
-        "Total",
-        "Invoice Date",
-        "Due Date",
-        "Paid At",
-        "LemonSqueezy Invoice ID",
-        "Invoice URL",
-        "Created At",
-    ])
-
-    # Write data rows
-    for inv, sub, user_email, user_name, plan_name, plan_display in invoices:
-        writer.writerow([
-            str(inv.id),
-            inv.invoice_number or "",
-            user_email,
-            user_name or "",
-            str(sub.id),
-            plan_name,
-            inv.status.value if inv.status else "",
-            float(inv.amount) if inv.amount else 0.0,
-            inv.currency or "USD",
-            float(inv.tax) if inv.tax else 0.0,
-            float(inv.discount) if inv.discount else 0.0,
-            float(inv.total) if inv.total else 0.0,
-            inv.invoice_date.isoformat() if inv.invoice_date else "",
-            inv.due_date.isoformat() if inv.due_date else "",
-            inv.paid_at.isoformat() if inv.paid_at else "",
-            inv.lemonsqueezy_invoice_id or "",
-            inv.invoice_url or "",
-            inv.created_at.isoformat() if inv.created_at else "",
-        ])
-
-    # Prepare response
-    output.seek(0)
-    timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
-    filename = f"invoices_export_{timestamp}.csv"
-
-    return StreamingResponse(
-        iter([output.getvalue()]),
-        media_type="text/csv",
-        headers={
-            "Content-Disposition": f"attachment; filename={filename}",
-            "X-Total-Records": str(len(invoices)),
-        }
+    # TODO: Implement invoice export when Invoice model is created
+    # The Invoice database model does not exist in the codebase.
+    # This functionality requires creating the Invoice model and migration first.
+    raise NotImplementedError(
+        "Invoice export is not available. The Invoice database model has not been implemented yet."
     )
 
 

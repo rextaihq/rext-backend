@@ -14,7 +14,8 @@ from datetime import datetime
 from pydantic import BaseModel, Field
 
 from src.api.database.async_database import get_async_db
-from src.api.middleware.auth import get_current_user, require_permissions
+from src.api.security.dependencies import get_current_user
+from src.utils.route_decorators import require_permissions
 from src.services.trial_service import TrialService
 from src.utils.response_utils import success
 from src.utils.route_decorators import db_transaction_handler

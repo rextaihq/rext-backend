@@ -21,7 +21,7 @@ from src.api.schema.subscription import (
 )
 from src.api.models.user_models.users import Users
 from src.services.subscription_service import SubscriptionService
-from src.services.payment.provider_factory import get_payment_provider_singleton
+from src.providers.payment.provider_factory import get_payment_provider_singleton
 from src.utils.response_utils import success, created
 from src.utils.route_decorators import db_transaction_handler, require_permissions
 from sqlalchemy import select
