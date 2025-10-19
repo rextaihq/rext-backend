@@ -92,7 +92,7 @@ async def update_onboarding_step(
             detail=str(e),
         )
     except Exception as e:
-        log.error(f"[Onboarding] Failed to update step: {e}")
+        logger.error(f"[Onboarding] Failed to update step: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to update onboarding step",
@@ -112,10 +112,10 @@ async def complete_onboarding(
     """
     try:
         onboarding = await OnboardingService.complete_onboarding(db, current_user.id)
-        log.info(f"[Onboarding] User {current_user.id} completed onboarding")
+        logger.info(f"[Onboarding] User {current_user.id} completed onboarding")
         return onboarding
     except Exception as e:
-        log.error(f"[Onboarding] Failed to complete: {e}")
+        logger.error(f"[Onboarding] Failed to complete: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to complete onboarding",
@@ -142,10 +142,10 @@ async def reset_onboarding(
             )
 
         onboarding = await OnboardingService.reset_onboarding(db, current_user.id)
-        log.info(f"[Onboarding] User {current_user.id} reset onboarding")
+        logger.info(f"[Onboarding] User {current_user.id} reset onboarding")
         return onboarding
     except Exception as e:
-        log.error(f"[Onboarding] Failed to reset: {e}")
+        logger.error(f"[Onboarding] Failed to reset: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to reset onboarding",
