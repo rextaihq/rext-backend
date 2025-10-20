@@ -17,10 +17,12 @@ from src.services.subscription_service import SubscriptionService
 from src.services.email_service import EmailService
 from src.services.lemonsqueezy_webhook_service import LemonSqueezyWebhookService
 from src.services.webhook_handlers import subscription_handlers, order_handlers
+from src.services.webhook_security_monitor import webhook_security_monitor
 from src.providers.payment.provider_factory import get_payment_provider_singleton as get_payment_provider
 from src.utils.response_utils import success
 from src.utils.route_decorators import db_transaction_handler
 from src.utils.logger import logger
+from src.services.audit_logger import audit_logger
 from sqlalchemy import select
 
 
@@ -299,7 +301,10 @@ async def handle_lemonsqueezy_webhook(
     )
 
     try:
-        # Process webhook
+        # Get client IP for audit logging
+        client_ip = request.client.host if request.client else None
+
+        # Process webhook (includes signature verification)
         result = await webhook_service.process_webhook(body, signature)
 
         logger.info(
@@ -307,14 +312,50 @@ async def handle_lemonsqueezy_webhook(
             extra={"event_id": result.get("event_id")}
         )
 
+        # Audit log - webhook processed successfully
+        audit_logger.log_webhook_processed(
+            event_id=result.get("event_id", "unknown"),
+            event_name=result.get("event_type", "unknown"),
+            processing_time_ms=result.get("processing_time_ms", 0),
+            metadata={"status": "success"},
+        )
+
         return {"status": "success", "message": "Webhook processed"}
 
     except ValueError as e:
-        # Signature verification failed
-        logger.error(f"LemonSqueezy webhook signature verification failed: {str(e)}")
+        # Signature verification failed - Record security event
+        client_ip = request.client.host if request.client else "unknown"
+
+        # Try to extract event type from payload (for logging)
+        event_type = None
+        try:
+            import json
+            payload_data = json.loads(body)
+            event_type = payload_data.get("meta", {}).get("event_name")
+        except:
+            pass
+
+        # Record failure in security monitor
+        webhook_security_monitor.record_verification_failure(
+            ip_address=client_ip,
+            event_type=event_type,
+            signature_prefix=signature[:8] if len(signature) >= 8 else signature,
+            payload_size=len(body)
+        )
+
+        logger.error(
+            f"LemonSqueezy webhook signature verification failed from {client_ip}",
+            extra={
+                "event": "webhook_verification_failed",
+                "ip_address": client_ip,
+                "event_type": event_type,
+                "signature_prefix": signature[:8] if len(signature) >= 8 else signature
+            }
+        )
+
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Invalid webhook signature: {str(e)}"
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid webhook signature"
         )
     except Exception as e:
         # Processing failed

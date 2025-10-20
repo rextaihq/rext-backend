@@ -38,8 +38,19 @@ from src.api.models.subscription_models.discount_usage import DiscountUsage
 from src.api.models.subscription_models.trial_conversions import TrialConversion
 from src.api.models.user_models.users import Users
 from src.utils.lemonsqueezy_webhook import extract_subscription_data, get_user_identifier
+from src.services.audit_logger import audit_logger
 from src.utils.logger import logger
 from src.services.trial_service import TrialService
+from src.api.lib.sentry_config import (
+    capture_payment_exception,
+    add_payment_breadcrumb,
+    set_payment_context,
+    alert_subscription_creation_failure,
+)
+from src.api.lib.logging_config import (
+    log_payment_timing,
+    generate_payment_correlation_id,
+)
 
 
 async def handle_subscription_created(
@@ -69,13 +80,38 @@ async def handle_subscription_created(
     Raises:
         Exception: If user not found, plan not found, or database error
     """
+    # Generate correlation ID for tracking (Phase 4, Task 4.2.2)
+    correlation_id = generate_payment_correlation_id()
+
     logger.info(
         "Processing subscription_created webhook",
-        extra={"event_id": webhook_data.get("event_id")}
+        operation="webhook_subscription_created",
+        event_id=webhook_data.get("event_id"),
+        correlation_id=correlation_id
     )
 
     # Extract subscription data
     sub_data = extract_subscription_data(webhook_data)
+
+    # Add Sentry context for webhook processing (Phase 4, Task 4.2.1)
+    set_payment_context(
+        operation="webhook_subscription_created",
+        subscription_id=sub_data.get("subscription_id"),
+        customer_id=sub_data.get("customer_id"),
+        metadata={
+            "event_id": webhook_data.get("event_id"),
+            "event_type": "subscription_created",
+        }
+    )
+
+    add_payment_breadcrumb(
+        "Processing subscription_created webhook",
+        operation="webhook",
+        data={
+            "event_id": webhook_data.get("event_id"),
+            "subscription_id": sub_data.get("subscription_id"),
+        }
+    )
 
     lemonsqueezy_subscription_id = sub_data.get("subscription_id")
     lemonsqueezy_customer_id = sub_data.get("customer_id")
@@ -113,6 +149,15 @@ async def handle_subscription_created(
             "user_identifier": user_identifier,
             "user_email": user_email
         })
+
+        # Trigger critical alert (Phase 4, Task 4.2.3)
+        alert_subscription_creation_failure(
+            user_id=user_identifier or user_email or "unknown",
+            variant_id=lemonsqueezy_variant_id,
+            error_message=error_msg,
+            event_id=webhook_data.get("event_id")
+        )
+
         raise ValueError(error_msg)
 
     # Find subscription plan by LemonSqueezy variant_id
@@ -126,6 +171,15 @@ async def handle_subscription_created(
     if not plan:
         error_msg = f"Plan not found for variant_id {lemonsqueezy_variant_id}"
         logger.error(error_msg)
+
+        # Trigger critical alert (Phase 4, Task 4.2.3)
+        alert_subscription_creation_failure(
+            user_id=str(user.id),
+            variant_id=lemonsqueezy_variant_id,
+            error_message=error_msg,
+            event_id=webhook_data.get("event_id")
+        )
+
         raise ValueError(error_msg)
 
     # Determine billing period based on variant
@@ -258,11 +312,13 @@ async def handle_subscription_created(
 
     logger.info(
         "Successfully processed subscription_created webhook",
-        extra={
-            "event_id": webhook_data.get("event_id"),
-            "subscription_id": str(subscription.id),
-            "user_id": str(user.id)
-        }
+        operation="webhook_subscription_created",
+        event_id=webhook_data.get("event_id"),
+        subscription_id=str(subscription.id),
+        user_id=str(user.id),
+        plan_id=str(plan.id),
+        status=internal_status.value,
+        correlation_id=correlation_id
     )
 
 
@@ -595,6 +651,16 @@ async def handle_subscription_payment_success(
         extra={"subscription_id": str(subscription.id)}
     )
 
+    # Audit log
+    audit_logger.log_payment_succeeded(
+        user_id=subscription.user_id,
+        subscription_id=subscription.id,
+        amount=0,  # Amount not available in webhook data
+        currency="USD",
+        lemonsqueezy_payment_id=lemonsqueezy_subscription_id,
+        metadata={"renews_at": renews_at}
+    )
+
 
 async def handle_subscription_payment_failed(
     webhook_data: Dict[str, Any],
@@ -685,6 +751,16 @@ async def handle_subscription_payment_failed(
         }
     )
 
+    # Audit log
+    audit_logger.log_payment_failed(
+        user_id=subscription.user_id,
+        subscription_id=subscription.id,
+        amount=0,  # Amount not available in webhook data
+        failure_reason="Payment failed",
+        lemonsqueezy_payment_id=lemonsqueezy_subscription_id,
+        metadata={"grace_period_end": grace_period_end.isoformat()}
+    )
+
     # Send payment failed email immediately
     try:
         from src.services.billing_email_service import BillingEmailService
@@ -727,6 +803,20 @@ async def handle_subscription_payment_failed(
                 "error": str(e)
             },
             exc_info=True
+        )
+
+        # Capture email failure to Sentry (Phase 4, Task 4.2.1)
+        # Non-critical but worth tracking
+        capture_payment_exception(
+            e,
+            operation="webhook_email_payment_failed",
+            user_id=str(user.id),
+            subscription_id=str(subscription.id),
+            level="warning",  # Non-critical
+            context={
+                "email_type": "payment_failed",
+                "plan_name": plan.name if plan else "Unknown",
+            }
         )
 
     logger.warning(

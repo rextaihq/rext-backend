@@ -31,6 +31,7 @@ from src.services.refund_service import RefundService
 from src.providers.payment.providers.lemonsqueezy import LemonSqueezyProvider
 from src.utils.route_decorators import db_transaction_handler
 from src.utils.logger import logger
+from src.services.audit_logger import audit_logger
 from .shared.auth import require_super_admin
 from src.api.config import settings
 
@@ -282,6 +283,24 @@ async def create_refund(
                 "refund_id": str(refund.id),
                 "order_id": lemonsqueezy_order_id,
                 "amount": refund_amount
+            }
+        )
+
+        # Audit log
+        client_ip = request.client.host if request.client else None
+        audit_logger.log_admin_refund_created(
+            admin_id=UUID(admin_user_id),
+            user_id=user_id,
+            refund_id=refund.id,
+            subscription_id=subscription_id,
+            amount=refund_amount,
+            reason=refund_request.reason,
+            ip_address=client_ip,
+            metadata={
+                "lemonsqueezy_refund_id": ls_refund_id,
+                "lemonsqueezy_order_id": lemonsqueezy_order_id,
+                "original_amount": original_amount,
+                "is_partial": refund_amount < original_amount if original_amount > 0 else False,
             }
         )
 

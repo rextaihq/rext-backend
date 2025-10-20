@@ -24,6 +24,12 @@ from src.services.subscription_service import SubscriptionService
 from src.providers.payment.provider_factory import get_payment_provider_singleton
 from src.utils.response_utils import success, created
 from src.utils.route_decorators import db_transaction_handler, require_permissions
+from src.api.middleware.rate_limiter import (
+    checkout_rate_limit,
+    subscription_update_rate_limit,
+    subscription_cancel_rate_limit,
+    customer_portal_rate_limit
+)
 from sqlalchemy import select
 
 
@@ -35,7 +41,6 @@ router = APIRouter(
 
 @router.post("/subscribe", response_model=dict, status_code=status.HTTP_201_CREATED)
 @db_transaction_handler("subscribe to plan")
-@require_permissions("subscription.manage", workspace_scoped=False)
 async def subscribe_to_plan(
     request: Request,
     subscription_data: SubscriptionCreateRequest,
@@ -83,12 +88,12 @@ async def subscribe_to_plan(
 
 @router.post("/checkout", response_model=dict, status_code=status.HTTP_200_OK)
 @db_transaction_handler("create checkout session")
-@require_permissions("subscription.manage", workspace_scoped=False)
 async def create_checkout_session(
     request: Request,
     checkout_data: CheckoutSessionRequest,
     db: AsyncSession = Depends(get_async_db),
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
+    _rate_limit: None = Depends(checkout_rate_limit())
 ):
     """
     Create LemonSqueezy checkout session for subscription.
@@ -312,12 +317,12 @@ async def get_subscription_history(
 
 @router.post("/upgrade", response_model=dict)
 @db_transaction_handler("upgrade subscription")
-@require_permissions("subscription.manage", workspace_scoped=False)
 async def upgrade_subscription(
     request: Request,
     upgrade_data: SubscriptionUpgradeRequest,
     db: AsyncSession = Depends(get_async_db),
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
+    _rate_limit: None = Depends(subscription_update_rate_limit())
 ):
     """
     Upgrade or downgrade subscription plan.
@@ -358,12 +363,12 @@ async def upgrade_subscription(
 
 @router.post("/cancel", response_model=dict)
 @db_transaction_handler("cancel subscription")
-@require_permissions("subscription.manage", workspace_scoped=False)
 async def cancel_subscription(
     request: Request,
     cancel_data: SubscriptionCancelRequest,
     db: AsyncSession = Depends(get_async_db),
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
+    _rate_limit: None = Depends(subscription_cancel_rate_limit())
 ):
     """
     Cancel current subscription.

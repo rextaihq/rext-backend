@@ -13,6 +13,7 @@ from src.api.schema.onboarding_schemas import (
     OnboardingReset,
     OnboardingResponse,
     OnboardingStepUpdate,
+    OnboardingMarketingData,
 )
 from src.services.onboarding_service import OnboardingService
 from src.utils.logger import logger
@@ -165,6 +166,7 @@ async def should_show_onboarding(
 
     Returns a boolean indicating whether the onboarding flow
     should be displayed. Returns false if not authenticated.
+    Only shows onboarding to organic signups (not invited users or admins).
     """
     # Return false if not authenticated (graceful degradation)
     if not current_user:
@@ -180,3 +182,36 @@ async def should_show_onboarding(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to check onboarding status",
         )
+
+
+@router.post("/marketing", response_model=OnboardingResponse, status_code=status.HTTP_200_OK)
+async def update_marketing_data(
+    marketing_data: OnboardingMarketingData,
+    db: Annotated[AsyncSession, Depends(get_async_db)],
+    current_user: Annotated[Auth.types.MinimalUserDict, Depends(get_current_user)],
+):
+    """
+    Update marketing data collected during onboarding.
+
+    Saves user's industry, role, goal, and acquisition channel.
+    """
+    try:
+        user_id = UUID(current_user["identity"])
+        onboarding = await OnboardingService.update_marketing_data(
+            db,
+            user_id,
+            user_industry=marketing_data.user_industry,
+            user_role=marketing_data.user_role,
+            user_goal=marketing_data.user_goal,
+            heard_from=marketing_data.heard_from,
+        )
+        logger.info(f"[Onboarding] Marketing data updated for user {user_id}")
+        return onboarding
+    except Exception as e:
+        logger.error(f"[Onboarding] Failed to update marketing data: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to update marketing data",
+        )
+
+

@@ -46,6 +46,8 @@ from src.api.middleware.exceptions import (
     ResourceNotFoundException
 )
 from src.providers.payment.provider_factory import get_payment_provider_singleton
+from src.services.audit_logger import audit_logger
+from src.api.lib.sentry_config import capture_payment_exception
 
 
 class SubscriptionService:
@@ -131,6 +133,25 @@ class SubscriptionService:
             extra={"user_id": str(user_id), "plan_id": str(plan_id), "is_trial": is_trial}
         )
 
+        # Audit log
+        if is_trial:
+            audit_logger.log_trial_started(
+                user_id=user_id,
+                subscription_id=new_subscription.id,
+                plan_name=plan.name,
+                trial_days=trial_days,
+                trial_end_date=new_subscription.trial_end_date,
+            )
+        else:
+            audit_logger.log_subscription_created(
+                user_id=user_id,
+                subscription_id=new_subscription.id,
+                plan_id=plan_id,
+                plan_name=plan.name,
+                billing_period=billing_period.value,
+                is_trial=False,
+            )
+
         return new_subscription
 
     async def create_checkout(
@@ -171,14 +192,22 @@ class SubscriptionService:
             WrextValidationException: If variant ID not configured for plan
         """
         # Check if user already has an active subscription
+        # Allow checkout if user is on free or trial plan (they can upgrade via checkout)
         existing_subscription = await self.get_subscription_by_user(user_id)
         if existing_subscription:
-            raise DuplicateResourceException(
-                message="User already has an active subscription. Use upgrade endpoint to change plans.",
-                resource_type="subscription",
-                conflicting_field="user_id",
-                conflicting_value=str(user_id)
-            )
+            print(f"🔍 DEBUG: User has existing subscription on plan: {existing_subscription.plan.name}")
+            # Users on free/trial plans can checkout to paid plans
+            # Users on paid plans must use upgrade endpoint
+            allowed_plans_for_checkout = ["free", "trial"]
+            if existing_subscription.plan.name.lower() not in allowed_plans_for_checkout:
+                print(f"🔍 DEBUG: Plan is not free/trial ({existing_subscription.plan.name}), blocking checkout")
+                raise DuplicateResourceException(
+                    message="User already has an active subscription. Use upgrade endpoint to change plans.",
+                    resource_type="subscription",
+                    conflicting_field="user_id",
+                    conflicting_value=str(user_id)
+                )
+            print(f"🔍 DEBUG: Plan is {existing_subscription.plan.name}, allowing checkout to proceed")
 
         # Get and validate plan
         plan = await self._get_plan_or_404(plan_id, active_only=True)
@@ -258,6 +287,20 @@ class SubscriptionService:
                 "session_id": checkout_session.session_id,
                 "discount_code": discount_code if discount_code else None,
                 "affiliate_code": affiliate_code if affiliate_code else None
+            }
+        )
+
+        # Audit log
+        audit_logger.log_checkout_created(
+            user_id=user_id,
+            plan_id=plan_id,
+            plan_name=plan.name,
+            billing_period=billing_period.value,
+            checkout_url=checkout_session.checkout_url,
+            discount_code=discount_code,
+            metadata={
+                "session_id": checkout_session.session_id,
+                "affiliate_code": affiliate_code,
             }
         )
 
@@ -373,6 +416,21 @@ class SubscriptionService:
                         f"Failed to update subscription with payment provider: {str(e)}",
                         extra={"user_id": str(user_id), "error": str(e)}
                     )
+
+                    # Capture to Sentry (Phase 4, Task 4.2.1)
+                    capture_payment_exception(
+                        e,
+                        operation="update_subscription",
+                        user_id=str(user_id),
+                        subscription_id=provider_sub_id,
+                        plan_id=str(new_plan_id),
+                        context={
+                            "old_plan": current_plan.name,
+                            "new_plan": new_plan.name,
+                            "new_variant_id": new_variant_id,
+                        }
+                    )
+
                     # Continue with local update even if provider update fails
                     # Webhook will sync the state eventually
             else:
@@ -400,6 +458,26 @@ class SubscriptionService:
             f"User {user_id} {action} from {current_plan.name} to {new_plan.name}",
             extra={"user_id": str(user_id), "old_plan": current_plan.name, "new_plan": new_plan.name}
         )
+
+        # Audit log
+        if is_downgrade:
+            audit_logger.log_subscription_downgraded(
+                user_id=user_id,
+                subscription_id=current_subscription.id,
+                old_plan_name=current_plan.name,
+                new_plan_name=new_plan.name,
+                old_billing_period=current_subscription.billing_period.value,
+                new_billing_period=new_billing_period.value,
+            )
+        else:
+            audit_logger.log_subscription_upgraded(
+                user_id=user_id,
+                subscription_id=current_subscription.id,
+                old_plan_name=current_plan.name,
+                new_plan_name=new_plan.name,
+                old_billing_period=current_subscription.billing_period.value,
+                new_billing_period=new_billing_period.value,
+            )
 
         return current_subscription
 
@@ -491,6 +569,19 @@ class SubscriptionService:
                     f"Failed to cancel subscription with payment provider: {str(e)}",
                     extra={"user_id": str(user_id), "error": str(e)}
                 )
+
+                # Capture to Sentry (Phase 4, Task 4.2.1)
+                capture_payment_exception(
+                    e,
+                    operation="cancel_subscription",
+                    user_id=str(user_id),
+                    subscription_id=provider_sub_id,
+                    context={
+                        "cancel_immediately": cancel_immediately,
+                        "at_period_end": not cancel_immediately,
+                    }
+                )
+
                 # Continue with local cancellation even if provider cancellation fails
                 # This ensures we don't leave the user stuck
 
@@ -522,6 +613,15 @@ class SubscriptionService:
 
         if reason:
             logger.info(f"Cancellation reason: {reason}")
+
+        # Audit log
+        audit_logger.log_subscription_cancelled(
+            user_id=user_id,
+            subscription_id=subscription.id,
+            plan_name=subscription.plan.name if subscription.plan else "Unknown",
+            reason=reason,
+            cancel_immediately=cancel_immediately,
+        )
 
         return subscription
 
@@ -832,6 +932,18 @@ class SubscriptionService:
                 f"Failed to create customer portal session: {str(e)}",
                 extra={"user_id": str(user_id), "error": str(e)}
             )
+
+            # Capture to Sentry (Phase 4, Task 4.2.1)
+            capture_payment_exception(
+                e,
+                operation="customer_portal",
+                user_id=str(user_id),
+                customer_id=user.provider_customer_id,
+                context={
+                    "return_url": return_url,
+                }
+            )
+
             return None
 
     # ========================================================================

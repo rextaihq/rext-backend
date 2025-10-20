@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime
 from typing import List
 
-from sqlalchemy import Column, Boolean, DateTime, Integer, JSON, ForeignKey
+from sqlalchemy import Column, Boolean, DateTime, Integer, JSON, ForeignKey, String, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 
@@ -17,7 +17,7 @@ class UserOnboarding(Base, SerializableMixin):
     Model for tracking user onboarding progress.
 
     Tracks completion of onboarding steps to guide new users through
-    the initial setup process.
+    the initial setup process and collects marketing data.
     """
 
     __tablename__ = "user_onboarding"
@@ -32,6 +32,12 @@ class UserOnboarding(Base, SerializableMixin):
     # Step tracking (list of step numbers/names)
     completed_steps = Column(JSON, default=list, nullable=False)
     skipped_steps = Column(JSON, default=list, nullable=False)
+
+    # Marketing data - collected during onboarding
+    user_industry = Column(String(100), nullable=True)
+    user_role = Column(String(100), nullable=True)
+    user_goal = Column(Text, nullable=True)
+    heard_from = Column(String(100), nullable=True)
 
     # Timestamps
     started_at = Column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)

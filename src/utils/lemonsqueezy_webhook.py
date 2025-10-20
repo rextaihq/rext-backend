@@ -85,14 +85,24 @@ def verify_webhook_signature(
 
         if not is_valid:
             logger.warning(
-                "LemonSqueezy webhook signature verification failed",
+                "SECURITY: LemonSqueezy webhook signature verification FAILED",
                 extra={
+                    "event": "webhook_verification_failed",
+                    "severity": "SECURITY",
                     "expected_prefix": expected_signature[:8],
-                    "received_prefix": signature[:8] if len(signature) >= 8 else signature
+                    "received_prefix": signature[:8] if len(signature) >= 8 else signature,
+                    "signature_length": len(signature),
+                    "payload_size": len(payload)
                 }
             )
         else:
-            logger.debug("LemonSqueezy webhook signature verified successfully")
+            logger.debug(
+                "LemonSqueezy webhook signature verified successfully",
+                extra={
+                    "event": "webhook_verified",
+                    "signature_prefix": expected_signature[:8]
+                }
+            )
 
         return is_valid
 

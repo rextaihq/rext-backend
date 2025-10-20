@@ -14,7 +14,7 @@ class CleanupConfig:
     """Configuration for data cleanup and retention policies."""
 
     # Retention periods (in days) - can be overridden by environment variables
-    AUDIT_LOG_RETENTION_DAYS: int = int(os.getenv("AUDIT_LOG_RETENTION_DAYS", "90"))
+    AUDIT_LOG_RETENTION_DAYS: int = int(os.getenv("AUDIT_LOG_RETENTION_DAYS", "365"))  # 1 year for audit logs (compliance)
     EMAIL_LOG_RETENTION_DAYS: int = int(os.getenv("EMAIL_LOG_RETENTION_DAYS", "30"))
     EMAIL_EVENT_RETENTION_DAYS: int = int(os.getenv("EMAIL_EVENT_RETENTION_DAYS", "30"))
     USER_SESSION_INACTIVE_DAYS: int = int(os.getenv("USER_SESSION_INACTIVE_DAYS", "7"))

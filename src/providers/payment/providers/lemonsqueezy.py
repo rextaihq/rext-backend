@@ -22,6 +22,17 @@ from src.providers.payment.base_provider import (
     CustomerData,
 )
 from src.utils.logger import logger
+from src.api.lib.sentry_config import (
+    capture_payment_exception,
+    add_payment_breadcrumb,
+    alert_api_error,
+    alert_checkout_failure,
+    alert_webhook_signature_failure,
+)
+from src.api.lib.logging_config import (
+    log_payment_timing,
+    generate_payment_correlation_id,
+)
 
 
 class LemonSqueezyError(Exception):
@@ -102,36 +113,133 @@ class LemonSqueezyProvider(PaymentProvider):
         Raises:
             LemonSqueezyAPIError: If request fails
         """
-        try:
-            response = await self.client.request(
-                method=method,
-                url=endpoint,
-                json=data,
-                params=params
-            )
+        # Add breadcrumb for API request (Phase 4, Task 4.2.1)
+        add_payment_breadcrumb(
+            f"LemonSqueezy API: {method} {endpoint}",
+            operation="api_request",
+            data={
+                "method": method,
+                "endpoint": endpoint,
+                "has_data": data is not None,
+                "has_params": params is not None,
+            }
+        )
 
-            # Check for errors
-            if response.status_code >= 400:
-                try:
-                    error_data = response.json()
-                    error_message = error_data.get("errors", [{}])[0].get(
-                        "detail",
-                        "Unknown error"
-                    )
-                except Exception:
-                    error_message = response.text or "Unknown error"
-
-                raise LemonSqueezyAPIError(
-                    status_code=response.status_code,
-                    message=error_message,
-                    details={"endpoint": endpoint, "method": method}
+        # Log API request with timing (Phase 4, Task 4.2.2)
+        with log_payment_timing(
+            logger,
+            operation="api_request",
+            message=f"LemonSqueezy API: {method} {endpoint}",
+            method=method,
+            endpoint=endpoint,
+            provider="lemonsqueezy"
+        ) as ctx:
+            try:
+                response = await self.client.request(
+                    method=method,
+                    url=endpoint,
+                    json=data,
+                    params=params
                 )
 
-            return response.json()
+                ctx["status_code"] = response.status_code
 
-        except httpx.HTTPError as e:
-            logger.error(f"LemonSqueezy HTTP error: {str(e)}")
-            raise LemonSqueezyError(f"HTTP request failed: {str(e)}") from e
+                # Log response status
+                if response.status_code < 400:
+                    logger.debug(
+                        f"LemonSqueezy API response: {response.status_code}",
+                        method=method,
+                        endpoint=endpoint,
+                        status_code=response.status_code
+                    )
+
+                # Check for errors
+                if response.status_code >= 400:
+                    try:
+                        error_data = response.json()
+                        # Log full error response for debugging
+                        logger.error(
+                            f"🔍 LemonSqueezy full error response: {error_data}",
+                            method=method,
+                            endpoint=endpoint
+                        )
+                        error_message = error_data.get("errors", [{}])[0].get(
+                            "detail",
+                            "Unknown error"
+                        )
+                    except Exception:
+                        error_message = response.text or "Unknown error"
+
+                    logger.error(
+                        f"LemonSqueezy API error: {response.status_code}",
+                        method=method,
+                        endpoint=endpoint,
+                        status_code=response.status_code,
+                        error_message=error_message
+                    )
+
+                    api_error = LemonSqueezyAPIError(
+                        status_code=response.status_code,
+                        message=error_message,
+                        details={"endpoint": endpoint, "method": method}
+                    )
+
+                    # Capture to Sentry (Phase 4, Task 4.2.1)
+                    capture_payment_exception(
+                        api_error,
+                        operation="api_request",
+                        context={
+                            "method": method,
+                            "endpoint": endpoint,
+                            "status_code": response.status_code,
+                            "error_message": error_message,
+                        }
+                    )
+
+                    # Trigger alert for API errors (Phase 4, Task 4.2.3)
+                    if response.status_code >= 500:
+                        # 5xx errors are critical - LemonSqueezy service issues
+                        alert_api_error(
+                            method=method,
+                            endpoint=endpoint,
+                            status_code=response.status_code,
+                            error_message=error_message,
+                            operation="api_request"
+                        )
+                    elif response.status_code == 429:
+                        # Rate limiting - also critical
+                        alert_api_error(
+                            method=method,
+                            endpoint=endpoint,
+                            status_code=response.status_code,
+                            error_message="Rate limit exceeded",
+                            operation="api_request"
+                        )
+
+                    raise api_error
+
+                return response.json()
+
+            except httpx.HTTPError as e:
+                logger.error(
+                    f"LemonSqueezy HTTP error: {str(e)}",
+                    method=method,
+                    endpoint=endpoint,
+                    error_type=type(e).__name__
+                )
+
+                # Capture HTTP errors to Sentry (Phase 4, Task 4.2.1)
+                capture_payment_exception(
+                    e,
+                    operation="api_request",
+                    context={
+                        "method": method,
+                        "endpoint": endpoint,
+                        "error_type": "http_error",
+                    }
+                )
+
+                raise LemonSqueezyError(f"HTTP request failed: {str(e)}") from e
 
     def _parse_jsonapi_data(self, response: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -250,34 +358,73 @@ class LemonSqueezyProvider(PaymentProvider):
         Returns:
             CheckoutSession: Checkout session details
         """
+        # Generate correlation ID for tracking (Phase 4, Task 4.2.2)
+        correlation_id = generate_payment_correlation_id()
+
+        logger.info(
+            "Creating checkout session",
+            operation="checkout",
+            customer_id=customer_id,
+            variant_id=price_id,
+            has_discount=discount_code is not None,
+            correlation_id=correlation_id
+        )
+
+        # Add breadcrumb for checkout (Phase 4, Task 4.2.1)
+        add_payment_breadcrumb(
+            "Creating checkout session",
+            operation="checkout",
+            data={
+                "customer_id": customer_id,
+                "variant_id": price_id,
+                "has_discount": discount_code is not None,
+                "correlation_id": correlation_id,
+            }
+        )
+
         # Build checkout attributes
+        # Ensure variant ID is an integer (LemonSqueezy requires integer IDs)
+        variant_id_int = int(price_id)
+
+        # Clean metadata - remove None values
+        clean_metadata = {k: v for k, v in (metadata or {}).items() if v is not None}
+
         checkout_attributes = {
+            "store_id": int(self.store_id),
+            "variant_id": variant_id_int,
             "custom_price": None,
             "product_options": {
-                "enabled_variants": [price_id],
+                "enabled_variants": [variant_id_int],
                 "redirect_url": success_url,
                 "receipt_button_text": "Go to Dashboard",
                 "receipt_thank_you_note": "Thank you for your purchase!",
+                "media": [],  # Required array field
             },
             "checkout_options": {
-                "embed": True,
+                "embed": False,
                 "media": False,
                 "logo": True,
                 "desc": True,
                 "discount": True,
-                "dark": False,
                 "subscription_preview": True,
             },
-            "checkout_data": metadata or {},
-            "expires_at": None,
+            "checkout_data": {
+                "custom": clean_metadata,
+                "variant_quantities": []  # Required array field
+            },
             "preview": self.sandbox_mode,
-            "test_mode": self.sandbox_mode,
         }
 
         # Add discount code if provided
         if discount_code:
             checkout_attributes["discount_code"] = discount_code
+            logger.debug(
+                "Adding discount code to checkout",
+                discount_code=discount_code,
+                correlation_id=correlation_id
+            )
 
+        # LemonSqueezy requires BOTH attributes AND relationships
         checkout_data = {
             "data": {
                 "type": "checkouts",
@@ -292,24 +439,41 @@ class LemonSqueezyProvider(PaymentProvider):
                     "variant": {
                         "data": {
                             "type": "variants",
-                            "id": str(price_id)
+                            "id": str(variant_id_int)
                         }
                     }
                 }
             }
         }
 
-        response = await self._make_request(
-            method="POST",
-            endpoint="/checkouts",
-            data=checkout_data
-        )
+        # Debug: Log the exact payload being sent
+        import json
+        logger.debug(f"🔍 LemonSqueezy checkout payload: {json.dumps(checkout_data, indent=2)}")
 
-        checkout = self._parse_jsonapi_data(response)
+        with log_payment_timing(
+            logger,
+            operation="checkout",
+            message="Creating LemonSqueezy checkout",
+            variant_id=price_id,
+            correlation_id=correlation_id
+        ) as ctx:
+            response = await self._make_request(
+                method="POST",
+                endpoint="/checkouts",
+                data=checkout_data
+            )
+
+            checkout = self._parse_jsonapi_data(response)
+            ctx["session_id"] = checkout["id"]
+            ctx["checkout_url"] = checkout["url"]
 
         logger.info(
-            f"LemonSqueezy: Created checkout session {checkout['id']} "
-            f"for variant {price_id}"
+            "Checkout session created successfully",
+            operation="checkout",
+            session_id=checkout["id"],
+            variant_id=price_id,
+            correlation_id=correlation_id,
+            checkout_url=checkout["url"]
         )
 
         return CheckoutSession(
@@ -332,6 +496,12 @@ class LemonSqueezyProvider(PaymentProvider):
         Returns:
             SubscriptionData: Subscription information
         """
+        logger.debug(
+            "Retrieving subscription details",
+            operation="get_subscription",
+            subscription_id=subscription_id
+        )
+
         response = await self._make_request(
             method="GET",
             endpoint=f"/subscriptions/{subscription_id}"
@@ -353,6 +523,15 @@ class LemonSqueezyProvider(PaymentProvider):
         internal_status = status_map.get(
             subscription.get("status", "").lower(),
             "active"
+        )
+
+        logger.info(
+            "Retrieved subscription details",
+            operation="get_subscription",
+            subscription_id=subscription_id,
+            status=internal_status,
+            customer_id=subscription.get("customer_id"),
+            variant_id=subscription.get("variant_id")
         )
 
         return SubscriptionData(
@@ -394,18 +573,45 @@ class LemonSqueezyProvider(PaymentProvider):
         Returns:
             SubscriptionData: Updated subscription information
         """
-        # LemonSqueezy DELETE cancels at period end by default
-        # For immediate cancellation, we'd need to update first then delete
-        response = await self._make_request(
-            method="DELETE",
-            endpoint=f"/subscriptions/{subscription_id}"
+        logger.info(
+            "Cancelling subscription",
+            operation="cancel_subscription",
+            subscription_id=subscription_id,
+            at_period_end=at_period_end
         )
 
-        subscription = self._parse_jsonapi_data(response)
+        # Add breadcrumb for cancellation (Phase 4, Task 4.2.1)
+        add_payment_breadcrumb(
+            "Cancelling subscription",
+            operation="cancel_subscription",
+            data={
+                "subscription_id": subscription_id,
+                "at_period_end": at_period_end,
+            }
+        )
+
+        # LemonSqueezy DELETE cancels at period end by default
+        # For immediate cancellation, we'd need to update first then delete
+        with log_payment_timing(
+            logger,
+            operation="cancel_subscription",
+            message="Cancelling subscription in LemonSqueezy",
+            subscription_id=subscription_id,
+            at_period_end=at_period_end
+        ) as ctx:
+            response = await self._make_request(
+                method="DELETE",
+                endpoint=f"/subscriptions/{subscription_id}"
+            )
+
+            subscription = self._parse_jsonapi_data(response)
+            ctx["cancelled"] = True
 
         logger.info(
-            f"LemonSqueezy: Cancelled subscription {subscription_id} "
-            f"(at_period_end={at_period_end})"
+            "Subscription cancelled successfully",
+            operation="cancel_subscription",
+            subscription_id=subscription_id,
+            at_period_end=at_period_end
         )
 
         # Return updated subscription data
@@ -426,6 +632,23 @@ class LemonSqueezyProvider(PaymentProvider):
         Returns:
             SubscriptionData: Updated subscription information
         """
+        logger.info(
+            "Updating subscription plan",
+            operation="update_subscription",
+            subscription_id=subscription_id,
+            new_variant_id=price_id
+        )
+
+        # Add breadcrumb for subscription update (Phase 4, Task 4.2.1)
+        add_payment_breadcrumb(
+            "Updating subscription plan",
+            operation="update_subscription",
+            data={
+                "subscription_id": subscription_id,
+                "new_variant_id": price_id,
+            }
+        )
+
         update_data = {
             "data": {
                 "type": "subscriptions",
@@ -436,14 +659,25 @@ class LemonSqueezyProvider(PaymentProvider):
             }
         }
 
-        response = await self._make_request(
-            method="PATCH",
-            endpoint=f"/subscriptions/{subscription_id}",
-            data=update_data
-        )
+        with log_payment_timing(
+            logger,
+            operation="update_subscription",
+            message="Updating subscription in LemonSqueezy",
+            subscription_id=subscription_id,
+            new_variant_id=price_id
+        ) as ctx:
+            response = await self._make_request(
+                method="PATCH",
+                endpoint=f"/subscriptions/{subscription_id}",
+                data=update_data
+            )
+            ctx["updated"] = True
 
         logger.info(
-            f"LemonSqueezy: Updated subscription {subscription_id} to variant {price_id}"
+            "Subscription plan updated successfully",
+            operation="update_subscription",
+            subscription_id=subscription_id,
+            new_variant_id=price_id
         )
 
         return await self.get_subscription(subscription_id)
@@ -494,10 +728,20 @@ class LemonSqueezyProvider(PaymentProvider):
         Returns:
             bool: True if signature is valid
         """
+        logger.debug(
+            "Verifying webhook signature",
+            operation="webhook_verification",
+            payload_length=len(payload),
+            has_signature=bool(signature)
+        )
+
         webhook_secret = secret or self.webhook_secret
 
         if not webhook_secret:
-            logger.error("LemonSqueezy: No webhook secret configured")
+            logger.error(
+                "No webhook secret configured",
+                operation="webhook_verification"
+            )
             return False
 
         # LemonSqueezy uses HMAC SHA-256
@@ -510,8 +754,17 @@ class LemonSqueezyProvider(PaymentProvider):
         # Timing-safe comparison
         is_valid = hmac.compare_digest(expected_signature, signature)
 
-        if not is_valid:
-            logger.warning("LemonSqueezy: Invalid webhook signature")
+        if is_valid:
+            logger.info(
+                "Webhook signature verified successfully",
+                operation="webhook_verification"
+            )
+        else:
+            logger.warning(
+                "Invalid webhook signature",
+                operation="webhook_verification",
+                payload_length=len(payload)
+            )
 
         return is_valid
 
