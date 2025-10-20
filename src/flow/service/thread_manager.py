@@ -8,11 +8,11 @@ class ThreadManager:
     Manager for LangGraph threads (stateful graph contexts).
 
     This class provides methods to:
-      - Create new threads
-      - Get existing threads
-      - Update thread metadata or TTL
-      - Delete threads
-      - Search or list threads
+      - Create new threads.
+      - Get existing threads.
+      - Update thread metadata or TTL.
+      - Delete threads.
+      - Search or list threads.
       - Access thread history / state / updates
     """
 
