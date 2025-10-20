@@ -1,17 +1,43 @@
+"""
+JWT Token Utilities
+
+Provides functions for creating and verifying JWT tokens for authentication.
+
+Security Features:
+- Cryptographic signing using PyJWT[crypto] with support for:
+  * HMAC algorithms: HS256, HS384, HS512 (symmetric)
+  * RSA algorithms: RS256, RS384, RS512 (asymmetric)
+  * EC algorithms: ES256, ES384, ES512 (elliptic curve)
+- Token blacklisting support via JTI (JWT ID)
+- Configurable token expiration
+- Separate secrets for access and refresh tokens
+
+Default Configuration:
+- Algorithm: HS256 (HMAC-SHA256)
+- Access Token Expiration: 24 hours (configurable)
+- Refresh Token Expiration: 7 days (configurable)
+
+Note: While multiple algorithms are available, we use HS256 (HMAC) by default
+for simplicity. For higher security requirements, consider using RS256 (RSA)
+or ES256 (Elliptic Curve) with asymmetric key pairs.
+"""
+
 from datetime import datetime, timedelta
 from fastapi.security import OAuth2PasswordBearer
 from fastapi import Depends, HTTPException, status
-from dotenv import load_dotenv
 import bcrypt
 import jwt
-import os
 import uuid
 
-load_dotenv()
+from src.api.config import get_settings
 
-SECRET_KEY= os.getenv("SECRET_KEY")
-ALGORITHM= os.getenv("ALGORITHM")
-REFRESH_SECRET_KEY = os.getenv('REFRESH_SECRET_KEY')
+# Load settings (validated on application startup)
+# Settings are loaded from environment variables and validated using Pydantic
+_settings = get_settings()
+SECRET_KEY = _settings.SECRET_KEY
+ALGORITHM = _settings.ALGORITHM
+REFRESH_SECRET_KEY = _settings.REFRESH_SECRET_KEY
+
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/user/login")
 # Encrypt Password
 def hash_password(password: str) -> str:
@@ -41,18 +67,20 @@ def verify_password(password: str, hashed_password: str) -> bool:
     return bcrypt.checkpw(password.encode('utf-8'), hashed_password.encode('utf-8'))
 
 # Create Access Token
-def create_access_token(data: dict, expires_delta: timedelta = timedelta(hours=24)) -> str:
+def create_access_token(data: dict, expires_delta: timedelta = None) -> str:
     """
     Creates a JWT access token with JTI for blacklisting support.
 
     Args:
         data (dict): The payload to include in the token.
-        expires_delta (timedelta, optional): Token expiration time. Defaults to 24 hours.
+        expires_delta (timedelta, optional): Token expiration time. Defaults to configured value.
 
     Returns:
         str: The JWT token.
     """
     to_encode = data.copy()
+    if expires_delta is None:
+        expires_delta = timedelta(minutes=_settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     expire = datetime.utcnow() + expires_delta
     jti = str(uuid.uuid4())  # Unique token ID for blacklisting
     to_encode.update({
@@ -64,18 +92,20 @@ def create_access_token(data: dict, expires_delta: timedelta = timedelta(hours=2
     return token
 
 # Refresh token
-def create_refresh_token(data: dict, expires_delta: timedelta = timedelta(days=7)) -> str:
+def create_refresh_token(data: dict, expires_delta: timedelta = None) -> str:
     """
     Creates a long-lived refresh token with JTI for blacklisting support.
 
     Args:
         data (dict): The payload to include in the token.
-        expires_delta (timedelta, optional): Token expiration time. Defaults to 7 days.
+        expires_delta (timedelta, optional): Token expiration time. Defaults to configured value.
 
     Returns:
         str: The JWT refresh token.
     """
     to_encode = data.copy()
+    if expires_delta is None:
+        expires_delta = timedelta(days=_settings.REFRESH_TOKEN_EXPIRE_DAYS)
     expire = datetime.utcnow() + expires_delta
     jti = str(uuid.uuid4())  # Unique token ID for blacklisting
     to_encode.update({
@@ -224,7 +254,7 @@ def verify_refresh_token(token: str) -> dict:
 
 
 # Check if Token is Blacklisted
-def is_token_blacklisted(jti: str, db) -> bool:
+async def is_token_blacklisted(jti: str, db) -> bool:
     """
     Check if a token JTI is blacklisted.
 
@@ -236,7 +266,9 @@ def is_token_blacklisted(jti: str, db) -> bool:
         bool: True if token is blacklisted, False otherwise.
     """
     from src.api.models.user_models.token_blacklist import TokenBlacklist
-    blacklisted = db.query(TokenBlacklist).filter(
-        TokenBlacklist.jti == jti
-    ).first()
+    from sqlalchemy import select
+    result = await db.execute(
+        select(TokenBlacklist).where(TokenBlacklist.jti == jti)
+    )
+    blacklisted = result.scalar_one_or_none()
     return blacklisted is not None

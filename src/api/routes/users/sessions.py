@@ -127,3 +127,16 @@ async def revoke_all_sessions(
         "revoked_count": revoked_count,
         "current_session_preserved": True,
     }
+
+
+@router.post("/sessions/revoke-all")
+@db_transaction_handler("revoke all user sessions (POST)", auto_commit=True)
+async def revoke_all_sessions_post(
+    request: Request,
+    current_user: dict = Depends(get_current_user),
+    authorization: str = Header(...),
+    db: AsyncSession = Depends(get_async_db)
+) -> dict:
+    """Revoke all sessions except the current one (POST version for frontend)."""
+    # Reuse the same logic as DELETE /sessions
+    return await revoke_all_sessions(request, current_user, authorization, db)

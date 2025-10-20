@@ -1,18 +1,18 @@
 """Structured logging configuration using structlog."""
 import logging
 import structlog
-import os
 import uuid
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
+from src.api.config import get_settings
 
 
 def configure_logging():
     """Configure structured logging for the application."""
-    log_level = os.getenv("LOG_LEVEL", "INFO")
+    settings = get_settings()
     logging.basicConfig(
         format="%(message)s",
-        level=getattr(logging, log_level),
+        level=getattr(logging, settings.LOG_LEVEL),
     )
 
     structlog.configure(
@@ -26,7 +26,7 @@ def configure_logging():
             structlog.processors.StackInfoRenderer(),
             structlog.processors.format_exc_info,
             structlog.processors.UnicodeDecoder(),
-            structlog.processors.JSONRenderer() if os.getenv("ENVIRONMENT") == "production"
+            structlog.processors.JSONRenderer() if settings.is_production
                 else structlog.dev.ConsoleRenderer(),
         ],
         wrapper_class=structlog.stdlib.BoundLogger,

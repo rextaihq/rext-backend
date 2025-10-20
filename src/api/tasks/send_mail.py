@@ -1,20 +1,19 @@
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-import os
 import warnings
-from dotenv import load_dotenv
-
 from src.api.lib.logger import auto_logger
+from src.api.config import get_settings
 
 logger = auto_logger()
 
-load_dotenv()
+# Get settings instance
+settings = get_settings()
 
-SMTP_SERVER = os.getenv("SMTP_SERVER")
-SMTP_PORT = int(os.getenv("SMTP_PORT", 587))
-EMAIL_ADDRESS = os.getenv("EMAIL_ADDRESS")
-EMAIL_PASSWORD = os.getenv("EMAIL_PASSWORD")
+SMTP_SERVER = settings.SMTP_SERVER
+SMTP_PORT = settings.SMTP_PORT
+EMAIL_ADDRESS = settings.EMAIL_ADDRESS
+EMAIL_PASSWORD = settings.EMAIL_PASSWORD
 
 
 def send_email(to: str, subject: str, body: str):

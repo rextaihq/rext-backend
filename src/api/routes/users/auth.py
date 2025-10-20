@@ -3,9 +3,10 @@ from src.utils.logger import logger
 from src.api.security.dependencies import get_current_user
 from src.api.schema.user_schema import LoginUser, RegisterUser
 from src.api.security.token_utils import verify_token
-from sqlalchemy.orm import Session
+from src.api.config import get_settings
+from sqlalchemy.ext.asyncio import AsyncSession
 from src.services.email_service import EmailService
-from src.api.database.database import get_db
+from src.api.database.async_database import get_async_db
 from src.utils.response_utils import success, error, created
 from src.api.schema.response_schemas import ErrorCode, ErrorSeverity
 from src.api.middleware.exceptions import (
@@ -24,6 +25,9 @@ from uuid import UUID
 
 router = APIRouter()
 
+
+# Get settings instance
+settings = get_settings()
 
 async def send_verification_email_task(
     email: str,
@@ -99,7 +103,7 @@ async def create_user(
     user: RegisterUser,
     request: Request,
     background_tasks: BackgroundTasks,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     _rate_limit: None = Depends(registration_rate_limit())
 ):
     """
@@ -117,7 +121,7 @@ async def create_user(
         )
 
         # Get frontend URL from environment
-        frontend_url = os.getenv("FRONTEND_URL", "http://localhost:3000")
+        frontend_url = settings.FRONTEND_URL
 
         # Send verification email in background using professional template
         background_tasks.add_task(
@@ -129,11 +133,8 @@ async def create_user(
             frontend_url=frontend_url
         )
 
-        # Commit transaction
-        db.commit()
-        db.refresh(new_user)
-
         # Return user data (excluding password)
+        # Note: Transaction will be committed by transaction decorator (Task 2.2)
         user_data = {
             "id": str(new_user.id),
             "username": new_user.username,
@@ -158,22 +159,16 @@ async def create_user(
         # Re-raise to be handled by middleware
         raise
     except Exception as e:
-        db.rollback()
-        return error(
-            message="Failed to create user",
-            code=ErrorCode.INTERNAL_SERVER_ERROR,
-            status_code=500,
-            severity=ErrorSeverity.HIGH,
-            context={"error_details": str(e)},
-            request=request
-        )
+        # Re-raise to be handled by middleware (transaction will be rolled back automatically)
+        logger.error(f"User registration failed: {str(e)}", exc_info=True)
+        raise
 
 
 @router.post("/login")
 async def login_user(
     user: LoginUser,
     request: Request,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     _rate_limit: None = Depends(login_rate_limit())
 ):
     """
@@ -202,30 +197,9 @@ async def login_user(
             device_info=device_info
         )
 
-        # Commit transaction
-        db.commit()
-        db.refresh(db_user)
-
-        # Get role names for response (get all roles, prioritize primary if exists)
-        primary_roles = [ur.role.name for ur in db_user.user_roles if ur.is_primary]
-        all_roles = [ur.role.name for ur in db_user.user_roles if ur.workspace_id is None]
-        role_names = primary_roles if primary_roles else all_roles
-
-        # Get user permissions (global permissions only, same as in auth_service.login_user)
-        from src.api.models.user_models.permissions import Permission
-        from src.api.models.user_models.role_permissions import RolePermission
-        from src.api.models.user_models.user_roles import UserRole
-        
-        permission_names = (
-            db.query(Permission.name)
-            .join(RolePermission, RolePermission.permission_id == Permission.id)
-            .join(UserRole, UserRole.role_id == RolePermission.role_id)
-            .filter(UserRole.user_id == db_user.id)
-            .filter(UserRole.workspace_id == None)  # Global permissions only
-            .distinct()
-            .all()
-        )
-        permissions = [p.name for p in permission_names]
+        # Extract roles and permissions from service response
+        role_names = tokens.get("roles", [])
+        permissions = tokens.get("permissions", [])
 
         # Return successful login response
         return success(
@@ -265,8 +239,7 @@ async def login_user(
 @router.post("/refresh")
 async def refresh_access_token(
     request: Request,
-    refresh_token: str,
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_async_db)
 ):
     """
     Refresh access token using refresh token.
@@ -275,14 +248,32 @@ async def refresh_access_token(
     without requiring the user to log in again. Implements refresh
     token rotation for better security - old refresh token is
     blacklisted and a new pair is issued.
+
+    Request Body:
+    {
+        "refresh_token": "your-refresh-token-here"
+    }
+
+    Security Note: Refresh token is now sent in POST body instead of URL
+    to prevent token exposure in server logs and browser history.
     """
     try:
+        # Extract refresh token from request body
+        body = await request.json()
+        refresh_token = body.get("refresh_token")
+
+        if not refresh_token:
+            return error(
+                message="Refresh token is required",
+                code=ErrorCode.INVALID_INPUT,
+                status_code=400,
+                severity=ErrorSeverity.LOW,
+                request=request
+            )
+
         # Use auth service
         auth_service = AuthService(db)
         tokens = await auth_service.refresh_token(refresh_token)
-
-        # Commit transaction
-        db.commit()
 
         return success(
             data=tokens,
@@ -310,7 +301,7 @@ async def logout_user(
     request: Request,
     current_user: dict = Depends(get_current_user),
     authorization: str = Header(...),
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_async_db)
 ):
     """
     Logout user by blacklisting their access token.
@@ -331,9 +322,6 @@ async def logout_user(
         # Use auth service
         auth_service = AuthService(db)
         await auth_service.logout_user(user_id, jti, exp)
-
-        # Commit transaction
-        db.commit()
 
         return success(
             data={"message": "Logged out successfully"},
@@ -361,7 +349,7 @@ async def verify_email(
     token: str,
     request: Request,
     background_tasks: BackgroundTasks,
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_async_db)
 ):
     """
     Verify user's email using the provided token and send welcome email
@@ -371,12 +359,9 @@ async def verify_email(
         auth_service = AuthService(db)
         user = await auth_service.verify_email(token)
 
-        # Commit transaction
-        db.commit()
-
         # Send welcome email after first-time verification
         if user.email_verified:
-            frontend_url = os.getenv("FRONTEND_URL", "http://localhost:3000")
+            frontend_url = settings.FRONTEND_URL
             background_tasks.add_task(
                 send_welcome_email_task,
                 email=user.email,
@@ -398,6 +383,259 @@ async def verify_email(
     except Exception as e:
         return error(
             message="Failed to verify email",
+            code=ErrorCode.INTERNAL_SERVER_ERROR,
+            status_code=500,
+            severity=ErrorSeverity.HIGH,
+            context={"error_details": str(e)},
+            request=request
+        )
+
+
+@router.post("/resend-verification")
+async def resend_verification(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_async_db),
+    _rate_limit: None = Depends(registration_rate_limit())
+):
+    """
+    Resend email verification link.
+
+    Request Body:
+    {
+        "email": "user@example.com"
+    }
+    """
+    try:
+        body = await request.json()
+        email = body.get("email")
+
+        if not email:
+            return error(
+                message="Email is required",
+                code=ErrorCode.INVALID_INPUT,
+                status_code=400,
+                severity=ErrorSeverity.LOW,
+                request=request
+            )
+
+        # Use auth service
+        auth_service = AuthService(db)
+        user, verification_token = await auth_service.resend_verification_email(email)
+
+        # Get frontend URL
+        frontend_url = settings.FRONTEND_URL
+
+        # Send verification email in background
+        background_tasks.add_task(
+            send_verification_email_task,
+            email=user.email,
+            first_name=user.first_name or user.username,
+            verification_token=verification_token,
+            user_id=str(user.id),
+            frontend_url=frontend_url
+        )
+
+        logger.info(f"Verification email resent to: {user.email}")
+        return success(
+            data={"message": "Verification email has been resent"},
+            request=request,
+            message="Verification email sent successfully"
+        )
+
+    except (WrextAuthenticationException, ResourceNotFoundException):
+        raise
+    except Exception as e:
+        logger.error(f"Resend verification error: {str(e)}")
+        return error(
+            message="Failed to resend verification email",
+            code=ErrorCode.INTERNAL_SERVER_ERROR,
+            status_code=500,
+            severity=ErrorSeverity.HIGH,
+            context={"error_details": str(e)},
+            request=request
+        )
+
+
+@router.post("/oauth/login")
+async def oauth_login(
+    request: Request,
+    db: AsyncSession = Depends(get_async_db)
+):
+    """
+    Login or register user via OAuth provider.
+
+    This endpoint handles the OAuth callback from the frontend.
+    It automatically creates a new user if one doesn't exist,
+    or links the OAuth account to an existing user with the same email.
+
+    Request Body:
+    {
+        "provider": "google" | "github",
+        "provider_account_id": "123456789",
+        "provider_email": "user@example.com",
+        "provider_name": "John Doe",
+        "provider_avatar_url": "https://...",  // optional
+        "provider_username": "johndoe",  // optional
+        "access_token": "...",  // optional
+        "refresh_token": "...",  // optional
+        "token_expires_at": "2024-..."  // optional
+    }
+    """
+    from src.services.oauth_service import OAuthService
+
+    try:
+        body = await request.json()
+
+        oauth_service = OAuthService(db)
+        user, tokens = await oauth_service.oauth_login_or_register(
+            provider=body.get("provider"),
+            provider_account_id=body.get("provider_account_id"),
+            provider_email=body.get("provider_email"),
+            provider_name=body.get("provider_name", ""),
+            provider_avatar_url=body.get("provider_avatar_url"),
+            provider_username=body.get("provider_username"),
+            access_token=body.get("access_token"),
+            refresh_token=body.get("refresh_token"),
+            token_expires_at=body.get("token_expires_at")
+        )
+
+        # Extract roles and permissions from service response (same pattern as login)
+        role_names = tokens.get("roles", [])
+        permissions = tokens.get("permissions", [])
+
+        return success(
+            data={
+                **tokens,
+                "user": {
+                    "id": str(user.id),
+                    "username": user.username,
+                    "email": user.email,
+                    "first_name": user.first_name,
+                    "last_name": user.last_name,
+                    "avatar_url": user.avatar_url,
+                    "last_login_at": user.last_login_at,
+                    "login_count": user.login_count,
+                    "roles": role_names,
+                    "permissions": permissions
+                }
+            },
+            request=request,
+            message="OAuth login successful"
+        )
+
+    except WrextAuthenticationException:
+        raise
+    except DuplicateResourceException:
+        raise
+    except Exception as e:
+        logger.error(f"OAuth login failed: {str(e)}", exc_info=True)
+        return error(
+            message="OAuth login failed",
+            code=ErrorCode.INTERNAL_SERVER_ERROR,
+            status_code=500,
+            severity=ErrorSeverity.HIGH,
+            context={"error_details": str(e)},
+            request=request
+        )
+
+
+@router.post("/oauth/link")
+async def link_oauth(
+    request: Request,
+    current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_async_db)
+):
+    """
+    Link an OAuth account to the current user.
+
+    This allows users to add OAuth providers to their existing account
+    for alternative login methods.
+
+    Request Body:
+    {
+        "provider": "google" | "github",
+        "provider_account_id": "123456789",
+        "provider_email": "user@example.com",
+        "provider_username": "johndoe",  // optional
+        "provider_avatar_url": "https://...",  // optional
+        "access_token": "...",  // optional
+        "refresh_token": "...",  // optional
+        "token_expires_at": "2024-..."  // optional
+    }
+    """
+    from src.services.oauth_service import OAuthService
+
+    try:
+        body = await request.json()
+        user_id = UUID(current_user.get("identity"))
+
+        oauth_service = OAuthService(db)
+        oauth_account = await oauth_service.link_oauth_account(
+            user_id=user_id,
+            provider=body.get("provider"),
+            provider_account_id=body.get("provider_account_id"),
+            provider_email=body.get("provider_email"),
+            provider_username=body.get("provider_username"),
+            provider_avatar_url=body.get("provider_avatar_url"),
+            access_token=body.get("access_token"),
+            refresh_token=body.get("refresh_token"),
+            token_expires_at=body.get("token_expires_at")
+        )
+
+        return success(
+            data=oauth_account.to_dict(),
+            request=request,
+            message=f"{body.get('provider').capitalize()} account linked successfully"
+        )
+
+    except (DuplicateResourceException, ResourceNotFoundException):
+        raise
+    except Exception as e:
+        logger.error(f"OAuth link failed: {str(e)}", exc_info=True)
+        return error(
+            message="Failed to link OAuth account",
+            code=ErrorCode.INTERNAL_SERVER_ERROR,
+            status_code=500,
+            severity=ErrorSeverity.HIGH,
+            context={"error_details": str(e)},
+            request=request
+        )
+
+
+@router.delete("/oauth/{provider}")
+async def unlink_oauth(
+    provider: str,
+    request: Request,
+    current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_async_db)
+):
+    """
+    Unlink an OAuth account from the current user.
+
+    Path Parameters:
+        provider: OAuth provider to unlink (google, github, etc.)
+    """
+    from src.services.oauth_service import OAuthService
+
+    try:
+        user_id = UUID(current_user.get("identity"))
+
+        oauth_service = OAuthService(db)
+        await oauth_service.unlink_oauth_account(user_id, provider)
+
+        return success(
+            data={"provider": provider},
+            request=request,
+            message=f"{provider.capitalize()} account unlinked successfully"
+        )
+
+    except ResourceNotFoundException:
+        raise
+    except Exception as e:
+        logger.error(f"OAuth unlink failed: {str(e)}", exc_info=True)
+        return error(
+            message="Failed to unlink OAuth account",
             code=ErrorCode.INTERNAL_SERVER_ERROR,
             status_code=500,
             severity=ErrorSeverity.HIGH,

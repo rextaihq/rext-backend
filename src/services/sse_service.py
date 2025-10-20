@@ -38,6 +38,7 @@ class _OperationState:
     last_event_at: datetime = field(default_factory=_utcnow)
     completed: bool = False
     completion_payload: Optional[Dict[str, Any]] = None
+    owner_user_id: Optional[UUID] = None  # Track who initiated the operation
 
 
 class OperationEvent(BaseModel):
@@ -123,6 +124,30 @@ class EventStreamManager:
                 yield item
         finally:
             await self._remove_subscription(operation_id, subscription)
+
+    async def set_operation_owner(self, operation_id: str, user_id: UUID) -> None:
+        """Set the owner of an operation when it's created."""
+        async with self._lock:
+            state = self._operations.get(operation_id)
+            if state is None:
+                state = _OperationState()
+                self._operations[operation_id] = state
+            # Only set owner if not already set (first come, first served)
+            if state.owner_user_id is None:
+                state.owner_user_id = user_id
+
+    async def verify_operation_ownership(self, operation_id: str, user_id: UUID) -> bool:
+        """Verify that the user owns the operation."""
+        async with self._lock:
+            state = self._operations.get(operation_id)
+            if state is None:
+                # If operation doesn't exist yet, allow access (will be created on first event)
+                return True
+            # If owner is not set, allow access
+            if state.owner_user_id is None:
+                return True
+            # Check if user is the owner
+            return state.owner_user_id == user_id
 
     async def publish(self, event: OperationEvent) -> None:
         """Publish an event to all subscribers and buffer it for future subscribers."""

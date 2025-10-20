@@ -16,7 +16,7 @@ logger = auto_logger()
 
 async def send_auth_email(
     db: AsyncSession,
-    email_type: Literal["verification", "password_reset", "welcome"],
+    email_type: Literal["verification", "password_reset", "password_changed", "welcome"],
     recipient_email: str,
     user_name: str,
     user_id: UUID,
@@ -54,6 +54,7 @@ async def send_auth_email(
         from emails.templates.auth import (
             create_verification_email,
             create_password_reset_email,
+            create_password_changed_email,
             create_welcome_email
         )
 
@@ -76,6 +77,17 @@ async def send_auth_email(
                 unsubscribe_token=unsubscribe_token
             )
             subject = "Reset Your Password - WREXT"
+
+        elif email_type == "password_changed":
+            html = create_password_changed_email(
+                user_name=user_name,
+                changed_at=kwargs.get('changed_at', 'recently'),
+                ip_address=kwargs.get('ip_address'),
+                user_agent=kwargs.get('user_agent'),
+                frontend_url=frontend_url,
+                unsubscribe_token=unsubscribe_token
+            )
+            subject = "Your Password Has Been Changed - WREXT"
 
         elif email_type == "welcome":
             html = create_welcome_email(

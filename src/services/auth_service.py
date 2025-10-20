@@ -24,8 +24,8 @@ from uuid import UUID
 from datetime import datetime, timedelta, timezone
 import os
 
-from sqlalchemy.orm import Session
-from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, or_
 
 from src.api.models.user_models.users import Users
 from src.api.models.user_models.roles import Role
@@ -34,6 +34,12 @@ from src.api.models.user_models.permissions import Permission
 from src.api.models.user_models.role_permissions import RolePermission
 from src.api.models.user_models.token_blacklist import TokenBlacklist
 from src.api.models.user_models.user_sessions import UserSession
+from src.api.models.subscription_models.plans import SubscriptionPlan
+from src.api.models.subscription_models.subscriptions import (
+    UserSubscription,
+    SubscriptionStatus,
+    BillingPeriod
+)
 from src.api.security.token_utils import (
     hash_password,
     verify_password,
@@ -55,12 +61,12 @@ from src.api.middleware.exceptions import (
 class AuthService:
     """Service for authentication business logic"""
 
-    def __init__(self, db: Session):
+    def __init__(self, db: AsyncSession):
         """
         Initialize AuthService.
 
         Args:
-            db: Database session
+            db: Async database session
         """
         self.db = db
 
@@ -73,12 +79,13 @@ class AuthService:
         last_name: str
     ) -> Tuple[Users, str]:
         """
-        Register new user with role assignment.
+        Register new user with role assignment and trial subscription.
 
         Business Rules:
         - Email and username must be unique
         - Password is hashed before storage
         - Default 'user' role is assigned
+        - Trial subscription is auto-assigned (14 days)
         - Verification token is generated (valid 24 hours)
 
         Args:
@@ -95,9 +102,12 @@ class AuthService:
             DuplicateResourceException: If email or username exists
         """
         # Check if user exists
-        existing_user = self.db.query(Users).filter(
-            (Users.email == email) | (Users.username == username)
-        ).first()
+        result = await self.db.execute(
+            select(Users).where(
+                or_(Users.email == email, Users.username == username)
+            )
+        )
+        existing_user = result.scalar_one_or_none()
 
         if existing_user:
             if existing_user.email == email:
@@ -128,10 +138,10 @@ class AuthService:
             created_at=datetime.utcnow()
         )
         self.db.add(new_user)
-        self.db.flush()
+        await self.db.flush()
 
         # Assign default role
-        default_role = self._get_or_create_default_role()
+        default_role = await self._get_or_create_default_role()
 
         user_role = UserRole(
             user_id=new_user.id,
@@ -142,14 +152,39 @@ class AuthService:
             assigned_by_user_id=new_user.id
         )
         self.db.add(user_role)
-        self.db.flush()
+        await self.db.flush()
+
+        # Create trial subscription (auto-assigned on signup)
+        trial_plan = await self._get_trial_plan()
+        if trial_plan:
+            trial_start = datetime.utcnow()
+            trial_end = trial_start + timedelta(days=14)
+
+            trial_subscription = UserSubscription(
+                user_id=new_user.id,
+                plan_id=trial_plan.id,
+                status=SubscriptionStatus.TRIAL,  # Use TRIAL status for trial subscriptions
+                billing_period=BillingPeriod.MONTHLY,
+                start_date=trial_start,
+                end_date=trial_end,
+                trial_end_date=trial_end,
+                created_at=trial_start,
+                updated_at=trial_start
+            )
+            self.db.add(trial_subscription)
+            await self.db.flush()
+
+            logger.info(
+                f"Trial subscription created for user: {new_user.id}",
+                extra={"plan_id": str(trial_plan.id), "trial_end": trial_end.isoformat()}
+            )
 
         # Generate verification token
         verification_token = create_verification_token({"user_id": str(new_user.id)})
 
         logger.info(
             f"User registered: {new_user.id}",
-            extra={"email": email, "username": username}
+            extra={"email": email, "username": username, "has_trial": trial_plan is not None}
         )
 
         return new_user, verification_token
@@ -180,8 +215,14 @@ class AuthService:
         Raises:
             WrextAuthenticationException: If credentials invalid or account locked
         """
-        # Find user
-        db_user = self.db.query(Users).filter(Users.email == email).first()
+        # Find user (eagerly load relationships to avoid lazy loading in async context)
+        from sqlalchemy.orm import selectinload
+        result = await self.db.execute(
+            select(Users)
+            .options(selectinload(Users.user_roles).selectinload(UserRole.role))
+            .where(Users.email == email)
+        )
+        db_user = result.scalar_one_or_none()
 
         if not db_user:
             raise WrextAuthenticationException(
@@ -203,11 +244,16 @@ class AuthService:
             # Increment failed attempts
             db_user.failed_login_attempts = (db_user.failed_login_attempts or 0) + 1
 
-            # Lock account if too many failures
-            if db_user.failed_login_attempts >= 3:
-                db_user.locked_until = datetime.utcnow() + timedelta(hours=1)
+            # Lock account if too many failures (configurable via settings)
+            from src.api.config import get_settings
+            settings = get_settings()
+            max_attempts = settings.AUTH_MAX_LOGIN_ATTEMPTS
+            lockout_hours = settings.AUTH_LOCKOUT_DURATION_HOURS
 
-            self.db.flush()
+            if db_user.failed_login_attempts >= max_attempts:
+                db_user.locked_until = datetime.utcnow() + timedelta(hours=lockout_hours)
+
+            await self.db.flush()
 
             raise WrextAuthenticationException(
                 message="Invalid email or password",
@@ -218,21 +264,20 @@ class AuthService:
         db_user.failed_login_attempts = 0
         db_user.last_login_at = datetime.utcnow()
         db_user.login_count = (db_user.login_count or 0) + 1
-        self.db.flush()
+        await self.db.flush()
 
         # Get roles and permissions
         role_names = [ur.role.name for ur in db_user.user_roles if ur.is_primary]
 
-        permission_names = (
-            self.db.query(Permission.name)
+        result = await self.db.execute(
+            select(Permission.name)
             .join(RolePermission, RolePermission.permission_id == Permission.id)
             .join(UserRole, UserRole.role_id == RolePermission.role_id)
-            .filter(UserRole.user_id == db_user.id)
-            .filter(UserRole.workspace_id == None)  # Global permissions only
+            .where(UserRole.user_id == db_user.id)
+            .where(UserRole.workspace_id == None)  # Global permissions only
             .distinct()
-            .all()
         )
-        permissions = [p.name for p in permission_names]
+        permissions = [row[0] for row in result.all()]
 
         # Prepare token data
         token_data = {
@@ -266,7 +311,7 @@ class AuthService:
             expires_at=expires_at
         )
         self.db.add(new_session)
-        self.db.flush()
+        await self.db.flush()
 
         logger.info(
             f"User logged in: {db_user.id}",
@@ -276,7 +321,9 @@ class AuthService:
         tokens = {
             "access_token": access_token,
             "refresh_token": refresh_token,
-            "token_type": "bearer"
+            "token_type": "bearer",
+            "permissions": permissions,  # Include permissions for route response
+            "roles": role_names  # Include roles for route response
         }
 
         return db_user, tokens
@@ -303,7 +350,10 @@ class AuthService:
                 context={"error": "Missing user_id"}
             )
 
-        user = self.db.query(Users).filter(Users.id == user_id).first()
+        result = await self.db.execute(
+            select(Users).where(Users.id == user_id)
+        )
+        user = result.scalar_one_or_none()
 
         if not user:
             raise ResourceNotFoundException(
@@ -314,7 +364,7 @@ class AuthService:
         if not user.email_verified:
             user.email_verified = True
             user.email_verified_at = datetime.utcnow()
-            self.db.flush()
+            await self.db.flush()
 
         logger.info(
             f"Email verified for user: {user_id}",
@@ -322,6 +372,60 @@ class AuthService:
         )
 
         return user
+
+    async def resend_verification_email(self, email: str) -> Tuple[Users, str]:
+        """
+        Resend email verification for a user.
+
+        Business Rules:
+        - User must exist
+        - Email must not be already verified
+        - Generates new verification token
+
+        Args:
+            email: User email address
+
+        Returns:
+            Tuple of (User object, new_verification_token)
+
+        Raises:
+            ResourceNotFoundException: If user not found
+            WrextAuthenticationException: If email already verified
+        """
+        # Find user by email
+        result = await self.db.execute(
+            select(Users).where(Users.email == email)
+        )
+        user = result.scalar_one_or_none()
+
+        if not user:
+            raise ResourceNotFoundException(
+                resource_type="User",
+                resource_id=email
+            )
+
+        # Check if already verified
+        if user.email_verified:
+            raise WrextAuthenticationException(
+                message="Email is already verified",
+                context={"email": email}
+            )
+
+        # Generate new verification token
+        verification_token = create_verification_token(
+            data={"user_id": str(user.id)}
+        )
+
+        # Update user's verification token
+        user.verification_token = verification_token
+        await self.db.flush()
+
+        logger.info(
+            f"Verification email resent for user: {user.id}",
+            extra={"email": email}
+        )
+
+        return user, verification_token
 
     async def refresh_token(self, refresh_token: str) -> Dict[str, str]:
         """
@@ -349,7 +453,7 @@ class AuthService:
                 context={"note": "Old token format not supported"}
             )
 
-        if is_token_blacklisted(jti, self.db):
+        if await is_token_blacklisted(jti, self.db):
             raise WrextAuthenticationException(
                 message="Refresh token has been revoked",
                 context={"reason": "Token blacklisted"}
@@ -357,7 +461,10 @@ class AuthService:
 
         # Get user
         user_id = payload.get("id")
-        db_user = self.db.query(Users).filter(Users.id == user_id).first()
+        result = await self.db.execute(
+            select(Users).where(Users.id == user_id)
+        )
+        db_user = result.scalar_one_or_none()
 
         if not db_user:
             raise WrextAuthenticationException(
@@ -374,16 +481,15 @@ class AuthService:
         # Get current roles and permissions
         role_names = [ur.role.name for ur in db_user.user_roles if ur.is_primary]
 
-        permission_names = (
-            self.db.query(Permission.name)
+        result = await self.db.execute(
+            select(Permission.name)
             .join(RolePermission, RolePermission.permission_id == Permission.id)
             .join(UserRole, UserRole.role_id == RolePermission.role_id)
-            .filter(UserRole.user_id == db_user.id)
-            .filter(UserRole.workspace_id == None)
+            .where(UserRole.user_id == db_user.id)
+            .where(UserRole.workspace_id == None)
             .distinct()
-            .all()
         )
-        permissions = [p.name for p in permission_names]
+        permissions = [row[0] for row in result.all()]
 
         # Create new token pair
         token_data = {
@@ -406,7 +512,7 @@ class AuthService:
             reason="refresh"
         )
         self.db.add(blacklist_entry)
-        self.db.flush()
+        await self.db.flush()
 
         logger.info(
             f"Token refreshed for user: {user_id}",
@@ -438,7 +544,7 @@ class AuthService:
             )
 
         # Check if already blacklisted
-        if is_token_blacklisted(jti, self.db):
+        if await is_token_blacklisted(jti, self.db):
             logger.info(f"Token already blacklisted for user {user_id}")
             return
 
@@ -454,16 +560,19 @@ class AuthService:
         self.db.add(blacklist_entry)
 
         # Deactivate session
-        session = self.db.query(UserSession).filter(
-            UserSession.jti == jti,
-            UserSession.is_active == True
-        ).first()
+        result = await self.db.execute(
+            select(UserSession).where(
+                UserSession.jti == jti,
+                UserSession.is_active == True
+            )
+        )
+        session = result.scalar_one_or_none()
 
         if session:
             session.is_active = False
             session.revoked_at = datetime.utcnow()
 
-        self.db.flush()
+        await self.db.flush()
 
         logger.info(
             f"User logged out: {user_id}",
@@ -483,7 +592,8 @@ class AuthService:
         Raises:
             ResourceNotFoundException: If user not found
         """
-        user = self.db.query(Users).filter(Users.email == email).first()
+        result = await self.db.execute(select(Users).where(Users.email == email))
+        user = result.scalar_one_or_none()
 
         if not user:
             raise ResourceNotFoundException(
@@ -525,7 +635,10 @@ class AuthService:
                 context={"error": "Missing user_id"}
             )
 
-        user = self.db.query(Users).filter(Users.id == user_id).first()
+        result = await self.db.execute(
+            select(Users).where(Users.id == user_id)
+        )
+        user = result.scalar_one_or_none()
 
         if not user:
             raise ResourceNotFoundException(
@@ -536,7 +649,7 @@ class AuthService:
         # Hash and update password
         hashed_pwd = hash_password(new_password)
         user.password_hash = hashed_pwd
-        self.db.flush()
+        await self.db.flush()
 
         logger.info(
             f"Password reset completed for user: {user_id}",
@@ -549,14 +662,17 @@ class AuthService:
     # Private Helper Methods
     # ========================================================================
 
-    def _get_or_create_default_role(self) -> Role:
+    async def _get_or_create_default_role(self) -> Role:
         """
         Get or create default 'user' role.
 
         Returns:
             Role object
         """
-        default_role = self.db.query(Role).filter(Role.name == "user").first()
+        result = await self.db.execute(
+            select(Role).where(Role.name == "user")
+        )
+        default_role = result.scalar_one_or_none()
 
         if not default_role:
             default_role = Role(
@@ -568,7 +684,27 @@ class AuthService:
                 created_at=datetime.utcnow()
             )
             self.db.add(default_role)
-            self.db.flush()
+            await self.db.flush()
             logger.info("Created default user role")
 
         return default_role
+
+    async def _get_trial_plan(self) -> Optional[SubscriptionPlan]:
+        """
+        Get trial subscription plan.
+
+        Returns:
+            SubscriptionPlan object for trial, or None if not found
+        """
+        result = await self.db.execute(
+            select(SubscriptionPlan).where(
+                SubscriptionPlan.name == "trial",
+                SubscriptionPlan.is_active == True
+            )
+        )
+        trial_plan = result.scalar_one_or_none()
+
+        if not trial_plan:
+            logger.warning("Trial subscription plan not found in database")
+
+        return trial_plan

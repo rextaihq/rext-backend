@@ -118,7 +118,6 @@ async def create_checkout_session(
             metadata={"user_id": str(user.id)}
         )
         user.provider_customer_id = customer_id
-        await db.commit()
         logger.info(f"Created payment provider customer for user {user.email}: {customer_id}")
     else:
         customer_id = user.provider_customer_id

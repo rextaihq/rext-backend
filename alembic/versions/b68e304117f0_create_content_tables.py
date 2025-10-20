@@ -1,8 +1,11 @@
 """create_content_tables
 
 Revision ID: b68e304117f0
-Revises: c47862f79eae
+Revises: 36ef85f33af2
 Create Date: 2025-10-03 15:54:38.304477
+
+Note: Originally revised c47862f79eae (seed003 - test data with workspace auto-creation).
+      seed003 has been removed. Now depends on 36ef85f33af2 (merge_schema_and_seeds).
 
 Creates all 10 content-related tables:
 - content (main table)
@@ -25,7 +28,7 @@ from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
 revision: str = 'b68e304117f0'
-down_revision: Union[str, Sequence[str], None] = 'c47862f79eae'
+down_revision: Union[str, Sequence[str], None] = '36ef85f33af2'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

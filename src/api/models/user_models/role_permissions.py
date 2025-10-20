@@ -4,7 +4,7 @@ from sqlalchemy import Column, String, Boolean, TIMESTAMP, ForeignKey
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 from datetime import datetime
-from src.api.database.database import Base
+from src.api.database.base import Base
 from src.api.models.base import SerializableMixin
 
 # Role Permissions

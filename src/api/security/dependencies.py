@@ -8,9 +8,9 @@ separated from core auth logic to avoid circular imports.
 from typing import TYPE_CHECKING
 from fastapi import Header, Depends, HTTPException
 from langgraph_sdk import Auth
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.api.database.database import get_db
+from src.api.database.async_database import get_async_db
 from src.api.security.token_utils import verify_token, is_token_blacklisted
 from src.utils.logger import logger
 
@@ -22,9 +22,9 @@ if TYPE_CHECKING:
     )
 
 
-def get_current_user(
+async def get_current_user(
     authorization: str = Header(...),
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_async_db)
 ) -> Auth.types.MinimalUserDict:
     """Check if the user's token is valid and not blacklisted."""
     # Import exceptions at runtime to avoid circular dependency
@@ -58,7 +58,7 @@ def get_current_user(
 
         # Check if token is blacklisted
         jti = payload.get("jti")
-        if jti and is_token_blacklisted(jti, db):
+        if jti and await is_token_blacklisted(jti, db):
             raise WrextAuthenticationException(
                 message="Token has been revoked",
                 context={"reason": "Token blacklisted"}
@@ -101,3 +101,22 @@ def get_current_user(
     # Log identity verification without PII
     logger.info("Identity verified", extra={"user_id": user_id})
     return user_info
+
+
+async def get_current_user_optional(
+    authorization: str = Header(None),
+    db: AsyncSession = Depends(get_async_db)
+) -> Auth.types.MinimalUserDict | None:
+    """
+    Optional authentication dependency.
+    Returns user info if valid token provided, None otherwise.
+    Does not raise exceptions for missing/invalid auth.
+    """
+    if not authorization:
+        return None
+
+    try:
+        return await get_current_user(authorization, db)
+    except Exception:
+        # Silently return None for any authentication errors
+        return None

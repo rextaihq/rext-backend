@@ -16,7 +16,7 @@ Does NOT:
 - Authentication/authorization (that's decorators)
 """
 
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 from uuid import UUID
 from datetime import datetime, timezone
 import bcrypt
@@ -304,3 +304,323 @@ class UserService:
             f"User last login updated: {user_id}",
             extra={"user_id": str(user_id), "login_count": user.login_count}
         )
+
+    async def get_users(
+        self,
+        workspace_id: Optional[UUID] = None
+    ) -> list[Users]:
+        """
+        Get list of users, optionally filtered by workspace membership.
+
+        Args:
+            workspace_id: Optional workspace ID to filter by
+
+        Returns:
+            List of Users objects
+
+        Raises:
+            Exception: If query fails
+        """
+        from src.api.models.workspace_models.workspace_member import WorkspaceMembers
+
+        query = select(Users)
+
+        if workspace_id:
+            # Filter by workspace membership
+            query = query.join(WorkspaceMembers).where(
+                WorkspaceMembers.workspace_id == workspace_id,
+                WorkspaceMembers.status == "active"
+            )
+            logger.info(f"Fetching users for workspace: {workspace_id}")
+        else:
+            logger.info("Fetching all users")
+
+        result = await self.db.execute(query)
+        users = result.scalars().all()
+
+        logger.info(f"Retrieved {len(users)} users")
+        return list(users)
+
+    async def delete_user(
+        self,
+        user_id: UUID
+    ) -> Users:
+        """
+        Soft delete a user by setting deleted_at timestamp.
+
+        Args:
+            user_id: User UUID to delete
+
+        Returns:
+            Deleted user object
+
+        Raises:
+            ResourceNotFoundException: If user not found
+            WrextValidationException: If user already deleted
+        """
+        from src.api.middleware.exceptions import WrextValidationException
+
+        user = await self.get_user_by_id(user_id)
+
+        if user.deleted_at:
+            raise WrextValidationException("User already deleted")
+
+        user.deleted_at = datetime.utcnow()
+
+        logger.info(f"User {user_id} soft deleted")
+        return user
+
+    async def check_user_permission(
+        self,
+        user_id: UUID,
+        permission_name: str
+    ) -> bool:
+        """
+        Check if user has a specific permission.
+
+        Args:
+            user_id: User UUID
+            permission_name: Permission name (e.g., "user.delete")
+
+        Returns:
+            True if user has permission, False otherwise
+        """
+        from src.api.models.user_models.permissions import Permission
+        from src.api.models.user_models.role_permissions import RolePermission
+        from src.api.models.user_models.user_roles import UserRole
+
+        query = select(Permission).join(
+            RolePermission, RolePermission.permission_id == Permission.id
+        ).join(
+            UserRole, UserRole.role_id == RolePermission.role_id
+        ).where(
+            UserRole.user_id == user_id,
+            Permission.name == permission_name
+        )
+
+        result = await self.db.execute(query)
+        permission = result.scalar_one_or_none()
+
+        has_permission = permission is not None
+        logger.debug(f"Permission check for user {user_id}, permission '{permission_name}': {has_permission}")
+
+        return has_permission
+
+    async def update_user(
+        self,
+        user_id: UUID,
+        email: Optional[str] = None,
+        username: Optional[str] = None,
+        first_name: Optional[str] = None,
+        last_name: Optional[str] = None,
+        display_name: Optional[str] = None,
+        language: Optional[str] = None,
+        timezone: Optional[str] = None
+    ) -> Users:
+        """
+        Update user with email/username validation and profile fields.
+
+        Args:
+            user_id: User UUID
+            email: New email (will check for duplicates)
+            username: New username (will check for duplicates)
+            first_name: First name
+            last_name: Last name
+            display_name: Display name
+            language: Language preference
+            timezone: Timezone preference
+
+        Returns:
+            Updated user object
+
+        Raises:
+            ResourceNotFoundException: If user not found
+            WrextValidationException: If email/username already exists
+        """
+        from src.api.middleware.exceptions import WrextValidationException
+
+        user = await self.get_user_by_id(user_id)
+
+        # Check for duplicate email
+        if email and email != user.email:
+            query = select(Users).where(
+                Users.email == email,
+                Users.id != user_id
+            )
+            result = await self.db.execute(query)
+            if result.scalar_one_or_none():
+                raise WrextValidationException("Email already exists")
+            user.email = email
+
+        # Check for duplicate username
+        if username and username != user.username:
+            query = select(Users).where(
+                Users.username == username,
+                Users.id != user_id
+            )
+            result = await self.db.execute(query)
+            if result.scalar_one_or_none():
+                raise WrextValidationException("Username already exists")
+            user.username = username
+
+        # Update profile fields
+        if first_name is not None:
+            user.first_name = first_name
+        if last_name is not None:
+            user.last_name = last_name
+        if display_name is not None:
+            user.display_name = display_name
+        if language is not None:
+            user.language = language
+        if timezone is not None:
+            user.timezone = timezone
+
+        user.updated_at = datetime.utcnow()
+
+        logger.info(f"User {user_id} updated successfully")
+        return user
+
+    async def set_reset_token(
+        self,
+        user_id: UUID,
+        reset_token: str
+    ) -> Users:
+        """
+        Set password reset token for user.
+
+        Args:
+            user_id: User UUID
+            reset_token: Password reset token
+
+        Returns:
+            User object with updated reset_token
+
+        Raises:
+            ResourceNotFoundException: If user not found
+        """
+        user = await self.get_user_by_id(user_id)
+        user.reset_token = reset_token
+
+        logger.info(f"Reset token set for user {user_id}")
+        return user
+
+    async def reset_password_with_token(
+        self,
+        reset_token: str,
+        new_password: str
+    ) -> Users:
+        """
+        Reset user password using reset token.
+
+        Args:
+            reset_token: Password reset token
+            new_password: New password to set
+
+        Returns:
+            User object with updated password
+
+        Raises:
+            ResourceNotFoundException: If no user found with that token
+        """
+        from src.api.security.token_utils import hash_password
+
+        # Find user by reset token
+        query = select(Users).where(Users.reset_token == reset_token)
+        result = await self.db.execute(query)
+        user = result.scalar_one_or_none()
+
+        if not user:
+            raise ResourceNotFoundException("Invalid or expired reset token")
+
+        # Update password
+        user.password_hash = hash_password(new_password)
+        user.reset_token = None
+        user.password_changed_at = datetime.utcnow()
+
+        logger.info(f"Password reset successfully for user {user.id}")
+        return user
+
+    async def verify_user_password(
+        self,
+        user_id: UUID,
+        password: str
+    ) -> bool:
+        """
+        Verify user's password.
+
+        Args:
+            user_id: User UUID
+            password: Password to verify
+
+        Returns:
+            True if password is correct, False otherwise
+
+        Raises:
+            ResourceNotFoundException: If user not found
+        """
+        from src.api.security.token_utils import verify_password
+
+        user = await self.get_user_by_id(user_id)
+
+        is_valid = verify_password(password, user.password)
+        logger.debug(f"Password verification for user {user_id}: {is_valid}")
+
+        return is_valid
+
+    async def get_user_by_email_or_404(
+        self,
+        email: str,
+        exclude_deleted: bool = True
+    ) -> Users:
+        """
+        Get user by email or raise 404.
+
+        Args:
+            email: User email address
+            exclude_deleted: Whether to exclude soft-deleted users
+
+        Returns:
+            User object
+
+        Raises:
+            ResourceNotFoundException: If user not found
+        """
+        query = select(Users).where(Users.email == email.lower())
+
+        if exclude_deleted:
+            query = query.where(Users.deleted_at.is_(None))
+
+        result = await self.db.execute(query)
+        user = result.scalar_one_or_none()
+
+        if not user:
+            raise ResourceNotFoundException(
+                resource_type="user",
+                resource_id=email
+            )
+
+        logger.debug(f"Found user by email: {email}")
+        return user
+
+    async def get_users_by_ids(
+        self,
+        user_ids: list[UUID]
+    ) -> Dict[UUID, Users]:
+        """
+        Batch load users by IDs.
+
+        Args:
+            user_ids: List of user UUIDs
+
+        Returns:
+            Dict mapping user_id -> Users object
+        """
+        if not user_ids:
+            return {}
+
+        result = await self.db.execute(
+            select(Users).where(Users.id.in_(user_ids))
+        )
+        users = result.scalars().all()
+
+        return {user.id: user for user in users}

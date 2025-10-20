@@ -6,7 +6,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
-from src.api.database.database import Base
+from src.api.database.base import Base
 from src.api.models.base import SerializableMixin
 from src.api.models.workspace_models.workspace_member import WorkspaceMembers
 
@@ -44,13 +44,16 @@ class Users(Base, SerializableMixin):
     # Relationships
     user_roles = relationship("UserRole", back_populates="user", foreign_keys="UserRole.user_id")
     workspace_memberships = relationship("WorkspaceMembers", back_populates="user")
-    workspaces = relationship("WorkspaceModel", back_populates="owner")
+    workspaces = relationship("WorkspaceModel", foreign_keys="WorkspaceModel.user_id", back_populates="owner")
     sent_invitations = relationship("UserInvitations", back_populates="invited_by")
     assigned_roles = relationship("UserRole", back_populates="assigned_by", foreign_keys="UserRole.assigned_by_user_id")
     notification_preferences = relationship("NotificationPreferences", back_populates="user", uselist=False)
     sessions = relationship("UserSession", back_populates="user", cascade="all, delete-orphan")
-    email_preferences = relationship("EmailPreferences", back_populates="user", uselist=False, foreign_keys="EmailPreferences.user_id")
+    email_preferences = relationship("EmailPreferences", back_populates="user", uselist=False)
+    preferences = relationship("UserPreferences", back_populates="user", uselist=False, cascade="all, delete-orphan")
     media = relationship("Media", back_populates="user", cascade="all, delete-orphan")
+    oauth_accounts = relationship("OAuthAccount", back_populates="user", cascade="all, delete-orphan")
+    onboarding = relationship("UserOnboarding", back_populates="user", uselist=False, cascade="all, delete-orphan")
 
     def to_dict(self, **kwargs):
         """Exclude sensitive fields from serialization"""

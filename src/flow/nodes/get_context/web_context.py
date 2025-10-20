@@ -56,9 +56,11 @@ def web_context(state: ContentState):
     # -----------------------------
     try:
         print("🌐 Running Perplexity web search...")
-        api_key = os.getenv("PERPLEXITY_API_KEY")
+        from src.api.config import get_settings
+        settings = get_settings()
+        api_key = settings.PERPLEXITY_API_KEY
         if not api_key:
-            error_msg = "Missing PERPLEXITY_API_KEY in environment"
+            error_msg = "Missing PERPLEXITY_API_KEY in settings"
             print(f"⚠️ {error_msg}")
             return {
                 "context": [],

@@ -2,7 +2,7 @@
 # This file intentionally left mostly empty to avoid circular import issues
 # and to allow lazy loading of model relationships
 
-from src.api.database.database import Base
+from src.api.database.base import Base
 
 # Core models
 from src.api.models.workspace_models.workspace_model import WorkspaceModel

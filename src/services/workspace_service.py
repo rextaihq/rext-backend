@@ -103,7 +103,7 @@ class WorkspaceService:
         with trace(name="Assign Roles & Permissions"):
             await self.create_workspace_member(workspace.id, user_id, is_default=True, status="active")
             admin_role = await self._ensure_workspace_admin_role(workspace.id)
-            await self._assign_permissions_to_role(admin_role.id, resources=["topic", "content"])
+            await self._assign_permissions_to_role(admin_role.id, resources=["workspace", "topic", "content", "member", "knowledge"])
             await self._assign_role_to_user(admin_role.id, user_id, workspace.id)
 
 
@@ -296,7 +296,10 @@ class WorkspaceService:
             .outerjoin(Website, Website.workspace_id == WorkspaceModel.id)
             .outerjoin(KnowledgeFiles, KnowledgeFiles.workspace_id == WorkspaceModel.id)
             .outerjoin(TextKnowledge, TextKnowledge.workspace_id == WorkspaceModel.id)
-            .where(WorkspaceMembers.user_id == user_id)
+            .where(
+                WorkspaceMembers.user_id == user_id,
+                WorkspaceModel.deleted_at.is_(None)  # Filter out soft-deleted workspaces
+            )
             .group_by(WorkspaceModel.id, Users.id)
         )
 
@@ -513,7 +516,10 @@ class WorkspaceService:
             ResourceNotFoundException: If workspace not found
         """
         result = await self.db.execute(
-            select(WorkspaceModel).where(WorkspaceModel.id == workspace_id)
+            select(WorkspaceModel).where(
+                WorkspaceModel.id == workspace_id,
+                WorkspaceModel.deleted_at.is_(None)  # Exclude soft-deleted workspaces
+            )
         )
         workspace = result.scalar_one_or_none()
 
@@ -524,6 +530,152 @@ class WorkspaceService:
             )
 
         return workspace
+
+    async def get_workspace_by_slug_for_user(
+        self,
+        slug: str,
+        user_id: UUID
+    ) -> WorkspaceModel:
+        """
+        Get workspace by slug for a specific user (verifies membership).
+
+        Args:
+            slug: Workspace slug
+            user_id: User UUID
+
+        Returns:
+            WorkspaceModel object
+
+        Raises:
+            ResourceNotFoundException: If workspace not found or user not a member
+        """
+        result = await self.db.execute(
+            select(WorkspaceModel)
+            .join(WorkspaceMembers, WorkspaceMembers.workspace_id == WorkspaceModel.id)
+            .where(
+                WorkspaceModel.slug == slug,
+                WorkspaceMembers.user_id == user_id,
+                WorkspaceModel.deleted_at.is_(None)
+            )
+        )
+        workspace = result.scalar_one_or_none()
+
+        if not workspace:
+            raise ResourceNotFoundException(
+                resource_type="workspace",
+                resource_id=slug
+            )
+
+        return workspace
+
+    async def get_workspace_by_id_or_slug_for_user(
+        self,
+        identifier: str,
+        user_id: UUID
+    ) -> WorkspaceModel:
+        """
+        Get workspace by ID or slug for a specific user (verifies membership).
+        Automatically detects whether identifier is UUID or slug.
+
+        Args:
+            identifier: Workspace UUID or slug
+            user_id: User UUID
+
+        Returns:
+            WorkspaceModel object
+
+        Raises:
+            ResourceNotFoundException: If workspace not found or user not a member
+        """
+        # Check if identifier is a UUID or slug
+        is_uuid = False
+        try:
+            UUID(identifier)
+            is_uuid = True
+        except ValueError:
+            is_uuid = False
+
+        # Build query based on whether it's UUID or slug
+        if is_uuid:
+            query = (
+                select(WorkspaceModel)
+                .join(WorkspaceMembers, WorkspaceMembers.workspace_id == WorkspaceModel.id)
+                .where(
+                    WorkspaceModel.id == UUID(identifier),
+                    WorkspaceMembers.user_id == user_id,
+                    WorkspaceModel.deleted_at.is_(None)
+                )
+            )
+        else:
+            query = (
+                select(WorkspaceModel)
+                .join(WorkspaceMembers, WorkspaceMembers.workspace_id == WorkspaceModel.id)
+                .where(
+                    WorkspaceModel.slug == identifier,
+                    WorkspaceMembers.user_id == user_id,
+                    WorkspaceModel.deleted_at.is_(None)
+                )
+            )
+
+        result = await self.db.execute(query)
+        workspace = result.scalar_one_or_none()
+
+        if not workspace:
+            raise ResourceNotFoundException(
+                resource_type="workspace",
+                resource_id=identifier
+            )
+
+        return workspace
+
+    async def verify_user_is_workspace_owner(
+        self,
+        workspace_id: UUID,
+        user_id: UUID
+    ) -> bool:
+        """
+        Verify if user has workspace owner role.
+
+        Args:
+            workspace_id: Workspace UUID
+            user_id: User UUID
+
+        Returns:
+            True if user is workspace owner, False otherwise
+
+        Raises:
+            ForbiddenException: If user is not workspace owner
+        """
+        from src.api.models.user_models.roles import Role
+
+        # Get user's membership
+        member_result = await self.db.execute(
+            select(WorkspaceMembers).where(
+                WorkspaceMembers.workspace_id == workspace_id,
+                WorkspaceMembers.user_id == user_id
+            )
+        )
+        member = member_result.scalar_one_or_none()
+
+        if not member or not member.role_id:
+            from src.api.middleware.exceptions import ForbiddenException
+            raise ForbiddenException(
+                message="Only workspace owners can perform this action"
+            )
+
+        # Get role details
+        role_result = await self.db.execute(
+            select(Role).where(Role.id == member.role_id)
+        )
+        role = role_result.scalar_one_or_none()
+
+        if not role or role.name not in ["workspace_owner", "super_admin"]:
+            from src.api.middleware.exceptions import ForbiddenException
+            raise ForbiddenException(
+                message="Only workspace owners can perform this action"
+            )
+
+        return True
 
     async def create_workspace(
         self,
@@ -678,29 +830,58 @@ class WorkspaceService:
 
     async def delete_workspace(
         self,
-        workspace_id: UUID
+        workspace_id: UUID,
+        user_id: UUID
     ) -> None:
         """
-        Delete workspace and all related data.
+        Soft delete workspace (30-day recovery period).
 
         Business Rules:
-        - Cascading delete of all workspace data (handled by DB)
+        - Soft delete: Sets deleted_at timestamp
+        - 30-day recovery period before permanent deletion
         - Only workspace owner can delete
+        - Related data remains intact for recovery
 
         Args:
             workspace_id: Workspace UUID
+            user_id: User performing the deletion
 
         Raises:
             ResourceNotFoundException: If workspace not found
         """
+        from datetime import datetime
+
         workspace = await self.get_workspace(workspace_id)
 
-        await self.db.delete(workspace)
+        # Soft delete: set deleted_at and deleted_by
+        workspace.deleted_at = datetime.utcnow()
+        workspace.deleted_by = user_id
 
         logger.info(
-            f"Workspace deleted: {workspace_id}",
-            extra={"workspace_id": str(workspace_id)}
+            f"Workspace soft deleted: {workspace_id} by user {user_id}",
+            extra={"workspace_id": str(workspace_id), "user_id": str(user_id)}
         )
+
+    async def count_user_workspaces(self, user_id: UUID) -> int:
+        """
+        Count the number of active workspaces a user has access to.
+
+        Args:
+            user_id: User UUID
+
+        Returns:
+            Number of active workspaces
+        """
+        result = await self.db.execute(
+            select(func.count(distinct(WorkspaceModel.id)))
+            .join(WorkspaceMembers, WorkspaceMembers.workspace_id == WorkspaceModel.id)
+            .where(
+                WorkspaceMembers.user_id == user_id,
+                WorkspaceModel.deleted_at.is_(None)
+            )
+        )
+        count = result.scalar() or 0
+        return count
 
     # ========================================================================
     # Private Helper Methods

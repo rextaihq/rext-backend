@@ -30,6 +30,7 @@ from src.api.models.user_models.users import Users
 from src.flow.flow import create_workflow
 from src.flow.states.content_state import ContentState
 from src.utils.logger import logger
+from src.api.config import get_settings
 from src.api.middleware.exceptions import (
     WrextValidationException,
     ResourceNotFoundException
@@ -38,6 +39,9 @@ from src.services.email_service import EmailService
 from src.services.content_progress_service import ContentProgressService
 
 
+
+# Get settings instance
+settings = get_settings()
 class LangGraphContentService:
     """Service for managing LangGraph content generation workflows"""
 
@@ -231,7 +235,6 @@ class LangGraphContentService:
         result = await self.db.execute(
             select(Content)
             .options(
-                selectinload(Content.content_metadata),
                 selectinload(Content.seo_data)
             )
             .where(
@@ -323,20 +326,19 @@ class LangGraphContentService:
             "updated_at": content.updated_at.isoformat() if content.updated_at else None
         }
 
-        # Add content metadata if exists
-        if hasattr(content, 'content_metadata') and content.content_metadata:
-            metadata = content.content_metadata
+        # Add content metadata if exists (now in JSONB column)
+        if content.metadata_json:
             payload["content_metadata"] = {
-                "content_type": metadata.content_type,
-                "target_platform": metadata.target_platform,
-                "target_industry": metadata.target_industry,
-                "target_audience": metadata.target_audience,
-                "audience_size": metadata.audience_size,
-                "complexity_level": metadata.complexity_level,
-                "content_tone": metadata.content_tone,
-                "target_region": metadata.target_region,
-                "content_objectives": metadata.content_objectives,
-                "content_word_count": metadata.content_word_count
+                "content_type": content.metadata_json.get("content_type"),
+                "target_platform": content.metadata_json.get("target_platform"),
+                "target_industry": content.metadata_json.get("target_industry"),
+                "target_audience": content.metadata_json.get("target_audience"),
+                "audience_size": content.metadata_json.get("audience_size"),
+                "complexity_level": content.metadata_json.get("complexity_level"),
+                "content_tone": content.metadata_json.get("content_tone"),
+                "target_region": content.metadata_json.get("target_region"),
+                "content_objectives": content.metadata_json.get("content_objectives"),
+                "content_word_count": content.metadata_json.get("content_word_count")
             }
 
         # Add SEO data if exists
@@ -488,7 +490,10 @@ class LangGraphContentService:
         workspace_id: UUID,
         content_data: Dict[str, Any]
     ) -> None:
-        """Send email notification when content generation starts."""
+        """Send email notification when content generation starts using professional template."""
+        from emails.templates.content.content_generation_started import render_content_generation_started_email
+        import os
+
         email_service = EmailService(self.db)
 
         content = content_data.get("content")
@@ -502,27 +507,24 @@ class LangGraphContentService:
             logger.warning(f"User {user_id} not found, skipping email")
             return
 
-        # Build email HTML content
-        user_name = user.username or user.email.split("@")[0]
-        html_content = f"""
-        <html>
-        <body>
-            <h2>Content Generation Started</h2>
-            <p>Hi {user_name},</p>
-            <p>Your content generation has started for "<strong>{content.title}</strong>" in workspace <strong>{workspace.name}</strong>.</p>
-            <p><strong>Content Type:</strong> {content.content_format or 'Blog Post'}</p>
-            <p><strong>Estimated Time:</strong> 5-10 minutes</p>
-            <p>You'll receive another email when the content is ready.</p>
-        </body>
-        </html>
-        """
+        # Build content URL
+        frontend_url = settings.FRONTEND_URL
+        content_url = f"{frontend_url}/w/{workspace.slug}/content/{content_id}"
 
-        # Override email for development - send to static address
-        dev_email = "mobeenabdullah@gmail.com"
+        # Render professional email
+        user_name = user.first_name or user.username or user.email.split("@")[0]
+        html_content = render_content_generation_started_email(
+            user_name=user_name,
+            content_title=content.title,
+            content_type=content.content_format or 'Blog Post',
+            workspace_name=workspace.name,
+            content_url=content_url,
+            frontend_url=frontend_url
+        )
 
         await email_service.send_email(
-            to=dev_email,  # Using static email for development
-            subject=f"Content Generation Started: {content.title}",
+            to=user.email,
+            subject=f"Content Generation Started - {content.title}",
             html=html_content,
             user_id=user_id,
             workspace_id=workspace_id,
@@ -536,7 +538,10 @@ class LangGraphContentService:
         content_data: Dict[str, Any],
         generated_blog: Any
     ) -> None:
-        """Send email notification when content generation completes."""
+        """Send email notification when content generation completes using professional template."""
+        from emails.templates.content.content_generation_completed import render_content_generation_completed_email
+        import os
+
         email_service = EmailService(self.db)
 
         content = content_data.get("content")
@@ -553,29 +558,30 @@ class LangGraphContentService:
         # Calculate word count
         word_count = len(generated_blog.content.split()) if hasattr(generated_blog, 'content') else 0
 
-        # Build email HTML content
-        user_name = user.username or user.email.split("@")[0]
-        html_content = f"""
-        <html>
-        <body>
-            <h2>Content Generation Completed!</h2>
-            <p>Hi {user_name},</p>
-            <p>Your content "<strong>{content.title}</strong>" has been successfully generated!</p>
-            <p><strong>Workspace:</strong> {workspace.name}</p>
-            <p><strong>Word Count:</strong> {word_count}</p>
-            <p><strong>AI Model:</strong> Claude 3.5 Sonnet</p>
-            <p><strong>Completed At:</strong> {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}</p>
-            <p>You can now review and edit your content.</p>
-        </body>
-        </html>
-        """
+        # Extract first 200 chars for excerpt
+        content_body = generated_blog.content if hasattr(generated_blog, 'content') else ""
+        content_excerpt = content_body[:200] if len(content_body) > 200 else content_body
 
-        # Override email for development - send to static address
-        dev_email = "mobeenabdullah@gmail.com"
+        # Build content URL
+        frontend_url = settings.FRONTEND_URL
+        content_url = f"{frontend_url}/w/{workspace.slug}/content/{content_id}"
+
+        # Render professional email
+        user_name = user.first_name or user.username or user.email.split("@")[0]
+        html_content = render_content_generation_completed_email(
+            user_name=user_name,
+            content_title=content.title,
+            content_excerpt=content_excerpt,
+            content_url=content_url,
+            generated_at=datetime.now(timezone.utc).strftime("%b %d, %Y %I:%M %p UTC"),
+            word_count=word_count,
+            ai_model="Claude 3.5 Sonnet",
+            frontend_url=frontend_url
+        )
 
         await email_service.send_email(
-            to=dev_email,  # Using static email for development
-            subject=f"Content Ready: {content.title}",
+            to=user.email,
+            subject=f"Your Content is Ready! - {content.title}",
             html=html_content,
             user_id=user_id,
             workspace_id=workspace_id,
@@ -589,7 +595,10 @@ class LangGraphContentService:
         content_data: Dict[str, Any],
         error_message: str
     ) -> None:
-        """Send email notification when content generation fails."""
+        """Send email notification when content generation fails using professional template."""
+        from emails.templates.content.content_generation_failed import render_content_generation_failed_email
+        import os
+
         email_service = EmailService(self.db)
 
         content = content_data.get("content")
@@ -603,27 +612,28 @@ class LangGraphContentService:
             logger.warning(f"User {user_id} not found, skipping email")
             return
 
-        # Build email HTML content
-        user_name = user.username or user.email.split("@")[0]
-        truncated_error = error_message[:200] if len(error_message) > 200 else error_message
-        html_content = f"""
-        <html>
-        <body>
-            <h2>Content Generation Failed</h2>
-            <p>Hi {user_name},</p>
-            <p>Unfortunately, the content generation for "<strong>{content.title}</strong>" in workspace <strong>{workspace.name}</strong> has failed.</p>
-            <p><strong>Error:</strong> {truncated_error}</p>
-            <p>You can try regenerating the content or contact support if the problem persists.</p>
-        </body>
-        </html>
-        """
+        # Build URLs
+        frontend_url = settings.FRONTEND_URL
+        retry_url = f"{frontend_url}/w/{workspace.slug}/content/{content_id}"
+        support_url = f"{frontend_url}/support"
 
-        # Override email for development - send to static address
-        dev_email = "mobeenabdullah@gmail.com"
+        # Sanitize error message for user display
+        user_friendly_error = error_message[:200] if len(error_message) > 200 else error_message
+
+        # Render professional email
+        user_name = user.first_name or user.username or user.email.split("@")[0]
+        html_content = render_content_generation_failed_email(
+            user_name=user_name,
+            content_title=content.title,
+            error_message=user_friendly_error,
+            retry_url=retry_url,
+            support_url=support_url,
+            frontend_url=frontend_url
+        )
 
         await email_service.send_email(
-            to=dev_email,  # Using static email for development
-            subject=f"Content Generation Failed: {content.title}",
+            to=user.email,
+            subject=f"Content Generation Failed - {content.title}",
             html=html_content,
             user_id=user_id,
             workspace_id=workspace_id,

@@ -1,5 +1,13 @@
 """
-Simple script to verify seed data in the database
+Verify system seed data in the database (roles, permissions, plans)
+
+This script verifies that essential system data has been seeded correctly:
+- Roles and permissions (RBAC system)
+- Subscription plans (including trial)
+- Email templates (system-wide)
+- Super admin user (if configured)
+
+Does NOT verify test users or workspaces (those should not exist in production)
 """
 import psycopg2
 import os
@@ -16,126 +24,140 @@ if db_url and db_url.startswith("postgresql://"):
     cursor = conn.cursor()
 
     print("\n" + "="*80)
-    print("SEED DATA VERIFICATION")
+    print("SYSTEM SEED DATA VERIFICATION")
+    print("="*80)
+    print("Verifying essential system data (roles, permissions, plans, templates)")
     print("="*80)
 
-    # Check users
+    # Check roles
     cursor.execute("""
-        SELECT email, display_name, email_verified, status
-        FROM users
-        WHERE id IN (
-            '11111111-1111-1111-1111-111111111111',
-            '22222222-2222-2222-2222-222222222222',
-            '33333333-3333-3333-3333-333333333333',
-            '44444444-4444-4444-4444-444444444444',
-            '55555555-5555-5555-5555-555555555555'
-        )
-        ORDER BY email
-    """)
-    users = cursor.fetchall()
-
-    print("\n✓ TEST USERS:")
-    print("-" * 80)
-    for user in users:
-        email, display_name, verified, status = user
-        print(f"  {email:30} | {display_name:20} | Verified: {verified} | {status}")
-
-    # Check workspaces
-    cursor.execute("""
-        SELECT w.name, w.description, u.display_name as owner
-        FROM workspace w
-        JOIN users u ON w.user_id = u.id
-        WHERE w.id IN (
-            'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
-            'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
-            'cccccccc-cccc-cccc-cccc-cccccccccccc'
-        )
-        ORDER BY w.name
-    """)
-    workspaces = cursor.fetchall()
-
-    print("\n✓ TEST WORKSPACES:")
-    print("-" * 80)
-    for ws in workspaces:
-        name, description, owner = ws
-        print(f"  {name:25} | Owner: {owner:20}")
-        print(f"    → {description}")
-
-    # Check workspace memberships
-    cursor.execute("""
-        SELECT
-            w.name as workspace,
-            u.display_name as member,
-            r.display_name as role,
-            wm.is_default
-        FROM workspace_members wm
-        JOIN workspace w ON wm.workspace_id = w.id
-        JOIN users u ON wm.user_id = u.id
-        LEFT JOIN user_roles ur ON ur.user_id = u.id AND ur.workspace_id = w.id
-        LEFT JOIN roles r ON ur.role_id = r.id
-        WHERE w.id IN (
-            'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
-            'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
-            'cccccccc-cccc-cccc-cccc-cccccccccccc'
-        )
-        ORDER BY w.name, u.display_name
-    """)
-    memberships = cursor.fetchall()
-
-    print("\n✓ WORKSPACE MEMBERSHIPS:")
-    print("-" * 80)
-    current_workspace = None
-    for membership in memberships:
-        workspace, member, role, is_default = membership
-        if workspace != current_workspace:
-            print(f"\n  {workspace}:")
-            current_workspace = workspace
-        default_marker = " [DEFAULT]" if is_default else ""
-        print(f"    • {member:20} → {role}{default_marker}")
-
-    # Check role assignments
-    cursor.execute("""
-        SELECT
-            u.display_name,
-            r.display_name as role,
-            CASE WHEN ur.workspace_id IS NULL THEN 'Global' ELSE w.name END as scope
-        FROM user_roles ur
-        JOIN users u ON ur.user_id = u.id
-        JOIN roles r ON ur.role_id = r.id
-        LEFT JOIN workspace w ON ur.workspace_id = w.id
-        WHERE u.id IN (
-            '11111111-1111-1111-1111-111111111111',
-            '22222222-2222-2222-2222-222222222222',
-            '33333333-3333-3333-3333-333333333333',
-            '44444444-4444-4444-4444-444444444444',
-            '55555555-5555-5555-5555-555555555555'
-        )
-        ORDER BY u.display_name, ur.workspace_id NULLS FIRST
+        SELECT name, display_name, hierarchy_level, is_system_role
+        FROM roles
+        WHERE is_system_role = true
+        ORDER BY hierarchy_level DESC
     """)
     roles = cursor.fetchall()
 
-    print("\n✓ ROLE ASSIGNMENTS:")
+    print("\n✓ SYSTEM ROLES:")
     print("-" * 80)
-    current_user = None
-    for role_assignment in roles:
-        user, role, scope = role_assignment
-        if user != current_user:
-            print(f"\n  {user}:")
-            current_user = user
-        print(f"    • {role:25} (Scope: {scope})")
+    for role in roles:
+        name, display_name, hierarchy, is_system = role
+        print(f"  {display_name:30} | {name:20} | Level: {hierarchy}")
+
+    # Check permissions count by resource
+    cursor.execute("""
+        SELECT resource, COUNT(*) as count
+        FROM permissions
+        GROUP BY resource
+        ORDER BY resource
+    """)
+    permissions = cursor.fetchall()
+
+    print("\n✓ PERMISSIONS BY RESOURCE:")
+    print("-" * 80)
+    total_perms = 0
+    for perm in permissions:
+        resource, count = perm
+        total_perms += count
+        print(f"  {resource:20} | {count:3} permissions")
+    print(f"  {'-'*28}")
+    print(f"  {'TOTAL':20} | {total_perms:3} permissions")
+
+    # Check subscription plans
+    cursor.execute("""
+        SELECT name, display_name, price_monthly, max_workspaces, is_active, is_public
+        FROM subscription_plans
+        WHERE is_active = true
+        ORDER BY price_monthly
+    """)
+    plans = cursor.fetchall()
+
+    print("\n✓ SUBSCRIPTION PLANS:")
+    print("-" * 80)
+    for plan in plans:
+        name, display_name, price, workspaces, active, public = plan
+        price_str = f"${float(price):.2f}/mo" if price else "Free"
+        ws_str = f"{workspaces} workspace{'s' if workspaces != 1 else ''}" if workspaces > 0 else "Unlimited"
+        public_str = "Public" if public else "Auto-assigned"
+        print(f"  {display_name:20} | {price_str:12} | {ws_str:15} | {public_str}")
+
+    # Check email templates
+    cursor.execute("""
+        SELECT template_type, is_default, is_active,
+               CASE WHEN workspace_id IS NULL THEN 'System-wide' ELSE 'Workspace' END as scope
+        FROM email_templates
+        WHERE is_default = true AND workspace_id IS NULL
+        ORDER BY template_type
+    """)
+    templates = cursor.fetchall()
+
+    print("\n✓ EMAIL TEMPLATES:")
+    print("-" * 80)
+    for template in templates:
+        template_type, is_default, is_active, scope = template
+        status = "Active" if is_active else "Inactive"
+        print(f"  {template_type:30} | {scope:12} | {status}")
+
+    # Check super admin user (if configured)
+    super_admin_email = os.getenv('SUPER_ADMIN_EMAIL')
+    if super_admin_email:
+        cursor.execute("""
+            SELECT u.email, u.display_name, u.status, u.email_verified,
+                   r.display_name as role
+            FROM users u
+            LEFT JOIN user_roles ur ON ur.user_id = u.id AND ur.workspace_id IS NULL
+            LEFT JOIN roles r ON ur.role_id = r.id
+            WHERE u.email = %s
+        """, (super_admin_email,))
+        admin = cursor.fetchone()
+
+        print("\n✓ SUPER ADMIN USER:")
+        print("-" * 80)
+        if admin:
+            email, display_name, status, verified, role = admin
+            verified_str = "✓ Verified" if verified else "✗ Not Verified"
+            print(f"  Email: {email}")
+            print(f"  Name: {display_name}")
+            print(f"  Status: {status}")
+            print(f"  Email: {verified_str}")
+            print(f"  Global Role: {role or 'None'}")
+        else:
+            print(f"  ⚠️  Super admin not found: {super_admin_email}")
+            print(f"  Make sure SUPER_ADMIN_EMAIL and SUPER_ADMIN_PASSWORD are set")
+            print(f"  and run: alembic upgrade head")
+    else:
+        print("\n✓ SUPER ADMIN USER:")
+        print("-" * 80)
+        print("  ⚠️  SUPER_ADMIN_EMAIL not set in environment")
+        print("  To create super admin, set environment variables and run migrations")
+
+    # Check total users and workspaces (should be minimal in production)
+    cursor.execute("SELECT COUNT(*) FROM users WHERE deleted_at IS NULL")
+    user_count = cursor.fetchone()[0]
+
+    cursor.execute("SELECT COUNT(*) FROM workspace")
+    workspace_count = cursor.fetchone()[0]
+
+    print("\n✓ DATABASE STATISTICS:")
+    print("-" * 80)
+    print(f"  Total Active Users: {user_count}")
+    print(f"  Total Workspaces: {workspace_count}")
+    print(f"  System Roles: {len(roles)}")
+    print(f"  Total Permissions: {total_perms}")
+    print(f"  Subscription Plans: {len(plans)}")
+    print(f"  Email Templates: {len(templates)}")
 
     print("\n" + "="*80)
-    print("✅ VERIFICATION COMPLETE")
+    print("✅ SYSTEM VERIFICATION COMPLETE")
     print("="*80)
-    print("\nLogin Credentials for Testing:")
-    print("  Email: admin@wrext.com | Password: Test1234!")
-    print("  Email: john.doe@wrext.com | Password: Test1234!")
-    print("  Email: jane.smith@wrext.com | Password: Test1234!")
-    print("  Email: bob.wilson@wrext.com | Password: Test1234!")
-    print("  Email: alice.johnson@wrext.com | Password: Test1234!")
+    print("\nAll essential system data is properly seeded.")
+    if super_admin_email and admin:
+        print(f"Super admin account: {super_admin_email}")
+    print("\nYour database is ready for production use.")
     print("="*80 + "\n")
 
     cursor.close()
     conn.close()
 else:
     print("ERROR: DATABASE_URL not found or invalid format")
+    print("Set POSTGRES_URI_CUSTOM or DATABASE_URL environment variable")

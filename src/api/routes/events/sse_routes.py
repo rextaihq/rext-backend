@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Dict
 from uuid import UUID
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, status
 from sse_starlette.sse import EventSourceResponse
 
 from src.api.security.dependencies import get_current_user
@@ -43,6 +43,18 @@ async def subscribe_to_operation_events(
         extra={"operation_id": operation_id, "user_id": str(user_id)},
     )
 
+    # Verify requesting user owns the operation being accessed
+    is_owner = await event_stream_manager.verify_operation_ownership(operation_id, user_id)
+    if not is_owner:
+        logger.warning(
+            "Unauthorized SSE subscription attempt",
+            extra={"operation_id": operation_id, "user_id": str(user_id)},
+        )
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You do not have permission to access this operation"
+        )
+
     # Check if operation is already completed
     # If it is, return a special SSE stream with completion event
     if await event_stream_manager.is_operation_completed(operation_id):
@@ -58,8 +70,6 @@ async def subscribe_to_operation_events(
                 "X-Accel-Buffering": "no",
             },
         )
-
-    # TODO: Verify requesting user owns the operation being accessed.
 
     return EventSourceResponse(
         event_stream_manager.subscribe(operation_id, user_id),

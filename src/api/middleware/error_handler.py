@@ -36,6 +36,13 @@ from src.api.middleware.exceptions import WrextAPIException
 from src.api.middleware.request_tracker import get_request_id, get_processing_time_ms
 from src.utils.logger import logger
 
+# Sentry integration (optional)
+try:
+    from src.api.lib.sentry_config import capture_exception_with_context
+    SENTRY_AVAILABLE = True
+except ImportError:
+    SENTRY_AVAILABLE = False
+
 
 class ErrorHandlerMiddleware(BaseHTTPMiddleware):
     """
@@ -160,6 +167,26 @@ class ErrorHandlerMiddleware(BaseHTTPMiddleware):
         Returns:
             ErrorResponse: Standardized error response
         """
+        # Capture high/critical severity errors to Sentry
+        if SENTRY_AVAILABLE and exception.severity in ["high", "critical"]:
+            try:
+                capture_exception_with_context(
+                    exception,
+                    context={
+                        "request_id": request_id,
+                        "error_code": exception.error_code.value,
+                        "severity": exception.severity.value,
+                        "details": exception.details,
+                    },
+                    level="error" if exception.severity == "high" else "fatal",
+                    tags={
+                        "error_code": exception.error_code.value,
+                        "error_type": "wrext_api_exception",
+                    }
+                )
+            except Exception as sentry_error:
+                logger.warning(f"Failed to send error to Sentry: {sentry_error}")
+
         # Filter details if necessary
         details = exception.details
         if self.filter_sensitive_data:
@@ -274,6 +301,35 @@ class ErrorHandlerMiddleware(BaseHTTPMiddleware):
         Returns:
             ErrorResponse: Standardized error response
         """
+        # Capture to Sentry (unexpected errors are high priority)
+        if SENTRY_AVAILABLE:
+            try:
+                context = {
+                    "request_id": request_id,
+                    "processing_time_ms": processing_time_ms,
+                }
+
+                if request:
+                    context.update({
+                        "request_path": request.url.path,
+                        "request_method": request.method,
+                        "request_query": str(request.url.query) if request.url.query else None,
+                    })
+
+                # Capture to Sentry with high severity
+                capture_exception_with_context(
+                    exception,
+                    context=context,
+                    level="error",
+                    tags={
+                        "error_handler": "unexpected",
+                        "request_id": request_id,
+                    }
+                )
+            except Exception as sentry_error:
+                # Never let Sentry errors crash the app
+                logger.warning(f"Failed to send error to Sentry: {sentry_error}")
+
         # Create safe error message
         if self.include_debug_info:
             message = f"Internal server error: {str(exception)}"

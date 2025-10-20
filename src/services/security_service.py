@@ -443,6 +443,119 @@ class SecurityService:
         result = await self.db.execute(query)
         return result.scalar() or 0
 
+    async def get_user_security_stats(self, user_id: UUID) -> Dict[str, Any]:
+        """
+        Get security statistics for a specific user (user-scoped).
+
+        Returns:
+        - Failed login attempts count
+        - Account lockout status
+        - Last successful login
+        - Last failed login
+        - Password last changed
+        - Active sessions count
+
+        Args:
+            user_id: User UUID
+
+        Returns:
+            Dict with user security statistics
+        """
+        # Get user
+        user = await self._get_user_or_404(user_id)
+
+        now = datetime.utcnow()
+        is_locked = bool(user.locked_until and user.locked_until > now)
+
+        # Get last successful login from audit logs
+        last_login_query = select(AuditLog).where(
+            and_(
+                AuditLog.user_id == str(user_id),
+                AuditLog.action == "user.login",
+                AuditLog.status == "success"
+            )
+        ).order_by(AuditLog.created_at.desc()).limit(1)
+
+        last_login_result = await self.db.execute(last_login_query)
+        last_login = last_login_result.scalar_one_or_none()
+
+        # Get last failed login from audit logs
+        last_failed_query = select(AuditLog).where(
+            and_(
+                AuditLog.user_id == str(user_id),
+                AuditLog.action == "user.login",
+                AuditLog.status == "failure"
+            )
+        ).order_by(AuditLog.created_at.desc()).limit(1)
+
+        last_failed_result = await self.db.execute(last_failed_query)
+        last_failed = last_failed_result.scalar_one_or_none()
+
+        # Count active sessions
+        from src.api.models.user_models.user_sessions import UserSession
+        active_sessions_query = select(func.count(UserSession.id)).where(
+            and_(
+                UserSession.user_id == user_id,
+                UserSession.expires_at > now
+            )
+        )
+        sessions_result = await self.db.execute(active_sessions_query)
+        active_sessions = sessions_result.scalar() or 0
+
+        return {
+            "success": True,
+            "data": {
+                "user_id": str(user_id),
+                "email": user.email,
+                "failed_login_attempts": user.failed_login_attempts or 0,
+                "is_locked": is_locked,
+                "locked_until": user.locked_until.isoformat() if user.locked_until else None,
+                "last_login": {
+                    "timestamp": last_login.created_at.isoformat() if last_login else None,
+                    "ip_address": last_login.metadata.get("ip_address") if last_login and last_login.metadata else None,
+                    "user_agent": last_login.metadata.get("user_agent") if last_login and last_login.metadata else None
+                } if last_login else None,
+                "last_failed_login": {
+                    "timestamp": last_failed.created_at.isoformat() if last_failed else None,
+                    "ip_address": last_failed.metadata.get("ip_address") if last_failed and last_failed.metadata else None
+                } if last_failed else None,
+                "password_changed_at": user.password_changed_at.isoformat() if user.password_changed_at else None,
+                "active_sessions_count": active_sessions,
+                "account_created_at": user.created_at.isoformat() if user.created_at else None
+            }
+        }
+
+    async def get_active_sessions_count(self, user_id: UUID) -> Dict[str, Any]:
+        """
+        Get count of active sessions for a user.
+
+        Args:
+            user_id: User UUID
+
+        Returns:
+            Dict with sessions count
+        """
+        from src.api.models.user_models.user_sessions import UserSession
+
+        now = datetime.utcnow()
+        query = select(func.count(UserSession.id)).where(
+            and_(
+                UserSession.user_id == user_id,
+                UserSession.expires_at > now
+            )
+        )
+
+        result = await self.db.execute(query)
+        count = result.scalar() or 0
+
+        return {
+            "success": True,
+            "data": {
+                "user_id": str(user_id),
+                "active_sessions_count": count
+            }
+        }
+
     async def _count_currently_locked(self) -> int:
         """
         Count currently locked accounts.
