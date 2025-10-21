@@ -34,7 +34,8 @@ class License(Base, SerializableMixin):
     product_name = Column(String(255), nullable=False)
 
     # Status and activation (create_type=False prevents SQLAlchemy from auto-creating the enum)
-    status = Column(SQLEnum(LicenseStatus, name='licensestatus', create_type=False), default=LicenseStatus.INACTIVE, nullable=False, index=True)
+    # values_callable ensures SQLAlchemy uses the .value (lowercase) not .name (uppercase)
+    status = Column(SQLEnum(LicenseStatus, name='licensestatus', create_type=False, values_callable=lambda x: [e.value for e in x]), default=LicenseStatus.INACTIVE, nullable=False, index=True)
     activation_email = Column(String(255), nullable=False, index=True)
     activation_limit = Column(Integer, nullable=True)  # Null = unlimited activations
     activation_count = Column(Integer, default=0, nullable=False)

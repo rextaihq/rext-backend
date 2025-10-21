@@ -6,7 +6,6 @@ The provider is selected based on the PAYMENT_PROVIDER environment variable.
 """
 
 from src.providers.payment.base_provider import PaymentProvider
-from src.providers.payment.mock_provider import MockPaymentProvider
 from src.config.payment_config import payment_settings
 from src.utils.logger import logger
 
@@ -16,7 +15,6 @@ def get_payment_provider() -> PaymentProvider:
     Factory function to get the configured payment provider.
 
     The provider is determined by the payment_settings.payment_provider value:
-    - "mock": MockPaymentProvider (for development/testing)
     - "lemonsqueezy": LemonSqueezyProvider (production payment processing)
 
     Returns:
@@ -29,10 +27,7 @@ def get_payment_provider() -> PaymentProvider:
 
     logger.info(f"Initializing payment provider: {provider_name}")
 
-    if provider_name == "mock":
-        return MockPaymentProvider()
-
-    elif provider_name == "lemonsqueezy":
+    if provider_name == "lemonsqueezy":
         try:
             from src.providers.payment.providers.lemonsqueezy import LemonSqueezyProvider
 
@@ -53,14 +48,14 @@ def get_payment_provider() -> PaymentProvider:
             logger.error(f"LemonSqueezy provider import failed: {e}")
             raise ValueError(
                 "LemonSqueezy provider not available. "
-                "Set PAYMENT_PROVIDER=mock in .env to use mock provider."
+                "Ensure the provider is properly installed."
             )
 
     else:
         logger.error(f"Unknown payment provider: {provider_name}")
         raise ValueError(
             f"Unknown payment provider: {provider_name}. "
-            f"Supported providers: mock, lemonsqueezy"
+            f"Only 'lemonsqueezy' is supported."
         )
 
 

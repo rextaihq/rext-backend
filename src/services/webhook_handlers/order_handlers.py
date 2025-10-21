@@ -77,15 +77,17 @@ async def handle_order_created(
     # Extract order data
     order_data = extract_order_data(webhook_data)
 
-    # Check if this is a subscription purchase (not a one-time/lifetime purchase)
-    # For subscription purchases, the subscription_created webhook handles everything
-    # Only process order_created for actual one-time purchases (LTDs)
-    first_order_item = webhook_data.get("data", {}).get("attributes", {}).get("first_order_item", {})
-    if first_order_item and first_order_item.get("product_id"):
-        # This is a subscription purchase - skip license creation
-        # The subscription will be created by subscription_created webhook
+    # Check if this is a license purchase (has license-keys relationship)
+    # License purchases have a "license-keys" relationship
+    # Subscription purchases will be handled by subscription_created webhook
+    relationships = webhook_data.get("data", {}).get("relationships", {})
+    has_license_keys = relationships.get("license-keys") is not None
+
+    if not has_license_keys:
+        # This is NOT a license purchase - likely a subscription
+        # Skip processing as subscription_created webhook will handle it
         logger.info(
-            "Order is for a subscription - skipping license creation (subscription_created will handle it)",
+            "Order does not have license-keys relationship - likely a subscription, skipping",
             extra={"order_id": order_data.get("order_id")}
         )
         return
@@ -143,9 +145,14 @@ async def handle_order_created(
 
     # Extract license key from webhook data (if present)
     license_key = None
+    activation_limit = None
     try:
         license_data = extract_license_key_data(webhook_data)
         license_key = license_data.get("license_key")
+        # Extract activation_limit (-1 means unlimited in LemonSqueezy)
+        extracted_limit = license_data.get("activation_limit")
+        if extracted_limit and extracted_limit > 0:
+            activation_limit = extracted_limit
     except Exception as e:
         logger.warning(f"No license key in order webhook: {str(e)}")
 
@@ -159,7 +166,7 @@ async def handle_order_created(
         product_name=product_name or "Lifetime Deal",
         activation_email=user.email,  # Required field
         status=LicenseStatus.ACTIVE if status == "paid" else LicenseStatus.INACTIVE,
-        activation_limit=None,  # None = Unlimited for LTDs
+        activation_limit=activation_limit,  # None = Unlimited, otherwise from license data
         activation_count=0,  # Fixed: was activation_usage, should be activation_count
         activated_at=datetime.utcnow() if status == "paid" else None,
         expires_at=None,  # Lifetime - never expires
@@ -426,8 +433,9 @@ async def handle_license_key_created(
         license_record.lemonsqueezy_license_id = lemonsqueezy_license_id
         license_record.license_key = license_key
         license_record.status = internal_status
-        license_record.activation_limit = activation_limit
-        license_record.activation_usage = activation_usage
+        # Convert LemonSqueezy's -1 or 0 (unlimited) to None
+        license_record.activation_limit = activation_limit if activation_limit and activation_limit > 0 else None
+        license_record.activation_count = activation_usage
         license_record.expires_at = datetime.fromisoformat(expires_at) if expires_at else None
         license_record.updated_at = datetime.utcnow()
 

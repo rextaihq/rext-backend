@@ -72,7 +72,7 @@ async def create_checkout_session(
     Create checkout session with payment provider.
 
     This endpoint creates a checkout session for subscription purchase.
-    The actual checkout is handled by the payment provider (LemonSqueezy or mock provider).
+    The actual checkout is handled by LemonSqueezy payment provider.
 
     Request Body:
     - plan_id: UUID of the subscription plan
@@ -80,7 +80,7 @@ async def create_checkout_session(
 
     Returns:
     - session_id: Checkout session ID
-    - checkout_url: URL to redirect user for checkout
+    - checkout_url: URL to redirect user for LemonSqueezy checkout
     """
     user_id = user.get("identity")
 
@@ -136,9 +136,12 @@ async def create_checkout_session(
         variant_id = plan.lemonsqueezy_variant_id_yearly or plan.provider_price_id_yearly
 
     if not variant_id:
-        # For mock provider or plans without variant/price IDs configured
-        variant_id = f"price_{plan.id}_{checkout_request.billing_period}"
-        logger.warning(f"Using generated variant ID for plan {plan.name}: {variant_id}")
+        # Plans must have LemonSqueezy variant IDs configured
+        logger.error(f"Plan {plan.name} missing LemonSqueezy variant ID for {checkout_request.billing_period}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Plan configuration error: Missing LemonSqueezy variant ID for {checkout_request.billing_period} billing"
+        )
 
     # Create checkout session
     try:

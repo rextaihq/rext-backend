@@ -189,7 +189,17 @@ async def activate_license_endpoint(
         metadata=metadata
     )
 
-    # Get the license for response
+    # Get the license for response (use await for async relationship loading)
+    from sqlalchemy.orm import selectinload
+    from sqlalchemy import select as sa_select
+    from src.api.models.subscription_models.license_activations import LicenseActivation
+
+    # Refetch activation with license eagerly loaded
+    stmt = sa_select(LicenseActivation).where(
+        LicenseActivation.id == activation.id
+    ).options(selectinload(LicenseActivation.license))
+    result = await db.execute(stmt)
+    activation = result.scalar_one()
     license_obj = activation.license
 
     return success(

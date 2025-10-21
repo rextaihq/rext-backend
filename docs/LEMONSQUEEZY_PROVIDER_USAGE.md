@@ -34,8 +34,9 @@ LEMONSQUEEZY_STORE_ID=your_store_id_here
 # Optional
 LEMONSQUEEZY_WEBHOOK_SECRET=your_webhook_secret_here
 
-# Provider selection
-PAYMENT_PROVIDER=lemonsqueezy  # or "mock" for testing
+# Provider selection (only lemonsqueezy supported)
+PAYMENT_PROVIDER=lemonsqueezy
+LEMONSQUEEZY_SANDBOX_MODE=true  # Use false for production
 ```
 
 ### Getting Your Credentials

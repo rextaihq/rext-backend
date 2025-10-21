@@ -6,16 +6,17 @@ This module handles configuration for the LemonSqueezy payment provider.
 
 from typing import Literal
 from pydantic_settings import BaseSettings
+from pydantic import field_validator
 
 
-PaymentProviderType = Literal["mock", "lemonsqueezy"]
+PaymentProviderType = Literal["lemonsqueezy"]
 
 
 class PaymentSettings(BaseSettings):
     """Payment provider settings"""
 
-    # Provider selection (mock, lemonsqueezy)
-    payment_provider: PaymentProviderType = "mock"
+    # Provider selection (only lemonsqueezy supported)
+    payment_provider: PaymentProviderType = "lemonsqueezy"
 
     # Generic settings
     payment_currency: str = "USD"
@@ -26,6 +27,17 @@ class PaymentSettings(BaseSettings):
     lemonsqueezy_api_key: str = ""
     lemonsqueezy_store_id: str = ""
     lemonsqueezy_webhook_secret: str = ""
+
+    @field_validator("payment_provider")
+    @classmethod
+    def validate_payment_provider(cls, v: str) -> str:
+        """Validate that only lemonsqueezy is used as payment provider"""
+        if v != "lemonsqueezy":
+            raise ValueError(
+                f"Invalid payment provider: {v}. Only 'lemonsqueezy' is supported. "
+                f"Mock payment provider has been removed."
+            )
+        return v
 
     class Config:
         env_file = ".env"

@@ -116,7 +116,8 @@ class LicenseService:
         license_obj = await self.validate_license_key(license_key)
 
         # Check if user owns this license (or if license is not yet claimed)
-        if license_obj.user_id and license_obj.user_id != user_id:
+        # Note: license.user_id might be a UUID object, user_id is a string, so compare as strings
+        if license_obj.user_id and str(license_obj.user_id) != str(user_id):
             raise UnauthorizedException(
                 message="You do not own this license",
                 required_permission="license.activate"
@@ -223,7 +224,8 @@ class LicenseService:
         license_obj = await self._get_license_or_404(license_id)
 
         # Check ownership
-        if license_obj.user_id != user_id:
+        # Note: license.user_id might be a UUID object, user_id is a string, so compare as strings
+        if str(license_obj.user_id) != str(user_id):
             raise UnauthorizedException(
                 message="You do not own this license",
                 required_permission="license.deactivate"
@@ -315,7 +317,8 @@ class LicenseService:
         # Get license and check ownership
         license_obj = await self._get_license_or_404(license_id)
 
-        if license_obj.user_id != user_id:
+        # Note: license.user_id might be a UUID object, user_id is a string, so compare as strings
+        if str(license_obj.user_id) != str(user_id):
             raise UnauthorizedException(
                 message="You do not own this license",
                 required_permission="license.view"
