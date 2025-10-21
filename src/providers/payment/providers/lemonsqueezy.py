@@ -412,7 +412,7 @@ class LemonSqueezyProvider(PaymentProvider):
                 "custom": clean_metadata,
                 "variant_quantities": []  # Required array field
             },
-            "preview": self.sandbox_mode,
+            "preview": False,  # Always false - test mode is controlled by test products/API keys
         }
 
         # Add discount code if provided
