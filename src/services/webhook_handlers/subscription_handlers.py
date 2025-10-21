@@ -215,14 +215,14 @@ async def handle_subscription_created(
         existing_sub.billing_period = billing_period
         existing_sub.lemonsqueezy_customer_id = lemonsqueezy_customer_id
         existing_sub.lemonsqueezy_variant_id = lemonsqueezy_variant_id
-        existing_sub.trial_end_date = datetime.fromisoformat(trial_ends_at) if trial_ends_at else None
+        existing_sub.trial_end_date = datetime.fromisoformat(trial_ends_at).replace(tzinfo=None) if trial_ends_at else None
         existing_sub.updated_at = datetime.utcnow()
         await db.flush()
         subscription = existing_sub
     else:
         # Create new subscription
         now = datetime.utcnow()
-        trial_end_date = datetime.fromisoformat(trial_ends_at) if trial_ends_at else None
+        trial_end_date = datetime.fromisoformat(trial_ends_at).replace(tzinfo=None) if trial_ends_at else None
 
         subscription = UserSubscription(
             user_id=user.id,
@@ -234,7 +234,7 @@ async def handle_subscription_created(
             lemonsqueezy_subscription_id=lemonsqueezy_subscription_id,
             lemonsqueezy_customer_id=lemonsqueezy_customer_id,
             lemonsqueezy_variant_id=lemonsqueezy_variant_id,
-            lemonsqueezy_renews_at=datetime.fromisoformat(renews_at) if renews_at else None,
+            renews_at=datetime.fromisoformat(renews_at).replace(tzinfo=None) if renews_at else None,
             current_api_calls=0,
             usage_reset_date=now + timedelta(days=30),
             created_at=now,
@@ -353,7 +353,9 @@ async def handle_subscription_updated(
     # Extract subscription data
     sub_data = extract_subscription_data(webhook_data)
     lemonsqueezy_subscription_id = sub_data.get("subscription_id")
+    lemonsqueezy_customer_id = sub_data.get("customer_id")
     lemonsqueezy_variant_id = sub_data.get("variant_id")
+    user_email = sub_data.get("user_email")
     status = sub_data.get("status", "active")
     renews_at = sub_data.get("renews_at")
     ends_at = sub_data.get("ends_at")
@@ -368,9 +370,103 @@ async def handle_subscription_updated(
     subscription = result.scalar_one_or_none()
 
     if not subscription:
-        error_msg = f"Subscription {lemonsqueezy_subscription_id} not found"
-        logger.error(error_msg)
-        raise ValueError(error_msg)
+        # Subscription doesn't exist yet - this can happen if subscription_updated arrives before subscription_created
+        # or if subscription_created webhook was missed. Create the subscription now.
+        logger.warning(
+            f"Subscription {lemonsqueezy_subscription_id} not found in subscription_updated - creating it now",
+            extra={"event_type": "subscription_updated", "subscription_id": lemonsqueezy_subscription_id}
+        )
+
+        # Find user (same logic as subscription_created)
+        user_identifier = get_user_identifier(webhook_data)
+        user = None
+        if user_identifier:
+            try:
+                user_id = UUID(user_identifier)
+                stmt = select(Users).where(Users.id == user_id)
+                result = await db.execute(stmt)
+                user = result.scalar_one_or_none()
+            except (ValueError, TypeError):
+                pass
+
+        if not user and user_email:
+            stmt = select(Users).where(Users.email == user_email)
+            result = await db.execute(stmt)
+            user = result.scalar_one_or_none()
+
+        if not user:
+            error_msg = f"User not found for subscription {lemonsqueezy_subscription_id}"
+            logger.error(error_msg)
+            raise ValueError(error_msg)
+
+        # Find plan by variant_id
+        stmt = select(SubscriptionPlan).where(
+            (SubscriptionPlan.lemonsqueezy_variant_id_monthly == lemonsqueezy_variant_id) |
+            (SubscriptionPlan.lemonsqueezy_variant_id_yearly == lemonsqueezy_variant_id)
+        )
+        result = await db.execute(stmt)
+        plan = result.scalar_one_or_none()
+
+        if not plan:
+            error_msg = f"Plan not found for variant_id {lemonsqueezy_variant_id}"
+            logger.error(error_msg)
+            raise ValueError(error_msg)
+
+        # Determine billing period
+        billing_period = BillingPeriod.YEARLY if plan.lemonsqueezy_variant_id_yearly == lemonsqueezy_variant_id else BillingPeriod.MONTHLY
+
+        # Map status
+        status_map = {
+            "on_trial": SubscriptionStatus.TRIAL,
+            "active": SubscriptionStatus.ACTIVE,
+            "paused": SubscriptionStatus.PAUSED,
+            "past_due": SubscriptionStatus.PAST_DUE,
+            "unpaid": SubscriptionStatus.PAST_DUE,
+            "cancelled": SubscriptionStatus.CANCELLED,
+            "expired": SubscriptionStatus.EXPIRED,
+        }
+        internal_status = status_map.get(status.lower(), SubscriptionStatus.ACTIVE)
+
+        # Create subscription
+        now = datetime.utcnow()
+        trial_end_date = datetime.fromisoformat(trial_ends_at).replace(tzinfo=None) if trial_ends_at else None
+
+        subscription = UserSubscription(
+            user_id=user.id,
+            plan_id=plan.id,
+            status=internal_status,
+            billing_period=billing_period,
+            start_date=now,
+            trial_end_date=trial_end_date,
+            lemonsqueezy_subscription_id=lemonsqueezy_subscription_id,
+            lemonsqueezy_customer_id=lemonsqueezy_customer_id,
+            lemonsqueezy_variant_id=lemonsqueezy_variant_id,
+            renews_at=datetime.fromisoformat(renews_at).replace(tzinfo=None) if renews_at else None,
+            current_api_calls=0,
+            usage_reset_date=now + timedelta(days=30),
+            created_at=now,
+            updated_at=now
+        )
+
+        db.add(subscription)
+        await db.flush()
+
+        logger.info(
+            f"Created subscription {subscription.id} via subscription_updated webhook",
+            extra={
+                "subscription_id": str(subscription.id),
+                "user_id": str(user.id),
+                "plan_id": str(plan.id)
+            }
+        )
+
+        # Update user's provider_customer_id if not set
+        if not user.provider_customer_id and lemonsqueezy_customer_id:
+            user.provider_customer_id = lemonsqueezy_customer_id
+            await db.flush()
+
+        # Return early - subscription created, nothing to update
+        return
 
     # Map status
     status_map = {
@@ -458,9 +554,9 @@ async def handle_subscription_updated(
 
     # Update subscription fields
     subscription.status = internal_status
-    subscription.lemonsqueezy_renews_at = datetime.fromisoformat(renews_at) if renews_at else None
-    subscription.end_date = datetime.fromisoformat(ends_at) if ends_at else None
-    subscription.trial_end_date = datetime.fromisoformat(trial_ends_at) if trial_ends_at else None
+    subscription.renews_at = datetime.fromisoformat(renews_at).replace(tzinfo=None) if renews_at else None
+    subscription.end_date = datetime.fromisoformat(ends_at).replace(tzinfo=None) if ends_at else None
+    subscription.trial_end_date = datetime.fromisoformat(trial_ends_at).replace(tzinfo=None) if trial_ends_at else None
     subscription.cancelled_at = datetime.utcnow() if cancelled and not subscription.cancelled_at else subscription.cancelled_at
     subscription.updated_at = datetime.utcnow()
 
@@ -522,7 +618,7 @@ async def handle_subscription_cancelled(
     # Update subscription
     subscription.status = SubscriptionStatus.CANCELLED
     subscription.cancelled_at = datetime.utcnow()
-    subscription.end_date = datetime.fromisoformat(ends_at) if ends_at else None
+    subscription.end_date = datetime.fromisoformat(ends_at).replace(tzinfo=None) if ends_at else None
     subscription.updated_at = datetime.utcnow()
 
     await db.flush()
@@ -627,16 +723,21 @@ async def handle_subscription_payment_success(
     subscription = result.scalar_one_or_none()
 
     if not subscription:
-        error_msg = f"Subscription {lemonsqueezy_subscription_id} not found"
-        logger.error(error_msg)
-        raise ValueError(error_msg)
+        # Payment success arrived before subscription_created - log and skip
+        # The subscription_created or subscription_updated webhook should create it
+        logger.warning(
+            f"Subscription {lemonsqueezy_subscription_id} not found in payment_success - will be created by subscription_created/updated webhook",
+            extra={"event_type": "subscription_payment_success", "subscription_id": lemonsqueezy_subscription_id}
+        )
+        # Don't raise error - this is normal webhook ordering issue
+        return
 
     # Update subscription - activate if was trial or suspended
     if subscription.status in [SubscriptionStatus.TRIAL, SubscriptionStatus.PAST_DUE]:
         subscription.status = SubscriptionStatus.ACTIVE
 
     # Update renewal date
-    subscription.lemonsqueezy_renews_at = datetime.fromisoformat(renews_at) if renews_at else None
+    subscription.renews_at = datetime.fromisoformat(renews_at).replace(tzinfo=None) if renews_at else None
 
     # Reset usage counters for new billing cycle
     subscription.current_api_calls = 0
@@ -899,7 +1000,7 @@ async def handle_subscription_payment_recovered(
     # Update subscription - restore to ACTIVE
     now = datetime.utcnow()
     subscription.status = SubscriptionStatus.ACTIVE
-    subscription.lemonsqueezy_renews_at = datetime.fromisoformat(renews_at) if renews_at else None
+    subscription.renews_at = datetime.fromisoformat(renews_at).replace(tzinfo=None) if renews_at else None
     subscription.updated_at = now
 
     # Clear grace period tracking (payment resolved)
@@ -939,7 +1040,7 @@ async def handle_subscription_payment_recovered(
 
         # Format dates
         recovery_date = now.strftime("%B %d, %Y")
-        next_billing_date = subscription.lemonsqueezy_renews_at.strftime("%B %d, %Y") if subscription.lemonsqueezy_renews_at else "N/A"
+        next_billing_date = subscription.renews_at.strftime("%B %d, %Y") if subscription.renews_at else "N/A"
 
         # Render email
         user_name = user.first_name or user.display_name or user.email
@@ -1085,7 +1186,7 @@ async def handle_subscription_resumed(
 
     # Update subscription - resume to ACTIVE
     subscription.status = SubscriptionStatus.ACTIVE
-    subscription.lemonsqueezy_renews_at = datetime.fromisoformat(renews_at) if renews_at else None
+    subscription.renews_at = datetime.fromisoformat(renews_at).replace(tzinfo=None) if renews_at else None
     subscription.updated_at = datetime.utcnow()
 
     await db.flush()

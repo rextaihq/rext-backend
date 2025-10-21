@@ -58,7 +58,7 @@ ngrok http 2024
 **Note:** Copy the ngrok HTTPS URL (e.g., `https://abc123.ngrok.io`)
 
 **Verify webhook endpoint:**
-- LemonSqueezy webhook URL should be: `https://abc123.ngrok.io/api/v1/webhooks/lemonsqueezy`
+- LemonSqueezy webhook URL should be: `https://abc123.ngrok.io/api/v1/subscriptions/webhooks/lemonsqueezy`
 - Check LemonSqueezy dashboard → Settings → Webhooks
 
 ### Step 3: Create/Login Test User

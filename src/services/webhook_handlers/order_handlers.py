@@ -77,6 +77,19 @@ async def handle_order_created(
     # Extract order data
     order_data = extract_order_data(webhook_data)
 
+    # Check if this is a subscription purchase (not a one-time/lifetime purchase)
+    # For subscription purchases, the subscription_created webhook handles everything
+    # Only process order_created for actual one-time purchases (LTDs)
+    first_order_item = webhook_data.get("data", {}).get("attributes", {}).get("first_order_item", {})
+    if first_order_item and first_order_item.get("product_id"):
+        # This is a subscription purchase - skip license creation
+        # The subscription will be created by subscription_created webhook
+        logger.info(
+            "Order is for a subscription - skipping license creation (subscription_created will handle it)",
+            extra={"order_id": order_data.get("order_id")}
+        )
+        return
+
     lemonsqueezy_order_id = order_data.get("order_id")
     lemonsqueezy_customer_id = order_data.get("customer_id")
     lemonsqueezy_variant_id = order_data.get("variant_id")
@@ -139,14 +152,16 @@ async def handle_order_created(
     # Create License record
     license_record = License(
         user_id=user.id,
-        lemonsqueezy_license_id=None,  # Will be updated in license_key_created event
+        lemonsqueezy_license_id=license_key if license_key else f"pending-{lemonsqueezy_order_id}",  # Use license_key as ID or pending
         lemonsqueezy_order_id=lemonsqueezy_order_id,
+        lemonsqueezy_product_id=lemonsqueezy_product_id or "unknown",  # Fixed: was product_id, should be lemonsqueezy_product_id
         license_key=license_key if license_key else f"pending-{lemonsqueezy_order_id}",
-        product_id=plan.id if plan else None,
         product_name=product_name or "Lifetime Deal",
+        activation_email=user.email,  # Required field
         status=LicenseStatus.ACTIVE if status == "paid" else LicenseStatus.INACTIVE,
-        activation_limit=-1,  # Unlimited for LTDs
-        activation_usage=1,  # User account counts as 1 activation
+        activation_limit=None,  # None = Unlimited for LTDs
+        activation_count=0,  # Fixed: was activation_usage, should be activation_count
+        activated_at=datetime.utcnow() if status == "paid" else None,
         expires_at=None,  # Lifetime - never expires
         created_at=datetime.utcnow(),
         updated_at=datetime.utcnow()

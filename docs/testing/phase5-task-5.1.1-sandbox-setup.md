@@ -194,12 +194,12 @@ Based on the subscription architecture, we need to create test products for:
 
 3. **Copy ngrok HTTPS URL**
    - Example: `https://abc123.ngrok.io`
-   - Webhook endpoint: `https://abc123.ngrok.io/api/v1/webhooks/lemonsqueezy`
+   - Webhook endpoint: `https://abc123.ngrok.io/api/v1/subscriptions/webhooks/lemonsqueezy`
 
 4. **Configure webhook in LemonSqueezy**
    - Navigate to Settings → Webhooks
    - Add Endpoint
-   - URL: `https://abc123.ngrok.io/api/v1/webhooks/lemonsqueezy`
+   - URL: `https://abc123.ngrok.io/api/v1/subscriptions/webhooks/lemonsqueezy`
    - Select Events (all subscription events):
      - `subscription_created`
      - `subscription_updated`
@@ -223,7 +223,7 @@ Based on the subscription architecture, we need to create test products for:
 **Option B: Use Staging Server** (if available)
 
 1. **Deploy to staging server**
-   - URL: `https://staging.wrext.com/api/v1/webhooks/lemonsqueezy`
+   - URL: `https://staging.wrext.com/api/v1/subscriptions/webhooks/lemonsqueezy`
 
 2. **Configure webhook in LemonSqueezy**
    - Same steps as Option A but use staging URL

@@ -18,6 +18,7 @@ from src.services.email_service import EmailService
 from src.services.lemonsqueezy_webhook_service import LemonSqueezyWebhookService
 from src.services.webhook_handlers import subscription_handlers, order_handlers
 from src.services.webhook_security_monitor import webhook_security_monitor
+from src.utils.lemonsqueezy_webhook import WebhookVerificationError, WebhookParsingError
 from src.providers.payment.provider_factory import get_payment_provider_singleton as get_payment_provider
 from src.utils.response_utils import success
 from src.utils.route_decorators import db_transaction_handler
@@ -322,7 +323,7 @@ async def handle_lemonsqueezy_webhook(
 
         return {"status": "success", "message": "Webhook processed"}
 
-    except ValueError as e:
+    except WebhookVerificationError as e:
         # Signature verification failed - Record security event
         client_ip = request.client.host if request.client else "unknown"
 

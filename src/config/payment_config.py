@@ -19,8 +19,8 @@ class PaymentSettings(BaseSettings):
 
     # Generic settings
     payment_currency: str = "USD"
-    payment_success_url: str = "http://localhost:3000/subscription/success"
-    payment_cancel_url: str = "http://localhost:3000/subscription/cancel"
+    payment_success_url: str = "http://localhost:3000/checkout/success"
+    payment_cancel_url: str = "http://localhost:3000/pricing"
 
     # LemonSqueezy configuration
     lemonsqueezy_api_key: str = ""

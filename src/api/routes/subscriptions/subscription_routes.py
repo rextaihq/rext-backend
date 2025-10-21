@@ -135,6 +135,7 @@ async def create_checkout_session(
 
 
 @router.get("/my-subscription", response_model=dict)
+@router.get("/current", response_model=dict)  # Alias for compatibility
 @db_transaction_handler("get my subscription", "Subscription retrieved successfully", auto_commit=False)
 async def get_my_subscription(
     request: Request,

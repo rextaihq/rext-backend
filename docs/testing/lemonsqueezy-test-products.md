@@ -214,7 +214,7 @@ variant_id = "1049351"
 ## Webhook Configuration
 
 **Endpoint:** (configured in Phase 0)
-- URL: `https://[your-ngrok-url]/api/v1/webhooks/lemonsqueezy`
+- URL: `https://[your-ngrok-url]/api/v1/subscriptions/webhooks/lemonsqueezy`
 - Secret: (stored in .env as `LEMONSQUEEZY_WEBHOOK_SECRET`)
 
 **Events Subscribed:**
