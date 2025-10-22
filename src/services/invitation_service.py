@@ -205,20 +205,8 @@ class InvitationService:
             status="pending",
             expires_at=expires_at
         )
+
         self.db.add(invitation)
-        await self.db.flush()
-        await self.db.refresh(invitation)
-
-        logger.info(
-            f"Invitation created: {email} to workspace {workspace_id}",
-            extra={
-                "invitation_id": str(invitation.id),
-                "email": email,
-                "workspace_id": str(workspace_id),
-                "expires_at": expires_at.isoformat()
-            }
-        )
-
         return invitation
 
     async def get_invitation_by_id(

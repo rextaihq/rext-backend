@@ -1,4 +1,5 @@
 import os
+from datetime import datetime
 from typing import Dict, List, Optional
 from uuid import UUID
 
@@ -275,16 +276,6 @@ async def create_workspace_invitation(
         user_email=inviter_email,
     )
 
-    logger.info(
-        "Workspace invitation created",
-        extra={
-            "workspace_id": str(workspace_id),
-            "invitation_id": str(invitation_id),
-            "invited_email": invitation_email,
-            "invited_by": str(user_uuid),
-        },
-    )
-
     return created(
         data={
             "invitation": invitation_data
@@ -329,6 +320,15 @@ async def create_bulk_workspace_invitations(
 
     frontend_url = settings.FRONTEND_URL
 
+    # Eagerly load all attributes we'll need before the loop
+    workspace_id_value = workspace.id
+    workspace_name_value = workspace.name
+    role_id_value = role.id
+    role_display_name = role.display_name or role.name
+    inviter_display_name = inviter.display_name if inviter else "A teammate"
+    inviter_username = inviter.username if inviter else None
+    inviter_email = inviter.email if inviter else None
+
     invitation_service = InvitationService(db)
     created_invitations = []
     failures = []
@@ -337,29 +337,32 @@ async def create_bulk_workspace_invitations(
         try:
             invitation = await invitation_service.create_invitation(
                 email=email,
-                workspace_id=workspace.id,
-                role_id=role.id,
+                workspace_id=workspace_id_value,
+                role_id=role_id_value,
                 invited_by_user_id=user_uuid,
                 expiry_days=payload.expiry_days or 7,
             )
-            created_invitations.append(invitation)
 
-            # Eagerly load attributes before async operations
+            # Eagerly load invitation attributes BEFORE using them
             invitation_id = invitation.id
             invitation_token = invitation.invitation_token
-            workspace_id = workspace.id
-            workspace_name = workspace.name
-            role_display_name = role.display_name or role.name
+            invitation_email = invitation.email
+
+            # Store eagerly-loaded values for later use
+            created_invitations.append({
+                "email": invitation_email,
+                "id": str(invitation_id),
+            })
 
             invitation_url = f"{frontend_url}/invitations/accept?token={invitation_token}"
 
             email_content = await render_workspace_email(
                 db=db,
-                workspace_id=workspace_id,
+                workspace_id=workspace_id_value,
                 template_type="workspace_invitation",
                 variables={
-                    "workspace_name": workspace_name,
-                    "inviter_name": inviter.display_name if inviter else "A teammate",
+                    "workspace_name": workspace_name_value,
+                    "inviter_name": inviter_display_name,
                     "invitee_name": email.split('@')[0],
                     "invitee_email": email,
                     "recipient_email": email,
@@ -374,7 +377,7 @@ async def create_bulk_workspace_invitations(
                 email=email,
                 subject=email_content["subject"],
                 body=email_content["body"],
-                workspace_id=str(workspace_id),
+                workspace_id=str(workspace_id_value),
                 invitation_id=str(invitation_id)
             )
         except (DuplicateResourceException, BusinessRuleViolationException) as exc:
@@ -387,14 +390,14 @@ async def create_bulk_workspace_invitations(
         resource_type="invitation",
         resource_id="bulk",
         new_values={
-            "workspace_id": str(workspace.id),
+            "workspace_id": str(workspace_id_value),
             "emails": payload.emails,
             "role_id": payload.role_id,
         },
         request=request,
-        workspace_id=workspace.id,
-        username=inviter.username if inviter else None,
-        user_email=inviter.email if inviter else None,
+        workspace_id=workspace_id_value,
+        username=inviter_username,
+        user_email=inviter_email,
     )
 
     return created(
@@ -404,9 +407,9 @@ async def create_bulk_workspace_invitations(
             "failed": len(failures),
             "results": [
                 {
-                    "email": inv.email,
+                    "email": inv["email"],
                     "success": True,
-                    "invitation_id": str(inv.id),
+                    "invitation_id": inv["id"],
                 }
                 for inv in created_invitations
             ]

@@ -21,7 +21,7 @@ logger.info("Async database configuration initialized", extra={"database_url": A
 # Create async engine
 async_engine = create_async_engine(
     ASYNC_DATABASE_URL,
-    echo=False,  # Set to True for SQL debugging
+    echo=False,  # Disable SQL logging
     pool_pre_ping=True,  # Verify connections before using
     pool_size=20,  # Connection pool size
     max_overflow=10,  # Max connections beyond pool_size
@@ -33,20 +33,23 @@ AsyncSessionLocal = async_sessionmaker(
     async_engine,
     class_=AsyncSession,
     expire_on_commit=False,
+    # autoflush defaults to True - let SQLAlchemy handle flushing
+    # autocommit defaults to False - we manage transactions explicitly
 )
 
 # Async dependency for FastAPI
 async def get_async_db():
-    """Async database session dependency for FastAPI routes."""
-    async with AsyncSessionLocal() as session:
-        try:
-            yield session
-            await session.commit()
-        except Exception:
-            await session.rollback()
-            raise
-        finally:
-            await session.close()
+    """
+    Async database session dependency for FastAPI routes.
+
+    Yields a database session and ensures proper cleanup.
+    The decorator handles commit/rollback.
+    """
+    session = AsyncSessionLocal()
+    try:
+        yield session
+    finally:
+        await session.close()
 
 
 # Context manager for background tasks
