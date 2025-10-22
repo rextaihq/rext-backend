@@ -49,6 +49,7 @@ from src.api.routes.email import preview_router, webhook_router
 from src.api.routes.users.email_preferences import router as email_prefs_router
 from src.api.routes.users.onboarding import router as onboarding_router
 from src.api.routes.media import router as media_router
+from src.api.routes.invitations import router as invitations_router
 from src.api.database.async_database import async_engine
 
 # Middleware imports
@@ -317,6 +318,8 @@ app.include_router(email_prefs_router, prefix="/api/v1", tags=["Email Preference
 app.include_router(onboarding_router, prefix="/api/v1", tags=["Onboarding"])
 # Media routes
 app.include_router(media_router, prefix="/api/v1", tags=["Media"])
+# Public invitation routes (validate and accept)
+app.include_router(invitations_router, prefix="/api/v1", tags=["Invitations"])
 
 # ============================================================================
 # STATIC FILE SERVING
