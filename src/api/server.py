@@ -17,6 +17,7 @@ from dotenv import load_dotenv
 
 # Local application imports
 from src.api.routes.users import router as users_router
+from src.api.routes.health import router as health_router
 from src.api.routes.topics.topic_generation_route import router as topic_router
 from src.api.routes.workspaces import router as workspace_router, workspaces_router
 from src.api.routes.workspaces.workspace_knowledge import router as workspace_knowledge_router
@@ -29,12 +30,16 @@ from src.api.routes.subscriptions.plan_routes import router as plan_routes_route
 from src.api.routes.subscriptions.subscription_routes import router as subscription_routes_router
 from src.api.routes.subscriptions.checkout_routes import router as checkout_routes_router
 from src.api.routes.subscriptions.webhook_routes import router as webhook_routes_router
+from src.api.routes.subscriptions.license_routes import router as license_routes_router
+from src.api.routes.subscriptions.trial_routes import router as trial_routes_router
 from src.api.routes.subscriptions.admin import router as admin_subscription_routes_router
 from src.api.routes.admin.customer_routes import router as admin_customer_routes_router
 from src.api.routes.admin.monitoring_routes import router as admin_monitoring_routes_router
 from src.api.routes.admin.reports_routes import router as admin_reports_routes_router
 from src.api.routes.admin.email_analytics_routes import router as admin_email_analytics_routes_router
 from src.api.routes.admin.email_admin_routes import router as admin_email_routes_router
+from src.api.routes.admin.webhook_monitoring_routes import router as admin_webhook_monitoring_routes_router
+from src.api.routes.admin.export_routes import router as admin_export_routes_router
 from src.api.routes.audit.modules import router as audit_router
 from src.api.routes.security.security_routes import router as security_router
 from src.api.routes.events import router as events_router
@@ -115,6 +120,65 @@ async def lifespan(app: FastAPI):
 
     # Initialize Sentry error monitoring
     init_sentry(settings)
+
+    # Validate critical configuration in production
+    from src.config.payment_config import payment_settings
+    if settings.ENVIRONMENT == "production":
+        # Ensure webhook secret is configured for LemonSqueezy in production
+        if payment_settings.payment_provider in ["lemonsqueezy", "lemonsqueezy_sandbox"]:
+            # Validate webhook secret
+            if not payment_settings.lemonsqueezy_webhook_secret:
+                error_msg = (
+                    "CRITICAL: LEMONSQUEEZY_WEBHOOK_SECRET is not configured in production. "
+                    "Webhook signature verification will fail. "
+                    "Set LEMONSQUEEZY_WEBHOOK_SECRET environment variable before starting."
+                )
+                logger.critical(error_msg)
+                raise RuntimeError(error_msg)
+            logger.info("✅ LemonSqueezy webhook secret configured")
+
+            # Validate API key
+            if not payment_settings.lemonsqueezy_api_key:
+                error_msg = (
+                    "CRITICAL: LEMONSQUEEZY_API_KEY is not configured in production. "
+                    "Payment processing will fail. "
+                    "Set LEMONSQUEEZY_API_KEY environment variable before starting."
+                )
+                logger.critical(error_msg)
+                raise RuntimeError(error_msg)
+
+            # Check for placeholder values (common mistake)
+            if payment_settings.lemonsqueezy_api_key in ["your_api_key_here", "REPLACE_ME", ""]:
+                error_msg = (
+                    "CRITICAL: LEMONSQUEEZY_API_KEY is set to a placeholder value. "
+                    "Set a valid LemonSqueezy API key before starting production."
+                )
+                logger.critical(error_msg)
+                raise RuntimeError(error_msg)
+
+            # Validate API key format (basic sanity check)
+            if len(payment_settings.lemonsqueezy_api_key) < 20:
+                error_msg = (
+                    f"CRITICAL: LEMONSQUEEZY_API_KEY is too short ({len(payment_settings.lemonsqueezy_api_key)} chars). "
+                    "LemonSqueezy API keys are typically 40+ characters. "
+                    "Verify you have the correct key from https://app.lemonsqueezy.com/settings/api"
+                )
+                logger.critical(error_msg)
+                raise RuntimeError(error_msg)
+
+            # Validate store ID
+            if not payment_settings.lemonsqueezy_store_id:
+                error_msg = (
+                    "CRITICAL: LEMONSQUEEZY_STORE_ID is not configured in production. "
+                    "Payment processing will fail. "
+                    "Set LEMONSQUEEZY_STORE_ID environment variable before starting."
+                )
+                logger.critical(error_msg)
+                raise RuntimeError(error_msg)
+
+            logger.info("✅ LemonSqueezy API key configured")
+            logger.info(f"✅ LemonSqueezy Store ID: {payment_settings.lemonsqueezy_store_id}")
+            logger.info(f"   API key prefix: {payment_settings.lemonsqueezy_api_key[:12]}...")
 
     # Initialize Redis cache
     from src.api.cache.redis_client import cache
@@ -216,6 +280,7 @@ setup_exception_handlers(app)
 
 # Include all API routes with consistent prefix (/api/v1)
 app.include_router(users_router, prefix="/api/v1", tags=["Authentication"])
+app.include_router(health_router, prefix="/api/v1", tags=["Health"])
 app.include_router(topic_router, prefix="/api/v1", tags=["Topic Generation"])
 app.include_router(workspace_router, prefix="/api/v1", tags=["Workspaces"])
 app.include_router(workspaces_router, prefix="/api/v1", tags=["Workspaces"])  # Alias for frontend compatibility
@@ -230,12 +295,16 @@ app.include_router(plan_routes_router, prefix="/api/v1", tags=["Subscription Pla
 app.include_router(subscription_routes_router, prefix="/api/v1", tags=["Subscriptions"])
 app.include_router(checkout_routes_router, prefix="/api/v1", tags=["Subscriptions", "Checkout"])
 app.include_router(webhook_routes_router, prefix="/api/v1", tags=["Subscriptions", "Webhooks"])
+app.include_router(license_routes_router, prefix="/api/v1", tags=["Licenses"])
+app.include_router(trial_routes_router, prefix="/api/v1", tags=["Trials"])
 app.include_router(admin_subscription_routes_router, prefix="/api/v1")
 app.include_router(admin_customer_routes_router, prefix="/api/v1/admin", tags=["Admin - Customers"])
 app.include_router(admin_monitoring_routes_router, prefix="/api/v1/admin", tags=["Admin - Monitoring"])
 app.include_router(admin_reports_routes_router, prefix="/api/v1/admin", tags=["Admin - Reports"])
 app.include_router(admin_email_analytics_routes_router, prefix="/api/v1", tags=["Admin - Email Analytics"])
 app.include_router(admin_email_routes_router)  # Prefix already defined in router
+app.include_router(admin_webhook_monitoring_routes_router, prefix="/api/v1/admin", tags=["Admin - Webhooks"])
+app.include_router(admin_export_routes_router, prefix="/api/v1/admin", tags=["Admin - Exports"])
 app.include_router(audit_router, prefix="/api/v1", tags=["Audit Logs"])
 app.include_router(security_router, prefix="/api/v1", tags=["Security Monitoring"])
 # Email routes (Phase 3 complete - Python-based templates)

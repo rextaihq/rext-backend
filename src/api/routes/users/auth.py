@@ -120,6 +120,10 @@ async def create_user(
             last_name=user.last_name
         )
 
+        # IMPORTANT: Commit transaction before background task
+        # Background tasks run immediately and need the user to exist in the database
+        await db.commit()
+
         # Get frontend URL from environment
         frontend_url = settings.FRONTEND_URL
 

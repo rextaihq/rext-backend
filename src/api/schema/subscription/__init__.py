@@ -38,10 +38,23 @@ from .admin_schemas import (
     AdminUsageResetRequest,
 )
 
-# Stripe integration schemas
-from .stripe_schemas import (
+# Payment checkout schemas
+from .checkout_schemas import (
     CheckoutSessionRequest,
     CheckoutSessionResponse,
+)
+
+# License validation schemas
+from .license_schemas import (
+    LicenseValidateRequest,
+    LicenseValidateResponse,
+)
+
+# Invoice schemas
+from .invoice_schemas import (
+    Invoice,
+    InvoiceItem,
+    InvoiceListResponse,
 )
 
 # Analytics schemas
@@ -78,9 +91,18 @@ __all__ = [
     "AdminSubscriptionExtendRequest",
     "AdminUsageResetRequest",
 
-    # Stripe integration schemas (2)
+    # Payment checkout schemas (2)
     "CheckoutSessionRequest",
     "CheckoutSessionResponse",
+
+    # License validation schemas (2)
+    "LicenseValidateRequest",
+    "LicenseValidateResponse",
+
+    # Invoice schemas (3)
+    "Invoice",
+    "InvoiceItem",
+    "InvoiceListResponse",
 
     # Analytics schemas (5)
     "SubscriptionStatsResponse",

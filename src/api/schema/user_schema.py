@@ -86,6 +86,7 @@ class DeactivateAccountRequest(BaseModel):
     """Schema for account deactivation request"""
     reason: Optional[str] = Field(None, max_length=500, description="Reason for deactivation")
     confirm: bool = Field(..., description="User must confirm deactivation")
+    cancel_subscriptions: bool = Field(False, description="Automatically cancel active subscriptions")
 
     @field_validator('confirm')
     @classmethod
@@ -109,6 +110,8 @@ class DataExportRequest(BaseModel):
     include_roles: bool = Field(True, description="Include role assignments")
     include_workspaces: bool = Field(True, description="Include workspace memberships")
     include_activity: bool = Field(True, description="Include activity logs")
+    include_billing: bool = Field(True, description="Include subscription and billing data")
+    include_usage: bool = Field(True, description="Include usage metrics and statistics")
 
 class DataExportResponse(BaseModel):
     """Schema for data export response"""

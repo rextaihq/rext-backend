@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sess
 from sqlalchemy.pool import NullPool
 from httpx import ASGITransport, AsyncClient
 
-from src.api.database.database import Base
+from src.api.database.base import Base
 from src.api.server import app
 from src.api.database.async_database import get_async_db
 

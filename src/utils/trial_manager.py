@@ -89,8 +89,8 @@ def expire_trial_subscriptions(db: Session) -> Dict[str, int]:
 
     for subscription in expired_trials:
         try:
-            # Check if payment method exists (Stripe integration)
-            has_payment = subscription.stripe_subscription_id is not None
+            # Check if payment method exists (LemonSqueezy integration)
+            has_payment = subscription.lemonsqueezy_subscription_id is not None
 
             if has_payment:
                 # Convert trial to active subscription
@@ -175,7 +175,7 @@ def get_trials_expiring_soon(
             "plan_name": plan.display_name,
             "trial_end_date": subscription.trial_end_date.isoformat(),
             "days_remaining": max(0, days_remaining),
-            "has_payment_method": subscription.stripe_subscription_id is not None
+            "has_payment_method": subscription.lemonsqueezy_subscription_id is not None
         })
 
     logger.info(f"Found {len(results)} trial(s) expiring within {days_threshold} days")
@@ -237,7 +237,7 @@ def extend_trial(
 def convert_trial_to_active(
     db: Session,
     subscription_id: str,
-    stripe_subscription_id: Optional[str] = None
+    lemonsqueezy_subscription_id: Optional[str] = None
 ) -> UserSubscription:
     """
     Manually convert a trial subscription to active (typically after payment confirmation).
@@ -245,7 +245,7 @@ def convert_trial_to_active(
     Args:
         db: Database session
         subscription_id: UUID of the subscription
-        stripe_subscription_id: Optional Stripe subscription ID to associate
+        lemonsqueezy_subscription_id: Optional LemonSqueezy subscription ID to associate
 
     Returns:
         Updated UserSubscription
@@ -266,8 +266,8 @@ def convert_trial_to_active(
     # Convert to active
     subscription.status = SubscriptionStatus.ACTIVE
     subscription.trial_end_date = None  # Clear trial end date
-    if stripe_subscription_id:
-        subscription.stripe_subscription_id = stripe_subscription_id
+    if lemonsqueezy_subscription_id:
+        subscription.lemonsqueezy_subscription_id = lemonsqueezy_subscription_id
     subscription.updated_at = datetime.utcnow()
 
     db.commit()
@@ -305,13 +305,13 @@ def get_trial_statistics(db: Session) -> Dict:
     # Trials with payment method
     trials_with_payment = db.query(UserSubscription).filter(
         UserSubscription.status == SubscriptionStatus.TRIAL,
-        UserSubscription.stripe_subscription_id.isnot(None)
+        UserSubscription.lemonsqueezy_subscription_id.isnot(None)
     ).count()
 
     # Trials without payment method
     trials_without_payment = db.query(UserSubscription).filter(
         UserSubscription.status == SubscriptionStatus.TRIAL,
-        UserSubscription.stripe_subscription_id.is_(None)
+        UserSubscription.lemonsqueezy_subscription_id.is_(None)
     ).count()
 
     # Average trial length (from start_date to trial_end_date)
