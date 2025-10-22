@@ -33,6 +33,7 @@ from src.api.models.subscription_models.subscriptions import (
 )
 from src.api.models.user_models.users import Users
 from src.api.models.workspace_models.workspace_model import WorkspaceModel
+from src.api.models.workspace_models.workspace_member import WorkspaceMembers
 from src.api.models.topic_models.topic_models import TopicsModel
 from src.api.models.knowledge_models.knowledge_model import (
     KnowledgeFiles,
@@ -636,10 +637,12 @@ class SubscriptionService:
             Dict with usage counts:
             {
                 "workspaces": count,
+                "members": count,
                 "topics": count,
                 "knowledge_files": count,
                 "knowledge_text": count,
-                "knowledge_web": count
+                "knowledge_web": count,
+                "knowledge_items": count
             }
         """
         # Count workspaces owned by user
@@ -647,6 +650,19 @@ class SubscriptionService:
             select(func.count(WorkspaceModel.id)).where(WorkspaceModel.user_id == user_id)
         )
         workspaces_count = workspaces_result.scalar() or 0
+
+        # Count workspace members across all user's workspaces
+        members_result = await self.db.execute(
+            select(func.count(WorkspaceMembers.id))
+            .join(WorkspaceModel, WorkspaceMembers.workspace_id == WorkspaceModel.id)
+            .where(
+                and_(
+                    WorkspaceModel.user_id == user_id,
+                    WorkspaceMembers.status == "active"  # Only count active members
+                )
+            )
+        )
+        members_count = members_result.scalar() or 0
 
         # Count topics across all user's workspaces
         topics_result = await self.db.execute(
@@ -685,6 +701,7 @@ class SubscriptionService:
 
         return {
             "workspaces": workspaces_count,
+            "members": members_count,
             "topics": topics_count,
             "knowledge_files": knowledge_files_count,
             "knowledge_text": knowledge_text_count,
