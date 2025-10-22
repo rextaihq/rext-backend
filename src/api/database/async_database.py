@@ -73,9 +73,15 @@ def get_async_db_context():
 # SYNC DATABASE (for LangGraph nodes running in thread pool)
 # ============================================================================
 
+# Convert postgresql:// to postgresql+psycopg:// for sync engine (using psycopg3)
+if SQLALCHEMY_DATABASE_URL and SQLALCHEMY_DATABASE_URL.startswith("postgresql://"):
+    SYNC_DATABASE_URL = SQLALCHEMY_DATABASE_URL.replace("postgresql://", "postgresql+psycopg://")
+else:
+    SYNC_DATABASE_URL = SQLALCHEMY_DATABASE_URL
+
 # Create sync engine for LangGraph nodes
 sync_engine = create_engine(
-    SQLALCHEMY_DATABASE_URL,
+    SYNC_DATABASE_URL,
     echo=False,
     pool_pre_ping=True,
     pool_size=10,

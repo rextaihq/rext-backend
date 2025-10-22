@@ -24,7 +24,7 @@ class Content(Base, SerializableMixin):
     body_markdown = Column(Text, nullable=True)
     body_html = Column(Text, nullable=True)
     content_format = Column(Text, nullable=True, default="Markdown")  # Markdown, HTML, Plain Text
-    status = Column(Text, nullable=True, default="draft")  # draft, generating, ready, published, archived
+    status = Column(Text, nullable=True, default="draft")  # draft, pending_review, approved, rejected, published, archived
     content_language = Column(Text, nullable=True, default="English")
 
     # LangGraph workflow tracking
@@ -38,6 +38,13 @@ class Content(Base, SerializableMixin):
     structure_json = Column(JSONB, nullable=True, comment="Content structure (length, TOC, summary, CTA flags)")
     research_config_json = Column(JSONB, nullable=True, comment="Research configuration (level, fact-checking, freshness)")
 
+    # Workflow tracking fields (added in migration 41596bee276b)
+    published_at = Column(DateTime(timezone=True), nullable=True, comment="When content was published")
+    submitted_for_review_at = Column(DateTime(timezone=True), nullable=True, comment="When content was submitted for review")
+    reviewed_at = Column(DateTime(timezone=True), nullable=True, comment="When content was reviewed (approved/rejected)")
+    reviewed_by_user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True, comment="Who reviewed the content")
+    review_notes = Column(Text, nullable=True, comment="Feedback from reviewer")
+
     created_at = Column(DateTime(timezone=True), nullable=False, default=datetime.utcnow)
     updated_at = Column(DateTime(timezone=True), nullable=True, default=datetime.utcnow, onupdate=datetime.utcnow)
     deleted_at = Column(DateTime(timezone=True), nullable=True)
@@ -48,6 +55,7 @@ class Content(Base, SerializableMixin):
     created_by = relationship("Users", foreign_keys=[created_by_user_id])
     assigned_to = relationship("Users", foreign_keys=[assigned_to_user_id])
     author = relationship("Users", foreign_keys=[author_id])
+    reviewed_by = relationship("Users", foreign_keys=[reviewed_by_user_id])
     featured_image = relationship("Media", foreign_keys=[featured_image_id], lazy="joined")
 
     # Related tables (kept separate for specific use cases)

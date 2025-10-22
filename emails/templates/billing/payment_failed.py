@@ -13,6 +13,7 @@ def render_payment_failed_email(
     amount: str,
     retry_date: str,
     update_payment_url: str = "https://app.wrext.com/settings/billing",
+    customer_portal_url: str = None,
     frontend_url: str = "https://app.wrext.com"
 ) -> str:
     """
@@ -25,12 +26,15 @@ def render_payment_failed_email(
         plan_name: Name of the plan
         amount: Payment amount that failed (e.g., "$29.99")
         retry_date: Date when payment will be retried (e.g., "January 18, 2025")
-        update_payment_url: URL to update payment method
+        update_payment_url: URL to update payment method (internal billing dashboard)
+        customer_portal_url: Optional direct URL to payment provider's customer portal for updating payment method
         frontend_url: Base frontend URL
 
     Returns:
         Complete HTML email string
     """
+    # Prefer customer portal URL (one-click update) over internal dashboard
+    payment_update_url = customer_portal_url or update_payment_url
     email_html = compose_email([
         simple_header(),
         f"""
@@ -86,7 +90,7 @@ def render_payment_failed_email(
             </table>
         </div>
         """,
-        primary_button("Update Payment Method", update_payment_url),
+        primary_button("Update Payment Method", payment_update_url),
         """
         <p style="color: #6b7280; font-size: 14px; line-height: 20px; margin: 32px 0 0 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
             <strong>Common solutions:</strong><br>

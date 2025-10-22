@@ -1,8 +1,8 @@
-import psycopg2
+import psycopg
 from datetime import datetime, timezone
 
 # Connect to database
-conn = psycopg2.connect("postgresql://localhost/mobeen")
+conn = psycopg.connect("postgresql://localhost/mobeen")
 
 try:
     cursor = conn.cursor()

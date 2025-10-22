@@ -63,7 +63,7 @@ async def list_customers(
     sort_order: str = Query("desc", pattern="^(asc|desc)$", description="Sort order"),
     db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user),
-    _: None = Depends(require_permissions(["user:read"]))
+    _: None = Depends(require_permissions(["user.read"]))
 ):
     """
     List all customers with filtering and pagination (admin only).
@@ -107,7 +107,7 @@ async def get_customer_detail(
     user_id: str,
     db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user),
-    _: None = Depends(require_permissions(["user:read"]))
+    _: None = Depends(require_permissions(["user.read"]))
 ):
     """
     Get detailed customer information (admin only).
@@ -185,7 +185,7 @@ async def add_customer_note(
     note_request: CustomerNoteRequest,
     db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user),
-    _: None = Depends(require_permissions(["user:read"]))
+    _: None = Depends(require_permissions(["user.read"]))
 ):
     """
     Add internal note to customer account (admin only).

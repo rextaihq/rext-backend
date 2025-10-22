@@ -5,15 +5,15 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
+from langgraph_sdk import Auth
 
 from src.api.database.async_database import get_async_db
 from src.api.security.dependencies import get_current_user, get_current_user_optional
-from src.api.models.user_models.users import Users
-from langgraph_sdk import Auth
 from src.api.schema.onboarding_schemas import (
     OnboardingReset,
     OnboardingResponse,
     OnboardingStepUpdate,
+    OnboardingMarketingData,
 )
 from src.services.onboarding_service import OnboardingService
 from src.utils.logger import logger
@@ -62,7 +62,7 @@ async def get_onboarding_status(
 async def update_onboarding_step(
     step_update: OnboardingStepUpdate,
     db: Annotated[AsyncSession, Depends(get_async_db)],
-    current_user: Annotated[Users, Depends(get_current_user)],
+    current_user: Annotated[Auth.types.MinimalUserDict, Depends(get_current_user)],
 ):
     """
     Update onboarding step.
@@ -73,12 +73,14 @@ async def update_onboarding_step(
     - set_current: Set current step for navigation
     """
     try:
+        user_id = UUID(current_user["identity"])
+
         if step_update.action == "complete":
-            onboarding = await OnboardingService.complete_step(db, current_user.id, step_update.step)
+            onboarding = await OnboardingService.complete_step(db, user_id, step_update.step)
         elif step_update.action == "skip":
-            onboarding = await OnboardingService.skip_step(db, current_user.id, step_update.step)
+            onboarding = await OnboardingService.skip_step(db, user_id, step_update.step)
         elif step_update.action == "set_current":
-            onboarding = await OnboardingService.set_current_step(db, current_user.id, step_update.step)
+            onboarding = await OnboardingService.set_current_step(db, user_id, step_update.step)
         else:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -92,7 +94,7 @@ async def update_onboarding_step(
             detail=str(e),
         )
     except Exception as e:
-        log.error(f"[Onboarding] Failed to update step: {e}")
+        logger.error(f"[Onboarding] Failed to update step: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to update onboarding step",
@@ -102,7 +104,7 @@ async def update_onboarding_step(
 @router.post("/complete", response_model=OnboardingResponse, status_code=status.HTTP_200_OK)
 async def complete_onboarding(
     db: Annotated[AsyncSession, Depends(get_async_db)],
-    current_user: Annotated[Users, Depends(get_current_user)],
+    current_user: Annotated[Auth.types.MinimalUserDict, Depends(get_current_user)],
 ):
     """
     Mark onboarding as fully completed.
@@ -111,11 +113,12 @@ async def complete_onboarding(
     or explicitly dismisses the onboarding flow.
     """
     try:
-        onboarding = await OnboardingService.complete_onboarding(db, current_user.id)
-        log.info(f"[Onboarding] User {current_user.id} completed onboarding")
+        user_id = UUID(current_user["identity"])
+        onboarding = await OnboardingService.complete_onboarding(db, user_id)
+        logger.info(f"[Onboarding] User {user_id} completed onboarding")
         return onboarding
     except Exception as e:
-        log.error(f"[Onboarding] Failed to complete: {e}")
+        logger.error(f"[Onboarding] Failed to complete: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to complete onboarding",
@@ -126,7 +129,7 @@ async def complete_onboarding(
 async def reset_onboarding(
     reset_data: OnboardingReset,
     db: Annotated[AsyncSession, Depends(get_async_db)],
-    current_user: Annotated[Users, Depends(get_current_user)],
+    current_user: Annotated[Auth.types.MinimalUserDict, Depends(get_current_user)],
 ):
     """
     Reset onboarding to start from beginning.
@@ -141,11 +144,12 @@ async def reset_onboarding(
                 detail="Confirmation required to reset onboarding",
             )
 
-        onboarding = await OnboardingService.reset_onboarding(db, current_user.id)
-        log.info(f"[Onboarding] User {current_user.id} reset onboarding")
+        user_id = UUID(current_user["identity"])
+        onboarding = await OnboardingService.reset_onboarding(db, user_id)
+        logger.info(f"[Onboarding] User {user_id} reset onboarding")
         return onboarding
     except Exception as e:
-        log.error(f"[Onboarding] Failed to reset: {e}")
+        logger.error(f"[Onboarding] Failed to reset: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to reset onboarding",
@@ -162,6 +166,7 @@ async def should_show_onboarding(
 
     Returns a boolean indicating whether the onboarding flow
     should be displayed. Returns false if not authenticated.
+    Only shows onboarding to organic signups (not invited users or admins).
     """
     # Return false if not authenticated (graceful degradation)
     if not current_user:
@@ -177,3 +182,36 @@ async def should_show_onboarding(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to check onboarding status",
         )
+
+
+@router.post("/marketing", response_model=OnboardingResponse, status_code=status.HTTP_200_OK)
+async def update_marketing_data(
+    marketing_data: OnboardingMarketingData,
+    db: Annotated[AsyncSession, Depends(get_async_db)],
+    current_user: Annotated[Auth.types.MinimalUserDict, Depends(get_current_user)],
+):
+    """
+    Update marketing data collected during onboarding.
+
+    Saves user's industry, role, goal, and acquisition channel.
+    """
+    try:
+        user_id = UUID(current_user["identity"])
+        onboarding = await OnboardingService.update_marketing_data(
+            db,
+            user_id,
+            user_industry=marketing_data.user_industry,
+            user_role=marketing_data.user_role,
+            user_goal=marketing_data.user_goal,
+            heard_from=marketing_data.heard_from,
+        )
+        logger.info(f"[Onboarding] Marketing data updated for user {user_id}")
+        return onboarding
+    except Exception as e:
+        logger.error(f"[Onboarding] Failed to update marketing data: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to update marketing data",
+        )
+
+

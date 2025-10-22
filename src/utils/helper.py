@@ -10,7 +10,7 @@ from bs4 import BeautifulSoup
 from crawl4ai import AsyncWebCrawler
 from crawl4ai.async_configs import BrowserConfig, CrawlerRunConfig, CacheMode
 from langchain_core.documents import Document
-from langchain.retrievers.multi_query import MultiQueryRetriever
+from langchain_classic.retrievers.multi_query import MultiQueryRetriever
 from pydantic import HttpUrl
 
 # === Project-specific imports ===

@@ -15,6 +15,7 @@ def render_subscription_created_email(
     billing_period: str,
     features: List[str],
     dashboard_url: str = "https://app.wrext.com/settings/billing",
+    customer_portal_url: str = None,
     frontend_url: str = "https://app.wrext.com"
 ) -> str:
     """
@@ -29,6 +30,7 @@ def render_subscription_created_email(
         billing_period: "monthly" or "yearly"
         features: List of key features included in the plan
         dashboard_url: URL to billing dashboard
+        customer_portal_url: Optional LemonSqueezy customer portal URL for easy subscription management
         frontend_url: Base frontend URL for branding
 
     Returns:
@@ -48,7 +50,7 @@ def render_subscription_created_email(
         <tr><td style="height: 8px;"></td></tr>
         """
 
-    email_html = compose_email([
+    email_content = [
         simple_header(),
         f"""
         <h1 style="color: #111827; font-size: 28px; font-weight: 700; margin: 0 0 16px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
@@ -97,12 +99,36 @@ def render_subscription_created_email(
         </table>
         """,
         primary_button("Go to Dashboard", dashboard_url),
-        """
+    ]
+
+    # Add customer portal button if URL is provided
+    if customer_portal_url:
+        email_content.append(f"""
+        <div style="margin: 24px 0;">
+            <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
+                <tr>
+                    <td align="center">
+                        <a href="{customer_portal_url}" style="display: inline-block; padding: 14px 32px; background-color: #6b7280; color: #ffffff; text-decoration: none; border-radius: 6px; font-weight: 600; font-size: 15px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
+                            Manage Subscription →
+                        </a>
+                    </td>
+                </tr>
+            </table>
+        </div>
+        """)
+
+    # Add footer note with portal mention if available
+    portal_text = " or customer portal" if customer_portal_url else ""
+    email_content.append(f"""
         <p style="color: #6b7280; font-size: 14px; line-height: 20px; margin: 32px 0 0 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
-            You can manage your subscription, update payment methods, and view invoices from your billing dashboard.
+            You can manage your subscription, update payment methods, and view invoices from your billing dashboard{portal_text}.
         </p>
-        """,
-        simple_footer()
-    ])
+        """)
+
+    # Add footer
+    email_content.append(simple_footer())
+
+    # Compose final email
+    email_html = compose_email(email_content)
 
     return email_html

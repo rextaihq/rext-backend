@@ -351,6 +351,58 @@ async def deactivate_account(
         # Store old status for audit
         old_status = db_user.status
 
+        # NEW: Check for active subscriptions
+        from src.api.models.subscription_models.subscriptions import UserSubscription
+        from src.services.subscription_service import SubscriptionService
+
+        subscriptions_result = await db.execute(
+            select(UserSubscription)
+            .where(
+                UserSubscription.user_id == user_id,
+                UserSubscription.status.in_(["active", "trialing"])
+            )
+        )
+        active_subs = subscriptions_result.scalars().all()
+
+        if active_subs and not deactivation_data.cancel_subscriptions:
+            # Return error with subscription details
+            subscription_details = [
+                {
+                    "subscription_id": str(sub.id),
+                    "plan_name": sub.plan.name if sub.plan else "Unknown",
+                    "status": sub.status,
+                    "current_period_end": sub.current_period_end.isoformat() if sub.current_period_end else None
+                }
+                for sub in active_subs
+            ]
+
+            return error(
+                message="You have active subscriptions. Please cancel them first or enable automatic cancellation.",
+                code=ErrorCode.VALIDATION_ERROR,
+                status_code=400,
+                severity=ErrorSeverity.MEDIUM,
+                context={"active_subscriptions": subscription_details},
+                request=request
+            )
+
+        # NEW: Auto-cancel subscriptions if requested
+        if active_subs and deactivation_data.cancel_subscriptions:
+            subscription_service = SubscriptionService(db)
+            canceled_count = 0
+            for sub in active_subs:
+                try:
+                    await subscription_service.cancel(
+                        user_id=user_id,
+                        reason="Account deactivation"
+                    )
+                    canceled_count += 1
+                    logger.info(f"Canceled subscription {sub.id} for user {user_id} during account deactivation")
+                except Exception as e:
+                    logger.error(f"Failed to cancel subscription {sub.id}: {e}")
+                    # Continue with other subscriptions
+
+            logger.info(f"Canceled {canceled_count} subscriptions for user {user_id} during deactivation")
+
         # Deactivate via service
         db_user = await service.deactivate_account(user_id)
 

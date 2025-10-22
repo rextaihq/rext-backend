@@ -54,6 +54,8 @@ class Users(Base, SerializableMixin):
     media = relationship("Media", back_populates="user", cascade="all, delete-orphan")
     oauth_accounts = relationship("OAuthAccount", back_populates="user", cascade="all, delete-orphan")
     onboarding = relationship("UserOnboarding", back_populates="user", uselist=False, cascade="all, delete-orphan")
+    discount_usages = relationship("DiscountUsage", back_populates="user", cascade="all, delete-orphan")
+    refunds = relationship("Refund", back_populates="user", cascade="all, delete-orphan")
 
     def to_dict(self, **kwargs):
         """Exclude sensitive fields from serialization"""

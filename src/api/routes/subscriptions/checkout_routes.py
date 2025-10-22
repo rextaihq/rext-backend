@@ -16,18 +16,23 @@ from src.api.database.async_database import get_async_db
 from src.api.security.dependencies import get_current_user
 from src.api.models.user_models.users import Users
 from src.api.models.subscription_models.plans import SubscriptionPlan
-from src.services.payment.provider_factory import get_payment_provider_singleton as get_payment_provider
+from src.providers.payment.provider_factory import get_payment_provider_singleton as get_payment_provider
 from src.services.usage_tracking_service import UsageTrackingService
 from src.config.payment_config import payment_settings
 from src.utils.response_utils import success
 from src.utils.route_decorators import db_transaction_handler
 from src.utils.logger import logger
+from src.api.middleware.rate_limiter import customer_portal_rate_limit
 
 
 router = APIRouter(
     prefix="/subscriptions",
     tags=["subscriptions", "checkout"]
 )
+
+# DEBUG: Verify this file is being loaded
+print("🔍 DEBUG: checkout_routes.py loaded at", __file__)
+print("🔍 DEBUG: create_checkout_session will use 'user' parameter")
 
 
 # ============================================================================
@@ -60,14 +65,14 @@ class PortalSessionResponse(BaseModel):
 async def create_checkout_session(
     request: Request,
     checkout_request: CheckoutSessionRequest,
-    current_user: dict = Depends(get_current_user),
+    user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_async_db)
 ):
     """
     Create checkout session with payment provider.
 
     This endpoint creates a checkout session for subscription purchase.
-    The actual checkout is handled by the payment provider (or mock provider in development).
+    The actual checkout is handled by LemonSqueezy payment provider.
 
     Request Body:
     - plan_id: UUID of the subscription plan
@@ -75,9 +80,9 @@ async def create_checkout_session(
 
     Returns:
     - session_id: Checkout session ID
-    - checkout_url: URL to redirect user for checkout
+    - checkout_url: URL to redirect user for LemonSqueezy checkout
     """
-    user_id = current_user.get("identity")
+    user_id = user.get("identity")
 
     # Get provider
     provider = get_payment_provider()
@@ -99,50 +104,54 @@ async def create_checkout_session(
             detail="This subscription plan is not available"
         )
 
-    # Get user
+    # Get user from database
     user_query = select(Users).where(Users.id == user_id)
     user_result = await db.execute(user_query)
-    user = user_result.scalar_one_or_none()
+    user_obj = user_result.scalar_one_or_none()
 
-    if not user:
+    if not user_obj:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="User not found"
         )
 
     # Get or create provider customer ID
-    if not user.provider_customer_id:
+    if not user_obj.provider_customer_id:
+        customer_name = f"{user_obj.first_name} {user_obj.last_name}".strip() or user_obj.display_name or user_obj.email
         customer_id = await provider.create_customer(
-            email=user.email,
-            name=user.display_name or user.email,
-            metadata={"user_id": str(user.id)}
+            email=user_obj.email,
+            name=customer_name,
+            metadata={"user_id": str(user_obj.id), "username": user_obj.username}
         )
-        user.provider_customer_id = customer_id
-        logger.info(f"Created payment provider customer for user {user.email}: {customer_id}")
+        user_obj.provider_customer_id = customer_id
+        logger.info(f"Created payment provider customer for user {user_obj.email}: {customer_id}")
     else:
-        customer_id = user.provider_customer_id
+        customer_id = user_obj.provider_customer_id
 
-    # Get price ID based on billing period
-    price_id = (
-        plan.provider_price_id_monthly
-        if checkout_request.billing_period == "monthly"
-        else plan.provider_price_id_yearly
-    )
+    # Get variant ID based on billing period (LemonSqueezy) or fall back to price ID
+    variant_id = None
+    if checkout_request.billing_period == "monthly":
+        variant_id = plan.lemonsqueezy_variant_id_monthly or plan.provider_price_id_monthly
+    elif checkout_request.billing_period == "yearly":
+        variant_id = plan.lemonsqueezy_variant_id_yearly or plan.provider_price_id_yearly
 
-    if not price_id:
-        # For mock provider or plans without provider price IDs, use plan ID
-        price_id = f"price_{plan.id}_{checkout_request.billing_period}"
-        logger.warning(f"Using generated price ID for plan {plan.name}: {price_id}")
+    if not variant_id:
+        # Plans must have LemonSqueezy variant IDs configured
+        logger.error(f"Plan {plan.name} missing LemonSqueezy variant ID for {checkout_request.billing_period}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Plan configuration error: Missing LemonSqueezy variant ID for {checkout_request.billing_period} billing"
+        )
 
     # Create checkout session
     try:
         session = await provider.create_checkout_session(
             customer_id=customer_id,
-            price_id=price_id,
+            price_id=variant_id,  # This is variant_id for LemonSqueezy
             success_url=payment_settings.payment_success_url,
             cancel_url=payment_settings.payment_cancel_url,
             metadata={
-                "user_id": str(user.id),
+                "user_id": str(user_obj.id),
                 "plan_id": str(plan.id),
                 "billing_period": checkout_request.billing_period
             }
@@ -170,8 +179,9 @@ async def create_checkout_session(
 @db_transaction_handler("create portal session", auto_commit=False)
 async def create_portal_session(
     request: Request,
-    current_user: dict = Depends(get_current_user),
-    db: AsyncSession = Depends(get_async_db)
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_async_db),
+    _rate_limit: None = Depends(customer_portal_rate_limit())
 ):
     """
     Create billing portal session.
@@ -182,14 +192,14 @@ async def create_portal_session(
     Returns:
     - portal_url: URL to redirect user to customer portal
     """
-    user_id = current_user.get("identity")
+    user_id = user.get("identity")
 
-    # Get user
+    # Get user from database
     user_query = select(Users).where(Users.id == user_id)
     user_result = await db.execute(user_query)
-    user = user_result.scalar_one_or_none()
+    user_obj = user_result.scalar_one_or_none()
 
-    if not user or not user.provider_customer_id:
+    if not user_obj or not user_obj.provider_customer_id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="No billing account found. Please subscribe to a plan first."
@@ -200,7 +210,7 @@ async def create_portal_session(
 
     try:
         portal_url = await provider.create_portal_session(
-            customer_id=user.provider_customer_id,
+            customer_id=user_obj.provider_customer_id,
             return_url=payment_settings.payment_success_url
         )
 
@@ -225,7 +235,7 @@ async def create_portal_session(
 @db_transaction_handler("get subscription status", auto_commit=False)
 async def get_subscription_status(
     request: Request,
-    current_user: dict = Depends(get_current_user),
+    user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_async_db)
 ):
     """
@@ -238,7 +248,7 @@ async def get_subscription_status(
 
     This is the main endpoint for the billing dashboard.
     """
-    user_id = current_user.get("identity")
+    user_id = user.get("identity")
 
     # Import here to avoid circular dependency
     from src.services.subscription_service import SubscriptionService
@@ -256,7 +266,8 @@ async def get_subscription_status(
             data={
                 "subscription": None,
                 "plan": None,
-                "usage": usage
+                "usage": usage,
+                "portal_url": None
             },
             message="No active subscription"
         )
@@ -264,11 +275,30 @@ async def get_subscription_status(
     # Get usage metrics
     usage = await usage_service.get_usage_metrics(user_id)
 
+    # Get user from database to check for customer ID
+    user_query = select(Users).where(Users.id == user_id)
+    user_result = await db.execute(user_query)
+    user_obj = user_result.scalar_one_or_none()
+
+    # Generate customer portal URL if customer exists
+    portal_url = None
+    if user_obj and user_obj.provider_customer_id:
+        try:
+            provider = get_payment_provider()
+            portal_url = await provider.create_portal_session(
+                customer_id=user_obj.provider_customer_id,
+                return_url=payment_settings.payment_success_url
+            )
+        except Exception as e:
+            logger.warning(f"Failed to generate portal URL: {str(e)}")
+            # Continue without portal URL - not critical
+
     return success(
         data={
             "subscription": subscription.to_dict(),
             "plan": subscription.plan.to_dict() if subscription.plan else None,
-            "usage": usage
+            "usage": usage,
+            "portal_url": portal_url
         },
         message="Subscription status retrieved successfully"
     )
@@ -278,7 +308,7 @@ async def get_subscription_status(
 @db_transaction_handler("get usage metrics", auto_commit=False)
 async def get_usage_metrics(
     request: Request,
-    current_user: dict = Depends(get_current_user),
+    user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_async_db)
 ):
     """
@@ -293,7 +323,7 @@ async def get_usage_metrics(
 
     Each metric includes used count, limit, and percentage.
     """
-    user_id = current_user.get("identity")
+    user_id = user.get("identity")
     usage_service = UsageTrackingService(db)
 
     usage = await usage_service.get_usage_metrics(user_id)
@@ -309,7 +339,7 @@ async def get_usage_metrics(
 async def cancel_subscription(
     request: Request,
     at_period_end: bool = True,
-    current_user: dict = Depends(get_current_user),
+    user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_async_db)
 ):
     """
@@ -322,7 +352,7 @@ async def cancel_subscription(
     Returns:
     - Updated subscription details
     """
-    user_id = current_user.get("identity")
+    user_id = user.get("identity")
 
     # Import here to avoid circular dependency
     from src.services.subscription_service import SubscriptionService
