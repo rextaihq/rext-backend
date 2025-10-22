@@ -1,20 +1,20 @@
 # Subscription System Architecture
 
-**Version:** 1.0
-**Last Updated:** 2025-10-12
-**Status:** Production Ready
+**Version:** 2.0
+**Last Updated:** 2025-10-21
+**Status:** Production Ready (LemonSqueezy Integrated)
 
 ---
 
 ## Overview
 
-The WREXT subscription system is built with a **payment provider-agnostic architecture**, allowing seamless switching between payment providers (LemonSqueezy, Paddle, FastSpring, Stripe) without modifying core business logic.
+The WREXT subscription system is built using **LemonSqueezy** as the payment processor, with a clean abstraction layer that separates payment processing from core business logic.
 
 ### Key Design Principles
 
 1. **Provider Abstraction** - All payment logic isolated behind a common interface
-2. **Business Logic Independence** - Subscription management works regardless of payment provider
-3. **Mock-First Development** - Complete testing without external dependencies
+2. **Business Logic Independence** - Subscription management works independently of payment provider details
+3. **Production-Ready Integration** - Complete LemonSqueezy integration with sandbox support
 4. **Usage-Based Enforcement** - Real-time limit checking at the route level
 5. **Data Consistency** - Single source of truth in WREXT database
 
@@ -22,19 +22,16 @@ The WREXT subscription system is built with a **payment provider-agnostic archit
 
 ## Architecture Components
 
-### 1. Payment Provider Abstraction Layer
+### 1. Payment Provider Layer
 
 **Location:** `src/providers/payment/`
 
 ```
 src/providers/payment/
 ├── base_provider.py          # Abstract interface (PaymentProvider)
-├── mock_provider.py          # Testing/development provider
 ├── provider_factory.py       # Factory pattern for provider selection
 └── providers/
-    ├── lemonsqueezy.py       # LemonSqueezy implementation (Plan 01B)
-    ├── paddle.py             # Paddle implementation (Plan 01B)
-    └── fastspring.py         # FastSpring implementation (Plan 01B)
+    └── lemonsqueezy.py       # LemonSqueezy implementation (Production)
 ```
 
 #### PaymentProvider Interface
@@ -83,10 +80,10 @@ class PaymentProvider(ABC):
 ```
 
 **Benefits:**
-- ✅ Swap providers by changing environment variable
-- ✅ Test entire subscription flow without payment provider account
-- ✅ Zero vendor lock-in
-- ✅ Consistent error handling across providers
+- ✅ Production-ready payment processing with LemonSqueezy
+- ✅ Sandbox mode for testing without real transactions
+- ✅ Clean abstraction for future provider changes if needed
+- ✅ Consistent error handling and webhook processing
 
 ---
 
@@ -401,40 +398,37 @@ ELSE:
 ### Environment Variables
 
 ```env
-# Payment Provider Selection
-PAYMENT_PROVIDER=mock  # mock, lemonsqueezy, paddle, fastspring
+# Payment Provider (only lemonsqueezy supported)
+PAYMENT_PROVIDER=lemonsqueezy
 
 # Generic Settings
 PAYMENT_CURRENCY=USD
-PAYMENT_SUCCESS_URL=http://localhost:3000/subscription/success
-PAYMENT_CANCEL_URL=http://localhost:3000/subscription/cancel
+PAYMENT_SUCCESS_URL=http://localhost:3000/checkout/success
+PAYMENT_CANCEL_URL=http://localhost:3000/pricing
 
-# Provider-Specific (loaded conditionally)
-# LemonSqueezy
-LEMONSQUEEZY_API_KEY=
-LEMONSQUEEZY_STORE_ID=
-LEMONSQUEEZY_WEBHOOK_SECRET=
-
-# Paddle
-PADDLE_VENDOR_ID=
-PADDLE_API_KEY=
-PADDLE_WEBHOOK_SECRET=
-
-# FastSpring
-FASTSPRING_USERNAME=
-FASTSPRING_PASSWORD=
-FASTSPRING_WEBHOOK_SECRET=
+# LemonSqueezy Configuration
+LEMONSQUEEZY_API_KEY=your_api_key
+LEMONSQUEEZY_STORE_ID=your_store_id
+LEMONSQUEEZY_WEBHOOK_SECRET=your_webhook_secret
+LEMONSQUEEZY_SANDBOX_MODE=true  # Set to false for production
 ```
 
-### Provider Selection
+### Provider Configuration
 
 **Location:** `src/config/payment_config.py`
 
 ```python
 from pydantic_settings import BaseSettings
+from typing import Literal
+
+PaymentProviderType = Literal["lemonsqueezy"]
 
 class PaymentSettings(BaseSettings):
-    payment_provider: str = "mock"  # Change here or via env var
+    payment_provider: PaymentProviderType = "lemonsqueezy"
+
+    lemonsqueezy_api_key: str = ""
+    lemonsqueezy_store_id: str = ""
+    lemonsqueezy_webhook_secret: str = ""
 
     class Config:
         env_file = ".env"
@@ -446,39 +440,38 @@ class PaymentSettings(BaseSettings):
 
 ### Unit Tests
 
-**Location:** `tests/unit/providers/payment/test_mock_provider.py`
+**Location:** `tests/unit/providers/payment/test_lemonsqueezy_provider.py`
 
-- ✅ 17 tests covering MockPaymentProvider
-- Customer CRUD operations
+- Customer creation and management
 - Checkout session creation
-- Subscription management
-- Webhook processing
-- Provider reset functionality
+- Subscription lifecycle management
+- Webhook signature verification
+- Error handling
 
-**Coverage:** 100% for payment provider abstraction
+**Coverage:** Comprehensive coverage of LemonSqueezy integration
 
 ### Integration Tests
 
-**Location:** `tests/integration/test_subscription_flows.py`
+**Location:** `tests/integration/`
 
-- Checkout flow end-to-end
-- Subscription creation and activation
-- Usage tracking and limits
-- Cancellation flows
-- Monthly usage reset
+- Complete checkout flows with LemonSqueezy sandbox
+- Webhook processing and subscription activation
+- Usage tracking and limit enforcement
+- Subscription upgrades and cancellations
 
 ### Manual Testing
 
-Use MockPaymentProvider for complete flow testing without external dependencies:
+Use LemonSqueezy sandbox mode for testing:
 
 ```bash
-# Set provider to mock
-export PAYMENT_PROVIDER=mock
+# Set sandbox mode
+export LEMONSQUEEZY_SANDBOX_MODE=true
+export PAYMENT_PROVIDER=lemonsqueezy
 
 # Start backend
 uvicorn src.api.server:app --reload
 
-# Test checkout (returns mock checkout URL)
+# Test checkout (returns LemonSqueezy checkout URL)
 curl -X POST http://localhost:2024/api/v1/subscriptions/checkout \
   -H "Authorization: Bearer <token>" \
   -H "Content-Type: application/json" \
@@ -487,56 +480,33 @@ curl -X POST http://localhost:2024/api/v1/subscriptions/checkout \
 
 ---
 
-## Migration Path
+## LemonSqueezy Integration Details
 
-### Adding a New Payment Provider
+### Supported Features
 
-1. **Create Provider Implementation**
-   ```python
-   # src/providers/payment/providers/new_provider.py
-   from src.providers.payment.base_provider import PaymentProvider
+1. **Checkout Sessions** - Create hosted checkout pages
+2. **Customer Management** - Automatic customer creation and updates
+3. **Subscription Lifecycle** - Full subscription management (create, update, cancel, resume)
+4. **Webhook Events** - 12 event types supported
+5. **Customer Portal** - Managed billing portal for customers
+6. **License Management** - Support for lifetime deals (LTD)
+7. **Sandbox Mode** - Testing without real transactions
 
-   class NewProvider(PaymentProvider):
-       def __init__(self):
-           self.api_key = payment_settings.new_provider_api_key
+### Webhook Events
 
-       async def create_customer(self, ...):
-           # Implement using provider's SDK
-           pass
-
-       # Implement all abstract methods
-   ```
-
-2. **Update Factory**
-   ```python
-   # src/providers/payment/provider_factory.py
-   def get_payment_provider() -> PaymentProvider:
-       if provider_name == "new_provider":
-           from .providers.new_provider import NewProvider
-           return NewProvider()
-   ```
-
-3. **Add Configuration**
-   ```python
-   # src/config/payment_config.py
-   class PaymentSettings(BaseSettings):
-       new_provider_api_key: str = ""
-       new_provider_webhook_secret: str = ""
-   ```
-
-4. **Test with Unit Tests**
-   ```python
-   # tests/unit/providers/payment/test_new_provider.py
-   # Follow same structure as test_mock_provider.py
-   ```
-
-5. **Update Environment**
-   ```env
-   PAYMENT_PROVIDER=new_provider
-   NEW_PROVIDER_API_KEY=your_key
-   ```
-
-**That's it!** No business logic changes required.
+Supported webhook events:
+- `subscription_created` - New recurring subscription
+- `subscription_updated` - Subscription plan/status change
+- `subscription_cancelled` - Subscription cancelled
+- `subscription_resumed` - Paused subscription resumed
+- `subscription_expired` - Subscription expired
+- `subscription_paused` - Subscription paused
+- `subscription_payment_success` - Payment successful
+- `subscription_payment_failed` - Payment failed
+- `subscription_payment_recovered` - Payment recovered after failure
+- `order_created` - One-time purchase (LTD)
+- `order_refunded` - Order refunded
+- `license_key_created` - License key generated
 
 ---
 
@@ -599,30 +569,29 @@ All subscription events logged with context:
 
 ---
 
-## Future Enhancements (Plan 01B+)
+## Future Enhancements
 
-- [ ] Real payment provider integration (LemonSqueezy/Paddle/FastSpring)
-- [ ] Customer portal customization
 - [ ] Coupon/promo code support
 - [ ] Usage-based billing
 - [ ] Tiered pricing within plans
-- [ ] Subscription analytics dashboard
+- [ ] Enhanced subscription analytics dashboard
 - [ ] Automated dunning management
 - [ ] Multi-currency support
+- [ ] Team/workspace-level subscriptions
 
 ---
 
 ## References
 
 - [Payment Provider Base Interface](../src/providers/payment/base_provider.py)
-- [Mock Provider Implementation](../src/providers/payment/mock_provider.py)
+- [LemonSqueezy Provider Implementation](../src/providers/payment/providers/lemonsqueezy.py)
 - [Usage Limiter Middleware](../src/api/middleware/usage_limiter.py)
 - [Subscription Service](../src/services/subscription_service.py)
 - [Usage Tracking Service](../src/services/usage_tracking_service.py)
-- [Plan 01A Implementation Document](../../plans/01A-subscription-core-infrastructure-plan.md)
+- [LemonSqueezy Integration Documentation](./LEMONSQUEEZY_PROVIDER_USAGE.md)
 
 ---
 
-**Document Version:** 1.0
-**Last Review:** 2025-10-12
-**Next Review:** After Plan 01B completion
+**Document Version:** 2.0
+**Last Review:** 2025-10-21
+**Next Review:** Quarterly

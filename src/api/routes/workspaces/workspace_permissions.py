@@ -8,11 +8,13 @@ These endpoints are critical for frontend permission checks in a multi-tenant en
 from typing import List, Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
+from langgraph_sdk import Auth
 
 from src.api.database.async_database import get_async_db
 from src.api.security.dependencies import get_current_user
+from src.services.workspace_permission_service import WorkspacePermissionService
 from src.utils.rbac_utils import (
     check_permission,
     get_user_permissions,
@@ -20,9 +22,7 @@ from src.utils.rbac_utils import (
 )
 from src.utils.response_utils import success
 from src.utils.workspace_utils import async_get_workspace_id_from_identifier
-from src.api.lib.logger import auto_logger
-
-logger = auto_logger()
+from src.utils.logger import logger
 
 router = APIRouter(
     prefix="",
@@ -40,10 +40,12 @@ async def get_my_workspace_permissions(
     Get current user's permissions in a specific workspace.
 
     This endpoint returns all permissions the authenticated user has within
-    the specified workspace, including both workspace-scoped and global permissions.
+    the specified workspace, using the new WorkspacePermissionService.
 
     **Multi-Tenancy**: This is critical for proper permission checking in a multi-tenant
     application. Users may have different permissions in different workspaces.
+
+    **Permission Format**: Uses dot notation (e.g., "content.create", "topic.read")
 
     Args:
         workspace_id: Workspace UUID or slug
@@ -53,15 +55,13 @@ async def get_my_workspace_permissions(
     Returns:
         {
             "workspace_id": "uuid",
-            "roles": [
-                {"name": "editor", "workspace_scoped": true},
-                {"name": "admin", "workspace_scoped": false}
-            ],
+            "workspace_slug": "slug",
+            "user_role": "workspace_owner",
             "permissions": [
-                "content:create",
-                "content:read",
-                "content:update",
-                "topic:read"
+                "content.create",
+                "content.read",
+                "content.update",
+                "topic.read"
             ]
         }
 
@@ -83,39 +83,23 @@ async def get_my_workspace_permissions(
         except ValueError:
             workspace_uuid = await async_get_workspace_id_from_identifier(db, workspace_id)
 
-        # Get user's permissions in this workspace
-        permissions = await get_user_permissions(db, user_id, workspace_uuid)
-
-        # Get user's roles in this workspace
-        roles_with_context = await get_user_roles(db, user_id, workspace_uuid)
-
-        # Format roles with workspace scope indicator
-        roles = [
-            {
-                "name": role.name,
-                "display_name": role.display_name,
-                "workspace_scoped": ws_id is not None,
-                "workspace_id": str(ws_id) if ws_id else None
-            }
-            for role, ws_id in roles_with_context
-        ]
+        # Use new WorkspacePermissionService for consistent permission loading
+        result = await WorkspacePermissionService.get_user_workspace_permissions(
+            db, user_id, workspace_uuid
+        )
 
         logger.info(
             f"Retrieved workspace permissions for user {user_id} in workspace {workspace_uuid}",
             extra={
                 "user_id": str(user_id),
                 "workspace_id": str(workspace_uuid),
-                "permission_count": len(permissions),
-                "role_count": len(roles)
+                "permission_count": len(result["permissions"]),
+                "user_role": result["user_role"]
             }
         )
 
         return success(
-            data={
-                "workspace_id": str(workspace_uuid),
-                "roles": roles,
-                "permissions": list(permissions)
-            },
+            data=result,
             message="Workspace permissions retrieved successfully"
         )
 
@@ -148,27 +132,30 @@ async def check_workspace_permission(
     This endpoint provides a quick permission check without retrieving all permissions.
     Useful for conditional API calls or real-time permission verification.
 
+    **Permission Format**: Supports both dot notation (content.delete) and colon notation (content:delete)
+    for backward compatibility. Dot notation is preferred.
+
     Args:
         workspace_id: Workspace UUID or slug
-        permission: Permission to check (e.g., "content:delete", "workspace:manage_settings")
+        permission: Permission to check (e.g., "content.delete", "workspace.manage_settings")
         user: Current authenticated user (from JWT)
         db: Database session
 
     Returns:
         {
             "has_permission": true,
-            "permission": "content:delete",
+            "permission": "content.delete",
             "workspace_id": "uuid"
         }
 
     Example:
-        GET /api/v1/workspaces/abc-123/permissions/check?permission=content:delete
+        GET /api/v1/workspaces/abc-123/permissions/check?permission=content.delete
         Authorization: Bearer <token>
 
     Frontend Usage:
         // Before performing a sensitive action
         const { data } = await fetch(
-            '/workspaces/abc-123/permissions/check?permission=content:delete'
+            '/workspaces/abc-123/permissions/check?permission=content.delete'
         );
         if (data.has_permission) {
             // Allow action
@@ -183,8 +170,10 @@ async def check_workspace_permission(
         except ValueError:
             workspace_uuid = await async_get_workspace_id_from_identifier(db, workspace_id)
 
-        # Check permission
-        has_permission = await check_permission(db, user_id, permission, workspace_uuid)
+        # Use new WorkspacePermissionService
+        has_permission = await WorkspacePermissionService.check_user_permission(
+            db, user_id, workspace_uuid, permission
+        )
 
         logger.debug(
             f"Permission check: user={user_id}, permission={permission}, "

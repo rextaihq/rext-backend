@@ -1,0 +1,28 @@
+{
+  "test_date": "2025-10-21T06:29:52.468768",
+  "base_url": "http://localhost:2024",
+  "test_email": "lifecycle_test_1761010075@example.com",
+  "total": 7,
+  "passed": 0,
+  "failed": 4,
+  "skipped": 3,
+  "pass_rate": 0.0,
+  "failures": [
+    {
+      "scenario": "trial_creation",
+      "reason": "Subscription not created"
+    },
+    {
+      "scenario": "upgrade",
+      "reason": "No active subscription"
+    },
+    {
+      "scenario": "downgrade",
+      "reason": "No active subscription"
+    },
+    {
+      "scenario": "cancel_at_period_end",
+      "reason": "No active subscription"
+    }
+  ]
+}

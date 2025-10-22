@@ -86,6 +86,13 @@ class UserSubscriptionResponse(BaseModel):
     current_api_calls: int = Field(..., description="Current API calls this period")
     created_at: str = Field(..., description="Creation timestamp")
 
+    # LemonSqueezy integration fields
+    lemonsqueezy_subscription_id: Optional[str] = Field(None, description="LemonSqueezy subscription ID")
+    lemonsqueezy_customer_id: Optional[str] = Field(None, description="LemonSqueezy customer ID")
+    renews_at: Optional[str] = Field(None, description="Next renewal date")
+    ends_at: Optional[str] = Field(None, description="Subscription end date")
+    current_period_end: Optional[str] = Field(None, description="Current billing period end date (alias for renews_at)")
+
     class Config:
         json_schema_extra = {
             "example": {
@@ -101,6 +108,11 @@ class UserSubscriptionResponse(BaseModel):
                 "trial_end_date": "2025-10-15T00:00:00Z",
                 "cancelled_at": None,
                 "current_api_calls": 2500,
-                "created_at": "2025-10-01T00:00:00Z"
+                "created_at": "2025-10-01T00:00:00Z",
+                "lemonsqueezy_subscription_id": "12345",
+                "lemonsqueezy_customer_id": "67890",
+                "renews_at": "2025-11-01T00:00:00Z",
+                "ends_at": None,
+                "current_period_end": "2025-11-01T00:00:00Z"
             }
         }

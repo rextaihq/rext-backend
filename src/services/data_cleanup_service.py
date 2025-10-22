@@ -16,6 +16,8 @@ from src.api.models.audit_models.audit_logs import AuditLog
 from src.api.models.email_models.email_log import EmailLog
 from src.api.models.email_models.email_event import EmailEvent
 from src.api.models.user_models.user_sessions import UserSession
+from src.api.models.subscription_models.webhooks import WebhookEvent
+from src.api.models.subscription_models.subscriptions import UserSubscription
 from src.config.cleanup_config import cleanup_config
 from src.utils.logger import logger
 
@@ -316,6 +318,144 @@ class DataCleanupService:
             )
             return record_count
 
+    async def cleanup_webhook_events(self, retention_days: Optional[int] = None) -> int:
+        """
+        Clean up old webhook events (processed events older than retention period).
+
+        Args:
+            retention_days: Number of days to retain (default 90 days)
+
+        Returns:
+            Number of records deleted (or would be deleted in dry-run mode)
+        """
+        retention_days = retention_days or 90  # Default 90 days for webhook events
+        cutoff_date = datetime.now(timezone.utc) - timedelta(days=retention_days)
+
+        logger.info(
+            f"{'[DRY RUN] ' if self.dry_run else ''}Cleaning processed webhook events older than {cutoff_date.isoformat()}",
+            extra={"retention_days": retention_days, "cutoff_date": cutoff_date.isoformat()}
+        )
+
+        # Count records to be deleted (only processed events)
+        count_result = await self.db.execute(
+            select(func.count(WebhookEvent.id))
+            .where(
+                WebhookEvent.created_at < cutoff_date,
+                WebhookEvent.processed == True
+            )
+        )
+        record_count = count_result.scalar()
+
+        if record_count == 0:
+            logger.info("No webhook events to clean up")
+            return 0
+
+        if not self.dry_run:
+            deleted_total = 0
+            batch_size = cleanup_config.CLEANUP_BATCH_SIZE
+
+            while True:
+                result = await self.db.execute(
+                    delete(WebhookEvent)
+                    .where(
+                        WebhookEvent.created_at < cutoff_date,
+                        WebhookEvent.processed == True
+                    )
+                    .execution_options(synchronize_session=False)
+                    .returning(WebhookEvent.id)
+                    .limit(batch_size)
+                )
+                deleted_batch = len(result.fetchall())
+
+                if deleted_batch == 0:
+                    break
+
+                deleted_total += deleted_batch
+                await self.db.commit()
+
+                logger.debug(f"Deleted batch of {deleted_batch} webhook events (total: {deleted_total})")
+
+                if deleted_batch < batch_size:
+                    break
+
+            logger.info(
+                f"Deleted {deleted_total} processed webhook events",
+                extra={"deleted_count": deleted_total, "retention_days": retention_days}
+            )
+            return deleted_total
+        else:
+            logger.info(
+                f"[DRY RUN] Would delete {record_count} processed webhook events",
+                extra={"would_delete": record_count, "retention_days": retention_days}
+            )
+            return record_count
+
+    async def anonymize_cancelled_subscriptions(self, retention_days: Optional[int] = None) -> int:
+        """
+        Anonymize user_id from cancelled/expired subscriptions older than retention period.
+        Keeps subscription data for financial records but removes link to user.
+
+        NOTE: This does NOT delete subscriptions (required for 7-year financial record retention).
+        It only anonymizes them by setting user_id to NULL.
+
+        Args:
+            retention_days: Number of days to retain user link (default 90 days after cancellation)
+
+        Returns:
+            Number of records anonymized (or would be anonymized in dry-run mode)
+        """
+        retention_days = retention_days or 90  # Default 90 days after cancellation
+        cutoff_date = datetime.now(timezone.utc) - timedelta(days=retention_days)
+
+        logger.info(
+            f"{'[DRY RUN] ' if self.dry_run else ''}Anonymizing cancelled subscriptions older than {cutoff_date.isoformat()}",
+            extra={"retention_days": retention_days, "cutoff_date": cutoff_date.isoformat()}
+        )
+
+        # Count records to be anonymized (cancelled/expired subscriptions with user_id still set)
+        count_result = await self.db.execute(
+            select(func.count(UserSubscription.id))
+            .where(
+                UserSubscription.updated_at < cutoff_date,
+                UserSubscription.status.in_(["cancelled", "expired"]),
+                UserSubscription.user_id.isnot(None)
+            )
+        )
+        record_count = count_result.scalar()
+
+        if record_count == 0:
+            logger.info("No cancelled subscriptions to anonymize")
+            return 0
+
+        if not self.dry_run:
+            # Anonymize by setting user_id to NULL (keep subscription for financial records)
+            from sqlalchemy import update
+
+            result = await self.db.execute(
+                update(UserSubscription)
+                .where(
+                    UserSubscription.updated_at < cutoff_date,
+                    UserSubscription.status.in_(["cancelled", "expired"]),
+                    UserSubscription.user_id.isnot(None)
+                )
+                .values(user_id=None)
+                .returning(UserSubscription.id)
+            )
+            anonymized_count = len(result.fetchall())
+            await self.db.commit()
+
+            logger.info(
+                f"Anonymized {anonymized_count} cancelled subscriptions (user_id set to NULL)",
+                extra={"anonymized_count": anonymized_count, "retention_days": retention_days}
+            )
+            return anonymized_count
+        else:
+            logger.info(
+                f"[DRY RUN] Would anonymize {record_count} cancelled subscriptions",
+                extra={"would_anonymize": record_count, "retention_days": retention_days}
+            )
+            return record_count
+
     async def cleanup_all(self) -> Dict[str, int]:
         """
         Run all cleanup tasks.
@@ -330,12 +470,14 @@ class DataCleanupService:
             "email_logs": await self.cleanup_email_logs(),
             "email_events": await self.cleanup_email_events(),
             "user_sessions": await self.cleanup_inactive_sessions(),
+            "webhook_events": await self.cleanup_webhook_events(),
+            "cancelled_subscriptions_anonymized": await self.anonymize_cancelled_subscriptions(),
         }
 
         total_deleted = sum(results.values())
 
         logger.info(
-            f"{'[DRY RUN] ' if self.dry_run else ''}Data cleanup completed: {total_deleted} total records {'would be ' if self.dry_run else ''}deleted",
+            f"{'[DRY RUN] ' if self.dry_run else ''}Data cleanup completed: {total_deleted} total records {'would be ' if self.dry_run else ''}deleted/anonymized",
             extra={"results": results, "total": total_deleted}
         )
 

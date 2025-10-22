@@ -266,26 +266,36 @@ class AuthService:
         db_user.login_count = (db_user.login_count or 0) + 1
         await self.db.flush()
 
-        # Get roles and permissions
-        role_names = [ur.role.name for ur in db_user.user_roles if ur.is_primary]
+        # Get GLOBAL roles only (workspace_id is NULL and is_primary is True)
+        # These are platform-level roles: super_admin, admin, user
+        global_role_names = [
+            ur.role.name
+            for ur in db_user.user_roles
+            if ur.workspace_id is None and ur.is_primary
+        ]
 
+        # Get GLOBAL permissions only (from global roles)
+        # These are platform-level permissions: user.*, workspace.create, subscription.*, etc.
+        # Workspace-specific permissions (topic.*, content.*, etc.) are loaded dynamically per workspace
         result = await self.db.execute(
             select(Permission.name)
             .join(RolePermission, RolePermission.permission_id == Permission.id)
             .join(UserRole, UserRole.role_id == RolePermission.role_id)
             .where(UserRole.user_id == db_user.id)
-            .where(UserRole.workspace_id == None)  # Global permissions only
+            .where(UserRole.workspace_id == None)  # Only global role assignments
+            .where(UserRole.is_primary == True)     # Only primary roles
             .distinct()
         )
-        permissions = [row[0] for row in result.all()]
+        global_permissions = [row[0] for row in result.all()]
 
-        # Prepare token data
+        # Prepare token data with ONLY global/platform permissions
+        # Workspace permissions will be loaded separately via /workspaces/{id}/permissions endpoint
         token_data = {
             "id": str(db_user.id),
             "username": db_user.username,
             "email": db_user.email,
-            "roles": role_names,
-            "permissions": permissions
+            "roles": global_role_names,
+            "permissions": global_permissions  # Only platform-level permissions
         }
 
         # Generate tokens
@@ -322,8 +332,8 @@ class AuthService:
             "access_token": access_token,
             "refresh_token": refresh_token,
             "token_type": "bearer",
-            "permissions": permissions,  # Include permissions for route response
-            "roles": role_names  # Include roles for route response
+            "permissions": global_permissions,  # Include permissions for route response
+            "roles": global_role_names  # Include roles for route response
         }
 
         return db_user, tokens
@@ -478,26 +488,32 @@ class AuthService:
                 context={"status": db_user.status}
             )
 
-        # Get current roles and permissions
-        role_names = [ur.role.name for ur in db_user.user_roles if ur.is_primary]
+        # Get GLOBAL roles only (workspace_id is NULL and is_primary is True)
+        global_role_names = [
+            ur.role.name
+            for ur in db_user.user_roles
+            if ur.workspace_id is None and ur.is_primary
+        ]
 
+        # Get GLOBAL permissions only (from global roles)
         result = await self.db.execute(
             select(Permission.name)
             .join(RolePermission, RolePermission.permission_id == Permission.id)
             .join(UserRole, UserRole.role_id == RolePermission.role_id)
             .where(UserRole.user_id == db_user.id)
-            .where(UserRole.workspace_id == None)
+            .where(UserRole.workspace_id == None)  # Only global role assignments
+            .where(UserRole.is_primary == True)     # Only primary roles
             .distinct()
         )
-        permissions = [row[0] for row in result.all()]
+        global_permissions = [row[0] for row in result.all()]
 
-        # Create new token pair
+        # Create new token pair with ONLY global permissions
         token_data = {
             "id": str(db_user.id),
             "username": db_user.username,
             "email": db_user.email,
-            "roles": role_names,
-            "permissions": permissions
+            "roles": global_role_names,
+            "permissions": global_permissions
         }
         new_access_token = create_access_token(data=token_data)
         new_refresh_token = create_refresh_token(data=token_data)

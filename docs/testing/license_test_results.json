@@ -1,0 +1,169 @@
+{
+  "test_run": {
+    "timestamp": "2025-10-21T10:14:21.098183",
+    "total": 16,
+    "passed": 3,
+    "failed": 13,
+    "pass_rate": 18.75
+  },
+  "configuration": {
+    "product_id": "668197",
+    "variant_id": "1049956",
+    "activation_limit": 5,
+    "backend_url": "http://localhost:2024"
+  },
+  "results": [
+    {
+      "name": "Login",
+      "passed": true,
+      "message": "Logged in as mobeen@revnix.com",
+      "details": {
+        "user_id": "54048b28-3012-487c-8479-1ca7ab5453c6"
+      },
+      "timestamp": "2025-10-21T10:14:09.400384"
+    },
+    {
+      "name": "Create Checkout Session",
+      "passed": true,
+      "message": "Checkout URL created successfully",
+      "details": {
+        "checkout_url": "https://wrext.lemonsqueezy.com/checkout/custom/0bccd5b1-3d99-42f5-82ca-3cacef97304b?signature=26556a03c9778ded7cc072f6401017e1ece8e0d582fd8f67609b46f9ca68cb6f",
+        "product_id": "668197",
+        "variant_id": "1049956",
+        "price": "$999.99"
+      },
+      "timestamp": "2025-10-21T10:14:10.066974"
+    },
+    {
+      "name": "License Created in Database",
+      "passed": true,
+      "message": "Found 1 license(s) in database",
+      "details": {
+        "license_key": "pending-6649333",
+        "license_id": "4390fe1a-07e4-41df-9826-d88e10ca0e1d",
+        "product_name": "License 1",
+        "status": "active",
+        "activation_limit": null,
+        "activation_count": 0
+      },
+      "timestamp": "2025-10-21T10:14:20.110237"
+    },
+    {
+      "name": "License Validation",
+      "passed": false,
+      "message": "Validation failed: 500",
+      "details": {
+        "response": "{\"success\":false,\"meta\":{\"request_id\":\"req_1761041660_e2847953\",\"timestamp\":\"2025-10-21T10:14:20.771207Z\",\"processing_time_ms\":null,\"version\":\"1.0\",\"server_id\":null},\"data\":null,\"error\":{\"code\":\"internal_server_error\",\"message\":\"Failed to validate license key\",\"severity\":\"high\",\"status_code\":500,\"context\":{\"error_details\":\"400: License validation failed: LemonSqueezy API Error (404): Unknown error\",\"error_type\":\"HTTPException\",\"operation\":\"validate license key\"}}}"
+      },
+      "timestamp": "2025-10-21T10:14:20.775424"
+    },
+    {
+      "name": "Activate License (Test Device 1)",
+      "passed": false,
+      "message": "Activation failed: 403",
+      "details": {
+        "response": "{\"success\":false,\"meta\":{\"request_id\":\"req_1761041660_9a96bbff\",\"timestamp\":\"2025-10-21T10:14:20.797831\",\"processing_time_ms\":null,\"version\":\"1.0\",\"server_id\":null},\"data\":null,\"error\":{\"code\":\"forbidden\",\"message\":\"You do not own this license\",\"severity\":\"medium\",\"status_code\":403,\"context\":{\"required_permission\":\"license.activate\"}}}"
+      },
+      "timestamp": "2025-10-21T10:14:20.804884"
+    },
+    {
+      "name": "Activate License (Test Device 2)",
+      "passed": false,
+      "message": "Activation failed: 403",
+      "details": {
+        "response": "{\"success\":false,\"meta\":{\"request_id\":\"req_1761041660_dbd5dbc0\",\"timestamp\":\"2025-10-21T10:14:20.824502\",\"processing_time_ms\":null,\"version\":\"1.0\",\"server_id\":null},\"data\":null,\"error\":{\"code\":\"forbidden\",\"message\":\"You do not own this license\",\"severity\":\"medium\",\"status_code\":403,\"context\":{\"required_permission\":\"license.activate\"}}}"
+      },
+      "timestamp": "2025-10-21T10:14:20.830862"
+    },
+    {
+      "name": "Activate License (Test Device 3)",
+      "passed": false,
+      "message": "Activation failed: 403",
+      "details": {
+        "response": "{\"success\":false,\"meta\":{\"request_id\":\"req_1761041660_62adad36\",\"timestamp\":\"2025-10-21T10:14:20.848982\",\"processing_time_ms\":null,\"version\":\"1.0\",\"server_id\":null},\"data\":null,\"error\":{\"code\":\"forbidden\",\"message\":\"You do not own this license\",\"severity\":\"medium\",\"status_code\":403,\"context\":{\"required_permission\":\"license.activate\"}}}"
+      },
+      "timestamp": "2025-10-21T10:14:20.854704"
+    },
+    {
+      "name": "Activate License (Test Device 1)",
+      "passed": false,
+      "message": "Activation failed: 403",
+      "details": {
+        "response": "{\"success\":false,\"meta\":{\"request_id\":\"req_1761041660_dc53da91\",\"timestamp\":\"2025-10-21T10:14:20.873111\",\"processing_time_ms\":null,\"version\":\"1.0\",\"server_id\":null},\"data\":null,\"error\":{\"code\":\"forbidden\",\"message\":\"You do not own this license\",\"severity\":\"medium\",\"status_code\":403,\"context\":{\"required_permission\":\"license.activate\"}}}"
+      },
+      "timestamp": "2025-10-21T10:14:20.878707"
+    },
+    {
+      "name": "Activate License (Test Device 2)",
+      "passed": false,
+      "message": "Activation failed: 403",
+      "details": {
+        "response": "{\"success\":false,\"meta\":{\"request_id\":\"req_1761041660_447c5018\",\"timestamp\":\"2025-10-21T10:14:20.897691\",\"processing_time_ms\":null,\"version\":\"1.0\",\"server_id\":null},\"data\":null,\"error\":{\"code\":\"forbidden\",\"message\":\"You do not own this license\",\"severity\":\"medium\",\"status_code\":403,\"context\":{\"required_permission\":\"license.activate\"}}}"
+      },
+      "timestamp": "2025-10-21T10:14:20.903835"
+    },
+    {
+      "name": "Activate License (Test Device 3)",
+      "passed": false,
+      "message": "Activation failed: 403",
+      "details": {
+        "response": "{\"success\":false,\"meta\":{\"request_id\":\"req_1761041660_c93e7e4c\",\"timestamp\":\"2025-10-21T10:14:20.920751\",\"processing_time_ms\":null,\"version\":\"1.0\",\"server_id\":null},\"data\":null,\"error\":{\"code\":\"forbidden\",\"message\":\"You do not own this license\",\"severity\":\"medium\",\"status_code\":403,\"context\":{\"required_permission\":\"license.activate\"}}}"
+      },
+      "timestamp": "2025-10-21T10:14:20.926751"
+    },
+    {
+      "name": "Activate License (Test Device 4)",
+      "passed": false,
+      "message": "Activation failed: 403",
+      "details": {
+        "response": "{\"success\":false,\"meta\":{\"request_id\":\"req_1761041660_343f243c\",\"timestamp\":\"2025-10-21T10:14:20.944577\",\"processing_time_ms\":null,\"version\":\"1.0\",\"server_id\":null},\"data\":null,\"error\":{\"code\":\"forbidden\",\"message\":\"You do not own this license\",\"severity\":\"medium\",\"status_code\":403,\"context\":{\"required_permission\":\"license.activate\"}}}"
+      },
+      "timestamp": "2025-10-21T10:14:20.949907"
+    },
+    {
+      "name": "Activate License (Test Device 5)",
+      "passed": false,
+      "message": "Activation failed: 403",
+      "details": {
+        "response": "{\"success\":false,\"meta\":{\"request_id\":\"req_1761041660_207f08dd\",\"timestamp\":\"2025-10-21T10:14:20.979615\",\"processing_time_ms\":null,\"version\":\"1.0\",\"server_id\":null},\"data\":null,\"error\":{\"code\":\"forbidden\",\"message\":\"You do not own this license\",\"severity\":\"medium\",\"status_code\":403,\"context\":{\"required_permission\":\"license.activate\"}}}"
+      },
+      "timestamp": "2025-10-21T10:14:20.986915"
+    },
+    {
+      "name": "Activation Limit Enforcement",
+      "passed": false,
+      "message": "Should have rejected activation (limit: 5), got 403",
+      "details": {
+        "response": "{\"success\":false,\"meta\":{\"request_id\":\"req_1761041660_0d06f840\",\"timestamp\":\"2025-10-21T10:14:21.007187\",\"processing_time_ms\":null,\"version\":\"1.0\",\"server_id\":null},\"data\":null,\"error\":{\"code\":\"forbidden\",\"message\":\"You do not own this license\",\"severity\":\"medium\",\"status_code\":403,\"context\":{\"required_permission\":\"license.activate\"}}}"
+      },
+      "timestamp": "2025-10-21T10:14:21.013908"
+    },
+    {
+      "name": "Deactivate License (test-device-1)",
+      "passed": false,
+      "message": "Deactivation failed: 403",
+      "details": {
+        "response": "{\"success\":false,\"meta\":{\"request_id\":\"req_1761041661_51007248\",\"timestamp\":\"2025-10-21T10:14:21.037311\",\"processing_time_ms\":null,\"version\":\"1.0\",\"server_id\":null},\"data\":null,\"error\":{\"code\":\"forbidden\",\"message\":\"You do not own this license\",\"severity\":\"medium\",\"status_code\":403,\"context\":{\"required_permission\":\"license.deactivate\"}}}"
+      },
+      "timestamp": "2025-10-21T10:14:21.046325"
+    },
+    {
+      "name": "Deactivate License (test-device-2)",
+      "passed": false,
+      "message": "Deactivation failed: 403",
+      "details": {
+        "response": "{\"success\":false,\"meta\":{\"request_id\":\"req_1761041661_3edd5a22\",\"timestamp\":\"2025-10-21T10:14:21.065532\",\"processing_time_ms\":null,\"version\":\"1.0\",\"server_id\":null},\"data\":null,\"error\":{\"code\":\"forbidden\",\"message\":\"You do not own this license\",\"severity\":\"medium\",\"status_code\":403,\"context\":{\"required_permission\":\"license.deactivate\"}}}"
+      },
+      "timestamp": "2025-10-21T10:14:21.071730"
+    },
+    {
+      "name": "List License Activations",
+      "passed": false,
+      "message": "Failed to list activations: 403",
+      "details": {
+        "response": "{\"success\":false,\"meta\":{\"request_id\":\"req_1761041661_6fda4ae6\",\"timestamp\":\"2025-10-21T10:14:21.091975\",\"processing_time_ms\":null,\"version\":\"1.0\",\"server_id\":null},\"data\":null,\"error\":{\"code\":\"forbidden\",\"message\":\"You do not own this license\",\"severity\":\"medium\",\"status_code\":403,\"context\":{\"required_permission\":\"license.view\"}}}"
+      },
+      "timestamp": "2025-10-21T10:14:21.098014"
+    }
+  ]
+}

@@ -9,7 +9,7 @@ This script verifies that essential system data has been seeded correctly:
 
 Does NOT verify test users or workspaces (those should not exist in production)
 """
-import psycopg2
+import psycopg
 import os
 from dotenv import load_dotenv
 
@@ -20,7 +20,7 @@ db_url = os.getenv("DATABASE_URL") or os.getenv("POSTGRES_URI_CUSTOM")
 
 # Parse connection string
 if db_url and db_url.startswith("postgresql://"):
-    conn = psycopg2.connect(db_url)
+    conn = psycopg.connect(db_url)
     cursor = conn.cursor()
 
     print("\n" + "="*80)

@@ -1,7 +1,7 @@
 """Onboarding schemas."""
 
 from datetime import datetime
-from typing import List
+from typing import List, Optional
 from uuid import UUID
 
 from pydantic import BaseModel, Field
@@ -10,8 +10,17 @@ from pydantic import BaseModel, Field
 class OnboardingStepUpdate(BaseModel):
     """Schema for updating onboarding step."""
 
-    step: int = Field(..., ge=0, le=5, description="Step number (0-5)")
+    step: int = Field(..., ge=0, le=1, description="Step number (0-1)")
     action: str = Field(..., description="Action: complete, skip, or set_current")
+
+
+class OnboardingMarketingData(BaseModel):
+    """Schema for marketing data collected during onboarding."""
+
+    user_industry: Optional[str] = Field(None, max_length=100, description="User's industry")
+    user_role: Optional[str] = Field(None, max_length=100, description="User's role")
+    user_goal: Optional[str] = Field(None, description="User's primary goal")
+    heard_from: Optional[str] = Field(None, max_length=100, description="How user heard about us")
 
 
 class OnboardingResponse(BaseModel):
@@ -23,6 +32,14 @@ class OnboardingResponse(BaseModel):
     current_step: int
     completed_steps: List[int]
     skipped_steps: List[int]
+
+    # Marketing data
+    user_industry: Optional[str]
+    user_role: Optional[str]
+    user_goal: Optional[str]
+    heard_from: Optional[str]
+
+    # Timestamps
     started_at: datetime
     completed_at: datetime | None
     created_at: datetime
@@ -44,44 +61,16 @@ class OnboardingReset(BaseModel):
 ONBOARDING_STEPS = [
     {
         "id": 0,
-        "name": "welcome",
-        "title": "Welcome to WREXT",
-        "description": "Learn what WREXT can do for you",
+        "name": "marketing_questions",
+        "title": "Tell Us About Yourself",
+        "description": "Help us personalize your experience",
         "required": True,
     },
     {
         "id": 1,
-        "name": "create_workspace",
-        "title": "Create Your First Workspace",
-        "description": "Set up a workspace for your team",
-        "required": True,
-    },
-    {
-        "id": 2,
-        "name": "invite_team",
-        "title": "Invite Your Team",
-        "description": "Add team members to collaborate",
-        "required": False,
-    },
-    {
-        "id": 3,
-        "name": "upload_knowledge",
-        "title": "Upload Knowledge Base",
-        "description": "Add your first knowledge base",
-        "required": False,
-    },
-    {
-        "id": 4,
-        "name": "generate_content",
-        "title": "Generate Content",
-        "description": "Create your first AI-generated content",
-        "required": False,
-    },
-    {
-        "id": 5,
         "name": "complete",
         "title": "You're All Set!",
-        "description": "Explore WREXT and start creating",
+        "description": "Start creating amazing content",
         "required": True,
     },
 ]
