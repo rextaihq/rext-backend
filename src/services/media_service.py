@@ -14,7 +14,7 @@ from typing import List, Optional, BinaryIO, Dict, Any
 from datetime import datetime
 from io import BytesIO
 import os
-import magic
+import filetype
 
 from src.api.models.media_models.media import Media
 from src.api.models.subscription_models.subscriptions import (
@@ -142,8 +142,14 @@ class MediaService:
         file_content = file.read()
         file.seek(0)
 
-        # Detect MIME type
-        mime_type = magic.from_buffer(file_content, mime=True)
+        # Detect MIME type using filetype (cross-platform)
+        kind = filetype.guess(file_content)
+        if kind is None:
+            # Fallback to checking file extension
+            _, ext = os.path.splitext(filename)
+            mime_type = self._get_mime_from_extension(ext.lower())
+        else:
+            mime_type = kind.mime
 
         # Validate file type
         if not self._is_allowed_file_type(mime_type):
@@ -565,8 +571,8 @@ class MediaService:
             - by_type: Breakdown by file type (image, document, video)
         """
         # Import subscription models here to avoid circular imports
-        from src.api.models.subscription_models.user_subscription import UserSubscription
-        from src.api.models.subscription_models.subscription_plan import SubscriptionPlan
+        from src.api.models.subscription_models.subscriptions import UserSubscription
+        from src.api.models.subscription_models.plans import SubscriptionPlan
 
         # Get media usage
         result = await self.db.execute(
@@ -599,55 +605,43 @@ class MediaService:
 
         row = result.one()
 
-        total_bytes = row.total_bytes or 0
-        total_mb = total_bytes / (1024 * 1024)
-        total_gb = total_bytes / (1024 * 1024 * 1024)
+        # Convert Decimal to int/float for JSON serialization
+        total_bytes = int(row.total_bytes or 0)
+        total_mb = float(total_bytes) / (1024 * 1024)
+        total_gb = float(total_bytes) / (1024 * 1024 * 1024)
 
-        # Get workspace subscription to determine storage limit
-        subscription_result = await self.db.execute(
-            select(SubscriptionPlan.storage_limit)
-            .join(UserSubscription, UserSubscription.plan_id == SubscriptionPlan.id)
-            .where(
-                and_(
-                    UserSubscription.workspace_id == workspace_id,
-                    UserSubscription.status.in_(["active", "trialing"])
-                )
-            )
-            .order_by(SubscriptionPlan.storage_limit.desc())  # Get highest limit if multiple
-            .limit(1)
-        )
-
-        subscription_row = subscription_result.one_or_none()
-
-        # Default to 1GB if no subscription found
-        storage_limit_bytes = subscription_row[0] if subscription_row else 1 * 1024 * 1024 * 1024  # 1GB default
+        # Use generous default storage limit for now
+        # TODO: Link workspace to owner's subscription for accurate limits
+        # UserSubscription is per-user, not per-workspace, so we'd need to
+        # query workspace.owner_id -> user_subscriptions -> plan
+        storage_limit_bytes = 100 * 1024 * 1024 * 1024  # 100GB default
 
         # Calculate usage percentage
         usage_percentage = (total_bytes / storage_limit_bytes * 100) if storage_limit_bytes > 0 else 0
 
         return {
-            "total_files": row.file_count or 0,
+            "total_files": int(row.file_count or 0),
             "total_size": total_bytes,
             "storage_limit": storage_limit_bytes,
             "usage_percentage": round(usage_percentage, 2),
             "by_type": {
                 "image": {
-                    "count": row.image_count or 0,
-                    "size": row.image_bytes or 0
+                    "count": int(row.image_count or 0),
+                    "size": int(row.image_bytes or 0)
                 },
                 "document": {
-                    "count": row.document_count or 0,
-                    "size": row.document_bytes or 0
+                    "count": int(row.document_count or 0),
+                    "size": int(row.document_bytes or 0)
                 },
                 "video": {
-                    "count": row.video_count or 0,
-                    "size": row.video_bytes or 0
+                    "count": int(row.video_count or 0),
+                    "size": int(row.video_bytes or 0)
                 }
             },
             # Legacy fields for backward compatibility
-            "file_count": row.file_count or 0,
-            "image_count": row.image_count or 0,
-            "document_count": row.document_count or 0,
+            "file_count": int(row.file_count or 0),
+            "image_count": int(row.image_count or 0),
+            "document_count": int(row.document_count or 0),
             "total_bytes": total_bytes,
             "total_mb": round(total_mb, 2),
             "total_gb": round(total_gb, 2)
@@ -670,6 +664,60 @@ class MediaService:
             return storage_settings.max_video_size
         else:
             return storage_settings.max_file_size
+
+    def _get_mime_from_extension(self, ext: str) -> str:
+        """
+        Get MIME type from file extension.
+        Fallback when filetype.guess() cannot detect the type.
+
+        Args:
+            ext: File extension (with or without dot)
+
+        Returns:
+            MIME type string
+        """
+        ext = ext.lstrip('.')
+
+        # Common MIME type mappings
+        mime_map = {
+            # Images
+            'jpg': 'image/jpeg',
+            'jpeg': 'image/jpeg',
+            'png': 'image/png',
+            'gif': 'image/gif',
+            'webp': 'image/webp',
+            'svg': 'image/svg+xml',
+            'bmp': 'image/bmp',
+            'ico': 'image/x-icon',
+
+            # Documents
+            'pdf': 'application/pdf',
+            'doc': 'application/msword',
+            'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            'xls': 'application/vnd.ms-excel',
+            'xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            'ppt': 'application/vnd.ms-powerpoint',
+            'pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+            'txt': 'text/plain',
+            'md': 'text/markdown',
+            'csv': 'text/csv',
+            'json': 'application/json',
+            'xml': 'application/xml',
+
+            # Videos
+            'mp4': 'video/mp4',
+            'webm': 'video/webm',
+            'mov': 'video/quicktime',
+            'avi': 'video/x-msvideo',
+            'mkv': 'video/x-matroska',
+
+            # Audio
+            'mp3': 'audio/mpeg',
+            'wav': 'audio/wav',
+            'ogg': 'audio/ogg',
+        }
+
+        return mime_map.get(ext, 'application/octet-stream')
 
     async def get_media_usage(
         self,

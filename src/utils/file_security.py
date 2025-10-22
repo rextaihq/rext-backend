@@ -234,7 +234,8 @@ class FileSecurityValidator:
 
         result = await self.db.execute(stmt)
         total_bytes = result.scalar() or 0
-        current_storage_mb = total_bytes / (1024 * 1024)
+        # Convert Decimal to float to avoid type errors in arithmetic operations
+        current_storage_mb = float(total_bytes) / (1024 * 1024)
 
         # Get tier storage limit
         max_storage_mb = self.settings.get_tier_storage_limit(subscription_tier)
