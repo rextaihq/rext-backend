@@ -77,15 +77,20 @@ class SubscriptionPlanCreate(BaseModel):
         default=True,
         description="Whether the plan is visible on pricing page"
     )
-    stripe_price_id_monthly: Optional[str] = Field(
+    lemonsqueezy_product_id: Optional[str] = Field(
         None,
         max_length=255,
-        description="Stripe price ID for monthly billing"
+        description="LemonSqueezy product ID"
     )
-    stripe_price_id_yearly: Optional[str] = Field(
+    lemonsqueezy_variant_id_monthly: Optional[str] = Field(
         None,
         max_length=255,
-        description="Stripe price ID for yearly billing"
+        description="LemonSqueezy variant ID for monthly billing"
+    )
+    lemonsqueezy_variant_id_yearly: Optional[str] = Field(
+        None,
+        max_length=255,
+        description="LemonSqueezy variant ID for yearly billing"
     )
 
     class Config:
@@ -173,15 +178,20 @@ class SubscriptionPlanUpdate(BaseModel):
         None,
         description="Whether the plan is visible on pricing page"
     )
-    stripe_price_id_monthly: Optional[str] = Field(
+    lemonsqueezy_product_id: Optional[str] = Field(
         None,
         max_length=255,
-        description="Stripe price ID for monthly billing"
+        description="LemonSqueezy product ID"
     )
-    stripe_price_id_yearly: Optional[str] = Field(
+    lemonsqueezy_variant_id_monthly: Optional[str] = Field(
         None,
         max_length=255,
-        description="Stripe price ID for yearly billing"
+        description="LemonSqueezy variant ID for monthly billing"
+    )
+    lemonsqueezy_variant_id_yearly: Optional[str] = Field(
+        None,
+        max_length=255,
+        description="LemonSqueezy variant ID for yearly billing"
     )
 
 

@@ -102,9 +102,8 @@ class WorkspaceService:
 
         with trace(name="Assign Roles & Permissions"):
             await self.create_workspace_member(workspace.id, user_id, is_default=True, status="active")
-            admin_role = await self._ensure_workspace_admin_role(workspace.id)
-            await self._assign_permissions_to_role(admin_role.id, resources=["workspace", "topic", "content", "member", "knowledge"])
-            await self._assign_role_to_user(admin_role.id, user_id, workspace.id)
+            owner_role = await self._get_workspace_owner_role()
+            await self._assign_role_to_user(owner_role.id, user_id, workspace.id)
 
 
         operation_id = str(uuid4())
@@ -917,22 +916,33 @@ class WorkspaceService:
             )
         return workspace
 
-    async def _ensure_workspace_admin_role(self, workspace_id: UUID) -> Role:
-        role_name = f"{workspace_id}_admin"
-        result = await self.db.execute(select(Role).where(Role.name == role_name))
-        role = result.scalar_one_or_none()
-        if role:
-            return role
+    async def _get_workspace_owner_role(self) -> Role:
+        """
+        Get the system workspace_owner role.
 
-        role = Role(
-            name=role_name,
-            display_name="Workspace Administrator",
-            description="Workspace admin with full content/topic permissions",
-            is_system_role=False,
+        This role is assigned to users who create a workspace, giving them
+        full control including workspace deletion and billing management.
+
+        Returns:
+            Role: The workspace_owner system role
+
+        Raises:
+            ValueError: If workspace_owner system role not found in database
+        """
+        result = await self.db.execute(
+            select(Role).where(
+                Role.name == "workspace_owner",
+                Role.is_system_role == True
+            )
         )
-        self.db.add(role)
-        await self.db.flush()
-        await self.db.refresh(role)
+        role = result.scalar_one_or_none()
+
+        if not role:
+            raise ValueError(
+                "System role 'workspace_owner' not found. "
+                "Please ensure role seeding migrations have been run."
+            )
+
         return role
 
     async def _assign_permissions_to_role(self, role_id: UUID, resources: List[str]) -> None:

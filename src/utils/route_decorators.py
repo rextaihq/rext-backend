@@ -339,12 +339,13 @@ def require_permissions(
             from uuid import UUID
 
             # Extract required dependencies from kwargs
-            user = kwargs.get('user')
+            # Support both 'user' and 'current_user' for backward compatibility
+            user = kwargs.get('user') or kwargs.get('current_user')
             db = kwargs.get('db')
 
             if not user or not db:
                 raise ValueError(
-                    "require_permissions decorator requires 'user' and 'db' parameters in route signature"
+                    "require_permissions decorator requires 'user' (or 'current_user') and 'db' parameters in route signature"
                 )
 
             user_id = UUID(user.get("identity"))

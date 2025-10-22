@@ -624,3 +624,63 @@ def ai_knowledge_processing_rate_limit():
     return AIEndpointRateLimiter(
         description="knowledge processing"
     )
+
+
+# ============================================================================
+# PAYMENT ENDPOINT RATE LIMITERS
+# ============================================================================
+
+def checkout_rate_limit():
+    """
+    Rate limiter for checkout endpoint.
+
+    Limit: 5 checkout attempts per minute per user.
+    Prevents rapid checkout session creation and potential abuse.
+    """
+    return EndpointRateLimiter(
+        requests=5,
+        window_minutes=1,
+        description="checkout"
+    )
+
+
+def subscription_update_rate_limit():
+    """
+    Rate limiter for subscription update endpoints (upgrade/downgrade).
+
+    Limit: 10 requests per minute per user.
+    Prevents excessive plan changes.
+    """
+    return EndpointRateLimiter(
+        requests=10,
+        window_minutes=1,
+        description="subscription update"
+    )
+
+
+def subscription_cancel_rate_limit():
+    """
+    Rate limiter for subscription cancellation endpoint.
+
+    Limit: 3 cancellation attempts per minute per user.
+    Prevents accidental rapid cancellations.
+    """
+    return EndpointRateLimiter(
+        requests=3,
+        window_minutes=1,
+        description="subscription cancellation"
+    )
+
+
+def customer_portal_rate_limit():
+    """
+    Rate limiter for customer portal URL generation.
+
+    Limit: 10 requests per minute per user.
+    Prevents portal URL abuse.
+    """
+    return EndpointRateLimiter(
+        requests=10,
+        window_minutes=1,
+        description="customer portal"
+    )

@@ -14,6 +14,8 @@ def render_payment_succeeded_email(
     payment_date: str,
     next_billing_date: str,
     invoice_url: str = None,
+    card_brand: str = None,
+    card_last_four: str = None,
     dashboard_url: str = "https://app.wrext.com/settings/billing",
     frontend_url: str = "https://app.wrext.com"
 ) -> str:
@@ -29,6 +31,8 @@ def render_payment_succeeded_email(
         payment_date: Date of payment (e.g., "January 15, 2025")
         next_billing_date: Next billing date (e.g., "February 15, 2025")
         invoice_url: Optional URL to download invoice
+        card_brand: Optional card brand (e.g., "Visa", "Mastercard")
+        card_last_four: Optional last 4 digits of card (e.g., "4242")
         dashboard_url: URL to billing dashboard
         frontend_url: Base frontend URL
 
@@ -97,6 +101,19 @@ def render_payment_succeeded_email(
                         {amount}
                     </td>
                 </tr>
+                {"" if not (card_brand and card_last_four) else f'''
+                <tr>
+                    <td colspan="2" style="height: 1px; background-color: #e5e7eb;"></td>
+                </tr>
+                <tr>
+                    <td style="color: #6b7280; font-size: 14px; padding: 8px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
+                        Payment Method
+                    </td>
+                    <td style="color: #111827; font-size: 14px; padding: 8px 0; text-align: right; font-weight: 600; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
+                        {card_brand} •••• {card_last_four}
+                    </td>
+                </tr>
+                '''}
                 <tr>
                     <td colspan="2" style="height: 1px; background-color: #e5e7eb;"></td>
                 </tr>

@@ -338,6 +338,53 @@ async def export_user_data(
                 "note": "Activity logs export will be available once audit log system is queried"
             }
 
+        # NEW: Export billing/subscription data
+        if export_request.include_billing:
+            from src.api.models.subscription_models.subscriptions import UserSubscription
+
+            # Get all user subscriptions
+            subscriptions = []
+            subscriptions_result = await db.execute(
+                select(UserSubscription)
+                .where(UserSubscription.user_id == user_id)
+                .order_by(UserSubscription.created_at.desc())
+            )
+
+            for sub in subscriptions_result.scalars():
+                subscription_data = {
+                    "subscription_id": str(sub.id),
+                    "plan_id": str(sub.plan_id),
+                    "plan_name": sub.plan.name if sub.plan else None,
+                    "status": sub.status,
+                    "billing_period": sub.billing_period,
+                    "current_period_start": sub.current_period_start.isoformat() if sub.current_period_start else None,
+                    "current_period_end": sub.current_period_end.isoformat() if sub.current_period_end else None,
+                    "trial_ends_at": sub.trial_ends_at.isoformat() if sub.trial_ends_at else None,
+                    "canceled_at": sub.canceled_at.isoformat() if sub.canceled_at else None,
+                    "created_at": sub.created_at.isoformat() if sub.created_at else None,
+                    "lemonsqueezy_id": sub.lemonsqueezy_id
+                }
+                subscriptions.append(subscription_data)
+
+            export_data["subscriptions"] = subscriptions
+            export_data["billing_info"] = {
+                "total_subscriptions": len(subscriptions),
+                "note": "Complete invoice history can be accessed via the LemonSqueezy customer portal",
+                "customer_portal": f"{frontend_url}/settings/subscription"
+            }
+
+        # NEW: Export usage metrics
+        if export_request.include_usage:
+            # Basic usage stats - can be expanded based on your usage tracking
+            export_data["usage"] = {
+                "workspaces_count": len(db_user.workspace_memberships) if hasattr(db_user, 'workspace_memberships') else 0,
+                "roles_count": len(db_user.user_roles) if hasattr(db_user, 'user_roles') else 0,
+                "login_count": db_user.login_count if hasattr(db_user, 'login_count') else 0,
+                "last_login": db_user.last_login_at.isoformat() if hasattr(db_user, 'last_login_at') and db_user.last_login_at else None,
+                "account_age_days": (datetime.utcnow() - db_user.created_at).days if db_user.created_at else 0,
+                "note": "Detailed usage metrics available upon request"
+            }
+
         # Convert to JSON for email
         import json
         export_json = json.dumps(export_data, indent=2)

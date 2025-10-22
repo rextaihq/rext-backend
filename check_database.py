@@ -1,7 +1,7 @@
-import psycopg2
+import psycopg
 
 # Connect to database
-conn = psycopg2.connect("postgresql://localhost/mobeen")
+conn = psycopg.connect("postgresql://localhost/mobeen")
 
 try:
     cursor = conn.cursor()

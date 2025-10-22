@@ -37,6 +37,12 @@ class SubscriptionPlan(Base, SerializableMixin):
     provider_price_id_monthly = Column(String(255))  # Payment provider price ID (monthly)
     provider_price_id_yearly = Column(String(255))  # Payment provider price ID (yearly)
 
+    # LemonSqueezy Integration Fields
+    lemonsqueezy_product_id = Column(String(255), nullable=True, index=True)  # LemonSqueezy product ID
+    lemonsqueezy_variant_id_monthly = Column(String(255), nullable=True, index=True)  # LemonSqueezy variant ID (monthly)
+    lemonsqueezy_variant_id_yearly = Column(String(255), nullable=True, index=True)  # LemonSqueezy variant ID (yearly)
+    lemonsqueezy_store_id = Column(String(255), nullable=True)  # LemonSqueezy store ID
+
     created_at = Column(TIMESTAMP, default=datetime.utcnow, nullable=False)
     updated_at = Column(TIMESTAMP, default=datetime.utcnow, onupdate=datetime.utcnow)
 

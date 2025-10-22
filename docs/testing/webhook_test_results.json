@@ -1,0 +1,964 @@
+{
+  "all_events": [
+    {
+      "success": true,
+      "status_code": 200,
+      "response": {
+        "status": "success",
+        "message": "Webhook processed"
+      },
+      "event_type": "subscription_created",
+      "payload": {
+        "meta": {
+          "event_name": "subscription_created",
+          "webhook_id": "test-webhook",
+          "custom_data": {
+            "user_id": "54048b28-3012-487c-8479-1ca7ab5453c6"
+          }
+        },
+        "data": {
+          "type": "subscriptions",
+          "id": "731082",
+          "attributes": {
+            "store_id": 126929,
+            "customer_id": 3277871,
+            "order_id": 6059686,
+            "order_item_id": 6385234,
+            "product_id": 665157,
+            "variant_id": 1049347,
+            "product_name": "Wrext Basic Plan",
+            "variant_name": "Monthly",
+            "user_name": "Mobeen",
+            "user_email": "mobeen@revnix.com",
+            "status": "active",
+            "status_formatted": "Active",
+            "card_brand": "visa",
+            "card_last_four": "4242",
+            "pause": null,
+            "cancelled": false,
+            "trial_ends_at": null,
+            "billing_anchor": 21,
+            "urls": {
+              "update_payment_method": "https://app.lemonsqueezy.com/my-orders/...",
+              "customer_portal": "https://app.lemonsqueezy.com/my-orders/..."
+            },
+            "renews_at": "2025-11-21T00:00:00.000000Z",
+            "ends_at": null,
+            "created_at": "2025-10-21T10:30:00.000000Z",
+            "updated_at": "2025-10-21T05:46:05.672077Z",
+            "test_mode": true
+          },
+          "relationships": {
+            "store": {
+              "links": {
+                "related": "..."
+              }
+            },
+            "customer": {
+              "links": {
+                "related": "..."
+              }
+            },
+            "order": {
+              "links": {
+                "related": "..."
+              }
+            },
+            "product": {
+              "links": {
+                "related": "..."
+              }
+            },
+            "variant": {
+              "links": {
+                "related": "..."
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "success": true,
+      "status_code": 200,
+      "response": {
+        "status": "success",
+        "message": "Webhook processed"
+      },
+      "event_type": "subscription_updated",
+      "payload": {
+        "meta": {
+          "event_name": "subscription_updated",
+          "webhook_id": "test-webhook",
+          "custom_data": {
+            "user_id": "54048b28-3012-487c-8479-1ca7ab5453c6"
+          }
+        },
+        "data": {
+          "type": "subscriptions",
+          "id": "731082",
+          "attributes": {
+            "store_id": 126929,
+            "customer_id": 3277871,
+            "order_id": 6059686,
+            "order_item_id": 6385234,
+            "product_id": 665157,
+            "variant_id": "1049347",
+            "product_name": "Wrext Basic Plan",
+            "variant_name": "Monthly",
+            "user_name": "Mobeen",
+            "user_email": "mobeen@revnix.com",
+            "status": "active",
+            "status_formatted": "Active",
+            "card_brand": "visa",
+            "card_last_four": "4242",
+            "pause": null,
+            "cancelled": false,
+            "trial_ends_at": null,
+            "billing_anchor": 21,
+            "urls": {
+              "update_payment_method": "https://app.lemonsqueezy.com/my-orders/...",
+              "customer_portal": "https://app.lemonsqueezy.com/my-orders/..."
+            },
+            "renews_at": "2025-11-21T00:00:00.000000Z",
+            "ends_at": null,
+            "created_at": "2025-10-21T10:30:00.000000Z",
+            "updated_at": "2025-10-21T05:46:05.808656Z",
+            "test_mode": true
+          }
+        }
+      }
+    },
+    {
+      "success": true,
+      "status_code": 200,
+      "response": {
+        "status": "success",
+        "message": "Webhook processed"
+      },
+      "event_type": "subscription_cancelled",
+      "payload": {
+        "meta": {
+          "event_name": "subscription_cancelled",
+          "webhook_id": "test-webhook",
+          "custom_data": {
+            "user_id": "54048b28-3012-487c-8479-1ca7ab5453c6"
+          }
+        },
+        "data": {
+          "type": "subscriptions",
+          "id": "731082",
+          "attributes": {
+            "store_id": 126929,
+            "customer_id": 3277871,
+            "order_id": 6059686,
+            "order_item_id": 6385234,
+            "product_id": 665157,
+            "variant_id": 1049347,
+            "product_name": "Wrext Basic Plan",
+            "variant_name": "Monthly",
+            "user_name": "Mobeen",
+            "user_email": "mobeen@revnix.com",
+            "status": "cancelled",
+            "status_formatted": "Cancelled",
+            "card_brand": "visa",
+            "card_last_four": "4242",
+            "pause": null,
+            "cancelled": true,
+            "trial_ends_at": null,
+            "billing_anchor": 21,
+            "urls": {
+              "update_payment_method": "https://app.lemonsqueezy.com/my-orders/...",
+              "customer_portal": "https://app.lemonsqueezy.com/my-orders/..."
+            },
+            "renews_at": "2025-11-21T00:00:00.000000Z",
+            "ends_at": "2025-11-21T00:00:00.000000Z",
+            "created_at": "2025-10-21T10:30:00.000000Z",
+            "updated_at": "2025-10-21T05:46:05.818901Z",
+            "test_mode": true
+          }
+        }
+      }
+    },
+    {
+      "success": true,
+      "status_code": 200,
+      "response": {
+        "status": "success",
+        "message": "Webhook processed"
+      },
+      "event_type": "subscription_resumed",
+      "payload": {
+        "meta": {
+          "event_name": "subscription_resumed",
+          "webhook_id": "test-webhook",
+          "custom_data": {
+            "user_id": "54048b28-3012-487c-8479-1ca7ab5453c6"
+          }
+        },
+        "data": {
+          "type": "subscriptions",
+          "id": "731082",
+          "attributes": {
+            "store_id": 126929,
+            "customer_id": 3277871,
+            "order_id": 6059686,
+            "order_item_id": 6385234,
+            "product_id": 665157,
+            "variant_id": 1049347,
+            "product_name": "Wrext Basic Plan",
+            "variant_name": "Monthly",
+            "user_name": "Mobeen",
+            "user_email": "mobeen@revnix.com",
+            "status": "active",
+            "status_formatted": "Active",
+            "card_brand": "visa",
+            "card_last_four": "4242",
+            "pause": null,
+            "cancelled": false,
+            "trial_ends_at": null,
+            "billing_anchor": 21,
+            "urls": {
+              "update_payment_method": "https://app.lemonsqueezy.com/my-orders/...",
+              "customer_portal": "https://app.lemonsqueezy.com/my-orders/..."
+            },
+            "renews_at": "2025-11-21T00:00:00.000000Z",
+            "ends_at": null,
+            "created_at": "2025-10-21T10:30:00.000000Z",
+            "updated_at": "2025-10-21T05:46:05.827455Z",
+            "test_mode": true
+          }
+        }
+      }
+    },
+    {
+      "success": true,
+      "status_code": 200,
+      "response": {
+        "status": "success",
+        "message": "Webhook processed"
+      },
+      "event_type": "subscription_expired",
+      "payload": {
+        "meta": {
+          "event_name": "subscription_expired",
+          "webhook_id": "test-webhook",
+          "custom_data": {
+            "user_id": "54048b28-3012-487c-8479-1ca7ab5453c6"
+          }
+        },
+        "data": {
+          "type": "subscriptions",
+          "id": "731082",
+          "attributes": {
+            "store_id": 126929,
+            "customer_id": 3277871,
+            "order_id": 6059686,
+            "order_item_id": 6385234,
+            "product_id": 665157,
+            "variant_id": 1049347,
+            "product_name": "Wrext Basic Plan",
+            "variant_name": "Monthly",
+            "user_name": "Mobeen",
+            "user_email": "mobeen@revnix.com",
+            "status": "expired",
+            "status_formatted": "Expired",
+            "card_brand": "visa",
+            "card_last_four": "4242",
+            "pause": null,
+            "cancelled": false,
+            "trial_ends_at": null,
+            "billing_anchor": 21,
+            "urls": {
+              "update_payment_method": "https://app.lemonsqueezy.com/my-orders/...",
+              "customer_portal": "https://app.lemonsqueezy.com/my-orders/..."
+            },
+            "renews_at": "2025-11-21T00:00:00.000000Z",
+            "ends_at": "2025-10-21T05:46:05.835490Z",
+            "created_at": "2025-10-21T10:30:00.000000Z",
+            "updated_at": "2025-10-21T05:46:05.835490Z",
+            "test_mode": true
+          }
+        }
+      }
+    },
+    {
+      "success": true,
+      "status_code": 200,
+      "response": {
+        "status": "success",
+        "message": "Webhook processed"
+      },
+      "event_type": "subscription_paused",
+      "payload": {
+        "meta": {
+          "event_name": "subscription_paused",
+          "webhook_id": "test-webhook",
+          "custom_data": {
+            "user_id": "54048b28-3012-487c-8479-1ca7ab5453c6"
+          }
+        },
+        "data": {
+          "type": "subscriptions",
+          "id": "731082",
+          "attributes": {
+            "store_id": 126929,
+            "customer_id": 3277871,
+            "order_id": 6059686,
+            "order_item_id": 6385234,
+            "product_id": 665157,
+            "variant_id": 1049347,
+            "product_name": "Wrext Basic Plan",
+            "variant_name": "Monthly",
+            "user_name": "Mobeen",
+            "user_email": "mobeen@revnix.com",
+            "status": "paused",
+            "status_formatted": "Paused",
+            "card_brand": "visa",
+            "card_last_four": "4242",
+            "pause": {
+              "mode": "void",
+              "resumes_at": "2025-12-21T00:00:00.000000Z"
+            },
+            "cancelled": false,
+            "trial_ends_at": null,
+            "billing_anchor": 21,
+            "urls": {
+              "update_payment_method": "https://app.lemonsqueezy.com/my-orders/...",
+              "customer_portal": "https://app.lemonsqueezy.com/my-orders/..."
+            },
+            "renews_at": "2025-11-21T00:00:00.000000Z",
+            "ends_at": null,
+            "created_at": "2025-10-21T10:30:00.000000Z",
+            "updated_at": "2025-10-21T05:46:05.843935Z",
+            "test_mode": true
+          }
+        }
+      }
+    },
+    {
+      "success": true,
+      "status_code": 200,
+      "response": {
+        "status": "success",
+        "message": "Webhook processed"
+      },
+      "event_type": "subscription_payment_success",
+      "payload": {
+        "meta": {
+          "event_name": "subscription_payment_success",
+          "webhook_id": "test-webhook",
+          "custom_data": {
+            "user_id": "54048b28-3012-487c-8479-1ca7ab5453c6"
+          }
+        },
+        "data": {
+          "type": "subscription-invoices",
+          "id": "test-invoice-123",
+          "attributes": {
+            "store_id": 126929,
+            "subscription_id": 731082,
+            "billing_reason": "renewal",
+            "card_brand": "visa",
+            "card_last_four": "4242",
+            "currency": "USD",
+            "currency_rate": "1.00000000",
+            "status": "paid",
+            "status_formatted": "Paid",
+            "refunded": false,
+            "refunded_at": null,
+            "subtotal": 900,
+            "discount_total": 0,
+            "tax": 0,
+            "total": 900,
+            "subtotal_usd": 900,
+            "discount_total_usd": 0,
+            "tax_usd": 0,
+            "total_usd": 900,
+            "created_at": "2025-10-21T05:46:05.851929Z",
+            "updated_at": "2025-10-21T05:46:05.851929Z",
+            "test_mode": true
+          }
+        }
+      }
+    },
+    {
+      "success": true,
+      "status_code": 200,
+      "response": {
+        "status": "success",
+        "message": "Webhook processed"
+      },
+      "event_type": "subscription_payment_failed",
+      "payload": {
+        "meta": {
+          "event_name": "subscription_payment_failed",
+          "webhook_id": "test-webhook",
+          "custom_data": {
+            "user_id": "54048b28-3012-487c-8479-1ca7ab5453c6"
+          }
+        },
+        "data": {
+          "type": "subscription-invoices",
+          "id": "test-invoice-failed-123",
+          "attributes": {
+            "store_id": 126929,
+            "subscription_id": 731082,
+            "billing_reason": "renewal",
+            "card_brand": "visa",
+            "card_last_four": "4242",
+            "currency": "USD",
+            "status": "failed",
+            "status_formatted": "Failed",
+            "refunded": false,
+            "subtotal": 900,
+            "tax": 0,
+            "total": 900,
+            "created_at": "2025-10-21T05:46:05.861588Z",
+            "updated_at": "2025-10-21T05:46:05.861588Z",
+            "test_mode": true
+          }
+        }
+      }
+    },
+    {
+      "success": true,
+      "status_code": 200,
+      "response": {
+        "status": "success",
+        "message": "Webhook processed"
+      },
+      "event_type": "subscription_payment_recovered",
+      "payload": {
+        "meta": {
+          "event_name": "subscription_payment_recovered",
+          "webhook_id": "test-webhook",
+          "custom_data": {
+            "user_id": "54048b28-3012-487c-8479-1ca7ab5453c6"
+          }
+        },
+        "data": {
+          "type": "subscription-invoices",
+          "id": "test-invoice-recovered-123",
+          "attributes": {
+            "store_id": 126929,
+            "subscription_id": 731082,
+            "billing_reason": "renewal",
+            "card_brand": "visa",
+            "card_last_four": "4242",
+            "currency": "USD",
+            "status": "paid",
+            "status_formatted": "Paid",
+            "refunded": false,
+            "subtotal": 900,
+            "tax": 0,
+            "total": 900,
+            "created_at": "2025-10-21T05:46:05.870037Z",
+            "updated_at": "2025-10-21T05:46:05.870037Z",
+            "test_mode": true
+          }
+        }
+      }
+    },
+    {
+      "success": true,
+      "status_code": 200,
+      "response": {
+        "status": "success",
+        "message": "Webhook processed"
+      },
+      "event_type": "order_created",
+      "payload": {
+        "meta": {
+          "event_name": "order_created",
+          "webhook_id": "test-webhook",
+          "custom_data": {
+            "user_id": "54048b28-3012-487c-8479-1ca7ab5453c6"
+          }
+        },
+        "data": {
+          "type": "orders",
+          "id": "9999999",
+          "attributes": {
+            "store_id": 126929,
+            "customer_id": 3277871,
+            "identifier": "test-order-9999999",
+            "order_number": 12345,
+            "user_name": "Mobeen",
+            "user_email": "mobeen@revnix.com",
+            "currency": "USD",
+            "currency_rate": "1.00000000",
+            "subtotal": 29900,
+            "discount_total": 0,
+            "tax": 0,
+            "total": 29900,
+            "subtotal_usd": 29900,
+            "discount_total_usd": 0,
+            "tax_usd": 0,
+            "total_usd": 29900,
+            "tax_name": "",
+            "tax_rate": "0.00",
+            "status": "paid",
+            "status_formatted": "Paid",
+            "refunded": false,
+            "refunded_at": null,
+            "subtotal_formatted": "$299.00",
+            "discount_total_formatted": "$0.00",
+            "tax_formatted": "$0.00",
+            "total_formatted": "$299.00",
+            "first_order_item": {
+              "id": 123456,
+              "order_id": 9999999,
+              "product_id": 665157,
+              "variant_id": 1049347,
+              "product_name": "Wrext Pro - Lifetime",
+              "variant_name": "Lifetime License",
+              "price": 29900,
+              "created_at": "2025-10-21T05:46:05.878695Z",
+              "updated_at": "2025-10-21T05:46:05.878695Z",
+              "test_mode": true
+            },
+            "created_at": "2025-10-21T05:46:05.878695Z",
+            "updated_at": "2025-10-21T05:46:05.878695Z",
+            "test_mode": true
+          }
+        }
+      }
+    },
+    {
+      "success": true,
+      "status_code": 200,
+      "response": {
+        "status": "success",
+        "message": "Webhook processed"
+      },
+      "event_type": "order_refunded",
+      "payload": {
+        "meta": {
+          "event_name": "order_refunded",
+          "webhook_id": "test-webhook",
+          "custom_data": {
+            "user_id": "54048b28-3012-487c-8479-1ca7ab5453c6"
+          }
+        },
+        "data": {
+          "type": "orders",
+          "id": "9999999",
+          "attributes": {
+            "store_id": 126929,
+            "customer_id": 3277871,
+            "identifier": "test-order-9999999",
+            "user_email": "mobeen@revnix.com",
+            "status": "refunded",
+            "status_formatted": "Refunded",
+            "refunded": true,
+            "refunded_at": "2025-10-21T05:46:05.887893Z",
+            "total": 29900,
+            "created_at": "2025-10-21T10:30:00.000000Z",
+            "updated_at": "2025-10-21T05:46:05.887893Z",
+            "test_mode": true
+          }
+        }
+      }
+    },
+    {
+      "success": true,
+      "status_code": 200,
+      "response": {
+        "status": "success",
+        "message": "Webhook processed"
+      },
+      "event_type": "license_key_created",
+      "payload": {
+        "meta": {
+          "event_name": "license_key_created",
+          "webhook_id": "test-webhook",
+          "custom_data": {
+            "user_id": "54048b28-3012-487c-8479-1ca7ab5453c6"
+          }
+        },
+        "data": {
+          "type": "license-keys",
+          "id": "test-license-123",
+          "attributes": {
+            "store_id": 126929,
+            "customer_id": 3277871,
+            "order_id": 9999999,
+            "order_item_id": 123456,
+            "product_id": 665157,
+            "user_name": "Mobeen",
+            "user_email": "mobeen@revnix.com",
+            "key": "TEST-ABCD-1234-EFGH-5678",
+            "key_short": "TEST-ABCD-12XX-XXXX-XX78",
+            "activation_limit": 5,
+            "instances_count": 0,
+            "disabled": false,
+            "status": "active",
+            "status_formatted": "Active",
+            "expires_at": null,
+            "created_at": "2025-10-21T05:46:05.896573Z",
+            "updated_at": "2025-10-21T05:46:05.896573Z",
+            "test_mode": true
+          }
+        }
+      }
+    }
+  ],
+  "signature_tests": {
+    "valid_signature": {
+      "success": true,
+      "status_code": 200,
+      "response": {
+        "status": "success",
+        "message": "Webhook processed"
+      },
+      "event_type": "subscription_created",
+      "payload": {
+        "meta": {
+          "event_name": "subscription_created",
+          "webhook_id": "test-webhook",
+          "custom_data": {
+            "user_id": "54048b28-3012-487c-8479-1ca7ab5453c6"
+          }
+        },
+        "data": {
+          "type": "subscriptions",
+          "id": "731082",
+          "attributes": {
+            "store_id": 126929,
+            "customer_id": 3277871,
+            "order_id": 6059686,
+            "order_item_id": 6385234,
+            "product_id": 665157,
+            "variant_id": 1049347,
+            "product_name": "Wrext Basic Plan",
+            "variant_name": "Monthly",
+            "user_name": "Mobeen",
+            "user_email": "mobeen@revnix.com",
+            "status": "active",
+            "status_formatted": "Active",
+            "card_brand": "visa",
+            "card_last_four": "4242",
+            "pause": null,
+            "cancelled": false,
+            "trial_ends_at": null,
+            "billing_anchor": 21,
+            "urls": {
+              "update_payment_method": "https://app.lemonsqueezy.com/my-orders/...",
+              "customer_portal": "https://app.lemonsqueezy.com/my-orders/..."
+            },
+            "renews_at": "2025-11-21T00:00:00.000000Z",
+            "ends_at": null,
+            "created_at": "2025-10-21T10:30:00.000000Z",
+            "updated_at": "2025-10-21T05:46:05.904723Z",
+            "test_mode": true
+          },
+          "relationships": {
+            "store": {
+              "links": {
+                "related": "..."
+              }
+            },
+            "customer": {
+              "links": {
+                "related": "..."
+              }
+            },
+            "order": {
+              "links": {
+                "related": "..."
+              }
+            },
+            "product": {
+              "links": {
+                "related": "..."
+              }
+            },
+            "variant": {
+              "links": {
+                "related": "..."
+              }
+            }
+          }
+        }
+      }
+    },
+    "invalid_signature": {
+      "success": false,
+      "status_code": 401,
+      "response": {
+        "success": false,
+        "meta": {
+          "request_id": "req_1761025565_b71a1a74",
+          "timestamp": "2025-10-21T05:46:05.932941",
+          "processing_time_ms": null,
+          "version": "1.0",
+          "server_id": null
+        },
+        "data": null,
+        "error": {
+          "code": "unauthorized",
+          "message": "Invalid webhook signature",
+          "severity": "medium",
+          "status_code": 401
+        }
+      },
+      "event_type": "subscription_created",
+      "payload": {
+        "meta": {
+          "event_name": "subscription_created",
+          "webhook_id": "test-webhook",
+          "custom_data": {
+            "user_id": "54048b28-3012-487c-8479-1ca7ab5453c6"
+          }
+        },
+        "data": {
+          "type": "subscriptions",
+          "id": "731082",
+          "attributes": {
+            "store_id": 126929,
+            "customer_id": 3277871,
+            "order_id": 6059686,
+            "order_item_id": 6385234,
+            "product_id": 665157,
+            "variant_id": 1049347,
+            "product_name": "Wrext Basic Plan",
+            "variant_name": "Monthly",
+            "user_name": "Mobeen",
+            "user_email": "mobeen@revnix.com",
+            "status": "active",
+            "status_formatted": "Active",
+            "card_brand": "visa",
+            "card_last_four": "4242",
+            "pause": null,
+            "cancelled": false,
+            "trial_ends_at": null,
+            "billing_anchor": 21,
+            "urls": {
+              "update_payment_method": "https://app.lemonsqueezy.com/my-orders/...",
+              "customer_portal": "https://app.lemonsqueezy.com/my-orders/..."
+            },
+            "renews_at": "2025-11-21T00:00:00.000000Z",
+            "ends_at": null,
+            "created_at": "2025-10-21T10:30:00.000000Z",
+            "updated_at": "2025-10-21T05:46:05.912503Z",
+            "test_mode": true
+          },
+          "relationships": {
+            "store": {
+              "links": {
+                "related": "..."
+              }
+            },
+            "customer": {
+              "links": {
+                "related": "..."
+              }
+            },
+            "order": {
+              "links": {
+                "related": "..."
+              }
+            },
+            "product": {
+              "links": {
+                "related": "..."
+              }
+            },
+            "variant": {
+              "links": {
+                "related": "..."
+              }
+            }
+          }
+        }
+      }
+    },
+    "missing_signature": {
+      "success": false,
+      "status_code": 400,
+      "response": {
+        "success": false,
+        "meta": {
+          "request_id": "req_1761025565_85e0a098",
+          "timestamp": "2025-10-21T05:46:05.937608",
+          "processing_time_ms": null,
+          "version": "1.0",
+          "server_id": null
+        },
+        "data": null,
+        "error": {
+          "code": "validation_failed",
+          "message": "Missing webhook signature",
+          "severity": "medium",
+          "status_code": 400
+        }
+      },
+      "event_type": "subscription_created",
+      "payload": {
+        "meta": {
+          "event_name": "subscription_created",
+          "webhook_id": "test-webhook",
+          "custom_data": {
+            "user_id": "54048b28-3012-487c-8479-1ca7ab5453c6"
+          }
+        },
+        "data": {
+          "type": "subscriptions",
+          "id": "731082",
+          "attributes": {
+            "store_id": 126929,
+            "customer_id": 3277871,
+            "order_id": 6059686,
+            "order_item_id": 6385234,
+            "product_id": 665157,
+            "variant_id": 1049347,
+            "product_name": "Wrext Basic Plan",
+            "variant_name": "Monthly",
+            "user_name": "Mobeen",
+            "user_email": "mobeen@revnix.com",
+            "status": "active",
+            "status_formatted": "Active",
+            "card_brand": "visa",
+            "card_last_four": "4242",
+            "pause": null,
+            "cancelled": false,
+            "trial_ends_at": null,
+            "billing_anchor": 21,
+            "urls": {
+              "update_payment_method": "https://app.lemonsqueezy.com/my-orders/...",
+              "customer_portal": "https://app.lemonsqueezy.com/my-orders/..."
+            },
+            "renews_at": "2025-11-21T00:00:00.000000Z",
+            "ends_at": null,
+            "created_at": "2025-10-21T10:30:00.000000Z",
+            "updated_at": "2025-10-21T05:46:05.934395Z",
+            "test_mode": true
+          },
+          "relationships": {
+            "store": {
+              "links": {
+                "related": "..."
+              }
+            },
+            "customer": {
+              "links": {
+                "related": "..."
+              }
+            },
+            "order": {
+              "links": {
+                "related": "..."
+              }
+            },
+            "product": {
+              "links": {
+                "related": "..."
+              }
+            },
+            "variant": {
+              "links": {
+                "related": "..."
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "idempotency_test": {
+    "first_send": {
+      "success": true,
+      "status_code": 200,
+      "response": {
+        "status": "success",
+        "message": "Webhook processed"
+      },
+      "event_type": "subscription_payment_success",
+      "payload": {
+        "meta": {
+          "event_name": "subscription_payment_success",
+          "webhook_id": "test-webhook",
+          "custom_data": {
+            "user_id": "54048b28-3012-487c-8479-1ca7ab5453c6"
+          }
+        },
+        "data": {
+          "type": "subscription-invoices",
+          "id": "test-invoice-123",
+          "attributes": {
+            "store_id": 126929,
+            "subscription_id": 731082,
+            "billing_reason": "renewal",
+            "card_brand": "visa",
+            "card_last_four": "4242",
+            "currency": "USD",
+            "currency_rate": "1.00000000",
+            "status": "paid",
+            "status_formatted": "Paid",
+            "refunded": false,
+            "refunded_at": null,
+            "subtotal": 900,
+            "discount_total": 0,
+            "tax": 0,
+            "total": 900,
+            "subtotal_usd": 900,
+            "discount_total_usd": 0,
+            "tax_usd": 0,
+            "total_usd": 900,
+            "created_at": "2025-10-21T05:46:05.938838Z",
+            "updated_at": "2025-10-21T05:46:05.938838Z",
+            "test_mode": true
+          }
+        }
+      }
+    },
+    "duplicate_send": {
+      "success": true,
+      "status_code": 200,
+      "response": {
+        "status": "success",
+        "message": "Webhook processed"
+      },
+      "event_type": "subscription_payment_success",
+      "payload": {
+        "meta": {
+          "event_name": "subscription_payment_success",
+          "webhook_id": "test-webhook",
+          "custom_data": {
+            "user_id": "54048b28-3012-487c-8479-1ca7ab5453c6"
+          }
+        },
+        "data": {
+          "type": "subscription-invoices",
+          "id": "test-invoice-123",
+          "attributes": {
+            "store_id": 126929,
+            "subscription_id": 731082,
+            "billing_reason": "renewal",
+            "card_brand": "visa",
+            "card_last_four": "4242",
+            "currency": "USD",
+            "currency_rate": "1.00000000",
+            "status": "paid",
+            "status_formatted": "Paid",
+            "refunded": false,
+            "refunded_at": null,
+            "subtotal": 900,
+            "discount_total": 0,
+            "tax": 0,
+            "total": 900,
+            "subtotal_usd": 900,
+            "discount_total_usd": 0,
+            "tax_usd": 0,
+            "total_usd": 900,
+            "created_at": "2025-10-21T05:46:05.949690Z",
+            "updated_at": "2025-10-21T05:46:05.949690Z",
+            "test_mode": true
+          }
+        }
+      }
+    },
+    "idempotency_working": true
+  }
+}

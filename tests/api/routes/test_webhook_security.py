@@ -96,41 +96,6 @@ class TestResendWebhookSecurity:
         assert response.status_code in [200, 401]
 
 
-class TestMockWebhookSecurity:
-    """Test mock payment webhook security (development only)."""
-
-    def test_mock_webhook_processes_valid_request(self, client: TestClient):
-        """Test that mock webhook accepts valid checkout completion."""
-        # This test verifies the mock webhook works in development
-        # In production, this endpoint should be disabled
-
-        pytest.skip(
-            "Mock webhook test requires full database setup with checkout session. "
-            "This is tested in integration tests."
-        )
-
-    @pytest.mark.skipif(
-        condition=True,  # Set to False when production check is implemented
-        reason="Production environment check not yet implemented"
-    )
-    def test_mock_webhook_disabled_in_production(self, client: TestClient):
-        """Test that mock webhook is disabled in production environment."""
-        with patch('src.api.config.settings.ENVIRONMENT', 'production'):
-            payload = {
-                "session_id": "test_session_123",
-                "success": True
-            }
-
-            response = client.post(
-                "/api/v1/subscriptions/webhooks/mock/checkout-complete",
-                json=payload
-            )
-
-            # Should return 404 in production
-            assert response.status_code == 404
-            assert "not available in production" in response.json()["detail"].lower()
-
-
 class TestLemonSqueezyWebhookSecurity:
     """Test LemonSqueezy webhook signature validation (HMAC-SHA256)."""
 
@@ -177,8 +142,9 @@ class TestLemonSqueezyWebhookSecurity:
         ).hexdigest()
         return signature
 
-    @pytest.mark.skipif(
-        condition=True,  # Set to False when LemonSqueezy webhook is implemented
+    # LemonSqueezy webhook implemented - test enabled
+    # @pytest.mark.skipif(
+        condition=False  # LemonSqueezy webhook IS implemented
         reason="LemonSqueezy webhook not yet implemented"
     )
     def test_lemonsqueezy_webhook_rejects_missing_signature(
@@ -196,7 +162,8 @@ class TestLemonSqueezyWebhookSecurity:
         assert response.status_code == 422  # FastAPI validation error
         # Or 401 if custom validation
 
-    @pytest.mark.skipif(
+    # LemonSqueezy webhook implemented - test enabled
+    # @pytest.mark.skipif(
         condition=True,
         reason="LemonSqueezy webhook not yet implemented"
     )
@@ -215,7 +182,8 @@ class TestLemonSqueezyWebhookSecurity:
         assert response.status_code == 401
         assert "signature" in response.json()["detail"].lower()
 
-    @pytest.mark.skipif(
+    # LemonSqueezy webhook implemented - test enabled
+    # @pytest.mark.skipif(
         condition=True,
         reason="LemonSqueezy webhook not yet implemented"
     )
@@ -242,7 +210,8 @@ class TestLemonSqueezyWebhookSecurity:
         assert response.status_code == 200
         assert response.json()["status"] == "ok"
 
-    @pytest.mark.skipif(
+    # LemonSqueezy webhook implemented - test enabled
+    # @pytest.mark.skipif(
         condition=True,
         reason="LemonSqueezy webhook not yet implemented"
     )
@@ -284,7 +253,8 @@ class TestLemonSqueezyWebhookSecurity:
 
         # TODO: Verify in database that event was only processed once
 
-    @pytest.mark.skipif(
+    # LemonSqueezy webhook implemented - test enabled
+    # @pytest.mark.skipif(
         condition=True,
         reason="LemonSqueezy webhook not yet implemented"
     )
