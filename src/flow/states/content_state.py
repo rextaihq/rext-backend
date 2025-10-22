@@ -1,5 +1,5 @@
 # ContentState: workflow state across nodes
-from typing import Any,Annotated
+from typing import Annotated
 from langchain_core.documents import Document
 from typing_extensions import TypedDict
 from typing import Optional, List

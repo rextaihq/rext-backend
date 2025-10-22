@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 from uuid import UUID
-from typing import AsyncIterator, Dict, Any, Optional
+from typing import Dict, Any, Optional
 from src.api.schema.content_schema import ContentProgressResponse
 from src.flow.service.utils import get_progress_percent
 

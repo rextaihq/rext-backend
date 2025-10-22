@@ -5,8 +5,6 @@ Provides synchronous wrapper for updating progress from workflow nodes.
 Since nodes are sync functions but progress updates need async DB operations,
 this helper uses asyncio.run() to execute async operations.
 """
-
-import asyncio
 from typing import Optional, Dict, Any
 from uuid import UUID
 
