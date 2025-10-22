@@ -11,7 +11,9 @@ import yaml
 def load_yaml(file_path: str = "config/config.yaml") -> dict:
     """
     Load a YAML config file and return it as a Python dict.
-    Resolves the path relative to the project root.
+    Resolves the path relative to the project root.do not use relative paths.
+    :param file_path: Path to the YAML config file.
+    :return: Dictionary containing the YAML file contents.
     """
      # go up two levels: src/utils -> src -> project_root
     project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
