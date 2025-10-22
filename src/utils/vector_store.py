@@ -35,7 +35,7 @@ def add_to_vector_store(
     workspace_id:str=None
 )->bool:
     if blog_context is None:
-        raise "Document should not be none"
+        raise "Make Sure Document should not be none"
 
     if workspace_id is None:
         raise "Doc id should not be none"
