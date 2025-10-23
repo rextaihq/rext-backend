@@ -115,7 +115,6 @@ class ThreadManager:
     ) -> List[Dict[str, Any]]:
         """
         Search for threads matching filter criteria.
-
         Args:
             metadata: Filter threads by metadata keys/values.
             status: Filter by thread status (e.g. "idle", "busy", "error").
@@ -123,7 +122,6 @@ class ThreadManager:
             offset: Offset for pagination.
             sort_by: Sort by one of the thread fields (thread_id, status, created_at, updated_at) :contentReference[oaicite:1]{index=1}
             sort_order: "asc" or "desc".
-
         Returns:
             A list of thread dicts.
         """
@@ -147,7 +145,6 @@ class ThreadManager:
     ) -> List[Dict[str, Any]]:
         """
         Retrieve the state history of a thread.
-
         Args:
             thread_id: The thread to fetch history for.
             checkpoint: (Optional) checkpoint context to scope history.
