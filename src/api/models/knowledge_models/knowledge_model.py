@@ -1,6 +1,8 @@
 from sqlalchemy import Column, String, Integer, ForeignKey, Text, CheckConstraint, DateTime
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import relationship
+from sqlalchemy import inspect as sa_inspect
+from sqlalchemy.orm.base import NO_VALUE
 from src.api.database.base import Base
 from src.api.models.base import SerializableMixin
 import uuid
@@ -28,14 +30,41 @@ class KnowledgeBase(Base, SerializableMixin):
     text_knowledge = relationship("TextKnowledge", back_populates="knowledge_base", cascade="all, delete-orphan")
 
     def to_dict(self, **kwargs) -> dict:
-        """Custom serialization with computed fields"""
+        """
+        Custom serialization with computed fields.
+
+        Safely computes items_count only if relationships are already loaded.
+        This prevents lazy loading in async context which would cause MissingGreenlet error.
+
+        Args:
+            **kwargs: Arguments passed to parent to_dict()
+
+        Returns:
+            Dictionary with knowledge base data and optional items_count
+        """
         data = super().to_dict(**kwargs)
-        # Add items count
-        data['items_count'] = (
-            len(self.websites or []) +
-            len(self.knowledge_files or []) +
-            len(self.text_knowledge or [])
-        )
+
+        # Use SQLAlchemy inspection to check if relationships are loaded
+        # This prevents triggering lazy loads in async context
+        inspector = sa_inspect(self)
+
+        # Check if all required relationships are loaded
+        websites_loaded = inspector.attrs.websites.loaded_value is not NO_VALUE
+        files_loaded = inspector.attrs.knowledge_files.loaded_value is not NO_VALUE
+        text_loaded = inspector.attrs.text_knowledge.loaded_value is not NO_VALUE
+
+        # Only compute items_count if all relationships are loaded
+        if websites_loaded and files_loaded and text_loaded:
+            data['items_count'] = (
+                len(self.websites or []) +
+                len(self.knowledge_files or []) +
+                len(self.text_knowledge or [])
+            )
+        else:
+            # Relationships not loaded - set to 0 for newly created knowledge bases
+            # When listing KBs with eager loading, this will be overwritten with actual count
+            data['items_count'] = 0
+
         return data
 
 # Brand Voice
