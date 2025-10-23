@@ -110,10 +110,19 @@ def upgrade() -> None:
 
     # 10. INDEX: platform_admin_invitations(email, status) with partial index
     # Use case: Admin invitation lookups
+    # Note: Only create if table exists (admin001 migration may not have run yet)
     op.execute("""
-        CREATE INDEX IF NOT EXISTS idx_admin_invitations_email_status_pending
-        ON platform_admin_invitations(email, status)
-        WHERE status = 'pending'
+        DO $$
+        BEGIN
+            IF EXISTS (
+                SELECT 1 FROM information_schema.tables
+                WHERE table_name = 'platform_admin_invitations'
+            ) THEN
+                CREATE INDEX IF NOT EXISTS idx_admin_invitations_email_status_pending
+                ON platform_admin_invitations(email, status)
+                WHERE status = 'pending';
+            END IF;
+        END $$;
     """)
 
 
@@ -121,7 +130,18 @@ def downgrade() -> None:
     """Remove composite and partial indexes."""
 
     # Drop indexes in reverse order
-    op.execute("DROP INDEX IF EXISTS idx_admin_invitations_email_status_pending")
+    # Note: Conditional drop in case table doesn't exist
+    op.execute("""
+        DO $$
+        BEGIN
+            IF EXISTS (
+                SELECT 1 FROM information_schema.tables
+                WHERE table_name = 'platform_admin_invitations'
+            ) THEN
+                DROP INDEX IF EXISTS idx_admin_invitations_email_status_pending;
+            END IF;
+        END $$;
+    """)
     op.drop_index('idx_invitations_workspace_status_created', 'user_invitations')
     op.drop_index('idx_invitations_invited_by', 'user_invitations')
     op.execute("DROP INDEX IF EXISTS idx_invitations_workspace_pending")
