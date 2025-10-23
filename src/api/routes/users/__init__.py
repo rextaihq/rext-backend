@@ -12,7 +12,9 @@ from . import (
     impersonation,
     user_permissions,
     user_security,
-    preferences
+    preferences,
+    workspaces,
+    invitations
 )
 
 # Create main router with prefix and tags
@@ -35,3 +37,5 @@ router.include_router(impersonation.router)
 router.include_router(user_permissions.router)
 router.include_router(user_security.router)
 router.include_router(preferences.router)
+router.include_router(workspaces.router)
+router.include_router(invitations.router)

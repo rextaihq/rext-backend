@@ -57,6 +57,23 @@ class Users(Base, SerializableMixin):
     discount_usages = relationship("DiscountUsage", back_populates="user", cascade="all, delete-orphan")
     refunds = relationship("Refund", back_populates="user", cascade="all, delete-orphan")
 
+    # Admin invitation relationships
+    sent_admin_invitations = relationship(
+        "PlatformAdminInvitations",
+        back_populates="invited_by",
+        foreign_keys="PlatformAdminInvitations.invited_by_admin_id"
+    )
+    accepted_admin_invitations = relationship(
+        "PlatformAdminInvitations",
+        back_populates="accepted_by",
+        foreign_keys="PlatformAdminInvitations.accepted_by_user_id"
+    )
+    revoked_admin_invitations = relationship(
+        "PlatformAdminInvitations",
+        back_populates="revoked_by",
+        foreign_keys="PlatformAdminInvitations.revoked_by_admin_id"
+    )
+
     def to_dict(self, **kwargs):
         """Exclude sensitive fields from serialization"""
         if 'exclude' not in kwargs:

@@ -30,6 +30,7 @@ from src.services.invitation_service import InvitationService
 from src.services.member_service import MemberService
 from src.services.user_service import UserService
 from src.services.role_service import RoleService
+from src.services.email_service import EmailService
 from src.utils.response_utils import success, created
 from src.utils.route_decorators import db_transaction_handler
 from src.utils.audit_helper import create_audit_log_async
@@ -124,22 +125,41 @@ async def validate_invitation(
     invitation_status = invitation.status
     workspace_id = str(workspace.id)
     workspace_name = workspace.name
+    workspace_slug = workspace.slug
     role_id = str(role.id)
     role_name = role.display_name or role.name
-    inviter_name = inviter.display_name or inviter.username if inviter else "Unknown"
+    inviter_display_name = inviter.display_name if inviter else None
+    inviter_username = inviter.username if inviter else "Unknown"
+    inviter_first_name = inviter.first_name if inviter and hasattr(inviter, 'first_name') else ""
+    inviter_last_name = inviter.last_name if inviter and hasattr(inviter, 'last_name') else ""
+    inviter_id = str(inviter.id) if inviter else None
 
     return success(
         data={
             "invitation": {
                 "id": invitation_id,
                 "email": invitation_email,
-                "workspace_id": workspace_id,
-                "workspace_name": workspace_name,
-                "role_id": role_id,
-                "role_name": role_name,
-                "invited_by": inviter_name,
+                "workspace": {
+                    "id": workspace_id,
+                    "title": workspace_name,
+                    "name": workspace_name,
+                    "slug": workspace_slug,
+                },
+                "role": {
+                    "id": role_id,
+                    "name": role_name,
+                    "display_name": role_name,
+                },
+                "invited_by": {
+                    "id": inviter_id,
+                    "username": inviter_username,
+                    "first_name": inviter_first_name,
+                    "last_name": inviter_last_name,
+                    "display_name": inviter_display_name,
+                },
                 "expires_at": invitation_expires_at,
                 "status": invitation_status,
+                "token": token,
             }
         },
         request=request,
@@ -283,6 +303,64 @@ async def accept_invitation(
             "membership_id": membership_id,
         }
     )
+
+    # Send notification email to inviter
+    if invitation.invited_by_user_id:
+        try:
+            inviter = await user_service.get_user_by_id(invitation.invited_by_user_id)
+
+            # Import email template
+            from emails.templates.workspace.invitation_accepted import create_invitation_accepted_email
+
+            # Prepare member details
+            new_member_name = current_user_obj.display_name or current_user_obj.username
+
+            # Generate email HTML
+            email_html = create_invitation_accepted_email(
+                workspace_name=workspace_name_str,
+                new_member_name=new_member_name,
+                new_member_email=user_email,
+                role_name=role_name_str,
+                workspace_id=workspace_id_str,
+                frontend_url="http://localhost:3000"  # TODO: Get from config
+            )
+
+            # Send email to inviter
+            email_service = EmailService(db)
+            await email_service.send_email(
+                to=inviter.email,
+                subject=f"✅ {new_member_name} joined {workspace_name_str}",
+                html=email_html,
+                workspace_id=invitation.workspace_id,
+                user_id=invitation.invited_by_user_id,
+                template_type="invitation_accepted",
+                tags={
+                    "type": "workspace",
+                    "action": "invitation_accepted",
+                    "invitation_id": str(invitation.id),
+                    "workspace_id": workspace_id_str,
+                },
+                auto_commit=False  # Already in transaction
+            )
+
+            logger.info(
+                f"Invitation accepted notification sent to inviter: {inviter.email}",
+                extra={
+                    "invitation_id": str(invitation.id),
+                    "inviter_id": str(invitation.invited_by_user_id),
+                    "inviter_email": inviter.email,
+                }
+            )
+        except Exception as e:
+            # Don't fail the acceptance if email fails
+            logger.error(
+                f"Failed to send invitation accepted notification: {str(e)}",
+                exc_info=True,
+                extra={
+                    "invitation_id": str(invitation.id),
+                    "inviter_id": str(invitation.invited_by_user_id),
+                }
+            )
 
     return created(
         data={

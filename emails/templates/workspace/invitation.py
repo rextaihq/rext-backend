@@ -8,6 +8,75 @@ from emails.components import simple_header, primary_button, simple_footer
 from emails.utils.renderer import compose_email
 
 
+def get_role_permissions_html(role_name: str) -> str:
+    """
+    Get HTML describing permissions for a given role.
+
+    Args:
+        role_name: Name of the role (e.g., "Admin", "Editor", "Viewer")
+
+    Returns:
+        HTML string with role permissions
+    """
+    role_lower = role_name.lower()
+
+    # Define permissions for common roles
+    permissions_map = {
+        "owner": [
+            "Full workspace access",
+            "Manage workspace settings",
+            "Invite and remove members",
+            "Delete workspace"
+        ],
+        "admin": [
+            "Manage workspace content",
+            "Invite and manage members",
+            "Configure workspace settings",
+            "View analytics and reports"
+        ],
+        "editor": [
+            "Create and edit content",
+            "Manage topics and knowledge",
+            "Collaborate with team members",
+            "Submit content for review"
+        ],
+        "member": [
+            "View workspace content",
+            "Create content",
+            "Collaborate with team",
+            "Access knowledge base"
+        ],
+        "viewer": [
+            "View workspace content",
+            "Browse knowledge base",
+            "Read-only access",
+            "No editing permissions"
+        ]
+    }
+
+    # Get permissions for this role or default
+    permissions = permissions_map.get(role_lower, [
+        f"Access as {role_name}",
+        "Collaborate with team members"
+    ])
+
+    permissions_html = "".join([
+        f'<li style="color: #166534; font-size: 14px; line-height: 24px; margin: 4px 0;">{perm}</li>'
+        for perm in permissions
+    ])
+
+    return f"""
+    <div style="margin: 24px 0; padding: 20px; background-color: #f0fdf4; border-radius: 6px; border: 1px solid #86efac;">
+        <p style="color: #166534; font-size: 14px; line-height: 20px; margin: 0 0 12px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
+            <strong>✨ As {role_name}, you can:</strong>
+        </p>
+        <ul style="margin: 0; padding-left: 20px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
+            {permissions_html}
+        </ul>
+    </div>
+    """
+
+
 def render_workspace_invitation_email(
     workspace_name: str,
     inviter_name: str,
@@ -84,6 +153,7 @@ def render_workspace_invitation_email(
         </div>
         """,
         description_html,
+        get_role_permissions_html(role_name),
         """
         <p style="color: #374151; font-size: 16px; line-height: 24px; margin: 0 0 24px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
             Click the button below to accept this invitation and start collaborating:
@@ -208,6 +278,7 @@ def create_workspace_invitation_email(
         </div>
         """,
         description_html,
+        get_role_permissions_html(role_name),
         """
         <p style="color: #374151; font-size: 16px; line-height: 24px; margin: 0 0 24px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
             Click the button below to accept this invitation and start collaborating:

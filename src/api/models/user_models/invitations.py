@@ -17,6 +17,7 @@ class UserInvitations(Base, SerializableMixin):
     status = Column(String(50), default="pending")  # e.g., pending, accepted, revoked
     created_at = Column(TIMESTAMP, default=datetime.utcnow, nullable=False)
     expires_at = Column(TIMESTAMP, nullable=False)
+    reminder_sent = Column(Boolean, default=False, nullable=False)  # Track if expiry reminder email sent
 
     # add a constraint to ensure that the combination of email and workspace_id is unique
     __table_args__ = (
