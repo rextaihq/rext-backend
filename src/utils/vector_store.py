@@ -39,7 +39,7 @@ def load_yaml(file_path: str = "config/config.yaml") -> dict:
 
     with open(abs_path, "r") as f:
         content = yaml.safe_load(f) or {}
-        logger.info("✅ Loaded config from:", abs_path)
+        logger.info("✅ Loaded config from", path=abs_path)
         return content
 
 

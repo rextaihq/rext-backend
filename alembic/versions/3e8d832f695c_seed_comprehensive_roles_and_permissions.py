@@ -166,6 +166,7 @@ def upgrade() -> None:
             "display_name": "Workspace Owner",
             "description": "Full control over owned workspaces",
             "hierarchy_level": 60,
+            "is_system_role": False,  # Workspace-specific role
             "permissions": [
                 "workspace.read", "workspace.update", "workspace.delete", "workspace.manage_members", "workspace.invite",
                 "content.read", "content.create", "content.update", "content.delete",
@@ -179,6 +180,7 @@ def upgrade() -> None:
             "display_name": "Workspace Administrator",
             "description": "Manage workspace members and content",
             "hierarchy_level": 50,
+            "is_system_role": False,  # Workspace-specific role
             "permissions": [
                 "workspace.read", "workspace.update", "workspace.manage_members", "workspace.invite",
                 "content.read", "content.create", "content.update", "content.delete",
@@ -192,6 +194,7 @@ def upgrade() -> None:
             "display_name": "Editor",
             "description": "Create and edit content",
             "hierarchy_level": 30,
+            "is_system_role": False,  # Workspace-specific role
             "permissions": [
                 "workspace.read",
                 "content.read", "content.create", "content.update",
@@ -205,6 +208,7 @@ def upgrade() -> None:
             "display_name": "Viewer",
             "description": "Read-only access to content",
             "hierarchy_level": 10,
+            "is_system_role": False,  # Workspace-specific role
             "permissions": [
                 "workspace.read",
                 "content.read",
@@ -237,7 +241,7 @@ def upgrade() -> None:
                 display_name=role_data["display_name"],
                 description=role_data["description"],
                 hierarchy_level=role_data["hierarchy_level"],
-                is_system_role=True,
+                is_system_role=role_data.get("is_system_role", True),  # Default to True if not specified
                 created_at=datetime.utcnow(),
                 updated_at=datetime.utcnow()
             )
