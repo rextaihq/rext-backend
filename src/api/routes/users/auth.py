@@ -213,12 +213,39 @@ async def register_with_invitation(
         invitation_service = InvitationService(db)
         invitation = await invitation_service.get_invitation_by_token(user_data.invitation_token)
 
+        logger.info(
+            "Processing invitation registration",
+            extra={
+                "invitation_id": str(invitation.id),
+                "invitation_status": invitation.status,
+                "invitation_email": invitation.email,
+                "registration_email": user_data.email
+            }
+        )
+
         # Check invitation status
         if invitation.status != "pending":
-            raise BusinessRuleViolationException(
-                message=f"Invitation is {invitation.status} and cannot be used",
-                rule_name="invitation_must_be_pending"
-            )
+            # Provide helpful error messages based on status
+            if invitation.status == "accepted":
+                raise BusinessRuleViolationException(
+                    message="This invitation has already been accepted. If you need access to this workspace, please contact the workspace administrator for a new invitation.",
+                    rule_name="invitation_already_accepted"
+                )
+            elif invitation.status == "expired":
+                raise BusinessRuleViolationException(
+                    message="This invitation has expired. Please request a new invitation from the workspace administrator.",
+                    rule_name="invitation_expired"
+                )
+            elif invitation.status == "revoked":
+                raise BusinessRuleViolationException(
+                    message="This invitation has been revoked. Please contact the workspace administrator if you believe this is an error.",
+                    rule_name="invitation_revoked"
+                )
+            else:
+                raise BusinessRuleViolationException(
+                    message=f"Invitation is {invitation.status} and cannot be used",
+                    rule_name="invitation_must_be_pending"
+                )
 
         # Check if invitation expired
         if is_invitation_expired(invitation):
@@ -296,7 +323,7 @@ async def register_with_invitation(
         workspace_data = {
             "id": str(workspace.id),
             "slug": workspace.slug,
-            "title": workspace.title,
+            "name": workspace.name,
             "membership_id": acceptance_result["membership_id"]
         }
 
@@ -314,7 +341,7 @@ async def register_with_invitation(
                 "user": user_data_response,
                 "workspace": workspace_data,
                 "invitation_accepted": True,
-                "message": f"Welcome! You've joined {workspace.title}"
+                "message": f"Welcome! You've joined {workspace.name}"
             },
             request=request,
             message="Account created and workspace joined successfully"

@@ -42,6 +42,7 @@ class Role(Base):
     description = sa.Column(sa.Text)
     hierarchy_level = sa.Column(sa.Integer, default=0)
     is_system_role = sa.Column(sa.Boolean, default=True)
+    is_workspace_role = sa.Column(sa.Boolean, default=False, nullable=False)
     created_at = sa.Column(sa.TIMESTAMP, default=datetime.utcnow)
     updated_at = sa.Column(sa.TIMESTAMP, default=datetime.utcnow)
 
@@ -166,7 +167,8 @@ def upgrade() -> None:
             "display_name": "Workspace Owner",
             "description": "Full control over owned workspaces",
             "hierarchy_level": 60,
-            "is_system_role": False,  # Workspace-specific role
+            "is_system_role": False,  # Not a platform role
+            "is_workspace_role": True,  # Can be assigned to workspace members
             "permissions": [
                 "workspace.read", "workspace.update", "workspace.delete", "workspace.manage_members", "workspace.invite",
                 "content.read", "content.create", "content.update", "content.delete",
@@ -180,7 +182,8 @@ def upgrade() -> None:
             "display_name": "Workspace Administrator",
             "description": "Manage workspace members and content",
             "hierarchy_level": 50,
-            "is_system_role": False,  # Workspace-specific role
+            "is_system_role": False,  # Not a platform role
+            "is_workspace_role": True,  # Can be assigned to workspace members
             "permissions": [
                 "workspace.read", "workspace.update", "workspace.manage_members", "workspace.invite",
                 "content.read", "content.create", "content.update", "content.delete",
@@ -194,7 +197,8 @@ def upgrade() -> None:
             "display_name": "Editor",
             "description": "Create and edit content",
             "hierarchy_level": 30,
-            "is_system_role": False,  # Workspace-specific role
+            "is_system_role": False,  # Not a platform role
+            "is_workspace_role": True,  # Can be assigned to workspace members
             "permissions": [
                 "workspace.read",
                 "content.read", "content.create", "content.update",
@@ -208,7 +212,8 @@ def upgrade() -> None:
             "display_name": "Viewer",
             "description": "Read-only access to content",
             "hierarchy_level": 10,
-            "is_system_role": False,  # Workspace-specific role
+            "is_system_role": False,  # Not a platform role
+            "is_workspace_role": True,  # Can be assigned to workspace members
             "permissions": [
                 "workspace.read",
                 "content.read",
@@ -242,6 +247,7 @@ def upgrade() -> None:
                 description=role_data["description"],
                 hierarchy_level=role_data["hierarchy_level"],
                 is_system_role=role_data.get("is_system_role", True),  # Default to True if not specified
+                is_workspace_role=role_data.get("is_workspace_role", False),  # Default to False if not specified
                 created_at=datetime.utcnow(),
                 updated_at=datetime.utcnow()
             )

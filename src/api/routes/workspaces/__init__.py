@@ -140,12 +140,13 @@ async def get_available_roles(
     """
     Get available roles for workspace member invitations.
 
-    Returns non-system roles that can be assigned to workspace members.
+    Returns workspace roles that can be assigned to workspace members.
+    Uses is_workspace_role flag for proper role classification.
     """
-    # Fetch all non-system roles ordered by hierarchy
+    # Fetch all workspace roles ordered by hierarchy
     query = (
         select(Role)
-        .where(Role.is_system_role == False)
+        .where(Role.is_workspace_role == True)
         .order_by(Role.hierarchy_level.desc())
     )
     result = await db.execute(query)
@@ -158,6 +159,7 @@ async def get_available_roles(
             "display_name": role.display_name,
             "description": role.description,
             "is_system_role": role.is_system_role,
+            "is_workspace_role": role.is_workspace_role,
             "hierarchy_level": role.hierarchy_level,
             "created_at": role.created_at.isoformat() if role.created_at else None,
             "updated_at": role.updated_at.isoformat() if role.updated_at else None,

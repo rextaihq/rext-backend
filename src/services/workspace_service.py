@@ -918,28 +918,32 @@ class WorkspaceService:
 
     async def _get_workspace_owner_role(self) -> Role:
         """
-        Get the system workspace_owner role.
+        Get the workspace_owner role.
 
         This role is assigned to users who create a workspace, giving them
         full control including workspace deletion and billing management.
 
+        Note: Uses is_workspace_role instead of is_system_role for proper
+        role classification. workspace_owner is a workspace role, not a
+        platform/system role.
+
         Returns:
-            Role: The workspace_owner system role
+            Role: The workspace_owner role
 
         Raises:
-            ValueError: If workspace_owner system role not found in database
+            ValueError: If workspace_owner role not found in database
         """
         result = await self.db.execute(
             select(Role).where(
                 Role.name == "workspace_owner",
-                Role.is_system_role == True
+                Role.is_workspace_role == True
             )
         )
         role = result.scalar_one_or_none()
 
         if not role:
             raise ValueError(
-                "System role 'workspace_owner' not found. "
+                "Workspace role 'workspace_owner' not found. "
                 "Please ensure role seeding migrations have been run."
             )
 

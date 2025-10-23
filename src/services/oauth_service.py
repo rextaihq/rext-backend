@@ -436,6 +436,7 @@ class OAuthService:
                 description="Default role for regular users",
                 hierarchy_level=1,
                 is_system_role=True,
+                is_workspace_role=False,  # Platform role, not workspace role
                 created_at=datetime.utcnow()
             )
             self.db.add(default_role)

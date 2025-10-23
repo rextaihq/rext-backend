@@ -42,6 +42,14 @@ from src.api.middleware.exceptions import (
 class RoleService:
     """Service for role and permission management"""
 
+    # Standard workspace roles that cannot be deleted or modified
+    PROTECTED_WORKSPACE_ROLES = {
+        "workspace_owner",
+        "workspace_admin",
+        "editor",
+        "viewer"
+    }
+
     def __init__(self, db: AsyncSession):
         """
         Initialize RoleService.
@@ -59,7 +67,8 @@ class RoleService:
         workspace_id: Optional[UUID] = None,
         permission_ids: Optional[List[UUID]] = None,
         hierarchy_level: int = 1,
-        is_system_role: bool = False
+        is_system_role: bool = False,
+        is_workspace_role: bool = False
     ) -> Role:
         """
         Create role with permissions.
@@ -78,7 +87,8 @@ class RoleService:
             workspace_id: Optional workspace UUID for workspace-scoped roles
             permission_ids: List of permission UUIDs to assign
             hierarchy_level: 0-100 (default: 1)
-            is_system_role: Whether this is a system role (default: False)
+            is_system_role: Whether this is a platform role (default: False)
+            is_workspace_role: Whether this can be assigned to workspaces (default: False)
 
         Returns:
             Role object
@@ -121,6 +131,7 @@ class RoleService:
             description=description,
             hierarchy_level=hierarchy_level,
             is_system_role=is_system_role,
+            is_workspace_role=is_workspace_role,
             created_at=datetime.utcnow()
         )
 
@@ -138,6 +149,25 @@ class RoleService:
         )
 
         return new_role
+
+    def _is_protected_role(self, role: Role) -> bool:
+        """
+        Check if a role is protected from modification/deletion.
+
+        Protected roles include:
+        - Platform/system roles (is_system_role=True)
+        - Standard workspace roles (workspace_owner, workspace_admin, editor, viewer)
+
+        Args:
+            role: Role object to check
+
+        Returns:
+            True if role is protected, False otherwise
+        """
+        return (
+            role.is_system_role or
+            role.name in self.PROTECTED_WORKSPACE_ROLES
+        )
 
     async def update_role(
         self,
@@ -171,11 +201,11 @@ class RoleService:
         """
         role = await self.get_role_by_id(role_id)
 
-        # Check if system role
-        if role.is_system_role:
+        # Check if protected role (system roles or standard workspace roles)
+        if self._is_protected_role(role):
             raise WrextValidationException(
-                message="Cannot update system roles",
-                field_errors={"role_id": ["System roles are immutable"]}
+                message=f"Cannot update protected role '{role.name}'",
+                field_errors={"role_id": ["Protected roles (platform roles and standard workspace roles) cannot be modified"]}
             )
 
         # Check display_name uniqueness if being updated
@@ -246,11 +276,11 @@ class RoleService:
         """
         role = await self.get_role_by_id(role_id)
 
-        # Check if system role
-        if role.is_system_role:
+        # Check if protected role (system roles or standard workspace roles)
+        if self._is_protected_role(role):
             raise WrextValidationException(
-                message="Cannot delete system roles",
-                field_errors={"role_id": ["System roles cannot be deleted"]}
+                message=f"Cannot delete protected role '{role.name}'",
+                field_errors={"role_id": ["Protected roles (platform roles and standard workspace roles) cannot be deleted"]}
             )
 
         # Check if role is assigned to users
