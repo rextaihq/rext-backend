@@ -295,6 +295,27 @@ class ErrorResponse(BaseResponse):
         }
 
 
+class GenericResponse(BaseModel):
+    """Simple generic response with success and message"""
+
+    success: bool = Field(
+        ...,
+        description="Indicates whether the operation was successful"
+    )
+    message: str = Field(
+        ...,
+        description="Human-readable message describing the result"
+    )
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "success": True,
+                "message": "Operation completed successfully"
+            }
+        }
+
+
 # ============================================================================
 # TYPE UNIONS
 # ============================================================================
