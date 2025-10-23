@@ -9,6 +9,27 @@ class RegisterUser(BaseModel):
     password: str = Field(..., min_length=8, description="Password for the user account")
 
 
+class RegisterWithInvitation(BaseModel):
+    """
+    Schema for user registration via workspace invitation.
+
+    This endpoint handles the complete flow of:
+    1. Creating a new user account
+    2. Validating the invitation token
+    3. Auto-accepting the invitation
+    4. Creating workspace membership
+
+    The email is pre-filled and read-only on the frontend, but we validate
+    that it matches the invitation email for security.
+    """
+    first_name: str = Field(..., description="First name of the user")
+    last_name: str = Field(..., description="Last name of the user")
+    username: str = Field(..., description="Username for the account")
+    email: EmailStr = Field(..., description="Email address (must match invitation email)")
+    password: str = Field(..., min_length=8, description="Password for the user account")
+    invitation_token: str = Field(..., description="Invitation token from email link")
+
+
 class LoginUser(BaseModel):
     email: EmailStr = Field(..., description="email of the user")
     password: str = Field(..., min_length=8, description="Password for the user account")

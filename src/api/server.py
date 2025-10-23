@@ -41,6 +41,9 @@ from src.api.routes.admin.email_analytics_routes import router as admin_email_an
 from src.api.routes.admin.email_admin_routes import router as admin_email_routes_router
 from src.api.routes.admin.webhook_monitoring_routes import router as admin_webhook_monitoring_routes_router
 from src.api.routes.admin.export_routes import router as admin_export_routes_router
+from src.api.routes.admin.admin_invitation_routes import admin_router as admin_invitation_admin_router
+from src.api.routes.admin.admin_invitation_routes import public_router as admin_invitation_public_router
+from src.api.routes.admin.invitation_analytics_routes import router as invitation_analytics_router
 from src.api.routes.audit.modules import router as audit_router
 from src.api.routes.security.security_routes import router as security_router
 from src.api.routes.events import router as events_router
@@ -308,6 +311,9 @@ app.include_router(admin_email_analytics_routes_router, prefix="/api/v1", tags=[
 app.include_router(admin_email_routes_router)  # Prefix already defined in router
 app.include_router(admin_webhook_monitoring_routes_router, prefix="/api/v1/admin", tags=["Admin - Webhooks"])
 app.include_router(admin_export_routes_router, prefix="/api/v1/admin", tags=["Admin - Exports"])
+app.include_router(admin_invitation_admin_router, prefix="/api/v1", tags=["Admin - Platform Invitations"])
+app.include_router(admin_invitation_public_router, prefix="/api/v1", tags=["Public - Admin Invitations"])
+app.include_router(invitation_analytics_router, prefix="/api/v1/admin/analytics", tags=["Admin - Invitation Analytics"])
 app.include_router(audit_router, prefix="/api/v1", tags=["Audit Logs"])
 app.include_router(security_router, prefix="/api/v1", tags=["Security Monitoring"])
 # Email routes (Phase 3 complete - Python-based templates)

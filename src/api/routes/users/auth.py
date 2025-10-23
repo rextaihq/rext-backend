@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, Request, BackgroundTasks, Header
 from src.utils.logger import logger
 from src.api.security.dependencies import get_current_user
-from src.api.schema.user_schema import LoginUser, RegisterUser
+from src.api.schema.user_schema import LoginUser, RegisterUser, RegisterWithInvitation
 from src.api.security.token_utils import verify_token
 from src.api.config import get_settings
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -11,7 +11,9 @@ from src.utils.response_utils import success, error, created
 from src.api.schema.response_schemas import ErrorCode, ErrorSeverity
 from src.api.middleware.exceptions import (
     DuplicateResourceException,
-    WrextAuthenticationException
+    WrextAuthenticationException,
+    ResourceNotFoundException,
+    BusinessRuleViolationException
 )
 from datetime import datetime
 from user_agents import parse as parse_user_agent
@@ -165,6 +167,164 @@ async def create_user(
     except Exception as e:
         # Re-raise to be handled by middleware (transaction will be rolled back automatically)
         logger.error(f"User registration failed: {str(e)}", exc_info=True)
+        raise
+
+
+@router.post("/register-with-invitation")
+async def register_with_invitation(
+    user_data: RegisterWithInvitation,
+    request: Request,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_async_db),
+    _rate_limit: None = Depends(registration_rate_limit())
+):
+    """
+    Create a new user account via workspace invitation.
+
+    This endpoint handles the complete invitation acceptance flow:
+    1. Validates the invitation token
+    2. Creates the user account
+    3. Auto-accepts the invitation
+    4. Creates workspace membership
+    5. Skips email verification (invitation email already validated)
+    6. Returns user + workspace context
+
+    This is the recommended flow for users signing up via invitation links.
+
+    Args:
+        user_data: RegisterWithInvitation schema with user details + invitation token
+        request: FastAPI request object
+        background_tasks: For sending welcome emails
+        db: Database session
+
+    Returns:
+        User data + workspace information + authentication tokens
+
+    Raises:
+        ResourceNotFoundException: If invitation not found
+        BusinessRuleViolationException: If invitation expired or email mismatch
+        DuplicateResourceException: If user already exists
+    """
+    from src.services.invitation_service import InvitationService
+    from src.utils.invitation_utils import is_invitation_expired
+
+    try:
+        # Step 1: Validate invitation token
+        invitation_service = InvitationService(db)
+        invitation = await invitation_service.get_invitation_by_token(user_data.invitation_token)
+
+        # Check invitation status
+        if invitation.status != "pending":
+            raise BusinessRuleViolationException(
+                message=f"Invitation is {invitation.status} and cannot be used",
+                rule_name="invitation_must_be_pending"
+            )
+
+        # Check if invitation expired
+        if is_invitation_expired(invitation):
+            invitation.status = "expired"
+            await db.flush()
+            raise BusinessRuleViolationException(
+                message="Invitation has expired",
+                rule_name="invitation_not_expired"
+            )
+
+        # Step 2: Verify email matches invitation
+        # This is a critical security check
+        if user_data.email.lower() != invitation.email.lower():
+            raise BusinessRuleViolationException(
+                message=f"Email must match invitation email: {invitation.email}",
+                rule_name="email_must_match_invitation"
+            )
+
+        # Step 3: Create user account
+        auth_service = AuthService(db)
+        new_user, verification_token = await auth_service.register_user(
+            email=user_data.email,
+            username=user_data.username,
+            password=user_data.password,
+            first_name=user_data.first_name,
+            last_name=user_data.last_name
+        )
+
+        # Step 4: Skip email verification for invited users
+        # Rationale: Email was already validated by invitation system
+        new_user.email_verified = True
+        new_user.email_verified_at = datetime.utcnow()
+        await db.flush()
+
+        # Step 5: Auto-accept invitation
+        acceptance_result = await invitation_service.accept_invitation(
+            invitation_id=invitation.id,
+            user_id=new_user.id
+        )
+
+        # Commit transaction before background tasks
+        await db.commit()
+
+        # Step 6: Send welcome email (not verification email)
+        frontend_url = settings.FRONTEND_URL
+        background_tasks.add_task(
+            send_welcome_email_task,
+            email=new_user.email,
+            first_name=new_user.first_name,
+            user_id=str(new_user.id),
+            frontend_url=frontend_url
+        )
+
+        # Step 7: Get workspace details for response
+        from src.services.workspace_service import WorkspaceService
+        workspace_service = WorkspaceService(db)
+        workspace = await workspace_service.get_workspace(invitation.workspace_id)
+
+        # Step 8: Return comprehensive response with workspace context
+        user_data_response = {
+            "id": str(new_user.id),
+            "username": new_user.username,
+            "email": new_user.email,
+            "first_name": new_user.first_name,
+            "last_name": new_user.last_name,
+            "display_name": new_user.display_name,
+            "language": new_user.language,
+            "timezone": new_user.timezone,
+            "status": new_user.status,
+            "email_verified": new_user.email_verified,
+            "roles": [{"name": "user", "display_name": "User"}],
+            "created_at": new_user.created_at.isoformat() if hasattr(new_user, 'created_at') else None,
+        }
+
+        workspace_data = {
+            "id": str(workspace.id),
+            "slug": workspace.slug,
+            "title": workspace.title,
+            "membership_id": acceptance_result["membership_id"]
+        }
+
+        logger.info(
+            f"User registered via invitation: {new_user.email}",
+            extra={
+                "user_id": str(new_user.id),
+                "workspace_id": str(workspace.id),
+                "invitation_id": str(invitation.id)
+            }
+        )
+
+        return created(
+            data={
+                "user": user_data_response,
+                "workspace": workspace_data,
+                "invitation_accepted": True,
+                "message": f"Welcome! You've joined {workspace.title}"
+            },
+            request=request,
+            message="Account created and workspace joined successfully"
+        )
+
+    except (ResourceNotFoundException, BusinessRuleViolationException, DuplicateResourceException):
+        # Re-raise to be handled by middleware
+        raise
+    except Exception as e:
+        logger.error(f"Registration with invitation failed: {str(e)}", exc_info=True)
         raise
 
 

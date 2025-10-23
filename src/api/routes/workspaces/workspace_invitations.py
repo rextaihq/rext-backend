@@ -423,6 +423,125 @@ async def create_bulk_workspace_invitations(
     )
 
 
+@router.post(
+    "/{workspace_id}/invitations/{invitation_id}/resend",
+    summary="Resend workspace invitation",
+)
+@db_transaction_handler("resend workspace invitation", auto_commit=True)
+@require_permissions("member.invite", workspace_scoped=True)
+async def resend_workspace_invitation(
+    workspace_id: str,
+    invitation_id: str,
+    request: Request,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_async_db),
+    user: dict = Depends(get_current_user),
+):
+    """Resend a pending invitation with a new token and extended expiry."""
+    user_uuid = UUID(str(user.get("identity")))
+    await verify_current_user(db, str(user_uuid))
+    workspace, _membership = await resolve_and_verify_workspace(
+        db,
+        workspace_id,
+        user_uuid,
+    )
+
+    service = InvitationService(db)
+    invitation = await service.get_invitation_by_id(UUID(invitation_id))
+    if invitation.workspace_id != workspace.id:
+        raise ResourceNotFoundException(
+            resource_type="invitation",
+            resource_id=invitation_id,
+        )
+
+    # Resend invitation (generates new token and extends expiry)
+    invitation = await service.resend_invitation(
+        invitation_id=UUID(invitation_id),
+        extend_days=7
+    )
+
+    # Get role and inviter details
+    role_service = RoleService(db)
+    user_service = UserService(db)
+    role = await role_service.get_role_by_id(invitation.role_id)
+    inviter = await user_service.get_user_by_id(user_uuid)
+
+    frontend_url = settings.FRONTEND_URL
+
+    # Eagerly load attributes before async operations
+    workspace_id_value = workspace.id
+    workspace_name_value = workspace.name
+    role_display_name = role.display_name or role.name
+    invitation_id_value = invitation.id
+    invitation_email = invitation.email
+    invitation_token = invitation.invitation_token
+    inviter_display_name = inviter.display_name if inviter else "A teammate"
+    inviter_username = inviter.username if inviter else None
+    inviter_email = inviter.email if inviter else None
+
+    invitation_link = f"{frontend_url}/invitations/accept?token={invitation_token}"
+
+    # Prepare and send email
+    email_content = await render_workspace_email(
+        db=db,
+        workspace_id=workspace_id_value,
+        template_type="workspace_invitation",
+        variables={
+            "workspace_name": workspace_name_value,
+            "inviter_name": inviter_display_name,
+            "invitee_name": invitation_email.split('@')[0],
+            "invitee_email": invitation_email,
+            "recipient_email": invitation_email,
+            "role_name": role_display_name,
+            "invitation_url": invitation_link,
+            "expiry_days": "7",
+        },
+    )
+
+    background_tasks.add_task(
+        send_workspace_invitation_email_task,
+        email=invitation_email,
+        subject=email_content["subject"],
+        body=email_content["body"],
+        workspace_id=str(workspace_id_value),
+        invitation_id=str(invitation_id_value)
+    )
+
+    await create_audit_log_async(
+        db=db,
+        user_id=str(user_uuid),
+        action="invitation.resend",
+        resource_type="invitation",
+        resource_id=invitation_id,
+        new_values={
+            "new_token": invitation_token,
+            "new_expires_at": invitation.expires_at.isoformat()
+        },
+        request=request,
+        workspace_id=workspace_id_value,
+        username=inviter_username,
+        user_email=inviter_email,
+    )
+
+    logger.info(
+        "Workspace invitation resent",
+        extra={
+            "workspace_id": str(workspace_id_value),
+            "invitation_id": invitation_id,
+            "email": invitation_email,
+        },
+    )
+
+    # Serialize invitation for response
+    invitation_data = _serialize_invitation(invitation, role, inviter)
+
+    return success(
+        data={"invitation": invitation_data},
+        request=request,
+        message="Invitation resent successfully",
+    )
+
+
 @router.delete(
     "/{workspace_id}/invitations/{invitation_id}",
     summary="Revoke workspace invitation",
