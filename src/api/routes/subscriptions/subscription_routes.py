@@ -219,15 +219,15 @@ async def get_subscription_status(
     current_user: dict = Depends(get_current_user)
 ):
     """
-    Get subscription status with LemonSqueezy data.
+    Get subscription status with detailed usage metrics.
 
-    Lightweight endpoint for quick status checks.
-    Returns subscription status, customer portal URL, and basic usage metrics.
+    Returns subscription status, plan details, and formatted usage metrics
+    that match the frontend's expected structure.
 
     Returns:
-    - Subscription status and key information
-    - Customer portal URL for subscription management
-    - Current usage metrics
+    - subscription: Subscription details with status
+    - plan: Plan information with pricing
+    - usage: Detailed usage metrics with limits and percentages
     - null if no active subscription
     """
     user_id = current_user.get("identity")
@@ -237,43 +237,87 @@ async def get_subscription_status(
 
     if not subscription:
         return success(
-            data={
-                "has_subscription": False,
-                "status": None,
-                "customer_portal_url": None
-            },
+            data=None,
             request=request,
             message="No active subscription found"
         )
 
+    # Get plan details
+    plan = await service.get_plan_by_id(subscription.plan_id)
+
     # Get usage metrics
     current_usage = await service.calculate_usage(user_id)
 
-    # Get customer portal URL
-    portal_url = await service.get_customer_portal_url(
-        user_id=user_id,
-        return_url=str(request.url_for("get_subscription_status"))
-    )
+    # Helper function to format usage metric
+    def format_usage_metric(used: int, limit: int | None, reset_date: str | None = None) -> dict:
+        """Format usage metric with percentage calculation."""
+        unlimited = limit is None or limit < 0
 
-    # Build lightweight status response
-    status_data = {
-        "has_subscription": True,
-        "subscription_id": str(subscription.id),
-        "status": subscription.status.value,
-        "billing_period": subscription.billing_period.value,
-        "plan_id": str(subscription.plan_id),
-        "start_date": subscription.start_date.isoformat() if subscription.start_date else None,
-        "end_date": subscription.end_date.isoformat() if subscription.end_date else None,
-        "trial_end_date": subscription.trial_end_date.isoformat() if subscription.trial_end_date else None,
-        "cancel_at_period_end": subscription.cancel_at_period_end,
-        "customer_portal_url": portal_url,
-        "lemonsqueezy_subscription_id": subscription.lemonsqueezy_subscription_id,
-        "usage": {
-            "workspaces": current_usage["workspaces"],
-            "topics": current_usage["topics"],
-            "knowledge_items": current_usage["knowledge_items"],
-            "api_calls": subscription.current_api_calls
+        if unlimited:
+            percentage = 0.0
+            limit = None
+        else:
+            percentage = round((used / limit) * 100, 1) if limit > 0 else 0.0
+
+        metric = {
+            "used": used,
+            "limit": limit,
+            "percentage": percentage,
+            "unlimited": unlimited
         }
+
+        if reset_date is not None:
+            metric["reset_date"] = reset_date
+
+        return metric
+
+    # Build formatted usage response
+    usage_reset_date = subscription.usage_reset_date.isoformat() if subscription.usage_reset_date else None
+
+    formatted_usage = {
+        "workspaces": format_usage_metric(
+            current_usage["workspaces"],
+            plan.max_workspaces
+        ),
+        "members": format_usage_metric(
+            current_usage["members"],
+            plan.max_members_per_workspace
+        ),
+        "topics": format_usage_metric(
+            current_usage["topics"],
+            plan.max_topics
+        ),
+        "knowledge_items": format_usage_metric(
+            current_usage["knowledge_items"],
+            plan.max_knowledge_items
+        ),
+        "api_calls": format_usage_metric(
+            subscription.current_api_calls,
+            plan.max_api_calls_per_month,
+            usage_reset_date
+        )
+    }
+
+    # Build complete status response
+    status_data = {
+        "subscription": {
+            "id": str(subscription.id),
+            "status": subscription.status.value,
+            "current_period_end": subscription.renews_at.isoformat() if subscription.renews_at else None,
+            "cancel_at_period_end": subscription.cancel_at_period_end,
+            "billing_period": subscription.billing_period.value,
+            "start_date": subscription.start_date.isoformat() if subscription.start_date else None,
+            "end_date": subscription.end_date.isoformat() if subscription.end_date else None,
+            "cancelled_at": subscription.cancelled_at.isoformat() if subscription.cancelled_at else None,
+        },
+        "plan": {
+            "id": str(plan.id),
+            "name": plan.name,
+            "display_name": plan.display_name,
+            "price_monthly": float(plan.price_monthly) if plan.price_monthly else 0.0,
+            "price_yearly": float(plan.price_yearly) if plan.price_yearly else 0.0,
+        },
+        "usage": formatted_usage
     }
 
     return success(

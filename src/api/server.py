@@ -13,6 +13,7 @@ from src.api.models.subscription_models.subscriptions import UserSubscription
 # Third-party imports
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from dotenv import load_dotenv
 
 # Local application imports
@@ -47,6 +48,8 @@ from src.api.routes.events import router as events_router
 from src.api.routes.email import preview_router, webhook_router
 from src.api.routes.users.email_preferences import router as email_prefs_router
 from src.api.routes.users.onboarding import router as onboarding_router
+from src.api.routes.media import router as media_router
+from src.api.routes.invitations import router as invitations_router
 from src.api.database.async_database import async_engine
 
 # Middleware imports
@@ -313,6 +316,25 @@ app.include_router(webhook_router, prefix="/api/v1/email", tags=["Email Webhooks
 app.include_router(email_prefs_router, prefix="/api/v1", tags=["Email Preferences"])
 # Onboarding routes (Phase 9)
 app.include_router(onboarding_router, prefix="/api/v1", tags=["Onboarding"])
+# Media routes
+app.include_router(media_router, prefix="/api/v1", tags=["Media"])
+# Public invitation routes (validate and accept)
+app.include_router(invitations_router, prefix="/api/v1", tags=["Invitations"])
+
+# ============================================================================
+# STATIC FILE SERVING
+# ============================================================================
+
+# Mount media directory for serving uploaded files
+# This allows the frontend to access media files via URLs like:
+# http://localhost:2024/media/workspace-id/user-id/filename.jpg
+media_dir = os.path.join(os.getcwd(), "media")
+if not os.path.exists(media_dir):
+    os.makedirs(media_dir, exist_ok=True)
+    logger.info(f"Created media directory at: {media_dir}")
+
+app.mount("/media", StaticFiles(directory=media_dir), name="media")
+logger.info(f"Mounted media directory for static file serving: {media_dir}")
 
 # ============================================================================
 # ROOT ENDPOINTS

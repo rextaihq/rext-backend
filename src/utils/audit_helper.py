@@ -175,5 +175,6 @@ async def create_audit_log_async(
 
     except Exception as e:
         logger.error(f"Failed to create audit log: {str(e)}")
-        await db.rollback()
+        # DO NOT rollback here - let the decorator handle transaction rollback
+        # Rolling back here would cause the entire request transaction to fail
         return None

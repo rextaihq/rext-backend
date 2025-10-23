@@ -15,7 +15,7 @@ from src.services.media_service import MediaService
 from src.services.storage_service import create_storage_service
 from src.services.image_processing_service import ImageProcessingService
 from src.config.storage_config import storage_settings
-from src.utils.response_utils import success, created, error_response
+from src.utils.response_utils import success, created, error
 from src.utils.route_decorators import db_transaction_handler, require_permissions
 from src.utils.logger import logger
 
@@ -138,13 +138,13 @@ async def upload_media(
 
     except ValueError as e:
         logger.error(f"Media upload validation error: {e}")
-        return error_response(
+        return error(
             message=str(e),
             status_code=status.HTTP_400_BAD_REQUEST
         )
     except Exception as e:
         logger.error(f"Media upload error: {e}")
-        return error_response(
+        return error(
             message="Failed to upload file",
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
@@ -246,7 +246,7 @@ async def get_media_detail(
     media = await service.get_media(media_id, workspace_id)
 
     if not media:
-        return error_response(
+        return error(
             message="Media not found",
             status_code=status.HTTP_404_NOT_FOUND
         )
@@ -310,7 +310,7 @@ async def update_media_metadata(
     )
 
     if not media:
-        return error_response(
+        return error(
             message="Media not found",
             status_code=status.HTTP_404_NOT_FOUND
         )
@@ -357,7 +357,7 @@ async def delete_media(
     )
 
     if not deleted:
-        return error_response(
+        return error(
             message="Media not found",
             status_code=status.HTTP_404_NOT_FOUND
         )

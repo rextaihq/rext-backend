@@ -12,21 +12,57 @@ def split_data(
     overlap: int = 200
 ) -> List[Document]:
     """
-    Splits text(s) or Document(s) into smaller chunks for efficient retrieval and embedding.
+    Splits text or Document objects into semantic chunks for vector embeddings.
+
+    Following LangChain v1.0 best practices (Released Oct 2025):
+    - Uses RecursiveCharacterTextSplitter for semantic splitting
+    - Preserves document metadata across chunks
+    - Adds chunk-specific metadata for tracking
+    - Handles both raw strings and Document objects
+
+    RecursiveCharacterTextSplitter splits on separators in order:
+    1. "\n\n" (paragraphs) - preserves semantic structure
+    2. "\n" (lines) - maintains readability
+    3. " " (words) - keeps words intact
+    4. "" (characters) - fallback for very long words
 
     Args:
-        documents (Union[List[Document], str]): Input text or list of Document objects.
-        chunk_size (int, optional): Maximum size of each text chunk. Defaults to 1000.
-        overlap (int, optional): Number of overlapping characters between chunks. Defaults to 200.
+        documents: Input text string or list of Document objects to split
+        chunk_size: Maximum size of each text chunk in characters
+                   Default: 1000 (optimal for most retrieval tasks)
+        overlap: Number of overlapping characters between chunks
+                Default: 200 (20% overlap maintains context continuity)
 
     Returns:
-        List[Document]: A list of Document objects with:
-            - page_content (str): The chunked text content.
-            - metadata (dict): Includes:
-                - "source" (if available),
-                - "chunk_id",
-                - "total_chunks",
-                - "length".
+        List of Document objects with:
+            - page_content: The chunked text content
+            - metadata: Original metadata plus:
+                - chunk_id: Zero-based index of chunk
+                - total_chunks: Total number of chunks from this document
+                - length: Character count of this chunk
+
+    Raises:
+        ValueError: If documents is neither a string nor List[Document]
+        Exception: If text splitting fails
+
+    Examples:
+        >>> # Split a string
+        >>> chunks = split_data("Long text...", chunk_size=500, overlap=100)
+        >>> print(len(chunks))
+        3
+
+        >>> # Split Document objects
+        >>> from langchain_core.documents import Document
+        >>> docs = [Document(page_content="Text", metadata={"source": "file.txt"})]
+        >>> chunks = split_data(docs)
+        >>> print(chunks[0].metadata)
+        {'source': 'file.txt', 'chunk_id': 0, 'total_chunks': 1, 'length': 4}
+
+    Note:
+        Chunk size of 1000 with 200 overlap is optimal for:
+        - BAAI/bge-small-en embeddings (512 token context window)
+        - Most retrieval tasks balancing precision vs. context
+        - ~150-200 words per chunk (typical English text)
     """
     try:
         text_splitter = RecursiveCharacterTextSplitter(

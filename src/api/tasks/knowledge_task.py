@@ -33,9 +33,14 @@ async def scrape_web_content(url: HttpUrl, website_id: str):
         if result.success:
             content = result.markdown
 
-            # Push chunks to vector store
+            # Push chunks to vector store with workspace and knowledge metadata
             logger.info(f"Adding chunks for {result.url} to vector store")
-            add_to_vector_store(blog_context=chunks)
+            add_to_vector_store(
+                blog_context=chunks,
+                workspace_id=str(website.workspace_id),
+                knowledge_id=str(website_id),
+                knowledge_type="web"
+            )
 
             # Update DB with stats
             website.char_count = str(len(content))

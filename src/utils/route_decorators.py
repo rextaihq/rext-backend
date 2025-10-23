@@ -147,10 +147,7 @@ def db_transaction_handler(
                 # Auto-commit transaction if db session present and enabled
                 if db and auto_commit and hasattr(db, "commit"):
                     await db.commit()
-                    logger.debug(
-                        f"Transaction committed: {operation_name}",
-                        extra={"operation": func.__name__}
-                    )
+                    logger.debug(f"Transaction committed: {operation_name}")
 
                 # Auto-format success response if raw data returned
                 # If handler returns JSONResponse, pass it through unchanged

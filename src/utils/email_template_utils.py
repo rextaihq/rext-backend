@@ -282,17 +282,16 @@ async def get_workspace_template(db, workspace_id: str, template_type: str) -> D
     Returns:
         Dictionary with 'subject' and 'body' keys
     """
-    from sqlalchemy import select, or_
+    from sqlalchemy import select, or_, cast, String
     from src.api.models.workspace_models.email_template import EmailTemplate, TemplateType
+    from src.utils.logger import logger
 
     try:
-        # Convert string to TemplateType enum for proper database comparison
-        enum_value = TemplateType(template_type)
-
         # First, try to find active custom template for this specific workspace
+        # Use cast() to ensure proper type comparison with the database enum
         query = select(EmailTemplate).where(
             EmailTemplate.workspace_id == workspace_id,
-            EmailTemplate.template_type == enum_value,
+            cast(EmailTemplate.template_type, String) == template_type,
             EmailTemplate.is_active == True,
             EmailTemplate.is_default == False
         )
@@ -308,7 +307,7 @@ async def get_workspace_template(db, workspace_id: str, template_type: str) -> D
         # Second, try to find database default template (is_default=True)
         default_query = select(EmailTemplate).where(
             EmailTemplate.workspace_id == workspace_id,
-            EmailTemplate.template_type == enum_value,
+            cast(EmailTemplate.template_type, String) == template_type,
             EmailTemplate.is_active == True,
             EmailTemplate.is_default == True
         )
@@ -320,12 +319,9 @@ async def get_workspace_template(db, workspace_id: str, template_type: str) -> D
                 "subject": db_default_template.subject,
                 "body": db_default_template.body
             }
-    except ValueError:
-        # If enum conversion fails, continue to hardcoded defaults
-        pass
     except Exception as e:
-        # If database query fails, rollback and continue to hardcoded defaults
-        await db.rollback()
+        # If database query fails, log the error and continue to hardcoded defaults
+        logger.error(f"Error fetching email template from database: {str(e)}")
         pass
 
     # Third, fall back to hardcoded default template

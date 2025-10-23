@@ -2,19 +2,36 @@
 Knowledge Service - Business Logic for Knowledge Operations
 
 This service encapsulates all business logic related to knowledge management,
-including file uploads, text knowledge, and web scraping.
+including file uploads, text knowledge, and web scraping with vector embeddings.
+
+Following LangChain v1.0 and LangGraph v1.0 Best Practices (Released Oct 2025):
+- Uses RecursiveCharacterTextSplitter for semantic text chunking (LCEL pattern)
+- BAAI/bge-small-en embeddings (384-dim, optimized for retrieval)
+- FAISS IndexFlatL2 for exact similarity search
+- Document objects with metadata for multi-tenant isolation
+- Batch processing with async operations for efficiency
+- Robust error handling with try/except blocks
+
+Vector Store Integration (Supports Multiple KBs per Workspace):
+- Text is split into 1000-char chunks with 200-char overlap
+- Each chunk becomes a Document with workspace_id + knowledge_id metadata
+- Documents are embedded and stored in FAISS index
+- Multi-level isolation: workspace → knowledge_base → knowledge_item
+- UUID-based document IDs prevent collisions
 
 Responsibilities:
 - File knowledge operations (upload, delete, update)
-- Text knowledge operations
-- Web knowledge operations
-- Vector store integration
-- Duplicate detection
+- Text knowledge operations (create, update, delete)
+- Web knowledge operations (scrape, process, index)
+- Vector store integration (add, delete, query)
+- Duplicate detection (file hash, URL uniqueness)
+- Text chunking and embedding generation
 
 Does NOT:
 - Handle HTTP requests/responses (that's routes)
 - Commit transactions (that's decorators/routes)
 - Authentication/authorization (that's decorators)
+- Direct vector search (that's RAG/content generation services)
 """
 
 from typing import List, Optional, Dict, Any
@@ -29,6 +46,7 @@ from src.api.models.knowledge_models.knowledge_model import KnowledgeFiles, Text
 from src.utils.logger import logger
 from src.utils.file_upload_utils import validate_and_store_file, delete_file
 from src.utils.utils import load_split_file_data
+from src.utils.splitter import split_data
 from src.utils.vector_store import add_to_vector_store, delete_vectors
 from src.utils.helper import web_page_scraper
 from src.api.config import get_settings
@@ -145,12 +163,15 @@ class KnowledgeService:
         await self.db.flush()
         await self.db.refresh(new_knowledge)
 
-        # Add to vector store
+        # Add to vector store with knowledge item metadata
         try:
             logger.info(f"Inserting {len(chunks)} chunks into vector store")
             success_status = add_to_vector_store(
                 blog_context=chunks,
-                doc_id=f"{str(workspace_id)}_{str(new_knowledge.id)}"
+                workspace_id=str(workspace_id),
+                knowledge_base_id=str(knowledge_base_id) if knowledge_base_id else None,
+                knowledge_id=str(new_knowledge.id),
+                knowledge_type="file"
             )
             if not success_status:
                 raise WrextExternalServiceException(
@@ -204,8 +225,11 @@ class KnowledgeService:
         """
         knowledge = await self._get_file_knowledge_or_404(file_id, workspace_id)
 
-        # Delete from vector store
-        success_status = delete_vectors(vector_id=f"{str(workspace_id)}_{str(file_id)}")
+        # Delete from vector store using granular knowledge_id filter
+        success_status = delete_vectors(
+            workspace_id=str(workspace_id),
+            knowledge_id=str(file_id)
+        )
         if not success_status:
             logger.warning(f"Failed to delete vectors for file {file_id}")
 
@@ -292,8 +316,13 @@ class KnowledgeService:
             kb = await kb_service.get_default_knowledge_base(workspace_id)
             knowledge_base_id = kb.id
 
-        # Split content into chunks
-        chunks = [content]  # Simplified - should use proper chunking
+        # Split content into chunks using proper text splitter
+        # This creates Document objects with page_content and metadata
+        chunks = split_data(
+            documents=content,
+            chunk_size=1000,
+            overlap=200
+        )
 
         # Save to database
         new_knowledge = TextKnowledge(
@@ -306,10 +335,13 @@ class KnowledgeService:
         await self.db.flush()
         await self.db.refresh(new_knowledge)
 
-        # Add to vector store
+        # Add to vector store with knowledge item metadata
         add_to_vector_store(
             blog_context=chunks,
-            doc_id=f"{str(workspace_id)}_{str(new_knowledge.id)}"
+            workspace_id=str(workspace_id),
+            knowledge_base_id=str(knowledge_base_id) if knowledge_base_id else None,
+            knowledge_id=str(new_knowledge.id),
+            knowledge_type="text"
         )
 
         logger.info(
@@ -423,8 +455,11 @@ class KnowledgeService:
                 resource_id=str(knowledge_id)
             )
 
-        # Delete from vector store
-        delete_vectors(vector_id=f"{str(workspace_id)}_{str(knowledge_id)}")
+        # Delete from vector store using granular knowledge_id filter
+        delete_vectors(
+            workspace_id=str(workspace_id),
+            knowledge_id=str(knowledge_id)
+        )
 
         # Delete from database
         await self.db.delete(knowledge)
@@ -503,7 +538,10 @@ class KnowledgeService:
             )
             success_status = add_to_vector_store(
                 blog_context=chunks,
-                doc_id=f"{str(workspace_id)}_{str(knowledge.id)}",
+                workspace_id=str(workspace_id),
+                knowledge_base_id=str(knowledge_base_id) if knowledge_base_id else None,
+                knowledge_id=str(knowledge.id),
+                knowledge_type="web"
             )
             if not success_status:
                 raise WrextExternalServiceException(
@@ -540,7 +578,11 @@ class KnowledgeService:
         """Delete web knowledge entry and cleanup vector store."""
         knowledge = await self._get_website_or_404(web_id, workspace_id)
 
-        success_status = delete_vectors(vector_id=f"{str(workspace_id)}_{str(web_id)}")
+        # Delete from vector store using granular knowledge_id filter
+        success_status = delete_vectors(
+            workspace_id=str(workspace_id),
+            knowledge_id=str(web_id)
+        )
         if not success_status:
             logger.warning(
                 "Failed to delete vectors for web knowledge",
