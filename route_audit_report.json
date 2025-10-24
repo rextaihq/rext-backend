@@ -1,12 +1,12 @@
 {
-  "audit_date": "2025-10-24T10:17:13.615483",
+  "audit_date": "2025-10-24T10:19:39.717617",
   "statistics": {
     "total_files": 78,
     "total_routes": 278,
-    "protected_routes": 203,
-    "unprotected_routes": 21,
+    "protected_routes": 205,
+    "unprotected_routes": 19,
     "public_routes": 54,
-    "coverage_percentage": 90.625
+    "coverage_percentage": 91.51785714285714
   },
   "unprotected_routes": [
     {
@@ -37,16 +37,6 @@
       "has_permission": false,
       "permission_type": "none",
       "line_number": 408,
-      "is_public": false
-    },
-    {
-      "file": "api/routes/audit/modules/audit_user.py",
-      "function": "get_my_audit_logs",
-      "method": "GET",
-      "path": "/user/my-logs",
-      "has_permission": false,
-      "permission_type": "none",
-      "line_number": 21,
       "is_public": false
     },
     {
@@ -177,16 +167,6 @@
       "has_permission": false,
       "permission_type": "none",
       "line_number": 30,
-      "is_public": false
-    },
-    {
-      "file": "api/routes/subscriptions/subscription_routes.py",
-      "function": "get_invoices",
-      "method": "GET",
-      "path": "/invoices",
-      "has_permission": false,
-      "permission_type": "none",
-      "line_number": 561,
       "is_public": false
     },
     {
@@ -509,6 +489,16 @@
       "has_permission": true,
       "permission_type": "is_admin",
       "line_number": 103,
+      "is_public": false
+    },
+    {
+      "file": "api/routes/audit/modules/audit_user.py",
+      "function": "get_my_audit_logs",
+      "method": "GET",
+      "path": "/user/my-logs",
+      "has_permission": true,
+      "permission_type": "decorator",
+      "line_number": 22,
       "is_public": false
     },
     {
@@ -1179,6 +1169,16 @@
       "has_permission": true,
       "permission_type": "decorator",
       "line_number": 529,
+      "is_public": false
+    },
+    {
+      "file": "api/routes/subscriptions/subscription_routes.py",
+      "function": "get_invoices",
+      "method": "GET",
+      "path": "/invoices",
+      "has_permission": true,
+      "permission_type": "decorator",
+      "line_number": 562,
       "is_public": false
     },
     {

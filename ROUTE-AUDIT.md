@@ -1,15 +1,15 @@
 # Route Permission Coverage Audit Report
 
-**Generated:** 2025-10-24 10:17:13
+**Generated:** 2025-10-24 10:19:39
 
 ## Summary
 
 - **Total Files:** 78
 - **Total Routes:** 278
 - **Public Routes:** 54
-- **Protected Routes:** 203
-- **Unprotected Routes:** 21
-- **Coverage:** 90.6%
+- **Protected Routes:** 205
+- **Unprotected Routes:** 19
+- **Coverage:** 91.5%
 
 ## Unprotected Routes
 
@@ -23,11 +23,6 @@ These routes need permission protection:
   - Function: `accept_admin_invitation` (line 367)
 - ❌ `POST /{token}/decline`
   - Function: `decline_admin_invitation` (line 408)
-
-### api/routes/audit/modules/audit_user.py
-
-- ❌ `GET /user/my-logs`
-  - Function: `get_my_audit_logs` (line 21)
 
 ### api/routes/email/preview.py
 
@@ -79,11 +74,6 @@ These routes need permission protection:
 - ❌ `GET /public`
   - Function: `list_public_plans` (line 30)
 
-### api/routes/subscriptions/subscription_routes.py
-
-- ❌ `GET /invoices`
-  - Function: `get_invoices` (line 561)
-
 ### api/routes/subscriptions/trial_routes.py
 
 - ❌ `GET /eligibility`
@@ -101,5 +91,5 @@ These routes need permission protection:
 
 ## Protected Routes
 
-Total protected routes: 203
+Total protected routes: 205
 
