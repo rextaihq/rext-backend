@@ -17,6 +17,7 @@ router = APIRouter()
 
 
 @router.get("/user/my-logs", response_model=dict)
+@require_permissions(["audit.read"])
 @db_transaction_handler("get user audit logs", "User audit logs retrieved successfully", auto_commit=False)
 async def get_my_audit_logs(
     request: Request,

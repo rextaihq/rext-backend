@@ -1,15 +1,15 @@
 # Route Permission Coverage Audit Report
 
-**Generated:** 2025-10-24 10:14:38
+**Generated:** 2025-10-24 10:17:13
 
 ## Summary
 
 - **Total Files:** 78
 - **Total Routes:** 278
 - **Public Routes:** 54
-- **Protected Routes:** 191
-- **Unprotected Routes:** 33
-- **Coverage:** 85.3%
+- **Protected Routes:** 203
+- **Unprotected Routes:** 21
+- **Coverage:** 90.6%
 
 ## Unprotected Routes
 
@@ -99,43 +99,7 @@ These routes need permission protection:
 - ❌ `POST /unsubscribe`
   - Function: `unsubscribe` (line 127)
 
-### api/routes/users/user_permissions.py
-
-- ❌ `GET /me/permissions`
-  - Function: `get_current_user_permissions` (line 25)
-
-### api/routes/users/user_security.py
-
-- ❌ `GET /security/stats`
-  - Function: `get_current_user_security_stats` (line 22)
-- ❌ `GET /security/login-history`
-  - Function: `get_current_user_login_history` (line 48)
-- ❌ `GET /security/active-sessions-count`
-  - Function: `get_active_sessions_count` (line 81)
-
-### api/routes/workspaces/email_template_route.py
-
-- ❌ `GET /variables/{template_type}`
-  - Function: `get_template_variables` (line 34)
-- ❌ `POST /preview`
-  - Function: `preview_email_template` (line 50)
-- ❌ `GET /defaults/{template_type}`
-  - Function: `get_default_template_for_type` (line 180)
-
-### api/routes/workspaces/workspace_route.py
-
-- ❌ `GET /all`
-  - Function: `get_workspaces` (line 37)
-- ❌ `GET /detail`
-  - Function: `get_workspace_by_id` (line 56)
-- ❌ `POST /create`
-  - Function: `create_workspace` (line 89)
-- ❌ `DELETE /delete`
-  - Function: `delete_workspace` (line 134)
-- ❌ `PUT /update`
-  - Function: `update_workspace` (line 161)
-
 ## Protected Routes
 
-Total protected routes: 191
+Total protected routes: 203
 

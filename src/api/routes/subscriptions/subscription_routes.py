@@ -557,6 +557,7 @@ async def get_trial_status(
 
 
 @router.get("/invoices", response_model=dict)
+@require_permissions(["subscription.read"])
 @db_transaction_handler("get invoices", "Invoices retrieved successfully", auto_commit=False)
 async def get_invoices(
     request: Request,

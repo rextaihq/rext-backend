@@ -1,12 +1,12 @@
 {
-  "audit_date": "2025-10-24T10:14:38.685212",
+  "audit_date": "2025-10-24T10:17:13.615483",
   "statistics": {
     "total_files": 78,
     "total_routes": 278,
-    "protected_routes": 191,
-    "unprotected_routes": 33,
+    "protected_routes": 203,
+    "unprotected_routes": 21,
     "public_routes": 54,
-    "coverage_percentage": 85.26785714285714
+    "coverage_percentage": 90.625
   },
   "unprotected_routes": [
     {
@@ -217,126 +217,6 @@
       "has_permission": false,
       "permission_type": "none",
       "line_number": 127,
-      "is_public": false
-    },
-    {
-      "file": "api/routes/users/user_permissions.py",
-      "function": "get_current_user_permissions",
-      "method": "GET",
-      "path": "/me/permissions",
-      "has_permission": false,
-      "permission_type": "none",
-      "line_number": 25,
-      "is_public": false
-    },
-    {
-      "file": "api/routes/users/user_security.py",
-      "function": "get_current_user_security_stats",
-      "method": "GET",
-      "path": "/security/stats",
-      "has_permission": false,
-      "permission_type": "none",
-      "line_number": 22,
-      "is_public": false
-    },
-    {
-      "file": "api/routes/users/user_security.py",
-      "function": "get_current_user_login_history",
-      "method": "GET",
-      "path": "/security/login-history",
-      "has_permission": false,
-      "permission_type": "none",
-      "line_number": 48,
-      "is_public": false
-    },
-    {
-      "file": "api/routes/users/user_security.py",
-      "function": "get_active_sessions_count",
-      "method": "GET",
-      "path": "/security/active-sessions-count",
-      "has_permission": false,
-      "permission_type": "none",
-      "line_number": 81,
-      "is_public": false
-    },
-    {
-      "file": "api/routes/workspaces/email_template_route.py",
-      "function": "get_template_variables",
-      "method": "GET",
-      "path": "/variables/{template_type}",
-      "has_permission": false,
-      "permission_type": "none",
-      "line_number": 34,
-      "is_public": false
-    },
-    {
-      "file": "api/routes/workspaces/email_template_route.py",
-      "function": "preview_email_template",
-      "method": "POST",
-      "path": "/preview",
-      "has_permission": false,
-      "permission_type": "none",
-      "line_number": 50,
-      "is_public": false
-    },
-    {
-      "file": "api/routes/workspaces/email_template_route.py",
-      "function": "get_default_template_for_type",
-      "method": "GET",
-      "path": "/defaults/{template_type}",
-      "has_permission": false,
-      "permission_type": "none",
-      "line_number": 180,
-      "is_public": false
-    },
-    {
-      "file": "api/routes/workspaces/workspace_route.py",
-      "function": "get_workspaces",
-      "method": "GET",
-      "path": "/all",
-      "has_permission": false,
-      "permission_type": "none",
-      "line_number": 37,
-      "is_public": false
-    },
-    {
-      "file": "api/routes/workspaces/workspace_route.py",
-      "function": "get_workspace_by_id",
-      "method": "GET",
-      "path": "/detail",
-      "has_permission": false,
-      "permission_type": "none",
-      "line_number": 56,
-      "is_public": false
-    },
-    {
-      "file": "api/routes/workspaces/workspace_route.py",
-      "function": "create_workspace",
-      "method": "POST",
-      "path": "/create",
-      "has_permission": false,
-      "permission_type": "none",
-      "line_number": 89,
-      "is_public": false
-    },
-    {
-      "file": "api/routes/workspaces/workspace_route.py",
-      "function": "delete_workspace",
-      "method": "DELETE",
-      "path": "/delete",
-      "has_permission": false,
-      "permission_type": "none",
-      "line_number": 134,
-      "is_public": false
-    },
-    {
-      "file": "api/routes/workspaces/workspace_route.py",
-      "function": "update_workspace",
-      "method": "PUT",
-      "path": "/update",
-      "has_permission": false,
-      "permission_type": "none",
-      "line_number": 161,
       "is_public": false
     }
   ],
@@ -1732,6 +1612,46 @@
       "is_public": false
     },
     {
+      "file": "api/routes/users/user_permissions.py",
+      "function": "get_current_user_permissions",
+      "method": "GET",
+      "path": "/me/permissions",
+      "has_permission": true,
+      "permission_type": "decorator",
+      "line_number": 27,
+      "is_public": false
+    },
+    {
+      "file": "api/routes/users/user_security.py",
+      "function": "get_current_user_security_stats",
+      "method": "GET",
+      "path": "/security/stats",
+      "has_permission": true,
+      "permission_type": "decorator",
+      "line_number": 23,
+      "is_public": false
+    },
+    {
+      "file": "api/routes/users/user_security.py",
+      "function": "get_current_user_login_history",
+      "method": "GET",
+      "path": "/security/login-history",
+      "has_permission": true,
+      "permission_type": "decorator",
+      "line_number": 50,
+      "is_public": false
+    },
+    {
+      "file": "api/routes/users/user_security.py",
+      "function": "get_active_sessions_count",
+      "method": "GET",
+      "path": "/security/active-sessions-count",
+      "has_permission": true,
+      "permission_type": "decorator",
+      "line_number": 84,
+      "is_public": false
+    },
+    {
       "file": "api/routes/users/user_status.py",
       "function": "suspend_user",
       "method": "POST",
@@ -1773,12 +1693,32 @@
     },
     {
       "file": "api/routes/workspaces/email_template_route.py",
+      "function": "get_template_variables",
+      "method": "GET",
+      "path": "/variables/{template_type}",
+      "has_permission": true,
+      "permission_type": "decorator",
+      "line_number": 35,
+      "is_public": false
+    },
+    {
+      "file": "api/routes/workspaces/email_template_route.py",
+      "function": "preview_email_template",
+      "method": "POST",
+      "path": "/preview",
+      "has_permission": true,
+      "permission_type": "decorator",
+      "line_number": 52,
+      "is_public": false
+    },
+    {
+      "file": "api/routes/workspaces/email_template_route.py",
       "function": "update_email_template",
       "method": "PUT",
       "path": "/{template_id}",
       "has_permission": true,
       "permission_type": "decorator",
-      "line_number": 127,
+      "line_number": 129,
       "is_public": false
     },
     {
@@ -1788,7 +1728,17 @@
       "path": "/{template_id}",
       "has_permission": true,
       "permission_type": "decorator",
-      "line_number": 156,
+      "line_number": 158,
+      "is_public": false
+    },
+    {
+      "file": "api/routes/workspaces/email_template_route.py",
+      "function": "get_default_template_for_type",
+      "method": "GET",
+      "path": "/defaults/{template_type}",
+      "has_permission": true,
+      "permission_type": "decorator",
+      "line_number": 183,
       "is_public": false
     },
     {
@@ -2239,6 +2189,56 @@
       "has_permission": true,
       "permission_type": "decorator",
       "line_number": 249,
+      "is_public": false
+    },
+    {
+      "file": "api/routes/workspaces/workspace_route.py",
+      "function": "get_workspaces",
+      "method": "GET",
+      "path": "/all",
+      "has_permission": true,
+      "permission_type": "decorator",
+      "line_number": 38,
+      "is_public": false
+    },
+    {
+      "file": "api/routes/workspaces/workspace_route.py",
+      "function": "get_workspace_by_id",
+      "method": "GET",
+      "path": "/detail",
+      "has_permission": true,
+      "permission_type": "decorator",
+      "line_number": 58,
+      "is_public": false
+    },
+    {
+      "file": "api/routes/workspaces/workspace_route.py",
+      "function": "create_workspace",
+      "method": "POST",
+      "path": "/create",
+      "has_permission": true,
+      "permission_type": "decorator",
+      "line_number": 92,
+      "is_public": false
+    },
+    {
+      "file": "api/routes/workspaces/workspace_route.py",
+      "function": "delete_workspace",
+      "method": "DELETE",
+      "path": "/delete",
+      "has_permission": true,
+      "permission_type": "decorator",
+      "line_number": 138,
+      "is_public": false
+    },
+    {
+      "file": "api/routes/workspaces/workspace_route.py",
+      "function": "update_workspace",
+      "method": "PUT",
+      "path": "/update",
+      "has_permission": true,
+      "permission_type": "decorator",
+      "line_number": 166,
       "is_public": false
     },
     {
@@ -2710,7 +2710,7 @@
       "path": "/",
       "has_permission": false,
       "permission_type": "none",
-      "line_number": 70,
+      "line_number": 72,
       "is_public": true
     },
     {
@@ -2720,7 +2720,7 @@
       "path": "/",
       "has_permission": true,
       "permission_type": "decorator",
-      "line_number": 99,
+      "line_number": 101,
       "is_public": true
     },
     {
