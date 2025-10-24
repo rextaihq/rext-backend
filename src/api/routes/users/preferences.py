@@ -12,6 +12,7 @@ from typing import Optional
 
 from src.api.database.async_database import get_async_db
 from src.api.security.dependencies import get_current_user
+from src.utils.route_decorators import require_permissions
 from src.utils.response_utils import success, error
 from src.api.schema.response_schemas import ErrorCode, ErrorSeverity
 from src.utils.logger import logger
@@ -43,6 +44,7 @@ class UpdateUserPreferencesRequest(BaseModel):
 
 
 @router.get("/preferences", response_model=dict)
+@require_permissions(["user.read"])
 async def get_user_preferences(
     request: Request,
     current_user: dict = Depends(get_current_user),
@@ -73,6 +75,7 @@ async def get_user_preferences(
 
 
 @router.patch("/preferences", response_model=dict)
+@require_permissions(["user.update"])
 async def update_user_preferences(
     request: Request,
     preferences_data: UpdateUserPreferencesRequest,
