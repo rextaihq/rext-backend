@@ -133,6 +133,7 @@ async def revoke_role_from_user(
 
 
 @router.get("/{user_id}/roles")
+@require_permissions(["role.read"])
 @db_transaction_handler("list user roles", auto_commit=False)
 async def list_user_roles(
     request: Request,

@@ -12,7 +12,7 @@ from uuid import UUID
 from src.api.database.async_database import get_async_db
 from src.api.security.dependencies import get_current_user
 from src.services.security_service import SecurityService
-from src.utils.route_decorators import db_transaction_handler
+from src.utils.route_decorators import require_permissions, db_transaction_handler
 
 router = APIRouter()
 

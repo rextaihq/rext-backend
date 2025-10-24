@@ -29,7 +29,7 @@ from src.services.invitation_service import InvitationService
 from src.services.user_service import UserService
 from src.services.email_service import EmailService
 from src.utils.response_utils import success
-from src.utils.route_decorators import db_transaction_handler
+from src.utils.route_decorators import db_transaction_handler, require_permissions
 from src.utils.audit_helper import create_audit_log_async
 from src.utils.invitation_utils import is_invitation_expired
 from src.utils.logger import logger
@@ -38,6 +38,7 @@ router = APIRouter(prefix="/user/invitations", tags=["User Invitations"])
 
 
 @router.get("/pending")
+@require_permissions(["member.read"])
 @db_transaction_handler("get pending invitations", auto_commit=False)
 async def get_pending_invitations(
     request: Request,
@@ -209,6 +210,7 @@ async def get_pending_invitations(
 
 
 @router.post("/{invitation_id}/decline")
+@require_permissions(["member.read"])
 @db_transaction_handler("decline invitation", auto_commit=True)
 async def decline_invitation(
     invitation_id: UUID,

@@ -9,7 +9,7 @@ from src.api.models.audit_models.audit_logs import AuditLog
 from src.utils.response_utils import success
 from src.api.middleware.exceptions import WrextValidationException
 from src.utils.logger import logger
-from src.utils.route_decorators import db_transaction_handler
+from src.utils.route_decorators import db_transaction_handler, require_permissions
 from .helpers import build_audit_query, format_audit_log
 
 
