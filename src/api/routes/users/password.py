@@ -6,6 +6,7 @@ import os
 
 from src.utils.logger import logger
 from src.api.security.dependencies import get_current_user
+from src.utils.route_decorators import require_permissions
 from src.api.config import get_settings
 from src.api.schema.user_schema import (
     ResetPassword,
@@ -189,6 +190,7 @@ async def reset_password(
 
 
 @router.post("/change-password")
+@require_permissions("user.update")
 async def change_password(
     request: Request,
     password_data: ChangePasswordRequest,
@@ -280,6 +282,7 @@ async def change_password(
 # Verify Password
 # -------------------------
 @router.post("/verify-password")
+@require_permissions("user.read")
 async def verify_password(
     request: Request,
     db: AsyncSession = Depends(get_async_db),

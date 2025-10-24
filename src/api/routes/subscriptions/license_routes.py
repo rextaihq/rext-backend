@@ -35,6 +35,7 @@ router = APIRouter(
 
 
 @router.post("/validate", response_model=dict, status_code=status.HTTP_200_OK)
+@require_permissions("license.read", workspace_scoped=False)
 @db_transaction_handler("validate license key", auto_commit=False)
 async def validate_license(
     request: Request,
@@ -43,6 +44,9 @@ async def validate_license(
 ):
     """
     Validate a LemonSqueezy license key.
+
+    Required Permission: license.read (user-level)
+    Scope: User-level (not workspace-scoped)
 
     This endpoint validates license keys for lifetime deals and one-time purchases.
     It checks the license status, activation limits, and expiration.
@@ -282,7 +286,7 @@ async def deactivate_license_endpoint(
 
 @router.get("", response_model=dict, status_code=status.HTTP_200_OK)
 @db_transaction_handler("list licenses", auto_commit=False)
-@require_permissions("license.view", workspace_scoped=False)
+@require_permissions("license.read", workspace_scoped=False)
 async def list_licenses_endpoint(
     request: Request,
     db: AsyncSession = Depends(get_async_db),
@@ -330,7 +334,7 @@ async def list_licenses_endpoint(
 
 @router.get("/{license_id}", response_model=dict, status_code=status.HTTP_200_OK)
 @db_transaction_handler("get license details", auto_commit=False)
-@require_permissions("license.view", workspace_scoped=False)
+@require_permissions("license.read", workspace_scoped=False)
 async def get_license_endpoint(
     request: Request,
     license_id: str,
@@ -369,7 +373,7 @@ async def get_license_endpoint(
         from src.api.middleware.exceptions import WrextAuthorizationException
         raise WrextAuthorizationException(
             message="You do not own this license",
-            required_permission="license.view"
+            required_permission="license.read"
         )
 
     return success(
@@ -391,7 +395,7 @@ async def get_license_endpoint(
 
 @router.get("/{license_id}/activations", response_model=dict, status_code=status.HTTP_200_OK)
 @db_transaction_handler("list license activations", auto_commit=False)
-@require_permissions("license.view", workspace_scoped=False)
+@require_permissions("license.read", workspace_scoped=False)
 async def list_license_activations_endpoint(
     request: Request,
     license_id: str,

@@ -9,7 +9,7 @@ from src.utils.logger import logger
 from src.utils.response_utils import success, error
 from src.utils.invitation_utils import is_invitation_expired
 from src.utils.audit_helper import create_audit_log
-from src.utils.route_decorators import db_transaction_handler
+from src.utils.route_decorators import db_transaction_handler, require_permissions
 from src.api.database.async_database import get_async_db
 from src.api.security.dependencies import get_current_user
 from src.api.config import get_settings
@@ -89,6 +89,7 @@ async def notify_workspace_admins_of_acceptance(
 
 
 @router.post("/accept")
+@require_permissions("member.read")
 @db_transaction_handler("accept invitation", auto_commit=True)
 async def accept_invitation(
     request: Request,
@@ -158,6 +159,7 @@ async def accept_invitation(
 
 
 @router.post("/{invitation_id}/revoke")
+@require_permissions("member.invite", workspace_scoped=True)
 @db_transaction_handler("revoke invitation", auto_commit=True)
 async def revoke_invitation(
     invitation_id: str,

@@ -11,13 +11,14 @@ from src.api.security.dependencies import get_current_user
 from src.api.security.token_utils import verify_token
 from src.services.session_service import SessionService
 from src.utils.logger import logger
-from src.utils.route_decorators import db_transaction_handler
+from src.utils.route_decorators import db_transaction_handler, require_permissions
 
 
 router = APIRouter()
 
 
 @router.get("/sessions")
+@require_permissions("user.read", workspace_scoped=False)
 @db_transaction_handler("list user sessions", auto_commit=False)
 async def list_user_sessions(
     request: Request,
@@ -58,6 +59,7 @@ async def list_user_sessions(
 
 
 @router.delete("/sessions/{session_id}")
+@require_permissions("user.update", workspace_scoped=False)
 @db_transaction_handler("revoke user session", auto_commit=True)
 async def revoke_session(
     session_id: str,
@@ -83,6 +85,7 @@ async def revoke_session(
 
 
 @router.delete("/sessions")
+@require_permissions("user.update", workspace_scoped=False)
 @db_transaction_handler("revoke all user sessions", auto_commit=True)
 async def revoke_all_sessions(
     request: Request,
@@ -130,6 +133,7 @@ async def revoke_all_sessions(
 
 
 @router.post("/sessions/revoke-all")
+@require_permissions("user.update", workspace_scoped=False)
 @db_transaction_handler("revoke all user sessions (POST)", auto_commit=True)
 async def revoke_all_sessions_post(
     request: Request,

@@ -74,6 +74,11 @@ class PermissionChecker:
 
         This method is called by FastAPI's dependency injection system.
 
+        Enhancements (Phase 1, Task 1.2):
+        - Super admin bypass: super_admin role bypasses all permission checks
+        - Enhanced workspace membership validation
+        - Improved audit logging for permission denials
+
         Args:
             request: FastAPI request object
             current_user: Current authenticated user (from get_current_user dependency)
@@ -87,7 +92,10 @@ class PermissionChecker:
         """
         user_id = current_user.get("identity")
         if not user_id:
-            logger.warning("Permission check failed: No user identity")
+            logger.warning(
+                "Permission check failed: No user identity",
+                extra={"required_permissions": self.required_permissions}
+            )
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Authentication required"
@@ -102,6 +110,37 @@ class PermissionChecker:
                 # Try query parameters
                 workspace_id = request.query_params.get("workspace_id")
 
+        # ENHANCEMENT 1: Check if user is super_admin (bypasses all permission checks)
+        if self._is_super_admin(db, user_id):
+            logger.debug(
+                f"Permission check passed for super_admin user {user_id}",
+                extra={
+                    "user_id": user_id,
+                    "required_permissions": self.required_permissions,
+                    "workspace_id": workspace_id,
+                    "bypass_reason": "super_admin_role"
+                }
+            )
+            return True
+
+        # ENHANCEMENT 2: Enhanced workspace membership validation
+        if self.workspace_scoped and workspace_id:
+            is_member = self._validate_workspace_membership(db, user_id, workspace_id)
+            if not is_member:
+                logger.warning(
+                    f"Workspace access denied for user {user_id}: Not a workspace member",
+                    extra={
+                        "user_id": user_id,
+                        "workspace_id": workspace_id,
+                        "required_permissions": self.required_permissions,
+                        "denial_reason": "not_workspace_member"
+                    }
+                )
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="You are not a member of this workspace"
+                )
+
         # Get user's permissions
         user_permissions = self._get_user_permissions(db, user_id, workspace_id)
 
@@ -113,17 +152,34 @@ class PermissionChecker:
         )
 
         if not has_permission:
+            # ENHANCEMENT 3: Improved audit logging for permission denials
             logger.warning(
-                f"Permission denied for user {user_id}. "
-                f"Required: {self.required_permissions}, "
-                f"Has: {list(user_permissions)}"
+                f"Permission denied for user {user_id}",
+                extra={
+                    "user_id": user_id,
+                    "required_permissions": self.required_permissions,
+                    "user_permissions": list(user_permissions),
+                    "workspace_id": workspace_id,
+                    "workspace_scoped": self.workspace_scoped,
+                    "require_all": self.require_all,
+                    "denial_reason": "insufficient_permissions",
+                    "request_path": request.url.path,
+                    "request_method": request.method
+                }
             )
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=f"Insufficient permissions. Required: {', '.join(self.required_permissions)}"
             )
 
-        logger.debug(f"Permission check passed for user {user_id}")
+        logger.debug(
+            f"Permission check passed for user {user_id}",
+            extra={
+                "user_id": user_id,
+                "required_permissions": self.required_permissions,
+                "workspace_id": workspace_id
+            }
+        )
         return True
 
     @staticmethod
@@ -190,6 +246,71 @@ class PermissionChecker:
         else:
             # User must have at least ONE of the required permissions
             return any(perm in user_permissions for perm in required_permissions)
+
+    @staticmethod
+    def _is_super_admin(db: Session, user_id: str) -> bool:
+        """
+        Check if user has super_admin role.
+
+        Super admins bypass ALL permission checks as per RBAC implementation plan.
+        This is a security feature for platform administrators.
+
+        Args:
+            db: Database session
+            user_id: User ID (UUID as string)
+
+        Returns:
+            True if user has super_admin role, False otherwise
+        """
+        super_admin_role = (
+            db.query(UserRole)
+            .join(Role, UserRole.role_id == Role.id)
+            .filter(
+                UserRole.user_id == user_id,
+                Role.name == "super_admin"
+            )
+            .first()
+        )
+        return super_admin_role is not None
+
+    @staticmethod
+    def _validate_workspace_membership(
+        db: Session,
+        user_id: str,
+        workspace_id: str
+    ) -> bool:
+        """
+        Validate that user is a member of the specified workspace.
+
+        This provides enhanced security by ensuring users can only access
+        workspaces they are actually members of, even if they somehow have
+        workspace-scoped permissions.
+
+        Args:
+            db: Database session
+            user_id: User ID (UUID as string)
+            workspace_id: Workspace ID (UUID as string)
+
+        Returns:
+            True if user is a workspace member, False otherwise
+        """
+        from src.api.models.workspace_models.workspace_member import WorkspaceMembers
+
+        # Check if user is a workspace member
+        member = (
+            db.query(WorkspaceMembers)
+            .filter(
+                WorkspaceMembers.user_id == user_id,
+                WorkspaceMembers.workspace_id == workspace_id
+            )
+            .first()
+        )
+
+        # Also check if user has super_admin role (can access any workspace)
+        if not member:
+            return False
+
+        return True
 
 
 def require_permissions(
@@ -270,7 +391,10 @@ def is_admin(
     user_id = current_user.get("identity")
 
     if not user_id:
-        logger.warning("Admin check failed: No user identity")
+        logger.warning(
+            "Admin check failed: No user identity",
+            extra={"check_type": "is_admin"}
+        )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Authentication required"
@@ -288,11 +412,24 @@ def is_admin(
     )
 
     if not admin_role:
-        logger.warning(f"Admin access denied for user {user_id}")
+        logger.warning(
+            f"Admin access denied for user {user_id}",
+            extra={
+                "user_id": user_id,
+                "check_type": "is_admin",
+                "denial_reason": "not_admin_or_super_admin"
+            }
+        )
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Admin access required"
         )
 
-    logger.debug(f"Admin check passed for user {user_id}")
+    logger.debug(
+        f"Admin check passed for user {user_id}",
+        extra={
+            "user_id": user_id,
+            "check_type": "is_admin"
+        }
+    )
     return True

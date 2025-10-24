@@ -29,7 +29,7 @@ from src.api.schema.subscription.refund_schemas import (
 )
 from src.services.refund_service import RefundService
 from src.providers.payment.providers.lemonsqueezy import LemonSqueezyProvider
-from src.utils.route_decorators import db_transaction_handler
+from src.utils.route_decorators import db_transaction_handler, require_permissions
 from src.utils.logger import logger
 from src.services.audit_logger import audit_logger
 from .shared.auth import require_super_admin
@@ -58,6 +58,7 @@ async def get_lemonsqueezy_provider() -> LemonSqueezyProvider:
 # ============================================================================
 
 @router.get("/refunds", response_model=dict)
+@require_permissions("subscription.read")
 @db_transaction_handler("list refunds", auto_commit=False)
 async def list_refunds(
     request: Request,
@@ -110,6 +111,7 @@ async def list_refunds(
 
 
 @router.get("/refunds/{refund_id}", response_model=dict)
+@require_permissions("subscription.read")
 @db_transaction_handler("get refund", auto_commit=False)
 async def get_refund(
     request: Request,
@@ -145,6 +147,7 @@ async def get_refund(
 
 
 @router.post("/refunds/create", response_model=dict)
+@require_permissions("subscription.manage")
 @db_transaction_handler("create refund")
 async def create_refund(
     request: Request,

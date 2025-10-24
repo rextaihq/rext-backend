@@ -40,6 +40,7 @@ router = APIRouter(
 
 
 @router.post("/subscribe", response_model=dict, status_code=status.HTTP_201_CREATED)
+@require_permissions("subscription.manage")
 @db_transaction_handler("subscribe to plan")
 async def subscribe_to_plan(
     request: Request,
@@ -87,6 +88,7 @@ async def subscribe_to_plan(
 
 
 @router.post("/checkout", response_model=dict, status_code=status.HTTP_200_OK)
+@require_permissions("subscription.manage")
 @db_transaction_handler("create checkout session")
 async def create_checkout_session(
     request: Request,
@@ -136,6 +138,7 @@ async def create_checkout_session(
 
 @router.get("/my-subscription", response_model=dict)
 @router.get("/current", response_model=dict)  # Alias for compatibility
+@require_permissions("subscription.read", workspace_scoped=False)
 @db_transaction_handler("get my subscription", "Subscription retrieved successfully", auto_commit=False)
 async def get_my_subscription(
     request: Request,
@@ -211,123 +214,10 @@ async def get_my_subscription(
     )
 
 
-@router.get("/status", response_model=dict)
-@db_transaction_handler("get subscription status", "Subscription status retrieved successfully", auto_commit=False)
-async def get_subscription_status(
-    request: Request,
-    db: AsyncSession = Depends(get_async_db),
-    current_user: dict = Depends(get_current_user)
-):
-    """
-    Get subscription status with detailed usage metrics.
-
-    Returns subscription status, plan details, and formatted usage metrics
-    that match the frontend's expected structure.
-
-    Returns:
-    - subscription: Subscription details with status
-    - plan: Plan information with pricing
-    - usage: Detailed usage metrics with limits and percentages
-    - null if no active subscription
-    """
-    user_id = current_user.get("identity")
-    service = SubscriptionService(db)
-
-    subscription = await service.get_subscription_by_user(user_id)
-
-    if not subscription:
-        return success(
-            data=None,
-            request=request,
-            message="No active subscription found"
-        )
-
-    # Get plan details
-    plan = await service.get_plan_by_id(subscription.plan_id)
-
-    # Get usage metrics
-    current_usage = await service.calculate_usage(user_id)
-
-    # Helper function to format usage metric
-    def format_usage_metric(used: int, limit: int | None, reset_date: str | None = None) -> dict:
-        """Format usage metric with percentage calculation."""
-        unlimited = limit is None or limit < 0
-
-        if unlimited:
-            percentage = 0.0
-            limit = None
-        else:
-            percentage = round((used / limit) * 100, 1) if limit > 0 else 0.0
-
-        metric = {
-            "used": used,
-            "limit": limit,
-            "percentage": percentage,
-            "unlimited": unlimited
-        }
-
-        if reset_date is not None:
-            metric["reset_date"] = reset_date
-
-        return metric
-
-    # Build formatted usage response
-    usage_reset_date = subscription.usage_reset_date.isoformat() if subscription.usage_reset_date else None
-
-    formatted_usage = {
-        "workspaces": format_usage_metric(
-            current_usage["workspaces"],
-            plan.max_workspaces
-        ),
-        "members": format_usage_metric(
-            current_usage["members"],
-            plan.max_members_per_workspace
-        ),
-        "topics": format_usage_metric(
-            current_usage["topics"],
-            plan.max_topics
-        ),
-        "knowledge_items": format_usage_metric(
-            current_usage["knowledge_items"],
-            plan.max_knowledge_items
-        ),
-        "api_calls": format_usage_metric(
-            subscription.current_api_calls,
-            plan.max_api_calls_per_month,
-            usage_reset_date
-        )
-    }
-
-    # Build complete status response
-    status_data = {
-        "subscription": {
-            "id": str(subscription.id),
-            "status": subscription.status.value,
-            "current_period_end": subscription.renews_at.isoformat() if subscription.renews_at else None,
-            "cancel_at_period_end": subscription.cancel_at_period_end,
-            "billing_period": subscription.billing_period.value,
-            "start_date": subscription.start_date.isoformat() if subscription.start_date else None,
-            "end_date": subscription.end_date.isoformat() if subscription.end_date else None,
-            "cancelled_at": subscription.cancelled_at.isoformat() if subscription.cancelled_at else None,
-        },
-        "plan": {
-            "id": str(plan.id),
-            "name": plan.name,
-            "display_name": plan.display_name,
-            "price_monthly": float(plan.price_monthly) if plan.price_monthly else 0.0,
-            "price_yearly": float(plan.price_yearly) if plan.price_yearly else 0.0,
-        },
-        "usage": formatted_usage
-    }
-
-    return success(
-        data=status_data,
-        request=request,
-        message="Subscription status retrieved successfully"
-    )
-
+# NOTE: /status endpoint is in checkout_routes.py (includes portal URL and free tier usage)
 
 @router.get("/history", response_model=dict)
+@require_permissions("subscription.read")
 @db_transaction_handler("get subscription history", auto_commit=False)
 async def get_subscription_history(
     request: Request,
@@ -361,6 +251,7 @@ async def get_subscription_history(
 
 
 @router.post("/upgrade", response_model=dict)
+@require_permissions("subscription.manage")
 @db_transaction_handler("upgrade subscription")
 async def upgrade_subscription(
     request: Request,
@@ -407,6 +298,7 @@ async def upgrade_subscription(
 
 
 @router.post("/cancel", response_model=dict)
+@require_permissions("subscription.manage")
 @db_transaction_handler("cancel subscription")
 async def cancel_subscription(
     request: Request,
@@ -449,6 +341,7 @@ async def cancel_subscription(
 
 
 @router.get("/usage", response_model=dict)
+@require_permissions("usage.read", workspace_scoped=False)
 @db_transaction_handler("get usage stats", "Usage statistics retrieved successfully", auto_commit=False)
 async def get_usage_stats(
     request: Request,
@@ -517,6 +410,7 @@ async def get_usage_stats(
 
 
 @router.get("/trial-status", response_model=dict)
+@require_permissions("subscription.read")
 @db_transaction_handler("get trial status", "Trial status retrieved successfully", auto_commit=False)
 async def get_trial_status(
     request: Request,
@@ -549,6 +443,7 @@ async def get_trial_status(
 
 
 @router.get("/invoices", response_model=dict)
+@require_permissions("subscription.read")
 @db_transaction_handler("get invoices", "Invoices retrieved successfully", auto_commit=False)
 async def get_invoices(
     request: Request,

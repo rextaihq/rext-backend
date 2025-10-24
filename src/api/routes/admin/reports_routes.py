@@ -17,9 +17,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.database.async_database import get_async_db
 from src.api.security.dependencies import get_current_user
-from src.api.middleware.permissions import require_permissions
 from src.services.subscription_analytics_service import SubscriptionAnalyticsService
-from src.utils.route_decorators import db_transaction_handler
+from src.utils.route_decorators import db_transaction_handler, require_permissions
 
 
 router = APIRouter(prefix="/reports", tags=["Admin - Reports"])
@@ -31,14 +30,14 @@ router = APIRouter(prefix="/reports", tags=["Admin - Reports"])
 
 
 @router.get("/revenue", response_model=dict)
+@require_permissions("audit.read", workspace_scoped=False)
 @db_transaction_handler("get revenue report", auto_commit=False)
 async def get_revenue_report(
     request: Request,
     start_date: Optional[datetime] = Query(None, description="Start date (ISO format)"),
     end_date: Optional[datetime] = Query(None, description="End date (ISO format)"),
     db: AsyncSession = Depends(get_async_db),
-    current_user: dict = Depends(get_current_user),
-    _: None = Depends(require_permissions(["subscription:analytics"]))
+    current_user: dict = Depends(get_current_user)
 ):
     """
     Get comprehensive revenue report for date range (admin only).
@@ -97,6 +96,7 @@ async def get_revenue_report(
 
 
 @router.get("/revenue/export", response_class=Response)
+@require_permissions("audit.read", workspace_scoped=False)
 @db_transaction_handler("export revenue report", auto_commit=False)
 async def export_revenue_report(
     request: Request,
@@ -104,8 +104,7 @@ async def export_revenue_report(
     start_date: Optional[datetime] = Query(None, description="Start date (ISO format)"),
     end_date: Optional[datetime] = Query(None, description="End date (ISO format)"),
     db: AsyncSession = Depends(get_async_db),
-    current_user: dict = Depends(get_current_user),
-    _: None = Depends(require_permissions(["subscription:analytics"]))
+    current_user: dict = Depends(get_current_user)
 ):
     """
     Export revenue report as CSV or JSON (admin only).
@@ -217,12 +216,12 @@ async def export_revenue_report(
 
 
 @router.get("/revenue/summary", response_model=dict)
+@require_permissions("audit.read", workspace_scoped=False)
 @db_transaction_handler("get revenue summary", auto_commit=False)
 async def get_revenue_summary(
     request: Request,
     db: AsyncSession = Depends(get_async_db),
-    current_user: dict = Depends(get_current_user),
-    _: None = Depends(require_permissions(["subscription:analytics"]))
+    current_user: dict = Depends(get_current_user)
 ):
     """
     Get quick revenue summary for dashboard (admin only).

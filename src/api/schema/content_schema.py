@@ -72,7 +72,7 @@ class ContentSEODataSchema(BaseModel):
 
 class ContentCreate(ContentBase):
     """Schema for creating content"""
-    workspace_id: UUID = Field(..., description="Workspace ID")
+    workspace_id: Optional[UUID] = Field(None, description="Workspace ID (optional - resolved from query parameter)")
     topic_id: Optional[UUID] = Field(None, description="Related topic ID")
     body_markdown: Optional[str] = Field(None, description="Content body in markdown")
     content_format: Optional[str] = Field(default="Markdown", description="Content format")

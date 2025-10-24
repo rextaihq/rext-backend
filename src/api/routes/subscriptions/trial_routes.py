@@ -88,7 +88,7 @@ async def check_trial_eligibility_endpoint(
 
 @router.post("/{subscription_id}/extend", response_model=dict, status_code=status.HTTP_200_OK)
 @db_transaction_handler("extend trial")
-@require_permissions("trial.extend", workspace_scoped=False)
+@require_permissions("subscription.manage", workspace_scoped=False)
 async def extend_trial_endpoint(
     request: Request,
     subscription_id: str,
@@ -150,7 +150,7 @@ async def extend_trial_endpoint(
 
 @router.get("/analytics/conversions", response_model=dict, status_code=status.HTTP_200_OK)
 @db_transaction_handler("get trial conversion analytics", auto_commit=False)
-@require_permissions("trial.analytics", workspace_scoped=False)
+@require_permissions("audit.read", workspace_scoped=False)
 async def get_trial_conversion_analytics_endpoint(
     request: Request,
     start_date: Optional[str] = Query(None, description="Start date (ISO format)"),
@@ -216,7 +216,7 @@ async def get_trial_conversion_analytics_endpoint(
 
 @router.get("/expiring", response_model=dict, status_code=status.HTTP_200_OK)
 @db_transaction_handler("get expiring trials", auto_commit=False)
-@require_permissions("trial.view_all", workspace_scoped=False)
+@require_permissions("audit.read", workspace_scoped=False)
 async def get_expiring_trials_endpoint(
     request: Request,
     days: int = Query(3, ge=0, le=30, description="Days until expiration"),

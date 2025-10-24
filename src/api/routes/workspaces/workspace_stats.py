@@ -17,13 +17,14 @@ from src.api.models.knowledge_models.knowledge_model import Website, KnowledgeFi
 from src.api.models.workspace_models.workspace_member import WorkspaceMembers
 from src.services.subscription_service import SubscriptionService
 from src.utils.response_utils import success
-from src.utils.route_decorators import db_transaction_handler
+from src.utils.route_decorators import db_transaction_handler, require_permissions
 from src.utils.auth_utils import verify_current_user
 
 router = APIRouter()
 
 
 @router.get("/{workspace_id}/stats")
+@require_permissions("workspace.read", workspace_scoped=True)
 @db_transaction_handler("get workspace stats", auto_commit=False)
 async def get_workspace_stats(
     workspace_id: str,

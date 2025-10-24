@@ -23,6 +23,7 @@ from src.utils.rbac_utils import (
 from src.utils.response_utils import success
 from src.utils.workspace_utils import async_get_workspace_id_from_identifier
 from src.utils.logger import logger
+from src.utils.route_decorators import require_permissions
 
 router = APIRouter(
     prefix="",
@@ -31,6 +32,7 @@ router = APIRouter(
 
 
 @router.get("/{workspace_id}/permissions/me")
+@require_permissions("member.read", workspace_scoped=True)
 async def get_my_workspace_permissions(
     workspace_id: str,
     user: dict = Depends(get_current_user),
@@ -120,6 +122,7 @@ async def get_my_workspace_permissions(
 
 
 @router.get("/{workspace_id}/permissions/check")
+@require_permissions("member.read", workspace_scoped=True)
 async def check_workspace_permission(
     workspace_id: str,
     permission: str,
@@ -207,6 +210,7 @@ async def check_workspace_permission(
 
 
 @router.post("/{workspace_id}/permissions/refresh")
+@require_permissions("member.read", workspace_scoped=True)
 async def refresh_workspace_permissions(
     workspace_id: str,
     user: dict = Depends(get_current_user),
@@ -241,6 +245,7 @@ async def refresh_workspace_permissions(
 
 
 @router.get("/{workspace_id}/members/{user_id}/permissions")
+@require_permissions("member.read", workspace_scoped=True)
 async def get_member_workspace_permissions(
     workspace_id: str,
     user_id: str,

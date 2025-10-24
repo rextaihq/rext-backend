@@ -17,6 +17,7 @@ from src.api.schema.onboarding_schemas import (
 )
 from src.services.onboarding_service import OnboardingService
 from src.utils.logger import logger
+from src.utils.route_decorators import require_permissions
 
 router = APIRouter(prefix="/onboarding", tags=["onboarding"])
 

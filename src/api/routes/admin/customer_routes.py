@@ -16,7 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.database.async_database import get_async_db
 from src.api.security.dependencies import get_current_user
-from src.api.middleware.permissions import require_permissions
+from src.api.middleware.permissions import is_admin
 from src.services.customer_admin_service import CustomerAdminService
 from src.utils.route_decorators import db_transaction_handler
 
@@ -63,10 +63,15 @@ async def list_customers(
     sort_order: str = Query("desc", pattern="^(asc|desc)$", description="Sort order"),
     db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user),
-    _: None = Depends(require_permissions(["user.read"]))
+    _: bool = Depends(is_admin)
 ):
     """
-    List all customers with filtering and pagination (admin only).
+    List all customers with filtering and pagination.
+
+    **Security: Requires admin or super_admin role**
+
+    This endpoint provides access to sensitive customer billing and subscription data.
+    Only platform administrators should have access.
 
     Query Parameters:
     - page: Page number (default 1)
@@ -80,6 +85,9 @@ async def list_customers(
     Returns:
     - List of customers with subscription and workspace info
     - Pagination metadata
+
+    Raises:
+        HTTPException: 401 if not authenticated, 403 if not admin
     """
     # Use service
     service = CustomerAdminService(db)
@@ -107,10 +115,16 @@ async def get_customer_detail(
     user_id: str,
     db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user),
-    _: None = Depends(require_permissions(["user.read"]))
+    _: bool = Depends(is_admin)
 ):
     """
-    Get detailed customer information (admin only).
+    Get detailed customer information.
+
+    **Security: Requires admin or super_admin role**
+
+    This endpoint exposes comprehensive customer data including billing information,
+    subscription details, usage metrics, and audit logs. Access is restricted to
+    platform administrators only.
 
     Path Parameters:
     - user_id: User ID
@@ -123,6 +137,9 @@ async def get_customer_detail(
     - Activity summary
     - Recent audit events
     - Customer notes
+
+    Raises:
+        HTTPException: 401 if not authenticated, 403 if not admin
     """
     # Use service
     service = CustomerAdminService(db)
@@ -142,22 +159,31 @@ async def perform_customer_action(
     action_request: CustomerActionRequest,
     db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user),
-    _: None = Depends(require_permissions(["user:manage"]))
+    _: bool = Depends(is_admin)
 ):
     """
-    Perform admin actions on customer account (admin only).
+    Perform admin actions on customer account.
+
+    **Security: Requires admin or super_admin role**
+
+    This endpoint allows critical administrative actions on customer accounts
+    including deactivation, subscription cancellation, and trial extensions.
+    Access is strictly limited to platform administrators.
 
     Path Parameters:
     - user_id: User ID
 
     Request Body:
     - action: deactivate, activate, reset_usage, extend_trial, cancel_subscription
-    - reason: Reason for the action
+    - reason: Reason for the action (required for audit trail)
     - metadata: Additional metadata
 
     Returns:
     - Action result
     - Updated user/subscription state
+
+    Raises:
+        HTTPException: 401 if not authenticated, 403 if not admin
     """
     admin_user_id = current_user.get("identity")
 
@@ -185,10 +211,15 @@ async def add_customer_note(
     note_request: CustomerNoteRequest,
     db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user),
-    _: None = Depends(require_permissions(["user.read"]))
+    _: bool = Depends(is_admin)
 ):
     """
-    Add internal note to customer account (admin only).
+    Add internal note to customer account.
+
+    **Security: Requires admin or super_admin role**
+
+    Customer notes are internal administrative records and should only be
+    accessible to platform administrators.
 
     Path Parameters:
     - user_id: User ID
@@ -199,6 +230,9 @@ async def add_customer_note(
 
     Returns:
     - Created note
+
+    Raises:
+        HTTPException: 401 if not authenticated, 403 if not admin
     """
     admin_user_id = current_user.get("identity")
 

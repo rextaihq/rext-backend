@@ -22,7 +22,7 @@ router = APIRouter()
 
 @router.post("/{user_id}/roles")
 @db_transaction_handler("assign role to user", auto_commit=True)
-@require_permissions("user.assign_role", workspace_scoped=False)
+@require_permissions("user.manage_roles", workspace_scoped=False)
 async def assign_role_to_user(
     request: Request,
     user_id: str,
@@ -33,7 +33,7 @@ async def assign_role_to_user(
     """
     Assign a role to a user.
 
-    Requires: user.assign_role permission OR admin role
+    Requires: user.manage_roles permission OR admin role
 
     Parameters:
     - user_id: UUID of the user
@@ -133,6 +133,7 @@ async def revoke_role_from_user(
 
 
 @router.get("/{user_id}/roles")
+@require_permissions("role.read")
 @db_transaction_handler("list user roles", auto_commit=False)
 async def list_user_roles(
     request: Request,

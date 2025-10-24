@@ -14,6 +14,7 @@ from src.services.role_service import RoleService
 from src.utils.response_utils import success, created
 from src.utils.route_decorators import db_transaction_handler, require_permissions
 from src.utils.logger import logger
+from src.api.middleware.rate_limiter import role_management_rate_limit
 from .helpers import check_role_permission
 
 
@@ -21,6 +22,7 @@ router = APIRouter()
 
 
 @router.get("/", response_model=dict)
+@require_permissions("role.read")
 @db_transaction_handler("list roles", auto_commit=False)
 async def list_roles(
     request: Request,
@@ -31,17 +33,20 @@ async def list_roles(
     """
     List all roles.
 
-    Requires: role.read permission OR admin role
+    **Security: Requires role.read permission**
+
+    This endpoint lists all system and workspace roles. Access is restricted to users
+    with the role.read permission (admin and super_admin roles by default).
 
     Query Parameters:
     - include_permissions: If true, include permissions for each role
 
     Returns:
     - List of roles sorted by hierarchy_level (descending)
+
+    Raises:
+        HTTPException: 401 if not authenticated, 403 if insufficient permissions
     """
-    # Check permission
-    user_id = current_user.get("identity")
-    await check_role_permission(db, user_id, "role.read")
 
     service = RoleService(db)
     roles = await service.get_role_hierarchy()
@@ -62,6 +67,7 @@ async def list_roles(
 
 
 @router.get("/{role_id}", response_model=dict)
+@require_permissions("role.read")
 @db_transaction_handler("get role", auto_commit=False)
 async def get_role(
     request: Request,
@@ -110,7 +116,8 @@ async def create_role(
     request: Request,
     role_data: RoleCreate,
     db: AsyncSession = Depends(get_async_db),
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
+    _rate_limit: None = Depends(role_management_rate_limit())
 ):
     """
     Create a new role.
@@ -126,6 +133,12 @@ async def create_role(
 
     Returns:
     - Created role details
+
+    **Phase 2, Task HIGH-3: Audit Logging**
+    This endpoint logs role creation to the audit table for compliance tracking.
+
+    **Phase 3, Task HIGH-4: Rate Limiting**
+    Rate limit: 20 requests per minute per user
     """
     # Check permission
     user_id = current_user.get("identity")
@@ -133,12 +146,51 @@ async def create_role(
 
     service = RoleService(db)
 
+    # Create the role
     new_role = await service.create_role(
         name=role_data.name,
         display_name=role_data.display_name,
         description=role_data.description,
         hierarchy_level=role_data.hierarchy_level,
         is_system_role=role_data.is_system_role
+    )
+
+    # Prepare values for audit log
+    new_values = {
+        "name": new_role.name,
+        "display_name": new_role.display_name,
+        "description": new_role.description,
+        "hierarchy_level": new_role.hierarchy_level,
+        "is_system_role": new_role.is_system_role
+    }
+
+    # Create audit log (HIGH-3: Role Creation Audit Logging)
+    from src.utils.audit_helper import create_audit_log_async
+    from uuid import UUID
+    await create_audit_log_async(
+        db=db,
+        user_id=UUID(user_id),
+        action="role.create",
+        resource_type="role",
+        resource_id=str(new_role.id),
+        old_values=None,
+        new_values=new_values,
+        request=request,
+        metadata={
+            "created_by_email": current_user.get("email"),
+            "created_by_username": current_user.get("username"),
+            "role_name": new_role.name,
+            "role_type": "system" if new_role.is_system_role else "custom"
+        }
+    )
+
+    logger.info(
+        f"Role created and logged to audit: {new_role.display_name}",
+        extra={
+            "role_id": str(new_role.id),
+            "created_by": user_id,
+            "role_name": new_role.name
+        }
     )
 
     return {
@@ -155,7 +207,8 @@ async def update_role(
     role_id: str,
     role_data: RoleUpdate,
     db: AsyncSession = Depends(get_async_db),
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
+    _rate_limit: None = Depends(role_management_rate_limit())
 ):
     """
     Update an existing role.
@@ -176,6 +229,12 @@ async def update_role(
 
     Returns:
     - Updated role details
+
+    **Phase 2, Task HIGH-3: Audit Logging**
+    This endpoint logs role updates to the audit table for compliance tracking.
+
+    **Phase 3, Task HIGH-4: Rate Limiting**
+    Rate limit: 20 requests per minute per user
     """
     # Check permission
     user_id = current_user.get("identity")
@@ -184,11 +243,59 @@ async def update_role(
     service = RoleService(db)
     from uuid import UUID
 
+    # Get role details before update for audit log
+    role_before = await service._get_role_or_404(UUID(role_id))
+    old_values = {
+        "display_name": role_before.display_name,
+        "description": role_before.description,
+        "hierarchy_level": role_before.hierarchy_level
+    }
+
+    # Update the role
     updated_role = await service.update_role(
         role_id=UUID(role_id),
         display_name=role_data.display_name,
         description=role_data.description,
         hierarchy_level=role_data.hierarchy_level
+    )
+
+    # Prepare new values for audit log
+    new_values = {
+        "display_name": updated_role.display_name,
+        "description": updated_role.description,
+        "hierarchy_level": updated_role.hierarchy_level
+    }
+
+    # Create audit log (HIGH-3: Role Update Audit Logging)
+    from src.utils.audit_helper import create_audit_log_async
+    await create_audit_log_async(
+        db=db,
+        user_id=UUID(user_id),
+        action="role.update",
+        resource_type="role",
+        resource_id=role_id,
+        old_values=old_values,
+        new_values=new_values,
+        request=request,
+        metadata={
+            "updated_by_email": current_user.get("email"),
+            "updated_by_username": current_user.get("username"),
+            "role_name": updated_role.name,
+            "changes": {
+                k: {"from": old_values[k], "to": new_values[k]}
+                for k in old_values
+                if old_values[k] != new_values[k]
+            }
+        }
+    )
+
+    logger.info(
+        f"Role updated and logged to audit: {updated_role.display_name}",
+        extra={
+            "role_id": role_id,
+            "updated_by": user_id,
+            "role_name": updated_role.name
+        }
     )
 
     return {
@@ -204,7 +311,8 @@ async def delete_role(
     request: Request,
     role_id: str,
     db: AsyncSession = Depends(get_async_db),
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
+    _rate_limit: None = Depends(role_management_rate_limit())
 ):
     """
     Delete a role.
@@ -220,6 +328,12 @@ async def delete_role(
 
     Returns:
     - Success message
+
+    **Phase 2, Task HIGH-3: Audit Logging**
+    This endpoint logs role deletion to the audit table for compliance tracking.
+
+    **Phase 3, Task HIGH-4: Rate Limiting**
+    Rate limit: 20 requests per minute per user
     """
     # Check permission
     user_id = current_user.get("identity")
@@ -228,11 +342,48 @@ async def delete_role(
     service = RoleService(db)
     from uuid import UUID
 
-    # Get role name before deletion
+    # Get role details before deletion for audit log
     role = await service._get_role_or_404(UUID(role_id))
     role_name = role.display_name
+    role_details = {
+        "name": role.name,
+        "display_name": role.display_name,
+        "description": role.description,
+        "hierarchy_level": role.hierarchy_level,
+        "is_system_role": role.is_system_role,
+        "created_at": role.created_at.isoformat() if role.created_at else None
+    }
 
+    # Delete the role
     await service.delete_role(role_id=UUID(role_id))
+
+    # Create audit log (HIGH-3: Role Deletion Audit Logging)
+    from src.utils.audit_helper import create_audit_log_async
+    await create_audit_log_async(
+        db=db,
+        user_id=UUID(user_id),
+        action="role.delete",
+        resource_type="role",
+        resource_id=role_id,
+        old_values=role_details,
+        new_values=None,
+        request=request,
+        metadata={
+            "deleted_by_email": current_user.get("email"),
+            "deleted_by_username": current_user.get("username"),
+            "role_name": role_name,
+            "role_type": "system" if role_details["is_system_role"] else "custom"
+        }
+    )
+
+    logger.info(
+        f"Role deleted and logged to audit: {role_name}",
+        extra={
+            "role_id": role_id,
+            "deleted_by": user_id,
+            "role_name": role_name
+        }
+    )
 
     return {
         "data": {"role_id": role_id},

@@ -17,6 +17,8 @@ import time
 from src.api.database.deps import get_db_dependency
 from src.api.config import get_settings
 from src.providers.payment.provider_factory import get_payment_provider_singleton
+from src.api.middleware.permissions import is_admin
+from src.utils.logger import logger
 
 router = APIRouter(prefix="/health", tags=["health"])
 
@@ -38,10 +40,16 @@ async def health_check():
 
 @router.get("/payment")
 async def payment_health_check(
-    db: AsyncSession = Depends(get_db_dependency)
+    db: AsyncSession = Depends(get_db_dependency),
+    _: bool = Depends(is_admin)
 ) -> Dict[str, Any]:
     """
     Comprehensive payment system health check (Phase 4, Task 4.2.5).
+
+    **Security: Requires admin or super_admin role**
+
+    This endpoint exposes sensitive payment system configuration and should only
+    be accessible to system administrators for monitoring purposes.
 
     Checks:
     - Database connectivity
@@ -61,7 +69,14 @@ async def payment_health_check(
                 "payment_provider": {"status": "healthy", "configured": true}
             }
         }
+
+    Raises:
+        HTTPException: 401 if not authenticated, 403 if not admin
     """
+    logger.info(
+        "Payment health check accessed",
+        extra={"endpoint": "/health/payment"}
+    )
     settings = get_settings()
     checks = {}
     overall_status = "healthy"
@@ -175,16 +190,30 @@ async def payment_health_check(
 
 
 @router.get("/payment/quick")
-async def payment_quick_health_check() -> Dict[str, Any]:
+async def payment_quick_health_check(
+    _: bool = Depends(is_admin)
+) -> Dict[str, Any]:
     """
     Quick payment health check without external dependencies.
 
+    **Security: Requires admin or super_admin role**
+
+    This endpoint exposes payment system configuration status and should only
+    be accessible to system administrators.
+
     Checks only configuration without making external calls.
-    Useful for load balancer health checks.
+    Useful for admin dashboards and internal monitoring.
 
     Returns:
         Dict with basic health status
+
+    Raises:
+        HTTPException: 401 if not authenticated, 403 if not admin
     """
+    logger.info(
+        "Quick payment health check accessed",
+        extra={"endpoint": "/health/payment/quick"}
+    )
     settings = get_settings()
 
     # Check if payment system is configured

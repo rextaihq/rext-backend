@@ -17,6 +17,7 @@ from src.api.schema.email_preview_schema import (
 )
 from src.api.security.dependencies import get_current_user
 from src.utils.logger import logger
+from src.utils.route_decorators import require_permissions
 
 # Import email templates
 from emails.templates.auth import (
@@ -67,6 +68,7 @@ def extract_preview_text(html: str) -> str:
 
 
 @router.post("/auth", response_model=EmailPreviewResponse)
+@require_permissions("user.read")
 async def preview_auth_email(
     request: AuthEmailPreviewRequest,
     current_user: dict = Depends(get_current_user)
@@ -146,6 +148,7 @@ async def preview_auth_email(
 
 
 @router.post("/workspace", response_model=EmailPreviewResponse)
+@require_permissions("user.read")
 async def preview_workspace_email(
     request: WorkspaceEmailPreviewRequest,
     current_user: dict = Depends(get_current_user)
@@ -250,6 +253,7 @@ async def preview_workspace_email(
 
 
 @router.post("/auth/html", response_class=HTMLResponse)
+@require_permissions("user.read")
 async def preview_auth_email_html(
     request: AuthEmailPreviewRequest,
     current_user: dict = Depends(get_current_user)
@@ -267,6 +271,7 @@ async def preview_auth_email_html(
 
 
 @router.post("/workspace/html", response_class=HTMLResponse)
+@require_permissions("user.read")
 async def preview_workspace_email_html(
     request: WorkspaceEmailPreviewRequest,
     current_user: dict = Depends(get_current_user)

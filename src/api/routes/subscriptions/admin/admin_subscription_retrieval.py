@@ -17,7 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.api.database.async_database import get_async_db
 from src.api.security.dependencies import get_current_user
 from src.services.subscription_retrieval_service import SubscriptionRetrievalService
-from src.utils.route_decorators import db_transaction_handler
+from src.utils.route_decorators import db_transaction_handler, require_permissions
 from .shared.auth import require_super_admin
 
 
@@ -25,6 +25,7 @@ router = APIRouter()
 
 
 @router.get("/", response_model=dict)
+@require_permissions("subscription.read")
 @db_transaction_handler("list subscriptions", auto_commit=False)
 async def list_all_subscriptions(
     request: Request,
@@ -51,6 +52,7 @@ async def list_all_subscriptions(
 
 
 @router.get("/{subscription_id}", response_model=dict)
+@require_permissions("subscription.read")
 @db_transaction_handler("get subscription", auto_commit=False)
 async def get_subscription_admin(
     request: Request,
