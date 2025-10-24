@@ -1,12 +1,12 @@
 {
-  "audit_date": "2025-10-24T07:33:16.144561",
+  "audit_date": "2025-10-24T07:39:58.845720",
   "statistics": {
     "total_files": 78,
     "total_routes": 278,
-    "protected_routes": 117,
-    "unprotected_routes": 107,
+    "protected_routes": 128,
+    "unprotected_routes": 96,
     "public_routes": 54,
-    "coverage_percentage": 52.23214285714286
+    "coverage_percentage": 57.14285714285714
   },
   "unprotected_routes": [
     {
@@ -200,86 +200,6 @@
       "is_public": false
     },
     {
-      "file": "api/routes/subscriptions/admin/admin_subscription_analytics.py",
-      "function": "get_subscription_stats",
-      "method": "GET",
-      "path": "/stats/overview",
-      "has_permission": false,
-      "permission_type": "none",
-      "line_number": 29,
-      "is_public": false
-    },
-    {
-      "file": "api/routes/subscriptions/admin/admin_subscription_analytics.py",
-      "function": "get_revenue_metrics",
-      "method": "GET",
-      "path": "/stats/revenue",
-      "has_permission": false,
-      "permission_type": "none",
-      "line_number": 54,
-      "is_public": false
-    },
-    {
-      "file": "api/routes/subscriptions/admin/admin_subscription_analytics.py",
-      "function": "get_churn_analysis",
-      "method": "GET",
-      "path": "/stats/churn",
-      "has_permission": false,
-      "permission_type": "none",
-      "line_number": 76,
-      "is_public": false
-    },
-    {
-      "file": "api/routes/subscriptions/admin/admin_subscription_analytics.py",
-      "function": "get_trial_conversion_metrics",
-      "method": "GET",
-      "path": "/stats/trial-conversion",
-      "has_permission": false,
-      "permission_type": "none",
-      "line_number": 100,
-      "is_public": false
-    },
-    {
-      "file": "api/routes/subscriptions/admin/admin_subscription_analytics.py",
-      "function": "get_analytics_overview",
-      "method": "GET",
-      "path": "/analytics/overview",
-      "has_permission": false,
-      "permission_type": "none",
-      "line_number": 124,
-      "is_public": false
-    },
-    {
-      "file": "api/routes/subscriptions/admin/admin_subscription_analytics.py",
-      "function": "get_revenue_history",
-      "method": "GET",
-      "path": "/analytics/revenue-history",
-      "has_permission": false,
-      "permission_type": "none",
-      "line_number": 147,
-      "is_public": false
-    },
-    {
-      "file": "api/routes/subscriptions/admin/admin_subscription_analytics.py",
-      "function": "get_plan_distribution",
-      "method": "GET",
-      "path": "/analytics/plan-distribution",
-      "has_permission": false,
-      "permission_type": "none",
-      "line_number": 171,
-      "is_public": false
-    },
-    {
-      "file": "api/routes/subscriptions/admin/admin_subscription_analytics.py",
-      "function": "get_cohort_retention",
-      "method": "GET",
-      "path": "/analytics/cohort-retention",
-      "has_permission": false,
-      "permission_type": "none",
-      "line_number": 191,
-      "is_public": false
-    },
-    {
       "file": "api/routes/subscriptions/admin/admin_subscription_management.py",
       "function": "assign_subscription",
       "method": "POST",
@@ -447,36 +367,6 @@
       "has_permission": false,
       "permission_type": "none",
       "line_number": 127,
-      "is_public": false
-    },
-    {
-      "file": "api/routes/users/impersonation.py",
-      "function": "start_impersonation",
-      "method": "POST",
-      "path": "/impersonate/start",
-      "has_permission": false,
-      "permission_type": "none",
-      "line_number": 28,
-      "is_public": false
-    },
-    {
-      "file": "api/routes/users/impersonation.py",
-      "function": "stop_impersonation",
-      "method": "POST",
-      "path": "/impersonate/stop",
-      "has_permission": false,
-      "permission_type": "none",
-      "line_number": 92,
-      "is_public": false
-    },
-    {
-      "file": "api/routes/users/impersonation.py",
-      "function": "get_impersonation_status",
-      "method": "GET",
-      "path": "/impersonate/status",
-      "has_permission": false,
-      "permission_type": "none",
-      "line_number": 165,
       "is_public": false
     },
     {
@@ -1612,6 +1502,86 @@
       "is_public": false
     },
     {
+      "file": "api/routes/subscriptions/admin/admin_subscription_analytics.py",
+      "function": "get_subscription_stats",
+      "method": "GET",
+      "path": "/stats/overview",
+      "has_permission": true,
+      "permission_type": "decorator",
+      "line_number": 30,
+      "is_public": false
+    },
+    {
+      "file": "api/routes/subscriptions/admin/admin_subscription_analytics.py",
+      "function": "get_revenue_metrics",
+      "method": "GET",
+      "path": "/stats/revenue",
+      "has_permission": true,
+      "permission_type": "decorator",
+      "line_number": 56,
+      "is_public": false
+    },
+    {
+      "file": "api/routes/subscriptions/admin/admin_subscription_analytics.py",
+      "function": "get_churn_analysis",
+      "method": "GET",
+      "path": "/stats/churn",
+      "has_permission": true,
+      "permission_type": "decorator",
+      "line_number": 79,
+      "is_public": false
+    },
+    {
+      "file": "api/routes/subscriptions/admin/admin_subscription_analytics.py",
+      "function": "get_trial_conversion_metrics",
+      "method": "GET",
+      "path": "/stats/trial-conversion",
+      "has_permission": true,
+      "permission_type": "decorator",
+      "line_number": 104,
+      "is_public": false
+    },
+    {
+      "file": "api/routes/subscriptions/admin/admin_subscription_analytics.py",
+      "function": "get_analytics_overview",
+      "method": "GET",
+      "path": "/analytics/overview",
+      "has_permission": true,
+      "permission_type": "decorator",
+      "line_number": 129,
+      "is_public": false
+    },
+    {
+      "file": "api/routes/subscriptions/admin/admin_subscription_analytics.py",
+      "function": "get_revenue_history",
+      "method": "GET",
+      "path": "/analytics/revenue-history",
+      "has_permission": true,
+      "permission_type": "decorator",
+      "line_number": 153,
+      "is_public": false
+    },
+    {
+      "file": "api/routes/subscriptions/admin/admin_subscription_analytics.py",
+      "function": "get_plan_distribution",
+      "method": "GET",
+      "path": "/analytics/plan-distribution",
+      "has_permission": true,
+      "permission_type": "decorator",
+      "line_number": 178,
+      "is_public": false
+    },
+    {
+      "file": "api/routes/subscriptions/admin/admin_subscription_analytics.py",
+      "function": "get_cohort_retention",
+      "method": "GET",
+      "path": "/analytics/cohort-retention",
+      "has_permission": true,
+      "permission_type": "decorator",
+      "line_number": 199,
+      "is_public": false
+    },
+    {
       "file": "api/routes/subscriptions/checkout_routes.py",
       "function": "create_checkout_session",
       "method": "POST",
@@ -1929,6 +1899,36 @@
       "has_permission": true,
       "permission_type": "is_admin",
       "line_number": 69,
+      "is_public": false
+    },
+    {
+      "file": "api/routes/users/impersonation.py",
+      "function": "start_impersonation",
+      "method": "POST",
+      "path": "/impersonate/start",
+      "has_permission": true,
+      "permission_type": "decorator",
+      "line_number": 29,
+      "is_public": false
+    },
+    {
+      "file": "api/routes/users/impersonation.py",
+      "function": "stop_impersonation",
+      "method": "POST",
+      "path": "/impersonate/stop",
+      "has_permission": true,
+      "permission_type": "decorator",
+      "line_number": 94,
+      "is_public": false
+    },
+    {
+      "file": "api/routes/users/impersonation.py",
+      "function": "get_impersonation_status",
+      "method": "GET",
+      "path": "/impersonate/status",
+      "has_permission": true,
+      "permission_type": "decorator",
+      "line_number": 168,
       "is_public": false
     },
     {

@@ -1,15 +1,15 @@
 # Route Permission Coverage Audit Report
 
-**Generated:** 2025-10-24 07:33:16
+**Generated:** 2025-10-24 07:39:58
 
 ## Summary
 
 - **Total Files:** 78
 - **Total Routes:** 278
 - **Public Routes:** 54
-- **Protected Routes:** 117
-- **Unprotected Routes:** 107
-- **Coverage:** 52.2%
+- **Protected Routes:** 128
+- **Unprotected Routes:** 96
+- **Coverage:** 57.1%
 
 ## Unprotected Routes
 
@@ -80,25 +80,6 @@ These routes need permission protection:
 - ❌ `POST /{token}/accept`
   - Function: `accept_invitation` (line 172)
 
-### api/routes/subscriptions/admin/admin_subscription_analytics.py
-
-- ❌ `GET /stats/overview`
-  - Function: `get_subscription_stats` (line 29)
-- ❌ `GET /stats/revenue`
-  - Function: `get_revenue_metrics` (line 54)
-- ❌ `GET /stats/churn`
-  - Function: `get_churn_analysis` (line 76)
-- ❌ `GET /stats/trial-conversion`
-  - Function: `get_trial_conversion_metrics` (line 100)
-- ❌ `GET /analytics/overview`
-  - Function: `get_analytics_overview` (line 124)
-- ❌ `GET /analytics/revenue-history`
-  - Function: `get_revenue_history` (line 147)
-- ❌ `GET /analytics/plan-distribution`
-  - Function: `get_plan_distribution` (line 171)
-- ❌ `GET /analytics/cohort-retention`
-  - Function: `get_cohort_retention` (line 191)
-
 ### api/routes/subscriptions/admin/admin_subscription_management.py
 
 - ❌ `POST /assign`
@@ -162,15 +143,6 @@ These routes need permission protection:
 
 - ❌ `POST /unsubscribe`
   - Function: `unsubscribe` (line 127)
-
-### api/routes/users/impersonation.py
-
-- ❌ `POST /impersonate/start`
-  - Function: `start_impersonation` (line 28)
-- ❌ `POST /impersonate/stop`
-  - Function: `stop_impersonation` (line 92)
-- ❌ `GET /impersonate/status`
-  - Function: `get_impersonation_status` (line 165)
 
 ### api/routes/users/invitations.py
 
@@ -354,5 +326,5 @@ These routes need permission protection:
 
 ## Protected Routes
 
-Total protected routes: 117
+Total protected routes: 128
 
