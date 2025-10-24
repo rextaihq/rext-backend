@@ -17,10 +17,12 @@ from src.api.schema.onboarding_schemas import (
 )
 from src.services.onboarding_service import OnboardingService
 from src.utils.logger import logger
+from src.utils.route_decorators import require_permissions
 
 router = APIRouter(prefix="/onboarding", tags=["onboarding"])
 
 
+@require_permissions(["user.read"])
 @router.get("", response_model=OnboardingResponse, status_code=status.HTTP_200_OK)
 async def get_onboarding_status(
     db: Annotated[AsyncSession, Depends(get_async_db)],
@@ -59,6 +61,7 @@ async def get_onboarding_status(
 
 
 @router.post("/update", response_model=OnboardingResponse, status_code=status.HTTP_200_OK)
+@require_permissions(["user.update"])
 async def update_onboarding_step(
     step_update: OnboardingStepUpdate,
     db: Annotated[AsyncSession, Depends(get_async_db)],
@@ -102,6 +105,7 @@ async def update_onboarding_step(
 
 
 @router.post("/complete", response_model=OnboardingResponse, status_code=status.HTTP_200_OK)
+@require_permissions(["user.update"])
 async def complete_onboarding(
     db: Annotated[AsyncSession, Depends(get_async_db)],
     current_user: Annotated[Auth.types.MinimalUserDict, Depends(get_current_user)],
@@ -126,6 +130,7 @@ async def complete_onboarding(
 
 
 @router.post("/reset", response_model=OnboardingResponse, status_code=status.HTTP_200_OK)
+@require_permissions(["user.update"])
 async def reset_onboarding(
     reset_data: OnboardingReset,
     db: Annotated[AsyncSession, Depends(get_async_db)],
@@ -156,6 +161,7 @@ async def reset_onboarding(
         )
 
 
+@require_permissions(["user.read"])
 @router.get("/should-show", status_code=status.HTTP_200_OK)
 async def should_show_onboarding(
     db: Annotated[AsyncSession, Depends(get_async_db)],
@@ -185,6 +191,7 @@ async def should_show_onboarding(
 
 
 @router.post("/marketing", response_model=OnboardingResponse, status_code=status.HTTP_200_OK)
+@require_permissions(["user.update"])
 async def update_marketing_data(
     marketing_data: OnboardingMarketingData,
     db: Annotated[AsyncSession, Depends(get_async_db)],
