@@ -26,7 +26,7 @@ router = APIRouter()
 
 
 @router.post("/{user_id}/suspend", response_model=UserStatusResponse)
-@require_permissions(["user.update"])
+@require_permissions("user.update")
 async def suspend_user(
     user_id: str,
     request: Request,
@@ -123,7 +123,7 @@ async def suspend_user(
 
 
 @router.post("/{user_id}/activate", response_model=UserStatusResponse)
-@require_permissions(["user.update"])
+@require_permissions("user.update")
 async def activate_user(
     user_id: str,
     request: Request,
@@ -218,7 +218,7 @@ async def activate_user(
 
 
 @router.post("/{user_id}/ban", response_model=UserStatusResponse)
-@require_permissions(["user.update"])
+@require_permissions("user.update")
 async def ban_user(
     user_id: str,
     request: Request,
@@ -315,7 +315,7 @@ async def ban_user(
 
 
 @router.post("/deactivate", response_model=DeactivateAccountResponse)
-@require_permissions(["user.update"])
+@require_permissions("user.update")
 async def deactivate_account(
     request: Request,
     deactivation_data: DeactivateAccountRequest,

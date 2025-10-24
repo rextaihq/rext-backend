@@ -21,7 +21,7 @@ router = APIRouter()
 
 
 @router.get("/sent")
-@require_permissions(["member.read"], workspace_scoped=True)
+@require_permissions("member.read", workspace_scoped=True)
 @db_transaction_handler("list sent invitations", auto_commit=False)
 async def list_sent_invitations(
     request: Request,
@@ -66,7 +66,7 @@ async def list_sent_invitations(
 
 
 @router.get("/received")
-@require_permissions(["member.read"])
+@require_permissions("member.read")
 @db_transaction_handler("list received invitations", auto_commit=True)
 async def list_received_invitations(
     request: Request,

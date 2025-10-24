@@ -22,7 +22,7 @@ router = APIRouter()
 
 
 @router.get("/", response_model=dict)
-@require_permissions(["role.read"])
+@require_permissions("role.read")
 @db_transaction_handler("list roles", auto_commit=False)
 async def list_roles(
     request: Request,
@@ -67,7 +67,7 @@ async def list_roles(
 
 
 @router.get("/{role_id}", response_model=dict)
-@require_permissions(["role.read"])
+@require_permissions("role.read")
 @db_transaction_handler("get role", auto_commit=False)
 async def get_role(
     request: Request,

@@ -70,7 +70,7 @@ async def list_content(
 # Get Single Content by ID
 # -------------------------
 @router.get("/{content_id}")
-@require_permissions(["content.read"], workspace_scoped=True)
+@require_permissions("content.read", workspace_scoped=True)
 @db_transaction_handler("get content", "Content retrieved successfully", auto_commit=False)
 async def get_content(
     content_id: UUID,

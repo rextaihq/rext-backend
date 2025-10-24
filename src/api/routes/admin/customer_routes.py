@@ -16,7 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.database.async_database import get_async_db
 from src.api.security.dependencies import get_current_user
-from src.api.middleware.permissions import require_permissions, is_admin
+from src.api.middleware.permissions import is_admin
 from src.services.customer_admin_service import CustomerAdminService
 from src.utils.route_decorators import db_transaction_handler
 

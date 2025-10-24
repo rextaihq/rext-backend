@@ -80,14 +80,17 @@ WORKSPACE_PERMISSIONS = [
     ("knowledge.delete", "Delete Knowledge", "knowledge", "delete", "Delete knowledge bases"),
 
     # Media Management
-    ("media.upload", "Upload Media", "media", "upload", "Upload media files (alias for media.create)"),
-    ("media.read", "View Media", "media", "read", "View media library (alias for media.view)"),
+    # CANONICAL PERMISSIONS (use these in new code - standard CRUD):
+    ("media.create", "Create Media", "media", "create", "Upload media files to workspace"),
+    ("media.read", "View Media", "media", "read", "View media files in workspace"),
+    ("media.update", "Update Media Metadata", "media", "update", "Update media file metadata"),
     ("media.delete", "Delete Media", "media", "delete", "Delete media files"),
     ("media.organize", "Organize Media", "media", "organize", "Organize media into folders"),
-    # Also keep existing media.view, media.create, media.update for backward compatibility
-    ("media.view", "View Media Files", "media", "view", "View media files in workspace"),
-    ("media.create", "Create Media", "media", "create", "Upload new media files to workspace"),
-    ("media.update", "Update Media Metadata", "media", "update", "Update media file metadata"),
+
+    # DEPRECATED ALIASES (kept for backward compatibility - DO NOT use in new code):
+    # Migration path: media.upload → media.create (standard CRUD), media.view → media.read (standard CRUD)
+    ("media.upload", "Upload Media (Deprecated)", "media", "upload", "DEPRECATED: Use media.create instead"),
+    ("media.view", "View Media Files (Deprecated)", "media", "view", "DEPRECATED: Use media.read instead"),
 
     # Member Management
     ("member.read", "View Members", "member", "read", "View workspace members"),
@@ -99,10 +102,14 @@ WORKSPACE_PERMISSIONS = [
     ("member.revoke_invitation", "Revoke Invitations", "member", "revoke_invitation", "Cancel pending invitations"),
 
     # License Management (one-time purchases)
-    ("license.view", "View Licenses", "license", "view", "View own license keys and activations"),
+    # CANONICAL PERMISSIONS (standard CRUD):
+    ("license.read", "View Licenses", "license", "read", "View own license keys and activations"),
     ("license.activate", "Activate License", "license", "activate", "Activate license on a device"),
     ("license.deactivate", "Deactivate License", "license", "deactivate", "Deactivate license from a device"),
     ("license.revoke", "Revoke License", "license", "revoke", "Revoke a license (admin only)"),
+
+    # DEPRECATED ALIASES (kept for backward compatibility):
+    ("license.view", "View Licenses (Deprecated)", "license", "view", "DEPRECATED: Use license.read instead"),
 ]
 
 GLOBAL_PERMISSIONS = [
@@ -112,6 +119,12 @@ GLOBAL_PERMISSIONS = [
     ("user.update", "Update Users", "user", "update", "Edit user profiles"),
     ("user.delete", "Delete Users", "user", "delete", "Delete users"),
     ("user.manage_roles", "Manage User Roles", "user", "manage_roles", "Assign global roles to users"),
+
+    # Workspace Creation (User Level - not workspace-scoped)
+    ("workspace.create", "Create Workspace", "workspace", "create", "Create new workspaces"),
+
+    # Admin Management (Platform Level)
+    ("admin.invite", "Invite Administrators", "admin", "invite", "Invite new platform administrators"),
 
     # Role & Permission Management
     ("role.create", "Create Roles", "role", "create", "Create custom roles"),
@@ -163,15 +176,17 @@ ROLE_PERMISSION_ASSIGNMENTS = {
         "knowledge.create", "knowledge.read", "knowledge.update", "knowledge.delete",
 
         # Media (full)
-        "media.upload", "media.read", "media.delete", "media.organize",
-        "media.view", "media.create", "media.update",  # Backward compatibility
+        "media.create", "media.read", "media.delete", "media.organize",
+        "media.update",
+        "media.upload", "media.view",  # Backward compatibility (deprecated)
 
         # Members (full)
         "member.read", "member.update", "member.update_role",
         "member.invite", "member.remove", "member.resend_invitation", "member.revoke_invitation",
 
         # License (full)
-        "license.view", "license.activate", "license.deactivate",
+        "license.read",
+        "license.view",  # Backward compatibility (deprecated) "license.activate", "license.deactivate",
     ],
 
     "workspace_admin": [
@@ -181,7 +196,8 @@ ROLE_PERMISSION_ASSIGNMENTS = {
 
         # NO BILLING/SUBSCRIPTION ACCESS!
         "usage.read",  # Can view usage only
-        "license.view", "license.activate",  # Can view/activate licenses
+        "license.read",
+        "license.view",  # Backward compatibility (deprecated) "license.activate",  # Can view/activate licenses
 
         # Content management (full)
         "content.create", "content.read", "content.update", "content.delete",
@@ -194,8 +210,9 @@ ROLE_PERMISSION_ASSIGNMENTS = {
         "knowledge.create", "knowledge.read", "knowledge.update", "knowledge.delete",
 
         # Media (full)
-        "media.upload", "media.read", "media.delete", "media.organize",
-        "media.view", "media.create", "media.update",
+        "media.create", "media.read", "media.delete", "media.organize",
+        "media.update",
+        "media.upload", "media.view",  # Backward compatibility (deprecated)
 
         # Members (full)
         "member.read", "member.update", "member.update_role",
@@ -217,14 +234,15 @@ ROLE_PERMISSION_ASSIGNMENTS = {
         "knowledge.create", "knowledge.read", "knowledge.update",
 
         # Media (can upload/view)
-        "media.upload", "media.read", "media.organize",
-        "media.view", "media.create",  # Backward compatibility
+        "media.create", "media.read", "media.organize",
+        "media.upload", "media.view",  # Backward compatibility (deprecated)
 
         # Members (read only)
         "member.read",
 
         # License (view only)
-        "license.view",
+        "license.read",
+        "license.view",  # Backward compatibility (deprecated)
     ],
 
     "viewer": [
@@ -241,13 +259,15 @@ ROLE_PERMISSION_ASSIGNMENTS = {
         "knowledge.read",
 
         # Media (read only)
-        "media.read", "media.view",
+        "media.read",
+        "media.view",  # Backward compatibility (deprecated)
 
         # Members (read only)
         "member.read",
 
         # License (view only)
-        "license.view",
+        "license.read",
+        "license.view",  # Backward compatibility (deprecated)
     ],
 
     # ========== GLOBAL ROLES ==========
@@ -256,7 +276,7 @@ ROLE_PERMISSION_ASSIGNMENTS = {
         # NOTE: Super admin bypasses all checks in code, but we assign all permissions for audit purposes
 
         # All workspace permissions
-        "workspace.read", "workspace.update", "workspace.delete", "workspace.transfer",
+        "workspace.create", "workspace.read", "workspace.update", "workspace.delete", "workspace.transfer",
         "workspace.manage_members", "workspace.manage_roles", "workspace.invite",
 
         # All billing
@@ -274,18 +294,21 @@ ROLE_PERMISSION_ASSIGNMENTS = {
         "knowledge.create", "knowledge.read", "knowledge.update", "knowledge.delete",
 
         # All media
-        "media.upload", "media.read", "media.delete", "media.organize",
-        "media.view", "media.create", "media.update",
+        "media.create", "media.read", "media.delete", "media.organize",
+        "media.update",
+        "media.upload", "media.view",  # Backward compatibility (deprecated)
 
         # All members
         "member.read", "member.update", "member.update_role",
         "member.invite", "member.remove", "member.resend_invitation", "member.revoke_invitation",
 
         # All licenses
-        "license.view", "license.activate", "license.deactivate", "license.revoke",
+        "license.read",
+        "license.view",  # Backward compatibility (deprecated) "license.activate", "license.deactivate", "license.revoke",
 
         # All global permissions
         "user.create", "user.read", "user.update", "user.delete", "user.manage_roles",
+        "workspace.create", "admin.invite",
         "role.create", "role.read", "role.update", "role.delete", "role.manage_permissions",
         "permission.create", "permission.read", "permission.update", "permission.delete",
         "audit.read", "audit.export",
@@ -296,7 +319,7 @@ ROLE_PERMISSION_ASSIGNMENTS = {
         # Platform management (similar to super_admin but less destructive permissions)
 
         # All workspace permissions
-        "workspace.read", "workspace.update", "workspace.delete",
+        "workspace.create", "workspace.read", "workspace.update", "workspace.delete",
         "workspace.manage_members", "workspace.manage_roles", "workspace.invite",
 
         # All billing (admin can manage billing)
@@ -314,15 +337,17 @@ ROLE_PERMISSION_ASSIGNMENTS = {
         "knowledge.create", "knowledge.read", "knowledge.update", "knowledge.delete",
 
         # All media
-        "media.upload", "media.read", "media.delete", "media.organize",
-        "media.view", "media.create", "media.update",
+        "media.create", "media.read", "media.delete", "media.organize",
+        "media.update",
+        "media.upload", "media.view",  # Backward compatibility (deprecated)
 
         # All members
         "member.read", "member.update", "member.update_role",
         "member.invite", "member.remove", "member.resend_invitation", "member.revoke_invitation",
 
         # All licenses
-        "license.view", "license.activate", "license.deactivate", "license.revoke",
+        "license.read",
+        "license.view",  # Backward compatibility (deprecated) "license.activate", "license.deactivate", "license.revoke",
 
         # Most global permissions (except some destructive ones)
         "user.create", "user.read", "user.update", "user.manage_roles",
@@ -351,13 +376,15 @@ ROLE_PERMISSION_ASSIGNMENTS = {
         "knowledge.read",
 
         # Media (read only)
-        "media.read", "media.view",
+        "media.read",
+        "media.view",  # Backward compatibility (deprecated)
 
         # Members (read only)
         "member.read",
 
         # License (read + activate/deactivate to help users)
-        "license.view", "license.activate", "license.deactivate",
+        "license.read",
+        "license.view",  # Backward compatibility (deprecated) "license.activate", "license.deactivate",
 
         # Global (read only)
         "user.read",
@@ -370,10 +397,8 @@ ROLE_PERMISSION_ASSIGNMENTS = {
     "user": [
         # Default authenticated user - basic workspace member
 
-        # Workspace (read only)
-        "workspace.read",
-
-        # Can create workspaces (handled by workspace.create route)
+        # Workspace
+        "workspace.read", "workspace.create",  # Users can create their own workspaces
 
         # Content (read only unless added to specific workspace)
         "content.read",
@@ -385,13 +410,15 @@ ROLE_PERMISSION_ASSIGNMENTS = {
         "knowledge.read",
 
         # Media (read only)
-        "media.read", "media.view",
+        "media.read",
+        "media.view",  # Backward compatibility (deprecated)
 
         # Members (read only)
         "member.read",
 
         # License (can view/activate own licenses)
-        "license.view", "license.activate", "license.deactivate",
+        "license.read",
+        "license.view",  # Backward compatibility (deprecated) "license.activate", "license.deactivate",
     ],
 }
 

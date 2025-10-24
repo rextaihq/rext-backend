@@ -223,7 +223,7 @@ async def save_topic(
 
 
 @router.get("/get-topic/{topic_id}")
-@require_permissions(["topic.read"], workspace_scoped=True)
+@require_permissions("topic.read", workspace_scoped=True)
 @db_transaction_handler("get topic", auto_commit=False)
 async def get_topic(
     topic_id: str,
@@ -279,7 +279,7 @@ async def get_topic(
 
 
 @router.get("/get-topics")
-@require_permissions(["topic.read"], workspace_scoped=True)
+@require_permissions("topic.read", workspace_scoped=True)
 @db_transaction_handler("get topics", auto_commit=False)
 async def get_topics(
     request: Request,

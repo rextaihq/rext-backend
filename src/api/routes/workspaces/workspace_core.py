@@ -33,7 +33,7 @@ async def get_status(request: Request):
 # Get all workspaces for user
 # -------------------------
 @router.get("/all")
-@require_permissions(["workspace.read"])
+@require_permissions("workspace.read", workspace_scoped=False)
 @db_transaction_handler("get workspaces", auto_commit=False)
 async def get_workspaces(
     request: Request,
@@ -53,7 +53,7 @@ async def get_workspaces(
 # Get workspace by ID
 # -------------------------
 @router.get("/detail")
-@require_permissions(["workspace.read"])
+@require_permissions("workspace.read")
 @db_transaction_handler("get workspace by id", auto_commit=False)
 async def get_workspace_by_id(
     workspace_id: str,
@@ -102,7 +102,7 @@ async def get_workspace_by_id(
 # Get workspace by slug
 # -------------------------
 @router.get("/slug/{workspace_slug}")
-@require_permissions(["workspace.read"])
+@require_permissions("workspace.read", workspace_scoped=False)
 @db_transaction_handler("get workspace by slug", auto_commit=False)
 async def get_workspace_by_slug(
     workspace_slug: str,
@@ -148,7 +148,7 @@ async def get_workspace_by_slug(
 # Get workspace by ID (RESTful endpoint)
 # -------------------------
 @router.get("/{workspace_id}")
-@require_permissions(["workspace.read"])
+@require_permissions("workspace.read")
 @db_transaction_handler("get workspace by id (path)", auto_commit=False)
 async def get_workspace_by_id_path(
     workspace_id: str,
@@ -201,7 +201,7 @@ async def get_workspace_by_id_path(
 # Update workspace
 # -------------------------
 @router.put("/{workspace_id}")
-@require_permissions(["workspace.update"], workspace_scoped=True)
+@require_permissions("workspace.update", workspace_scoped=True)
 @db_transaction_handler("update workspace", auto_commit=True)
 async def update_workspace(
     workspace_id: str,
@@ -258,7 +258,7 @@ async def update_workspace(
 # Delete workspace
 # -------------------------
 @router.delete("/{workspace_id}")
-@require_permissions(["workspace.delete"], workspace_scoped=True)
+@require_permissions("workspace.delete", workspace_scoped=True)
 @db_transaction_handler("delete workspace", auto_commit=True)
 async def delete_workspace_endpoint(
     workspace_id: str,

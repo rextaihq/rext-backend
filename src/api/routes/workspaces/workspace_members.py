@@ -144,7 +144,7 @@ def _serialize_member(member: WorkspaceMembers, user: Users) -> Dict[str, Any]:
     "/{workspace_id}/members",
     summary="List workspace members",
 )
-@require_permissions(["member.read"], workspace_scoped=True)
+@require_permissions("member.read", workspace_scoped=True)
 @db_transaction_handler("get workspace members", auto_commit=False)
 async def list_workspace_members(
     workspace_id: str,

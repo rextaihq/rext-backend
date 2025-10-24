@@ -18,7 +18,7 @@ router = APIRouter()
 
 
 @router.post("/{role_id}/permissions", response_model=dict)
-@require_permissions(["role.manage_permissions"])
+@require_permissions("role.manage_permissions")
 @db_transaction_handler("assign permissions to role", auto_commit=True)
 async def assign_permissions_to_role(
     request: Request,

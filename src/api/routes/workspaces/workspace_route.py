@@ -33,7 +33,7 @@ def get_status(request: Request):
 
 
 @router.get("/all")
-@require_permissions(["workspace.read"])
+@require_permissions("workspace.read")
 @db_transaction_handler("list workspaces", auto_commit=False)
 async def get_workspaces(
     request: Request,
@@ -53,7 +53,7 @@ async def get_workspaces(
 
 
 @router.get("/detail")
-@require_permissions(["workspace.read"])
+@require_permissions("workspace.read")
 @db_transaction_handler("get workspace", auto_commit=False)
 async def get_workspace_by_id(
     workspace_id: str,
@@ -81,7 +81,7 @@ async def get_workspace_by_id(
 
 
 @router.post("/create")
-@require_permissions(["workspace.create"])
+@require_permissions("workspace.create")
 @db_transaction_handler("create workspace", auto_commit=True)
 @traceable(
     name="Create Workspace",
@@ -133,7 +133,7 @@ async def create_workspace(
 
 
 @router.delete("/delete")
-@require_permissions(["workspace.delete"])
+@require_permissions("workspace.delete")
 @db_transaction_handler("delete workspace", auto_commit=True)
 async def delete_workspace(
     workspace_id: str,
@@ -161,7 +161,7 @@ async def delete_workspace(
 
 
 @router.put("/update")
-@require_permissions(["workspace.update"])
+@require_permissions("workspace.update")
 @db_transaction_handler("update workspace", auto_commit=True)
 async def update_workspace(
     workspace_id: str,

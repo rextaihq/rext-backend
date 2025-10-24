@@ -27,7 +27,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.database.async_database import get_async_db
 from src.api.security.dependencies import get_current_user
-from src.api.middleware.permissions import require_permissions
 from src.services.admin_invitation_service import AdminInvitationService
 from src.api.schema.admin_invitation_schema import (
     CreateAdminInvitationRequest,
@@ -41,7 +40,7 @@ from src.api.schema.admin_invitation_schema import (
     AdminInvitationStatsResponse,
 )
 from src.api.schema.response_schemas import GenericResponse
-from src.utils.route_decorators import db_transaction_handler
+from src.utils.route_decorators import db_transaction_handler, require_permissions
 from src.utils.logger import logger
 
 
@@ -115,12 +114,12 @@ def _invitation_to_response(invitation) -> AdminInvitationResponse:
 
 @admin_router.post("", response_model=AdminInvitationResponse, status_code=status.HTTP_201_CREATED)
 @db_transaction_handler("create admin invitation", auto_commit=True)
+@require_permissions("admin.invite", workspace_scoped=False)
 async def create_admin_invitation(
     request: Request,
     data: CreateAdminInvitationRequest,
     db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user),
-    _: None = Depends(require_permissions(["admin.invite"])),  # super_admin permission
 ):
     """
     Create a new platform admin invitation.
@@ -164,6 +163,7 @@ async def create_admin_invitation(
 
 @admin_router.get("", response_model=AdminInvitationListResponse)
 @db_transaction_handler("list admin invitations", auto_commit=False)
+@require_permissions("audit.read", workspace_scoped=False)
 async def list_admin_invitations(
     request: Request,
     status: Optional[str] = Query(None, description="Filter by status (pending/accepted/revoked/expired/declined)"),
@@ -171,7 +171,6 @@ async def list_admin_invitations(
     offset: int = Query(0, ge=0, description="Number of results to skip"),
     db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user),
-    _: None = Depends(require_permissions(["admin.view"])),
 ):
     """
     List all platform admin invitations.
@@ -205,12 +204,12 @@ async def list_admin_invitations(
 
 @admin_router.get("/{invitation_id}", response_model=AdminInvitationResponse)
 @db_transaction_handler("get admin invitation", auto_commit=False)
+@require_permissions("audit.read", workspace_scoped=False)
 async def get_admin_invitation(
     request: Request,
     invitation_id: UUID,
     db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user),
-    _: None = Depends(require_permissions(["admin.view"])),
 ):
     """
     Get details of a specific admin invitation.
@@ -227,13 +226,13 @@ async def get_admin_invitation(
 
 @admin_router.post("/{invitation_id}/resend", response_model=AdminInvitationResponse)
 @db_transaction_handler("resend admin invitation", auto_commit=True)
+@require_permissions("admin.invite", workspace_scoped=False)
 async def resend_admin_invitation(
     request: Request,
     invitation_id: UUID,
     data: ResendAdminInvitationRequest,
     db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user),
-    _: None = Depends(require_permissions(["admin.invite"])),
 ):
     """
     Resend (refresh) an admin invitation with new token and expiry.
@@ -267,13 +266,13 @@ async def resend_admin_invitation(
 
 @admin_router.delete("/{invitation_id}", response_model=GenericResponse)
 @db_transaction_handler("revoke admin invitation", auto_commit=True)
+@require_permissions("admin.invite", workspace_scoped=False)
 async def revoke_admin_invitation(
     request: Request,
     invitation_id: UUID,
     data: RevokeAdminInvitationRequest,
     db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user),
-    _: None = Depends(require_permissions(["admin.invite"])),
 ):
     """
     Revoke (cancel) an admin invitation.

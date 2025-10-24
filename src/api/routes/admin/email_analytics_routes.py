@@ -24,7 +24,7 @@ router = APIRouter(
 
 @router.get("/overview")
 @db_transaction_handler("get email analytics overview", auto_commit=False)
-@require_permissions("system.manage")
+@require_permissions("audit.read", workspace_scoped=False)
 async def get_email_analytics_overview(
     request: Request,
     date_range: str = Query("30d", description="Date range (e.g., 7d, 30d, 90d)"),
@@ -35,7 +35,7 @@ async def get_email_analytics_overview(
     """
     Get email analytics overview
 
-    **Permissions Required:** system.manage
+    **Permissions Required:** audit.read (admin monitoring)
 
     **Query Parameters:**
     - `date_range`: Date range string (e.g., "7d", "30d", "90d")
@@ -78,7 +78,7 @@ async def get_email_analytics_overview(
 
 @router.get("/by-template")
 @db_transaction_handler("get email analytics by template", auto_commit=False)
-@require_permissions("system.manage")
+@require_permissions("audit.read", workspace_scoped=False)
 async def get_email_analytics_by_template(
     request: Request,
     date_range: str = Query("30d", description="Date range (e.g., 7d, 30d, 90d)"),
@@ -89,7 +89,7 @@ async def get_email_analytics_by_template(
     """
     Get email performance by template type
 
-    **Permissions Required:** system.manage
+    **Permissions Required:** audit.read (admin monitoring)
 
     **Query Parameters:**
     - `date_range`: Date range string
@@ -130,7 +130,7 @@ async def get_email_analytics_by_template(
 
 @router.get("/timeline")
 @db_transaction_handler("get email timeline", auto_commit=False)
-@require_permissions("system.manage")
+@require_permissions("audit.read", workspace_scoped=False)
 async def get_email_timeline(
     request: Request,
     period: str = Query("daily", description="Aggregation period (daily, weekly, monthly)"),
@@ -142,7 +142,7 @@ async def get_email_timeline(
     """
     Get email volume over time
 
-    **Permissions Required:** system.manage
+    **Permissions Required:** audit.read (admin monitoring)
 
     **Query Parameters:**
     - `period`: Aggregation period ("daily", "weekly", "monthly")
@@ -181,7 +181,7 @@ async def get_email_timeline(
 
 @router.get("/failures")
 @db_transaction_handler("get email failures", auto_commit=False)
-@require_permissions("system.manage")
+@require_permissions("audit.read", workspace_scoped=False)
 async def get_email_failures(
     request: Request,
     limit: int = Query(100, ge=1, le=500, description="Maximum number of failures"),
@@ -192,7 +192,7 @@ async def get_email_failures(
     """
     Get recent email failures
 
-    **Permissions Required:** system.manage
+    **Permissions Required:** audit.read (admin monitoring)
 
     **Query Parameters:**
     - `limit`: Maximum number of failures to return (1-500)

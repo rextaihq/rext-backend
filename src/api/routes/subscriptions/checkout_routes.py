@@ -59,125 +59,10 @@ class PortalSessionResponse(BaseModel):
 # ============================================================================
 # Checkout Routes
 # ============================================================================
-
-@router.post("/checkout", response_model=dict, status_code=status.HTTP_200_OK)
-@require_permissions(["subscription.manage"])
-@db_transaction_handler("create checkout session")
-async def create_checkout_session(
-    request: Request,
-    checkout_request: CheckoutSessionRequest,
-    user: dict = Depends(get_current_user),
-    db: AsyncSession = Depends(get_async_db)
-):
-    """
-    Create checkout session with payment provider.
-
-    This endpoint creates a checkout session for subscription purchase.
-    The actual checkout is handled by LemonSqueezy payment provider.
-
-    Request Body:
-    - plan_id: UUID of the subscription plan
-    - billing_period: "monthly" or "yearly"
-
-    Returns:
-    - session_id: Checkout session ID
-    - checkout_url: URL to redirect user for LemonSqueezy checkout
-    """
-    user_id = user.get("identity")
-
-    # Get provider
-    provider = get_payment_provider()
-
-    # Get plan
-    plan_query = select(SubscriptionPlan).where(SubscriptionPlan.id == checkout_request.plan_id)
-    plan_result = await db.execute(plan_query)
-    plan = plan_result.scalar_one_or_none()
-
-    if not plan:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Subscription plan not found"
-        )
-
-    if not plan.is_active:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="This subscription plan is not available"
-        )
-
-    # Get user from database
-    user_query = select(Users).where(Users.id == user_id)
-    user_result = await db.execute(user_query)
-    user_obj = user_result.scalar_one_or_none()
-
-    if not user_obj:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="User not found"
-        )
-
-    # Get or create provider customer ID
-    if not user_obj.provider_customer_id:
-        customer_name = f"{user_obj.first_name} {user_obj.last_name}".strip() or user_obj.display_name or user_obj.email
-        customer_id = await provider.create_customer(
-            email=user_obj.email,
-            name=customer_name,
-            metadata={"user_id": str(user_obj.id), "username": user_obj.username}
-        )
-        user_obj.provider_customer_id = customer_id
-        logger.info(f"Created payment provider customer for user {user_obj.email}: {customer_id}")
-    else:
-        customer_id = user_obj.provider_customer_id
-
-    # Get variant ID based on billing period (LemonSqueezy) or fall back to price ID
-    variant_id = None
-    if checkout_request.billing_period == "monthly":
-        variant_id = plan.lemonsqueezy_variant_id_monthly or plan.provider_price_id_monthly
-    elif checkout_request.billing_period == "yearly":
-        variant_id = plan.lemonsqueezy_variant_id_yearly or plan.provider_price_id_yearly
-
-    if not variant_id:
-        # Plans must have LemonSqueezy variant IDs configured
-        logger.error(f"Plan {plan.name} missing LemonSqueezy variant ID for {checkout_request.billing_period}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Plan configuration error: Missing LemonSqueezy variant ID for {checkout_request.billing_period} billing"
-        )
-
-    # Create checkout session
-    try:
-        session = await provider.create_checkout_session(
-            customer_id=customer_id,
-            price_id=variant_id,  # This is variant_id for LemonSqueezy
-            success_url=payment_settings.payment_success_url,
-            cancel_url=payment_settings.payment_cancel_url,
-            metadata={
-                "user_id": str(user_obj.id),
-                "plan_id": str(plan.id),
-                "billing_period": checkout_request.billing_period
-            }
-        )
-
-        return success(
-            data={
-                "session_id": session.session_id,
-                "checkout_url": session.checkout_url,
-                "plan_name": plan.display_name,
-                "billing_period": checkout_request.billing_period
-            },
-            message="Checkout session created successfully"
-        )
-
-    except Exception as e:
-        logger.error(f"Failed to create checkout session: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to create checkout session: {str(e)}"
-        )
-
+# NOTE: /checkout endpoint is in subscription_routes.py (uses service layer with rate limiting)
 
 @router.get("/portal", response_model=dict, status_code=status.HTTP_200_OK)
-@require_permissions(["billing.read"])
+@require_permissions("billing.read")
 @db_transaction_handler("create portal session", auto_commit=False)
 async def create_portal_session(
     request: Request,
@@ -234,14 +119,18 @@ async def create_portal_session(
 # ============================================================================
 
 @router.get("/status", response_model=dict, status_code=status.HTTP_200_OK)
+@require_permissions("subscription.read", workspace_scoped=False)
 @db_transaction_handler("get subscription status", auto_commit=False)
-async def get_subscription_status(
+async def get_subscription_status_v2(
     request: Request,
     user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_async_db)
 ):
     """
     Get current subscription status with usage metrics.
+
+    Required Permission: subscription.read (owner only)
+    Scope: User-level (not workspace-scoped)
 
     Returns complete subscription information including:
     - Current subscription details
@@ -307,7 +196,7 @@ async def get_subscription_status(
 
 
 @router.get("/usage", response_model=dict, status_code=status.HTTP_200_OK)
-@require_permissions(["usage.read"])
+@require_permissions("usage.read")
 @db_transaction_handler("get usage metrics", auto_commit=False)
 async def get_usage_metrics(
     request: Request,
@@ -338,7 +227,7 @@ async def get_usage_metrics(
 
 
 @router.delete("/cancel", response_model=dict, status_code=status.HTTP_200_OK)
-@require_permissions(["subscription.manage"])
+@require_permissions("subscription.manage")
 @db_transaction_handler("cancel subscription")
 async def cancel_subscription(
     request: Request,

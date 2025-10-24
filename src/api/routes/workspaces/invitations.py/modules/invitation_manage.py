@@ -89,7 +89,7 @@ async def notify_workspace_admins_of_acceptance(
 
 
 @router.post("/accept")
-@require_permissions(["member.read"])
+@require_permissions("member.read")
 @db_transaction_handler("accept invitation", auto_commit=True)
 async def accept_invitation(
     request: Request,
@@ -159,7 +159,7 @@ async def accept_invitation(
 
 
 @router.post("/{invitation_id}/revoke")
-@require_permissions(["member.invite"], workspace_scoped=True)
+@require_permissions("member.invite", workspace_scoped=True)
 @db_transaction_handler("revoke invitation", auto_commit=True)
 async def revoke_invitation(
     invitation_id: str,

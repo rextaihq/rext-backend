@@ -23,7 +23,7 @@ router = APIRouter()
 
 
 @router.get("/me/permissions", response_model=dict)
-@require_permissions(["permission.read"])
+@require_permissions("permission.read")
 async def get_current_user_permissions(
     request: Request,
     workspace_id: Optional[str] = Query(None, description="Workspace ID or slug for workspace-scoped permissions"),

@@ -96,7 +96,7 @@ async def list_plans(
 
 
 @router.get("/{plan_id}", response_model=dict)
-@require_permissions(["subscription.read"])
+@require_permissions("subscription.read")
 @db_transaction_handler("get plan", auto_commit=False)
 async def get_plan(
     request: Request,
@@ -118,7 +118,7 @@ async def get_plan(
 
 
 @router.patch("/{plan_id}", response_model=dict)
-@require_permissions(["subscription.manage"])
+@require_permissions("subscription.manage")
 @db_transaction_handler("update plan", auto_commit=True)
 async def update_plan(
     request: Request,
@@ -141,7 +141,7 @@ async def update_plan(
 
 
 @router.delete("/{plan_id}", response_model=dict)
-@require_permissions(["subscription.manage"])
+@require_permissions("subscription.manage")
 @db_transaction_handler("delete plan", auto_commit=True)
 async def delete_plan(
     request: Request,

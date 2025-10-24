@@ -24,7 +24,7 @@ router = APIRouter()
 
 
 @router.post("/impersonate/start", dependencies=[Depends(is_admin)])
-@require_permissions(["user.update"])
+@require_permissions("user.update")
 @db_transaction_handler("start impersonation", auto_commit=False)
 async def start_impersonation(
     impersonate_request: ImpersonateStartRequest,
@@ -89,7 +89,7 @@ async def start_impersonation(
 
 
 @router.post("/impersonate/stop")
-@require_permissions(["user.update"])
+@require_permissions("user.update")
 @db_transaction_handler("stop impersonation", auto_commit=False)
 async def stop_impersonation(
     request: Request,
@@ -164,17 +164,16 @@ async def stop_impersonation(
 
 
 @router.get("/impersonate/status", response_model=ImpersonationStatusResponse)
-@require_permissions(["user.read"])
 async def get_impersonation_status(
     current_user: dict = Depends(get_current_user)
 ) -> dict:
     """
     Get the current impersonation status.
-    
+
     Returns impersonation details if the current user is impersonating someone,
     or a simple status response if not impersonating.
-    
-    This endpoint reads from the JWT token and does not require database access.
+
+    This endpoint reads from the JWT token and does not require database access or permissions.
     """
     is_impersonating = current_user.get("is_impersonating", False)
     

@@ -88,7 +88,7 @@ async def send_data_export_email_task(
 
 
 @router.get("/users")
-@require_permissions(["user.read"])
+@require_permissions("user.read")
 async def get_users(
     request: Request,
     workspace_id: str = None,
@@ -126,7 +126,7 @@ async def get_users(
 
 
 @router.delete("/delete/{user_id}")
-@require_permissions(["user.delete"])
+@require_permissions("user.delete")
 async def delete_user(
     user_id: str,
     request: Request,
@@ -190,7 +190,7 @@ async def delete_user(
 
 
 @router.put("/update/{user_id}")
-@require_permissions(["user.update"])
+@require_permissions("user.update")
 async def update_user(
     user_id: str,
     user: UpdateUser,
@@ -258,7 +258,7 @@ async def update_user(
 
 
 @router.post("/export-data", response_model=DataExportResponse)
-@require_permissions(["user.read"])
+@require_permissions("user.read")
 async def export_user_data(
     request: Request,
     export_request: DataExportRequest,

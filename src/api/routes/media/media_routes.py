@@ -152,7 +152,7 @@ async def upload_media(
 
 @router.get("", response_model=dict)
 @db_transaction_handler("list media")
-@require_permissions("media.view")
+@require_permissions("media.read")
 async def list_media(
     request: Request,
     workspace_id: str,
@@ -221,7 +221,7 @@ async def list_media(
 
 @router.get("/{media_id}", response_model=dict)
 @db_transaction_handler("get media")
-@require_permissions("media.view")
+@require_permissions("media.read")
 async def get_media_detail(
     request: Request,
     workspace_id: str,
@@ -417,7 +417,7 @@ async def bulk_delete_media(
 
 @router.get("/{media_id}/usage", response_model=dict)
 @db_transaction_handler("get media usage")
-@require_permissions("media.view")
+@require_permissions("media.read")
 async def get_media_usage_info(
     request: Request,
     workspace_id: str,
@@ -452,7 +452,7 @@ async def get_media_usage_info(
 
 @router.get("/usage/stats", response_model=dict)
 @db_transaction_handler("get storage usage")
-@require_permissions("media.view")
+@require_permissions("media.read")
 async def get_storage_usage(
     request: Request,
     workspace_id: str,

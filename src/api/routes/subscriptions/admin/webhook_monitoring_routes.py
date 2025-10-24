@@ -17,7 +17,7 @@ from sqlalchemy import select, and_, or_, desc, func
 from src.api.database.async_database import get_async_db
 from src.api.security.dependencies import get_current_user
 from src.api.models.subscription_models.webhooks import WebhookEvent
-from src.utils.route_decorators import db_transaction_handler
+from src.utils.route_decorators import db_transaction_handler, require_permissions
 from .shared.auth import require_super_admin
 
 
@@ -29,6 +29,7 @@ router = APIRouter()
 # ============================================================================
 
 @router.get("/webhooks/events", response_model=dict)
+@require_permissions("subscription.manage", workspace_scoped=False)
 @db_transaction_handler("get webhook events", auto_commit=False)
 async def get_webhook_events(
     request: Request,
@@ -42,7 +43,7 @@ async def get_webhook_events(
     current_user: dict = Depends(get_current_user)
 ):
     """
-    List recent webhook events (super admin only).
+    List recent webhook events (requires subscription.manage permission).
 
     Query Parameters:
     - page: Page number (default 1)
@@ -142,6 +143,7 @@ async def get_webhook_events(
 
 
 @router.get("/webhooks/failed", response_model=dict)
+@require_permissions("subscription.manage", workspace_scoped=False)
 @db_transaction_handler("get failed webhook events", auto_commit=False)
 async def get_failed_webhook_events(
     request: Request,
@@ -152,7 +154,7 @@ async def get_failed_webhook_events(
     current_user: dict = Depends(get_current_user)
 ):
     """
-    List failed webhook events (super admin only).
+    List failed webhook events (requires subscription.manage permission).
 
     Failed events are webhooks that have not been processed successfully
     and have an error message recorded.
@@ -250,6 +252,7 @@ async def get_failed_webhook_events(
 
 
 @router.post("/webhooks/{event_id}/retry", response_model=dict)
+@require_permissions("subscription.manage", workspace_scoped=False)
 @db_transaction_handler("retry failed webhook")
 async def retry_failed_webhook(
     request: Request,
@@ -258,7 +261,7 @@ async def retry_failed_webhook(
     current_user: dict = Depends(get_current_user)
 ):
     """
-    Retry a failed webhook event (super admin only).
+    Retry a failed webhook event (requires subscription.manage permission).
 
     This endpoint marks a failed webhook event for reprocessing.
     The actual reprocessing happens via the webhook processor service.
@@ -309,6 +312,7 @@ async def retry_failed_webhook(
 
 
 @router.get("/webhooks/stats", response_model=dict)
+@require_permissions("subscription.manage", workspace_scoped=False)
 @db_transaction_handler("get webhook statistics", auto_commit=False)
 async def get_webhook_statistics(
     request: Request,
@@ -317,7 +321,7 @@ async def get_webhook_statistics(
     current_user: dict = Depends(get_current_user)
 ):
     """
-    Get webhook processing statistics (super admin only).
+    Get webhook processing statistics (requires subscription.manage permission).
 
     Query Parameters:
     - days: Look back period in days (default 7, max 90)

@@ -13,9 +13,9 @@ from datetime import datetime, timedelta
 from src.api.database.async_database import get_async_db
 from src.api.models.email_models.email_log import EmailLog
 from src.services.email_service import EmailService
-from src.api.middleware.permissions import require_permissions
 from src.api.lib.logger import auto_logger
 from src.utils.response_utils import success, error
+from src.utils.route_decorators import require_permissions
 from pydantic import BaseModel
 
 logger = auto_logger()
@@ -53,7 +53,8 @@ class ResendEmailRequest(BaseModel):
 # ENDPOINTS
 # ============================================================================
 
-@router.get("/failed", dependencies=[Depends(require_permissions(["admin:emails:read"]))])
+@router.get("/failed")
+@require_permissions("audit.read", workspace_scoped=False)
 async def get_failed_emails(
     db: AsyncSession = Depends(get_async_db),
     limit: int = Query(default=50, le=200),
@@ -63,7 +64,7 @@ async def get_failed_emails(
     """
     Get failed emails from the last N days.
 
-    Requires permission: admin:emails:read
+    Requires permission: audit.read (admin only)
 
     Args:
         limit: Maximum number of results (default 50, max 200)
@@ -129,7 +130,8 @@ async def get_failed_emails(
         )
 
 
-@router.post("/{email_log_id}/resend", dependencies=[Depends(require_permissions(["admin:emails:write"]))])
+@router.post("/{email_log_id}/resend")
+@require_permissions("audit.read", workspace_scoped=False)
 async def resend_single_email(
     email_log_id: UUID,
     db: AsyncSession = Depends(get_async_db)
@@ -137,7 +139,7 @@ async def resend_single_email(
     """
     Resend a single failed email.
 
-    Requires permission: admin:emails:write
+    Requires permission: audit.read (admin monitoring)
 
     Args:
         email_log_id: ID of the email log to resend
@@ -200,7 +202,8 @@ async def resend_single_email(
         )
 
 
-@router.post("/resend-batch", dependencies=[Depends(require_permissions(["admin:emails:write"]))])
+@router.post("/resend-batch")
+@require_permissions("audit.read", workspace_scoped=False)
 async def resend_batch_emails(
     request: ResendEmailRequest,
     db: AsyncSession = Depends(get_async_db)
@@ -208,7 +211,7 @@ async def resend_batch_emails(
     """
     Resend multiple failed emails in batch.
 
-    Requires permission: admin:emails:write
+    Requires permission: audit.read (admin only)
 
     Args:
         request: List of email log IDs to resend

@@ -36,7 +36,7 @@ router = APIRouter()
 # ============================================================================
 
 @router.get("/export/subscriptions", response_class=StreamingResponse)
-@require_permissions(["subscription.read"])
+@require_permissions("subscription.read")
 @db_transaction_handler("export subscriptions", auto_commit=False)
 async def export_subscriptions_csv(
     request: Request,
@@ -157,7 +157,7 @@ async def export_subscriptions_csv(
 
 
 @router.get("/export/invoices", response_class=StreamingResponse)
-@require_permissions(["subscription.read"])
+@require_permissions("subscription.read")
 @db_transaction_handler("export invoices", auto_commit=False)
 async def export_invoices_csv(
     request: Request,
@@ -190,7 +190,7 @@ async def export_invoices_csv(
 
 
 @router.get("/export/revenue-summary", response_class=StreamingResponse)
-@require_permissions(["subscription.read"])
+@require_permissions("subscription.read")
 @db_transaction_handler("export revenue summary", auto_commit=False)
 async def export_revenue_summary_csv(
     request: Request,
@@ -327,7 +327,7 @@ async def export_revenue_summary_csv(
 
 
 @router.get("/export/trial-conversions", response_class=StreamingResponse)
-@require_permissions(["subscription.read"])
+@require_permissions("subscription.read")
 @db_transaction_handler("export trial conversions", auto_commit=False)
 async def export_trial_conversions_csv(
     request: Request,

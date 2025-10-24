@@ -110,7 +110,7 @@ async def create_knowledge_base(
 
 
 @router.get("/{kb_id}")
-@require_permissions(["knowledge.read"], workspace_scoped=True)
+@require_permissions("knowledge.read", workspace_scoped=True)
 @db_transaction_handler("get knowledge base", auto_commit=False)
 async def get_knowledge_base(
     workspace_id: str,
