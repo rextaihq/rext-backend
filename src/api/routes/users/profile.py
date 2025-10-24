@@ -23,7 +23,7 @@ router = APIRouter()
 AVATAR_UPLOAD_DIR = Path("uploads/avatars")
 AVATAR_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
-@require_permissions(["user.read"])
+@require_permissions("user.read")
 
 @router.get("/profile", response_model=dict)
 async def get_profile(
@@ -78,7 +78,7 @@ async def get_profile(
         raise
 
 
-@require_permissions(["user.update"])
+@require_permissions("user.update")
 @router.patch("/profile")
 async def update_profile(
     request: Request,
@@ -156,7 +156,7 @@ async def update_profile(
 
 
 @router.post("/avatar/upload")
-@require_permissions(["user.update"])
+@require_permissions("user.update")
 async def upload_avatar(
     request: Request,
     file: UploadFile = File(...),
@@ -257,7 +257,7 @@ async def upload_avatar(
 
 
 @router.delete("/avatar")
-@require_permissions(["user.update"])
+@require_permissions("user.update")
 async def delete_avatar(
     request: Request,
     current_user: dict = Depends(get_current_user),
@@ -326,7 +326,7 @@ async def delete_avatar(
 
 
 @router.get("/preferences/notifications", response_model=None)
-@require_permissions(["user.read"])
+@require_permissions("user.read", workspace_scoped=False)
 async def get_notification_preferences(
     request: Request,
     current_user: dict = Depends(get_current_user),
@@ -368,7 +368,7 @@ async def get_notification_preferences(
 
 
 @router.patch("/preferences/notifications", response_model=None)
-@require_permissions(["user.update"])
+@require_permissions("user.update", workspace_scoped=False)
 async def update_notification_preferences(
     preferences_update: UpdateNotificationPreferencesRequest,
     request: Request,

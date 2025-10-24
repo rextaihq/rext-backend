@@ -44,7 +44,7 @@ class UpdateUserPreferencesRequest(BaseModel):
 
 
 @router.get("/preferences", response_model=dict)
-@require_permissions(["user.read"])
+@require_permissions("user.read", workspace_scoped=False)
 async def get_user_preferences(
     request: Request,
     current_user: dict = Depends(get_current_user),
@@ -75,7 +75,7 @@ async def get_user_preferences(
 
 
 @router.patch("/preferences", response_model=dict)
-@require_permissions(["user.update"])
+@require_permissions("user.update", workspace_scoped=False)
 async def update_user_preferences(
     request: Request,
     preferences_data: UpdateUserPreferencesRequest,
