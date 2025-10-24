@@ -244,7 +244,6 @@ admin           (80)  - Platform administrator
 workspace_owner (60)  - Workspace creator, full control
 workspace_admin (50)  - Workspace manager
 editor          (30)  - Content creator
-content_reviewer(20)  - Approval workflow
 viewer          (10)  - Read-only access
 user            (1)   - Default global role
 ```
@@ -334,7 +333,7 @@ POST /api/v1/workspaces/{workspace_id}/invitations
 
 {
   "email": "user@example.com",
-  "role_id": "<role-uuid>",  // workspace_admin, editor, content_reviewer, or viewer
+  "role_id": "<role-uuid>",  // workspace_admin, editor, or viewer
   "message": "Join our team!"
 }
 ```

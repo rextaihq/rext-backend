@@ -24,11 +24,11 @@ def upgrade() -> None:
     op.add_column('roles', sa.Column('is_workspace_role', sa.Boolean(), nullable=True))
 
     # Set values for workspace roles
-    # Workspace roles: workspace_owner, workspace_admin, editor, viewer, content_reviewer
+    # Workspace roles: workspace_owner, workspace_admin, editor, viewer
     op.execute("""
         UPDATE roles
         SET is_workspace_role = TRUE
-        WHERE name IN ('workspace_owner', 'workspace_admin', 'editor', 'viewer', 'content_reviewer')
+        WHERE name IN ('workspace_owner', 'workspace_admin', 'editor', 'viewer')
     """)
 
     # Set values for platform/global roles
@@ -37,6 +37,14 @@ def upgrade() -> None:
         UPDATE roles
         SET is_workspace_role = FALSE
         WHERE name IN ('super_admin', 'admin', 'user')
+    """)
+
+    # Set default FALSE for any other roles that might exist (e.g., content_reviewer)
+    # This ensures no NULL values remain before making the column non-nullable
+    op.execute("""
+        UPDATE roles
+        SET is_workspace_role = FALSE
+        WHERE is_workspace_role IS NULL
     """)
 
     # Make column non-nullable now that all existing rows have values
