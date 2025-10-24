@@ -1,15 +1,15 @@
 # Route Permission Coverage Audit Report
 
-**Generated:** 2025-10-24 07:31:18
+**Generated:** 2025-10-24 07:33:16
 
 ## Summary
 
 - **Total Files:** 78
 - **Total Routes:** 278
 - **Public Routes:** 54
-- **Protected Routes:** 116
-- **Unprotected Routes:** 108
-- **Coverage:** 51.8%
+- **Protected Routes:** 117
+- **Unprotected Routes:** 107
+- **Coverage:** 52.2%
 
 ## Unprotected Routes
 
@@ -323,11 +323,6 @@ These routes need permission protection:
 - ❌ `GET /{kb_id}`
   - Function: `get_knowledge_base` (line 114)
 
-### api/routes/workspaces/workspace_members.py
-
-- ❌ `GET /{workspace_id}/members`
-  - Function: `list_workspace_members` (line 148)
-
 ### api/routes/workspaces/workspace_permissions.py
 
 - ❌ `GET /{workspace_id}/permissions/me`
@@ -359,5 +354,5 @@ These routes need permission protection:
 
 ## Protected Routes
 
-Total protected routes: 116
+Total protected routes: 117
 

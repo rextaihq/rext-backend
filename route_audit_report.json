@@ -1,12 +1,12 @@
 {
-  "audit_date": "2025-10-24T07:31:18.290456",
+  "audit_date": "2025-10-24T07:33:16.144561",
   "statistics": {
     "total_files": 78,
     "total_routes": 278,
-    "protected_routes": 116,
-    "unprotected_routes": 108,
+    "protected_routes": 117,
+    "unprotected_routes": 107,
     "public_routes": 54,
-    "coverage_percentage": 51.78571428571429
+    "coverage_percentage": 52.23214285714286
   },
   "unprotected_routes": [
     {
@@ -977,16 +977,6 @@
       "has_permission": false,
       "permission_type": "none",
       "line_number": 114,
-      "is_public": false
-    },
-    {
-      "file": "api/routes/workspaces/workspace_members.py",
-      "function": "list_workspace_members",
-      "method": "GET",
-      "path": "/{workspace_id}/members",
-      "has_permission": false,
-      "permission_type": "none",
-      "line_number": 148,
       "is_public": false
     },
     {
@@ -2223,12 +2213,22 @@
     },
     {
       "file": "api/routes/workspaces/workspace_members.py",
+      "function": "list_workspace_members",
+      "method": "GET",
+      "path": "/{workspace_id}/members",
+      "has_permission": true,
+      "permission_type": "decorator",
+      "line_number": 149,
+      "is_public": false
+    },
+    {
+      "file": "api/routes/workspaces/workspace_members.py",
       "function": "add_workspace_member",
       "method": "POST",
       "path": "/{workspace_id}/members",
       "has_permission": true,
       "permission_type": "decorator",
-      "line_number": 181,
+      "line_number": 182,
       "is_public": false
     },
     {
@@ -2238,7 +2238,7 @@
       "path": "/{workspace_id}/members/{member_id}",
       "has_permission": true,
       "permission_type": "decorator",
-      "line_number": 229,
+      "line_number": 230,
       "is_public": false
     },
     {
@@ -2248,7 +2248,7 @@
       "path": "/{workspace_id}/members/{member_id}/role",
       "has_permission": true,
       "permission_type": "decorator",
-      "line_number": 302,
+      "line_number": 303,
       "is_public": false
     }
   ],
