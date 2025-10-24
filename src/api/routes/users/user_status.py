@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 
 from src.utils.logger import logger
 from src.api.security.dependencies import get_current_user
+from src.utils.route_decorators import require_permissions
 from src.api.schema.user_schema import (
     UserStatusRequest,
     UserStatusResponse,
@@ -25,6 +26,7 @@ router = APIRouter()
 
 
 @router.post("/{user_id}/suspend", response_model=UserStatusResponse)
+@require_permissions(["user.update"])
 async def suspend_user(
     user_id: str,
     request: Request,
@@ -121,6 +123,7 @@ async def suspend_user(
 
 
 @router.post("/{user_id}/activate", response_model=UserStatusResponse)
+@require_permissions(["user.update"])
 async def activate_user(
     user_id: str,
     request: Request,
@@ -215,6 +218,7 @@ async def activate_user(
 
 
 @router.post("/{user_id}/ban", response_model=UserStatusResponse)
+@require_permissions(["user.update"])
 async def ban_user(
     user_id: str,
     request: Request,
@@ -311,6 +315,7 @@ async def ban_user(
 
 
 @router.post("/deactivate", response_model=DeactivateAccountResponse)
+@require_permissions(["user.update"])
 async def deactivate_account(
     request: Request,
     deactivation_data: DeactivateAccountRequest,

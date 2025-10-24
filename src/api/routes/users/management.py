@@ -7,6 +7,7 @@ from datetime import datetime
 
 from src.utils.logger import logger
 from src.api.security.dependencies import get_current_user
+from src.utils.route_decorators import require_permissions
 from src.api.schema.user_schema import UpdateUser, DataExportRequest, DataExportResponse
 from src.services.email_service import EmailService
 from src.api.database.async_database import get_async_db
@@ -87,6 +88,7 @@ async def send_data_export_email_task(
 
 
 @router.get("/users")
+@require_permissions(["user.read"])
 async def get_users(
     request: Request,
     workspace_id: str = None,
@@ -124,6 +126,7 @@ async def get_users(
 
 
 @router.delete("/delete/{user_id}")
+@require_permissions(["user.delete"])
 async def delete_user(
     user_id: str,
     request: Request,
@@ -187,6 +190,7 @@ async def delete_user(
 
 
 @router.put("/update/{user_id}")
+@require_permissions(["user.update"])
 async def update_user(
     user_id: str,
     user: UpdateUser,
@@ -254,6 +258,7 @@ async def update_user(
 
 
 @router.post("/export-data", response_model=DataExportResponse)
+@require_permissions(["user.read"])
 async def export_user_data(
     request: Request,
     export_request: DataExportRequest,
