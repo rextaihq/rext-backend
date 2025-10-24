@@ -1,15 +1,15 @@
 # Route Permission Coverage Audit Report
 
-**Generated:** 2025-10-24 08:41:19
+**Generated:** 2025-10-24 10:14:38
 
 ## Summary
 
 - **Total Files:** 78
 - **Total Routes:** 278
 - **Public Routes:** 54
-- **Protected Routes:** 178
-- **Unprotected Routes:** 46
-- **Coverage:** 79.5%
+- **Protected Routes:** 191
+- **Unprotected Routes:** 33
+- **Coverage:** 85.3%
 
 ## Unprotected Routes
 
@@ -99,25 +99,6 @@ These routes need permission protection:
 - ❌ `POST /unsubscribe`
   - Function: `unsubscribe` (line 127)
 
-### api/routes/users/invitations.py
-
-- ❌ `GET /pending`
-  - Function: `get_pending_invitations` (line 42)
-- ❌ `POST /{invitation_id}/decline`
-  - Function: `decline_invitation` (line 213)
-
-### api/routes/users/password.py
-
-- ❌ `POST /change-password`
-  - Function: `change_password` (line 192)
-- ❌ `POST /verify-password`
-  - Function: `verify_password` (line 283)
-
-### api/routes/users/roles.py
-
-- ❌ `GET /{user_id}/roles`
-  - Function: `list_user_roles` (line 137)
-
 ### api/routes/users/user_permissions.py
 
 - ❌ `GET /me/permissions`
@@ -141,32 +122,6 @@ These routes need permission protection:
 - ❌ `GET /defaults/{template_type}`
   - Function: `get_default_template_for_type` (line 180)
 
-### api/routes/workspaces/invitations.py/modules/invitation_list.py
-
-- ❌ `GET /sent`
-  - Function: `list_sent_invitations` (line 25)
-- ❌ `GET /received`
-  - Function: `list_received_invitations` (line 69)
-
-### api/routes/workspaces/invitations.py/modules/invitation_manage.py
-
-- ❌ `POST /accept`
-  - Function: `accept_invitation` (line 93)
-- ❌ `POST /{invitation_id}/revoke`
-  - Function: `revoke_invitation` (line 162)
-
-### api/routes/workspaces/workspace_knowledge.py
-
-- ❌ `GET /text/{text_id}`
-  - Function: `get_text_knowledge` (line 513)
-- ❌ `PATCH /text/{text_id}`
-  - Function: `update_text_knowledge` (line 539)
-
-### api/routes/workspaces/workspace_knowledge_bases.py
-
-- ❌ `GET /{kb_id}`
-  - Function: `get_knowledge_base` (line 114)
-
 ### api/routes/workspaces/workspace_route.py
 
 - ❌ `GET /all`
@@ -180,12 +135,7 @@ These routes need permission protection:
 - ❌ `PUT /update`
   - Function: `update_workspace` (line 161)
 
-### api/routes/workspaces/workspace_stats.py
-
-- ❌ `GET /{workspace_id}/stats`
-  - Function: `get_workspace_stats` (line 28)
-
 ## Protected Routes
 
-Total protected routes: 178
+Total protected routes: 191
 

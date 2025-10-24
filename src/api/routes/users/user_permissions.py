@@ -16,12 +16,14 @@ from src.utils.rbac_utils import get_user_permissions, get_user_roles
 from src.utils.workspace_utils import async_get_workspace_id_from_identifier
 from src.utils.response_utils import success
 from src.utils.logger import logger
+from src.utils.route_decorators import require_permissions
 
 
 router = APIRouter()
 
 
 @router.get("/me/permissions", response_model=dict)
+@require_permissions(["permission.read"])
 async def get_current_user_permissions(
     request: Request,
     workspace_id: Optional[str] = Query(None, description="Workspace ID or slug for workspace-scoped permissions"),

@@ -1,12 +1,12 @@
 {
-  "audit_date": "2025-10-24T08:41:19.453869",
+  "audit_date": "2025-10-24T10:14:38.685212",
   "statistics": {
     "total_files": 78,
     "total_routes": 278,
-    "protected_routes": 178,
-    "unprotected_routes": 46,
+    "protected_routes": 191,
+    "unprotected_routes": 33,
     "public_routes": 54,
-    "coverage_percentage": 79.46428571428571
+    "coverage_percentage": 85.26785714285714
   },
   "unprotected_routes": [
     {
@@ -220,56 +220,6 @@
       "is_public": false
     },
     {
-      "file": "api/routes/users/invitations.py",
-      "function": "get_pending_invitations",
-      "method": "GET",
-      "path": "/pending",
-      "has_permission": false,
-      "permission_type": "none",
-      "line_number": 42,
-      "is_public": false
-    },
-    {
-      "file": "api/routes/users/invitations.py",
-      "function": "decline_invitation",
-      "method": "POST",
-      "path": "/{invitation_id}/decline",
-      "has_permission": false,
-      "permission_type": "none",
-      "line_number": 213,
-      "is_public": false
-    },
-    {
-      "file": "api/routes/users/password.py",
-      "function": "change_password",
-      "method": "POST",
-      "path": "/change-password",
-      "has_permission": false,
-      "permission_type": "none",
-      "line_number": 192,
-      "is_public": false
-    },
-    {
-      "file": "api/routes/users/password.py",
-      "function": "verify_password",
-      "method": "POST",
-      "path": "/verify-password",
-      "has_permission": false,
-      "permission_type": "none",
-      "line_number": 283,
-      "is_public": false
-    },
-    {
-      "file": "api/routes/users/roles.py",
-      "function": "list_user_roles",
-      "method": "GET",
-      "path": "/{user_id}/roles",
-      "has_permission": false,
-      "permission_type": "none",
-      "line_number": 137,
-      "is_public": false
-    },
-    {
       "file": "api/routes/users/user_permissions.py",
       "function": "get_current_user_permissions",
       "method": "GET",
@@ -340,76 +290,6 @@
       "is_public": false
     },
     {
-      "file": "api/routes/workspaces/invitations.py/modules/invitation_list.py",
-      "function": "list_sent_invitations",
-      "method": "GET",
-      "path": "/sent",
-      "has_permission": false,
-      "permission_type": "none",
-      "line_number": 25,
-      "is_public": false
-    },
-    {
-      "file": "api/routes/workspaces/invitations.py/modules/invitation_list.py",
-      "function": "list_received_invitations",
-      "method": "GET",
-      "path": "/received",
-      "has_permission": false,
-      "permission_type": "none",
-      "line_number": 69,
-      "is_public": false
-    },
-    {
-      "file": "api/routes/workspaces/invitations.py/modules/invitation_manage.py",
-      "function": "accept_invitation",
-      "method": "POST",
-      "path": "/accept",
-      "has_permission": false,
-      "permission_type": "none",
-      "line_number": 93,
-      "is_public": false
-    },
-    {
-      "file": "api/routes/workspaces/invitations.py/modules/invitation_manage.py",
-      "function": "revoke_invitation",
-      "method": "POST",
-      "path": "/{invitation_id}/revoke",
-      "has_permission": false,
-      "permission_type": "none",
-      "line_number": 162,
-      "is_public": false
-    },
-    {
-      "file": "api/routes/workspaces/workspace_knowledge.py",
-      "function": "get_text_knowledge",
-      "method": "GET",
-      "path": "/text/{text_id}",
-      "has_permission": false,
-      "permission_type": "none",
-      "line_number": 513,
-      "is_public": false
-    },
-    {
-      "file": "api/routes/workspaces/workspace_knowledge.py",
-      "function": "update_text_knowledge",
-      "method": "PATCH",
-      "path": "/text/{text_id}",
-      "has_permission": false,
-      "permission_type": "none",
-      "line_number": 539,
-      "is_public": false
-    },
-    {
-      "file": "api/routes/workspaces/workspace_knowledge_bases.py",
-      "function": "get_knowledge_base",
-      "method": "GET",
-      "path": "/{kb_id}",
-      "has_permission": false,
-      "permission_type": "none",
-      "line_number": 114,
-      "is_public": false
-    },
-    {
       "file": "api/routes/workspaces/workspace_route.py",
       "function": "get_workspaces",
       "method": "GET",
@@ -457,16 +337,6 @@
       "has_permission": false,
       "permission_type": "none",
       "line_number": 161,
-      "is_public": false
-    },
-    {
-      "file": "api/routes/workspaces/workspace_stats.py",
-      "function": "get_workspace_stats",
-      "method": "GET",
-      "path": "/{workspace_id}/stats",
-      "has_permission": false,
-      "permission_type": "none",
-      "line_number": 28,
       "is_public": false
     }
   ],
@@ -1582,6 +1452,26 @@
       "is_public": false
     },
     {
+      "file": "api/routes/users/invitations.py",
+      "function": "get_pending_invitations",
+      "method": "GET",
+      "path": "/pending",
+      "has_permission": true,
+      "permission_type": "decorator",
+      "line_number": 43,
+      "is_public": false
+    },
+    {
+      "file": "api/routes/users/invitations.py",
+      "function": "decline_invitation",
+      "method": "POST",
+      "path": "/{invitation_id}/decline",
+      "has_permission": true,
+      "permission_type": "decorator",
+      "line_number": 215,
+      "is_public": false
+    },
+    {
       "file": "api/routes/users/management.py",
       "function": "get_users",
       "method": "GET",
@@ -1669,6 +1559,26 @@
       "has_permission": true,
       "permission_type": "decorator",
       "line_number": 195,
+      "is_public": false
+    },
+    {
+      "file": "api/routes/users/password.py",
+      "function": "change_password",
+      "method": "POST",
+      "path": "/change-password",
+      "has_permission": true,
+      "permission_type": "decorator",
+      "line_number": 194,
+      "is_public": false
+    },
+    {
+      "file": "api/routes/users/password.py",
+      "function": "verify_password",
+      "method": "POST",
+      "path": "/verify-password",
+      "has_permission": true,
+      "permission_type": "decorator",
+      "line_number": 286,
       "is_public": false
     },
     {
@@ -1769,6 +1679,16 @@
       "has_permission": true,
       "permission_type": "decorator",
       "line_number": 90,
+      "is_public": false
+    },
+    {
+      "file": "api/routes/users/roles.py",
+      "function": "list_user_roles",
+      "method": "GET",
+      "path": "/{user_id}/roles",
+      "has_permission": true,
+      "permission_type": "decorator",
+      "line_number": 138,
       "is_public": false
     },
     {
@@ -1879,6 +1799,46 @@
       "has_permission": true,
       "permission_type": "decorator",
       "line_number": 209,
+      "is_public": false
+    },
+    {
+      "file": "api/routes/workspaces/invitations.py/modules/invitation_list.py",
+      "function": "list_sent_invitations",
+      "method": "GET",
+      "path": "/sent",
+      "has_permission": true,
+      "permission_type": "decorator",
+      "line_number": 26,
+      "is_public": false
+    },
+    {
+      "file": "api/routes/workspaces/invitations.py/modules/invitation_list.py",
+      "function": "list_received_invitations",
+      "method": "GET",
+      "path": "/received",
+      "has_permission": true,
+      "permission_type": "decorator",
+      "line_number": 71,
+      "is_public": false
+    },
+    {
+      "file": "api/routes/workspaces/invitations.py/modules/invitation_manage.py",
+      "function": "accept_invitation",
+      "method": "POST",
+      "path": "/accept",
+      "has_permission": true,
+      "permission_type": "decorator",
+      "line_number": 94,
+      "is_public": false
+    },
+    {
+      "file": "api/routes/workspaces/invitations.py/modules/invitation_manage.py",
+      "function": "revoke_invitation",
+      "method": "POST",
+      "path": "/{invitation_id}/revoke",
+      "has_permission": true,
+      "permission_type": "decorator",
+      "line_number": 164,
       "is_public": false
     },
     {
@@ -2143,12 +2103,42 @@
     },
     {
       "file": "api/routes/workspaces/workspace_knowledge.py",
+      "function": "get_text_knowledge",
+      "method": "GET",
+      "path": "/text/{text_id}",
+      "has_permission": true,
+      "permission_type": "decorator",
+      "line_number": 514,
+      "is_public": false
+    },
+    {
+      "file": "api/routes/workspaces/workspace_knowledge.py",
+      "function": "update_text_knowledge",
+      "method": "PATCH",
+      "path": "/text/{text_id}",
+      "has_permission": true,
+      "permission_type": "decorator",
+      "line_number": 541,
+      "is_public": false
+    },
+    {
+      "file": "api/routes/workspaces/workspace_knowledge.py",
       "function": "delete_text_knowledge",
       "method": "DELETE",
       "path": "/text/{text_id}",
       "has_permission": true,
       "permission_type": "decorator",
-      "line_number": 581,
+      "line_number": 583,
+      "is_public": false
+    },
+    {
+      "file": "api/routes/workspaces/workspace_knowledge_bases.py",
+      "function": "get_knowledge_base",
+      "method": "GET",
+      "path": "/{kb_id}",
+      "has_permission": true,
+      "permission_type": "decorator",
+      "line_number": 115,
       "is_public": false
     },
     {
@@ -2158,7 +2148,7 @@
       "path": "/{kb_id}",
       "has_permission": true,
       "permission_type": "decorator",
-      "line_number": 146,
+      "line_number": 147,
       "is_public": false
     },
     {
@@ -2168,7 +2158,7 @@
       "path": "/{kb_id}",
       "has_permission": true,
       "permission_type": "decorator",
-      "line_number": 179,
+      "line_number": 180,
       "is_public": false
     },
     {
@@ -2249,6 +2239,16 @@
       "has_permission": true,
       "permission_type": "decorator",
       "line_number": 249,
+      "is_public": false
+    },
+    {
+      "file": "api/routes/workspaces/workspace_stats.py",
+      "function": "get_workspace_stats",
+      "method": "GET",
+      "path": "/{workspace_id}/stats",
+      "has_permission": true,
+      "permission_type": "decorator",
+      "line_number": 29,
       "is_public": false
     }
   ],
@@ -2670,7 +2670,7 @@
       "path": "/forgot-password",
       "has_permission": false,
       "permission_type": "none",
-      "line_number": 69,
+      "line_number": 70,
       "is_public": true
     },
     {
@@ -2680,7 +2680,7 @@
       "path": "/reset-password",
       "has_permission": false,
       "permission_type": "none",
-      "line_number": 132,
+      "line_number": 133,
       "is_public": true
     },
     {

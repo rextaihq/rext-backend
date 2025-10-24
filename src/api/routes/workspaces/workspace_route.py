@@ -11,7 +11,7 @@ from src.api.security.dependencies import get_current_user
 from src.services.workspace_service import WorkspaceService
 from src.utils.logger import logger
 from src.utils.response_utils import created, success
-from src.utils.route_decorators import db_transaction_handler
+from src.utils.route_decorators import db_transaction_handler, require_permissions
 from langsmith import traceable, trace
 
 router = APIRouter(
@@ -33,6 +33,7 @@ def get_status(request: Request):
 
 
 @router.get("/all")
+@require_permissions(["workspace.read"])
 @db_transaction_handler("list workspaces", auto_commit=False)
 async def get_workspaces(
     request: Request,
@@ -52,6 +53,7 @@ async def get_workspaces(
 
 
 @router.get("/detail")
+@require_permissions(["workspace.read"])
 @db_transaction_handler("get workspace", auto_commit=False)
 async def get_workspace_by_id(
     workspace_id: str,
@@ -79,6 +81,7 @@ async def get_workspace_by_id(
 
 
 @router.post("/create")
+@require_permissions(["workspace.create"])
 @db_transaction_handler("create workspace", auto_commit=True)
 @traceable(
     name="Create Workspace",
@@ -130,6 +133,7 @@ async def create_workspace(
 
 
 @router.delete("/delete")
+@require_permissions(["workspace.delete"])
 @db_transaction_handler("delete workspace", auto_commit=True)
 async def delete_workspace(
     workspace_id: str,
@@ -157,6 +161,7 @@ async def delete_workspace(
 
 
 @router.put("/update")
+@require_permissions(["workspace.update"])
 @db_transaction_handler("update workspace", auto_commit=True)
 async def update_workspace(
     workspace_id: str,
