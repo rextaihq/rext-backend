@@ -684,3 +684,49 @@ def customer_portal_rate_limit():
         window_minutes=1,
         description="customer portal"
     )
+
+
+# ============================================================================
+# ADMIN ENDPOINT RATE LIMITERS (Phase 3, Task HIGH-4)
+# ============================================================================
+
+def role_management_rate_limit():
+    """
+    Rate limiter for role management endpoints (create/update/delete).
+
+    Limit: 20 requests per minute per user.
+    Prevents excessive role modifications and potential abuse.
+    """
+    return EndpointRateLimiter(
+        requests=20,
+        window_minutes=1,
+        description="role management"
+    )
+
+
+def permission_management_rate_limit():
+    """
+    Rate limiter for permission management endpoints.
+
+    Limit: 30 requests per minute per user.
+    Allows for bulk permission updates while preventing abuse.
+    """
+    return EndpointRateLimiter(
+        requests=30,
+        window_minutes=1,
+        description="permission management"
+    )
+
+
+def role_assignment_rate_limit():
+    """
+    Rate limiter for role assignment/revocation endpoints.
+
+    Limit: 15 requests per minute per user.
+    Prevents rapid role changes to users.
+    """
+    return EndpointRateLimiter(
+        requests=15,
+        window_minutes=1,
+        description="role assignment"
+    )

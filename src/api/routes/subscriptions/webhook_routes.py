@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.database.async_database import get_async_db
+from src.api.middleware.webhook_security import validate_lemonsqueezy_webhook_ip
 from src.services.lemonsqueezy_webhook_service import LemonSqueezyWebhookService
 from src.services.webhook_handlers import subscription_handlers, order_handlers
 from src.services.webhook_security_monitor import webhook_security_monitor
@@ -25,10 +26,18 @@ router = APIRouter(
 @router.post("/lemonsqueezy", status_code=status.HTTP_200_OK)
 async def handle_lemonsqueezy_webhook(
     request: Request,
-    db: AsyncSession = Depends(get_async_db)
+    db: AsyncSession = Depends(get_async_db),
+    _: None = Depends(validate_lemonsqueezy_webhook_ip)
 ):
     """
     Handle LemonSqueezy webhook events.
+
+    **Security: Multi-layer webhook protection (Phase 2, Task CRITICAL-4)**
+
+    This endpoint implements defense-in-depth for webhook security:
+    1. **Layer 1: IP Whitelist** - Validates request comes from LemonSqueezy IPs
+    2. **Layer 2: Signature Verification** - Validates HMAC signature
+    3. **Layer 3: Security Monitoring** - Logs all webhook attempts
 
     This endpoint receives webhook events from LemonSqueezy and processes them
     according to the event type. All events are verified, logged, and routed
@@ -55,9 +64,14 @@ async def handle_lemonsqueezy_webhook(
     Headers:
     - X-Signature: HMAC signature for webhook verification
 
+    Security Configuration:
+    - WEBHOOK_IP_VALIDATION_ENABLED: Enable/disable IP whitelist (default: true)
+    - LEMONSQUEEZY_WEBHOOK_IPS: Comma-separated list of allowed IPs/CIDR ranges
+
     Returns:
     - 200 OK if webhook processed successfully
     - 400 Bad Request if signature invalid
+    - 403 Forbidden if IP not in whitelist
     - 500 Internal Server Error if processing fails
     """
     # Get raw body for signature verification

@@ -28,6 +28,10 @@ class PaymentSettings(BaseSettings):
     lemonsqueezy_store_id: str = ""
     lemonsqueezy_webhook_secret: str = ""
 
+    # Webhook Security (Phase 2, Task CRITICAL-4)
+    webhook_ip_validation_enabled: bool = True
+    lemonsqueezy_webhook_ips: str = "159.223.172.0/24"  # Comma-separated IPs/CIDR ranges
+
     @field_validator("payment_provider")
     @classmethod
     def validate_payment_provider(cls, v: str) -> str:
