@@ -1,12 +1,12 @@
 {
-  "audit_date": "2025-10-24T07:05:07.537514",
+  "audit_date": "2025-10-24T07:27:27.419618",
   "statistics": {
     "total_files": 78,
     "total_routes": 278,
-    "protected_routes": 88,
-    "unprotected_routes": 136,
+    "protected_routes": 106,
+    "unprotected_routes": 118,
     "public_routes": 54,
-    "coverage_percentage": 39.285714285714285
+    "coverage_percentage": 47.32142857142857
   },
   "unprotected_routes": [
     {
@@ -210,36 +210,6 @@
       "is_public": false
     },
     {
-      "file": "api/routes/permissions/modules/permission_crud.py",
-      "function": "get_permission",
-      "method": "GET",
-      "path": "/{permission_id}",
-      "has_permission": false,
-      "permission_type": "none",
-      "line_number": 32,
-      "is_public": false
-    },
-    {
-      "file": "api/routes/roles/modules/role_crud.py",
-      "function": "get_role",
-      "method": "GET",
-      "path": "/{role_id}",
-      "has_permission": false,
-      "permission_type": "none",
-      "line_number": 66,
-      "is_public": false
-    },
-    {
-      "file": "api/routes/roles/modules/role_permissions.py",
-      "function": "assign_permissions_to_role",
-      "method": "POST",
-      "path": "/{role_id}/permissions",
-      "has_permission": false,
-      "permission_type": "none",
-      "line_number": 22,
-      "is_public": false
-    },
-    {
       "file": "api/routes/subscriptions/admin/admin_subscription_analytics.py",
       "function": "get_subscription_stats",
       "method": "GET",
@@ -430,46 +400,6 @@
       "is_public": false
     },
     {
-      "file": "api/routes/subscriptions/checkout_routes.py",
-      "function": "create_checkout_session",
-      "method": "POST",
-      "path": "/checkout",
-      "has_permission": false,
-      "permission_type": "none",
-      "line_number": 65,
-      "is_public": false
-    },
-    {
-      "file": "api/routes/subscriptions/checkout_routes.py",
-      "function": "create_portal_session",
-      "method": "GET",
-      "path": "/portal",
-      "has_permission": false,
-      "permission_type": "none",
-      "line_number": 180,
-      "is_public": false
-    },
-    {
-      "file": "api/routes/subscriptions/checkout_routes.py",
-      "function": "get_usage_metrics",
-      "method": "GET",
-      "path": "/usage",
-      "has_permission": false,
-      "permission_type": "none",
-      "line_number": 309,
-      "is_public": false
-    },
-    {
-      "file": "api/routes/subscriptions/checkout_routes.py",
-      "function": "cancel_subscription",
-      "method": "DELETE",
-      "path": "/cancel",
-      "has_permission": false,
-      "permission_type": "none",
-      "line_number": 339,
-      "is_public": false
-    },
-    {
       "file": "api/routes/subscriptions/license_routes.py",
       "function": "validate_license",
       "method": "POST",
@@ -490,123 +420,13 @@
       "is_public": false
     },
     {
-      "file": "api/routes/subscriptions/plan_routes.py",
-      "function": "get_plan",
-      "method": "GET",
-      "path": "/{plan_id}",
-      "has_permission": false,
-      "permission_type": "none",
-      "line_number": 100,
-      "is_public": false
-    },
-    {
-      "file": "api/routes/subscriptions/plan_routes.py",
-      "function": "update_plan",
-      "method": "PATCH",
-      "path": "/{plan_id}",
-      "has_permission": false,
-      "permission_type": "none",
-      "line_number": 121,
-      "is_public": false
-    },
-    {
-      "file": "api/routes/subscriptions/plan_routes.py",
-      "function": "delete_plan",
-      "method": "DELETE",
-      "path": "/{plan_id}",
-      "has_permission": false,
-      "permission_type": "none",
-      "line_number": 143,
-      "is_public": false
-    },
-    {
-      "file": "api/routes/subscriptions/subscription_routes.py",
-      "function": "subscribe_to_plan",
-      "method": "POST",
-      "path": "/subscribe",
-      "has_permission": false,
-      "permission_type": "none",
-      "line_number": 44,
-      "is_public": false
-    },
-    {
-      "file": "api/routes/subscriptions/subscription_routes.py",
-      "function": "create_checkout_session",
-      "method": "POST",
-      "path": "/checkout",
-      "has_permission": false,
-      "permission_type": "none",
-      "line_number": 91,
-      "is_public": false
-    },
-    {
-      "file": "api/routes/subscriptions/subscription_routes.py",
-      "function": "get_my_subscription",
-      "method": "GET",
-      "path": "/current",
-      "has_permission": false,
-      "permission_type": "none",
-      "line_number": 140,
-      "is_public": false
-    },
-    {
-      "file": "api/routes/subscriptions/subscription_routes.py",
-      "function": "get_subscription_history",
-      "method": "GET",
-      "path": "/history",
-      "has_permission": false,
-      "permission_type": "none",
-      "line_number": 332,
-      "is_public": false
-    },
-    {
-      "file": "api/routes/subscriptions/subscription_routes.py",
-      "function": "upgrade_subscription",
-      "method": "POST",
-      "path": "/upgrade",
-      "has_permission": false,
-      "permission_type": "none",
-      "line_number": 365,
-      "is_public": false
-    },
-    {
-      "file": "api/routes/subscriptions/subscription_routes.py",
-      "function": "cancel_subscription",
-      "method": "POST",
-      "path": "/cancel",
-      "has_permission": false,
-      "permission_type": "none",
-      "line_number": 411,
-      "is_public": false
-    },
-    {
-      "file": "api/routes/subscriptions/subscription_routes.py",
-      "function": "get_usage_stats",
-      "method": "GET",
-      "path": "/usage",
-      "has_permission": false,
-      "permission_type": "none",
-      "line_number": 453,
-      "is_public": false
-    },
-    {
-      "file": "api/routes/subscriptions/subscription_routes.py",
-      "function": "get_trial_status",
-      "method": "GET",
-      "path": "/trial-status",
-      "has_permission": false,
-      "permission_type": "none",
-      "line_number": 521,
-      "is_public": false
-    },
-    {
       "file": "api/routes/subscriptions/subscription_routes.py",
       "function": "get_invoices",
       "method": "GET",
       "path": "/invoices",
       "has_permission": false,
       "permission_type": "none",
-      "line_number": 553,
+      "line_number": 561,
       "is_public": false
     },
     {
@@ -1753,12 +1573,22 @@
     },
     {
       "file": "api/routes/permissions/modules/permission_crud.py",
+      "function": "get_permission",
+      "method": "GET",
+      "path": "/{permission_id}",
+      "has_permission": true,
+      "permission_type": "decorator",
+      "line_number": 33,
+      "is_public": false
+    },
+    {
+      "file": "api/routes/permissions/modules/permission_crud.py",
       "function": "update_permission",
       "method": "PUT",
       "path": "/{permission_id}",
       "has_permission": true,
       "permission_type": "decorator",
-      "line_number": 65,
+      "line_number": 66,
       "is_public": false
     },
     {
@@ -1768,7 +1598,17 @@
       "path": "/{permission_id}",
       "has_permission": true,
       "permission_type": "decorator",
-      "line_number": 84,
+      "line_number": 85,
+      "is_public": false
+    },
+    {
+      "file": "api/routes/roles/modules/role_crud.py",
+      "function": "get_role",
+      "method": "GET",
+      "path": "/{role_id}",
+      "has_permission": true,
+      "permission_type": "decorator",
+      "line_number": 67,
       "is_public": false
     },
     {
@@ -1778,7 +1618,7 @@
       "path": "/{role_id}",
       "has_permission": true,
       "permission_type": "decorator",
-      "line_number": 153,
+      "line_number": 154,
       "is_public": false
     },
     {
@@ -1788,7 +1628,17 @@
       "path": "/{role_id}",
       "has_permission": true,
       "permission_type": "decorator",
-      "line_number": 203,
+      "line_number": 204,
+      "is_public": false
+    },
+    {
+      "file": "api/routes/roles/modules/role_permissions.py",
+      "function": "assign_permissions_to_role",
+      "method": "POST",
+      "path": "/{role_id}/permissions",
+      "has_permission": true,
+      "permission_type": "decorator",
+      "line_number": 23,
       "is_public": false
     },
     {
@@ -1798,7 +1648,7 @@
       "path": "/{role_id}/permissions/{permission_id}",
       "has_permission": true,
       "permission_type": "decorator",
-      "line_number": 47,
+      "line_number": 48,
       "is_public": false
     },
     {
@@ -1862,6 +1712,46 @@
       "is_public": false
     },
     {
+      "file": "api/routes/subscriptions/checkout_routes.py",
+      "function": "create_checkout_session",
+      "method": "POST",
+      "path": "/checkout",
+      "has_permission": true,
+      "permission_type": "decorator",
+      "line_number": 66,
+      "is_public": false
+    },
+    {
+      "file": "api/routes/subscriptions/checkout_routes.py",
+      "function": "create_portal_session",
+      "method": "GET",
+      "path": "/portal",
+      "has_permission": true,
+      "permission_type": "decorator",
+      "line_number": 182,
+      "is_public": false
+    },
+    {
+      "file": "api/routes/subscriptions/checkout_routes.py",
+      "function": "get_usage_metrics",
+      "method": "GET",
+      "path": "/usage",
+      "has_permission": true,
+      "permission_type": "decorator",
+      "line_number": 312,
+      "is_public": false
+    },
+    {
+      "file": "api/routes/subscriptions/checkout_routes.py",
+      "function": "cancel_subscription",
+      "method": "DELETE",
+      "path": "/cancel",
+      "has_permission": true,
+      "permission_type": "decorator",
+      "line_number": 343,
+      "is_public": false
+    },
+    {
       "file": "api/routes/subscriptions/license_routes.py",
       "function": "activate_license_endpoint",
       "method": "POST",
@@ -1909,6 +1799,116 @@
       "has_permission": true,
       "permission_type": "decorator",
       "line_number": 453,
+      "is_public": false
+    },
+    {
+      "file": "api/routes/subscriptions/plan_routes.py",
+      "function": "get_plan",
+      "method": "GET",
+      "path": "/{plan_id}",
+      "has_permission": true,
+      "permission_type": "decorator",
+      "line_number": 101,
+      "is_public": false
+    },
+    {
+      "file": "api/routes/subscriptions/plan_routes.py",
+      "function": "update_plan",
+      "method": "PATCH",
+      "path": "/{plan_id}",
+      "has_permission": true,
+      "permission_type": "decorator",
+      "line_number": 123,
+      "is_public": false
+    },
+    {
+      "file": "api/routes/subscriptions/plan_routes.py",
+      "function": "delete_plan",
+      "method": "DELETE",
+      "path": "/{plan_id}",
+      "has_permission": true,
+      "permission_type": "decorator",
+      "line_number": 146,
+      "is_public": false
+    },
+    {
+      "file": "api/routes/subscriptions/subscription_routes.py",
+      "function": "subscribe_to_plan",
+      "method": "POST",
+      "path": "/subscribe",
+      "has_permission": true,
+      "permission_type": "decorator",
+      "line_number": 45,
+      "is_public": false
+    },
+    {
+      "file": "api/routes/subscriptions/subscription_routes.py",
+      "function": "create_checkout_session",
+      "method": "POST",
+      "path": "/checkout",
+      "has_permission": true,
+      "permission_type": "decorator",
+      "line_number": 93,
+      "is_public": false
+    },
+    {
+      "file": "api/routes/subscriptions/subscription_routes.py",
+      "function": "get_my_subscription",
+      "method": "GET",
+      "path": "/current",
+      "has_permission": true,
+      "permission_type": "decorator",
+      "line_number": 143,
+      "is_public": false
+    },
+    {
+      "file": "api/routes/subscriptions/subscription_routes.py",
+      "function": "get_subscription_history",
+      "method": "GET",
+      "path": "/history",
+      "has_permission": true,
+      "permission_type": "decorator",
+      "line_number": 336,
+      "is_public": false
+    },
+    {
+      "file": "api/routes/subscriptions/subscription_routes.py",
+      "function": "upgrade_subscription",
+      "method": "POST",
+      "path": "/upgrade",
+      "has_permission": true,
+      "permission_type": "decorator",
+      "line_number": 370,
+      "is_public": false
+    },
+    {
+      "file": "api/routes/subscriptions/subscription_routes.py",
+      "function": "cancel_subscription",
+      "method": "POST",
+      "path": "/cancel",
+      "has_permission": true,
+      "permission_type": "decorator",
+      "line_number": 417,
+      "is_public": false
+    },
+    {
+      "file": "api/routes/subscriptions/subscription_routes.py",
+      "function": "get_usage_stats",
+      "method": "GET",
+      "path": "/usage",
+      "has_permission": true,
+      "permission_type": "decorator",
+      "line_number": 460,
+      "is_public": false
+    },
+    {
+      "file": "api/routes/subscriptions/subscription_routes.py",
+      "function": "get_trial_status",
+      "method": "GET",
+      "path": "/trial-status",
+      "has_permission": true,
+      "permission_type": "decorator",
+      "line_number": 529,
       "is_public": false
     },
     {
@@ -2400,7 +2400,7 @@
       "path": "/",
       "has_permission": true,
       "permission_type": "decorator",
-      "line_number": 51,
+      "line_number": 52,
       "is_public": true
     },
     {
@@ -2420,7 +2420,7 @@
       "path": "/",
       "has_permission": true,
       "permission_type": "decorator",
-      "line_number": 109,
+      "line_number": 110,
       "is_public": true
     },
     {
@@ -2480,7 +2480,7 @@
       "path": "/status",
       "has_permission": false,
       "permission_type": "none",
-      "line_number": 236,
+      "line_number": 238,
       "is_public": true
     },
     {
@@ -2520,7 +2520,7 @@
       "path": "/status",
       "has_permission": false,
       "permission_type": "none",
-      "line_number": 216,
+      "line_number": 219,
       "is_public": true
     },
     {

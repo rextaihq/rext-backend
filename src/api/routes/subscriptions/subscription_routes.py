@@ -40,6 +40,7 @@ router = APIRouter(
 
 
 @router.post("/subscribe", response_model=dict, status_code=status.HTTP_201_CREATED)
+@require_permissions(["subscription.manage"])
 @db_transaction_handler("subscribe to plan")
 async def subscribe_to_plan(
     request: Request,
@@ -87,6 +88,7 @@ async def subscribe_to_plan(
 
 
 @router.post("/checkout", response_model=dict, status_code=status.HTTP_200_OK)
+@require_permissions(["subscription.manage"])
 @db_transaction_handler("create checkout session")
 async def create_checkout_session(
     request: Request,
@@ -136,6 +138,7 @@ async def create_checkout_session(
 
 @router.get("/my-subscription", response_model=dict)
 @router.get("/current", response_model=dict)  # Alias for compatibility
+@require_permissions(["subscription.read"])
 @db_transaction_handler("get my subscription", "Subscription retrieved successfully", auto_commit=False)
 async def get_my_subscription(
     request: Request,
@@ -328,6 +331,7 @@ async def get_subscription_status(
 
 
 @router.get("/history", response_model=dict)
+@require_permissions(["subscription.read"])
 @db_transaction_handler("get subscription history", auto_commit=False)
 async def get_subscription_history(
     request: Request,
@@ -361,6 +365,7 @@ async def get_subscription_history(
 
 
 @router.post("/upgrade", response_model=dict)
+@require_permissions(["subscription.manage"])
 @db_transaction_handler("upgrade subscription")
 async def upgrade_subscription(
     request: Request,
@@ -407,6 +412,7 @@ async def upgrade_subscription(
 
 
 @router.post("/cancel", response_model=dict)
+@require_permissions(["subscription.manage"])
 @db_transaction_handler("cancel subscription")
 async def cancel_subscription(
     request: Request,
@@ -449,6 +455,7 @@ async def cancel_subscription(
 
 
 @router.get("/usage", response_model=dict)
+@require_permissions(["usage.read"])
 @db_transaction_handler("get usage stats", "Usage statistics retrieved successfully", auto_commit=False)
 async def get_usage_stats(
     request: Request,
@@ -517,6 +524,7 @@ async def get_usage_stats(
 
 
 @router.get("/trial-status", response_model=dict)
+@require_permissions(["subscription.read"])
 @db_transaction_handler("get trial status", "Trial status retrieved successfully", auto_commit=False)
 async def get_trial_status(
     request: Request,

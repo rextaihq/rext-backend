@@ -28,6 +28,7 @@ async def list_permissions(
 
 
 @router.get("/{permission_id}", response_model=dict)
+@require_permissions(["permission.read"])
 @db_transaction_handler("get permission", auto_commit=False)
 async def get_permission(
     request: Request,

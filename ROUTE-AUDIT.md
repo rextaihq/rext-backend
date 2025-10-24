@@ -1,15 +1,15 @@
 # Route Permission Coverage Audit Report
 
-**Generated:** 2025-10-24 07:05:07
+**Generated:** 2025-10-24 07:27:27
 
 ## Summary
 
 - **Total Files:** 78
 - **Total Routes:** 278
 - **Public Routes:** 54
-- **Protected Routes:** 88
-- **Unprotected Routes:** 136
-- **Coverage:** 39.3%
+- **Protected Routes:** 106
+- **Unprotected Routes:** 118
+- **Coverage:** 47.3%
 
 ## Unprotected Routes
 
@@ -85,21 +85,6 @@ These routes need permission protection:
 - ❌ `POST /{token}/accept`
   - Function: `accept_invitation` (line 172)
 
-### api/routes/permissions/modules/permission_crud.py
-
-- ❌ `GET /{permission_id}`
-  - Function: `get_permission` (line 32)
-
-### api/routes/roles/modules/role_crud.py
-
-- ❌ `GET /{role_id}`
-  - Function: `get_role` (line 66)
-
-### api/routes/roles/modules/role_permissions.py
-
-- ❌ `POST /{role_id}/permissions`
-  - Function: `assign_permissions_to_role` (line 22)
-
 ### api/routes/subscriptions/admin/admin_subscription_analytics.py
 
 - ❌ `GET /stats/overview`
@@ -153,17 +138,6 @@ These routes need permission protection:
 - ❌ `POST /refunds/create`
   - Function: `create_refund` (line 149)
 
-### api/routes/subscriptions/checkout_routes.py
-
-- ❌ `POST /checkout`
-  - Function: `create_checkout_session` (line 65)
-- ❌ `GET /portal`
-  - Function: `create_portal_session` (line 180)
-- ❌ `GET /usage`
-  - Function: `get_usage_metrics` (line 309)
-- ❌ `DELETE /cancel`
-  - Function: `cancel_subscription` (line 339)
-
 ### api/routes/subscriptions/license_routes.py
 
 - ❌ `POST /validate`
@@ -173,33 +147,11 @@ These routes need permission protection:
 
 - ❌ `GET /public`
   - Function: `list_public_plans` (line 30)
-- ❌ `GET /{plan_id}`
-  - Function: `get_plan` (line 100)
-- ❌ `PATCH /{plan_id}`
-  - Function: `update_plan` (line 121)
-- ❌ `DELETE /{plan_id}`
-  - Function: `delete_plan` (line 143)
 
 ### api/routes/subscriptions/subscription_routes.py
 
-- ❌ `POST /subscribe`
-  - Function: `subscribe_to_plan` (line 44)
-- ❌ `POST /checkout`
-  - Function: `create_checkout_session` (line 91)
-- ❌ `GET /current`
-  - Function: `get_my_subscription` (line 140)
-- ❌ `GET /history`
-  - Function: `get_subscription_history` (line 332)
-- ❌ `POST /upgrade`
-  - Function: `upgrade_subscription` (line 365)
-- ❌ `POST /cancel`
-  - Function: `cancel_subscription` (line 411)
-- ❌ `GET /usage`
-  - Function: `get_usage_stats` (line 453)
-- ❌ `GET /trial-status`
-  - Function: `get_trial_status` (line 521)
 - ❌ `GET /invoices`
-  - Function: `get_invoices` (line 553)
+  - Function: `get_invoices` (line 561)
 
 ### api/routes/subscriptions/trial_routes.py
 
@@ -433,5 +385,5 @@ These routes need permission protection:
 
 ## Protected Routes
 
-Total protected routes: 88
+Total protected routes: 106
 

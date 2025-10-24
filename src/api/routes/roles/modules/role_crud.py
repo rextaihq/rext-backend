@@ -62,6 +62,7 @@ async def list_roles(
 
 
 @router.get("/{role_id}", response_model=dict)
+@require_permissions(["role.read"])
 @db_transaction_handler("get role", auto_commit=False)
 async def get_role(
     request: Request,

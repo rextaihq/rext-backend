@@ -20,7 +20,7 @@ from src.providers.payment.provider_factory import get_payment_provider_singleto
 from src.services.usage_tracking_service import UsageTrackingService
 from src.config.payment_config import payment_settings
 from src.utils.response_utils import success
-from src.utils.route_decorators import db_transaction_handler
+from src.utils.route_decorators import db_transaction_handler, require_permissions
 from src.utils.logger import logger
 from src.api.middleware.rate_limiter import customer_portal_rate_limit
 
@@ -61,6 +61,7 @@ class PortalSessionResponse(BaseModel):
 # ============================================================================
 
 @router.post("/checkout", response_model=dict, status_code=status.HTTP_200_OK)
+@require_permissions(["subscription.manage"])
 @db_transaction_handler("create checkout session")
 async def create_checkout_session(
     request: Request,
@@ -176,6 +177,7 @@ async def create_checkout_session(
 
 
 @router.get("/portal", response_model=dict, status_code=status.HTTP_200_OK)
+@require_permissions(["billing.read"])
 @db_transaction_handler("create portal session", auto_commit=False)
 async def create_portal_session(
     request: Request,
@@ -305,6 +307,7 @@ async def get_subscription_status(
 
 
 @router.get("/usage", response_model=dict, status_code=status.HTTP_200_OK)
+@require_permissions(["usage.read"])
 @db_transaction_handler("get usage metrics", auto_commit=False)
 async def get_usage_metrics(
     request: Request,
@@ -335,6 +338,7 @@ async def get_usage_metrics(
 
 
 @router.delete("/cancel", response_model=dict, status_code=status.HTTP_200_OK)
+@require_permissions(["subscription.manage"])
 @db_transaction_handler("cancel subscription")
 async def cancel_subscription(
     request: Request,
