@@ -13,7 +13,6 @@ class ThreadManager:
       - Update thread metadata or TTL.
       - Delete threads.
       - Search or list threads.
-      - Access thread history / state / updates
     """
 
     async def create_thread(
