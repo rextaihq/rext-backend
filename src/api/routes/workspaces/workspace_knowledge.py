@@ -509,6 +509,7 @@ async def create_text_knowledge(
 
 
 @router.get("/text/{text_id}")
+@require_permissions(["knowledge.read"], workspace_scoped=True)
 @db_transaction_handler("get text knowledge", auto_commit=False)
 async def get_text_knowledge(
     workspace_id: str,
@@ -535,6 +536,7 @@ async def get_text_knowledge(
 
 
 @router.patch("/text/{text_id}")
+@require_permissions(["knowledge.update"], workspace_scoped=True)
 @db_transaction_handler("update text knowledge", auto_commit=True)
 async def update_text_knowledge(
     workspace_id: str,
