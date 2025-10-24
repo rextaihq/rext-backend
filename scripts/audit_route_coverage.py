@@ -78,6 +78,34 @@ class RouteAuditor:
             "/oauth/",  # OAuth routes
         ]
 
+        # Webhook-specific routes (external services with signature verification)
+        self.PUBLIC_WEBHOOK_ROUTES = [
+            "/resend",  # Resend email webhook
+            "/lemonsqueezy",  # LemonSqueezy payment webhook
+        ]
+
+        # Public routes for specific features
+        self.PUBLIC_ROUTES_BY_FEATURE = [
+            # Invitation tokens (token-based auth, public by design)
+            "/{token}/validate",  # Workspace invitations
+            "/{token}/accept",  # Workspace invitations
+            "/{token}/decline",  # Admin invitations
+
+            # Health check endpoints (monitoring)
+            "/payment",  # Health check
+            "/payment/quick",  # Health check
+
+            # Public subscription endpoints
+            "/public",  # Public subscription plans
+            "/validate",  # License validation (public for external systems)
+
+            # Email unsubscribe (email link)
+            "/unsubscribe",  # Email preferences
+
+            # Development/testing
+            "/test",  # SSE test endpoint
+        ]
+
     def is_public_route(self, route_path: str) -> bool:
         """Check if a route is public (doesn't need protection)."""
         # Check exact matches
@@ -92,6 +120,14 @@ class RouteAuditor:
         for pattern in self.PUBLIC_STARTSWITH:
             if route_path.startswith(pattern):
                 return True
+
+        # Check feature-based public routes
+        if route_path in self.PUBLIC_ROUTES_BY_FEATURE:
+            return True
+
+        # Check webhook-specific routes
+        if route_path in self.PUBLIC_WEBHOOK_ROUTES:
+            return True
 
         return False
 
@@ -174,8 +210,9 @@ class RouteAuditor:
         # Check function body for permission checks
         has_depends_permission = self._check_function_for_permissions(func_node)
         has_is_admin = self._check_function_for_admin(func_node)
+        has_current_user = self._check_function_for_current_user(func_node)
 
-        if has_depends_permission or has_is_admin:
+        if has_depends_permission or has_is_admin or has_current_user:
             has_permission_check = True
 
         return {
@@ -187,7 +224,8 @@ class RouteAuditor:
             "permission_type": self._get_permission_type(
                 permission_decorator,
                 has_depends_permission,
-                has_is_admin
+                has_is_admin,
+                has_current_user
             ),
             "line_number": func_node.lineno
         }
@@ -234,11 +272,30 @@ class RouteAuditor:
 
         return False
 
+    def _check_function_for_current_user(self, func_node: ast.FunctionDef) -> bool:
+        """Check if function has Depends(get_current_user) for authentication."""
+        # Check annotations
+        for arg in func_node.args.args + func_node.args.kwonlyargs:
+            if arg.annotation:
+                annotation_str = ast.unparse(arg.annotation)
+                if "Depends" in annotation_str and "get_current_user" in annotation_str:
+                    return True
+
+        # Check default values
+        for default in func_node.args.defaults + func_node.args.kw_defaults:
+            if default is not None:
+                default_str = ast.unparse(default)
+                if "Depends" in default_str and "get_current_user" in default_str:
+                    return True
+
+        return False
+
     def _get_permission_type(
         self,
         decorator: str,
         has_depends: bool,
-        has_admin: bool
+        has_admin: bool,
+        has_current_user: bool
     ) -> str:
         """Determine the type of permission check."""
         if has_admin:
@@ -247,6 +304,8 @@ class RouteAuditor:
             return "decorator"
         elif has_depends:
             return "depends"
+        elif has_current_user:
+            return "authenticated"
         return "none"
 
     def audit_all_routes(self):

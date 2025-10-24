@@ -1,205 +1,14 @@
 {
-  "audit_date": "2025-10-24T10:19:39.717617",
+  "audit_date": "2025-10-24T10:41:27.141224",
   "statistics": {
     "total_files": 78,
     "total_routes": 278,
-    "protected_routes": 205,
-    "unprotected_routes": 19,
-    "public_routes": 54,
-    "coverage_percentage": 91.51785714285714
+    "protected_routes": 211,
+    "unprotected_routes": 0,
+    "public_routes": 67,
+    "coverage_percentage": 100.0
   },
-  "unprotected_routes": [
-    {
-      "file": "api/routes/admin/admin_invitation_routes.py",
-      "function": "validate_admin_invitation_token",
-      "method": "GET",
-      "path": "/{token}/validate",
-      "has_permission": false,
-      "permission_type": "none",
-      "line_number": 317,
-      "is_public": false
-    },
-    {
-      "file": "api/routes/admin/admin_invitation_routes.py",
-      "function": "accept_admin_invitation",
-      "method": "POST",
-      "path": "/{token}/accept",
-      "has_permission": false,
-      "permission_type": "none",
-      "line_number": 367,
-      "is_public": false
-    },
-    {
-      "file": "api/routes/admin/admin_invitation_routes.py",
-      "function": "decline_admin_invitation",
-      "method": "POST",
-      "path": "/{token}/decline",
-      "has_permission": false,
-      "permission_type": "none",
-      "line_number": 408,
-      "is_public": false
-    },
-    {
-      "file": "api/routes/email/preview.py",
-      "function": "preview_auth_email",
-      "method": "POST",
-      "path": "/auth",
-      "has_permission": false,
-      "permission_type": "none",
-      "line_number": 70,
-      "is_public": false
-    },
-    {
-      "file": "api/routes/email/preview.py",
-      "function": "preview_workspace_email",
-      "method": "POST",
-      "path": "/workspace",
-      "has_permission": false,
-      "permission_type": "none",
-      "line_number": 149,
-      "is_public": false
-    },
-    {
-      "file": "api/routes/email/preview.py",
-      "function": "preview_auth_email_html",
-      "method": "POST",
-      "path": "/auth/html",
-      "has_permission": false,
-      "permission_type": "none",
-      "line_number": 253,
-      "is_public": false
-    },
-    {
-      "file": "api/routes/email/preview.py",
-      "function": "preview_workspace_email_html",
-      "method": "POST",
-      "path": "/workspace/html",
-      "has_permission": false,
-      "permission_type": "none",
-      "line_number": 270,
-      "is_public": false
-    },
-    {
-      "file": "api/routes/email/webhooks.py",
-      "function": "handle_resend_webhook",
-      "method": "POST",
-      "path": "/resend",
-      "has_permission": false,
-      "permission_type": "none",
-      "line_number": 166,
-      "is_public": false
-    },
-    {
-      "file": "api/routes/events/sse_routes.py",
-      "function": "subscribe_to_operation_events",
-      "method": "GET",
-      "path": "/{operation_id}",
-      "has_permission": false,
-      "permission_type": "none",
-      "line_number": 25,
-      "is_public": false
-    },
-    {
-      "file": "api/routes/events/sse_test_route.py",
-      "function": "stream_test_events",
-      "method": "GET",
-      "path": "/test",
-      "has_permission": false,
-      "permission_type": "none",
-      "line_number": 71,
-      "is_public": false
-    },
-    {
-      "file": "api/routes/health.py",
-      "function": "payment_health_check",
-      "method": "GET",
-      "path": "/payment",
-      "has_permission": false,
-      "permission_type": "none",
-      "line_number": 40,
-      "is_public": false
-    },
-    {
-      "file": "api/routes/health.py",
-      "function": "payment_quick_health_check",
-      "method": "GET",
-      "path": "/payment/quick",
-      "has_permission": false,
-      "permission_type": "none",
-      "line_number": 178,
-      "is_public": false
-    },
-    {
-      "file": "api/routes/invitations.py",
-      "function": "validate_invitation",
-      "method": "GET",
-      "path": "/{token}/validate",
-      "has_permission": false,
-      "permission_type": "none",
-      "line_number": 45,
-      "is_public": false
-    },
-    {
-      "file": "api/routes/invitations.py",
-      "function": "accept_invitation",
-      "method": "POST",
-      "path": "/{token}/accept",
-      "has_permission": false,
-      "permission_type": "none",
-      "line_number": 172,
-      "is_public": false
-    },
-    {
-      "file": "api/routes/subscriptions/license_routes.py",
-      "function": "validate_license",
-      "method": "POST",
-      "path": "/validate",
-      "has_permission": false,
-      "permission_type": "none",
-      "line_number": 39,
-      "is_public": false
-    },
-    {
-      "file": "api/routes/subscriptions/plan_routes.py",
-      "function": "list_public_plans",
-      "method": "GET",
-      "path": "/public",
-      "has_permission": false,
-      "permission_type": "none",
-      "line_number": 30,
-      "is_public": false
-    },
-    {
-      "file": "api/routes/subscriptions/trial_routes.py",
-      "function": "check_trial_eligibility_endpoint",
-      "method": "GET",
-      "path": "/eligibility",
-      "has_permission": false,
-      "permission_type": "none",
-      "line_number": 55,
-      "is_public": false
-    },
-    {
-      "file": "api/routes/subscriptions/webhook_routes.py",
-      "function": "handle_lemonsqueezy_webhook",
-      "method": "POST",
-      "path": "/lemonsqueezy",
-      "has_permission": false,
-      "permission_type": "none",
-      "line_number": 26,
-      "is_public": false
-    },
-    {
-      "file": "api/routes/users/email_preferences.py",
-      "function": "unsubscribe",
-      "method": "POST",
-      "path": "/unsubscribe",
-      "has_permission": false,
-      "permission_type": "none",
-      "line_number": 127,
-      "is_public": false
-    }
-  ],
+  "unprotected_routes": [],
   "protected_routes": [
     {
       "file": "api/routes/admin/admin_invitation_routes.py",
@@ -569,6 +378,56 @@
       "has_permission": true,
       "permission_type": "decorator",
       "line_number": 75,
+      "is_public": false
+    },
+    {
+      "file": "api/routes/email/preview.py",
+      "function": "preview_auth_email",
+      "method": "POST",
+      "path": "/auth",
+      "has_permission": true,
+      "permission_type": "decorator",
+      "line_number": 72,
+      "is_public": false
+    },
+    {
+      "file": "api/routes/email/preview.py",
+      "function": "preview_workspace_email",
+      "method": "POST",
+      "path": "/workspace",
+      "has_permission": true,
+      "permission_type": "decorator",
+      "line_number": 152,
+      "is_public": false
+    },
+    {
+      "file": "api/routes/email/preview.py",
+      "function": "preview_auth_email_html",
+      "method": "POST",
+      "path": "/auth/html",
+      "has_permission": true,
+      "permission_type": "decorator",
+      "line_number": 257,
+      "is_public": false
+    },
+    {
+      "file": "api/routes/email/preview.py",
+      "function": "preview_workspace_email_html",
+      "method": "POST",
+      "path": "/workspace/html",
+      "has_permission": true,
+      "permission_type": "decorator",
+      "line_number": 275,
+      "is_public": false
+    },
+    {
+      "file": "api/routes/events/sse_routes.py",
+      "function": "subscribe_to_operation_events",
+      "method": "GET",
+      "path": "/{operation_id}",
+      "has_permission": true,
+      "permission_type": "authenticated",
+      "line_number": 25,
       "is_public": false
     },
     {
@@ -1179,6 +1038,16 @@
       "has_permission": true,
       "permission_type": "decorator",
       "line_number": 562,
+      "is_public": false
+    },
+    {
+      "file": "api/routes/subscriptions/trial_routes.py",
+      "function": "check_trial_eligibility_endpoint",
+      "method": "GET",
+      "path": "/eligibility",
+      "has_permission": true,
+      "permission_type": "authenticated",
+      "line_number": 55,
       "is_public": false
     },
     {
@@ -2274,6 +2143,36 @@
       "is_public": true
     },
     {
+      "file": "api/routes/admin/admin_invitation_routes.py",
+      "function": "validate_admin_invitation_token",
+      "method": "GET",
+      "path": "/{token}/validate",
+      "has_permission": false,
+      "permission_type": "none",
+      "line_number": 317,
+      "is_public": true
+    },
+    {
+      "file": "api/routes/admin/admin_invitation_routes.py",
+      "function": "accept_admin_invitation",
+      "method": "POST",
+      "path": "/{token}/accept",
+      "has_permission": true,
+      "permission_type": "authenticated",
+      "line_number": 367,
+      "is_public": true
+    },
+    {
+      "file": "api/routes/admin/admin_invitation_routes.py",
+      "function": "decline_admin_invitation",
+      "method": "POST",
+      "path": "/{token}/decline",
+      "has_permission": false,
+      "permission_type": "none",
+      "line_number": 408,
+      "is_public": true
+    },
+    {
       "file": "api/routes/admin/customer_routes.py",
       "function": "list_customers",
       "method": "GET",
@@ -2288,8 +2187,8 @@
       "function": "get_webhook_events",
       "method": "GET",
       "path": "/webhooks/events",
-      "has_permission": false,
-      "permission_type": "none",
+      "has_permission": true,
+      "permission_type": "authenticated",
       "line_number": 31,
       "is_public": true
     },
@@ -2298,8 +2197,8 @@
       "function": "get_failed_webhooks",
       "method": "GET",
       "path": "/webhooks/failed",
-      "has_permission": false,
-      "permission_type": "none",
+      "has_permission": true,
+      "permission_type": "authenticated",
       "line_number": 70,
       "is_public": true
     },
@@ -2308,8 +2207,8 @@
       "function": "retry_webhook",
       "method": "POST",
       "path": "/webhooks/{webhook_id}/retry",
-      "has_permission": false,
-      "permission_type": "none",
+      "has_permission": true,
+      "permission_type": "authenticated",
       "line_number": 102,
       "is_public": true
     },
@@ -2318,8 +2217,8 @@
       "function": "get_webhook_statistics",
       "method": "GET",
       "path": "/webhooks/statistics",
-      "has_permission": false,
-      "permission_type": "none",
+      "has_permission": true,
+      "permission_type": "authenticated",
       "line_number": 136,
       "is_public": true
     },
@@ -2348,9 +2247,19 @@
       "function": "list_content",
       "method": "GET",
       "path": "/",
+      "has_permission": true,
+      "permission_type": "authenticated",
+      "line_number": 22,
+      "is_public": true
+    },
+    {
+      "file": "api/routes/email/webhooks.py",
+      "function": "handle_resend_webhook",
+      "method": "POST",
+      "path": "/resend",
       "has_permission": false,
       "permission_type": "none",
-      "line_number": 22,
+      "line_number": 166,
       "is_public": true
     },
     {
@@ -2364,6 +2273,16 @@
       "is_public": true
     },
     {
+      "file": "api/routes/events/sse_test_route.py",
+      "function": "stream_test_events",
+      "method": "GET",
+      "path": "/test",
+      "has_permission": false,
+      "permission_type": "none",
+      "line_number": 71,
+      "is_public": true
+    },
+    {
       "file": "api/routes/health.py",
       "function": "health_check",
       "method": "GET",
@@ -2371,6 +2290,46 @@
       "has_permission": false,
       "permission_type": "none",
       "line_number": 25,
+      "is_public": true
+    },
+    {
+      "file": "api/routes/health.py",
+      "function": "payment_health_check",
+      "method": "GET",
+      "path": "/payment",
+      "has_permission": false,
+      "permission_type": "none",
+      "line_number": 40,
+      "is_public": true
+    },
+    {
+      "file": "api/routes/health.py",
+      "function": "payment_quick_health_check",
+      "method": "GET",
+      "path": "/payment/quick",
+      "has_permission": false,
+      "permission_type": "none",
+      "line_number": 178,
+      "is_public": true
+    },
+    {
+      "file": "api/routes/invitations.py",
+      "function": "validate_invitation",
+      "method": "GET",
+      "path": "/{token}/validate",
+      "has_permission": false,
+      "permission_type": "none",
+      "line_number": 45,
+      "is_public": true
+    },
+    {
+      "file": "api/routes/invitations.py",
+      "function": "accept_invitation",
+      "method": "POST",
+      "path": "/{token}/accept",
+      "has_permission": true,
+      "permission_type": "authenticated",
+      "line_number": 172,
       "is_public": true
     },
     {
@@ -2388,8 +2347,8 @@
       "function": "list_permissions",
       "method": "GET",
       "path": "/",
-      "has_permission": false,
-      "permission_type": "none",
+      "has_permission": true,
+      "permission_type": "authenticated",
       "line_number": 18,
       "is_public": true
     },
@@ -2408,8 +2367,8 @@
       "function": "list_roles",
       "method": "GET",
       "path": "/",
-      "has_permission": false,
-      "permission_type": "none",
+      "has_permission": true,
+      "permission_type": "authenticated",
       "line_number": 25,
       "is_public": true
     },
@@ -2438,8 +2397,8 @@
       "function": "get_webhook_events",
       "method": "GET",
       "path": "/webhooks/events",
-      "has_permission": false,
-      "permission_type": "none",
+      "has_permission": true,
+      "permission_type": "authenticated",
       "line_number": 33,
       "is_public": true
     },
@@ -2448,8 +2407,8 @@
       "function": "get_failed_webhook_events",
       "method": "GET",
       "path": "/webhooks/failed",
-      "has_permission": false,
-      "permission_type": "none",
+      "has_permission": true,
+      "permission_type": "authenticated",
       "line_number": 146,
       "is_public": true
     },
@@ -2458,8 +2417,8 @@
       "function": "retry_failed_webhook",
       "method": "POST",
       "path": "/webhooks/{event_id}/retry",
-      "has_permission": false,
-      "permission_type": "none",
+      "has_permission": true,
+      "permission_type": "authenticated",
       "line_number": 254,
       "is_public": true
     },
@@ -2468,8 +2427,8 @@
       "function": "get_webhook_statistics",
       "method": "GET",
       "path": "/webhooks/stats",
-      "has_permission": false,
-      "permission_type": "none",
+      "has_permission": true,
+      "permission_type": "authenticated",
       "line_number": 313,
       "is_public": true
     },
@@ -2478,9 +2437,19 @@
       "function": "get_subscription_status",
       "method": "GET",
       "path": "/status",
+      "has_permission": true,
+      "permission_type": "authenticated",
+      "line_number": 238,
+      "is_public": true
+    },
+    {
+      "file": "api/routes/subscriptions/license_routes.py",
+      "function": "validate_license",
+      "method": "POST",
+      "path": "/validate",
       "has_permission": false,
       "permission_type": "none",
-      "line_number": 238,
+      "line_number": 39,
       "is_public": true
     },
     {
@@ -2495,11 +2464,21 @@
     },
     {
       "file": "api/routes/subscriptions/plan_routes.py",
+      "function": "list_public_plans",
+      "method": "GET",
+      "path": "/public",
+      "has_permission": false,
+      "permission_type": "none",
+      "line_number": 30,
+      "is_public": true
+    },
+    {
+      "file": "api/routes/subscriptions/plan_routes.py",
       "function": "create_plan",
       "method": "POST",
       "path": "",
-      "has_permission": false,
-      "permission_type": "none",
+      "has_permission": true,
+      "permission_type": "authenticated",
       "line_number": 53,
       "is_public": true
     },
@@ -2508,8 +2487,8 @@
       "function": "list_plans",
       "method": "GET",
       "path": "",
-      "has_permission": false,
-      "permission_type": "none",
+      "has_permission": true,
+      "permission_type": "authenticated",
       "line_number": 74,
       "is_public": true
     },
@@ -2518,9 +2497,19 @@
       "function": "get_subscription_status",
       "method": "GET",
       "path": "/status",
+      "has_permission": true,
+      "permission_type": "authenticated",
+      "line_number": 219,
+      "is_public": true
+    },
+    {
+      "file": "api/routes/subscriptions/webhook_routes.py",
+      "function": "handle_lemonsqueezy_webhook",
+      "method": "POST",
+      "path": "/lemonsqueezy",
       "has_permission": false,
       "permission_type": "none",
-      "line_number": 219,
+      "line_number": 26,
       "is_public": true
     },
     {
@@ -2578,8 +2567,8 @@
       "function": "logout_user",
       "method": "POST",
       "path": "/logout",
-      "has_permission": false,
-      "permission_type": "none",
+      "has_permission": true,
+      "permission_type": "authenticated",
       "line_number": 491,
       "is_public": true
     },
@@ -2618,8 +2607,8 @@
       "function": "link_oauth",
       "method": "POST",
       "path": "/oauth/link",
-      "has_permission": false,
-      "permission_type": "none",
+      "has_permission": true,
+      "permission_type": "authenticated",
       "line_number": 735,
       "is_public": true
     },
@@ -2628,8 +2617,8 @@
       "function": "unlink_oauth",
       "method": "DELETE",
       "path": "/oauth/{provider}",
-      "has_permission": false,
-      "permission_type": "none",
+      "has_permission": true,
+      "permission_type": "authenticated",
       "line_number": 798,
       "is_public": true
     },
@@ -2638,8 +2627,8 @@
       "function": "get_preferences",
       "method": "GET",
       "path": "/",
-      "has_permission": false,
-      "permission_type": "none",
+      "has_permission": true,
+      "permission_type": "authenticated",
       "line_number": 67,
       "is_public": true
     },
@@ -2648,9 +2637,19 @@
       "function": "update_preferences",
       "method": "PUT",
       "path": "/",
+      "has_permission": true,
+      "permission_type": "authenticated",
+      "line_number": 91,
+      "is_public": true
+    },
+    {
+      "file": "api/routes/users/email_preferences.py",
+      "function": "unsubscribe",
+      "method": "POST",
+      "path": "/unsubscribe",
       "has_permission": false,
       "permission_type": "none",
-      "line_number": 91,
+      "line_number": 127,
       "is_public": true
     },
     {
@@ -2698,8 +2697,8 @@
       "function": "get_user_workspaces",
       "method": "GET",
       "path": "",
-      "has_permission": false,
-      "permission_type": "none",
+      "has_permission": true,
+      "permission_type": "authenticated",
       "line_number": 28,
       "is_public": true
     },
@@ -2708,8 +2707,8 @@
       "function": "list_email_templates",
       "method": "GET",
       "path": "/",
-      "has_permission": false,
-      "permission_type": "none",
+      "has_permission": true,
+      "permission_type": "authenticated",
       "line_number": 72,
       "is_public": true
     },
@@ -2758,8 +2757,8 @@
       "function": "get_workspace_knowledge",
       "method": "GET",
       "path": "",
-      "has_permission": false,
-      "permission_type": "none",
+      "has_permission": true,
+      "permission_type": "authenticated",
       "line_number": 65,
       "is_public": true
     },
@@ -2768,8 +2767,8 @@
       "function": "list_knowledge_bases",
       "method": "GET",
       "path": "",
-      "has_permission": false,
-      "permission_type": "none",
+      "has_permission": true,
+      "permission_type": "authenticated",
       "line_number": 54,
       "is_public": true
     },
