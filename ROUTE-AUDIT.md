@@ -1,15 +1,15 @@
 # Route Permission Coverage Audit Report
 
-**Generated:** 2025-10-24 07:27:27
+**Generated:** 2025-10-24 07:31:18
 
 ## Summary
 
 - **Total Files:** 78
 - **Total Routes:** 278
 - **Public Routes:** 54
-- **Protected Routes:** 106
-- **Unprotected Routes:** 118
-- **Coverage:** 47.3%
+- **Protected Routes:** 116
+- **Unprotected Routes:** 108
+- **Coverage:** 51.8%
 
 ## Unprotected Routes
 
@@ -39,11 +39,6 @@ These routes need permission protection:
 
 - ❌ `GET /user/my-logs`
   - Function: `get_my_audit_logs` (line 21)
-
-### api/routes/content/modules/content_retrieval.py
-
-- ❌ `GET /{content_id}`
-  - Function: `get_content` (line 74)
 
 ### api/routes/email/preview.py
 
@@ -162,13 +157,6 @@ These routes need permission protection:
 
 - ❌ `POST /lemonsqueezy`
   - Function: `handle_lemonsqueezy_webhook` (line 26)
-
-### api/routes/topics/topic_generation_route.py
-
-- ❌ `GET /get-topic/{topic_id}`
-  - Function: `get_topic` (line 227)
-- ❌ `GET /get-topics`
-  - Function: `get_topics` (line 282)
 
 ### api/routes/users/email_preferences.py
 
@@ -325,24 +313,10 @@ These routes need permission protection:
 
 ### api/routes/workspaces/workspace_knowledge.py
 
-- ❌ `GET /web`
-  - Function: `list_web_knowledge` (line 121)
-- ❌ `GET /web/{web_id}`
-  - Function: `get_web_knowledge` (line 187)
-- ❌ `PATCH /web/{web_id}`
-  - Function: `update_web_knowledge` (line 213)
-- ❌ `GET /files`
-  - Function: `list_file_knowledge` (line 271)
-- ❌ `GET /files/{file_id}`
-  - Function: `get_file_knowledge` (line 350)
-- ❌ `PATCH /files/{file_id}`
-  - Function: `update_file_knowledge` (line 376)
-- ❌ `GET /text`
-  - Function: `list_text_knowledge` (line 437)
 - ❌ `GET /text/{text_id}`
-  - Function: `get_text_knowledge` (line 506)
+  - Function: `get_text_knowledge` (line 513)
 - ❌ `PATCH /text/{text_id}`
-  - Function: `update_text_knowledge` (line 532)
+  - Function: `update_text_knowledge` (line 539)
 
 ### api/routes/workspaces/workspace_knowledge_bases.py
 
@@ -385,5 +359,5 @@ These routes need permission protection:
 
 ## Protected Routes
 
-Total protected routes: 106
+Total protected routes: 116
 

@@ -4,7 +4,7 @@ from typing import Optional
 from uuid import UUID
 
 from src.utils.response_utils import success, error
-from src.utils.route_decorators import db_transaction_handler
+from src.utils.route_decorators import db_transaction_handler, require_permissions
 from src.api.database.async_database import get_async_db
 from src.api.security.dependencies import get_current_user
 from src.services.content_service import ContentService
@@ -70,6 +70,7 @@ async def list_content(
 # Get Single Content by ID
 # -------------------------
 @router.get("/{content_id}")
+@require_permissions(["content.read"], workspace_scoped=True)
 @db_transaction_handler("get content", "Content retrieved successfully", auto_commit=False)
 async def get_content(
     content_id: UUID,

@@ -1,12 +1,12 @@
 {
-  "audit_date": "2025-10-24T07:27:27.419618",
+  "audit_date": "2025-10-24T07:31:18.290456",
   "statistics": {
     "total_files": 78,
     "total_routes": 278,
-    "protected_routes": 106,
-    "unprotected_routes": 118,
+    "protected_routes": 116,
+    "unprotected_routes": 108,
     "public_routes": 54,
-    "coverage_percentage": 47.32142857142857
+    "coverage_percentage": 51.78571428571429
   },
   "unprotected_routes": [
     {
@@ -87,16 +87,6 @@
       "has_permission": false,
       "permission_type": "none",
       "line_number": 21,
-      "is_public": false
-    },
-    {
-      "file": "api/routes/content/modules/content_retrieval.py",
-      "function": "get_content",
-      "method": "GET",
-      "path": "/{content_id}",
-      "has_permission": false,
-      "permission_type": "none",
-      "line_number": 74,
       "is_public": false
     },
     {
@@ -447,26 +437,6 @@
       "has_permission": false,
       "permission_type": "none",
       "line_number": 26,
-      "is_public": false
-    },
-    {
-      "file": "api/routes/topics/topic_generation_route.py",
-      "function": "get_topic",
-      "method": "GET",
-      "path": "/get-topic/{topic_id}",
-      "has_permission": false,
-      "permission_type": "none",
-      "line_number": 227,
-      "is_public": false
-    },
-    {
-      "file": "api/routes/topics/topic_generation_route.py",
-      "function": "get_topics",
-      "method": "GET",
-      "path": "/get-topics",
-      "has_permission": false,
-      "permission_type": "none",
-      "line_number": 282,
       "is_public": false
     },
     {
@@ -981,82 +951,12 @@
     },
     {
       "file": "api/routes/workspaces/workspace_knowledge.py",
-      "function": "list_web_knowledge",
-      "method": "GET",
-      "path": "/web",
-      "has_permission": false,
-      "permission_type": "none",
-      "line_number": 121,
-      "is_public": false
-    },
-    {
-      "file": "api/routes/workspaces/workspace_knowledge.py",
-      "function": "get_web_knowledge",
-      "method": "GET",
-      "path": "/web/{web_id}",
-      "has_permission": false,
-      "permission_type": "none",
-      "line_number": 187,
-      "is_public": false
-    },
-    {
-      "file": "api/routes/workspaces/workspace_knowledge.py",
-      "function": "update_web_knowledge",
-      "method": "PATCH",
-      "path": "/web/{web_id}",
-      "has_permission": false,
-      "permission_type": "none",
-      "line_number": 213,
-      "is_public": false
-    },
-    {
-      "file": "api/routes/workspaces/workspace_knowledge.py",
-      "function": "list_file_knowledge",
-      "method": "GET",
-      "path": "/files",
-      "has_permission": false,
-      "permission_type": "none",
-      "line_number": 271,
-      "is_public": false
-    },
-    {
-      "file": "api/routes/workspaces/workspace_knowledge.py",
-      "function": "get_file_knowledge",
-      "method": "GET",
-      "path": "/files/{file_id}",
-      "has_permission": false,
-      "permission_type": "none",
-      "line_number": 350,
-      "is_public": false
-    },
-    {
-      "file": "api/routes/workspaces/workspace_knowledge.py",
-      "function": "update_file_knowledge",
-      "method": "PATCH",
-      "path": "/files/{file_id}",
-      "has_permission": false,
-      "permission_type": "none",
-      "line_number": 376,
-      "is_public": false
-    },
-    {
-      "file": "api/routes/workspaces/workspace_knowledge.py",
-      "function": "list_text_knowledge",
-      "method": "GET",
-      "path": "/text",
-      "has_permission": false,
-      "permission_type": "none",
-      "line_number": 437,
-      "is_public": false
-    },
-    {
-      "file": "api/routes/workspaces/workspace_knowledge.py",
       "function": "get_text_knowledge",
       "method": "GET",
       "path": "/text/{text_id}",
       "has_permission": false,
       "permission_type": "none",
-      "line_number": 506,
+      "line_number": 513,
       "is_public": false
     },
     {
@@ -1066,7 +966,7 @@
       "path": "/text/{text_id}",
       "has_permission": false,
       "permission_type": "none",
-      "line_number": 532,
+      "line_number": 539,
       "is_public": false
     },
     {
@@ -1499,6 +1399,16 @@
       "has_permission": true,
       "permission_type": "decorator",
       "line_number": 128,
+      "is_public": false
+    },
+    {
+      "file": "api/routes/content/modules/content_retrieval.py",
+      "function": "get_content",
+      "method": "GET",
+      "path": "/{content_id}",
+      "has_permission": true,
+      "permission_type": "decorator",
+      "line_number": 75,
       "is_public": false
     },
     {
@@ -1963,12 +1873,32 @@
     },
     {
       "file": "api/routes/topics/topic_generation_route.py",
+      "function": "get_topic",
+      "method": "GET",
+      "path": "/get-topic/{topic_id}",
+      "has_permission": true,
+      "permission_type": "decorator",
+      "line_number": 228,
+      "is_public": false
+    },
+    {
+      "file": "api/routes/topics/topic_generation_route.py",
+      "function": "get_topics",
+      "method": "GET",
+      "path": "/get-topics",
+      "has_permission": true,
+      "permission_type": "decorator",
+      "line_number": 284,
+      "is_public": false
+    },
+    {
+      "file": "api/routes/topics/topic_generation_route.py",
       "function": "delete_topics",
       "method": "DELETE",
       "path": "/delete-topic",
       "has_permission": true,
       "permission_type": "decorator",
-      "line_number": 340,
+      "line_number": 342,
       "is_public": false
     },
     {
@@ -1978,7 +1908,7 @@
       "path": "/update-topic",
       "has_permission": true,
       "permission_type": "decorator",
-      "line_number": 381,
+      "line_number": 383,
       "is_public": false
     },
     {
@@ -2143,12 +2073,42 @@
     },
     {
       "file": "api/routes/workspaces/workspace_knowledge.py",
+      "function": "list_web_knowledge",
+      "method": "GET",
+      "path": "/web",
+      "has_permission": true,
+      "permission_type": "decorator",
+      "line_number": 122,
+      "is_public": false
+    },
+    {
+      "file": "api/routes/workspaces/workspace_knowledge.py",
       "function": "create_web_knowledge",
       "method": "POST",
       "path": "/web",
       "has_permission": true,
       "permission_type": "decorator",
-      "line_number": 148,
+      "line_number": 149,
+      "is_public": false
+    },
+    {
+      "file": "api/routes/workspaces/workspace_knowledge.py",
+      "function": "get_web_knowledge",
+      "method": "GET",
+      "path": "/web/{web_id}",
+      "has_permission": true,
+      "permission_type": "decorator",
+      "line_number": 189,
+      "is_public": false
+    },
+    {
+      "file": "api/routes/workspaces/workspace_knowledge.py",
+      "function": "update_web_knowledge",
+      "method": "PATCH",
+      "path": "/web/{web_id}",
+      "has_permission": true,
+      "permission_type": "decorator",
+      "line_number": 216,
       "is_public": false
     },
     {
@@ -2158,7 +2118,17 @@
       "path": "/web/{web_id}",
       "has_permission": true,
       "permission_type": "decorator",
-      "line_number": 245,
+      "line_number": 248,
+      "is_public": false
+    },
+    {
+      "file": "api/routes/workspaces/workspace_knowledge.py",
+      "function": "list_file_knowledge",
+      "method": "GET",
+      "path": "/files",
+      "has_permission": true,
+      "permission_type": "decorator",
+      "line_number": 275,
       "is_public": false
     },
     {
@@ -2168,7 +2138,27 @@
       "path": "/files",
       "has_permission": true,
       "permission_type": "decorator",
-      "line_number": 298,
+      "line_number": 302,
+      "is_public": false
+    },
+    {
+      "file": "api/routes/workspaces/workspace_knowledge.py",
+      "function": "get_file_knowledge",
+      "method": "GET",
+      "path": "/files/{file_id}",
+      "has_permission": true,
+      "permission_type": "decorator",
+      "line_number": 355,
+      "is_public": false
+    },
+    {
+      "file": "api/routes/workspaces/workspace_knowledge.py",
+      "function": "update_file_knowledge",
+      "method": "PATCH",
+      "path": "/files/{file_id}",
+      "has_permission": true,
+      "permission_type": "decorator",
+      "line_number": 382,
       "is_public": false
     },
     {
@@ -2178,7 +2168,17 @@
       "path": "/files/{file_id}",
       "has_permission": true,
       "permission_type": "decorator",
-      "line_number": 408,
+      "line_number": 414,
+      "is_public": false
+    },
+    {
+      "file": "api/routes/workspaces/workspace_knowledge.py",
+      "function": "list_text_knowledge",
+      "method": "GET",
+      "path": "/text",
+      "has_permission": true,
+      "permission_type": "decorator",
+      "line_number": 444,
       "is_public": false
     },
     {
@@ -2188,7 +2188,7 @@
       "path": "/text",
       "has_permission": true,
       "permission_type": "decorator",
-      "line_number": 464,
+      "line_number": 471,
       "is_public": false
     },
     {
@@ -2198,7 +2198,7 @@
       "path": "/text/{text_id}",
       "has_permission": true,
       "permission_type": "decorator",
-      "line_number": 574,
+      "line_number": 581,
       "is_public": false
     },
     {

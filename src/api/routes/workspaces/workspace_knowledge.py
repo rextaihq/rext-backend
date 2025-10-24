@@ -117,6 +117,7 @@ def _format_list_response(items: list[dict[str, Any]], key: str) -> dict[str, An
 
 
 @router.get("/web")
+@require_permissions(["knowledge.read"], workspace_scoped=True)
 @db_transaction_handler("list web knowledge", auto_commit=False)
 async def list_web_knowledge(
     workspace_id: str,
@@ -183,6 +184,7 @@ async def create_web_knowledge(
 
 
 @router.get("/web/{web_id}")
+@require_permissions(["knowledge.read"], workspace_scoped=True)
 @db_transaction_handler("get web knowledge", auto_commit=False)
 async def get_web_knowledge(
     workspace_id: str,
@@ -209,6 +211,7 @@ async def get_web_knowledge(
 
 
 @router.patch("/web/{web_id}")
+@require_permissions(["knowledge.update"], workspace_scoped=True)
 @db_transaction_handler("update web knowledge", auto_commit=True)
 async def update_web_knowledge(
     workspace_id: str,
@@ -267,6 +270,7 @@ async def delete_web_knowledge(
 
 
 @router.get("/files")
+@require_permissions(["knowledge.read"], workspace_scoped=True)
 @db_transaction_handler("list file knowledge", auto_commit=False)
 async def list_file_knowledge(
     workspace_id: str,
@@ -346,6 +350,7 @@ async def create_file_knowledge(
 
 
 @router.get("/files/{file_id}")
+@require_permissions(["knowledge.read"], workspace_scoped=True)
 @db_transaction_handler("get file knowledge", auto_commit=False)
 async def get_file_knowledge(
     workspace_id: str,
@@ -372,6 +377,7 @@ async def get_file_knowledge(
 
 
 @router.patch("/files/{file_id}")
+@require_permissions(["knowledge.update"], workspace_scoped=True)
 @db_transaction_handler("update file knowledge", auto_commit=True)
 async def update_file_knowledge(
     workspace_id: str,
@@ -433,6 +439,7 @@ async def delete_file_knowledge(
 
 
 @router.get("/text")
+@require_permissions(["knowledge.read"], workspace_scoped=True)
 @db_transaction_handler("list text knowledge", auto_commit=False)
 async def list_text_knowledge(
     workspace_id: str,
