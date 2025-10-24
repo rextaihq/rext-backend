@@ -22,7 +22,7 @@ from src.api.schema.subscription import (
 )
 from src.services.subscription_management_service import SubscriptionManagementService
 from src.utils.logger import logger
-from src.utils.route_decorators import db_transaction_handler
+from src.utils.route_decorators import db_transaction_handler, require_permissions
 from .shared.auth import require_super_admin
 
 
@@ -30,6 +30,7 @@ router = APIRouter()
 
 
 @router.post("/assign", response_model=dict, status_code=status.HTTP_201_CREATED)
+@require_permissions(["subscription.manage"])
 @db_transaction_handler("assign subscription", auto_commit=True)
 async def assign_subscription(
     request: Request,
@@ -57,6 +58,7 @@ async def assign_subscription(
 
 
 @router.post("/{subscription_id}/extend", response_model=dict)
+@require_permissions(["subscription.manage"])
 @db_transaction_handler("extend subscription", auto_commit=True)
 async def extend_subscription(
     request: Request,
@@ -83,6 +85,7 @@ async def extend_subscription(
 
 
 @router.post("/{subscription_id}/reset-usage", response_model=dict)
+@require_permissions(["subscription.manage"])
 @db_transaction_handler("reset usage", auto_commit=True)
 async def reset_usage(
     request: Request,
