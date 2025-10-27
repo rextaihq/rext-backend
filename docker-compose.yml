@@ -73,8 +73,8 @@ services:
           PORT: 2024
 
           # Frontend + CORS
-          FRONTEND_URL: http://localhost:3000
-          ALLOWED_ORIGINS: http://localhost:3000,http://127.0.0.1:3000
+          FRONTEND_URL: http://192.168.1.70/:3000
+          ALLOWED_ORIGINS: http://localhost:3000,http://127.0.0.1:3000,http://192.168.1.70/:3000
           ENVIRONMENT: development
           DEBUG: "false"
 
