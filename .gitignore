@@ -56,3 +56,6 @@ uv.lock
 # Email (React Email templates)
 .react-email/
 emails/.react-email/
+
+# Media
+media/

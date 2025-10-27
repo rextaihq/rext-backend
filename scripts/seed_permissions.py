@@ -61,7 +61,7 @@ WORKSPACE_PERMISSIONS = [
     ("content.update", "Update Content", "content", "update", "Edit existing content"),
     ("content.delete", "Delete Content", "content", "delete", "Delete content"),
     ("content.publish", "Publish Content", "content", "publish", "Publish content to production"),
-    ("content.submit_review", "Submit for Review", "content", "submit_review", "Submit content for approval"),
+    ("content.submit_for_review", "Submit Content for Review", "content", "submit_for_review", "Submit content for approval"),
     ("content.approve", "Approve Content", "content", "approve", "Approve content for publishing"),
     ("content.reject", "Reject Content", "content", "reject", "Reject submitted content"),
     ("content.export", "Export Content", "content", "export", "Export content data"),
@@ -102,14 +102,12 @@ WORKSPACE_PERMISSIONS = [
     ("member.revoke_invitation", "Revoke Invitations", "member", "revoke_invitation", "Cancel pending invitations"),
 
     # License Management (one-time purchases)
-    # CANONICAL PERMISSIONS (standard CRUD):
-    ("license.read", "View Licenses", "license", "read", "View own license keys and activations"),
+    # NOTE: Using license.view as primary (already in DB), license.read added for compatibility
+    ("license.view", "View Licenses", "license", "view", "View own license keys and activations"),
+    ("license.read", "View Licenses (Canonical)", "license", "read", "View own license keys and activations (canonical)"),
     ("license.activate", "Activate License", "license", "activate", "Activate license on a device"),
     ("license.deactivate", "Deactivate License", "license", "deactivate", "Deactivate license from a device"),
     ("license.revoke", "Revoke License", "license", "revoke", "Revoke a license (admin only)"),
-
-    # DEPRECATED ALIASES (kept for backward compatibility):
-    ("license.view", "View Licenses (Deprecated)", "license", "view", "DEPRECATED: Use license.read instead"),
 ]
 
 GLOBAL_PERMISSIONS = [
@@ -167,7 +165,7 @@ ROLE_PERMISSION_ASSIGNMENTS = {
 
         # Content management (full)
         "content.create", "content.read", "content.update", "content.delete",
-        "content.publish", "content.submit_review", "content.approve", "content.reject", "content.export",
+        "content.publish", "content.submit_for_review", "content.approve", "content.reject", "content.export",
 
         # Topics (full)
         "topic.create", "topic.read", "topic.update", "topic.delete", "topic.approve",
@@ -201,7 +199,7 @@ ROLE_PERMISSION_ASSIGNMENTS = {
 
         # Content management (full)
         "content.create", "content.read", "content.update", "content.delete",
-        "content.publish", "content.submit_review", "content.approve", "content.reject", "content.export",
+        "content.publish", "content.submit_for_review", "content.approve", "content.reject", "content.export",
 
         # Topics (full)
         "topic.create", "topic.read", "topic.update", "topic.delete", "topic.approve",
@@ -225,7 +223,7 @@ ROLE_PERMISSION_ASSIGNMENTS = {
 
         # Content (can create/edit/publish own content, cannot delete)
         "content.create", "content.read", "content.update",
-        "content.publish", "content.submit_review", "content.approve", "content.reject", "content.export",
+        "content.publish", "content.submit_for_review", "content.approve", "content.reject", "content.export",
 
         # Topics (can create/edit)
         "topic.create", "topic.read", "topic.update", "topic.approve",
@@ -285,7 +283,7 @@ ROLE_PERMISSION_ASSIGNMENTS = {
 
         # All content
         "content.create", "content.read", "content.update", "content.delete",
-        "content.publish", "content.submit_review", "content.approve", "content.reject", "content.export",
+        "content.publish", "content.submit_for_review", "content.approve", "content.reject", "content.export",
 
         # All topics
         "topic.create", "topic.read", "topic.update", "topic.delete", "topic.approve",
@@ -319,7 +317,7 @@ ROLE_PERMISSION_ASSIGNMENTS = {
         # Platform management (similar to super_admin but less destructive permissions)
 
         # All workspace permissions
-        "workspace.create", "workspace.read", "workspace.update", "workspace.delete",
+        "workspace.create", "workspace.read", "workspace.update", "workspace.delete", "workspace.transfer",
         "workspace.manage_members", "workspace.manage_roles", "workspace.invite",
 
         # All billing (admin can manage billing)
@@ -328,7 +326,7 @@ ROLE_PERMISSION_ASSIGNMENTS = {
 
         # All content
         "content.create", "content.read", "content.update", "content.delete",
-        "content.publish", "content.submit_review", "content.approve", "content.reject", "content.export",
+        "content.publish", "content.submit_for_review", "content.approve", "content.reject", "content.export",
 
         # All topics
         "topic.create", "topic.read", "topic.update", "topic.delete", "topic.approve",
@@ -351,9 +349,10 @@ ROLE_PERMISSION_ASSIGNMENTS = {
 
         # Most global permissions (except some destructive ones)
         "user.create", "user.read", "user.update", "user.manage_roles",
-        "role.read", "role.update", "role.manage_permissions",
-        "permission.read",
+        "role.create", "role.read", "role.update", "role.manage_permissions",
+        "permission.create", "permission.read", "permission.update",
         "audit.read", "audit.export",
+        "admin.invite",
         "support.view_workspace", "support.view_billing",
     ],
 
@@ -362,9 +361,6 @@ ROLE_PERMISSION_ASSIGNMENTS = {
 
         # Workspace (read only)
         "workspace.read",
-
-        # Billing (read only for support inquiries)
-        "subscription.read", "billing.read", "usage.read",
 
         # Content (read only)
         "content.read",
@@ -382,12 +378,11 @@ ROLE_PERMISSION_ASSIGNMENTS = {
         # Members (read only)
         "member.read",
 
-        # License (read + activate/deactivate to help users)
+        # License (view only)
         "license.read",
-        "license.view",  # Backward compatibility (deprecated) "license.activate", "license.deactivate",
+        "license.view",  # Backward compatibility (deprecated)
 
-        # Global (read only)
-        "user.read",
+        # Audit (read only)
         "audit.read",
 
         # Support-specific
