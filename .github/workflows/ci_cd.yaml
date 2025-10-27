@@ -101,7 +101,7 @@ jobs:
       - name: Deploy Docker
         run: |
           # Ensure correct working directory
-          DEPLOY_DIR=~/app
+          DEPLOY_DIR=~/WREXT/backend
           mkdir -p $DEPLOY_DIR
           cp -r $GITHUB_WORKSPACE/* $DEPLOY_DIR/
           cd $DEPLOY_DIR
@@ -121,8 +121,6 @@ jobs:
           SECRET_KEY="${{ secrets.SECRET_KEY }}" \
           REFRESH_SECRET_KEY="${{ secrets.REFRESH_SECRET_KEY }}" \
           ALGORITHM="${{ secrets.ALGORITHM }}" \
-          TAVILY_API_KEY="${{ secrets.TAVILY_API_KEY }}" \
-          docker-compose up -d
 
           # Start containers
           docker-compose up -d
