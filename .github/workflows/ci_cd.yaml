@@ -106,24 +106,37 @@ jobs:
           cp -r $GITHUB_WORKSPACE/* $DEPLOY_DIR/
           cd $DEPLOY_DIR
 
-          # Login to Docker
+          # Create .env file dynamically from GitHub Secrets
+          echo "Creating backend/.env file..."
+          cat <<EOF > .env
+          OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}
+          LANGSMITH_API_KEY=${{ secrets.LANGSMITH_API_KEY }}
+          POSTGRES_URI_CUSTOM=${{ secrets.POSTGRES_URI_CUSTOM }}
+          DATABASE_URI=${{ secrets.DATABASE_URI }}
+          REDIS_URI=${{ secrets.REDIS_URI }}
+          REDIS_URL=${{ secrets.REDIS_URL }}
+          SECRET_KEY=${{ secrets.SECRET_KEY }}
+          REFRESH_SECRET_KEY=${{ secrets.REFRESH_SECRET_KEY }}
+          ALGORITHM=${{ secrets.ALGORITHM }}
+          FRONTEND_URL=${{ secrets.FRONTEND_URL }}
+          ALLOWED_ORIGINS=${{ secrets.ALLOWED_ORIGINS }}
+          ENVIRONMENT=production
+          DEBUG=false
+          EOF
+
+          echo "✅ .env file created successfully."
+
+          # Log in to Docker
           echo "${{ secrets.DOCKER_PASSWORD }}" | docker login -u "${{ secrets.DOCKER_USERNAME }}" --password-stdin
 
           # Pull latest image
           docker pull revnix/content-automation:latest
 
           # Stop and remove old containers
-          docker-compose down || true
-
-          REDIS_URI="${{ secrets.REDIS_URI }}" \
-          LANGSMITH_API_KEY="${{ secrets.LANGSMITH_API_KEY }}" \
-          POSTGRES_URI_CUSTOM="${{ secrets.POSTGRES_URI_CUSTOM }}" \
-          SECRET_KEY="${{ secrets.SECRET_KEY }}" \
-          REFRESH_SECRET_KEY="${{ secrets.REFRESH_SECRET_KEY }}" \
-          ALGORITHM="${{ secrets.ALGORITHM }}" \
+          docker compose down || true
 
           # Start containers
-          docker-compose up -d
+          docker compose up -d
 
           # Clean up old images
           docker image prune -f
