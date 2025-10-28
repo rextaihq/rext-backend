@@ -143,3 +143,5 @@ jobs:
 
           # Show running containers
           docker ps
+
+          echo "✅ Deployment completed successfully."
