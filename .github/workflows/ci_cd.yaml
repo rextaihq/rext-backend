@@ -129,7 +129,7 @@ jobs:
           # Log in to Docker
           echo "${{ secrets.DOCKER_PASSWORD }}" | docker login -u "${{ secrets.DOCKER_USERNAME }}" --password-stdin
 
-          # Pull latest image
+          echo "📦 Pulling latest backend image..."
           docker pull revnix/content-automation:latest
 
           echo "🧹 Stopping old containers..."
