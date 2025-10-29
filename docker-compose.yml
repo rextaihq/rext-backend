@@ -127,14 +127,3 @@ services:
           # Monitoring
           SENTRY_DSN: https://feb7a02f38d531b4139ecd2b0ae5a56c@o4510194743181312.ingest.us.sentry.io/4510194746064896
           SENTRY_ENVIRONMENT: development
-        
-        command: >
-            sh -c "
-                echo 'Waiting for Postgres...' &&
-                until pg_isready -h langgraph-postgres -U postgres; do sleep 1; done &&
-                echo 'Postgres is ready, initializing DB...' &&
-                python scripts/db.py reset &&
-                python scripts/db.py seed &&
-                echo 'Starting API...' &&
-                uvicorn src.main:app --host 0.0.0.0 --port 2024
-            "

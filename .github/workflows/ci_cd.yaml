@@ -135,6 +135,15 @@ jobs:
           # Stop and remove old containers
           docker compose down || true
 
+          # ✅ Run migrations before starting containers
+          echo "⏳ Running database migrations..."
+          docker run --rm \
+            --env-file .env \
+            --network host \
+            revnix/content-automation:latest \
+            python scripts/db.py migrate
+          echo "✅ Migrations completed successfully."
+
           # Start containers
           docker compose up -d
 
