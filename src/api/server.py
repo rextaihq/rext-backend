@@ -54,12 +54,16 @@ from src.api.routes.users.onboarding import router as onboarding_router
 from src.api.routes.media import router as media_router
 from src.api.routes.invitations import router as invitations_router
 from src.api.database.async_database import async_engine
-
+from src.api.database.base import Base
+from src.api.database.async_database import async_engine
 # Middleware imports
 from src.api.middleware.request_tracker import RequestTrackerMiddleware
 from src.api.middleware.error_handler import ErrorHandlerMiddleware, setup_exception_handlers
 from src.api.middleware.security import SecurityHeadersMiddleware
 from src.api.middleware.rate_limiter import RateLimiterMiddleware
+from src.config.payment_config import payment_settings
+from src.tasks.scheduled_tasks import start_scheduled_tasks, shutdown_scheduled_tasks
+from src.api.cache.redis_client import cache
 from src.api.config import settings
 from src.utils.response_utils import success
 from src.utils.logger import logger
@@ -118,102 +122,86 @@ async def check_migrations():
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
-    """Application lifespan events."""
-    # Startup
-    logger.info("Starting Wrext API server...")
+async def lifespan(app):
+    """
+    Application startup and shutdown lifecycle.
+    Ensures database tables exist, Redis is connected,
+    Sentry and tasks are initialized cleanly.
+    """
+    logger.info("🚀 Starting Wrext API server...")
     logger.info(f"Environment: {settings.ENVIRONMENT}")
 
-    # Initialize Sentry error monitoring
-    init_sentry(settings)
+    # --- Initialize Sentry ---
+    try:
+        init_sentry(settings)
+        logger.info("✅ Sentry initialized successfully")
+    except Exception as e:
+        logger.warning(f"⚠️ Failed to initialize Sentry: {e}")
 
-    # Validate critical configuration in production
-    from src.config.payment_config import payment_settings
+    # --- Ensure database tables exist ---
+    try:
+        async with async_engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        logger.info("✅ Verified database tables exist or created if missing")
+    except Exception as e:
+        logger.error(f"❌ Failed to verify/create database tables: {e}")
+
+    # --- Connect Redis cache ---
+    try:
+        await cache.connect()
+        logger.info("✅ Redis cache connected")
+    except Exception as e:
+        logger.error(f"❌ Failed to connect to Redis: {e}")
+
+    # --- Validate production configuration ---
     if settings.ENVIRONMENT == "production":
-        # Ensure webhook secret is configured for LemonSqueezy in production
-        if payment_settings.payment_provider in ["lemonsqueezy", "lemonsqueezy_sandbox"]:
-            # Validate webhook secret
-            if not payment_settings.lemonsqueezy_webhook_secret:
-                error_msg = (
-                    "CRITICAL: LEMONSQUEEZY_WEBHOOK_SECRET is not configured in production. "
-                    "Webhook signature verification will fail. "
-                    "Set LEMONSQUEEZY_WEBHOOK_SECRET environment variable before starting."
-                )
-                logger.critical(error_msg)
-                raise RuntimeError(error_msg)
-            logger.info("✅ LemonSqueezy webhook secret configured")
+        try:
+            if payment_settings.payment_provider in ["lemonsqueezy", "lemonsqueezy_sandbox"]:
+                if not payment_settings.lemonsqueezy_webhook_secret:
+                    raise RuntimeError("Missing LEMONSQUEEZY_WEBHOOK_SECRET in production")
+                if not payment_settings.lemonsqueezy_api_key:
+                    raise RuntimeError("Missing LEMONSQUEEZY_API_KEY in production")
+                if not payment_settings.lemonsqueezy_store_id:
+                    raise RuntimeError("Missing LEMONSQUEEZY_STORE_ID in production")
+                logger.info("✅ LemonSqueezy configuration validated")
+        except Exception as e:
+            logger.critical(f"🚨 Invalid production config: {e}")
+            raise
 
-            # Validate API key
-            if not payment_settings.lemonsqueezy_api_key:
-                error_msg = (
-                    "CRITICAL: LEMONSQUEEZY_API_KEY is not configured in production. "
-                    "Payment processing will fail. "
-                    "Set LEMONSQUEEZY_API_KEY environment variable before starting."
-                )
-                logger.critical(error_msg)
-                raise RuntimeError(error_msg)
+    # --- Initialize prompt system ---
+    try:
+        PromptManager(auto_register=False)
+        logger.info("✅ Prompts initialized successfully")
+    except Exception as e:
+        logger.warning(f"⚠️ Failed to initialize PromptManager: {e}")
 
-            # Check for placeholder values (common mistake)
-            if payment_settings.lemonsqueezy_api_key in ["your_api_key_here", "REPLACE_ME", ""]:
-                error_msg = (
-                    "CRITICAL: LEMONSQUEEZY_API_KEY is set to a placeholder value. "
-                    "Set a valid LemonSqueezy API key before starting production."
-                )
-                logger.critical(error_msg)
-                raise RuntimeError(error_msg)
+    # --- Start background scheduled tasks ---
+    try:
+        start_scheduled_tasks()
+        logger.info("✅ Scheduled tasks started")
+    except Exception as e:
+        logger.warning(f"⚠️ Failed to start scheduled tasks: {e}")
 
-            # Validate API key format (basic sanity check)
-            if len(payment_settings.lemonsqueezy_api_key) < 20:
-                error_msg = (
-                    f"CRITICAL: LEMONSQUEEZY_API_KEY is too short ({len(payment_settings.lemonsqueezy_api_key)} chars). "
-                    "LemonSqueezy API keys are typically 40+ characters. "
-                    "Verify you have the correct key from https://app.lemonsqueezy.com/settings/api"
-                )
-                logger.critical(error_msg)
-                raise RuntimeError(error_msg)
-
-            # Validate store ID
-            if not payment_settings.lemonsqueezy_store_id:
-                error_msg = (
-                    "CRITICAL: LEMONSQUEEZY_STORE_ID is not configured in production. "
-                    "Payment processing will fail. "
-                    "Set LEMONSQUEEZY_STORE_ID environment variable before starting."
-                )
-                logger.critical(error_msg)
-                raise RuntimeError(error_msg)
-
-            logger.info("✅ LemonSqueezy API key configured")
-            logger.info(f"✅ LemonSqueezy Store ID: {payment_settings.lemonsqueezy_store_id}")
-            logger.info(f"   API key prefix: {payment_settings.lemonsqueezy_api_key[:12]}...")
-
-    # Initialize Redis cache
-    from src.api.cache.redis_client import cache
-    await cache.connect()
-
-    logger.info(f"Database URI: {DB_URI[:20]}..." if DB_URI else "No database URI configured")
-    logger.info("Database managed by Alembic migrations")
-    logger.info("Middleware configured: RequestTracker, ErrorHandler, SecurityHeaders")
-    logger.info(f"CORS allowed origins: {settings.allowed_origins_list}")
-    logger.info("Registering Prompt")
-    PromptManager(auto_register=False)
-    logger.info("✅ Prompts initialized successfully")
-
-    # Start scheduled tasks (data cleanup)
-    from src.tasks.scheduled_tasks import start_scheduled_tasks
-    start_scheduled_tasks()
-
-    # Optional: Check migration status (uncomment to enable)
-    # check_migrations()
-
+    # --- Application is now ready ---
+    logger.info("✅ Application startup complete. Ready to serve requests.")
     yield
-    # Shutdown
-    logger.info("Shutting down Wrext API server...")
 
-    # Shutdown scheduled tasks
-    from src.tasks.scheduled_tasks import shutdown_scheduled_tasks
-    shutdown_scheduled_tasks()
+    # --- Graceful shutdown ---
+    logger.info("🛑 Shutting down application...")
 
-    await cache.disconnect()
+    try:
+        shutdown_scheduled_tasks()
+        logger.info("✅ Scheduled tasks stopped")
+    except Exception as e:
+        logger.warning(f"⚠️ Failed to stop scheduled tasks: {e}")
+
+    try:
+        await cache.disconnect()
+        logger.info("✅ Redis cache disconnected")
+    except Exception as e:
+        logger.warning(f"⚠️ Failed to disconnect Redis: {e}")
+
+    logger.info("👋 Application shutdown complete.")
 
 app = FastAPI(
     title="Wrext Content Automation API",

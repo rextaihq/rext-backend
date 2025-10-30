@@ -129,32 +129,19 @@ jobs:
           # Log in to Docker
           echo "${{ secrets.DOCKER_PASSWORD }}" | docker login -u "${{ secrets.DOCKER_USERNAME }}" --password-stdin
 
-          echo "📦 Pulling latest backend image..."
+          # Pull latest image
           docker pull revnix/content-automation:latest
 
-          echo "🧹 Stopping old containers..."
+          # Stop and remove old containers
           docker compose down || true
 
-          echo "🚀 Starting database and redis..."
-          docker compose up -d langgraph-postgres langgraph-redis
-
-          echo "⏳ Waiting for PostgreSQL to be ready..."
-          until docker exec $(docker compose ps -q langgraph-postgres) pg_isready -U postgres; do
-            sleep 2
-          done
-          echo "✅ PostgreSQL is ready."
-
-          echo "⚙️ Running database migrations..."
-          docker compose run --rm langgraph-api python scripts/db.py migrate
-          echo "✅ Migrations completed successfully."
-
-          echo "🔄 Starting all containers..."
+          # Start containers
           docker compose up -d
 
-          echo "🧹 Cleaning up old images..."
+          # Clean up old images
           docker image prune -f
 
-          echo "🐳 Running containers:"
+          # Show running containers
           docker ps
 
           echo "✅ Deployment completed successfully."
