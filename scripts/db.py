@@ -54,7 +54,11 @@ async def reset_database():
 def run_migrations():
     """Run alembic migrations to upgrade to head."""
     print("\n📦 Running migrations...")
-    venv_alembic = project_root / ".venv" / "bin" / "alembic"
+    if os.name == "nt":  # Windows
+        venv_alembic = project_root / ".venv" / "Scripts" / "alembic.exe"
+    else:  # macOS/Linux
+        venv_alembic = project_root / ".venv" / "bin" / "alembic"
+
 
     try:
         result = subprocess.run(
@@ -79,7 +83,11 @@ def run_migrations():
 def check_status():
     """Check current migration status."""
     print("\n📊 Checking migration status...")
-    venv_alembic = project_root / ".venv" / "bin" / "alembic"
+    if os.name == "nt":  # Windows
+        venv_alembic = project_root / ".venv" / "Scripts" / "alembic.exe"
+    else:  # macOS/Linux
+        venv_alembic = project_root / ".venv" / "bin" / "alembic"
+
 
     try:
         result = subprocess.run(
