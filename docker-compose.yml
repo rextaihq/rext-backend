@@ -142,7 +142,6 @@ services:
           NEXT_PUBLIC_API_BASE_URL: "http://192.168.1.70:8123"
           NEXTAUTH_URL: "http://192.168.1.70:3000"
           NEXTAUTH_SECRET: "samiullah"
-          NEXT_PUBLIC_API_BASE_URL: "http://192.168.1.7:8123"
           NODE_ENV: "development"
         depends_on:
             - langgraph-api
