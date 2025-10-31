@@ -157,7 +157,7 @@ async def create_invitation(
     )
 
     background_tasks.add_task(
-        send_invitation_email_task,
+        send_workspace_invitation_email_task,
         email=invitation_data.email,
         subject=email_content["subject"],
         body=email_content["body"],
