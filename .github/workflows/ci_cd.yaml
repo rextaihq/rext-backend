@@ -1,12 +1,9 @@
 name: project_CI
 
 on:
-  push:
-    branches:
-      - '**'   # matches all branches
   pull_request:
     branches:
-      - '**'
+      - main
 
 jobs:
   build:

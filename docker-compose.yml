@@ -75,8 +75,8 @@ services:
           PORT: 2024
 
           # Frontend + CORS
-          FRONTEND_URL: http://192.168.1.70/:3000
-          ALLOWED_ORIGINS: http://localhost:3000,http://127.0.0.1:3000,http://192.168.1.70/:3000
+          FRONTEND_URL: http://192.168.1.70:3000
+          ALLOWED_ORIGINS: http://localhost:3000,http://127.0.0.1:3000,http://192.168.1.70:3000
           ENVIRONMENT: development
           DEBUG: "false"
 
@@ -129,19 +129,3 @@ services:
           # Monitoring
           SENTRY_DSN: https://feb7a02f38d531b4139ecd2b0ae5a56c@o4510194743181312.ingest.us.sentry.io/4510194746064896
           SENTRY_ENVIRONMENT: development
-    
-    # 🌐 Frontend (Next.js)
-    frontend:
-        image: revnix/frontend:latest
-        container_name: wrext-frontend
-        restart: unless-stopped
-        ports:
-            - "3000:3000"
-        environment:
-          NEXT_PUBLIC_BACKEND_API_URL: "http://192.168.1.70:8123"
-          NEXT_PUBLIC_API_BASE_URL: "http://192.168.1.70:8123"
-          NEXTAUTH_URL: "http://192.168.1.70:3000"
-          NEXTAUTH_SECRET: "samiullah"
-          NODE_ENV: "development"
-        depends_on:
-            - langgraph-api
