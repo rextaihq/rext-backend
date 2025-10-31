@@ -304,6 +304,14 @@ async def register_with_invitation(
         workspace_service = WorkspaceService(db)
         workspace = await workspace_service.get_workspace(invitation.workspace_id)
 
+        # Step 7.5: Get the assigned role from invitation
+        from src.api.models.user_models.roles import Role
+        from sqlalchemy import select
+        result = await db.execute(
+            select(Role).where(Role.id == invitation.role_id)
+        )
+        assigned_role = result.scalar_one_or_none()
+
         # Step 8: Return comprehensive response with workspace context
         user_data_response = {
             "id": str(new_user.id),
@@ -316,7 +324,7 @@ async def register_with_invitation(
             "timezone": new_user.timezone,
             "status": new_user.status,
             "email_verified": new_user.email_verified,
-            "roles": [{"name": "user", "display_name": "User"}],
+            "roles": [{"name": assigned_role.name, "display_name": assigned_role.display_name}] if assigned_role else [{"name": "user", "display_name": "User"}],
             "created_at": new_user.created_at.isoformat() if hasattr(new_user, 'created_at') else None,
         }
 
