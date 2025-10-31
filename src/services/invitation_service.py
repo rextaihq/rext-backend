@@ -388,6 +388,17 @@ class InvitationService:
         )
         self.db.add(member)
 
+        # Create user role assignment from invitation
+        from src.api.models.user_models.user_roles import UserRole
+        user_role = UserRole(
+            user_id=user_id,
+            role_id=invitation.role_id,
+            workspace_id=invitation.workspace_id,
+            assigned_by_user_id=invitation.invited_by_user_id,
+            is_primary=True
+        )
+        self.db.add(user_role)
+
         # Update invitation status
         invitation.status = "accepted"
         await self.db.flush()
