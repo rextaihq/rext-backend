@@ -16,7 +16,6 @@ This automatically:
 3. ✅ Starts LangGraph dev server on port 2024
 
 ### Manual Startup
-```bash
 # 1. Start infrastructure
 docker-compose up -d redis langgraph-redis langgraph-postgres
 

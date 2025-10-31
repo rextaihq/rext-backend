@@ -40,6 +40,8 @@ services:
             timeout: 1s
             retries: 5
             interval: 5s
+
+    # Backend API Service
     langgraph-api:
         image: revnix/content-automation:latest
         ports:
@@ -127,3 +129,20 @@ services:
           # Monitoring
           SENTRY_DSN: https://feb7a02f38d531b4139ecd2b0ae5a56c@o4510194743181312.ingest.us.sentry.io/4510194746064896
           SENTRY_ENVIRONMENT: development
+    
+    # 🌐 Frontend (Next.js)
+    frontend:
+        image: revnix/frontend:latest
+        container_name: wrext-frontend
+        restart: unless-stopped
+        ports:
+            - "3000:3000"
+        environment:
+          NEXT_PUBLIC_BACKEND_API_URL: "http://192.168.1.70:8123"
+          NEXT_PUBLIC_API_BASE_URL: "http://192.168.1.70:8123"
+          NEXTAUTH_URL: "http://192.168.1.70:3000"
+          NEXTAUTH_SECRET: "samiullah"
+          NEXT_PUBLIC_API_BASE_URL: "http://192.168.1.7:8123"
+          NODE_ENV: "development"
+        depends_on:
+            - langgraph-api
