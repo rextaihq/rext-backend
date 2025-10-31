@@ -596,22 +596,32 @@ class MemberService:
         self,
         workspace_id: UUID,
         status: Optional[str] = None
-    ) -> List[tuple[WorkspaceMembers, "Users"]]:
+    ) -> List[tuple[WorkspaceMembers, "Users", Optional["Role"]]]:
         """
-        Get workspace members with their user details.
+        Get workspace members with their user details and roles.
 
         Args:
             workspace_id: Workspace UUID
             status: Optional status filter
 
         Returns:
-            List of (WorkspaceMembers, Users) tuples
+            List of (WorkspaceMembers, Users, Role) tuples
         """
         from src.api.models.user_models.users import Users
+        from src.api.models.user_models.user_roles import UserRole
+        from src.api.models.user_models.roles import Role
 
         query = (
-            select(WorkspaceMembers, Users)
+            select(WorkspaceMembers, Users, Role)
             .join(Users, Users.id == WorkspaceMembers.user_id)
+            .outerjoin(
+                UserRole,
+                and_(
+                    UserRole.user_id == WorkspaceMembers.user_id,
+                    UserRole.workspace_id == workspace_id
+                )
+            )
+            .outerjoin(Role, Role.id == UserRole.role_id)
             .where(WorkspaceMembers.workspace_id == workspace_id)
             .order_by(WorkspaceMembers.joined_at.asc())
         )

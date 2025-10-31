@@ -1,3 +1,11 @@
+import asyncio
+import sys
+
+# 🩵 Fix for Playwright subprocess issue on Windows
+if sys.platform.startswith("win"):
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+    
+
 # Standard library imports
 import os
 from typing import Union
