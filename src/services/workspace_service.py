@@ -96,8 +96,23 @@ class WorkspaceService:
         """
         await self._ensure_active_user(user_id)
         with trace(name="Create Workspace Record"):
-            workspace = await self.create_workspace(user_id=user_id, name=name, tz=timezone, url=url)
-            await self.db.refresh(workspace)
+            # check if the url for same workspace exists in the knowledge base file
+            result = await self.db.execute(
+                select(Website).where(
+                    Website.workspace_id == user_id,
+                    Website.url == url
+                )
+            )
+            if result.scalar_one_or_none():
+                raise DuplicateResourceException(
+                    message="Workspace with this URL already exists",
+                    resource_type="workspace",
+                    conflicting_field="url",
+                    conflicting_value=url
+                )
+            else:
+                workspace = await self.create_workspace(user_id=user_id, name=name, tz=timezone, url=url)
+                await self.db.refresh(workspace)
         
 
         with trace(name="Assign Roles & Permissions"):
