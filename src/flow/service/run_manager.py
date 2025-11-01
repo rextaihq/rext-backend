@@ -1,10 +1,12 @@
 from datetime import datetime, timezone
 from uuid import UUID
 from typing import Dict, Any, Optional
-from src.api.schema.content_schema import ContentProgressResponse
 from src.flow.service.utils import get_progress_percent
+from src.flow.states.content_state import ContentState
+from src.flow.service.process_manager import ProgressManager
+from src.utils.logger import logger
 
-class RunManager:
+class RunManager(ProgressManager):
     """
     Manager for running LangGraph assistants and handling streaming progress.
 
@@ -20,7 +22,7 @@ class RunManager:
           to persist progress updates (e.g., from ProgressManager).
     """
     # Background runner
-    async def run_assistant(
+    async def create_content(
         self,
         assistant_id: str,
         input_payload: Dict[str, Any],
@@ -46,10 +48,10 @@ class RunManager:
         return await self.safe_call(client.runs.create(**run_req), "run_assistant")
     
 
-    async def run_assistant_stream(
+    async def stream_content(
             self, 
             assistant_id, 
-            input_payload, 
+            input_payload:ContentState, 
             thread_id=None, 
             metadata=None
     ):
@@ -70,6 +72,21 @@ class RunManager:
             (e.g., "updates") and `chunk` contains stage data.
         """
         client = await self.get_client()
+
+        logger.info(
+            f"Starting to stream content generation for assistant {assistant_id}",
+            extra={"assistant_id": assistant_id, "thread_id": thread_id}
+        )
+        # initalizing progress tracking
+        self.initialize_progress(
+            content_id=UUID(input_payload["request_payload"]["content_id"]),
+            step="initializing"
+        )
+        logger.info(
+            f"Initialized progress tracking for content {input_payload['request_payload']['content_id']}",
+            extra={"content_id": input_payload["request_payload"]["content_id"]}
+        )
+
         stream_args = {
             "assistant_id": assistant_id,
             "input": input_payload,
@@ -82,19 +99,16 @@ class RunManager:
         async for mode, chunk in client.runs.stream(**stream_args):
             if isinstance(mode, str) and mode.lower() == "updates" and isinstance(chunk, dict):
                 for stage, value in chunk.items():
-                    progress_payload = ContentProgressResponse(
+                    await self.update_progress(
                         content_id=UUID(input_payload["request_payload"]["content_id"]),
-                        current_step=stage,
-                        progress_percent=get_progress_percent(stage),
-                        status_message=f"{stage} running",
-                        started_at=datetime.now(timezone.utc),
+                        step=stage,
                         step_details=value,
+                        message=f"Stage '{stage}' in progress"
                     )
-                    await self.update_content_progress(progress_payload.content_id, progress_payload)
             yield mode, chunk
 
 
-    async def run_assistant_and_wait(
+    async def create_content_and_wait(
         self,
         assistant_id: str,
         input_payload: Dict[str, Any],
