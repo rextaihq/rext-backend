@@ -75,21 +75,21 @@ async def create_content(
     )
 
     # Initialize progress tracking
-    progress_service = ContentProgressService(db)
-    await progress_service.initialize_progress(
-        content_id=content.id,
-        step="initializing"
-    )
+    # progress_service = ContentProgressService(db)
+    # await progress_service.initialize_progress(
+    #     content_id=content.id,
+    #     step="initializing"
+    # )
 
     # Trigger background content generation
     # Frontend should subscribe to SSE using content.id as operation_id
     # FastAPI BackgroundTasks supports async functions natively
-    background_tasks.add_task(
-        run_content_generation_background,
-        content_id=content.id,
-        workspace_id=workspace.id,
-        topic_id=data.topic_id
-    )
+    # background_tasks.add_task(
+    #     run_content_generation_background,
+    #     content_id=content.id,
+    #     workspace_id=workspace.id,
+    #     topic_id=data.topic_id
+    # )
 
     logger.info(
         f"Content generation queued for content {content.id}",
@@ -168,10 +168,11 @@ async def delete_content(
 ):
     """Soft delete content by setting deleted_at timestamp"""
     user_id = user.get("identity")
+    print("Deleting content:", content_id)
 
     # Verify workspace access and membership in one call
     workspace, membership = await resolve_and_verify_workspace(db, workspace_id, UUID(user_id))
-
+    print("Workspace verified:", workspace.id)
     # Use ContentService to delete content
     service = ContentService(db)
     await service.delete_content(

@@ -39,6 +39,7 @@ from src.api.middleware.exceptions import (
     DuplicateResourceException
 )
 from dotenv import load_dotenv
+import asyncio
 import os
 load_dotenv()
 
@@ -70,6 +71,17 @@ class ContentService(LangGraphService):
             api_key=api_key
         )
         self.db = db
+    
+    async def _run_stream_in_background(self, assistant_id, payload):
+        """Run the LangGraph stream in the background and update content progress."""
+        try:
+            async for mode, chunk in self.stream_content(
+                assistant_id=assistant_id,
+                input_payload={"request_payload": payload},
+            ):
+                logger.info(f"Streaming update: mode={mode}, chunk={chunk}")
+        except Exception as e:
+            logger.error(f"Error while streaming content generation: {e}")
 
     async def create_content(
         self,
@@ -183,7 +195,34 @@ class ContentService(LangGraphService):
 
         # Content generation will be triggered by background task in the route
         # This allows immediate API response while generation runs in background
+        # create the assistant
+        assistant = await self.create_assistant(
+            graph_id="agent",
+            config={},
+            metadata={},
+            name=f"Content Generation Assistant for content {content.id}"
+        )
+
+        # create a thread 
+        # thread = await self.create_thread(thread_id="1234")
+
+        # Build payload
+        payload = Payload(
+            content_id=str(content.id),
+            workspace_id=str(workspace_id),
+            topic_id=str(data.topic_id) if data.topic_id else None,
+            author_id=str(user_id),
+            title=data.title,
+            content_language=data.content_language,
+            content_format=data.content_format,
+        )
+
+        # Launch streaming process in background (non-blocking)
+        asyncio.create_task(
+            self._run_stream_in_background(assistant["assistant_id"], payload)
+        )
         return content
+    
     async def update_content(
         self,
         content_id: UUID,
@@ -341,7 +380,7 @@ class ContentService(LangGraphService):
     async def delete_content(self, content_id: UUID, workspace_id: UUID) -> None:
         """
         Soft delete content by setting deleted_at timestamp.
-
+/
         Args:
             content_id: Content UUID
             workspace_id: Workspace UUID (for verification)
@@ -353,6 +392,8 @@ class ContentService(LangGraphService):
 
         content.deleted_at = datetime.now(timezone.utc)
         await self.db.flush()
+        await self.db.refresh(content)
+        await self.db.commit()
 
         logger.info(
             f"Content deleted: {content_id}",

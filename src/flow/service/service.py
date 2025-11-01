@@ -5,7 +5,7 @@ from src.flow.service.run_manager import RunManager
 from src.flow.service.thread_manager import ThreadManager
 
 class LangGraphService(
-    LangGraphBaseClient, AssistantManager, ProgressManager, RunManager, ThreadManager
+    LangGraphBaseClient, AssistantManager, RunManager, ThreadManager
 ):
     """
     Unified service for LangGraph operations.
@@ -22,7 +22,7 @@ class LangGraphService(
 
     def __init__(self, url, db, api_key=None, progress_callback=None):
         LangGraphBaseClient.__init__(self, url, api_key)
-        ProgressManager.__init__(self, db, progress_callback)
+        # ProgressManager.__init__(self, db, progress_callback)
 
     async def close(self):
         """Close LangGraph client connection if open."""
