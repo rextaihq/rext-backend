@@ -155,7 +155,7 @@ def upgrade() -> None:
         session.add(plan)
 
     session.commit()
-    print(f"✅ Successfully seeded {len(plans_data)} subscription plans")
+    print(f"Successfully seeded {len(plans_data)} subscription plans")
 
 
 def downgrade() -> None:
@@ -169,4 +169,4 @@ def downgrade() -> None:
     ).delete(synchronize_session=False)
 
     session.commit()
-    print("✅ Removed seeded subscription plans")
+    print("Removed seeded subscription plans")
