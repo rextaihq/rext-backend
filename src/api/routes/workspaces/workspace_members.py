@@ -110,7 +110,7 @@ async def send_member_removed_notification(
         logger.error(f"Failed to send member removed notification: {str(e)}", exc_info=True)
 
 
-def _serialize_member(member: WorkspaceMembers, user: Users) -> Dict[str, Any]:
+def _serialize_member(member: WorkspaceMembers, user: Users, role: Role = None) -> Dict[str, Any]:
     """Transform member + user join row into API response structure."""
     # Construct full name from first_name and last_name, fallback to display_name or email
     full_name = None
@@ -129,6 +129,11 @@ def _serialize_member(member: WorkspaceMembers, user: Users) -> Dict[str, Any]:
         "last_activity_at": (
             member.last_activity_at.isoformat() if member.last_activity_at else None
         ),
+        "role": {
+            "id": str(role.id),
+            "name": role.name,
+            "display_name": role.display_name,
+        } if role else None,
         "user": {
             "id": str(user.id),
             "name": full_name,  # Frontend expects "name" field
@@ -163,7 +168,7 @@ async def list_workspace_members(
     member_service = MemberService(db)
     rows = await member_service.get_workspace_members_with_users(workspace.id)
 
-    members = [_serialize_member(member, user) for member, user in rows]
+    members = [_serialize_member(member, user, role) for member, user, role in rows]
 
     return success(
         data={"members": members, "total_count": len(members)},

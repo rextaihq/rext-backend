@@ -170,7 +170,7 @@ async def get_pending_invitations(
             "id": str(invitation.id),
             "workspace": {
                 "id": str(workspace.id),
-                "name": workspace.title,  # WorkspaceModel uses 'title' not 'name'
+                "name": workspace.name,  # WorkspaceModel uses 'name'
                 "slug": workspace.slug
             },
             "role": {
@@ -333,7 +333,7 @@ async def decline_invitation(
 
             # Generate email HTML
             email_html = create_invitation_declined_email(
-                workspace_name=workspace.title or workspace.name,
+                workspace_name=workspace.name,
                 declined_by_email=user_email,
                 decline_reason=decline_reason,
                 workspace_id=str(workspace.id),
@@ -344,7 +344,7 @@ async def decline_invitation(
             email_service = EmailService(db)
             await email_service.send_email(
                 to=inviter.email,
-                subject=f"Invitation to {workspace.title or workspace.name} was declined",
+                subject=f"Invitation to {workspace.name} was declined",
                 html=email_html,
                 workspace_id=invitation.workspace_id,
                 user_id=invitation.invited_by_user_id,

@@ -24,6 +24,7 @@ from src.api.models.workspace_models.workspace_member import WorkspaceMembers
 from src.api.middleware.exceptions import (
     ResourceNotFoundException,
     BusinessRuleViolationException,
+    DuplicateResourceException,
 )
 from src.api.security.dependencies import get_current_user
 from src.services.invitation_service import InvitationService
@@ -250,6 +251,7 @@ async def accept_invitation(
 
     # Add member to workspace via service
     member_service = MemberService(db)
+    already_member = False
     try:
         membership = await member_service.add_member(
             workspace_id=invitation.workspace_id,
@@ -257,9 +259,28 @@ async def accept_invitation(
             invitation_id=invitation.id,
             status="active"
         )
-    except Exception as e:
-        # MemberService will raise DuplicateResourceException if already a member
-        raise
+    except DuplicateResourceException:
+        # User is already a member - this is okay, just mark invitation as accepted
+        already_member = True
+        logger.info(
+            f"User already member of workspace, accepting invitation anyway",
+            extra={
+                "user_id": str(user_id),
+                "workspace_id": str(invitation.workspace_id),
+                "invitation_id": str(invitation.id)
+            }
+        )
+        # Get existing membership for response
+        from sqlalchemy import select, and_
+        result = await db.execute(
+            select(WorkspaceMembers).where(
+                and_(
+                    WorkspaceMembers.user_id == user_id,
+                    WorkspaceMembers.workspace_id == invitation.workspace_id
+                )
+            )
+        )
+        membership = result.scalar_one()
 
     # Update invitation status
     invitation.status = "accepted"
@@ -362,6 +383,18 @@ async def accept_invitation(
                 }
             )
 
+    response_message = (
+        f"You're already a member of {workspace_name_str}"
+        if already_member
+        else f"Welcome to {workspace_name_str}!"
+    )
+
+    api_message = (
+        "Invitation accepted - already a member"
+        if already_member
+        else "Invitation accepted successfully"
+    )
+
     return created(
         data={
             "membership_id": membership_id,
@@ -369,8 +402,9 @@ async def accept_invitation(
             "workspace_name": workspace_name_str,
             "workspace_slug": workspace_slug_str,
             "role": role_name_str,
-            "message": f"Welcome to {workspace_name_str}!",
+            "already_member": already_member,
+            "message": response_message,
         },
         request=request,
-        message="Invitation accepted successfully",
+        message=api_message,
     )
