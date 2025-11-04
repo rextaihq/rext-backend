@@ -79,7 +79,7 @@ class ContentCreate(ContentBase):
     assigned_to_user_id: Optional[UUID] = Field(None, description="User assigned to this content")
 
     # LangGraph workflow tracking
-    langgraph_thread_id: Optional[UUID] = Field(None, description="LangGraph workflow thread ID for content generation tracking")
+    # langgraph_thread_id: Optional[UUID] = Field(None, description="LangGraph workflow thread ID for content generation tracking")
 
     # Metadata fields (optional, will create related records if provided)
     metadata: Optional[ContentMetadataSchema] = Field(None, description="Content metadata")

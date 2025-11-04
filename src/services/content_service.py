@@ -19,6 +19,7 @@ Does NOT:
 
 from typing import List, Optional, Dict, Any
 from uuid import UUID
+from uuid import uuid4
 from datetime import datetime, timezone
 import re
 
@@ -39,6 +40,8 @@ from src.api.middleware.exceptions import (
     DuplicateResourceException
 )
 from dotenv import load_dotenv
+from src.api.database.async_database import get_async_db_context
+from sqlalchemy.ext.asyncio import AsyncSession
 import asyncio
 import os
 load_dotenv()
@@ -72,16 +75,25 @@ class ContentService(LangGraphService):
         )
         self.db = db
     
-    async def _run_stream_in_background(self, assistant_id, payload):
+    async def _run_stream_in_background(self, assistant_id, thread_id,payload):
         """Run the LangGraph stream in the background and update content progress."""
-        try:
-            async for mode, chunk in self.stream_content(
-                assistant_id=assistant_id,
-                input_payload={"request_payload": payload},
-            ):
-                logger.info(f"Streaming update: mode={mode}, chunk={chunk}")
-        except Exception as e:
-            logger.error(f"Error while streaming content generation: {e}")
+        async with get_async_db_context() as db:  # new session
+            self.db = db
+            try:
+                async for mode, chunk in self.stream_content(
+                    assistant_id=assistant_id,
+                    thread_id=thread_id,
+                    input_payload={"request_payload": payload},
+                ):
+                    logger.info(f"Streaming update: mode={mode}, chunk={chunk}")
+                    await self.update_progress(
+                        content_id=UUID(payload['content_id']),
+                        step=chunk.get("name", "unknown")
+                    )
+            except Exception as e:
+                logger.error(f"Error while streaming content generation: {e}")
+            finally:
+                logger.info("!!!!!!!!!!!! Finally block of stream_content loop !!!!!!!!!!!!!!")
 
     async def create_content(
         self,
@@ -113,8 +125,10 @@ class ContentService(LangGraphService):
         base_slug = self._slugify(data.title)
         unique_slug = await self._generate_unique_slug(workspace_id, base_slug)
 
+        # create a thread
+        thread = await self.create_thread(thread_id=str(uuid4()))
+
         # Create content entity
-        # Default status is "generating" for new content that will be auto-generated
         # If body_markdown is provided, status can be "draft" (manual content)
         default_status = "generating" if not data.body_markdown else "draft"
 
@@ -130,12 +144,12 @@ class ContentService(LangGraphService):
             content_format=data.content_format or "Markdown",
             status=data.status or default_status,  # Auto-set to "generating" if no body provided
             content_language=data.content_language or "English",
-            langgraph_thread_id=data.langgraph_thread_id,  # Store thread ID if provided
+            langgraph_thread_id=thread['thread_id'],  # Store thread ID
             created_at=datetime.now(timezone.utc),
             updated_at=datetime.now(timezone.utc)
         )
         self.db.add(content)
-        await self.db.flush()  # Get content.id without committing
+        await self.db.flush()
 
         # Create metadata JSONB if provided (consolidated from content_metadata table)
         if data.metadata:
@@ -193,19 +207,6 @@ class ContentService(LangGraphService):
             extra={"workspace_id": str(workspace_id), "user_id": str(user_id), "title": data.title}
         )
 
-        # Content generation will be triggered by background task in the route
-        # This allows immediate API response while generation runs in background
-        # create the assistant
-        assistant = await self.create_assistant(
-            graph_id="agent",
-            config={},
-            metadata={},
-            name=f"Content Generation Assistant for content {content.id}"
-        )
-
-        # create a thread 
-        # thread = await self.create_thread(thread_id="1234")
-
         # Build payload
         payload = Payload(
             content_id=str(content.id),
@@ -216,10 +217,17 @@ class ContentService(LangGraphService):
             content_language=data.content_language,
             content_format=data.content_format,
         )
+        # create the assistant
+        assistant = await self.create_assistant(
+            graph_id="agent",
+            config={},
+            metadata={},
+            name=f"Content Generation Assistant for content {content.id}"
+        )
 
         # Launch streaming process in background (non-blocking)
         asyncio.create_task(
-            self._run_stream_in_background(assistant["assistant_id"], payload)
+            self._run_stream_in_background(assistant["assistant_id"],thread['thread_id'], payload)
         )
         return content
     

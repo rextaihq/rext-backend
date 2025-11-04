@@ -38,7 +38,7 @@ class ThreadManager:
         Returns:
             A dict representing the created thread from LangGraph.
         """
-        client = await self._get_client()
+        client = await self.get_client()
         try:
             thread = await client.threads.create(
                 metadata=metadata,
@@ -63,7 +63,7 @@ class ThreadManager:
         Returns:
             Thread object as dict.
         """
-        client = await self._get_client()
+        client = await self.get_client()
         return await client.threads.get(thread_id)
 
     async def update_thread(
@@ -83,7 +83,7 @@ class ThreadManager:
         Returns:
             The updated thread object.
         """
-        client = await self._get_client()
+        client = await self.get_client()
         return await client.threads.update(
             thread_id=thread_id,
             metadata=metadata,
@@ -100,7 +100,7 @@ class ThreadManager:
         Returns:
             None
         """
-        client = await self._get_client()
+        client = await self.get_client()
         await client.threads.delete(thread_id)
 
     async def search_threads(
@@ -124,7 +124,7 @@ class ThreadManager:
         Returns:
             A list of thread dicts.
         """
-        client = await self._get_client()
+        client = await self.get_client()
         return await client.threads.search(
             metadata=metadata,
             status=status,
@@ -154,7 +154,7 @@ class ThreadManager:
         Returns:
             A list of state snapshots for the thread.
         """
-        client = await self._get_client()
+        client = await self.get_client()
         return await client.threads.get_history(
             thread_id=thread_id,
             checkpoint=checkpoint,

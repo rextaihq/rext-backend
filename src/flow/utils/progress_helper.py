@@ -9,7 +9,7 @@ from typing import Optional, Dict, Any
 from uuid import UUID
 
 from src.api.database.async_database import get_async_db
-from src.services.content_progress_service import ContentProgressService
+
 from src.utils.logger import logger
 
 
