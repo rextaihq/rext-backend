@@ -11,6 +11,7 @@ from src.api.database.async_database import get_async_db
 from src.states.schemas import SaveTopicRequestList
 from src.services.topic_enrichment_service import TopicEnrichmentService
 from src.services.topic_service import TopicService
+from src.services.user_service import UserService
 from src.utils.response_utils import success, error, unauthorized, not_found, no_content
 from src.utils.workspace_utils import resolve_and_verify_workspace
 from src.utils.route_decorators import db_transaction_handler, require_permissions
@@ -144,6 +145,10 @@ async def generate_topic(
                 basic_topic_dict["suggested_defaults"] = enrichment_service._create_suggested_defaults(
                     basic_topic_dict, data.model_dump()
                 ).model_dump()
+                # ✅ Add user info here
+                basic_topic_dict["generated_by_user_id"] = str(user.get("identity"))
+                basic_topic_dict["generated_by_user_name"] = user.get("full_name") or user.get("name") or "Unknown User"
+
                 display_topics.append(basic_topic_dict)
 
             enrich_trace.outputs = {"enriched_topics": len(display_topics)}
@@ -201,15 +206,31 @@ async def save_topic(
     # Verify workspace access and membership in one call
     workspace, membership = await resolve_and_verify_workspace(db, workspace_id, uuid.UUID(user_id))
 
+    # Fetch full user data from database to get first_name and last_name
+    user_service = UserService(db)
+    db_user = await user_service.get_user_by_id(uuid.UUID(user_id))
+    first_name = db_user.first_name
+    last_name = db_user.last_name
     # Save topics if provided
     if data.topics:
+        # Create updated topic objects with user info (mandatory)
+        updated_topics = []
+        for topic in data.topics:
+            updated_topic = topic.model_copy(update={
+                "generated_by_user_id": user_id,
+                "generated_by_first_name": first_name,
+                "generated_by_last_name": last_name
+            })
+            updated_topics.append(updated_topic)
+        
+        # Use the updated topics list
+        data.topics = updated_topics
 
-        # Use TopicService to create topics
         service = TopicService(db)
         saved = await service.create_topics(
             workspace_id=workspace.id,
             user_id=uuid.UUID(user_id),
-            topics_data=data.topics
+            topics_data=updated_topics
         )
 
         # Return raw data - decorator handles success response and commit
@@ -274,7 +295,10 @@ async def get_topic(
         "user_settings": topic.user_settings,
         "created_at": topic.created_at.isoformat() if hasattr(topic, 'created_at') and topic.created_at else None,
         "updated_at": topic.updated_at.isoformat() if hasattr(topic, 'updated_at') and topic.updated_at else None,
-        "approved_at": topic.approved_at.isoformat() if hasattr(topic, 'approved_at') and topic.approved_at else None
+        "approved_at": topic.approved_at.isoformat() if hasattr(topic, 'approved_at') and topic.approved_at else None,
+        "generated_by_user_id": str(topic.generated_by_user_id) if topic.generated_by_user_id else None,
+        "generated_by_first_name": topic.generated_by_first_name if topic.generated_by_first_name else None,
+        "generated_by_last_name": topic.generated_by_last_name if topic.generated_by_last_name else None,
     }
 
 
@@ -325,7 +349,10 @@ async def get_topics(
             "approved": topic.approved,
             "created_at": topic.created_at.isoformat() if hasattr(topic, 'created_at') and topic.created_at else None,
             "updated_at": topic.updated_at.isoformat() if hasattr(topic, 'updated_at') and topic.updated_at else None,
-            "approved_at": topic.approved_at.isoformat() if hasattr(topic, 'approved_at') and topic.approved_at else None
+            "approved_at": topic.approved_at.isoformat() if hasattr(topic, 'approved_at') and topic.approved_at else None,
+            "generated_by_user_id": str(topic.generated_by_user_id) if topic.generated_by_user_id else None,
+            "generated_by_first_name": topic.generated_by_first_name if topic.generated_by_first_name else None,
+            "generated_by_last_name": topic.generated_by_last_name if topic.generated_by_last_name else None,
         }
         for topic in topics
     ]

@@ -11,6 +11,9 @@ class TopicsModel(Base, SerializableMixin):
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, unique=True, nullable=False)  # Changed to String to match schema
     workspace_id = Column(UUID(as_uuid=True), ForeignKey("workspace.id", ondelete="CASCADE"), nullable=False, index=True)
+    generated_by_user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    generated_by_first_name = Column(String, nullable=True)
+    generated_by_last_name = Column(String, nullable=True)
     title = Column(String, nullable=False)
     angle = Column(String, nullable=False)
     description = Column(String, nullable=False)  # New field
@@ -33,6 +36,7 @@ class TopicsModel(Base, SerializableMixin):
     # Relationships
     workspace = relationship("WorkspaceModel", back_populates="topics")
     content_items = relationship("Content", back_populates="topic")
+    generated_by = relationship("Users", foreign_keys=[generated_by_user_id], backref="topics_generated")
 
     def to_dict(self) -> dict:
         """Custom serialization for Topics model"""

@@ -98,10 +98,18 @@ class TopicService:
                 topic_uuid = UUID(save_topic_data.id) if isinstance(save_topic_data.id, str) else save_topic_data.id
                 enriched_topic.id = topic_uuid
 
+                # Extract user info from SaveTopicRequest (now mandatory)
+                generated_by_user_id = save_topic_data.generated_by_user_id
+                generated_by_first_name = save_topic_data.generated_by_first_name
+                generated_by_last_name = save_topic_data.generated_by_last_name
+
                 # Create database record with fully enriched data
                 db_topic = Topics(
                     id=topic_uuid,
                     workspace_id=workspace_id,
+                    generated_by_user_id=UUID(generated_by_user_id) if generated_by_user_id else None,
+                    generated_by_first_name=generated_by_first_name,
+                    generated_by_last_name=generated_by_last_name,
                     title=enriched_topic.title,
                     angle=enriched_topic.angle,
                     description=enriched_topic.description,
