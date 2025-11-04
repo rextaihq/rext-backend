@@ -4,6 +4,7 @@ from typing import Dict, Any, Optional
 from src.flow.service.utils import get_progress_percent
 from src.flow.states.content_state import ContentState
 from src.flow.service.process_manager import ProgressManager
+from sqlalchemy.ext.asyncio import AsyncSession
 from src.utils.logger import logger
 
 class RunManager(ProgressManager):
@@ -21,6 +22,8 @@ class RunManager(ProgressManager):
         - `self.update_content_progress(content_id, progress_payload)` method
           to persist progress updates (e.g., from ProgressManager).
     """
+    def __init__(self, db: AsyncSession):
+        super().__init__(db)
     # Background runner
     async def create_content(
         self,
@@ -38,7 +41,7 @@ class RunManager(ProgressManager):
             thread_id: Optional thread ID for the run.
             metadata: Optional metadata dictionary.
 
-        Returns:
+        Returns
             Dict containing the initial response from LangGraph for the run.
         """
         client = await self.get_client()
@@ -78,7 +81,7 @@ class RunManager(ProgressManager):
             extra={"assistant_id": assistant_id, "thread_id": thread_id}
         )
         # initalizing progress tracking
-        self.initialize_progress(
+        await self.initialize_progress(
             content_id=UUID(input_payload["request_payload"]["content_id"]),
             step="initializing"
         )
@@ -91,20 +94,16 @@ class RunManager(ProgressManager):
             "assistant_id": assistant_id,
             "input": input_payload,
             "thread_id": thread_id,
-            "stream_mode": ["updates"],
+            "stream_mode": ["tasks"],
         }
         if metadata:
             stream_args["metadata"] = metadata
 
         async for mode, chunk in client.runs.stream(**stream_args):
-            if isinstance(mode, str) and mode.lower() == "updates" and isinstance(chunk, dict):
-                for stage, value in chunk.items():
-                    await self.update_progress(
-                        content_id=UUID(input_payload["request_payload"]["content_id"]),
-                        step=stage,
-                        step_details=value,
-                        message=f"Stage '{stage}' in progress"
-                    )
+            logger.info(
+                f"Received stream update: mode={mode}, chunk={chunk}",
+                extra={"assistant_id": assistant_id, "thread_id": thread_id})
+           
             yield mode, chunk
 
 

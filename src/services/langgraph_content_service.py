@@ -36,7 +36,7 @@ from src.api.middleware.exceptions import (
     ResourceNotFoundException
 )
 from src.services.email_service import EmailService
-from src.services.content_progress_service import ContentProgressService
+
 
 
 
@@ -146,7 +146,7 @@ class LangGraphContentService:
                     step = node_to_step_map[name]
                     logger.info(f"Node started: {name} -> {step}")
                     try:
-                        progress_service = ContentProgressService(self.db)
+                        progress_service = None
                         await progress_service.update_progress(
                             content_id=content_id,
                             step=step

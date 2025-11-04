@@ -10,9 +10,7 @@ from src.api.middleware.exceptions import WrextValidationException
 from src.api.schema.content_schema import ContentCreate, ContentUpdate
 from src.utils.workspace_utils import resolve_and_verify_workspace
 from src.services.content_service import ContentService
-from src.services.content_progress_service import ContentProgressService
 from src.api.tasks.content_generation import run_content_generation_background
-
 
 router = APIRouter()
 
@@ -73,13 +71,6 @@ async def create_content(
         user_id=UUID(user_id),
         data=data
     )
-
-    # Initialize progress tracking
-    # progress_service = ContentProgressService(db)
-    # await progress_service.initialize_progress(
-    #     content_id=content.id,
-    #     step="initializing"
-    # )
 
     # Trigger background content generation
     # Frontend should subscribe to SSE using content.id as operation_id

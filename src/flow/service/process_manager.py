@@ -25,15 +25,15 @@ class ProgressManager:
     # Progress step definitions with percentages
     PROGRESS_STEPS = {
         "initializing": {"percent": 0, "message": "Initializing content generation..."},
-        "fetching_user": {"percent": 10, "message": "Fetching user information..."},
-        "fetching_workspace": {"percent": 15, "message": "Loading workspace details..."},
-        "fetching_topic": {"percent": 20, "message": "Retrieving topic information..."},
-        "gathering_web_context": {"percent": 30, "message": "Searching web for relevant context..."},
-        "gathering_knowledge_context": {"percent": 40, "message": "Retrieving workspace knowledge..."},
-        "scraping_content": {"percent": 50, "message": "Scraping and processing sources..."},
-        "reranking_documents": {"percent": 60, "message": "Ranking content by relevance..."},
-        "generating_blog": {"percent": 75, "message": "Generating content with AI..."},
-        "saving_content": {"percent": 95, "message": "Saving generated content..."},
+        "FetchUser": {"percent": 10, "message": "Fetching user information..."},
+        "FetchWorkspace": {"percent": 15, "message": "Loading workspace details..."},
+        "FetchTopic": {"percent": 20, "message": "Retrieving topic information..."},
+        "WebContext": {"percent": 30, "message": "Searching web for relevant context..."},
+        "KnowledgeContext": {"percent": 40, "message": "Retrieving workspace knowledge..."},
+        "ScrapeContent": {"percent": 50, "message": "Scraping and processing sources..."},
+        "RerankContent": {"percent": 60, "message": "Ranking content by relevance..."},
+        "BlogGeneration": {"percent": 75, "message": "Generating content with AI..."},
+        "SaveContent": {"percent": 95, "message": "Saving generated content..."},
         "completed": {"percent": 100, "message": "Content generation completed!"},
         "failed": {"percent": -1, "message": "Content generation failed"}
     }
@@ -62,6 +62,9 @@ class ProgressManager:
         Returns:
             Created ContentProgress record
         """
+        logger.debug(
+            f"Initializing progress for content {content_id} at step {step}"
+        )
         step_info = self.PROGRESS_STEPS.get(step, {"percent": 0, "message": "Starting..."})
 
         progress = ContentProgress(
@@ -77,6 +80,8 @@ class ProgressManager:
 
         self.db.add(progress)
         await self.db.flush()
+        await self.db.commit()
+        await self.db.refresh(progress)
 
         logger.info(
             f"Progress initialized for content {content_id}",
@@ -103,6 +108,7 @@ class ProgressManager:
             step_details: Additional step-specific data (optional)
             estimated_time_remaining: Estimated seconds remaining (optional)
         """
+        logger.info("Updating progress", extra={"content_id": content_id, "step": step})
         step_info = self.PROGRESS_STEPS.get(step)
         if not step_info:
             logger.warning(f"Unknown progress step: {step}")
@@ -134,6 +140,9 @@ class ProgressManager:
                 progress.step_details = step_details
 
         await self.db.flush()
+        await self.db.commit()
+        await self.db.refresh(progress)
+        
 
         # Determine status for SSE event
         if progress_percent == 100:
