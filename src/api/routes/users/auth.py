@@ -179,17 +179,18 @@ async def register_with_invitation(
     _rate_limit: None = Depends(registration_rate_limit())
 ):
     """
-    Create a new user account via workspace invitation.
+    Create a new user account via workspace invitation OR accept invitation for existing user.
 
     This endpoint handles the complete invitation acceptance flow:
     1. Validates the invitation token
-    2. Creates the user account
-    3. Auto-accepts the invitation
-    4. Creates workspace membership
-    5. Skips email verification (invitation email already validated)
-    6. Returns user + workspace context
+    2. Checks if user already exists:
+       a. If user exists: Auto-accepts invitation and adds to workspace
+       b. If new user: Creates user account, auto-accepts invitation
+    3. Creates workspace membership
+    4. Skips email verification (invitation email already validated)
+    5. Returns user + workspace context
 
-    This is the recommended flow for users signing up via invitation links.
+    This is the recommended flow for users accepting invitation links.
 
     Args:
         user_data: RegisterWithInvitation schema with user details + invitation token
@@ -203,9 +204,9 @@ async def register_with_invitation(
     Raises:
         ResourceNotFoundException: If invitation not found
         BusinessRuleViolationException: If invitation expired or email mismatch
-        DuplicateResourceException: If user already exists
     """
     from src.services.invitation_service import InvitationService
+    from src.services.user_service import UserService
     from src.utils.invitation_utils import is_invitation_expired
 
     try:
@@ -264,40 +265,75 @@ async def register_with_invitation(
                 rule_name="email_must_match_invitation"
             )
 
-        # Step 3: Create user account
-        auth_service = AuthService(db)
-        new_user, verification_token = await auth_service.register_user(
-            email=user_data.email,
-            username=user_data.username,
-            password=user_data.password,
-            first_name=user_data.first_name,
-            last_name=user_data.last_name
-        )
+        # Step 3: Check if user already exists
+        user_service = UserService(db)
+        existing_user = await user_service.get_user_by_email(user_data.email)
 
-        # Step 4: Skip email verification for invited users
-        # Rationale: Email was already validated by invitation system
-        new_user.email_verified = True
-        new_user.email_verified_at = datetime.utcnow()
-        await db.flush()
+        if existing_user:
+            user_exists = True
+            current_user = existing_user
+            logger.info(
+                f"Existing user found for invitation: {user_data.email}",
+                extra={
+                    "user_id": str(existing_user.id),
+                    "invitation_id": str(invitation.id)
+                }
+            )
+        else:
+            user_exists = False
+            current_user = None
+            logger.info(
+                f"New user will be created for invitation: {user_data.email}",
+                extra={
+                    "invitation_id": str(invitation.id)
+                }
+            )
+
+        # Step 4: Create user account if doesn't exist, otherwise use existing
+        if not user_exists:
+            auth_service = AuthService(db)
+            new_user, verification_token = await auth_service.register_user(
+                email=user_data.email,
+                username=user_data.username,
+                password=user_data.password,
+                first_name=user_data.first_name,
+                last_name=user_data.last_name
+            )
+
+            # Skip email verification for invited users
+            # Rationale: Email was already validated by invitation system
+            new_user.email_verified = True
+            new_user.email_verified_at = datetime.utcnow()
+            await db.flush()
+
+            current_user = new_user
+            logger.info(
+                f"New user created via invitation: {user_data.email}",
+                extra={
+                    "user_id": str(new_user.id),
+                    "invitation_id": str(invitation.id)
+                }
+            )
 
         # Step 5: Auto-accept invitation
         acceptance_result = await invitation_service.accept_invitation(
             invitation_id=invitation.id,
-            user_id=new_user.id
+            user_id=current_user.id
         )
 
         # Commit transaction before background tasks
         await db.commit()
 
-        # Step 6: Send welcome email (not verification email)
-        frontend_url = settings.FRONTEND_URL
-        background_tasks.add_task(
-            send_welcome_email_task,
-            email=new_user.email,
-            first_name=new_user.first_name,
-            user_id=str(new_user.id),
-            frontend_url=frontend_url
-        )
+        # Step 6: Send welcome email for new users only
+        if not user_exists:
+            frontend_url = settings.FRONTEND_URL
+            background_tasks.add_task(
+                send_welcome_email_task,
+                email=current_user.email,
+                first_name=current_user.first_name,
+                user_id=str(current_user.id),
+                frontend_url=frontend_url
+            )
 
         # Step 7: Get workspace details for response
         from src.services.workspace_service import WorkspaceService
@@ -314,18 +350,18 @@ async def register_with_invitation(
 
         # Step 8: Return comprehensive response with workspace context
         user_data_response = {
-            "id": str(new_user.id),
-            "username": new_user.username,
-            "email": new_user.email,
-            "first_name": new_user.first_name,
-            "last_name": new_user.last_name,
-            "display_name": new_user.display_name,
-            "language": new_user.language,
-            "timezone": new_user.timezone,
-            "status": new_user.status,
-            "email_verified": new_user.email_verified,
+            "id": str(current_user.id),
+            "username": current_user.username,
+            "email": current_user.email,
+            "first_name": current_user.first_name,
+            "last_name": current_user.last_name,
+            "display_name": current_user.display_name,
+            "language": current_user.language,
+            "timezone": current_user.timezone,
+            "status": current_user.status,
+            "email_verified": current_user.email_verified,
             "roles": [{"name": assigned_role.name, "display_name": assigned_role.display_name}] if assigned_role else [{"name": "user", "display_name": "User"}],
-            "created_at": new_user.created_at.isoformat() if hasattr(new_user, 'created_at') else None,
+            "created_at": current_user.created_at.isoformat() if hasattr(current_user, 'created_at') else None,
         }
 
         workspace_data = {
@@ -335,12 +371,15 @@ async def register_with_invitation(
             "membership_id": acceptance_result["membership_id"]
         }
 
+        action_message = "Account created and workspace joined" if not user_exists else "Workspace joined"
+
         logger.info(
-            f"User registered via invitation: {new_user.email}",
+            f"User {'registered' if not user_exists else 'accepted invitation'} via invitation: {current_user.email}",
             extra={
-                "user_id": str(new_user.id),
+                "user_id": str(current_user.id),
                 "workspace_id": str(workspace.id),
-                "invitation_id": str(invitation.id)
+                "invitation_id": str(invitation.id),
+                "user_existed": user_exists
             }
         )
 
@@ -349,13 +388,14 @@ async def register_with_invitation(
                 "user": user_data_response,
                 "workspace": workspace_data,
                 "invitation_accepted": True,
+                "user_existed": user_exists,
                 "message": f"Welcome! You've joined {workspace.name}"
             },
             request=request,
-            message="Account created and workspace joined successfully"
+            message=f"{action_message} successfully"
         )
 
-    except (ResourceNotFoundException, BusinessRuleViolationException, DuplicateResourceException):
+    except (ResourceNotFoundException, BusinessRuleViolationException):
         # Re-raise to be handled by middleware
         raise
     except Exception as e:
