@@ -458,6 +458,7 @@ class InvitationService:
             )
 
         invitation.status = "revoked"
+        await self.db.flush()
 
         logger.info(
             f"Invitation revoked: {invitation.email}",

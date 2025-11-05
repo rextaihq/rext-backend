@@ -8,7 +8,7 @@ import os
 from src.utils.logger import logger
 from src.utils.response_utils import success, error
 from src.utils.invitation_utils import is_invitation_expired
-from src.utils.audit_helper import create_audit_log
+from src.utils.audit_helper import create_audit_log_async
 from src.utils.route_decorators import db_transaction_handler, require_permissions
 from src.api.database.async_database import get_async_db
 from src.api.security.dependencies import get_current_user
@@ -212,7 +212,7 @@ async def revoke_invitation(
     )
 
     # Create audit log (audit concern - stays in route)
-    create_audit_log(
+    await create_audit_log_async(
         db=db,
         user_id=user_id,
         action="invitation.revoke",
