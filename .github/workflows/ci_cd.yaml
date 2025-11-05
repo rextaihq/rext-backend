@@ -2,11 +2,14 @@ name: project_CI
 
 on:
   pull_request:
+    types:
+      - closed
     branches:
       - main
 
 jobs:
   build:
+    if: github.event.pull_request.merged == true
     runs-on: ubuntu-latest
 
     steps:
