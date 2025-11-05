@@ -547,3 +547,38 @@ class InvitationService:
         )
 
         return invitation
+
+    # remvove invitation if exists
+    async def remove_invitation_if_exists(
+        self,
+        workspace_id: UUID,
+        email: str
+    ) -> None:
+        """
+        Remove an invitation if it exists for the given email and workspace.
+
+        Args:
+            workspace_id: Workspace UUID
+            email: Invitee email
+        Returns:
+            None
+        """
+        email = email.lower().strip()
+        result = await self.db.execute(
+            select(UserInvitations).where(
+                and_(
+                    UserInvitations.email == email,
+                    UserInvitations.workspace_id == workspace_id
+                )
+            )
+        )
+        invitation = result.scalar_one_or_none()
+        if invitation:
+            await self.db.delete(invitation)
+            logger.info(
+                f"Invitation removed: {email}",
+                extra={
+                    "workspace_id": str(workspace_id),
+                    "invitation_id": str(invitation.id)
+                }
+            )
