@@ -19,6 +19,7 @@ Does NOT:
 
 from typing import List, Optional, Dict, Any
 from uuid import UUID
+from uuid import uuid4
 from datetime import datetime, timezone
 import re
 
@@ -39,18 +40,27 @@ from src.api.middleware.exceptions import (
     DuplicateResourceException
 )
 from dotenv import load_dotenv
+from src.api.database.async_database import get_async_db_context
+from sqlalchemy.ext.asyncio import AsyncSession
+from src.services.sse_service import (
+    emit_step_start,
+    emit_step_progress,
+    emit_step_success,
+    emit_step_failure,
+    emit_pipeline_complete,
+    event_stream_manager,
+)
 import asyncio
 import os
+
 load_dotenv()
+
 
 class ContentService(LangGraphService):
     """Service for content business logic"""
 
     def __init__(
-            self,
-            db: AsyncSession,
-            url: Optional[str] = None,
-            api_key: Optional[str] = None
+        self, db: AsyncSession, url: Optional[str] = None, api_key: Optional[str] = None
     ):
         """
         Initialize ContentService.
@@ -61,33 +71,69 @@ class ContentService(LangGraphService):
             api_key: Optional LangSmith API key (defaults to settings)
         """
         from src.api.config import get_settings
+
         settings = get_settings()
 
         url = url or settings.LANGSMITH_DEV_URL
         api_key = api_key or settings.LANGSMITH_API_KEY
-        super().__init__(
-            db=db,
-            url=url, 
-            api_key=api_key
-        )
+        super().__init__(db=db, url=url, api_key=api_key)
         self.db = db
-    
-    async def _run_stream_in_background(self, assistant_id, payload):
+
+    async def _run_stream_in_background(self, assistant_id, thread_id, payload):
         """Run the LangGraph stream in the background and update content progress."""
-        try:
-            async for mode, chunk in self.stream_content(
-                assistant_id=assistant_id,
-                input_payload={"request_payload": payload},
-            ):
-                logger.info(f"Streaming update: mode={mode}, chunk={chunk}")
-        except Exception as e:
-            logger.error(f"Error while streaming content generation: {e}")
+        async with get_async_db_context() as db:  # new session
+            self.db = db
+            operation_id = payload["content_id"]
+            scope = "content"
+            try:
+                await emit_step_start(
+                    operation_id=payload["content_id"],
+                    scope=scope,
+                    step="generation_started",
+                    message="Content generation process initiated.",
+                    progress=00,  # Optional: starting progress
+                )
+                async for mode, chunk in self.stream_content(
+                    assistant_id=assistant_id,
+                    thread_id=thread_id,
+                    input_payload={"request_payload": payload},
+                ):
+                    logger.info(f"Streaming update: mode={mode}, chunk={chunk}")
+                     # Parse step name and progress safely
+                    step_name = chunk.get("data", {}).get("node", "unknown")
+                    message = chunk.get("data", {}).get("message", "Working...")
+                    # await self.update_progress(
+                    #     content_id=UUID(payload["content_id"]),
+                    #     step=chunk.get("name", "unknown"),
+                    # )
+
+                    # send SSE updates based on chunk data
+                    await emit_step_progress(
+                        operation_id=payload["content_id"],
+                        scope="scope",
+                        step=step_name,
+                        message=message,
+                        progress=chunk.get("progress", 50),
+                    )
+
+                    # send success for completed tasks
+                    if chunk.get("status") == "completed":
+                        await emit_step_success(
+                            operation_id=payload["content_id"],
+                            scope="scope",
+                            step=chunk.get("name", "unknown"),
+                            message=chunk.get("message", "Step completed."),
+                            progress=chunk.get("progress", 0),
+                        )
+            except Exception as e:
+                logger.error(f"Error while streaming content generation: {e}")
+            finally:
+                logger.info(
+                    "!!!!!!!!!!!! Finally block of stream_content loop !!!!!!!!!!!!!!"
+                )
 
     async def create_content(
-        self,
-        workspace_id: UUID,
-        user_id: UUID,
-        data: ContentCreate
+        self, workspace_id: UUID, user_id: UUID, data: ContentCreate
     ) -> Content:
         """
         Create new content with metadata and SEO data.
@@ -113,8 +159,10 @@ class ContentService(LangGraphService):
         base_slug = self._slugify(data.title)
         unique_slug = await self._generate_unique_slug(workspace_id, base_slug)
 
+        # create a thread
+        thread = await self.create_thread(thread_id=str(uuid4()))
+
         # Create content entity
-        # Default status is "generating" for new content that will be auto-generated
         # If body_markdown is provided, status can be "draft" (manual content)
         default_status = "generating" if not data.body_markdown else "draft"
 
@@ -128,14 +176,17 @@ class ContentService(LangGraphService):
             slug=unique_slug,
             body_markdown=data.body_markdown,
             content_format=data.content_format or "Markdown",
-            status=data.status or default_status,  # Auto-set to "generating" if no body provided
+            status=data.status
+            or default_status,  # Auto-set to "generating" if no body provided
             content_language=data.content_language or "English",
-            langgraph_thread_id=data.langgraph_thread_id,  # Store thread ID if provided
+            langgraph_thread_id=thread["thread_id"],  # Store thread ID
             created_at=datetime.now(timezone.utc),
-            updated_at=datetime.now(timezone.utc)
+            updated_at=datetime.now(timezone.utc),
         )
         self.db.add(content)
-        await self.db.flush()  # Get content.id without committing
+        await self.db.flush()
+
+        await event_stream_manager.set_operation_owner(str(content.id), user_id)
 
         # Create metadata JSONB if provided (consolidated from content_metadata table)
         if data.metadata:
@@ -157,7 +208,7 @@ class ContentService(LangGraphService):
                 "featured_image_prompt": data.metadata.featured_image_prompt,
                 "featured_image_alt_text": data.metadata.featured_image_alt_text,
                 "created_at": datetime.now(timezone.utc).isoformat(),
-                "updated_at": datetime.now(timezone.utc).isoformat()
+                "updated_at": datetime.now(timezone.utc).isoformat(),
             }
 
         # Create SEO data if provided
@@ -170,41 +221,30 @@ class ContentService(LangGraphService):
                 content_search_intent=data.seo_data.content_search_intent,
                 content_seo_score=data.seo_data.content_seo_score,
                 content_readability_score=data.seo_data.content_readability_score,
-                created_at=datetime.now(timezone.utc)
+                created_at=datetime.now(timezone.utc),
             )
             self.db.add(seo_data)
 
         await self.db.flush()
-        
+
         # Eagerly load relationships to avoid lazy loading in async context
         # This prevents "greenlet_spawn has not been called" errors when to_dict() accesses relationships
         query = (
             select(Content)
             .where(Content.id == content.id)
-            .options(
-                selectinload(Content.seo_data)
-            )
+            .options(selectinload(Content.seo_data))
         )
         result = await self.db.execute(query)
         content = result.scalar_one()
 
         logger.info(
             f"Content created: {content.id}",
-            extra={"workspace_id": str(workspace_id), "user_id": str(user_id), "title": data.title}
+            extra={
+                "workspace_id": str(workspace_id),
+                "user_id": str(user_id),
+                "title": data.title,
+            },
         )
-
-        # Content generation will be triggered by background task in the route
-        # This allows immediate API response while generation runs in background
-        # create the assistant
-        assistant = await self.create_assistant(
-            graph_id="agent",
-            config={},
-            metadata={},
-            name=f"Content Generation Assistant for content {content.id}"
-        )
-
-        # create a thread 
-        # thread = await self.create_thread(thread_id="1234")
 
         # Build payload
         payload = Payload(
@@ -216,19 +256,24 @@ class ContentService(LangGraphService):
             content_language=data.content_language,
             content_format=data.content_format,
         )
+        # create the assistant
+        assistant = await self.create_assistant(
+            graph_id="agent",
+            config={},
+            metadata={},
+            name=f"Content Generation Assistant for content {content.id}",
+        )
 
         # Launch streaming process in background (non-blocking)
         asyncio.create_task(
-            self._run_stream_in_background(assistant["assistant_id"], payload)
+            self._run_stream_in_background(
+                assistant["assistant_id"], thread["thread_id"], payload
+            )
         )
         return content
-    
+
     async def update_content(
-        self,
-        content_id: UUID,
-        workspace_id: UUID,
-        user_id: UUID,
-        data: ContentUpdate
+        self, content_id: UUID, workspace_id: UUID, user_id: UUID, data: ContentUpdate
     ) -> Content:
         """
         Update existing content.
@@ -260,9 +305,7 @@ class ContentService(LangGraphService):
             base_slug = self._slugify(data.title)
             # Exclude current content from uniqueness check
             unique_slug = await self._generate_unique_slug(
-                workspace_id,
-                base_slug,
-                exclude_id=content.id
+                workspace_id, base_slug, exclude_id=content.id
             )
             content.slug = unique_slug
             content.title = data.title
@@ -290,7 +333,10 @@ class ContentService(LangGraphService):
             content.topic_id = data.topic_id
 
         # Update LangGraph thread ID if provided
-        if hasattr(data, 'langgraph_thread_id') and data.langgraph_thread_id is not None:
+        if (
+            hasattr(data, "langgraph_thread_id")
+            and data.langgraph_thread_id is not None
+        ):
             content.langgraph_thread_id = data.langgraph_thread_id
 
         content.updated_at = datetime.now(timezone.utc)
@@ -314,7 +360,9 @@ class ContentService(LangGraphService):
             if data.metadata.content_word_count is not None:
                 metadata_json["content_word_count"] = data.metadata.content_word_count
             if data.metadata.reading_time_minutes is not None:
-                metadata_json["reading_time_minutes"] = data.metadata.reading_time_minutes
+                metadata_json["reading_time_minutes"] = (
+                    data.metadata.reading_time_minutes
+                )
             if data.metadata.audience_size is not None:
                 metadata_json["audience_size"] = data.metadata.audience_size
             if data.metadata.complexity_level is not None:
@@ -328,11 +376,17 @@ class ContentService(LangGraphService):
             if data.metadata.source_references is not None:
                 metadata_json["source_references"] = data.metadata.source_references
             if data.metadata.content_quality_scores is not None:
-                metadata_json["content_quality_scores"] = data.metadata.content_quality_scores
+                metadata_json["content_quality_scores"] = (
+                    data.metadata.content_quality_scores
+                )
             if data.metadata.featured_image_prompt is not None:
-                metadata_json["featured_image_prompt"] = data.metadata.featured_image_prompt
+                metadata_json["featured_image_prompt"] = (
+                    data.metadata.featured_image_prompt
+                )
             if data.metadata.featured_image_alt_text is not None:
-                metadata_json["featured_image_alt_text"] = data.metadata.featured_image_alt_text
+                metadata_json["featured_image_alt_text"] = (
+                    data.metadata.featured_image_alt_text
+                )
 
             metadata_json["updated_at"] = datetime.now(timezone.utc).isoformat()
             content.metadata_json = metadata_json
@@ -347,15 +401,23 @@ class ContentService(LangGraphService):
             if seo_data:
                 # Update existing SEO data
                 if data.seo_data.content_primary_keywords is not None:
-                    seo_data.content_primary_keywords = data.seo_data.content_primary_keywords
+                    seo_data.content_primary_keywords = (
+                        data.seo_data.content_primary_keywords
+                    )
                 if data.seo_data.content_secondary_keywords is not None:
-                    seo_data.content_secondary_keywords = data.seo_data.content_secondary_keywords
+                    seo_data.content_secondary_keywords = (
+                        data.seo_data.content_secondary_keywords
+                    )
                 if data.seo_data.content_meta_description is not None:
-                    seo_data.content_meta_description = data.seo_data.content_meta_description
+                    seo_data.content_meta_description = (
+                        data.seo_data.content_meta_description
+                    )
                 if data.seo_data.content_seo_score is not None:
                     seo_data.content_seo_score = data.seo_data.content_seo_score
                 if data.seo_data.content_readability_score is not None:
-                    seo_data.content_readability_score = data.seo_data.content_readability_score
+                    seo_data.content_readability_score = (
+                        data.seo_data.content_readability_score
+                    )
                 seo_data.updated_at = datetime.now(timezone.utc)
             else:
                 # Create new SEO data
@@ -363,7 +425,7 @@ class ContentService(LangGraphService):
                     content_id=content.id,
                     content_primary_keywords=data.seo_data.content_primary_keywords,
                     content_meta_description=data.seo_data.content_meta_description,
-                    created_at=datetime.now(timezone.utc)
+                    created_at=datetime.now(timezone.utc),
                 )
                 self.db.add(seo_data)
 
@@ -372,21 +434,21 @@ class ContentService(LangGraphService):
 
         logger.info(
             f"Content updated: {content_id}",
-            extra={"workspace_id": str(workspace_id), "user_id": str(user_id)}
+            extra={"workspace_id": str(workspace_id), "user_id": str(user_id)},
         )
 
         return content
 
     async def delete_content(self, content_id: UUID, workspace_id: UUID) -> None:
         """
-        Soft delete content by setting deleted_at timestamp.
-/
-        Args:
-            content_id: Content UUID
-            workspace_id: Workspace UUID (for verification)
+                Soft delete content by setting deleted_at timestamp.
+        /
+                Args:
+                    content_id: Content UUID
+                    workspace_id: Workspace UUID (for verification)
 
-        Raises:
-            ResourceNotFoundException: If content not found
+                Raises:
+                    ResourceNotFoundException: If content not found
         """
         content = await self._get_content_or_404(content_id, workspace_id)
 
@@ -396,11 +458,12 @@ class ContentService(LangGraphService):
         await self.db.commit()
 
         logger.info(
-            f"Content deleted: {content_id}",
-            extra={"workspace_id": str(workspace_id)}
+            f"Content deleted: {content_id}", extra={"workspace_id": str(workspace_id)}
         )
 
-    async def publish_content(self, content_id: UUID, workspace_id: UUID, user_id: UUID) -> Content:
+    async def publish_content(
+        self, content_id: UUID, workspace_id: UUID, user_id: UUID
+    ) -> Content:
         """
         Publish content (business logic for publishing).
 
@@ -426,13 +489,19 @@ class ContentService(LangGraphService):
         if content.status != "ready":
             raise WrextValidationException(
                 message="Content must be in 'ready' status to publish",
-                field_errors={"status": [f"Cannot publish content with status '{content.status}'. Move to 'ready' first."]}
+                field_errors={
+                    "status": [
+                        f"Cannot publish content with status '{content.status}'. Move to 'ready' first."
+                    ]
+                },
             )
 
         if not content.body_markdown or content.body_markdown.strip() == "":
             raise WrextValidationException(
                 message="Cannot publish empty content",
-                field_errors={"body_markdown": ["Content body is required for publishing"]}
+                field_errors={
+                    "body_markdown": ["Content body is required for publishing"]
+                },
             )
 
         # Publish
@@ -441,7 +510,7 @@ class ContentService(LangGraphService):
 
         logger.info(
             f"Content published: {content_id}",
-            extra={"workspace_id": str(workspace_id), "user_id": str(user_id)}
+            extra={"workspace_id": str(workspace_id), "user_id": str(user_id)},
         )
 
         return content
@@ -453,7 +522,7 @@ class ContentService(LangGraphService):
         include_metadata: bool = False,
         include_seo: bool = False,
         limit: int = 100,
-        offset: int = 0
+        offset: int = 0,
     ) -> Dict[str, Any]:
         """
         List content for workspace with filtering and pagination.
@@ -471,8 +540,7 @@ class ContentService(LangGraphService):
         """
         # Build query
         query = select(Content).where(
-            Content.workspace_id == workspace_id,
-            Content.deleted_at == None
+            Content.workspace_id == workspace_id, Content.deleted_at == None
         )
 
         # Filter by status if provided
@@ -485,9 +553,10 @@ class ContentService(LangGraphService):
             query = query.options(selectinload(Content.seo_data))
 
         # Get total count
-        count_query = select(func.count()).select_from(Content).where(
-            Content.workspace_id == workspace_id,
-            Content.deleted_at == None
+        count_query = (
+            select(func.count())
+            .select_from(Content)
+            .where(Content.workspace_id == workspace_id, Content.deleted_at == None)
         )
         if status:
             count_query = count_query.where(Content.status == status)
@@ -507,23 +576,24 @@ class ContentService(LangGraphService):
             relationships.append("seo_data")
 
         content_list = [
-            content.to_dict(include_relationships=relationships if relationships else None)
+            content.to_dict(
+                include_relationships=relationships if relationships else None
+            )
             for content in content_items
         ]
 
-        logger.info(f"Listed {len(content_list)} content items for workspace {workspace_id}")
+        logger.info(
+            f"Listed {len(content_list)} content items for workspace {workspace_id}"
+        )
 
-        return {
-            "content": content_list,
-            "total_count": total_count
-        }
+        return {"content": content_list, "total_count": total_count}
 
     async def get_content(
         self,
         content_id: UUID,
         workspace_id: UUID,
         include_metadata: bool = True,
-        include_seo: bool = True
+        include_seo: bool = True,
     ) -> Dict[str, Any]:
         """
         Get single content item by ID.
@@ -544,7 +614,7 @@ class ContentService(LangGraphService):
         query = select(Content).where(
             Content.id == content_id,
             Content.workspace_id == workspace_id,
-            Content.deleted_at == None
+            Content.deleted_at == None,
         )
 
         # Eagerly load relationships to avoid lazy loading issues
@@ -557,8 +627,7 @@ class ContentService(LangGraphService):
 
         if not content:
             raise ResourceNotFoundException(
-                resource_type="Content",
-                resource_id=str(content_id)
+                resource_type="Content", resource_id=str(content_id)
             )
 
         relationships = []
@@ -568,7 +637,7 @@ class ContentService(LangGraphService):
 
         content_data = content.to_dict(
             include_relationships=relationships if relationships else None,
-            include_nulls=True  # Include body_markdown even if null
+            include_nulls=True,  # Include body_markdown even if null
         )
 
         logger.info(f"Retrieved content {content_id} from workspace {workspace_id}")
@@ -592,20 +661,17 @@ class ContentService(LangGraphService):
         # Convert to lowercase
         text = text.lower()
         # Replace spaces and underscores with hyphens
-        text = re.sub(r'[\s_]+', '-', text)
+        text = re.sub(r"[\s_]+", "-", text)
         # Remove non-alphanumeric characters except hyphens
-        text = re.sub(r'[^a-z0-9-]', '', text)
+        text = re.sub(r"[^a-z0-9-]", "", text)
         # Remove multiple consecutive hyphens
-        text = re.sub(r'-+', '-', text)
+        text = re.sub(r"-+", "-", text)
         # Strip hyphens from start and end
-        text = text.strip('-')
+        text = text.strip("-")
         return text
 
     async def _generate_unique_slug(
-        self,
-        workspace_id: UUID,
-        base_slug: str,
-        exclude_id: Optional[UUID] = None
+        self, workspace_id: UUID, base_slug: str, exclude_id: Optional[UUID] = None
     ) -> str:
         """
         Generate unique slug within workspace.
@@ -628,7 +694,7 @@ class ContentService(LangGraphService):
             query = select(Content).where(
                 Content.workspace_id == workspace_id,
                 Content.slug == slug,
-                Content.deleted_at == None
+                Content.deleted_at == None,
             )
 
             if exclude_id:
@@ -644,7 +710,9 @@ class ContentService(LangGraphService):
             slug = f"{base_slug}-{counter}"
             counter += 1
 
-    async def _get_content_or_404(self, content_id: UUID, workspace_id: UUID) -> Content:
+    async def _get_content_or_404(
+        self, content_id: UUID, workspace_id: UUID
+    ) -> Content:
         """
         Get content by ID or raise 404.
 
@@ -662,15 +730,14 @@ class ContentService(LangGraphService):
             select(Content).where(
                 Content.id == content_id,
                 Content.workspace_id == workspace_id,
-                Content.deleted_at == None
+                Content.deleted_at == None,
             )
         )
         content = result.scalar_one_or_none()
 
         if not content:
             raise ResourceNotFoundException(
-                resource_type="Content",
-                resource_id=str(content_id)
+                resource_type="Content", resource_id=str(content_id)
             )
 
         return content
@@ -705,5 +772,9 @@ class ContentService(LangGraphService):
         if new not in allowed:
             raise WrextValidationException(
                 message=f"Invalid status transition: {current} → {new}",
-                field_errors={"status": [f"Cannot transition from '{current}' to '{new}'. Allowed: {', '.join(allowed) if allowed else 'none'}"]}
+                field_errors={
+                    "status": [
+                        f"Cannot transition from '{current}' to '{new}'. Allowed: {', '.join(allowed) if allowed else 'none'}"
+                    ]
+                },
             )

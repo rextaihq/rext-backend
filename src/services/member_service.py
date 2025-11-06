@@ -32,9 +32,9 @@ from src.api.middleware.exceptions import (
     DuplicateResourceException,
     WrextValidationException
 )
+from src.services.invitation_service import InvitationService
 
-
-class MemberService:
+class MemberService(InvitationService):
     """Service for workspace member business logic"""
 
     def __init__(self, db: AsyncSession):
@@ -665,3 +665,4 @@ class MemberService:
 
         logger.debug(f"Retrieved {len(rows)} admin members for workspace {workspace_id}")
         return rows
+    

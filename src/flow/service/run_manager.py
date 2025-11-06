@@ -4,6 +4,15 @@ from typing import Dict, Any, Optional
 from src.flow.service.utils import get_progress_percent
 from src.flow.states.content_state import ContentState
 from src.flow.service.process_manager import ProgressManager
+from sqlalchemy.ext.asyncio import AsyncSession
+from src.services.sse_service import (
+    emit_step_start,
+    emit_step_progress,
+    emit_step_success,
+    emit_step_failure,
+    emit_pipeline_complete,
+    event_stream_manager,
+)
 from src.utils.logger import logger
 
 class RunManager(ProgressManager):
@@ -21,6 +30,8 @@ class RunManager(ProgressManager):
         - `self.update_content_progress(content_id, progress_payload)` method
           to persist progress updates (e.g., from ProgressManager).
     """
+    def __init__(self, db: AsyncSession):
+        super().__init__(db)
     # Background runner
     async def create_content(
         self,
@@ -38,7 +49,7 @@ class RunManager(ProgressManager):
             thread_id: Optional thread ID for the run.
             metadata: Optional metadata dictionary.
 
-        Returns:
+        Returns
             Dict containing the initial response from LangGraph for the run.
         """
         client = await self.get_client()
@@ -72,39 +83,27 @@ class RunManager(ProgressManager):
             (e.g., "updates") and `chunk` contains stage data.
         """
         client = await self.get_client()
-
         logger.info(
-            f"Starting to stream content generation for assistant {assistant_id}",
-            extra={"assistant_id": assistant_id, "thread_id": thread_id}
-        )
-        # initalizing progress tracking
-        self.initialize_progress(
-            content_id=UUID(input_payload["request_payload"]["content_id"]),
-            step="initializing"
-        )
-        logger.info(
-            f"Initialized progress tracking for content {input_payload['request_payload']['content_id']}",
-            extra={"content_id": input_payload["request_payload"]["content_id"]}
+            f"Starting stream for assistant={assistant_id}, thread={thread_id}"
         )
 
         stream_args = {
             "assistant_id": assistant_id,
             "input": input_payload,
             "thread_id": thread_id,
-            "stream_mode": ["updates"],
+            "stream_mode": ["updates", "messages"], 
         }
         if metadata:
             stream_args["metadata"] = metadata
 
         async for mode, chunk in client.runs.stream(**stream_args):
-            if isinstance(mode, str) and mode.lower() == "updates" and isinstance(chunk, dict):
-                for stage, value in chunk.items():
-                    await self.update_progress(
-                        content_id=UUID(input_payload["request_payload"]["content_id"]),
-                        step=stage,
-                        step_details=value,
-                        message=f"Stage '{stage}' in progress"
-                    )
+            logger.info(f"Stream chunk received: mode={mode}, chunk={chunk}")
+            # if mode == "updates":
+            #     logger.info(f"Nodes......[update] {chunk}")
+           
+            # else:
+            #     logger.debug(f"Debugging.............[{mode}] {chunk}")
+
             yield mode, chunk
 
 

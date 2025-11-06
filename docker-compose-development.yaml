@@ -24,8 +24,22 @@ services:
             interval: 5s
             timeout: 1s
             retries: 5
-
-    # Backend API Service
+    langgraph-postgres:
+        image: postgres:16
+        ports:
+            - "5433:5432"
+        environment:
+            POSTGRES_DB: postgres
+            POSTGRES_USER: postgres
+            POSTGRES_PASSWORD: postgres
+        volumes:
+            - langgraph-data:/var/lib/postgresql/data
+        healthcheck:
+            test: pg_isready -U postgres
+            start_period: 10s
+            timeout: 1s
+            retries: 5
+            interval: 5s
     langgraph-api:
         image: revnix/content-automation:latest
         ports:
@@ -33,8 +47,8 @@ services:
         depends_on:
             langgraph-redis:
                 condition: service_healthy
-            # langgraph-postgres:
-            #     condition: service_healthy
+            langgraph-postgres:
+                condition: service_healthy
         env_file:
             - .env
         environment:
@@ -43,9 +57,8 @@ services:
           LANGSMITH_API_KEY: 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
           LANGSMITH_PROJECT: WREXT
           LANGSMITH_TRACING: "true"
-          # Database (Connect to host PostgreSQL)
-          POSTGRES_URI_CUSTOM: postgresql+asyncpg://samiullah:samiullah12@192.168.1.70:5432/langgraph_db
-          DATABASE_URI: postgresql://samiullah:samiullah12@192.168.1.70:5432/langgraph_db
+          POSTGRES_URI_CUSTOM: postgresql://postgres:postgres@langgraph-postgres:5432/postgres
+          DATABASE_URI: postgresql://postgres:postgres@langgraph-postgres:5432/postgres
           REDIS_URI: redis://langgraph-redis:6379
           REDIS_URL: redis://langgraph-redis:6379
           CACHE_URL: redis://langgraph-redis:6379
@@ -60,8 +73,8 @@ services:
           PORT: 2024
 
           # Frontend + CORS
-          FRONTEND_URL: http://192.168.1.70:3000
-          ALLOWED_ORIGINS: http://localhost:3000,http://127.0.0.1:3000,http://192.168.1.70:3000
+          FRONTEND_URL: http://192.168.1.70/:3000
+          ALLOWED_ORIGINS: http://localhost:3000,http://127.0.0.1:3000,http://192.168.1.70/:3000
           ENVIRONMENT: development
           DEBUG: "false"
 
@@ -114,7 +127,3 @@ services:
           # Monitoring
           SENTRY_DSN: https://feb7a02f38d531b4139ecd2b0ae5a56c@o4510194743181312.ingest.us.sentry.io/4510194746064896
           SENTRY_ENVIRONMENT: development
-
-networks:
-  wrext-network:
-    driver: bridge

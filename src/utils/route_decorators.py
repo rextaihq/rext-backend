@@ -351,10 +351,10 @@ def require_permissions(
             # Resolve workspace if scoped
             if workspace_scoped:
                 workspace_id_param = kwargs.get('workspace_id')
-                if not workspace_id_param:
-                    raise ValueError(
-                        "require_permissions with workspace_scoped=True requires 'workspace_id' parameter in route signature"
-                    )
+                # if not workspace_id_param:
+                    # raise ValueError(
+                    #     "require_permissions with workspace_scoped=True requires 'workspace_id' parameter in route signature"
+                    # )
 
                 # Resolve workspace ID (handles both UUID and slug)
                 try:

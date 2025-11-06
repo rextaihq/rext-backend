@@ -271,6 +271,11 @@ async def remove_workspace_member(
     # Remove member via service
     await member_service.remove_member(workspace_id=workspace.id, user_id=member.user_id)
 
+    # also remove the invite if exists
+    await member_service.remove_invitation_if_exists(
+        workspace_id=workspace.id,
+        email=member_user.email
+    )
     # Send member removed notification
     if member_user:
         background_tasks.add_task(

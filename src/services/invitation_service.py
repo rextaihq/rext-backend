@@ -153,17 +153,27 @@ class InvitationService:
                 and_(
                     UserInvitations.email == email,
                     UserInvitations.workspace_id == workspace_id,
-                    UserInvitations.status == "pending"
+                    # UserInvitations.status == "pending"
                 )
             )
         )
         existing_invitation = result.scalar_one_or_none()
         if existing_invitation:
-            # Check if expired - auto-expire it
-            if existing_invitation.expires_at < datetime.utcnow():
-                existing_invitation.status = "expired"
+            # check the invitation status if status is revoked or expired, allow new invitation creation
+            if existing_invitation.status in ("revoked", "expired"):
+                # Generate token and create invitation
+                token = self._generate_invitation_token(email, workspace_id)
+                expires_at = datetime.utcnow() + timedelta(days=expiry_days)
+                
+                # update the existing invitation
+                existing_invitation.invitation_token = token
+                existing_invitation.role_id = role_id
+                existing_invitation.invited_by_user_id = invited_by_user_id
+                existing_invitation.status = "pending"
+                existing_invitation.expires_at = expires_at
                 await self.db.flush()
-            else:
+                return existing_invitation
+            elif existing_invitation.status == "pending":
                 raise DuplicateResourceException(
                     resource_type="Invitation",
                     conflicting_field="email",
@@ -537,3 +547,38 @@ class InvitationService:
         )
 
         return invitation
+
+    # remvove invitation if exists
+    async def remove_invitation_if_exists(
+        self,
+        workspace_id: UUID,
+        email: str
+    ) -> None:
+        """
+        Remove an invitation if it exists for the given email and workspace.
+
+        Args:
+            workspace_id: Workspace UUID
+            email: Invitee email
+        Returns:
+            None
+        """
+        email = email.lower().strip()
+        result = await self.db.execute(
+            select(UserInvitations).where(
+                and_(
+                    UserInvitations.email == email,
+                    UserInvitations.workspace_id == workspace_id
+                )
+            )
+        )
+        invitation = result.scalar_one_or_none()
+        if invitation:
+            await self.db.delete(invitation)
+            logger.info(
+                f"Invitation removed: {email}",
+                extra={
+                    "workspace_id": str(workspace_id),
+                    "invitation_id": str(invitation.id)
+                }
+            )

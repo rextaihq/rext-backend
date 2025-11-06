@@ -12,7 +12,7 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.services.langgraph_content_service import LangGraphContentService
-from src.services.content_progress_service import ContentProgressService
+
 from src.api.database.async_database import get_async_db
 from src.utils.logger import logger
 
@@ -48,8 +48,6 @@ async def run_content_generation_background(
     async for db in get_async_db():
         try:
             # Initialize progress service
-            progress_service = ContentProgressService(db)
-
             # Progress already initialized in the API endpoint - skip duplicate initialization
             # Initialize LangGraph content service
             langgraph_service = LangGraphContentService(db)
