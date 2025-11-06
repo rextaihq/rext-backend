@@ -19,7 +19,7 @@ class TopicsModel(Base, SerializableMixin):
     why_it_works = Column(String, nullable=True)
     scores = Column(JSONB, nullable=False)
     tags = Column(ARRAY(String), nullable=True)
-    suggested_defaults = Column(JSONB, nullable=False)  # New field
+    suggested_defaults = Column(JSONB, nullable=False)  # New fieldm
     goal_alignment = Column(JSONB, nullable=False)  # New field
     content_guidance = Column(JSONB, nullable=False)  # New field
     audience_insights = Column(JSONB, nullable=False)  # New field

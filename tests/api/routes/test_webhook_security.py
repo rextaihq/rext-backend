@@ -323,23 +323,6 @@ class TestWebhookSignatureComparison:
 
 
 # ============================================================================
-# Pytest Fixtures
-# ============================================================================
-
-@pytest.fixture
-def client():
-    """
-    FastAPI test client.
-
-    Note: This fixture should be defined in conftest.py
-    This is a placeholder for documentation.
-    """
-    from src.api.server import app
-    from fastapi.testclient import TestClient
-    return TestClient(app)
-
-
-# ============================================================================
 # Test Utilities
 # ============================================================================
 

@@ -27,7 +27,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.models.workspace_models.workspace_model import WorkspaceModel
 from src.api.models.workspace_models.workspace_member import WorkspaceMembers
-from src.api.models.knowledge_models.knowledge_model import Website, KnowledgeFiles, TextKnowledge, BrandVoice
+from src.api.models.knowledge_models.knowledge_model import (
+    Website,
+    KnowledgeFiles,
+    TextKnowledge,
+    BrandVoice,
+)
 from src.api.models.user_models.users import Users
 from src.api.models.user_models.roles import Role
 from src.api.models.user_models.permissions import Permission
@@ -48,6 +53,7 @@ from src.utils.logger import logger
 from src.api.database.async_database import get_async_db
 from src.services.workspace_pipeline import run_workspace_pipeline
 from langsmith import traceable, trace
+
 
 class WorkspaceService:
     """Service for workspace business logic"""
@@ -70,7 +76,9 @@ class WorkspaceService:
             "total_count": len(workspaces),
         }
 
-    async def get_workspace_for_user(self, workspace_id: UUID, user_id: UUID) -> Dict[str, Any]:
+    async def get_workspace_for_user(
+        self, workspace_id: UUID, user_id: UUID
+    ) -> Dict[str, Any]:
         """Fetch workspace details for a member including brand voice data."""
         await self._ensure_active_user(user_id)
         await self._ensure_membership(workspace_id, user_id)
@@ -80,7 +88,7 @@ class WorkspaceService:
         name="Create Workspace",
         metadata={"operation": "workspace_create"},
         tags=["WorkspaceService", "Create"],
-        project_name="WREXT"
+        project_name="WREXT",
     )
     async def create_workspace_for_user(
         self,
@@ -99,8 +107,7 @@ class WorkspaceService:
             # check if the url for same workspace exists in the knowledge base file
             result = await self.db.execute(
                 select(Website).where(
-                    Website.workspace_id == user_id,
-                    Website.url == url
+                    Website.workspace_id == user_id, Website.url == url
                 )
             )
             if result.scalar_one_or_none():
@@ -108,22 +115,28 @@ class WorkspaceService:
                     message="Workspace with this URL already exists",
                     resource_type="workspace",
                     conflicting_field="url",
-                    conflicting_value=url
+                    conflicting_value=url,
                 )
             else:
-                workspace = await self.create_workspace(user_id=user_id, name=name, tz=timezone, url=url)
+                workspace = await self.create_workspace(
+                    user_id=user_id, name=name, tz=timezone, url=url
+                )
                 await self.db.refresh(workspace)
-        
 
         with trace(name="Assign Roles & Permissions"):
-            await self.create_workspace_member(workspace.id, user_id, is_default=True, status="active")
+            await self.create_workspace_member(
+                workspace.id, user_id, is_default=True, status="active"
+            )
             owner_role = await self._get_workspace_owner_role()
             await self._assign_role_to_user(owner_role.id, user_id, workspace.id)
 
-
         operation_id = str(uuid4())
-        async def run_pipeline()->None:
-            with trace(name="Run Workspace Pipeline", inputs={"operation_id": operation_id, "url": url}):
+
+        async def run_pipeline() -> None:
+            with trace(
+                name="Run Workspace Pipeline",
+                inputs={"operation_id": operation_id, "url": url},
+            ):
                 async for bg_db in get_async_db():
                     try:
                         await run_workspace_pipeline(
@@ -195,7 +208,9 @@ class WorkspaceService:
         if not workspace.url:
             raise WrextValidationException(
                 message="Workspace URL is required to refresh brand voice",
-                field_errors={"url": ["Workspace must have a valid URL before refreshing"]},
+                field_errors={
+                    "url": ["Workspace must have a valid URL before refreshing"]
+                },
             )
 
         operation_id = str(uuid4())
@@ -247,12 +262,14 @@ class WorkspaceService:
 
         return operation_id
 
-    async def delete_workspace_for_user(self, workspace_id: UUID, user_id: UUID) -> None:
+    async def delete_workspace_for_user(
+        self, workspace_id: UUID, user_id: UUID
+    ) -> None:
         """Delete workspace after verifying membership and cleanup."""
         await self._ensure_active_user(user_id)
         workspace = await self._ensure_membership(workspace_id, user_id)
         self._delete_vectors_safe(workspace.id)
-        await self.delete_workspace(workspace_id)
+        await self.delete_workspace(workspace_id, user_id)
 
     async def update_workspace_for_user(
         self,
@@ -278,10 +295,7 @@ class WorkspaceService:
         await self.db.refresh(updated)
         return self._serialize_workspace(updated)
 
-    async def get_user_workspaces(
-        self,
-        user_id: UUID
-    ) -> List[Dict[str, Any]]:
+    async def get_user_workspaces(self, user_id: UUID) -> List[Dict[str, Any]]:
         """
         Get all workspaces for a user with counts.
 
@@ -298,12 +312,12 @@ class WorkspaceService:
         workspaces_query = (
             select(
                 WorkspaceModel,
-                Users.display_name.label('owner_name'),
-                Users.email.label('owner_email'),
-                func.count(distinct(Website.id)).label('web_knowledge_count'),
-                func.count(distinct(KnowledgeFiles.id)).label('files_count'),
-                func.count(distinct(TextKnowledge.id)).label('text_knowledge_count'),
-                func.count(distinct(WorkspaceMembers.id)).label('members_count')
+                Users.display_name.label("owner_name"),
+                Users.email.label("owner_email"),
+                func.count(distinct(Website.id)).label("web_knowledge_count"),
+                func.count(distinct(KnowledgeFiles.id)).label("files_count"),
+                func.count(distinct(TextKnowledge.id)).label("text_knowledge_count"),
+                func.count(distinct(WorkspaceMembers.id)).label("members_count"),
             )
             .join(WorkspaceMembers, WorkspaceMembers.workspace_id == WorkspaceModel.id)
             .join(Users, Users.id == WorkspaceModel.user_id)
@@ -312,7 +326,9 @@ class WorkspaceService:
             .outerjoin(TextKnowledge, TextKnowledge.workspace_id == WorkspaceModel.id)
             .where(
                 WorkspaceMembers.user_id == user_id,
-                WorkspaceModel.deleted_at.is_(None)  # Filter out soft-deleted workspaces
+                WorkspaceModel.deleted_at.is_(
+                    None
+                ),  # Filter out soft-deleted workspaces
             )
             .group_by(WorkspaceModel.id, Users.id)
         )
@@ -331,40 +347,37 @@ class WorkspaceService:
             members_count = result_row[6] or 0
             total_knowledge = web_count + files_count + text_count
 
-            workspace_data.append({
-                "id": str(ws.id),
-                "user_id": str(ws.user_id),
-                "name": ws.name,
-                "slug": ws.slug if hasattr(ws, 'slug') else None,
-                "timezone": ws.timezone if hasattr(ws, 'timezone') else None,
-                "url": ws.url,
-                "created_at": ws.created_at.isoformat() if ws.created_at else None,
-                "updated_at": ws.updated_at.isoformat() if ws.updated_at else None,
-                "owner": {
-                    "name": owner_name,
-                    "email": owner_email
-                },
-                "knowledge_stats": {
-                    "web_knowledge": web_count,
-                    "files": files_count,
-                    "text_knowledge": text_count,
-                    "total": total_knowledge
-                },
-                "members_count": members_count,
-                "status": "active"
-            })
+            workspace_data.append(
+                {
+                    "id": str(ws.id),
+                    "user_id": str(ws.user_id),
+                    "name": ws.name,
+                    "slug": ws.slug if hasattr(ws, "slug") else None,
+                    "timezone": ws.timezone if hasattr(ws, "timezone") else None,
+                    "url": ws.url,
+                    "created_at": ws.created_at.isoformat() if ws.created_at else None,
+                    "updated_at": ws.updated_at.isoformat() if ws.updated_at else None,
+                    "owner": {"name": owner_name, "email": owner_email},
+                    "knowledge_stats": {
+                        "web_knowledge": web_count,
+                        "files": files_count,
+                        "text_knowledge": text_count,
+                        "total": total_knowledge,
+                    },
+                    "members_count": members_count,
+                    "status": "active",
+                }
+            )
 
         logger.info(
             f"Retrieved {len(workspace_data)} workspaces for user",
-            extra={"user_id": str(user_id), "count": len(workspace_data)}
+            extra={"user_id": str(user_id), "count": len(workspace_data)},
         )
 
         return workspace_data
 
     async def get_workspace_analytics(
-        self,
-        workspace_id: UUID,
-        include_word_counts: bool = False
+        self, workspace_id: UUID, include_word_counts: bool = False
     ) -> Dict[str, Any]:
         """
         Get comprehensive analytics for a workspace.
@@ -386,24 +399,29 @@ class WorkspaceService:
         web_count = result.scalar() or 0
 
         result = await self.db.execute(
-            select(func.count(KnowledgeFiles.id)).where(KnowledgeFiles.workspace_id == workspace_id)
+            select(func.count(KnowledgeFiles.id)).where(
+                KnowledgeFiles.workspace_id == workspace_id
+            )
         )
         files_count = result.scalar() or 0
 
         result = await self.db.execute(
-            select(func.count(TextKnowledge.id)).where(TextKnowledge.workspace_id == workspace_id)
+            select(func.count(TextKnowledge.id)).where(
+                TextKnowledge.workspace_id == workspace_id
+            )
         )
         text_count = result.scalar() or 0
 
         result = await self.db.execute(
-            select(func.count(WorkspaceMembers.id)).where(WorkspaceMembers.workspace_id == workspace_id)
+            select(func.count(WorkspaceMembers.id)).where(
+                WorkspaceMembers.workspace_id == workspace_id
+            )
         )
         members_count = result.scalar() or 0
 
         result = await self.db.execute(
             select(func.count(Content.id)).where(
-                Content.workspace_id == workspace_id,
-                Content.deleted_at == None
+                Content.workspace_id == workspace_id, Content.deleted_at == None
             )
         )
         content_count = result.scalar() or 0
@@ -413,26 +431,26 @@ class WorkspaceService:
                 "web_knowledge": web_count,
                 "files": files_count,
                 "text_knowledge": text_count,
-                "total": web_count + files_count + text_count
+                "total": web_count + files_count + text_count,
             },
             "members_count": members_count,
-            "content_count": content_count
+            "content_count": content_count,
         }
 
         # Add word count analytics if requested
         if include_word_counts:
             # Web content word stats
             web_word_query = select(
-                func.sum(Website.word_count).label('total_words'),
-                func.avg(Website.word_count).label('avg_words')
+                func.sum(Website.word_count).label("total_words"),
+                func.avg(Website.word_count).label("avg_words"),
             ).where(Website.workspace_id == workspace_id)
             result = await self.db.execute(web_word_query)
             web_word_stats = result.first()
 
             # File content word stats
             file_word_query = select(
-                func.sum(KnowledgeFiles.word_count).label('total_words'),
-                func.avg(KnowledgeFiles.word_count).label('avg_words')
+                func.sum(KnowledgeFiles.word_count).label("total_words"),
+                func.avg(KnowledgeFiles.word_count).label("avg_words"),
             ).where(KnowledgeFiles.workspace_id == workspace_id)
             result = await self.db.execute(file_word_query)
             file_word_stats = result.first()
@@ -451,19 +469,21 @@ class WorkspaceService:
                 "file_content_words": total_file_words,
                 "avg_web_article_words": avg_web_words,
                 "avg_file_words": avg_file_words,
-                "estimated_reading_time_minutes": estimated_reading_time
+                "estimated_reading_time_minutes": estimated_reading_time,
             }
 
         logger.info(
             f"Retrieved analytics for workspace",
-            extra={"workspace_id": str(workspace_id), "total_knowledge": analytics["knowledge_stats"]["total"]}
+            extra={
+                "workspace_id": str(workspace_id),
+                "total_knowledge": analytics["knowledge_stats"]["total"],
+            },
         )
 
         return analytics
 
     async def get_workspace_with_brand_voice(
-        self,
-        workspace_id: UUID
+        self, workspace_id: UUID
     ) -> Dict[str, Any]:
         """
         Get workspace with brand voice data.
@@ -489,11 +509,15 @@ class WorkspaceService:
             "id": str(workspace.id),
             "user_id": str(workspace.user_id),
             "name": workspace.name,
-            "slug": workspace.slug if hasattr(workspace, 'slug') else None,
-            "timezone": workspace.timezone if hasattr(workspace, 'timezone') else None,
+            "slug": workspace.slug if hasattr(workspace, "slug") else None,
+            "timezone": workspace.timezone if hasattr(workspace, "timezone") else None,
             "url": workspace.url,
-            "created_at": workspace.created_at.isoformat() if workspace.created_at else None,
-            "updated_at": workspace.updated_at.isoformat() if workspace.updated_at else None,
+            "created_at": (
+                workspace.created_at.isoformat() if workspace.created_at else None
+            ),
+            "updated_at": (
+                workspace.updated_at.isoformat() if workspace.updated_at else None
+            ),
         }
 
         # Add brand voice if exists
@@ -508,15 +532,16 @@ class WorkspaceService:
                 "brand_voice": brand_voice.brand_voice,
                 "competitors": brand_voice.competitors,
                 "content_strategy": brand_voice.content_strategy,
-                "created_at": brand_voice.created_at.isoformat() if brand_voice.created_at else None,
+                "created_at": (
+                    brand_voice.created_at.isoformat()
+                    if brand_voice.created_at
+                    else None
+                ),
             }
 
         return workspace_data
 
-    async def get_workspace(
-        self,
-        workspace_id: UUID
-    ) -> WorkspaceModel:
+    async def get_workspace(self, workspace_id: UUID) -> WorkspaceModel:
         """
         Get workspace by ID.
 
@@ -532,23 +557,20 @@ class WorkspaceService:
         result = await self.db.execute(
             select(WorkspaceModel).where(
                 WorkspaceModel.id == workspace_id,
-                WorkspaceModel.deleted_at.is_(None)  # Exclude soft-deleted workspaces
+                WorkspaceModel.deleted_at.is_(None),  # Exclude soft-deleted workspaces
             )
         )
         workspace = result.scalar_one_or_none()
 
         if not workspace:
             raise ResourceNotFoundException(
-                resource_type="Workspace",
-                resource_id=str(workspace_id)
+                resource_type="Workspace", resource_id=str(workspace_id)
             )
 
         return workspace
 
     async def get_workspace_by_slug_for_user(
-        self,
-        slug: str,
-        user_id: UUID
+        self, slug: str, user_id: UUID
     ) -> WorkspaceModel:
         """
         Get workspace by slug for a specific user (verifies membership).
@@ -569,23 +591,18 @@ class WorkspaceService:
             .where(
                 WorkspaceModel.slug == slug,
                 WorkspaceMembers.user_id == user_id,
-                WorkspaceModel.deleted_at.is_(None)
+                WorkspaceModel.deleted_at.is_(None),
             )
         )
         workspace = result.scalar_one_or_none()
 
         if not workspace:
-            raise ResourceNotFoundException(
-                resource_type="workspace",
-                resource_id=slug
-            )
+            raise ResourceNotFoundException(resource_type="workspace", resource_id=slug)
 
         return workspace
 
     async def get_workspace_by_id_or_slug_for_user(
-        self,
-        identifier: str,
-        user_id: UUID
+        self, identifier: str, user_id: UUID
     ) -> WorkspaceModel:
         """
         Get workspace by ID or slug for a specific user (verifies membership).
@@ -613,21 +630,25 @@ class WorkspaceService:
         if is_uuid:
             query = (
                 select(WorkspaceModel)
-                .join(WorkspaceMembers, WorkspaceMembers.workspace_id == WorkspaceModel.id)
+                .join(
+                    WorkspaceMembers, WorkspaceMembers.workspace_id == WorkspaceModel.id
+                )
                 .where(
                     WorkspaceModel.id == UUID(identifier),
                     WorkspaceMembers.user_id == user_id,
-                    WorkspaceModel.deleted_at.is_(None)
+                    WorkspaceModel.deleted_at.is_(None),
                 )
             )
         else:
             query = (
                 select(WorkspaceModel)
-                .join(WorkspaceMembers, WorkspaceMembers.workspace_id == WorkspaceModel.id)
+                .join(
+                    WorkspaceMembers, WorkspaceMembers.workspace_id == WorkspaceModel.id
+                )
                 .where(
                     WorkspaceModel.slug == identifier,
                     WorkspaceMembers.user_id == user_id,
-                    WorkspaceModel.deleted_at.is_(None)
+                    WorkspaceModel.deleted_at.is_(None),
                 )
             )
 
@@ -636,16 +657,13 @@ class WorkspaceService:
 
         if not workspace:
             raise ResourceNotFoundException(
-                resource_type="workspace",
-                resource_id=identifier
+                resource_type="workspace", resource_id=identifier
             )
 
         return workspace
 
     async def verify_user_is_workspace_owner(
-        self,
-        workspace_id: UUID,
-        user_id: UUID
+        self, workspace_id: UUID, user_id: UUID
     ) -> bool:
         """
         Verify if user has workspace owner role.
@@ -666,13 +684,14 @@ class WorkspaceService:
         member_result = await self.db.execute(
             select(WorkspaceMembers).where(
                 WorkspaceMembers.workspace_id == workspace_id,
-                WorkspaceMembers.user_id == user_id
+                WorkspaceMembers.user_id == user_id,
             )
         )
         member = member_result.scalar_one_or_none()
 
         if not member or not member.role_id:
             from src.api.middleware.exceptions import ForbiddenException
+
             raise ForbiddenException(
                 message="Only workspace owners can perform this action"
             )
@@ -685,6 +704,7 @@ class WorkspaceService:
 
         if not role or role.name not in ["workspace_owner", "super_admin"]:
             from src.api.middleware.exceptions import ForbiddenException
+
             raise ForbiddenException(
                 message="Only workspace owners can perform this action"
             )
@@ -697,7 +717,7 @@ class WorkspaceService:
         name: str,
         tz: Optional[str] = None,
         url: Optional[str] = None,
-        slug: Optional[str] = None
+        slug: Optional[str] = None,
     ) -> WorkspaceModel:
         """
         Create new workspace with owner membership.
@@ -723,8 +743,7 @@ class WorkspaceService:
         # Check for duplicate name
         result = await self.db.execute(
             select(WorkspaceModel).where(
-                WorkspaceModel.name == name,
-                WorkspaceModel.user_id == user_id
+                WorkspaceModel.name == name, WorkspaceModel.user_id == user_id
             )
         )
         if result.scalar_one_or_none():
@@ -732,7 +751,7 @@ class WorkspaceService:
                 message=f"Workspace with name '{name}' already exists",
                 resource_type="workspace",
                 conflicting_field="name",
-                conflicting_value=name
+                conflicting_value=name,
             )
 
         # Generate unique slug if not provided
@@ -748,14 +767,14 @@ class WorkspaceService:
             timezone=tz,
             url=url,
             created_at=datetime.now(timezone.utc),
-            updated_at=datetime.now(timezone.utc)
+            updated_at=datetime.now(timezone.utc),
         )
         self.db.add(workspace)
         await self.db.flush()
 
         logger.info(
             f"Workspace created: {workspace.id}",
-            extra={"user_id": str(user_id), "name": name}
+            extra={"user_id": str(user_id), "name": name},
         )
 
         return workspace
@@ -765,7 +784,7 @@ class WorkspaceService:
         workspace_id: UUID,
         user_id: UUID,
         is_default: bool = True,
-        status: str = "active"
+        status: str = "active",
     ) -> WorkspaceMembers:
         """
         Add a member to workspace.
@@ -785,14 +804,14 @@ class WorkspaceService:
             joined_at=datetime.utcnow(),
             is_default=is_default,
             status=status,
-            invitation_id=None
+            invitation_id=None,
         )
         self.db.add(member)
         await self.db.flush()
 
         logger.info(
             f"Added member to workspace",
-            extra={"workspace_id": str(workspace_id), "user_id": str(user_id)}
+            extra={"workspace_id": str(workspace_id), "user_id": str(user_id)},
         )
 
         return member
@@ -802,7 +821,7 @@ class WorkspaceService:
         workspace_id: UUID,
         name: Optional[str] = None,
         tz: Optional[str] = None,
-        url: Optional[str] = None
+        url: Optional[str] = None,
     ) -> WorkspaceModel:
         """
         Update workspace details.
@@ -825,7 +844,9 @@ class WorkspaceService:
             workspace.name = name
             # Regenerate slug if name changed
             base_slug = self._slugify(name)
-            workspace.slug = await self._generate_unique_slug(base_slug, workspace.user_id, exclude_id=workspace_id)
+            workspace.slug = await self._generate_unique_slug(
+                base_slug, workspace.user_id, exclude_id=workspace_id
+            )
 
         if tz is not None:
             workspace.timezone = tz
@@ -837,16 +858,12 @@ class WorkspaceService:
 
         logger.info(
             f"Workspace updated: {workspace_id}",
-            extra={"workspace_id": str(workspace_id)}
+            extra={"workspace_id": str(workspace_id)},
         )
 
         return workspace
 
-    async def delete_workspace(
-        self,
-        workspace_id: UUID,
-        user_id: UUID
-    ) -> None:
+    async def delete_workspace(self, workspace_id: UUID, user_id: UUID) -> None:
         """
         Soft delete workspace (30-day recovery period).
 
@@ -873,7 +890,7 @@ class WorkspaceService:
 
         logger.info(
             f"Workspace soft deleted: {workspace_id} by user {user_id}",
-            extra={"workspace_id": str(workspace_id), "user_id": str(user_id)}
+            extra={"workspace_id": str(workspace_id), "user_id": str(user_id)},
         )
 
     async def count_user_workspaces(self, user_id: UUID) -> int:
@@ -890,8 +907,7 @@ class WorkspaceService:
             select(func.count(distinct(WorkspaceModel.id)))
             .join(WorkspaceMembers, WorkspaceMembers.workspace_id == WorkspaceModel.id)
             .where(
-                WorkspaceMembers.user_id == user_id,
-                WorkspaceModel.deleted_at.is_(None)
+                WorkspaceMembers.user_id == user_id, WorkspaceModel.deleted_at.is_(None)
             )
         )
         count = result.scalar() or 0
@@ -913,7 +929,9 @@ class WorkspaceService:
             )
         return user
 
-    async def _ensure_membership(self, workspace_id: UUID, user_id: UUID) -> WorkspaceModel:
+    async def _ensure_membership(
+        self, workspace_id: UUID, user_id: UUID
+    ) -> WorkspaceModel:
         query = (
             select(WorkspaceModel)
             .join(WorkspaceMembers, WorkspaceMembers.workspace_id == WorkspaceModel.id)
@@ -950,8 +968,7 @@ class WorkspaceService:
         """
         result = await self.db.execute(
             select(Role).where(
-                Role.name == "workspace_owner",
-                Role.is_workspace_role == True
+                Role.name == "workspace_owner", Role.is_workspace_role == True
             )
         )
         role = result.scalar_one_or_none()
@@ -964,7 +981,9 @@ class WorkspaceService:
 
         return role
 
-    async def _assign_permissions_to_role(self, role_id: UUID, resources: List[str]) -> None:
+    async def _assign_permissions_to_role(
+        self, role_id: UUID, resources: List[str]
+    ) -> None:
         if not resources:
             return
         result = await self.db.execute(
@@ -983,7 +1002,9 @@ class WorkspaceService:
                 continue
             self.db.add(RolePermission(role_id=role_id, permission_id=permission.id))
 
-    async def _assign_role_to_user(self, role_id: UUID, user_id: UUID, workspace_id: UUID) -> None:
+    async def _assign_role_to_user(
+        self, role_id: UUID, user_id: UUID, workspace_id: UUID
+    ) -> None:
         result = await self.db.execute(
             select(UserRole).where(
                 UserRole.role_id == role_id,
@@ -1002,7 +1023,9 @@ class WorkspaceService:
         )
         self.db.add(user_role)
 
-    async def _populate_brand_voice_and_vectors(self, workspace_id: UUID, url: Optional[str]) -> None:
+    async def _populate_brand_voice_and_vectors(
+        self, workspace_id: UUID, url: Optional[str]
+    ) -> None:
         if not url:
             return
 
@@ -1088,8 +1111,12 @@ class WorkspaceService:
             "slug": workspace.slug if hasattr(workspace, "slug") else None,
             "timezone": workspace.timezone if hasattr(workspace, "timezone") else None,
             "url": workspace.url,
-            "created_at": workspace.created_at.isoformat() if workspace.created_at else None,
-            "updated_at": workspace.updated_at.isoformat() if workspace.updated_at else None,
+            "created_at": (
+                workspace.created_at.isoformat() if workspace.created_at else None
+            ),
+            "updated_at": (
+                workspace.updated_at.isoformat() if workspace.updated_at else None
+            ),
         }
 
     def _slugify(self, text: str) -> str:
@@ -1103,17 +1130,14 @@ class WorkspaceService:
             URL-safe slug
         """
         text = text.lower()
-        text = re.sub(r'[\s_]+', '-', text)
-        text = re.sub(r'[^a-z0-9-]', '', text)
-        text = re.sub(r'-+', '-', text)
-        text = text.strip('-')
+        text = re.sub(r"[\s_]+", "-", text)
+        text = re.sub(r"[^a-z0-9-]", "", text)
+        text = re.sub(r"-+", "-", text)
+        text = text.strip("-")
         return text
 
     async def _generate_unique_slug(
-        self,
-        base_slug: str,
-        user_id: UUID,
-        exclude_id: Optional[UUID] = None
+        self, base_slug: str, user_id: UUID, exclude_id: Optional[UUID] = None
     ) -> str:
         """
         Generate unique slug for user's workspaces.
@@ -1131,8 +1155,7 @@ class WorkspaceService:
 
         while True:
             query = select(WorkspaceModel).where(
-                WorkspaceModel.user_id == user_id,
-                WorkspaceModel.slug == slug
+                WorkspaceModel.user_id == user_id, WorkspaceModel.slug == slug
             )
 
             if exclude_id:

@@ -562,7 +562,7 @@ class UserService:
 
         user = await self.get_user_by_id(user_id)
 
-        is_valid = verify_password(password, user.password)
+        is_valid = verify_password(password, user.password_hash)
         logger.debug(f"Password verification for user {user_id}: {is_valid}")
 
         return is_valid
