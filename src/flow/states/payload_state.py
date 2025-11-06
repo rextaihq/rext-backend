@@ -29,7 +29,7 @@ class Payload(TypedDict, total=False):
     workspace_id: str
     topic_id: Optional[str]
     topicId: Optional[str]  # Legacy support
-    thread_id: Optional[str]
+    # thread_id: Optional[str]
     regenerate: Optional[bool]
     author_id: Optional[str]
     assigned_to_user_id: Optional[str]

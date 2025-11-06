@@ -376,7 +376,7 @@ async def emit_step_progress(
     scope: str,
     step: str,
     message: str,
-    progress: int,
+    progress: Optional[int] = None,
     payload: Optional[Dict[str, object]] = None,
 ) -> None:
     """Emit an event describing progress within a pipeline step."""
