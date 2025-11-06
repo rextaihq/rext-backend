@@ -43,9 +43,9 @@ class SaveTopicRequest(BaseModel):
     # Original input params for enrichment context
     input_params: Optional[dict] = None
     # User tracking fields (set by backend when saving)
-    generated_by_user_id: str
-    generated_by_first_name: str
-    generated_by_last_name: str
+    generated_by_user_id: Optional[str] = None
+    generated_by_first_name: Optional[str] = None
+    generated_by_last_name: Optional[str] = None
 
 class SaveTopicRequestList(BaseModel):
     topics: List[SaveTopicRequest]
