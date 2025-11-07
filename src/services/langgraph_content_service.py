@@ -36,6 +36,7 @@ from src.api.middleware.exceptions import (
     ResourceNotFoundException
 )
 from src.services.email_service import EmailService
+from src.flow.service.process_manager import ProgressManager
 
 
 
@@ -135,6 +136,9 @@ class LangGraphContentService:
                 "SaveContent": "saving_content",
             }
 
+            # Initialize progress manager for real-time updates
+            progress_manager = ProgressManager(self.db)
+
             # Stream events and track progress
             result = None
             async for event in compiled_workflow.astream_events(initial_state, config, version="v2"):
@@ -142,19 +146,19 @@ class LangGraphContentService:
                 name = event.get("name", "")
 
                 # Track node execution for progress updates
+                # Emit SSE events for all intermediate steps (no DB update)
                 if event_type == "on_chain_start" and name in node_to_step_map:
                     step = node_to_step_map[name]
                     logger.info(f"Node started: {name} -> {step}")
                     try:
-                        progress_service = None
-                        await progress_service.update_progress(
+                        # Emit progress event (SSE only, no DB write)
+                        await progress_manager.emit_progress_event(
                             content_id=content_id,
                             step=step
                         )
-                        await self.db.commit()
                     except Exception as e:
-                        logger.error(f"Failed to update progress for {step}: {e}")
-                        # Don't fail workflow on progress update errors
+                        logger.error(f"Failed to emit progress event for {step}: {e}")
+                        # Don't fail workflow on progress event errors
 
                 # Capture final result
                 if event_type == "on_chain_end" and name == "LangGraph":

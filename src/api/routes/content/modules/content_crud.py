@@ -73,10 +73,36 @@ async def create_content(
         data=data
     )
 
-    logger.info(
-        f"Content generation queued for content {content.id}",
-        extra={"workspace_id": str(workspace.id), "topic_id": str(data.topic_id)}
-    )
+    # Trigger background generation task if content status is "generating"
+    # (i.e., no body_markdown was provided, so AI generation is needed)
+    if content.status == "generating" and data.topic_id:
+        logger.info(
+            f"Triggering background content generation for content {content.id}",
+            extra={"workspace_id": str(workspace.id), "topic_id": str(data.topic_id)}
+        )
+
+        # Initialize progress tracking before starting generation
+        progress_manager = ProgressManager(db)
+        await progress_manager.initialize_progress(
+            content_id=content.id,
+            step="initializing"
+        )
+
+        # Add background task for content generation
+        background_tasks.add_task(
+            run_content_generation_background,
+            content_id=content.id,
+            workspace_id=workspace.id,
+            topic_id=data.topic_id
+        )
+
+        message = "Content generation started in background"
+    else:
+        logger.info(
+            f"Content created without generation for content {content.id}",
+            extra={"workspace_id": str(workspace.id), "status": content.status}
+        )
+        message = "Content created successfully"
 
     content_data = content.to_dict(include_relationships=["content_metadata", "seo_data"])
 
@@ -85,7 +111,7 @@ async def create_content(
     return {
         "content": content_data,
         "operation_id": str(content.id),  # For SSE subscription
-        "message": "Content generation started in background"
+        "message": message
     }
 
 

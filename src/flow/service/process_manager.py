@@ -25,15 +25,15 @@ class ProgressManager:
     # Progress step definitions with percentages
     PROGRESS_STEPS = {
         "initializing": {"percent": 0, "message": "Initializing content generation..."},
-        "FetchUser": {"percent": 10, "message": "Fetching user information..."},
-        "FetchWorkspace": {"percent": 15, "message": "Loading workspace details..."},
-        "FetchTopic": {"percent": 20, "message": "Retrieving topic information..."},
-        "WebContext": {"percent": 30, "message": "Searching web for relevant context..."},
-        "KnowledgeContext": {"percent": 40, "message": "Retrieving workspace knowledge..."},
-        "ScrapeContent": {"percent": 50, "message": "Scraping and processing sources..."},
-        "RerankContent": {"percent": 60, "message": "Ranking content by relevance..."},
-        "BlogGeneration": {"percent": 75, "message": "Generating content with AI..."},
-        "SaveContent": {"percent": 95, "message": "Saving generated content..."},
+        "fetching_user": {"percent": 10, "message": "Fetching user information..."},
+        "fetching_workspace": {"percent": 15, "message": "Loading workspace details..."},
+        "fetching_topic": {"percent": 20, "message": "Retrieving topic information..."},
+        "gathering_web_context": {"percent": 30, "message": "Searching web for relevant context..."},
+        "gathering_knowledge_context": {"percent": 40, "message": "Retrieving workspace knowledge..."},
+        "scraping_content": {"percent": 50, "message": "Scraping and processing sources..."},
+        "reranking_documents": {"percent": 60, "message": "Ranking content by relevance..."},
+        "generating_blog": {"percent": 75, "message": "Generating content with AI..."},
+        "saving_content": {"percent": 95, "message": "Saving generated content..."},
         "completed": {"percent": 100, "message": "Content generation completed!"},
         "failed": {"percent": -1, "message": "Content generation failed"}
     }
@@ -86,6 +86,16 @@ class ProgressManager:
         logger.info(
             f"Progress initialized for content {content_id}",
             extra={"step": step, "progress": step_info["percent"]}
+        )
+
+        # Emit SSE event for initialization
+        await self._publish_sse_event(
+            content_id=content_id,
+            step=step,
+            status="in_progress",
+            message=step_info["message"],
+            progress=step_info["percent"],
+            payload={}
         )
 
         return progress
@@ -165,6 +175,57 @@ class ProgressManager:
         logger.info(
             f"Progress updated for content {content_id}",
             extra={"step": step, "progress": progress_percent, "message": status_message}
+        )
+
+    async def emit_progress_event(
+        self,
+        content_id: UUID,
+        step: str,
+        message: Optional[str] = None,
+        step_details: Optional[Dict[str, Any]] = None
+    ) -> None:
+        """
+        Emit SSE progress event WITHOUT updating database.
+
+        Use this for intermediate steps to show real-time progress to frontend
+        without the overhead of database writes. The database should only be
+        updated for stable states (initializing, completed, failed).
+
+        Args:
+            content_id: Content UUID
+            step: Progress step name (from PROGRESS_STEPS)
+            message: Custom status message (optional, uses default if not provided)
+            step_details: Additional step-specific data (optional)
+        """
+        step_info = self.PROGRESS_STEPS.get(step)
+        if not step_info:
+            logger.warning(f"Unknown progress step: {step}")
+            return
+
+        progress_percent = step_info["percent"]
+        status_message = message or step_info["message"]
+
+        # Determine status for SSE event
+        if progress_percent == 100:
+            status = "completed"
+        elif progress_percent < 0:
+            status = "failed"
+        else:
+            status = "in_progress"
+
+        # Publish SSE event only (no DB update)
+        await self._publish_sse_event(
+            content_id=content_id,
+            step=step,
+            status=status,
+            message=status_message,
+            progress=progress_percent,
+            payload=step_details
+        )
+
+        logger.debug(
+            f"Progress event emitted for content {content_id}",
+            extra={"step": step, "progress": progress_percent}
         )
 
     async def mark_completed(
