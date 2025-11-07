@@ -159,8 +159,9 @@ class ContentService(LangGraphService):
         base_slug = self._slugify(data.title)
         unique_slug = await self._generate_unique_slug(workspace_id, base_slug)
 
-        # create a thread
-        thread = await self.create_thread(thread_id=str(uuid4()))
+        # Generate thread ID locally (no external API call needed)
+        # The actual LangGraph workflow will use this thread_id for execution tracking
+        thread_id = uuid4()
 
         # Create content entity
         # If body_markdown is provided, status can be "draft" (manual content)
@@ -179,7 +180,7 @@ class ContentService(LangGraphService):
             status=data.status
             or default_status,  # Auto-set to "generating" if no body provided
             content_language=data.content_language or "English",
-            langgraph_thread_id=thread["thread_id"],  # Store thread ID
+            langgraph_thread_id=thread_id,  # Store thread ID locally
             created_at=datetime.now(timezone.utc),
             updated_at=datetime.now(timezone.utc),
         )
