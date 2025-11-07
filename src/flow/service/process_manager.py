@@ -25,15 +25,15 @@ class ProgressManager:
     # Progress step definitions with percentages
     PROGRESS_STEPS = {
         "initializing": {"percent": 0, "message": "Initializing content generation..."},
-        "FetchUser": {"percent": 10, "message": "Fetching user information..."},
-        "FetchWorkspace": {"percent": 15, "message": "Loading workspace details..."},
-        "FetchTopic": {"percent": 20, "message": "Retrieving topic information..."},
-        "WebContext": {"percent": 30, "message": "Searching web for relevant context..."},
-        "KnowledgeContext": {"percent": 40, "message": "Retrieving workspace knowledge..."},
-        "ScrapeContent": {"percent": 50, "message": "Scraping and processing sources..."},
-        "RerankContent": {"percent": 60, "message": "Ranking content by relevance..."},
-        "BlogGeneration": {"percent": 75, "message": "Generating content with AI..."},
-        "SaveContent": {"percent": 95, "message": "Saving generated content..."},
+        "fetching_user": {"percent": 10, "message": "Fetching user information..."},
+        "fetching_workspace": {"percent": 15, "message": "Loading workspace details..."},
+        "fetching_topic": {"percent": 20, "message": "Retrieving topic information..."},
+        "gathering_web_context": {"percent": 30, "message": "Searching web for relevant context..."},
+        "gathering_knowledge_context": {"percent": 40, "message": "Retrieving workspace knowledge..."},
+        "scraping_content": {"percent": 50, "message": "Scraping and processing sources..."},
+        "reranking_documents": {"percent": 60, "message": "Ranking content by relevance..."},
+        "generating_blog": {"percent": 75, "message": "Generating content with AI..."},
+        "saving_content": {"percent": 95, "message": "Saving generated content..."},
         "completed": {"percent": 100, "message": "Content generation completed!"},
         "failed": {"percent": -1, "message": "Content generation failed"}
     }

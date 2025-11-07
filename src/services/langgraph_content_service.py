@@ -125,15 +125,15 @@ class LangGraphContentService:
 
             # Node name to progress step mapping
             node_to_step_map = {
-                "FetchUser": "FetchUser",
-                "FetchWorkspace": "FetchWorkspace",
-                "FetchTopic": "FetchTopic",
-                "WebContext": "WebContext",
-                "KnowledgeContext": "KnowledgeContext",
-                "ScrapeContent": "ScrapeContent",
-                "RerankContent": "RerankContent",
-                "BlogGeneration": "BlogGeneration",
-                "SaveContent": "SaveContent",
+                "FetchUser": "fetching_user",
+                "FetchWorkspace": "fetching_workspace",
+                "FetchTopic": "fetching_topic",
+                "WebContext": "gathering_web_context",
+                "KnowledgeContext": "gathering_knowledge_context",
+                "ScrapeContent": "scraping_content",
+                "RerankContent": "reranking_documents",
+                "BlogGeneration": "generating_blog",
+                "SaveContent": "saving_content",
             }
 
             # Initialize progress manager for real-time updates
