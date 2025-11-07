@@ -49,6 +49,9 @@ async def run_content_generation_background(
     async for db in get_async_db():
         try:
             # Initialize progress manager for tracking workflow steps
+            # Note: Progress tracking strategy:
+            #   - DB updates: Only for stable states (init, completed, failed)
+            #   - SSE events: Emitted for ALL intermediate steps (real-time frontend updates)
             progress_service = ProgressManager(db)
 
             # Initialize LangGraph content service

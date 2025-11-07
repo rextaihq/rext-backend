@@ -88,6 +88,16 @@ class ProgressManager:
             extra={"step": step, "progress": step_info["percent"]}
         )
 
+        # Emit SSE event for initialization
+        await self._publish_sse_event(
+            content_id=content_id,
+            step=step,
+            status="in_progress",
+            message=step_info["message"],
+            progress=step_info["percent"],
+            payload={}
+        )
+
         return progress
 
     async def update_progress(
@@ -165,6 +175,57 @@ class ProgressManager:
         logger.info(
             f"Progress updated for content {content_id}",
             extra={"step": step, "progress": progress_percent, "message": status_message}
+        )
+
+    async def emit_progress_event(
+        self,
+        content_id: UUID,
+        step: str,
+        message: Optional[str] = None,
+        step_details: Optional[Dict[str, Any]] = None
+    ) -> None:
+        """
+        Emit SSE progress event WITHOUT updating database.
+
+        Use this for intermediate steps to show real-time progress to frontend
+        without the overhead of database writes. The database should only be
+        updated for stable states (initializing, completed, failed).
+
+        Args:
+            content_id: Content UUID
+            step: Progress step name (from PROGRESS_STEPS)
+            message: Custom status message (optional, uses default if not provided)
+            step_details: Additional step-specific data (optional)
+        """
+        step_info = self.PROGRESS_STEPS.get(step)
+        if not step_info:
+            logger.warning(f"Unknown progress step: {step}")
+            return
+
+        progress_percent = step_info["percent"]
+        status_message = message or step_info["message"]
+
+        # Determine status for SSE event
+        if progress_percent == 100:
+            status = "completed"
+        elif progress_percent < 0:
+            status = "failed"
+        else:
+            status = "in_progress"
+
+        # Publish SSE event only (no DB update)
+        await self._publish_sse_event(
+            content_id=content_id,
+            step=step,
+            status=status,
+            message=status_message,
+            progress=progress_percent,
+            payload=step_details
+        )
+
+        logger.debug(
+            f"Progress event emitted for content {content_id}",
+            extra={"step": step, "progress": progress_percent}
         )
 
     async def mark_completed(

@@ -125,15 +125,15 @@ class LangGraphContentService:
 
             # Node name to progress step mapping
             node_to_step_map = {
-                "FetchUser": "fetching_user",
-                "FetchWorkspace": "fetching_workspace",
-                "FetchTopic": "fetching_topic",
-                "WebContext": "gathering_web_context",
-                "KnowledgeContext": "gathering_knowledge_context",
-                "ScrapeContent": "scraping_content",
-                "RerankContent": "reranking_documents",
-                "BlogGeneration": "generating_blog",
-                "SaveContent": "saving_content",
+                "FetchUser": "FetchUser",
+                "FetchWorkspace": "FetchWorkspace",
+                "FetchTopic": "FetchTopic",
+                "WebContext": "WebContext",
+                "KnowledgeContext": "KnowledgeContext",
+                "ScrapeContent": "ScrapeContent",
+                "RerankContent": "RerankContent",
+                "BlogGeneration": "BlogGeneration",
+                "SaveContent": "SaveContent",
             }
 
             # Initialize progress manager for real-time updates
@@ -146,17 +146,19 @@ class LangGraphContentService:
                 name = event.get("name", "")
 
                 # Track node execution for progress updates
+                # Emit SSE events for all intermediate steps (no DB update)
                 if event_type == "on_chain_start" and name in node_to_step_map:
                     step = node_to_step_map[name]
                     logger.info(f"Node started: {name} -> {step}")
                     try:
-                        await progress_manager.update_progress(
+                        # Emit progress event (SSE only, no DB write)
+                        await progress_manager.emit_progress_event(
                             content_id=content_id,
                             step=step
                         )
                     except Exception as e:
-                        logger.error(f"Failed to update progress for {step}: {e}")
-                        # Don't fail workflow on progress update errors
+                        logger.error(f"Failed to emit progress event for {step}: {e}")
+                        # Don't fail workflow on progress event errors
 
                 # Capture final result
                 if event_type == "on_chain_end" and name == "LangGraph":
