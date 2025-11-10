@@ -436,6 +436,18 @@ async def login_user(
             device_info=device_info
         )
 
+        # Commit transaction to persist auto-accepted invitations
+        # (WorkspaceMembers and UserRole records created during login)
+        logger.info(
+            f"[LOGIN] Committing transaction for user {user.email}",
+            extra={"user_id": str(db_user.id), "user_email": user.email}
+        )
+        await db.commit()
+        logger.info(
+            f"[LOGIN] Transaction committed successfully",
+            extra={"user_id": str(db_user.id), "user_email": user.email}
+        )
+
         # Extract roles and permissions from service response
         role_names = tokens.get("roles", [])
         permissions = tokens.get("permissions", [])
@@ -461,10 +473,16 @@ async def login_user(
             message="User logged in successfully"
         )
 
-    except WrextAuthenticationException:
+    except WrextAuthenticationException as auth_error:
+        # CRITICAL: Commit transaction to persist failed login attempts
+        # Without this, account locking after multiple failed attempts won't work
+        await db.commit()
         # Re-raise to be handled by middleware
-        raise
+        raise auth_error
     except Exception as e:
+        # Rollback transaction on error
+        await db.rollback()
+        logger.error(f"Login failed: {str(e)}", exc_info=True)
         return error(
             message="Login failed due to server error",
             code=ErrorCode.INTERNAL_SERVER_ERROR,

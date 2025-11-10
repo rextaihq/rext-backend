@@ -275,6 +275,39 @@ class InvitationService:
             )
         return invitation
 
+    async def get_invitations_by_email(
+        self,
+        email: str,
+        status: Optional[str] = None
+    ) -> List[UserInvitations]:
+        """
+        Get all invitations for a specific email address.
+
+        This is used during login to auto-accept pending invitations
+        for existing users.
+
+        Args:
+            email: Email address to search for
+            status: Optional status filter (pending/accepted/revoked/expired)
+
+        Returns:
+            List of UserInvitations objects
+        """
+        # Normalize email for case-insensitive comparison
+        email = email.lower().strip()
+
+        query = select(UserInvitations).where(
+            UserInvitations.email == email
+        )
+
+        if status:
+            query = query.where(UserInvitations.status == status)
+
+        query = query.order_by(UserInvitations.created_at.desc())
+
+        result = await self.db.execute(query)
+        return list(result.scalars().all())
+
     async def get_workspace_invitations(
         self,
         workspace_id: UUID,
