@@ -272,11 +272,15 @@ class AuthService:
 
         # Get GLOBAL roles only (workspace_id is NULL and is_primary is True)
         # These are platform-level roles: super_admin, admin, user
-        global_role_names = [
-            ur.role.name
-            for ur in db_user.user_roles
-            if ur.workspace_id is None and ur.is_primary
-        ]
+        # Query fresh from DB to include any roles created during auto-accept
+        global_roles_result = await self.db.execute(
+            select(Role.name)
+            .join(UserRole, UserRole.role_id == Role.id)
+            .where(UserRole.user_id == db_user.id)
+            .where(UserRole.workspace_id.is_(None))
+            .where(UserRole.is_primary == True)
+        )
+        global_role_names = list(global_roles_result.scalars().all())
 
         # Get GLOBAL permissions only (from global roles)
         # These are platform-level permissions: user.*, workspace.create, subscription.*, etc.
