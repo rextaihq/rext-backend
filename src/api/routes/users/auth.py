@@ -436,6 +436,10 @@ async def login_user(
             device_info=device_info
         )
 
+        # Commit transaction to persist auto-accepted invitations
+        # (WorkspaceMembers and UserRole records created during login)
+        await db.commit()
+
         # Extract roles and permissions from service response
         role_names = tokens.get("roles", [])
         permissions = tokens.get("permissions", [])
@@ -465,6 +469,9 @@ async def login_user(
         # Re-raise to be handled by middleware
         raise
     except Exception as e:
+        # Rollback transaction on error
+        await db.rollback()
+        logger.error(f"Login failed: {str(e)}", exc_info=True)
         return error(
             message="Login failed due to server error",
             code=ErrorCode.INTERNAL_SERVER_ERROR,
