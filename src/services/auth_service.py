@@ -54,7 +54,8 @@ from src.utils.logger import logger
 from src.api.middleware.exceptions import (
     DuplicateResourceException,
     WrextAuthenticationException,
-    ResourceNotFoundException
+    ResourceNotFoundException,
+    BusinessRuleViolationException
 )
 
 
@@ -265,6 +266,10 @@ class AuthService:
         db_user.last_login_at = datetime.utcnow()
         db_user.login_count = (db_user.login_count or 0) + 1
         await self.db.flush()
+
+        # Auto-accept pending workspace invitations for this user
+        # This ensures existing users see workspaces they were invited to
+        await self._auto_accept_pending_invitations(db_user)
 
         # Get GLOBAL roles only (workspace_id is NULL and is_primary is True)
         # These are platform-level roles: super_admin, admin, user
@@ -725,3 +730,147 @@ class AuthService:
             logger.warning("Trial subscription plan not found in database")
 
         return trial_plan
+
+    async def _auto_accept_pending_invitations(self, user: Users) -> None:
+        """
+        Auto-accept all pending workspace invitations for a user during login.
+
+        This ensures that existing users who were invited to a workspace
+        will see that workspace immediately after logging in, without needing
+        to manually accept the invitation.
+
+        The method is designed to be fault-tolerant:
+        - If invitation acceptance fails, it logs the error but doesn't fail login
+        - Skips expired invitations automatically
+        - Handles race conditions gracefully
+
+        Args:
+            user: User object who just logged in
+
+        Side Effects:
+            - Creates WorkspaceMembers records
+            - Creates UserRole records
+            - Updates UserInvitations.status to "accepted"
+        """
+        from src.services.invitation_service import InvitationService
+        from src.utils.invitation_utils import is_invitation_expired
+
+        try:
+            invitation_service = InvitationService(self.db)
+
+            # Get all pending invitations for this user's email
+            pending_invitations = await invitation_service.get_invitations_by_email(
+                email=user.email,
+                status="pending"
+            )
+
+            if not pending_invitations:
+                return  # No pending invitations, nothing to do
+
+            logger.info(
+                f"Found {len(pending_invitations)} pending invitation(s) for user {user.email}",
+                extra={
+                    "user_id": str(user.id),
+                    "invitation_count": len(pending_invitations)
+                }
+            )
+
+            accepted_count = 0
+            skipped_count = 0
+
+            for invitation in pending_invitations:
+                try:
+                    # Skip expired invitations
+                    if is_invitation_expired(invitation):
+                        invitation.status = "expired"
+                        skipped_count += 1
+                        logger.info(
+                            f"Skipping expired invitation",
+                            extra={
+                                "invitation_id": str(invitation.id),
+                                "workspace_id": str(invitation.workspace_id),
+                                "expires_at": invitation.expires_at.isoformat()
+                            }
+                        )
+                        continue
+
+                    # Auto-accept the invitation
+                    # This creates WorkspaceMembers + UserRole records
+                    result = await invitation_service.accept_invitation(
+                        invitation_id=invitation.id,
+                        user_id=user.id
+                    )
+
+                    accepted_count += 1
+                    logger.info(
+                        f"Auto-accepted invitation during login",
+                        extra={
+                            "user_id": str(user.id),
+                            "invitation_id": str(invitation.id),
+                            "workspace_id": str(invitation.workspace_id),
+                            "membership_id": result["membership_id"]
+                        }
+                    )
+
+                except BusinessRuleViolationException as e:
+                    # User might already be a member - this is OK, just skip
+                    if "already a member" in str(e):
+                        skipped_count += 1
+                        logger.info(
+                            f"User already member of workspace, marking invitation as accepted",
+                            extra={
+                                "user_id": str(user.id),
+                                "invitation_id": str(invitation.id),
+                                "workspace_id": str(invitation.workspace_id)
+                            }
+                        )
+                        # Mark invitation as accepted anyway
+                        invitation.status = "accepted"
+                    else:
+                        # Other business rule violations - log and continue
+                        logger.warning(
+                            f"Failed to auto-accept invitation: {str(e)}",
+                            extra={
+                                "user_id": str(user.id),
+                                "invitation_id": str(invitation.id),
+                                "error": str(e)
+                            }
+                        )
+                        skipped_count += 1
+
+                except Exception as e:
+                    # Unexpected error - log but don't fail login
+                    logger.error(
+                        f"Unexpected error auto-accepting invitation: {str(e)}",
+                        exc_info=True,
+                        extra={
+                            "user_id": str(user.id),
+                            "invitation_id": str(invitation.id),
+                            "workspace_id": str(invitation.workspace_id)
+                        }
+                    )
+                    skipped_count += 1
+
+            # Flush changes to database
+            await self.db.flush()
+
+            if accepted_count > 0:
+                logger.info(
+                    f"Auto-accepted {accepted_count} invitation(s) during login",
+                    extra={
+                        "user_id": str(user.id),
+                        "accepted": accepted_count,
+                        "skipped": skipped_count
+                    }
+                )
+
+        except Exception as e:
+            # Catch-all: Don't fail login if invitation processing fails
+            logger.error(
+                f"Failed to process pending invitations during login: {str(e)}",
+                exc_info=True,
+                extra={
+                    "user_id": str(user.id),
+                    "user_email": user.email
+                }
+            )
