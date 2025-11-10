@@ -21,8 +21,7 @@ Does NOT:
 
 from typing import Tuple, Dict, Any, Optional
 from uuid import UUID
-from datetime import datetime, timedelta, timezone
-import os
+from datetime import datetime, timedelta
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, or_
