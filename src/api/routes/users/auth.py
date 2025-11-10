@@ -438,7 +438,15 @@ async def login_user(
 
         # Commit transaction to persist auto-accepted invitations
         # (WorkspaceMembers and UserRole records created during login)
+        logger.info(
+            f"[LOGIN] Committing transaction for user {user.email}",
+            extra={"user_id": str(db_user.id), "user_email": user.email}
+        )
         await db.commit()
+        logger.info(
+            f"[LOGIN] Transaction committed successfully",
+            extra={"user_id": str(db_user.id), "user_email": user.email}
+        )
 
         # Extract roles and permissions from service response
         role_names = tokens.get("roles", [])

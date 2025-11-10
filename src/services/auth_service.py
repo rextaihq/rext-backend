@@ -755,6 +755,14 @@ class AuthService:
         from src.services.invitation_service import InvitationService
         from src.utils.invitation_utils import is_invitation_expired
 
+        logger.info(
+            f"[AUTO-ACCEPT] Starting auto-accept process for user during login",
+            extra={
+                "user_id": str(user.id),
+                "user_email": user.email
+            }
+        )
+
         try:
             invitation_service = InvitationService(self.db)
 
@@ -764,7 +772,21 @@ class AuthService:
                 status="pending"
             )
 
+            logger.info(
+                f"[AUTO-ACCEPT] Query completed - found {len(pending_invitations)} pending invitation(s)",
+                extra={
+                    "user_id": str(user.id),
+                    "user_email": user.email,
+                    "invitation_count": len(pending_invitations),
+                    "invitation_ids": [str(inv.id) for inv in pending_invitations]
+                }
+            )
+
             if not pending_invitations:
+                logger.info(
+                    f"[AUTO-ACCEPT] No pending invitations found for {user.email} - skipping",
+                    extra={"user_id": str(user.id)}
+                )
                 return  # No pending invitations, nothing to do
 
             logger.info(
@@ -780,12 +802,23 @@ class AuthService:
 
             for invitation in pending_invitations:
                 try:
+                    logger.info(
+                        f"[AUTO-ACCEPT] Processing invitation {str(invitation.id)}",
+                        extra={
+                            "invitation_id": str(invitation.id),
+                            "workspace_id": str(invitation.workspace_id),
+                            "role_id": str(invitation.role_id),
+                            "status": invitation.status,
+                            "expires_at": invitation.expires_at.isoformat()
+                        }
+                    )
+
                     # Skip expired invitations
                     if is_invitation_expired(invitation):
                         invitation.status = "expired"
                         skipped_count += 1
-                        logger.info(
-                            f"Skipping expired invitation",
+                        logger.warning(
+                            f"[AUTO-ACCEPT] Skipping expired invitation",
                             extra={
                                 "invitation_id": str(invitation.id),
                                 "workspace_id": str(invitation.workspace_id),
@@ -793,6 +826,15 @@ class AuthService:
                             }
                         )
                         continue
+
+                    logger.info(
+                        f"[AUTO-ACCEPT] Calling accept_invitation service method",
+                        extra={
+                            "invitation_id": str(invitation.id),
+                            "user_id": str(user.id),
+                            "workspace_id": str(invitation.workspace_id)
+                        }
+                    )
 
                     # Auto-accept the invitation
                     # This creates WorkspaceMembers + UserRole records
@@ -803,12 +845,13 @@ class AuthService:
 
                     accepted_count += 1
                     logger.info(
-                        f"Auto-accepted invitation during login",
+                        f"[AUTO-ACCEPT] ✅ Successfully auto-accepted invitation during login",
                         extra={
                             "user_id": str(user.id),
                             "invitation_id": str(invitation.id),
                             "workspace_id": str(invitation.workspace_id),
-                            "membership_id": result["membership_id"]
+                            "membership_id": result["membership_id"],
+                            "result": result
                         }
                     )
 
@@ -817,23 +860,26 @@ class AuthService:
                     if "already a member" in str(e):
                         skipped_count += 1
                         logger.info(
-                            f"User already member of workspace, marking invitation as accepted",
+                            f"[AUTO-ACCEPT] User already member of workspace, marking invitation as accepted",
                             extra={
                                 "user_id": str(user.id),
                                 "invitation_id": str(invitation.id),
-                                "workspace_id": str(invitation.workspace_id)
+                                "workspace_id": str(invitation.workspace_id),
+                                "error": str(e)
                             }
                         )
                         # Mark invitation as accepted anyway
                         invitation.status = "accepted"
                     else:
                         # Other business rule violations - log and continue
-                        logger.warning(
-                            f"Failed to auto-accept invitation: {str(e)}",
+                        logger.error(
+                            f"[AUTO-ACCEPT] ❌ Business rule violation - failed to auto-accept invitation: {str(e)}",
                             extra={
                                 "user_id": str(user.id),
                                 "invitation_id": str(invitation.id),
-                                "error": str(e)
+                                "workspace_id": str(invitation.workspace_id),
+                                "error": str(e),
+                                "error_type": type(e).__name__
                             }
                         )
                         skipped_count += 1
@@ -841,36 +887,49 @@ class AuthService:
                 except Exception as e:
                     # Unexpected error - log but don't fail login
                     logger.error(
-                        f"Unexpected error auto-accepting invitation: {str(e)}",
+                        f"[AUTO-ACCEPT] ❌ Unexpected error auto-accepting invitation: {str(e)}",
                         exc_info=True,
                         extra={
                             "user_id": str(user.id),
                             "invitation_id": str(invitation.id),
-                            "workspace_id": str(invitation.workspace_id)
+                            "workspace_id": str(invitation.workspace_id),
+                            "error": str(e),
+                            "error_type": type(e).__name__
                         }
                     )
                     skipped_count += 1
 
             # Flush changes to database
+            logger.info(
+                f"[AUTO-ACCEPT] Flushing database changes",
+                extra={
+                    "user_id": str(user.id),
+                    "accepted_count": accepted_count,
+                    "skipped_count": skipped_count
+                }
+            )
             await self.db.flush()
 
-            if accepted_count > 0:
-                logger.info(
-                    f"Auto-accepted {accepted_count} invitation(s) during login",
-                    extra={
-                        "user_id": str(user.id),
-                        "accepted": accepted_count,
-                        "skipped": skipped_count
-                    }
-                )
+            logger.info(
+                f"[AUTO-ACCEPT] ✅ Process completed - auto-accepted {accepted_count} invitation(s), skipped {skipped_count}",
+                extra={
+                    "user_id": str(user.id),
+                    "user_email": user.email,
+                    "accepted": accepted_count,
+                    "skipped": skipped_count,
+                    "total_processed": len(pending_invitations)
+                }
+            )
 
         except Exception as e:
             # Catch-all: Don't fail login if invitation processing fails
             logger.error(
-                f"Failed to process pending invitations during login: {str(e)}",
+                f"[AUTO-ACCEPT] ❌ Fatal error - failed to process pending invitations during login: {str(e)}",
                 exc_info=True,
                 extra={
                     "user_id": str(user.id),
-                    "user_email": user.email
+                    "user_email": user.email,
+                    "error": str(e),
+                    "error_type": type(e).__name__
                 }
             )
