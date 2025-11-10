@@ -789,14 +789,6 @@ class AuthService:
                 )
                 return  # No pending invitations, nothing to do
 
-            logger.info(
-                f"Found {len(pending_invitations)} pending invitation(s) for user {user.email}",
-                extra={
-                    "user_id": str(user.id),
-                    "invitation_count": len(pending_invitations)
-                }
-            )
-
             accepted_count = 0
             skipped_count = 0
 
