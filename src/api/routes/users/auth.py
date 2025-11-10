@@ -473,9 +473,12 @@ async def login_user(
             message="User logged in successfully"
         )
 
-    except WrextAuthenticationException:
+    except WrextAuthenticationException as auth_error:
+        # CRITICAL: Commit transaction to persist failed login attempts
+        # Without this, account locking after multiple failed attempts won't work
+        await db.commit()
         # Re-raise to be handled by middleware
-        raise
+        raise auth_error
     except Exception as e:
         # Rollback transaction on error
         await db.rollback()

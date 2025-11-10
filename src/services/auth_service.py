@@ -851,7 +851,7 @@ class AuthService:
                     if "already a member" in str(e):
                         skipped_count += 1
                         logger.info(
-                            f"[AUTO-ACCEPT] User already member of workspace, marking invitation as accepted",
+                            f"[AUTO-ACCEPT] User already member of workspace (invitation already marked accepted)",
                             extra={
                                 "user_id": str(user.id),
                                 "invitation_id": str(invitation.id),
@@ -859,8 +859,7 @@ class AuthService:
                                 "error": str(e)
                             }
                         )
-                        # Mark invitation as accepted anyway
-                        invitation.status = "accepted"
+                        # Note: invitation.status already set to "accepted" by accept_invitation before raising
                     else:
                         # Other business rule violations - log and continue
                         logger.error(
