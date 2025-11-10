@@ -46,7 +46,45 @@ class WorkspacePermissionService:
         if not workspace:
             raise ValueError(f"Workspace {workspace_id} not found")
 
-        # Get user's workspace role
+        # Check if user is super_admin FIRST (super_admin has access to all workspaces)
+        # This ensures super_admin role is always returned, even if user also has workspace-specific role
+        super_admin_check = await db.execute(
+            select(UserRole, Role)
+            .join(Role, Role.id == UserRole.role_id)
+            .where(UserRole.user_id == user_id)
+            .where(UserRole.workspace_id == None)
+            .where(Role.name == 'super_admin')
+        )
+        is_super_admin = super_admin_check.first() is not None
+
+        if is_super_admin:
+            # Super admin gets all permissions
+            all_permissions_result = await db.execute(
+                select(Permission.name)
+                .where(Permission.resource.in_([
+                    'workspace', 'content', 'topic', 'knowledge', 'member'
+                ]))
+            )
+            all_permissions = [row[0] for row in all_permissions_result.all()]
+
+            logger.info(
+                f"Super admin access granted for user {user_id} in workspace {workspace_id}",
+                extra={
+                    "user_id": str(user_id),
+                    "workspace_id": str(workspace_id),
+                    "role": "super_admin",
+                    "permission_count": len(all_permissions)
+                }
+            )
+
+            return {
+                "workspace_id": str(workspace_id),
+                "workspace_slug": workspace.slug,
+                "user_role": "super_admin",
+                "permissions": all_permissions
+            }
+
+        # Get user's workspace-specific role
         user_role_result = await db.execute(
             select(UserRole, Role)
             .join(Role, Role.id == UserRole.role_id)
@@ -56,33 +94,6 @@ class WorkspacePermissionService:
         user_role_data = user_role_result.first()
 
         if not user_role_data:
-            # Check if user is super_admin (has access to all workspaces)
-            super_admin_check = await db.execute(
-                select(UserRole, Role)
-                .join(Role, Role.id == UserRole.role_id)
-                .where(UserRole.user_id == user_id)
-                .where(UserRole.workspace_id == None)
-                .where(Role.name == 'super_admin')
-            )
-            is_super_admin = super_admin_check.first() is not None
-
-            if is_super_admin:
-                # Super admin gets all permissions
-                all_permissions_result = await db.execute(
-                    select(Permission.name)
-                    .where(Permission.resource.in_([
-                        'workspace', 'content', 'topic', 'knowledge', 'member'
-                    ]))
-                )
-                all_permissions = [row[0] for row in all_permissions_result.all()]
-
-                return {
-                    "workspace_id": str(workspace_id),
-                    "workspace_slug": workspace.slug,
-                    "user_role": "super_admin",
-                    "permissions": all_permissions
-                }
-
             raise ValueError(f"User {user_id} does not have access to workspace {workspace_id}")
 
         user_role, role = user_role_data
