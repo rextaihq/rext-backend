@@ -19,20 +19,33 @@ class NotificationPreferences(Base, SerializableMixin):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, nullable=False)
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), unique=True, nullable=False)
 
-    # Email Notifications
+    # Global toggles
     email_notifications = Column(Boolean, default=True, nullable=False)
-    email_digest_frequency = Column(String(20), default="daily", nullable=False)  # instant, daily, weekly, never
-    email_workspace_invites = Column(Boolean, default=True, nullable=False)
-    email_comments = Column(Boolean, default=True, nullable=False)
-    email_mentions = Column(Boolean, default=True, nullable=False)
-    email_updates = Column(Boolean, default=False, nullable=False)
-
-    # In-App Notifications
     in_app_notifications = Column(Boolean, default=True, nullable=False)
-    in_app_workspace_invites = Column(Boolean, default=True, nullable=False)
-    in_app_comments = Column(Boolean, default=True, nullable=False)
+
+    # Digest settings
+    digest_enabled = Column(Boolean, default=True, nullable=False)
+    email_digest_frequency = Column(String(20), default="daily", nullable=False)  # daily, weekly, monthly
+
+    # Category-specific preferences (email)
+    email_mentions = Column(Boolean, default=True, nullable=False)
+    email_workspace_invites = Column(Boolean, default=True, nullable=False)
+    email_content_updates = Column(Boolean, default=True, nullable=False)
+    email_comments = Column(Boolean, default=True, nullable=False)
+    email_team_activity = Column(Boolean, default=True, nullable=False)
+    email_security_alerts = Column(Boolean, default=True, nullable=False)
+    email_billing_updates = Column(Boolean, default=True, nullable=False)
+    email_product_updates = Column(Boolean, default=False, nullable=False)
+
+    # Category-specific preferences (in-app)
     in_app_mentions = Column(Boolean, default=True, nullable=False)
-    in_app_updates = Column(Boolean, default=False, nullable=False)
+    in_app_workspace_invites = Column(Boolean, default=True, nullable=False)
+    in_app_content_updates = Column(Boolean, default=True, nullable=False)
+    in_app_comments = Column(Boolean, default=True, nullable=False)
+    in_app_team_activity = Column(Boolean, default=True, nullable=False)
+    in_app_security_alerts = Column(Boolean, default=True, nullable=False)
+    in_app_billing_updates = Column(Boolean, default=True, nullable=False)
+    in_app_product_updates = Column(Boolean, default=False, nullable=False)
 
     created_at = Column(TIMESTAMP, default=datetime.utcnow, nullable=False)
     updated_at = Column(TIMESTAMP, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
@@ -41,19 +54,28 @@ class NotificationPreferences(Base, SerializableMixin):
     user = relationship("Users", back_populates="notification_preferences")
 
     def to_dict(self, **kwargs):
-        """Convert to dictionary with camelCase keys for frontend."""
-        data = super().to_dict(exclude=['id'], **kwargs)
-        # Convert snake_case to camelCase for frontend
+        """Convert to dictionary matching the API spec format.
+
+        Note: Categories return True if enabled for either email OR in-app.
+        This provides a simplified view while maintaining backward compatibility.
+        """
+        data = super().to_dict(exclude=['id', 'user_id', 'created_at', 'updated_at'], **kwargs)
+
+        # Build response in the format expected by the API spec
+        # For categories, we return True if enabled for either email OR in-app
         return {
-            "emailNotifications": data.get("email_notifications"),
-            "emailDigestFrequency": data.get("email_digest_frequency"),
-            "emailWorkspaceInvites": data.get("email_workspace_invites"),
-            "emailComments": data.get("email_comments"),
-            "emailMentions": data.get("email_mentions"),
-            "emailUpdates": data.get("email_updates"),
-            "inAppNotifications": data.get("in_app_notifications"),
-            "inAppWorkspaceInvites": data.get("in_app_workspace_invites"),
-            "inAppComments": data.get("in_app_comments"),
-            "inAppMentions": data.get("in_app_mentions"),
-            "inAppUpdates": data.get("in_app_updates"),
+            "email_enabled": data.get("email_notifications"),
+            "in_app_enabled": data.get("in_app_notifications"),
+            "digest_enabled": data.get("digest_enabled"),
+            "digest_frequency": data.get("email_digest_frequency"),
+            "categories": {
+                "mentions": data.get("email_mentions") or data.get("in_app_mentions"),
+                "workspace_invites": data.get("email_workspace_invites") or data.get("in_app_workspace_invites"),
+                "content_updates": data.get("email_content_updates") or data.get("in_app_content_updates"),
+                "comments": data.get("email_comments") or data.get("in_app_comments"),
+                "team_activity": data.get("email_team_activity") or data.get("in_app_team_activity"),
+                "security_alerts": data.get("email_security_alerts") or data.get("in_app_security_alerts"),
+                "billing_updates": data.get("email_billing_updates") or data.get("in_app_billing_updates"),
+                "product_updates": data.get("email_product_updates") or data.get("in_app_product_updates")
+            }
         }

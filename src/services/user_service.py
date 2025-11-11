@@ -100,6 +100,7 @@ class UserService:
         first_name: Optional[str] = None,
         last_name: Optional[str] = None,
         display_name: Optional[str] = None,
+        bio: Optional[str] = None,
         avatar_url: Optional[str] = None,
         language: Optional[str] = None,
         timezone: Optional[str] = None
@@ -112,6 +113,7 @@ class UserService:
             first_name: First name
             last_name: Last name
             display_name: Display name
+            bio: User bio (max 500 characters)
             avatar_url: Avatar URL
             language: Language preference
             timezone: Timezone preference
@@ -133,6 +135,9 @@ class UserService:
 
         if display_name is not None:
             user.display_name = display_name
+
+        if bio is not None:
+            user.bio = bio
 
         if avatar_url is not None:
             user.avatar_url = avatar_url

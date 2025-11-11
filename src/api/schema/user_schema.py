@@ -70,6 +70,7 @@ class UpdateProfileRequest(BaseModel):
     first_name: Optional[str] = Field(None, min_length=1, max_length=100, description="First name")
     last_name: Optional[str] = Field(None, min_length=1, max_length=100, description="Last name")
     display_name: Optional[str] = Field(None, min_length=1, max_length=200, description="Display name")
+    bio: Optional[str] = Field(None, max_length=500, description="User bio (max 500 characters)")
     language: Optional[str] = Field(None, min_length=2, max_length=10, description="Language preference (e.g., 'en', 'es')")
     timezone: Optional[str] = Field(None, min_length=1, max_length=50, description="Timezone (e.g., 'UTC', 'America/New_York')")
 
