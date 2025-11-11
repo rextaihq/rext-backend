@@ -23,6 +23,7 @@ class Users(Base, SerializableMixin):
     first_name = Column(String(100))
     last_name = Column(String(100))
     display_name = Column(String(200))
+    bio = Column(String(500))
     password_changed_at = Column(TIMESTAMP)
     locked_until = Column(TIMESTAMP)
     reset_token = Column(Text)
