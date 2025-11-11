@@ -106,6 +106,7 @@ class UserStatusResponse(BaseModel):
 
 class DeactivateAccountRequest(BaseModel):
     """Schema for account deactivation request"""
+    password: str = Field(..., min_length=1, description="Current password for verification")
     reason: Optional[str] = Field(None, max_length=500, description="Reason for deactivation")
     confirm: bool = Field(..., description="User must confirm deactivation")
     cancel_subscriptions: bool = Field(False, description="Automatically cancel active subscriptions")

@@ -16,6 +16,7 @@ from datetime import datetime
 from pathlib import Path
 from sqlalchemy import select
 import time
+import imghdr
 
 router = APIRouter()
 
@@ -24,7 +25,6 @@ AVATAR_UPLOAD_DIR = Path("uploads/avatars")
 AVATAR_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 @require_permissions("user.read")
-
 @router.get("/profile", response_model=dict)
 async def get_profile(
     request: Request,
@@ -121,6 +121,9 @@ async def update_profile(
         # Update via service
         user = await service.update_profile(user_id=user_id, **update_kwargs)
 
+        # Commit changes to database
+        await db.commit()
+
         # Build response
         profile_response = {
             "id": str(user.id),
@@ -205,17 +208,56 @@ async def upload_avatar(
                 request=request
             )
 
+        # Validate actual file content using magic bytes (not just Content-Type header)
+        image_type = imghdr.what(None, file_content)
+        allowed_image_types = ['jpeg', 'png', 'gif', 'webp']
+
+        if image_type not in allowed_image_types:
+            logger.warning(
+                f"Invalid image file uploaded by user {user_id}. " +
+                f"Content-Type: {file.content_type}, Actual type: {image_type}",
+                extra={"user_id": str(user_id)}
+            )
+            return error(
+                message="Invalid image file. File content does not match an allowed image format (JPEG, PNG, GIF, WebP).",
+                code=ErrorCode.INVALID_INPUT,
+                status_code=400,
+                severity=ErrorSeverity.MEDIUM,
+                request=request
+            )
+
+        # Security: Block SVG files to prevent XSS
+        if file.filename and file.filename.lower().endswith('.svg'):
+            logger.warning(f"SVG upload attempt blocked for user {user_id}")
+            return error(
+                message="SVG files are not supported for security reasons.",
+                code=ErrorCode.INVALID_INPUT,
+                status_code=400,
+                severity=ErrorSeverity.MEDIUM,
+                request=request
+            )
+
         # Create user-specific directory
         user_avatar_dir = AVATAR_UPLOAD_DIR / str(user_id)
         user_avatar_dir.mkdir(parents=True, exist_ok=True)
 
         # Delete old avatar if exists
         if user.avatar_url:
-            old_avatar_path = Path(user.avatar_url.lstrip('/'))
-            if old_avatar_path.exists():
-                try:
+            old_avatar_path = Path(user.avatar_url.lstrip('/')).resolve()
+
+            # Security: Validate path is within allowed directory to prevent path traversal
+            try:
+                old_avatar_path.relative_to(AVATAR_UPLOAD_DIR.resolve())
+                if old_avatar_path.exists():
                     old_avatar_path.unlink()
-                except Exception as e:
+            except (ValueError, Exception) as e:
+                # Path is outside allowed directory or deletion failed
+                if isinstance(e, ValueError):
+                    logger.warning(
+                        f"Path traversal attempt detected for user {user_id}: {user.avatar_url}",
+                        extra={"user_id": str(user_id), "attempted_path": user.avatar_url}
+                    )
+                else:
                     logger.warning(f"Could not delete old avatar: {str(e)}")
 
         # Save new avatar
@@ -233,6 +275,9 @@ async def upload_avatar(
             user_id=user_id,
             avatar_url=relative_path
         )
+
+        # Commit changes to database
+        await db.commit()
 
         logger.info(f"Avatar uploaded for user {user_id}: {relative_path}")
 
@@ -289,12 +334,22 @@ async def delete_avatar(
                 request=request
             )
 
-        # Delete file from storage
-        avatar_path = Path(user.avatar_url.lstrip('/'))
-        if avatar_path.exists():
-            try:
+        # Delete file from storage with path traversal protection
+        avatar_path = Path(user.avatar_url.lstrip('/')).resolve()
+
+        try:
+            # Security: Validate path is within allowed directory
+            avatar_path.relative_to(AVATAR_UPLOAD_DIR.resolve())
+            if avatar_path.exists():
                 avatar_path.unlink()
-            except Exception as e:
+        except (ValueError, Exception) as e:
+            # Path is outside allowed directory or deletion failed
+            if isinstance(e, ValueError):
+                logger.warning(
+                    f"Path traversal attempt detected for user {user_id}: {user.avatar_url}",
+                    extra={"user_id": str(user_id), "attempted_path": user.avatar_url}
+                )
+            else:
                 logger.warning(f"Could not delete avatar file: {str(e)}")
 
         # Update user via service
@@ -303,6 +358,9 @@ async def delete_avatar(
             user_id=user_id,
             avatar_url=None
         )
+
+        # Commit changes to database
+        await db.commit()
 
         logger.info(f"Avatar deleted for user {user_id}")
 
@@ -360,6 +418,8 @@ async def get_notification_preferences(
         if not preferences:
             preferences = NotificationPreferences(user_id=user_id)
             db.add(preferences)
+            await db.commit()
+            await db.refresh(preferences)
             logger.info(f"Created default notification preferences for user {user_id}")
 
         return success(
@@ -386,7 +446,18 @@ async def update_notification_preferences(
     Creates preferences with defaults if they don't exist.
 
     Supports partial updates - only provided fields will be updated.
-    When updating categories, the setting applies to both email and in-app channels.
+
+    IMPORTANT: When updating categories, the setting applies to BOTH email and in-app channels.
+    This is intentional per the API spec to provide a simplified UX.
+
+    Note: GET returns True if EITHER channel is enabled (OR logic), but PATCH sets BOTH
+    channels to the same value. This means updating one field could unintentionally enable
+    a channel the user had disabled. Frontend should always send complete category state
+    to avoid this.
+
+    Example: If user has email_mentions=False and in_app_mentions=True:
+    - GET returns mentions=True (correct, uses OR)
+    - PATCH with mentions=True sets BOTH to True (email_mentions changes from False!)
     """
     try:
         user_id = current_user.get("identity")
@@ -454,6 +525,9 @@ async def update_notification_preferences(
                 preferences.email_product_updates = categories.product_updates
                 preferences.in_app_product_updates = categories.product_updates
 
+        # Commit changes to database
+        await db.commit()
+
         logger.info(f"Updated notification preferences for user {user_id}")
 
         return success(
@@ -504,11 +578,22 @@ async def deactivate_account(
                 request=request
             )
 
+        # Verify password before allowing deactivation
+        if not await service.verify_user_password(user_id, deactivate_request.password):
+            logger.warning(f"Failed deactivation attempt for user {user_id}: invalid password")
+            return error(
+                message="Invalid password. Please enter your current password to deactivate your account.",
+                code=ErrorCode.AUTHENTICATION_ERROR,
+                status_code=401,
+                severity=ErrorSeverity.HIGH,
+                request=request
+            )
+
         # Get user
         user = await service.get_user_by_id(user_id)
 
         # Check if already deactivated
-        if user.status == "deactivated":
+        if user.status == "inactive":
             return error(
                 message="Account is already deactivated",
                 code=ErrorCode.INVALID_INPUT,
@@ -536,7 +621,7 @@ async def deactivate_account(
         now = datetime.utcnow()
         scheduled_deletion = now + timedelta(days=14)
 
-        user.status = "deactivated"
+        user.status = "inactive"
         user.deactivated_at = now
 
         # Log the deactivation reason if provided

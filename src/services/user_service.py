@@ -137,6 +137,9 @@ class UserService:
             user.display_name = display_name
 
         if bio is not None:
+            # Validate bio length at service layer
+            if len(bio) > 500:
+                raise WrextValidationException("Bio must be 500 characters or less")
             user.bio = bio
 
         if avatar_url is not None:
