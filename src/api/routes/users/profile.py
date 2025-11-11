@@ -243,7 +243,8 @@ async def upload_avatar(
 
         # Delete old avatar if exists
         if user.avatar_url:
-            old_avatar_path = Path(user.avatar_url.lstrip('/')).resolve()
+            # Construct correct path: DB stores "/avatars/..." but files are in "uploads/avatars/..."
+            old_avatar_path = Path("uploads" + user.avatar_url).resolve()
 
             # Security: Validate path is within allowed directory to prevent path traversal
             try:
@@ -335,7 +336,8 @@ async def delete_avatar(
             )
 
         # Delete file from storage with path traversal protection
-        avatar_path = Path(user.avatar_url.lstrip('/')).resolve()
+        # Construct correct path: DB stores "/avatars/..." but files are in "uploads/avatars/..."
+        avatar_path = Path("uploads" + user.avatar_url).resolve()
 
         try:
             # Security: Validate path is within allowed directory
