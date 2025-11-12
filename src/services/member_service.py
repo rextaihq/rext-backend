@@ -592,6 +592,39 @@ class MemberService(InvitationService):
         logger.info(f"Updated role for member {member_id} in workspace {workspace_id}")
         return member, member_user, new_role, old_role
 
+
+    async def remove_user_roles_in_workspace(
+        self,
+        workspace_id: UUID,
+        user_id: UUID
+    ) -> None:
+        """
+        Remove all roles assigned to a user in a specific workspace.
+        Args:
+            workspace_id: Workspace UUID
+            user_id: User UUID
+        """
+        from src.api.models.user_models.user_roles import UserRole
+
+        # Fetch all roles for the user in the given workspace
+        result = await self.db.execute(
+            select(UserRole).where(
+                and_(
+                    UserRole.workspace_id == workspace_id,
+                    UserRole.user_id == user_id
+                )
+            )
+        )
+
+        user_roles = result.scalars().all()
+
+        # Delete each user role
+        for user_role in user_roles:
+            await self.db.delete(user_role)
+
+        # ✅ Commit the changes
+        await self.db.commit()
+
     async def get_workspace_members_with_users(
         self,
         workspace_id: UUID,
