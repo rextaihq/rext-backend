@@ -20,8 +20,8 @@ import imghdr
 
 router = APIRouter()
 
-# Avatar upload directory
-AVATAR_UPLOAD_DIR = Path("uploads/avatars")
+# Avatar upload directory - stored in media directory for consistent static file serving
+AVATAR_UPLOAD_DIR = Path("media/avatars")
 AVATAR_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 @require_permissions("user.read")
@@ -243,8 +243,8 @@ async def upload_avatar(
 
         # Delete old avatar if exists
         if user.avatar_url:
-            # Construct correct path: DB stores "/avatars/..." but files are in "uploads/avatars/..."
-            old_avatar_path = Path("uploads" + user.avatar_url).resolve()
+            # Construct correct path: DB stores "/media/avatars/..." and files are in "media/avatars/..."
+            old_avatar_path = Path(user.avatar_url.lstrip('/')).resolve()
 
             # Security: Validate path is within allowed directory to prevent path traversal
             try:
@@ -271,7 +271,7 @@ async def upload_avatar(
             f.write(file_content)
 
         # Update user avatar via service
-        relative_path = f"/avatars/{user_id}/{new_filename}"
+        relative_path = f"/media/avatars/{user_id}/{new_filename}"
         updated_user = await service.update_profile(
             user_id=user_id,
             avatar_url=relative_path
@@ -336,8 +336,8 @@ async def delete_avatar(
             )
 
         # Delete file from storage with path traversal protection
-        # Construct correct path: DB stores "/avatars/..." but files are in "uploads/avatars/..."
-        avatar_path = Path("uploads" + user.avatar_url).resolve()
+        # Construct correct path: DB stores "/media/avatars/..." and files are in "media/avatars/..."
+        avatar_path = Path(user.avatar_url.lstrip('/')).resolve()
 
         try:
             # Security: Validate path is within allowed directory

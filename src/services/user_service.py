@@ -97,65 +97,57 @@ class UserService:
     async def update_profile(
         self,
         user_id: UUID,
-        first_name: Optional[str] = None,
-        last_name: Optional[str] = None,
-        display_name: Optional[str] = None,
-        bio: Optional[str] = None,
-        avatar_url: Optional[str] = None,
-        language: Optional[str] = None,
-        timezone: Optional[str] = None
+        **kwargs
     ) -> Users:
         """
         Update user profile information.
 
         Args:
             user_id: User UUID
-            first_name: First name
-            last_name: Last name
-            display_name: Display name
-            bio: User bio (max 500 characters)
-            avatar_url: Avatar URL
-            language: Language preference
-            timezone: Timezone preference
+            **kwargs: Fields to update (first_name, last_name, display_name, bio,
+                     avatar_url, language, timezone)
 
         Returns:
             Updated Users object
 
         Raises:
             ResourceNotFoundException: If user not found
+            WrextValidationException: If validation fails
         """
         user = await self.get_user_by_id(user_id)
 
-        # Update only provided fields
-        if first_name is not None:
-            user.first_name = first_name
+        # Update only explicitly provided fields
+        if "first_name" in kwargs:
+            user.first_name = kwargs["first_name"]
 
-        if last_name is not None:
-            user.last_name = last_name
+        if "last_name" in kwargs:
+            user.last_name = kwargs["last_name"]
 
-        if display_name is not None:
-            user.display_name = display_name
+        if "display_name" in kwargs:
+            user.display_name = kwargs["display_name"]
 
-        if bio is not None:
+        if "bio" in kwargs:
             # Validate bio length at service layer
-            if len(bio) > 500:
+            bio = kwargs["bio"]
+            if bio is not None and len(bio) > 500:
                 raise WrextValidationException("Bio must be 500 characters or less")
             user.bio = bio
 
-        if avatar_url is not None:
-            user.avatar_url = avatar_url
+        if "avatar_url" in kwargs:
+            # Allow setting to None to clear avatar
+            user.avatar_url = kwargs["avatar_url"]
 
-        if language is not None:
-            user.language = language
+        if "language" in kwargs:
+            user.language = kwargs["language"]
 
-        if timezone is not None:
-            user.timezone = timezone
+        if "timezone" in kwargs:
+            user.timezone = kwargs["timezone"]
 
         user.updated_at = datetime.utcnow()
 
         logger.info(
             f"User profile updated: {user_id}",
-            extra={"user_id": str(user_id)}
+            extra={"user_id": str(user_id), "updated_fields": list(kwargs.keys())}
         )
 
         return user
