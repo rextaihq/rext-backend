@@ -276,6 +276,14 @@ async def remove_workspace_member(
         workspace_id=workspace.id,
         email=member_user.email
     )
+
+    #  also remove the user roles assigned in the workspace
+    await member_service.remove_user_roles_in_workspace(
+        workspace_id=workspace.id,
+        user_id=member.user_id,
+    )
+
+
     # Send member removed notification
     if member_user:
         background_tasks.add_task(
