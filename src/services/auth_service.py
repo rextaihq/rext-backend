@@ -57,6 +57,13 @@ from src.api.middleware.exceptions import (
     BusinessRuleViolationException
 )
 
+default_permissions = [
+            "user.update",
+            "user.read",
+            "workspace.create",
+            "subscription.view",
+            "subscription.read"
+        ]
 
 class AuthService:
     """Service for authentication business logic"""
@@ -154,6 +161,10 @@ class AuthService:
         self.db.add(user_role)
         await self.db.flush()
 
+        # also assign default permissions to the role
+        await self._assign_default_permissions_to_role(default_role)
+
+
         # Create trial subscription (auto-assigned on signup)
         trial_plan = await self._get_trial_plan()
         if trial_plan:
@@ -217,6 +228,7 @@ class AuthService:
         """
         # Find user (eagerly load relationships to avoid lazy loading in async context)
         from sqlalchemy.orm import selectinload
+        global  default_permissions
         result = await self.db.execute(
             select(Users)
             .options(selectinload(Users.user_roles).selectinload(UserRole.role))
@@ -294,7 +306,15 @@ class AuthService:
             .where(UserRole.is_primary == True)     # Only primary roles
             .distinct()
         )
-        global_permissions = [row[0] for row in result.all()]
+        
+        if "super_admin" in global_role_names:
+            # Super admin gets ALL permissions
+            all_perms_result = await self.db.execute(select(Permission.name))
+            global_permissions = list(all_perms_result.scalars().all())
+        else:
+            global_permissions = list(result.scalars().all())
+            global_permissions = [p for p in global_permissions if p in default_permissions]
+
 
         # Prepare token data with ONLY global/platform permissions
         # Workspace permissions will be loaded separately via /workspaces/{id}/permissions endpoint
@@ -713,6 +733,43 @@ class AuthService:
             logger.info("Created default user role")
 
         return default_role
+
+    # also assign default user permissions
+    async def _assign_default_permissions_to_role(self, role: Role) -> None:
+        """
+        Assign default permissions to a role, avoiding duplicates.
+
+        Args:
+            role: Role object
+        """
+        global default_permissions
+
+        # Get existing permissions for the role to avoid adding duplicates
+        existing_perms_result = await self.db.execute(
+            select(Permission.name)
+            .join(RolePermission, RolePermission.permission_id == Permission.id)
+            .where(RolePermission.role_id == role.id)
+        )
+        existing_perms = {p_name for p_name, in existing_perms_result}
+
+        permissions_to_add_names = [p for p in default_permissions if p not in existing_perms]
+
+        if not permissions_to_add_names:
+            logger.debug(f"Role '{role.name}' already has all default permissions.")
+            return
+
+        # Fetch permission objects to add
+        permissions_to_add_result = await self.db.execute(
+            select(Permission).where(Permission.name.in_(permissions_to_add_names))
+        )
+        permissions_to_add = permissions_to_add_result.scalars().all()
+
+        for permission in permissions_to_add:
+            self.db.add(RolePermission(role_id=role.id, permission_id=permission.id))
+
+        if permissions_to_add:
+            await self.db.flush()
+            logger.info(f"Assigned {len(permissions_to_add)} missing default permissions to role: {role.name}")
 
     async def _get_trial_plan(self) -> Optional[SubscriptionPlan]:
         """
