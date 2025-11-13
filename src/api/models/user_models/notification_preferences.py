@@ -60,22 +60,16 @@ class NotificationPreferences(Base, SerializableMixin):
         This provides a simplified view while maintaining backward compatibility.
         """
         data = super().to_dict(exclude=['id', 'user_id', 'created_at', 'updated_at'], **kwargs)
-
-        # Build response in the format expected by the API spec
-        # For categories, we return True if enabled for either email OR in-app
-        return {
-            "email_enabled": data.get("email_notifications"),
-            "in_app_enabled": data.get("in_app_notifications"),
-            "digest_enabled": data.get("digest_enabled"),
-            "digest_frequency": data.get("email_digest_frequency"),
-            "categories": {
-                "mentions": data.get("email_mentions") or data.get("in_app_mentions"),
-                "workspace_invites": data.get("email_workspace_invites") or data.get("in_app_workspace_invites"),
-                "content_updates": data.get("email_content_updates") or data.get("in_app_content_updates"),
-                "comments": data.get("email_comments") or data.get("in_app_comments"),
-                "team_activity": data.get("email_team_activity") or data.get("in_app_team_activity"),
-                "security_alerts": data.get("email_security_alerts") or data.get("in_app_security_alerts"),
-                "billing_updates": data.get("email_billing_updates") or data.get("in_app_billing_updates"),
-                "product_updates": data.get("email_product_updates") or data.get("in_app_product_updates")
-            }
+        categories = {
+            "mentions": data.get("email_mentions") or data.get("in_app_mentions"),
+            "workspace_invites": data.get("email_workspace_invites") or data.get("in_app_workspace_invites"),
+            "content_updates": data.get("email_content_updates") or data.get("in_app_content_updates"),
+            "comments": data.get("email_comments") or data.get("in_app_comments"),
+            "team_activity": data.get("email_team_activity") or data.get("in_app_team_activity"),
+            "security_alerts": data.get("email_security_alerts") or data.get("in_app_security_alerts"),
+            "billing_updates": data.get("email_billing_updates") or data.get("in_app_billing_updates"),
+            "product_updates": data.get("email_product_updates") or data.get("in_app_product_updates")
         }
+
+        # Keep all original fields, and add the API-format categories
+        return {**data, "categories": categories}

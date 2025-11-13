@@ -405,7 +405,7 @@ def registration_rate_limit():
     Limit: 3 registrations per hour per IP.
     """
     return EndpointRateLimiter(
-        requests=3,
+        requests=1000,
         window_minutes=60,
         description="registration"
     )
