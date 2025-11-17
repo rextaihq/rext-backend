@@ -24,6 +24,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.models.topic_models.topic_models import TopicsModel as Topics
+from src.api.models.content_models.content import Content
 from src.api.schema.topic_schema import UpdateTopicRequest
 from src.states.schemas import SaveTopicRequest
 from src.services.topic_enrichment_service import TopicEnrichmentService
@@ -228,6 +229,10 @@ class TopicService:
         """
         Delete multiple topics by IDs.
 
+        Business Rules:
+        - Cannot delete topics that have associated content
+        - Only topics from the specified workspace can be deleted
+
         Args:
             topic_ids: List of topic UUIDs to delete
             workspace_id: Workspace UUID (for verification)
@@ -237,6 +242,7 @@ class TopicService:
 
         Raises:
             ResourceNotFoundException: If no topics found
+            WrextValidationException: If topic has associated content
         """
         # Fetch topics - only from the specified workspace
         result = await self.db.execute(
@@ -257,6 +263,32 @@ class TopicService:
         # Check if all requested topics were found
         found_ids = [topic.id for topic in topics]
         missing_ids = [tid for tid in topic_ids if tid not in found_ids]
+
+        # Check if any of the topics have associated content (excluding soft-deleted content)
+        content_result = await self.db.execute(
+            select(Content).where(
+                Content.topic_id.in_(found_ids),
+                Content.deleted_at.is_(None)  # Only check non-deleted content
+            )
+        )
+        content_items = content_result.scalars().all()
+
+        if content_items:
+            # Find which topics have content
+            topic_ids_with_content = set(item.topic_id for item in content_items)
+            topic_titles_with_content = [
+                topic.title for topic in topics if topic.id in topic_ids_with_content
+            ]
+            
+            raise WrextValidationException(
+                message="Cannot delete topics that have associated content",
+                context={
+                    "topics_with_content": topic_titles_with_content,
+                    "content_count": len(content_items),
+                    "error_detail": "These topics have content items associated with them. Please delete or reassign the content before deleting the topics."
+                },
+                field_errors={"topic_ids": [f"Topic '{title}' has {len(content_items)} content item(s) associated" for title in topic_titles_with_content]}
+            )
 
         # Delete all found topics
         deleted_count = 0
