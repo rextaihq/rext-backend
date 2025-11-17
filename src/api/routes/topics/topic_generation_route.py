@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, BackgroundTasks
 from src.api.schema.topic_schema import TopicGenerationInput, DeleteTopics, UpdateTopicRequest
 from langchain_core.messages import SystemMessage
 from src.flow.prompts.prompt_manager import PromptManager
@@ -28,6 +28,7 @@ import uuid
 
 from src.api.lib.logger import auto_logger
 from langsmith import traceable, trace
+from src.services.notifications_services import notification_service # New import
 
 logger = auto_logger()
 prompt_manager = PromptManager()
@@ -68,7 +69,8 @@ async def generate_topic(
     db: AsyncSession = Depends(get_async_db),
     user: dict = Depends(get_current_user),
     _api_limit: None = Depends(check_api_limit()),
-    _rate_limit: None = Depends(ai_topic_generation_rate_limit())
+    _rate_limit: None = Depends(ai_topic_generation_rate_limit()),
+    background_tasks: BackgroundTasks = BackgroundTasks() # New dependency
 ):
     """
     Generate content topics using AI based on workspace context.
@@ -174,6 +176,23 @@ async def generate_topic(
         }
         finalize_trace.outputs = {"response_size": len(display_topics)}
         logger.info("✅ Topic generation completed successfully.")
+
+        logger.info("Scheduling notification task...")
+        # Send success notification
+        background_tasks.add_task(
+            notification_service.send_success_notification,
+            user_id=uuid.UUID(user_id),
+            message="Topics generated successfully!",
+            payload={
+                "workspace_id": str(workspace.id),
+                "total_generated": len(display_topics),
+                "topics": [
+                    {"id": topic["id"], "title": topic["title"]}
+                    for topic in display_topics
+                ],
+            },
+        )
+        logger.info("Notification task scheduled.")
     # Note: auto_commit=False because this doesn't modify database
     return {
         "topics": display_topics,
@@ -232,7 +251,7 @@ async def save_topic(
             user_id=uuid.UUID(user_id),
             topics_data=updated_topics
         )
-
+    
         # Return raw data - decorator handles success response and commit
         return {
             "saved_count": len(saved),
