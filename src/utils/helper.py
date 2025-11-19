@@ -11,6 +11,7 @@ from crawl4ai import AsyncWebCrawler
 from crawl4ai.async_configs import BrowserConfig, CrawlerRunConfig, CacheMode
 from langchain_core.documents import Document
 from langchain_classic.retrievers.multi_query import MultiQueryRetriever
+from langchain_cohere.rerank import CohereRerank
 from pydantic import HttpUrl
 
 # === Project-specific imports ===
@@ -245,4 +246,5 @@ def get_compressor():
     """
     Returns a FlashrankRerank document compressor for reranking retrieved documents.
     """
-    return FlashrankRerank()
+    compressor = CohereRerank(model="rerank-english-v3.0", api_key=os.getenv("COHERE_API_KEY"))
+    return compressor

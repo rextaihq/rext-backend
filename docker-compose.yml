@@ -41,10 +41,12 @@ services:
           # Core API + Database
           OPENAI_API_KEY: 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
           LANGSMITH_API_KEY: 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
+          LANGSMITH_DEV_URL:http://127.0.0.1:2024
           LANGSMITH_PROJECT: WREXT
           LANGSMITH_TRACING: "true"
+          COHERE_API_KEY:fjdGHUhizhmmngOASXlhgZyH3ghsdErtaKu25WSo
           # Database (Connect to host PostgreSQL)
-          POSTGRES_URI_CUSTOM: postgresql+asyncpg://samiullah:samiullah12@192.168.1.70:5432/langgraph_db
+          POSTGRES_URI_CUSTOM: postgresql://samiullah:samiullah12@192.168.1.70:5432/langgraph_db
           DATABASE_URI: postgresql://samiullah:samiullah12@192.168.1.70:5432/langgraph_db
           REDIS_URI: redis://langgraph-redis:6379
           REDIS_URL: redis://langgraph-redis:6379

@@ -29,33 +29,84 @@ from sqlalchemy.orm import selectinload
 
 from src.api.models.content_models.content import Content
 from src.api.models.content_models.content_seo_data import ContentSEOData
-# Note: ContentMetadata table dropped in migration 40fd95ca1e8d - now uses Content.metadata_json
+from src.flow.service.run_manager import RunManager
 from src.api.schema.content_schema import ContentCreate, ContentUpdate
 from src.utils.logger import logger
 from src.api.middleware.exceptions import (
     WrextValidationException,
     ResourceNotFoundException,
-    DuplicateResourceException
 )
-from src.services.sse_service import event_stream_manager
+from dotenv import load_dotenv
+from src.api.database.async_database import get_async_db_context
+from sqlalchemy.ext.asyncio import AsyncSession
+from src.services.sse_service import (
+    emit_step_start,
+    emit_step_progress,
+    emit_step_success,
+    emit_step_failure,
+    emit_pipeline_complete,
+    event_stream_manager,
+)
+from src.flow.service.service import LangGraphService
+from src.flow.states.payload_state import Payload   
+import asyncio
+import os
 
+load_dotenv()
 
-class ContentService:
-    """
-    Service for content business logic.
+class ContentService(LangGraphService):
+    """Service for content business logic"""
 
-    Handles pure CRUD operations for content without any external dependencies.
-    For AI generation workflows, use LangGraphContentService in background tasks.
-    """
+    def __init__(
+        self, db: AsyncSession, url: Optional[str] = None, api_key: Optional[str] = None
+    ):
+        from src.api.config import get_settings
 
-    def __init__(self, db: AsyncSession):
-        """
-        Initialize ContentService.
+        settings = get_settings()
 
-        Args:
-            db: Async database session
-        """
+        url = settings.LANGSMITH_DEV_URL
+        api_key = settings.LANGSMITH_API_KEY
+
+        # Placeholder for assistant_id
+        self.assistant_id = None
+        super().__init__(db=db, url=url, api_key=api_key, assistant_id=self.assistant_id)
+
         self.db = db
+
+    @classmethod
+    async def create(cls, db: AsyncSession, url: Optional[str] = None, api_key: Optional[str] = None):
+        """Async factory for initializing service with assistant"""
+        self = cls(db, url, api_key)
+        result = await self.create_assistant(
+            graph_id="agent",
+            config={},
+            metadata={},
+            name="Content Generation Assistant",
+        )
+        self.assistant_id = result["assistant_id"]
+        return self
+
+    async def _run_stream_in_background(self, thread_id, payload: Payload):
+        from src.api.config import get_settings
+        settings = get_settings()
+
+        async with get_async_db_context() as db:
+            # Recreate RunManager with proper credentials
+            run_manager = RunManager(
+                url=settings.LANGSMITH_DEV_URL,
+                assistant_id=self.assistant_id ,
+                api_key=settings.LANGSMITH_API_KEY,
+            )
+            run_manager.db = db 
+            try:
+                async for mode, chunk in run_manager.stream_content(
+                    input_payload=payload,
+                    thread_id=thread_id,
+                ):
+                    logger.info(f"Streaming update: mode={mode}, chunk={chunk}")
+            except Exception as e:
+                logger.error(f"Error while streaming content generation: {e}")
+
 
     async def create_content(
         self, workspace_id: UUID, user_id: UUID, data: ContentCreate
@@ -84,9 +135,8 @@ class ContentService:
         base_slug = self._slugify(data.title)
         unique_slug = await self._generate_unique_slug(workspace_id, base_slug)
 
-        # Generate thread ID locally (no external API call needed)
-        # The actual LangGraph workflow will use this thread_id for execution tracking
-        thread_id = uuid4()
+        # create a thread
+        thread = await self.thread_manager.create_thread(thread_id=str(uuid4()))
 
         # Create content entity
         # If body_markdown is provided, status can be "draft" (manual content)
@@ -105,7 +155,7 @@ class ContentService:
             status=data.status
             or default_status,  # Auto-set to "generating" if no body provided
             content_language=data.content_language or "English",
-            langgraph_thread_id=thread_id,  # Store thread ID locally
+            langgraph_thread_id=thread["thread_id"],  # Store thread ID locally
             created_at=datetime.now(timezone.utc),
             updated_at=datetime.now(timezone.utc),
         )
@@ -172,8 +222,32 @@ class ContentService:
             },
         )
 
-        # Return content record
-        # Background generation (if needed) is triggered by the route layer
+        # Build payload
+        payload = {
+            "content_id": str(content.id),
+            "workspace_id": str(workspace_id),
+            "topic_id": str(data.topic_id) if data.topic_id else "",
+            "author_id": str(user_id),
+            "title": data.title or "",
+            "content_language": data.content_language or "English",
+            "content_format": data.content_format or "Markdown",
+            "content_metadata": data.metadata.dict() if data.metadata else {},
+            "content_seo_data": data.seo_data.dict() if data.seo_data else {},
+            "body_markdown": data.body_markdown or "",
+        }
+
+
+        # # create the assistant
+        # assistant = await self.create_assistant(
+        #     graph_id="agent",
+        #     config={},
+        #     metadata={},
+        #     name=f"Content Generation Assistant for content {content.id}",
+        # )
+
+        # Launch streaming process in background (non-blocking)
+        asyncio.create_task(self._run_stream_in_background(thread["thread_id"], payload))
+
         return content
 
     async def update_content(

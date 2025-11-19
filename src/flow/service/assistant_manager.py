@@ -1,4 +1,5 @@
-class AssistantManager:
+from src.flow.service.base_clinet import LangGraphRemoteGraph
+class AssistantManager(LangGraphRemoteGraph):
     """
     Manager for handling LangGraph assistants.
 
@@ -11,6 +12,9 @@ class AssistantManager:
         get_assistant: Retrieve details of an existing assistant by ID.
         get_schemas: Retrieve the input/output schemas of an assistant.
     """
+    def __init__(self, url, assistant_id, name = "WREXT", api_key = None):
+        super().__init__(url, assistant_id, name, api_key)
+        
     async def create_assistant(self, graph_id, config=None, metadata=None, name=None):
         """
         Create a new assistant in LangGraph.

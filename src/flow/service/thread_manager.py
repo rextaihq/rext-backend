@@ -1,9 +1,8 @@
 from typing import Any, Dict, Optional, List
 from src.utils.logger import logger
-from langgraph_sdk import get_client
-from langgraph_sdk.client import LangGraphClient
+from src.flow.service.base_clinet import LangGraphRemoteGraph
 
-class ThreadManager:
+class ThreadManager(LangGraphRemoteGraph):
     """
     Manager for LangGraph threads (stateful graph contexts).
 
@@ -14,6 +13,8 @@ class ThreadManager:
       - Delete threads.
       - Search or list threads.
     """
+    def __init__(self, url, assistant_id, name = "WREXT", api_key = None):
+        super().__init__(url, assistant_id, name, api_key)
 
     async def create_thread(
         self,
