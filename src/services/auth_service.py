@@ -56,18 +56,14 @@ from src.api.middleware.exceptions import (
     ResourceNotFoundException,
     BusinessRuleViolationException
 )
-
 default_permissions = [
             "user.update",
             "user.read",
             "workspace.create",
-            "subscription.view",
             "subscription.read"
         ]
-
 class AuthService:
     """Service for authentication business logic"""
-
     def __init__(self, db: AsyncSession):
         """
         Initialize AuthService.
@@ -293,27 +289,21 @@ class AuthService:
             .where(UserRole.is_primary == True)
         )
         global_role_names = list(global_roles_result.scalars().all())
-
-        # Get GLOBAL permissions only (from global roles)
-        # These are platform-level permissions: user.*, workspace.create, subscription.*, etc.
-        # Workspace-specific permissions (topic.*, content.*, etc.) are loaded dynamically per workspace
+        
+        #  Get the permission based on the roles
         result = await self.db.execute(
             select(Permission.name)
             .join(RolePermission, RolePermission.permission_id == Permission.id)
-            .join(UserRole, UserRole.role_id == RolePermission.role_id)
+            .join(Role, Role.id == RolePermission.role_id)
+            .join(UserRole, UserRole.role_id == Role.id)
             .where(UserRole.user_id == db_user.id)
-            .where(UserRole.workspace_id == None)  # Only global role assignments
-            .where(UserRole.is_primary == True)     # Only primary roles
+            .where(UserRole.workspace_id.is_(None))  # global roles only
+            .where(UserRole.is_primary == True)
             .distinct()
         )
-        
-        if "super_admin" in global_role_names:
-            # Super admin gets ALL permissions
-            all_perms_result = await self.db.execute(select(Permission.name))
-            global_permissions = list(all_perms_result.scalars().all())
-        else:
-            global_permissions = list(result.scalars().all())
-            global_permissions = [p for p in global_permissions if p in default_permissions]
+        global_permissions = list(result.scalars().all())
+
+            # global_permissions = [p for p in global_permissions if p in default_permissions]
 
 
         # Prepare token data with ONLY global/platform permissions

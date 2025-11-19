@@ -1,10 +1,9 @@
 from typing import Annotated, Any, Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Body, Depends, File, Request, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Body, Depends, File, Request, UploadFile
 from pydantic import BaseModel, HttpUrl, constr
 from sqlalchemy.ext.asyncio import AsyncSession
-
 from src.api.database.async_database import get_async_db
 from src.api.middleware.exceptions import WrextValidationException
 from src.api.middleware.usage_limiter import check_knowledge_item_limit
@@ -15,6 +14,7 @@ from src.utils.logger import logger
 from src.utils.response_utils import created, success
 from src.utils.route_decorators import db_transaction_handler, require_permissions
 from src.utils.workspace_utils import resolve_and_verify_workspace
+from src.services.notification_helper import schedule_if_allowed
 
 
 class WebKnowledgeCreateRequest(BaseModel):
@@ -149,6 +149,7 @@ async def list_web_knowledge(
 async def create_web_knowledge(
     workspace_id: str,
     request: Request,
+    background_tasks: BackgroundTasks,
     payload: WebKnowledgeCreateRequest = Body(...),
     db: AsyncSession = Depends(get_async_db),
     user: dict = Depends(get_current_user),
@@ -175,6 +176,16 @@ async def create_web_knowledge(
     # Update title if provided
     if payload.title:
         knowledge = await service.update_web_knowledge_title(workspace.id, UUID(str(knowledge["id"])), payload.title)
+
+    # Schedule notification
+    await schedule_if_allowed(
+        db=db,
+        user_id=str(user["identity"]),
+        background_tasks=background_tasks,
+        pref_flag="kb_processing_completed",
+        message=f"Web knowledge '{raw_url}' processed successfully.",
+        payload={"knowledge_id": str(knowledge["id"]), "type": "web"},
+    )
 
     return created(
         data={"web_knowledge": knowledge},
@@ -302,6 +313,7 @@ async def list_file_knowledge(
 async def create_file_knowledge(
     workspace_id: str,
     request: Request,
+    background_tasks: BackgroundTasks,
     file: Annotated[UploadFile, File(...)],
     _: None = Depends(check_knowledge_item_limit()),
     knowledge_base_id: Optional[str] = None,
@@ -340,6 +352,16 @@ async def create_file_knowledge(
             "image/webp",
         ],
         max_size_mb=10,
+    )
+
+    # Schedule notification
+    await schedule_if_allowed(
+        db=db,
+        user_id=str(user["identity"]),
+        background_tasks=background_tasks,
+        pref_flag="kb_processing_completed",
+        message=f"File '{knowledge.file_name}' processed successfully.",
+        payload={"knowledge_id": str(knowledge.id), "type": "file"},
     )
 
     return created(
@@ -471,6 +493,7 @@ async def list_text_knowledge(
 async def create_text_knowledge(
     workspace_id: str,
     request: Request,
+    background_tasks: BackgroundTasks,
     payload: TextKnowledgeCreateRequest = Body(...),
     db: AsyncSession = Depends(get_async_db),
     user: dict = Depends(get_current_user),
@@ -493,6 +516,16 @@ async def create_text_knowledge(
 
     if payload.tags:
         logger.warning("Tags provided for text knowledge are currently ignored", extra={"tags": payload.tags})
+
+    # Schedule notification
+    await schedule_if_allowed(
+        db=db,
+        user_id=str(user["identity"]),
+        background_tasks=background_tasks,
+        pref_flag="kb_processing_completed",
+        message=f"Text knowledge '{knowledge.title}' processed successfully.",
+        payload={"knowledge_id": str(knowledge.id), "type": "text"},
+    )
 
     return created(
         data={

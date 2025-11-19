@@ -21,6 +21,7 @@ from src.api.schema.workspace_schema import (
     AddWorkspaceMemberRequest,
     ChangeMemberRoleRequest,
 )
+from src.services.notification_helper import schedule_if_allowed
 from src.api.security.dependencies import get_current_user
 from src.api.schema.response_schemas import ErrorCode, ErrorSeverity
 from src.services.member_service import MemberService
@@ -295,7 +296,22 @@ async def remove_workspace_member(
             member_name=member_user.first_name or member_user.username,
             removed_by_name=current_user_obj.first_name if current_user_obj else "Admin"
         )
-
+    logger.info("Removing Member")
+    payload = {
+        "workspace_id": str(workspace.id),
+        "member_id": str(member_id),
+        "removed_by": user_id,
+    }
+    
+    logger.info("Scheduling member removed notification")
+    await schedule_if_allowed(
+        db=db,
+        user_id=str(member_user.id),
+        background_tasks=background_tasks,
+        pref_flag="ws_member_removed",
+        message="You have been removed from a workspace.",
+        payload=payload,
+    )
     logger.info(
         "Workspace member removed",
         extra={
@@ -342,6 +358,8 @@ async def update_workspace_member_role(
         new_role_id=UUID(payload.role_id),
         assigned_by_user_id=UUID(user_id)
     )
+    # Capture the previous role ID for logging/response (may be None)
+    previous_role_id = old_role.id if old_role else None
 
     # Get current user details for notification
     user_service = UserService(db)
@@ -360,6 +378,27 @@ async def update_workspace_member_role(
             new_role_name=new_role.display_name,
             changed_by_name=current_user_obj.first_name if current_user_obj else "Admin"
         )
+    
+    payload = {
+        "workspace_id": str(workspace_id),
+        "member_id": str(member_id),
+        "new_role": {
+            "id": str(new_role.id),
+            "name": new_role.name,
+            "display_name": new_role.display_name,
+        },
+    }
+    # Current timestamp for response
+    timestamp = datetime.utcnow()
+
+    await schedule_if_allowed(
+        db=db,
+        user_id=str(member_user.id),
+        background_tasks=background_tasks,
+        pref_flag="ws_role_changed",
+        message="Your role in a workspace was updated.",
+        payload=payload,
+    )
 
     logger.info(
         "Workspace member role updated",
@@ -368,7 +407,7 @@ async def update_workspace_member_role(
             "member_id": member_id,
             "updated_by": user_id,
             "old_role_id": str(previous_role_id) if previous_role_id else None,
-            "new_role_id": payload.role_id,
+            "new_role_id": new_role.id,
         },
     )
 
@@ -378,7 +417,7 @@ async def update_workspace_member_role(
                 "id": str(member.id),
                 "workspace_id": str(workspace.id),
                 "user_id": str(member.user_id),
-                "role_id": payload.role_id,
+                "role_id": str(new_role.id),
                 "updated_at": timestamp.isoformat(),
             }
         },

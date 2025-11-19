@@ -6,7 +6,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, status
 from sse_starlette.sse import EventSourceResponse
 
-from src.api.security.dependencies import get_current_user
+from src.api.security.dependencies import get_current_user, get_current_user_sse
 from src.services.sse_service import event_stream_manager
 from src.utils.logger import logger
 
@@ -24,7 +24,7 @@ router = APIRouter(
 )
 async def subscribe_to_operation_events(
     operation_id: str,
-    current_user: Dict[str, str] = Depends(get_current_user),
+    current_user: Dict[str, str] = Depends(get_current_user_sse),
 ) -> EventSourceResponse:
     """
     Establish a Server-Sent Events stream for a specific background operation.

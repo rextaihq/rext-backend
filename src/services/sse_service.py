@@ -178,7 +178,11 @@ class EventStreamManager:
                 operation_id,
             )
             return
-
+        logger.debug(
+            "Publishing event to %d subscribers for operation %s",
+            len(subscribers),
+            operation_id,
+        )
         await asyncio.gather(
             *(self._enqueue_event(subscriber, formatted) for subscriber in subscribers),
             return_exceptions=True,

@@ -36,6 +36,8 @@ from src.services.user_service import UserService
 from src.services.member_service import MemberService
 from src.services.workspace_service import WorkspaceService
 from src.services.role_service import RoleService
+from src.api.models.user_models.notification_preferences import NotificationPreferences
+from src.services.notifications_services import notification_service
 
 
 router = APIRouter()
@@ -94,45 +96,46 @@ async def notify_workspace_admins_of_acceptance(
 async def accept_invitation(
     request: Request,
     invitation_data: AcceptInvitationRequest,
-    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_async_db),
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
+    background_tasks: BackgroundTasks = Depends(BackgroundTasks),
 ):
     """
-    Accept an invitation to join a workspace - Thin controller using InvitationService
+    Accept an invitation to join a workspace.
+    Sends notifications to workspace admins and the user.
     """
     user_id = current_user.get("identity")
     logger.info(f"User {user_id} attempting to accept invitation with token")
 
-    # Get user details using UserService
+    # Get user details
     user_service = UserService(db)
     user = await user_service.get_user_by_id(UUID(user_id))
 
-    # Use InvitationService to get invitation by token
-    service = InvitationService(db)
-    invitation = await service.get_invitation_by_token(invitation_data.token)
+    # Get invitation by token
+    invitation_service = InvitationService(db)
+    invitation = await invitation_service.get_invitation_by_token(invitation_data.token)
 
-    # Validate invitation email matches user email (route-level validation)
+    # Validate email matches
     if invitation.email.lower() != user.email.lower():
         logger.warning(f"Invitation email mismatch: {invitation.email} vs {user.email}")
         raise WrextAuthenticationException(
             message="This invitation is for a different email address"
         )
 
-    # Use service to accept invitation (handles all business logic)
-    result = await service.accept_invitation(
+    # Accept invitation
+    result = await invitation_service.accept_invitation(
         invitation_id=invitation.id,
         user_id=UUID(user_id)
     )
 
-    # Get workspace and role details using services
+    # Get workspace and role details
     workspace_service = WorkspaceService(db)
     workspace = await workspace_service.get_workspace_by_id(invitation.workspace_id)
 
     role_service = RoleService(db)
     role = await role_service.get_role_by_id(invitation.role_id)
 
-    # Send invitation accepted notification to workspace admins
+    # Notify workspace admins
     if workspace:
         background_tasks.add_task(
             notify_workspace_admins_of_acceptance,
@@ -142,6 +145,22 @@ async def accept_invitation(
             new_member_email=user.email,
             role_name=role.display_name if role else "Member"
         )
+    # 3️⃣ Build a tiny payload (you probably only need the invitation id & workspace name)
+    payload = {
+        "invitation_id": str(invitation.id),
+        "workspace_id": str(invitation.workspace_id),
+        "invitee_email": invitation.email,
+    }
+
+    # 4️⃣ Schedule the notification using the helper
+    await schedule_if_allowed(
+        db=db,
+        user_id=str(inviter_id),
+        background_tasks=background_tasks,
+        pref_flag="ws_invite_accepted",
+        message="Your invitation was accepted!",
+        payload=payload,
+    )
 
     logger.info(f"User {user_id} accepted invitation to workspace {invitation.workspace_id}")
 
@@ -156,6 +175,7 @@ async def accept_invitation(
         },
         "message": "Successfully joined workspace"
     }
+
 
 
 @router.post("/{invitation_id}/revoke")

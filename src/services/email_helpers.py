@@ -193,8 +193,8 @@ async def send_workspace_email(
 
             email_data = await render_workspace_email(
                 workspace_id=str(workspace_id),
-                email_type=email_type,
-                context=context_with_token,
+                template_type=email_type,
+                variables=context_with_token,
                 db=db
             )
             subject = email_data["subject"]

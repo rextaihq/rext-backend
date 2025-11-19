@@ -250,6 +250,7 @@ app.add_middleware(
 # CORS middleware - configured via environment variables
 app.add_middleware(
     CORSMiddleware,
+    # allow_origins=settings.allowed_origins_list,
     allow_origins=settings.allowed_origins_list,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
