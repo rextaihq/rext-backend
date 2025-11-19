@@ -17,6 +17,7 @@ from src.api.middleware.exceptions import (
 )
 from datetime import datetime
 from user_agents import parse as parse_user_agent
+from src.api.models.user_models.notification_preferences import NotificationPreferences
 import os
 from src.api.middleware.rate_limiter import (
     login_rate_limit,
@@ -141,6 +142,35 @@ async def create_user(
 
         # Return user data (excluding password)
         # Note: Transaction will be committed by transaction decorator (Task 2.2)
+        # set the notification preferences
+        notification_preference = NotificationPreferences(
+            user_id=new_user.id,
+            email_notifications=True,
+            in_app_notifications=True,
+            ws_invite_received=True,
+            ws_invite_accepted=True,
+            ws_role_changed=True,
+            ws_member_removed=True,
+            gen_started=True,
+            gen_completed=True,
+            gen_failed=True,
+            gen_published=True,
+            billing_payment_success=True,
+            billing_payment_failed=True,
+            billing_subscription_cancelled=True,
+            billing_subscription_expiring=True,
+            billing_trial_ending=True,
+            billing_usage_limit_warning=True,
+            billing_usage_limit_exceeded=True,
+            kb_processing_completed=True,
+            kb_processing_failed=True,
+            digest_enabled=True,
+            digest_frequency="daily",
+            marketing_updates=False
+        )
+        db.add(notification_preference)
+        await db.commit()
+        await db.refresh(notification_preference)
         user_data = {
             "id": str(new_user.id),
             "username": new_user.username,

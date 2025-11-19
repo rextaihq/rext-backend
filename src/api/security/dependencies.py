@@ -6,7 +6,7 @@ separated from core auth logic to avoid circular imports.
 """
 
 from typing import TYPE_CHECKING
-from fastapi import Header, Depends, HTTPException
+from fastapi import Header, Depends, HTTPException, Query
 from langgraph_sdk import Auth
 from sqlalchemy.ext.asyncio import AsyncSession
 

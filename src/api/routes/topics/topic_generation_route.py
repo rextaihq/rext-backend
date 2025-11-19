@@ -28,6 +28,7 @@ import uuid
 
 from src.api.lib.logger import auto_logger
 from langsmith import traceable, trace
+from src.api.models.user_models.notification_preferences import NotificationPreferences
 from src.services.notifications_services import notification_service # New import
 
 logger = auto_logger()

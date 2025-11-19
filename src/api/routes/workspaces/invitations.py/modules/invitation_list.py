@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Request, HTTPException, Query
+from fastapi import APIRouter, Depends, Request, HTTPException, Query,BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from typing import Optional
@@ -15,7 +15,9 @@ from src.api.schema.response_schemas import ErrorCode, ErrorSeverity
 from src.api.models.user_models.users import Users
 from src.api.models.user_models.invitations import UserInvitations
 from src.services.invitation_service import InvitationService
-
+from src.api.models.user_models.notification_preferences import NotificationPreferences
+from src.services.notifications_services import notification_service
+from src.api.services.notification_helper import schedule_if_allowed
 
 router = APIRouter()
 
@@ -27,7 +29,7 @@ async def list_sent_invitations(
     request: Request,
     status_filter: Optional[str] = Query(None, description="Filter by status (pending, accepted, revoked, expired)"),
     db: AsyncSession = Depends(get_async_db),
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
 ):
     """
     List invitations sent by the current user - Using InvitationService
@@ -51,10 +53,11 @@ async def list_sent_invitations(
     # Format response with details (presentation layer concern)
     invitations_data = []
     for inv in invitations:
-        details = get_invitation_with_details(db, str(inv.id))
+        details = await get_invitation_with_details(db, str(inv.id))
         if details:
             invitations_data.append(details)
 
+   
     return {
         "data": {
             "invitations": invitations_data,
@@ -64,60 +67,93 @@ async def list_sent_invitations(
         "message": f"Retrieved {len(invitations_data)} sent invitation(s)"
     }
 
-
 @router.get("/received")
 @require_permissions("member.read")
 @db_transaction_handler("list received invitations", auto_commit=True)
 async def list_received_invitations(
     request: Request,
     db: AsyncSession = Depends(get_async_db),
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
+    background_tasks: BackgroundTasks = Depends(BackgroundTasks),
 ):
     """
-    List pending invitations for the current user's email
-    Note: Expiry checking and marking stays in route as it's presentation/cleanup logic
+    List pending invitations for the current user's email.
+    Expiry checking and marking stays in route as it's presentation/cleanup logic.
     """
     user_id = current_user.get("identity")
 
-    # Get user email
+    # ------------------------------------------------------------------
+    # 1️⃣ Load the user & their email
+    # ------------------------------------------------------------------
     result = await db.execute(select(Users).where(Users.id == user_id))
     user = result.scalar_one_or_none()
     if not user:
         raise ResourceNotFoundException(
             message="User not found",
             resource_type="user",
-            resource_id=str(user_id)
+            resource_id=str(user_id),
         )
 
     logger.info(f"User {user_id} listing received invitations for email {user.email}")
 
-    # Get pending invitations for user's email
+    # ------------------------------------------------------------------
+    # 2️⃣ Pull pending invitations for that email
+    # ------------------------------------------------------------------
     result = await db.execute(
-        select(UserInvitations).where(
-            UserInvitations.email == user.email,
-            UserInvitations.status == "pending"
-        ).order_by(UserInvitations.created_at.desc())
+        select(UserInvitations)
+        .where(UserInvitations.email == user.email, UserInvitations.status == "pending")
+        .order_by(UserInvitations.created_at.desc())
     )
     invitations = result.scalars().all()
 
-    # Filter out expired and add details (presentation layer concern)
+    # ------------------------------------------------------------------
+    # 3️⃣ Filter out expired ones & build detailed payload
+    # ------------------------------------------------------------------
     invitations_data = []
+    expired_count = 0
     for inv in invitations:
         if not is_invitation_expired(inv):
-            details = get_invitation_with_details(db, str(inv.id))
+            details = await get_invitation_with_details(db, str(inv.id))
             if details:
                 invitations_data.append(details)
         else:
-            # Mark as expired
             inv.status = "expired"
+            expired_count += 1
 
-    # Flush any expiry status updates
-    await db.flush()
+    if expired_count:
+        logger.info(f"Marked {expired_count} invitation(s) as expired.")
+    await db.flush()   # persist any status changes
 
+    # ------------------------------------------------------------------
+    # 4️⃣ Load the user's notification preferences
+    # ------------------------------------------------------------------
+    result = await db.execute(
+        select(NotificationPreferences).where(NotificationPreferences.user_id == UUID(user_id))
+    )
+    pref = result.scalar_one_or_none()
+
+    # ------------------------------------------------------------------
+    # 5️⃣ Schedule notification **iff** the preference allows it
+    # ------------------------------------------------------------------
+    await schedule_if_allowed(
+        db=db,
+        user_id=user_id,
+        background_tasks=background_tasks,
+        pref_flag="ws_invite_received",
+        message="You have new pending invitations.",
+        payload={
+            "invitations": invitations_data,
+            "total_count": len(invitations_data),
+        },
+    )
+
+    # ------------------------------------------------------------------
+    # 6️⃣ Return the API response
+    # ------------------------------------------------------------------
     return {
         "data": {
             "invitations": invitations_data,
-            "total_count": len(invitations_data)
+            "total_count": len(invitations_data),
         },
-        "message": f"Retrieved {len(invitations_data)} pending invitation(s)"
+        "message": f"Retrieved {len(invitations_data)} pending invitation(s)",
     }

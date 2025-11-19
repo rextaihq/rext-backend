@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SSE Notification Tester</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            margin: 0;
+            padding: 2rem;
+            background-color: #f4f7f9;
+            color: #333;
+        }
+
+        .container {
+            max-width: 800px;
+            margin: auto;
+            background: #fff;
+            padding: 2rem;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+        }
+
+        h1 {
+            color: #1a202c;
+            border-bottom: 2px solid #e2e8f0;
+            padding-bottom: 0.5rem;
+            margin-top: 0;
+        }
+
+        .form-group {
+            margin-bottom: 1.5rem;
+        }
+
+        label {
+            display: block;
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+        }
+
+        input[type="text"],
+        input[type="url"] {
+            width: 100%;
+            padding: 0.75rem;
+            border: 1px solid #cbd5e0;
+            border-radius: 4px;
+            font-size: 1rem;
+            box-sizing: border-box;
+        }
+
+        .buttons {
+            display: flex;
+            gap: 1rem;
+            margin-bottom: 1.5rem;
+        }
+
+        button {
+            padding: 0.75rem 1.5rem;
+            border: none;
+            border-radius: 4px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+
+        #connectBtn {
+            background-color: #4299e1;
+            color: white;
+        }
+
+        #connectBtn:hover {
+            background-color: #2b6cb0;
+        }
+
+        #disconnectBtn {
+            background-color: #f56565;
+            color: white;
+        }
+
+        #disconnectBtn:hover {
+            background-color: #c53030;
+        }
+
+        #disconnectBtn:disabled {
+            background-color: #a0aec0;
+            cursor: not-allowed;
+        }
+
+        #notifications {
+            list-style: none;
+            padding: 0;
+            margin-top: 1rem;
+            border-top: 1px solid #e2e8f0;
+        }
+
+        .notification-item {
+            padding: 1rem;
+            border-bottom: 1px solid #e2e8f0;
+            word-wrap: break-word;
+        }
+
+        .notification-item:last-child {
+            border-bottom: none;
+        }
+
+        .notification-item .event-name {
+            font-weight: 700;
+            color: #2b6cb0;
+            margin-bottom: 0.5rem;
+            display: block;
+        }
+
+        pre {
+            background-color: #edf2f7;
+            padding: 1rem;
+            border-radius: 4px;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, Courier, monospace;
+        }
+
+        .status {
+            padding: 1rem;
+            border-radius: 4px;
+            font-weight: 600;
+        }
+
+        .status.connected {
+            background-color: #c6f6d5;
+            color: #22543d;
+        }
+
+        .status.disconnected {
+            background-color: #fed7d7;
+            color: #742a2a;
+        }
+
+        .status.connecting {
+            background-color: #faf089;
+            color: #744210;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="container">
+        <h1>SSE Notification Tester</h1>
+
+        <div class="form-group">
+            <label for="backendUrl">Backend SSE URL</label>
+            <input type="url" id="backendUrl" value="http://localhost:8000/api/v1/events">
+        </div>
+
+        <div class="form-group">
+            <label for="userId">User ID</label>
+            <input type="text" id="userId" placeholder="Enter your User ID (UUID)">
+        </div>
+
+        <div class="form-group">
+            <label for="token">JWT Token</label>
+            <input type="text" id="token" placeholder="Enter your JWT authentication token">
+        </div>
+
+        <div class="buttons">
+            <button id="connectBtn">Connect</button>
+            <button id="disconnectBtn" disabled>Disconnect</button>
+        </div>
+
+        <div id="connectionStatus" class="status disconnected">Status: Disconnected</div>
+
+        <ul id="notifications"></ul>
+    </div>
+
+    <script>
+        const connectBtn = document.getElementById('connectBtn');
+        const disconnectBtn = document.getElementById('disconnectBtn');
+        const connectionStatus = document.getElementById('connectionStatus');
+        const notificationsList = document.getElementById('notifications');
+        const backendUrlInput = document.getElementById('backendUrl');
+        const userIdInput = document.getElementById('userId');
+        const tokenInput = document.getElementById('token');
+
+        let eventSource = null;
+
+        function setStatus(status, message) {
+            connectionStatus.className = `status ${status}`;
+            connectionStatus.textContent = `Status: ${message}`;
+        }
+
+        connectBtn.addEventListener('click', () => {
+            const backendUrl = backendUrlInput.value;
+            const userId = userIdInput.value;
+            const token = tokenInput.value;
+
+            if (!userId || !token) {
+                alert('Please enter both User ID and JWT Token.');
+                return;
+            }
+
+            // Construct the full URL
+            // Expected format: /api/v1/events/user-notifications-{userId}?token={token}
+
+            // Remove trailing slash if present
+            let baseUrl = backendUrl.replace(/\/$/, '');
+
+            // If the user didn't include /events, add it (just in case)
+            if (!baseUrl.includes('/events')) {
+                baseUrl += '/events';
+            }
+
+            const operationId = `user-notifications-${userId}`;
+            const fullUrl = `${baseUrl}/${operationId}?token=${encodeURIComponent(token)}`;
+
+            // Close any existing connection
+            if (eventSource) {
+                eventSource.close();
+            }
+
+            // Clear previous notifications
+            notificationsList.innerHTML = '';
+            setStatus('connecting', 'Connecting...');
+
+            // Create a new EventSource instance
+            eventSource = new EventSource(fullUrl);
+
+            // Handle successful connection
+            eventSource.onopen = () => {
+                setStatus('connected', 'Connected');
+                connectBtn.disabled = true;
+                disconnectBtn.disabled = false;
+            };
+
+            // Handle incoming messages (generic 'message' event)
+            eventSource.onmessage = (event) => {
+                addNotification('message', event.data);
+            };
+
+            // Handle specific named events from the backend
+            // e.g., 'notification.success', 'notification.error', etc.
+            // You can add more listeners for different event types.
+            const eventTypes = [
+                'notification.new_message',
+                'notification.success',
+                'notification.error',
+                'notification.warning',
+                'notification.info',
+                'notification.system',
+                'connection.connected' // From sse_service.py
+            ];
+
+            eventTypes.forEach(type => {
+                eventSource.addEventListener(type, (event) => {
+                    addNotification(event.type, event.data);
+                });
+            });
+
+            // Handle errors
+            eventSource.onerror = (err) => {
+                console.error("EventSource failed:", err);
+                setStatus('disconnected', 'Error or connection closed');
+                eventSource.close();
+                connectBtn.disabled = false;
+                disconnectBtn.disabled = true;
+            };
+        });
+
+        disconnectBtn.addEventListener('click', () => {
+            if (eventSource) {
+                eventSource.close();
+                setStatus('disconnected', 'Disconnected by user');
+                connectBtn.disabled = false;
+                disconnectBtn.disabled = true;
+            }
+        });
+
+        function addNotification(eventName, data) {
+            const listItem = document.createElement('li');
+            listItem.className = 'notification-item';
+
+            let formattedData;
+            try {
+                // Try to parse and format the JSON data
+                const parsedData = JSON.parse(data);
+                formattedData = JSON.stringify(parsedData, null, 2);
+            } catch (e) {
+                // If it's not JSON, display as plain text
+                formattedData = data;
+            }
+
+            listItem.innerHTML = `
+                <span class="event-name">Event: ${eventName}</span>
+                <pre>${formattedData}</pre>
+            `;
+            notificationsList.prepend(listItem); // Add new notifications to the top
+        }
+    </script>
+
+</body>
+
+</html>
