@@ -448,18 +448,6 @@ async def update_notification_preferences(
     Creates preferences with defaults if they don't exist.
 
     Supports partial updates - only provided fields will be updated.
-
-    IMPORTANT: When updating categories, the setting applies to BOTH email and in-app channels.
-    This is intentional per the API spec to provide a simplified UX.
-
-    Note: GET returns True if EITHER channel is enabled (OR logic), but PATCH sets BOTH
-    channels to the same value. This means updating one field could unintentionally enable
-    a channel the user had disabled. Frontend should always send complete category state
-    to avoid this.
-
-    Example: If user has email_mentions=False and in_app_mentions=True:
-    - GET returns mentions=True (correct, uses OR)
-    - PATCH with mentions=True sets BOTH to True (email_mentions changes from False!)
     """
     try:
         user_id = current_user.get("identity")
@@ -478,54 +466,63 @@ async def update_notification_preferences(
             logger.info(f"Creating notification preferences for user {user_id}")
 
         # Update global toggles
-        if preferences_update.email_enabled is not None:
-            preferences.email_notifications = preferences_update.email_enabled
+        if preferences_update.email_notifications is not None:
+            preferences.email_notifications = preferences_update.email_notifications
 
-        if preferences_update.in_app_enabled is not None:
-            preferences.in_app_notifications = preferences_update.in_app_enabled
+        if preferences_update.in_app_notifications is not None:
+            preferences.in_app_notifications = preferences_update.in_app_notifications
+
+        # Update workspace notifications
+        if preferences_update.ws_invite_received is not None:
+            preferences.ws_invite_received = preferences_update.ws_invite_received
+        if preferences_update.ws_invite_accepted is not None:
+            preferences.ws_invite_accepted = preferences_update.ws_invite_accepted
+        if preferences_update.ws_role_changed is not None:
+            preferences.ws_role_changed = preferences_update.ws_role_changed
+        if preferences_update.ws_member_removed is not None:
+            preferences.ws_member_removed = preferences_update.ws_member_removed
+
+        # Update content generation notifications
+        if preferences_update.gen_started is not None:
+            preferences.gen_started = preferences_update.gen_started
+        if preferences_update.gen_completed is not None:
+            preferences.gen_completed = preferences_update.gen_completed
+        if preferences_update.gen_failed is not None:
+            preferences.gen_failed = preferences_update.gen_failed
+        if preferences_update.gen_published is not None:
+            preferences.gen_published = preferences_update.gen_published
+
+        # Update billing notifications
+        if preferences_update.billing_payment_success is not None:
+            preferences.billing_payment_success = preferences_update.billing_payment_success
+        if preferences_update.billing_payment_failed is not None:
+            preferences.billing_payment_failed = preferences_update.billing_payment_failed
+        if preferences_update.billing_subscription_cancelled is not None:
+            preferences.billing_subscription_cancelled = preferences_update.billing_subscription_cancelled
+        if preferences_update.billing_subscription_expiring is not None:
+            preferences.billing_subscription_expiring = preferences_update.billing_subscription_expiring
+        if preferences_update.billing_trial_ending is not None:
+            preferences.billing_trial_ending = preferences_update.billing_trial_ending
+        if preferences_update.billing_usage_limit_warning is not None:
+            preferences.billing_usage_limit_warning = preferences_update.billing_usage_limit_warning
+        if preferences_update.billing_usage_limit_exceeded is not None:
+            preferences.billing_usage_limit_exceeded = preferences_update.billing_usage_limit_exceeded
+
+        # Update knowledge base notifications
+        if preferences_update.kb_processing_completed is not None:
+            preferences.kb_processing_completed = preferences_update.kb_processing_completed
+        if preferences_update.kb_processing_failed is not None:
+            preferences.kb_processing_failed = preferences_update.kb_processing_failed
 
         # Update digest settings
         if preferences_update.digest_enabled is not None:
             preferences.digest_enabled = preferences_update.digest_enabled
-
         if preferences_update.digest_frequency is not None:
-            preferences.email_digest_frequency = preferences_update.digest_frequency
+            preferences.digest_frequency = preferences_update.digest_frequency
 
-        # Update categories (applies to both email and in-app)
-        if preferences_update.categories is not None:
-            categories = preferences_update.categories
-
-            if categories.mentions is not None:
-                preferences.email_mentions = categories.mentions
-                preferences.in_app_mentions = categories.mentions
-
-            if categories.workspace_invites is not None:
-                preferences.email_workspace_invites = categories.workspace_invites
-                preferences.in_app_workspace_invites = categories.workspace_invites
-
-            if categories.content_updates is not None:
-                preferences.email_content_updates = categories.content_updates
-                preferences.in_app_content_updates = categories.content_updates
-
-            if categories.comments is not None:
-                preferences.email_comments = categories.comments
-                preferences.in_app_comments = categories.comments
-
-            if categories.team_activity is not None:
-                preferences.email_team_activity = categories.team_activity
-                preferences.in_app_team_activity = categories.team_activity
-
-            if categories.security_alerts is not None:
-                preferences.email_security_alerts = categories.security_alerts
-                preferences.in_app_security_alerts = categories.security_alerts
-
-            if categories.billing_updates is not None:
-                preferences.email_billing_updates = categories.billing_updates
-                preferences.in_app_billing_updates = categories.billing_updates
-
-            if categories.product_updates is not None:
-                preferences.email_product_updates = categories.product_updates
-                preferences.in_app_product_updates = categories.product_updates
+        # Update marketing settings
+        if preferences_update.marketing_updates is not None:
+            preferences.marketing_updates = preferences_update.marketing_updates
 
         # Commit changes to database
         await db.commit()

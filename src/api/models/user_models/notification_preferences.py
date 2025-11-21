@@ -85,7 +85,7 @@ class NotificationPreferences(Base, SerializableMixin):
         data = super().to_dict(exclude=['id', 'user_id'], **kwargs)
 
         return {
-            **data,
+            # **data,
             "workspace_notifications": {
                 "invite_received": data["ws_invite_received"],
                 "invite_accepted": data["ws_invite_accepted"],
