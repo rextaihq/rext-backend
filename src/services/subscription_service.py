@@ -21,6 +21,8 @@ from typing import Dict, Any, Optional, List
 from uuid import UUID
 from datetime import datetime, timedelta
 
+from fastapi import BackgroundTasks
+from src.services.notification_helper import schedule_if_allowed
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_
 from sqlalchemy.orm import selectinload
@@ -515,7 +517,8 @@ class SubscriptionService:
         self,
         user_id: UUID,
         reason: Optional[str] = None,
-        cancel_immediately: bool = False
+        cancel_immediately: bool = False,
+        background_tasks: Optional[BackgroundTasks] = None
     ) -> UserSubscription:
         """
         Cancel subscription.
@@ -530,6 +533,7 @@ class SubscriptionService:
             user_id: User UUID
             reason: Optional cancellation reason
             cancel_immediately: If True, cancel now; if False, at end of period
+            background_tasks: Optional background tasks for notifications
 
         Returns:
             Updated UserSubscription object
@@ -623,6 +627,22 @@ class SubscriptionService:
             reason=reason,
             cancel_immediately=cancel_immediately,
         )
+
+        # Send in-app notification
+        if background_tasks:
+            await schedule_if_allowed(
+                db=self.db,
+                user_id=str(user_id),
+                background_tasks=background_tasks,
+                pref_flag="billing_subscription_cancelled",
+                message="Your subscription has been cancelled.",
+                payload={
+                    "subscription_id": str(subscription.id),
+                    "plan_name": subscription.plan.name if subscription.plan else "Unknown",
+                    "end_date": subscription.end_date.isoformat() if subscription.end_date else None,
+                    "cancel_immediately": cancel_immediately
+                }
+            )
 
         return subscription
 

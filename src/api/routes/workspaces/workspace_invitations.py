@@ -26,6 +26,7 @@ from src.api.schema.invitation_schema import (
 from src.api.security.dependencies import get_current_user
 from src.services.email_service import EmailService
 from src.services.invitation_service import InvitationService
+from src.services.notification_helper import schedule_if_allowed
 from src.services.role_service import RoleService
 from src.services.user_service import UserService
 from src.utils.audit_helper import create_audit_log_async
@@ -276,6 +277,25 @@ async def create_workspace_invitation(
         user_email=inviter_email,
     )
 
+    # Check if user exists to send in-app notification
+    existing_user = await user_service.get_user_by_email(invitation_email)
+    if existing_user:
+        await schedule_if_allowed(
+            db=db,
+            user_id=str(existing_user.id),
+            background_tasks=background_tasks,
+            pref_flag="ws_invite_received",
+            message=f"You have been invited to join workspace {workspace_name}",
+            payload={
+                "workspace_id": str(workspace_id),
+                "workspace_name": workspace_name,
+                "invitation_id": str(invitation_id),
+                "role_name": role_display_name,
+                "invited_by": inviter_display_name
+            },
+        )
+        logger.info(f"Scheduled in-app notification for existing user {existing_user.id}")
+
     return created(
         data={
             "invitation": invitation_data
@@ -380,6 +400,24 @@ async def create_bulk_workspace_invitations(
                 workspace_id=str(workspace_id_value),
                 invitation_id=str(invitation_id)
             )
+
+            # Check if user exists to send in-app notification
+            existing_user = await user_service.get_user_by_email(email)
+            if existing_user:
+                await schedule_if_allowed(
+                    db=db,
+                    user_id=str(existing_user.id),
+                    background_tasks=background_tasks,
+                    pref_flag="ws_invite_received",
+                    message=f"You have been invited to join workspace {workspace_name_value}",
+                    payload={
+                        "workspace_id": str(workspace_id_value),
+                        "workspace_name": workspace_name_value,
+                        "invitation_id": str(invitation_id),
+                        "role_name": role_display_name,
+                        "invited_by": inviter_display_name
+                    },
+                )
         except (DuplicateResourceException, BusinessRuleViolationException) as exc:
             failures.append({"email": email, "error": str(exc)})
 

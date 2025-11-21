@@ -5,7 +5,7 @@ This module provides subscription management operations for end users.
 Routes handle HTTP concerns and delegate business logic to SubscriptionService.
 """
 
-from fastapi import APIRouter, Depends, status, Request, Query
+from fastapi import APIRouter, Depends, status, Request, Query, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.database.async_database import get_async_db
@@ -303,6 +303,7 @@ async def upgrade_subscription(
 async def cancel_subscription(
     request: Request,
     cancel_data: SubscriptionCancelRequest,
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user),
     _rate_limit: None = Depends(subscription_cancel_rate_limit())
@@ -324,7 +325,8 @@ async def cancel_subscription(
     subscription = await service.cancel(
         user_id=user_id,
         reason=cancel_data.reason,
-        cancel_immediately=cancel_data.cancel_immediately
+        cancel_immediately=cancel_data.cancel_immediately,
+        background_tasks=background_tasks
     )
 
     message = (
