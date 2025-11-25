@@ -13,8 +13,16 @@ class ThreadManager(LangGraphRemoteGraph):
       - Delete threads.
       - Search or list threads.
     """
-    def __init__(self, url, assistant_id, name = "WREXT", api_key = None):
-        super().__init__(url, assistant_id, name, api_key)
+    def __init__(self, url: str, assistant_id: str, name: str = "WREXT", api_key: str | None = None):
+        """Initialize ThreadManager with proper argument ordering.
+
+        Args:
+            url: Base URL for the LangGraph API.
+            assistant_id: Identifier for the assistant.
+            name: Optional name for the client (default "WREXT").
+            api_key: Optional API key for authentication.
+        """
+        super().__init__(assistant_id=assistant_id, name=name, api_key=api_key, url=url)
 
     async def create_thread(
         self,

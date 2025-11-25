@@ -488,7 +488,6 @@ dependencies = [
     { name = "svix" },
     { name = "tenacity" },
     { name = "user-agents" },
-    { name = "websockets" },
     { name = "werkzeug" },
 ]
 
@@ -545,7 +544,6 @@ requires-dist = [
     { name = "svix", specifier = ">=1.77.0" },
     { name = "tenacity", specifier = ">=8.2.0" },
     { name = "user-agents", specifier = ">=2.2.0" },
-    { name = "websockets", specifier = ">=15.0.1" },
     { name = "werkzeug", specifier = ">=3.0.1" },
 ]
 

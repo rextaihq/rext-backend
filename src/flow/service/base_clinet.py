@@ -1,5 +1,7 @@
 from langgraph.pregel.remote import RemoteGraph
 from src.utils.logger import logger
+import os
+
 class LangGraphRemoteGraph:
     """
     Base client for interacting with LangGraph API.
@@ -13,7 +15,13 @@ class LangGraphRemoteGraph:
         _client: Cached LangGraph SDK client instance.
     """
 
-    def __init__(self, url: str, assistant_id: str, name: str = "WREXT", api_key: str | None = None):
+    def __init__(
+        self, 
+        assistant_id: str, 
+        name: str = "WREXT", 
+        api_key: str | None = None,
+        url: str = os.getenv("LANGSMITH_DEV_URL")
+    ):
         """
         Initialize the base client.
 
@@ -22,6 +30,9 @@ class LangGraphRemoteGraph:
             api_key (str | None, optional): API key for authentication. Defaults to None.
         """
         self.url = url
+        # Ensure URL includes protocol scheme; prepend https:// if missing
+        if not (self.url.startswith('http://') or self.url.startswith('https://')):
+            self.url = f"https://{self.url}"
         self.api_key = api_key
         self.assistant_id = assistant_id
         self.name:str=name
@@ -55,15 +66,14 @@ class LangGraphRemoteGraph:
         """
         logger.info("inside get remote graph of base client") 
         logger.info(f"URL: {self.url}, API Key: {self.api_key}, Name: {self.name}")  
-        if self.remote_graph is None: 
-            await self.create_assistant_if_needed()
-            self.remote_graph= RemoteGraph(
-                    self.assistant_id,
-                    url='http://127.0.0.1:2024',
-                    api_key=self.api_key,
-                    name=self.name
+        await self.create_assistant_if_needed()
+        self.remote_graph= RemoteGraph(
+                self.assistant_id,
+                url=self.url,
+                api_key=self.api_key,
+                name=self.name
                 )
-            return self.remote_graph
+        return self.remote_graph
 
     async def get_client(self):
         """
@@ -76,9 +86,9 @@ class LangGraphRemoteGraph:
             LangGraphClient: An initialized LangGraph SDK client.
         """
         if self._client is None:
-            logger.info("Initializing LangGraph client...")
+            logger.info(f"Initializing LangGraph client...{self.url}")
             from langgraph_sdk import get_client
-            client = get_client(url='http://127.0.0.1:2024')
+            client = get_client(url=self.url)
             if self.api_key:
                 try:
                     client.http.client.headers["Authorization"] = f"Bearer {self.api_key}"

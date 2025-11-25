@@ -144,7 +144,7 @@ async def update_content(
             permission_name="content.publish",
             workspace_id=workspace.id,
             resource_name="content"
-        )
+        ) 
 
     # Use ContentService to update content
     service = ContentService(db)
