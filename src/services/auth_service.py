@@ -49,6 +49,8 @@ from src.api.security.token_utils import (
     verify_refresh_token,
     is_token_blacklisted
 )
+from fastapi import BackgroundTasks
+from src.services.notification_helper import schedule_if_allowed
 from src.utils.logger import logger
 from src.api.middleware.exceptions import (
     DuplicateResourceException,
@@ -200,7 +202,8 @@ class AuthService:
         self,
         email: str,
         password: str,
-        device_info: Dict[str, str]
+        device_info: Dict[str, str],
+        background_tasks: Optional[BackgroundTasks] = None
     ) -> Tuple[Users, Dict[str, Any]]:
         """
         Authenticate user and create session.
@@ -215,6 +218,7 @@ class AuthService:
             email: User email
             password: Plain text password
             device_info: Dict with device_name, device_type, user_agent, ip_address
+            background_tasks: Optional background tasks for notifications
 
         Returns:
             Tuple of (User object, tokens dict with access_token, refresh_token, token_type)
@@ -277,6 +281,32 @@ class AuthService:
         # Auto-accept pending workspace invitations for this user
         # This ensures existing users see workspaces they were invited to
         await self._auto_accept_pending_invitations(db_user)
+
+        # Check for trial expiration and send notification
+        if background_tasks:
+            # Get user subscription
+            sub_result = await self.db.execute(
+                select(UserSubscription).where(
+                    UserSubscription.user_id == db_user.id,
+                    UserSubscription.status == SubscriptionStatus.TRIAL
+                )
+            )
+            subscription = sub_result.scalar_one_or_none()
+            
+            if subscription and subscription.trial_end_date:
+                if subscription.trial_end_date < datetime.utcnow():
+                     await schedule_if_allowed(
+                        db=self.db,
+                        user_id=str(db_user.id),
+                        background_tasks=background_tasks,
+                        pref_flag="billing_trial_ending",
+                        message="Your trial period has ended.",
+                        payload={
+                            "subscription_id": str(subscription.id),
+                            "trial_end_date": subscription.trial_end_date.isoformat(),
+                            "plan_id": str(subscription.plan_id)
+                        }
+                    )
 
         # Get GLOBAL roles only (workspace_id is NULL and is_primary is True)
         # These are platform-level roles: super_admin, admin, user

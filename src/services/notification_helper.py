@@ -28,7 +28,9 @@ async def schedule_if_allowed(
     result = await db.execute(
         select(NotificationPreferences).where(NotificationPreferences.user_id == UUID(user_id))
     )
-    pref: NotificationPreferences | None = result.scalar_one_or_none()
+    pref = result.scalar_one_or_none()
+    logger.info(f"preferences: ----------------------------------: {pref}")
+    logger.info(f"Flag----------------------------------: {pref_flag}")
     if not pref:
         logger.debug(f"No NotificationPreferences row for user {user_id}")
         return
@@ -60,43 +62,43 @@ async def schedule_if_allowed(
 
 
 
-async def schedule_email_if_allowed(
-    *,
-    db: AsyncSession,
-    user_id: str,
-    background_tasks: BackgroundTasks,
-    pref_flag: str,          # e.g. "email_workspace_invite"
-    email_task_callable,    # e.g. send_workspace_invitation_email_task
-    task_kwargs: dict,
-) -> None:
-    """
-    Load the user's NotificationPreferences, check the master email toggle
-    (email_notifications) and the specific Boolean column ``pref_flag``.
-    If both are True, schedule the provided email background task.
-    """
-    result = await db.execute(
-        select(NotificationPreferences).where(NotificationPreferences.user_id == UUID(user_id))
-    )
-    pref: NotificationPreferences | None = result.scalar_one_or_none()
-    if not pref:
-        logger.debug(f"No NotificationPreferences row for user {user_id}")
-        return
+# async def schedule_email_if_allowed(
+#     *,
+#     db: AsyncSession,
+#     user_id: str,
+#     background_tasks: BackgroundTasks,
+#     pref_flag: str,          # e.g. "email_workspace_invite"
+#     email_task_callable,    # e.g. send_workspace_invitation_email_task
+#     task_kwargs: dict,
+# ) -> None:
+#     """
+#     Load the user's NotificationPreferences, check the master email toggle
+#     (email_notifications) and the specific Boolean column ``pref_flag``.
+#     If both are True, schedule the provided email background task.
+#     """
+#     result = await db.execute(
+#         select(NotificationPreferences).where(NotificationPreferences.user_id == UUID(user_id))
+#     )
+#     pref: NotificationPreferences | None = result.scalar_one_or_none()
+#     if not pref:
+#         logger.debug(f"No NotificationPreferences row for user {user_id}")
+#         return
 
-    # Global master switch for email
-    if not pref.email_notifications:
-        logger.debug(f"User {user_id} disabled all email notifications.")
-        return
+#     # Global master switch for email
+#     if not pref.email_notifications:
+#         logger.debug(f"User {user_id} disabled all email notifications.")
+#         return
 
-    # Specific flag
-    flag_enabled = getattr(pref, pref_flag, False)
-    if not flag_enabled:
-        logger.debug(
-            f"User {user_id} has preference {pref_flag}=False – skipping email."
-        )
-        return
+#     # Specific flag
+#     flag_enabled = getattr(pref, pref_flag, False)
+#     if not flag_enabled:
+#         logger.debug(
+#             f"User {user_id} has preference {pref_flag}=False – skipping email."
+#         )
+#         return
 
-    logger.info(
-        f"Scheduling email task for user {user_id} – flag {pref_flag}"
-    )
-    background_tasks.add_task(email_task_callable, **task_kwargs)
-    logger.info("Email background task scheduled.")
+#     logger.info(
+#         f"Scheduling email task for user {user_id} – flag {pref_flag}"
+#     )
+#     background_tasks.add_task(email_task_callable, **task_kwargs)
+#     logger.info("Email background task scheduled.")

@@ -437,6 +437,7 @@ async def register_with_invitation(
 async def login_user(
     user: LoginUser,
     request: Request,
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_async_db),
     _rate_limit: None = Depends(login_rate_limit())
 ):
@@ -463,7 +464,8 @@ async def login_user(
         db_user, tokens = await auth_service.login_user(
             email=user.email,
             password=user.password,
-            device_info=device_info
+            device_info=device_info,
+            background_tasks=background_tasks
         )
 
         # Commit transaction to persist auto-accepted invitations

@@ -49,28 +49,41 @@ class UpdateNotificationPreferencesRequest(BaseModel):
     Supports partial updates - all fields are optional.
     When a category is set, it applies to both email and in-app channels.
     """
-    email_enabled: Optional[bool] = Field(None, description="Enable/disable all email notifications")
-    in_app_enabled: Optional[bool] = Field(None, description="Enable/disable all in-app notifications")
-    digest_enabled: Optional[bool] = Field(None, description="Enable/disable notification digests")
-    digest_frequency: Optional[Literal["daily", "weekly", "monthly"]] = Field(None, description="Digest frequency")
-    categories: Optional[NotificationCategories] = Field(None, description="Category-specific preferences")
+    # GLOBAL
+    email_notifications: Optional[bool] = None
+    in_app_notifications: Optional[bool] = None
+
+    # WORKSPACE
+    ws_invite_received: Optional[bool] = None
+    ws_invite_accepted: Optional[bool] = None
+    ws_role_changed: Optional[bool] = None
+    ws_member_removed: Optional[bool] = None
+
+    # CONTENT GENERATION
+    gen_started: Optional[bool] = None
+    gen_completed: Optional[bool] = None
+    gen_failed: Optional[bool] = None
+    gen_published: Optional[bool] = None
+
+    # BILLING
+    billing_payment_success: Optional[bool] = None
+    billing_payment_failed: Optional[bool] = None
+    billing_subscription_cancelled: Optional[bool] = None
+    billing_subscription_expiring: Optional[bool] = None
+    billing_trial_ending: Optional[bool] = None
+    billing_usage_limit_warning: Optional[bool] = None
+    billing_usage_limit_exceeded: Optional[bool] = None
+
+    # KNOWLEDGE BASE
+    kb_processing_completed: Optional[bool] = None
+    kb_processing_failed: Optional[bool] = None
+
+    # DIGEST
+    digest_enabled: Optional[bool] = None
+    digest_frequency: Optional[Literal["daily", "weekly", "monthly"]] = None
+
+    # MARKETING
+    marketing_updates: Optional[bool] = None
 
     class Config:
-        json_schema_extra = {
-            "example": {
-                "email_enabled": True,
-                "in_app_enabled": True,
-                "digest_enabled": True,
-                "digest_frequency": "daily",
-                "categories": {
-                    "mentions": True,
-                    "workspace_invites": True,
-                    "content_updates": True,
-                    "comments": True,
-                    "team_activity": True,
-                    "security_alerts": True,
-                    "billing_updates": True,
-                    "product_updates": False
-                }
-            }
-        }
+        from_attributes = True
