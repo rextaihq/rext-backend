@@ -6,6 +6,7 @@ Routes handle HTTP concerns and delegate business logic to SubscriptionService.
 """
 
 from fastapi import APIRouter, Depends, status, Request, Query, BackgroundTasks
+from src.services.notification_helper import schedule_if_allowed
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.database.async_database import get_async_db
@@ -141,10 +142,11 @@ async def create_checkout_session(
 @require_permissions("subscription.read", workspace_scoped=False)
 @db_transaction_handler("get my subscription", "Subscription retrieved successfully", auto_commit=False)
 async def get_my_subscription(
+    background_tasks: BackgroundTasks,
     request: Request,
     include_usage: bool = Query(False, description="Include usage metrics"),
     db: AsyncSession = Depends(get_async_db),
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
 ):
     """
     Get current user's active subscription.
@@ -207,6 +209,19 @@ async def get_my_subscription(
             "api_calls": subscription.current_api_calls
         }
 
+    # Schedule expiring notification if renewal is near (within 3 days)
+    if subscription.renews_at:
+        from datetime import datetime, timezone, timedelta
+        now = datetime.now(timezone.utc)
+        if 0 <= (subscription.renews_at - now).days <= 3:
+            await schedule_if_allowed(
+                db=db,
+                user_id=str(user_id),
+                background_tasks=background_tasks,
+                pref_flag="subscription_expiring",
+                message="Your subscription is about to expire.",
+                payload={"subscription_id": str(subscription.id), "renewal_date": subscription.renews_at.isoformat()},
+            )
     return success(
         data=response_data,
         request=request,
@@ -335,6 +350,15 @@ async def cancel_subscription(
         else f"Subscription will end on {subscription.end_date.strftime('%Y-%m-%d') if subscription.end_date else 'N/A'}"
     )
 
+    # Schedule cancellation notification
+    await schedule_if_allowed(
+        db=db,
+        user_id=str(user_id),
+        background_tasks=background_tasks,
+        pref_flag="subscription_cancelled",
+        message="Your subscription has been cancelled.",
+        payload={"subscription_id": str(subscription.id), "type": "cancelled"},
+    )
     return success(
         data=subscription.to_dict(),
         request=request,
@@ -415,9 +439,10 @@ async def get_usage_stats(
 @require_permissions("subscription.read")
 @db_transaction_handler("get trial status", "Trial status retrieved successfully", auto_commit=False)
 async def get_trial_status(
+    background_tasks: BackgroundTasks,
     request: Request,
     db: AsyncSession = Depends(get_async_db),
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
 ):
     """
     Get trial status for current subscription.
@@ -437,6 +462,20 @@ async def get_trial_status(
     if trial_data["trial_end_date"]:
         trial_data["trial_end_date"] = trial_data["trial_end_date"].isoformat()
 
+    # Schedule trial ending notification if trial ends within 3 days
+    if trial_data.get("trial_end_date"):
+        from datetime import datetime, timezone, timedelta
+        trial_end = datetime.fromisoformat(trial_data["trial_end_date"]).replace(tzinfo=timezone.utc)
+        now = datetime.now(timezone.utc)
+        if 0 <= (trial_end - now).days <= 3:
+            await schedule_if_allowed(
+                db=db,
+                user_id=str(user_id),
+                background_tasks=background_tasks,
+                pref_flag="trial_ending",
+                message="Your trial period is ending soon.",
+                payload={"trial_end_date": trial_data["trial_end_date"]},
+            )
     return success(
         data=trial_data,
         request=request,

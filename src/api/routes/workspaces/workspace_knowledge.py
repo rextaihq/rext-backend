@@ -166,32 +166,44 @@ async def create_web_knowledge(
     raw_url = str(payload.url)
     if getattr(payload.url, "path", "/") == "/" and not getattr(payload.url, "query", "") and not getattr(payload.url, "fragment", ""):
         raw_url = raw_url.rstrip("/")
-
-    knowledge = await service.add_web_knowledge(
-        workspace.id,
-        raw_url,
-        knowledge_base_id=payload.knowledge_base_id
-    )
-
-    # Update title if provided
-    if payload.title:
-        knowledge = await service.update_web_knowledge_title(workspace.id, UUID(str(knowledge["id"])), payload.title)
-
-    # Schedule notification
-    await schedule_if_allowed(
-        db=db,
-        user_id=str(user["identity"]),
-        background_tasks=background_tasks,
-        pref_flag="kb_processing_completed",
-        message=f"Web knowledge '{raw_url}' processed successfully.",
-        payload={"knowledge_id": str(knowledge["id"]), "type": "web"},
-    )
-
-    return created(
-        data={"web_knowledge": knowledge},
-        request=request,
-        message="Web knowledge added and processed successfully",
-    )
+    try:
+        knowledge = await service.add_web_knowledge(
+            workspace.id,
+            raw_url,
+            knowledge_base_id=payload.knowledge_base_id,
+        )
+        # Update title if provided
+        if payload.title:
+            knowledge = await service.update_web_knowledge_title(
+                workspace.id,
+                UUID(str(knowledge["id"])),
+                payload.title,
+            )
+        # Schedule success notification
+        await schedule_if_allowed(
+            db=db,
+            user_id=str(user["identity"]),
+            background_tasks=background_tasks,
+            pref_flag="kb_processing_completed",
+            message=f"Web knowledge '{raw_url}' processed successfully.",
+            payload={"knowledge_id": str(knowledge["id"]), "type": "web"},
+        )
+        return created(
+            data={"web_knowledge": knowledge},
+            request=request,
+            message="Web knowledge added and processed successfully",
+        )
+    except Exception as e:
+        # Schedule failure notification
+        await schedule_if_allowed(
+            db=db,
+            user_id=str(user["identity"]),
+            background_tasks=background_tasks,
+            pref_flag="kb_processing_failed",
+            message=f"Failed to create web knowledge for URL '{raw_url}': {str(e)}",
+            payload={"url": raw_url, "type": "web"},
+        )
+        raise
 
 
 @router.get("/web/{web_id}")
@@ -354,21 +366,31 @@ async def create_file_knowledge(
         max_size_mb=10,
     )
 
-    # Schedule notification
-    await schedule_if_allowed(
-        db=db,
-        user_id=str(user["identity"]),
-        background_tasks=background_tasks,
-        pref_flag="kb_processing_completed",
-        message=f"File '{knowledge.file_name}' processed successfully.",
-        payload={"knowledge_id": str(knowledge.id), "type": "file"},
-    )
-
-    return created(
-        data={"file_knowledge": knowledge.to_dict()},
-        request=request,
-        message="File knowledge uploaded, processed, and stored successfully",
-    )
+    try:
+        # Schedule success notification
+        await schedule_if_allowed(
+            db=db,
+            user_id=str(user["identity"]),
+            background_tasks=background_tasks,
+            pref_flag="kb_processing_completed",
+            message=f"File '{knowledge.file_name}' processed successfully.",
+            payload={"knowledge_id": str(knowledge.id), "type": "file"},
+        )
+        return created(
+            data={"file_knowledge": knowledge.to_dict()},
+            request=request,
+            message="File knowledge uploaded, processed, and stored successfully",
+        )
+    except Exception as e:
+        await schedule_if_allowed(
+            db=db,
+            user_id=str(user["identity"]),
+            background_tasks=background_tasks,
+            pref_flag="kb_processing_failed",
+            message=f"Failed to upload file knowledge: {str(e)}",
+            payload={"file_name": knowledge.file_name if 'knowledge' in locals() else None, "type": "file"},
+        )
+        raise
 
 
 @router.get("/files/{file_id}")
@@ -517,28 +539,38 @@ async def create_text_knowledge(
     if payload.tags:
         logger.warning("Tags provided for text knowledge are currently ignored", extra={"tags": payload.tags})
 
-    # Schedule notification
-    await schedule_if_allowed(
-        db=db,
-        user_id=str(user["identity"]),
-        background_tasks=background_tasks,
-        pref_flag="kb_processing_completed",
-        message=f"Text knowledge '{knowledge.title}' processed successfully.",
-        payload={"knowledge_id": str(knowledge.id), "type": "text"},
-    )
-
-    return created(
-        data={
-            "text_knowledge": {
-                "text_id": str(knowledge.id),
-                "workspace_id": str(knowledge.workspace_id),
-                "title": knowledge.title,
-                "content": knowledge.content,
-            }
-        },
-        request=request,
-        message="Text knowledge added successfully",
-    )
+    try:
+        # Schedule success notification
+        await schedule_if_allowed(
+            db=db,
+            user_id=str(user["identity"]),
+            background_tasks=background_tasks,
+            pref_flag="kb_processing_completed",
+            message=f"Text knowledge '{knowledge.title}' processed successfully.",
+            payload={"knowledge_id": str(knowledge.id), "type": "text"},
+        )
+        return created(
+            data={
+                "text_knowledge": {
+                    "text_id": str(knowledge.id),
+                    "workspace_id": str(knowledge.workspace_id),
+                    "title": knowledge.title,
+                    "content": knowledge.content,
+                }
+            },
+            request=request,
+            message="Text knowledge added successfully",
+        )
+    except Exception as e:
+        await schedule_if_allowed(
+            db=db,
+            user_id=str(user["identity"]),
+            background_tasks=background_tasks,
+            pref_flag="kb_processing_failed",
+            message=f"Failed to create text knowledge: {str(e)}",
+            payload={"title": payload.title if payload else None, "type": "text"},
+        )
+        raise
 
 
 @router.get("/text/{text_id}")
