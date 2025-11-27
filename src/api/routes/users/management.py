@@ -15,7 +15,9 @@ from src.utils.response_utils import success, error
 from src.api.schema.response_schemas import ErrorCode, ErrorSeverity
 from src.services.user_service import UserService
 from src.api.middleware.exceptions import ResourceNotFoundException, WrextValidationException
+from src.api.models.workspace_models.workspace_member import WorkspaceMembers
 from src.api.config import get_settings
+from sqlalchemy import select, delete
 
 router = APIRouter()
 
@@ -159,9 +161,20 @@ async def delete_user(
                 request=request
             )
 
+        # Delete workspace memberships if any
+        memberships = await db.execute(
+            select(WorkspaceMembers).where(WorkspaceMembers.user_id == UUID(user_id))
+        )
+        membership_list = memberships.scalars().all()
+        if membership_list:
+            await db.execute(
+                delete(WorkspaceMembers).where(WorkspaceMembers.user_id == UUID(user_id))
+            )
+            logger.info(f"Deleted {len(membership_list)} workspace memberships for user {user_id}")
+            await db.commit()
+
         # Delete user via service (includes validation)
         db_user = await service.delete_user(UUID(user_id))
-
         return success(
             data={"id": str(db_user.id)},
             request=request,
