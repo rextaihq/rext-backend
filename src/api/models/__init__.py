@@ -26,6 +26,9 @@ from src.api.models.subscription_models.payment_methods import PaymentMethod
 # Media models
 from src.api.models.media_models.media import Media
 
+# Notification models
+from src.api.models.notification.notification_model import Notification
+
 
 __all__ = [
     "Base",
@@ -41,4 +44,5 @@ __all__ = [
     "UserSubscription",
     "PaymentMethod",
     "Media",
+    "Notification",
 ]

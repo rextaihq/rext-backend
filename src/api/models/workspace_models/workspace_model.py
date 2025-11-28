@@ -39,5 +39,6 @@ class WorkspaceModel(Base, SerializableMixin):
     content_items = relationship("Content", back_populates="workspace", cascade="all, delete-orphan")
     topics = relationship("TopicsModel", back_populates="workspace", cascade="all, delete-orphan")
     media = relationship("Media", back_populates="workspace", cascade="all, delete-orphan")
+    notifications = relationship("Notification", back_populates="workspace", cascade="all, delete-orphan")
 
     # to_dict() inherited from SerializableMixin

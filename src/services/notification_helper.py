@@ -18,11 +18,13 @@ async def schedule_if_allowed(
     pref_flag: str,
     message: str,
     payload: dict,
+    workspace_id: str = None,
 ) -> None:
     """
     Load the user's NotificationPreferences, check the master in‑app toggle
     (in_app_notifications) and the specific Boolean column named ``pref_flag``.
-    If both are True, schedule ``notification_service.send_success_notification``.
+    If both are True, schedule ``notification_service.send_success_notification``
+    AND persist the notification to the database.
     """
     # 1️⃣ Load preferences
     result = await db.execute(
@@ -48,9 +50,95 @@ async def schedule_if_allowed(
         )
         return
 
-    # 4️⃣ Schedule the SSE notification
+    # 4️⃣ Determine notification type and status based on pref_flag
+    notification_type = "system"
+    notification_status = "success"
+    notification_title = "Notification"
+    
+    # Map pref_flag to notification type and generate title
+    if pref_flag.startswith("ws_"):
+        notification_type = "workspace"
+        if pref_flag == "ws_invite_received":
+            notification_title = "Workspace Invitation"
+        elif pref_flag == "ws_invite_accepted":
+            notification_title = "Invitation Accepted"
+        elif pref_flag == "ws_role_changed":
+            notification_title = "Role Changed"
+        elif pref_flag == "ws_member_removed":
+            notification_title = "Member Removed"
+    elif pref_flag.startswith("billing_"):
+        notification_type = "billing"
+        if pref_flag == "billing_payment_success":
+            notification_title = "Payment Successful"
+        elif pref_flag == "billing_payment_failed":
+            notification_title = "Payment Failed"
+            notification_status = "error"
+        elif pref_flag == "billing_subscription_cancelled":
+            notification_title = "Subscription Cancelled"
+            notification_status = "warning"
+        elif pref_flag == "billing_subscription_expiring":
+            notification_title = "Subscription Expiring"
+            notification_status = "warning"
+        elif pref_flag == "billing_trial_ending":
+            notification_title = "Trial Ending"
+            notification_status = "warning"
+        elif pref_flag == "billing_usage_limit_warning":
+            notification_title = "Usage Limit Warning"
+            notification_status = "warning"
+        elif pref_flag == "billing_usage_limit_exceeded":
+            notification_title = "Usage Limit Exceeded"
+            notification_status = "error"
+    elif pref_flag.startswith("kb_"):
+        notification_type = "knowledge"
+        if pref_flag == "kb_processing_completed":
+            notification_title = "Knowledge Processing Complete"
+        elif pref_flag == "kb_processing_failed":
+            notification_title = "Knowledge Processing Failed"
+            notification_status = "error"
+    elif pref_flag.startswith("gen_"):
+        notification_type = "content"
+        if pref_flag == "gen_started":
+            notification_title = "Content Generation Started"
+            notification_status = "info"
+        elif pref_flag == "gen_completed":
+            notification_title = "Content Generation Complete"
+        elif pref_flag == "gen_failed":
+            notification_title = "Content Generation Failed"
+            notification_status = "error"
+        elif pref_flag == "gen_published":
+            notification_title = "Content Published"
+    
+    # 5️⃣ Create notification record in database
+    from src.api.models.notification.notification_model import Notification
+    from datetime import datetime
+    
+    notification = Notification(
+        user_id=UUID(user_id),
+        workspace_id=UUID(workspace_id) if workspace_id else None,
+        title=notification_title,
+        message=message,
+        type=notification_type,
+        category=pref_flag,
+        status=notification_status,
+        priority="normal",
+        payload=payload,
+        is_read=False,
+        sent_via_sse=True,
+        sse_sent_at=datetime.utcnow(),
+    )
+    
+    db.add(notification)
+    await db.commit()
+    await db.refresh(notification)
+    
     logger.info(
-        f"Scheduling notification for user {user_id} – flag {pref_flag} – message: {message}"
+        f"Created notification record {notification.id} for user {user_id} – "
+        f"type: {notification_type}, category: {pref_flag}"
+    )
+
+    # 6️⃣ Schedule the SSE notification
+    logger.info(
+        f"Scheduling SSE notification for user {user_id} – flag {pref_flag} – message: {message}"
     )
     background_tasks.add_task(
         notification_service.send_success_notification,
