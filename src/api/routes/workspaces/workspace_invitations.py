@@ -293,6 +293,7 @@ async def create_workspace_invitation(
                 "role_name": role_display_name,
                 "invited_by": inviter_display_name
             },
+            workspace_id=str(workspace_id),
         )
         logger.info(f"Scheduled in-app notification for existing user {existing_user.id}")
 
@@ -417,6 +418,7 @@ async def create_bulk_workspace_invitations(
                         "role_name": role_display_name,
                         "invited_by": inviter_display_name
                     },
+                    workspace_id=str(workspace_id_value),
                 )
         except (DuplicateResourceException, BusinessRuleViolationException) as exc:
             failures.append({"email": email, "error": str(exc)})

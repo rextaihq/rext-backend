@@ -187,6 +187,7 @@ async def create_web_knowledge(
             pref_flag="kb_processing_completed",
             message=f"Web knowledge '{raw_url}' processed successfully.",
             payload={"knowledge_id": str(knowledge["id"]), "type": "web"},
+            workspace_id=str(workspace.id),
         )
         return created(
             data={"web_knowledge": knowledge},
@@ -202,6 +203,7 @@ async def create_web_knowledge(
             pref_flag="kb_processing_failed",
             message=f"Failed to create web knowledge for URL '{raw_url}': {str(e)}",
             payload={"url": raw_url, "type": "web"},
+            workspace_id=str(workspace.id),
         )
         raise
 
@@ -375,6 +377,7 @@ async def create_file_knowledge(
             pref_flag="kb_processing_completed",
             message=f"File '{knowledge.file_name}' processed successfully.",
             payload={"knowledge_id": str(knowledge.id), "type": "file"},
+            workspace_id=str(workspace.id),
         )
         return created(
             data={"file_knowledge": knowledge.to_dict()},
@@ -389,6 +392,7 @@ async def create_file_knowledge(
             pref_flag="kb_processing_failed",
             message=f"Failed to upload file knowledge: {str(e)}",
             payload={"file_name": knowledge.file_name if 'knowledge' in locals() else None, "type": "file"},
+            workspace_id=str(workspace.id),
         )
         raise
 
@@ -548,6 +552,7 @@ async def create_text_knowledge(
             pref_flag="kb_processing_completed",
             message=f"Text knowledge '{knowledge.title}' processed successfully.",
             payload={"knowledge_id": str(knowledge.id), "type": "text"},
+            workspace_id=str(workspace.id),
         )
         return created(
             data={
@@ -569,6 +574,7 @@ async def create_text_knowledge(
             pref_flag="kb_processing_failed",
             message=f"Failed to create text knowledge: {str(e)}",
             payload={"title": payload.title if payload else None, "type": "text"},
+            workspace_id=str(workspace.id),
         )
         raise
 

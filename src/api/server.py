@@ -58,6 +58,7 @@ from src.api.routes.users.email_preferences import router as email_prefs_router
 from src.api.routes.users.onboarding import router as onboarding_router
 from src.api.routes.media import router as media_router
 from src.api.routes.invitations import router as invitations_router
+from src.api.routes.notifications.notification_routes import router as notification_router
 from src.api.database.async_database import async_engine
 from src.api.database.base import Base
 from src.api.database.async_database import async_engine
@@ -320,6 +321,8 @@ app.include_router(onboarding_router, prefix="/api/v1", tags=["Onboarding"])
 app.include_router(media_router, prefix="/api/v1", tags=["Media"])
 # Public invitation routes (validate and accept)
 app.include_router(invitations_router, prefix="/api/v1", tags=["Invitations"])
+# Notification routes
+app.include_router(notification_router, prefix="/api/v1", tags=["Notifications"])
 
 # ============================================================================
 # STATIC FILE SERVING
