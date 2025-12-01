@@ -43,10 +43,15 @@ async def schedule_if_allowed(
         return
 
     # 3️⃣ Specific flag
-    flag_enabled = getattr(pref, pref_flag, False)
+    # Handle virtual flags mapping to real columns
+    real_pref_column = pref_flag
+    if pref_flag in ["profile_update_failed", "avatar_uploaded", "avatar_upload_failed"]:
+        real_pref_column = "in_app_notifications"
+    
+    flag_enabled = getattr(pref, real_pref_column, False)
     if not flag_enabled:
         logger.debug(
-            f"User {user_id} has preference {pref_flag}=False – skipping notification."
+            f"User {user_id} has preference {real_pref_column}=False – skipping notification."
         )
         return
 
@@ -107,6 +112,20 @@ async def schedule_if_allowed(
             notification_status = "error"
         elif pref_flag == "gen_published":
             notification_title = "Content Published"
+    elif pref_flag == "in_app_notifications":
+        notification_type = "user"
+        notification_title = "Profile Updated"
+    elif pref_flag == "profile_update_failed":
+        notification_type = "user"
+        notification_title = "Profile Update Failed"
+        notification_status = "error"
+    elif pref_flag == "avatar_uploaded":
+        notification_type = "user"
+        notification_title = "Avatar Updated"
+    elif pref_flag == "avatar_upload_failed":
+        notification_type = "user"
+        notification_title = "Avatar Upload Failed"
+        notification_status = "error"
     
     # 5️⃣ Create notification record in database
     from src.api.models.notification.notification_model import Notification

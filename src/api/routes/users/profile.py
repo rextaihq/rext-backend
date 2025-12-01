@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Request, UploadFile, File, HTTPException, status
+from fastapi import APIRouter, Depends, Request, UploadFile, File, HTTPException, status, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.utils.logger import logger
@@ -12,6 +12,7 @@ from src.utils.response_utils import success, error
 from src.api.schema.response_schemas import ErrorCode, ErrorSeverity
 from src.api.middleware.exceptions import ResourceNotFoundException
 from src.services.user_service import UserService
+from src.services.notification_helper import schedule_if_allowed
 from datetime import datetime
 from pathlib import Path
 from sqlalchemy import select
@@ -20,7 +21,7 @@ import imghdr
 
 router = APIRouter()
 
-# Avatar upload directory - stored in media directory for consistent static file serving
+# Avatar upload directory - stored in media directorys for consistent static file serving
 AVATAR_UPLOAD_DIR = Path("media/avatars")
 AVATAR_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -83,6 +84,7 @@ async def get_profile(
 @router.patch("/profile")
 async def update_profile(
     request: Request,
+    background_tasks: BackgroundTasks,
     profile_data: UpdateProfileRequest,
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_async_db)
@@ -142,6 +144,18 @@ async def update_profile(
         }
 
         logger.info(f"Profile updated for user {user_id}. Fields: {', '.join(updated_fields)}")
+
+        # Schedule notification
+        await schedule_if_allowed(
+            db=db,
+            user_id=str(user_id),
+            background_tasks=background_tasks,
+            pref_flag="in_app_notifications",
+            message="Your profile has been successfully updated.",
+            payload={"user_id": str(user_id), "updated_fields": updated_fields},
+            workspace_id=None
+        )
+
         return success(
             data={
                 "profile": profile_response,
@@ -161,6 +175,18 @@ async def update_profile(
         )
     except Exception as e:
         logger.error(f"Error updating profile: {str(e)}")
+        # Schedule failure notification
+        await schedule_if_allowed(
+            db=db,
+            user_id=str(user_id),
+            background_tasks=background_tasks,
+            pref_flag="in_app_notifications",
+            message=f"Failed to update profile: {str(e)}",
+            payload={"user_id": str(user_id), "error": str(e)},
+            workspace_id=None,
+            title="Profile Update Failed",
+            status="error"
+        )
         raise
 
 
@@ -168,6 +194,7 @@ async def update_profile(
 @require_permissions("user.update")
 async def upload_avatar(
     request: Request,
+    background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_async_db)
@@ -282,6 +309,17 @@ async def upload_avatar(
 
         logger.info(f"Avatar uploaded for user {user_id}: {relative_path}")
 
+        # Schedule notification
+        await schedule_if_allowed(
+            db=db,
+            user_id=str(user_id),
+            background_tasks=background_tasks,
+            pref_flag="in_app_notifications",
+            message="Your profile has been successfully updated.",
+            payload={"user_id": str(user_id)},
+            workspace_id=None
+        )
+
         return success(
             data={
                 "avatar_url": updated_user.avatar_url,
@@ -293,6 +331,16 @@ async def upload_avatar(
         )
 
     except ResourceNotFoundException:
+        # Schedule notification
+        await schedule_if_allowed(
+            db=db,
+            user_id=str(user_id),
+            background_tasks=background_tasks,
+            pref_flag="in_app_notifications",
+            message="failed to upload avatar",
+            payload={"user_id": str(user_id), "error": str(e)},
+            workspace_id=None
+        )
         return error(
             message="User not found",
             code=ErrorCode.RESOURCE_NOT_FOUND,
@@ -302,6 +350,16 @@ async def upload_avatar(
         )
     except Exception as e:
         logger.error(f"Error uploading avatar: {str(e)}")
+        # Schedule notification
+        await schedule_if_allowed(
+            db=db,
+            user_id=str(user_id),
+            background_tasks=background_tasks,
+            pref_flag="in_app_notifications",
+            message="failed to upload avatar",
+            payload={"user_id": str(user_id), "error": str(e)},
+            workspace_id=None
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to upload avatar"
@@ -312,6 +370,7 @@ async def upload_avatar(
 @require_permissions("user.update")
 async def delete_avatar(
     request: Request,
+    background_tasks: BackgroundTasks,
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_async_db)
 ):
@@ -366,6 +425,17 @@ async def delete_avatar(
 
         logger.info(f"Avatar deleted for user {user_id}")
 
+        # Schedule notification
+        await schedule_if_allowed(
+            db=db,
+            user_id=str(user_id),
+            background_tasks=background_tasks,
+            pref_flag="in_app_notifications",
+            message="Your profile has been successfully deleted.",
+            payload={"user_id": str(user_id)},
+            workspace_id=None
+        )
+
         return success(
             data={
                 "deleted_avatar_url": old_avatar_url,
@@ -376,6 +446,16 @@ async def delete_avatar(
         )
 
     except ResourceNotFoundException:
+        # Schedule notification
+        await schedule_if_allowed(
+            db=db,
+            user_id=str(user_id),
+            background_tasks=background_tasks,
+            pref_flag="in_app_notifications",
+            message="failed to delete avatar",
+            payload={"user_id": str(user_id), "error": str(e)},
+            workspace_id=None
+        )
         return error(
             message="User not found",
             code=ErrorCode.RESOURCE_NOT_FOUND,
@@ -385,7 +465,17 @@ async def delete_avatar(
         )
     except Exception as e:
         logger.error(f"Error deleting avatar: {str(e)}")
-        raise HTTPException(
+        # Schedule notification
+        await schedule_if_allowed(
+            db=db,
+            user_id=str(user_id),
+            background_tasks=background_tasks,
+            pref_flag="in_app_notifications",
+            message="failed to delete avatar",
+            payload={"user_id": str(user_id), "error": str(e)},
+            workspace_id=None
+        )
+        return HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to delete avatar"
         )
@@ -438,6 +528,7 @@ async def get_notification_preferences(
 @router.patch("/preferences/notifications", response_model=None)
 @require_permissions("user.update", workspace_scoped=False)
 async def update_notification_preferences(
+    background_tasks: BackgroundTasks,
     preferences_update: UpdateNotificationPreferencesRequest,
     request: Request,
     current_user: dict = Depends(get_current_user),
@@ -528,6 +619,16 @@ async def update_notification_preferences(
         await db.commit()
 
         logger.info(f"Updated notification preferences for user {user_id}")
+         # Schedule notification
+        await schedule_if_allowed(
+            db=db,
+            user_id=str(user_id),
+            background_tasks=background_tasks,
+            pref_flag="in_app_notifications",
+            message="Your notification preferences have been successfully updated.",
+            payload={"user_id": str(user_id)},
+            workspace_id=None
+        )
 
         return success(
             data=preferences.to_dict(),
@@ -537,6 +638,16 @@ async def update_notification_preferences(
 
     except Exception as e:
         logger.error(f"Failed to update notification preferences: {str(e)}")
+        # Schedule notification
+        await schedule_if_allowed(
+            db=db,
+            user_id=str(user_id),
+            background_tasks=background_tasks,
+            pref_flag="in_app_notifications",
+            message="failed to update notification preferences",
+            payload={"user_id": str(user_id), "error": str(e)},
+            workspace_id=None
+        )
         raise
 
 
