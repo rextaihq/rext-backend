@@ -180,6 +180,9 @@ class Notification(Base, SerializableMixin):
         Return only selected fields required by the frontend/UI.
         """
         return {
+            "id": self.id,
+            "user_id": self.user_id,
+            "workspace_id": self.workspace_id,
             "title": self.title,
             "message": self.message,
             "type": self.type,
