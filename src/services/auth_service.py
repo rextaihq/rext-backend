@@ -203,7 +203,8 @@ class AuthService:
         email: str,
         password: str,
         device_info: Dict[str, str],
-        background_tasks: Optional[BackgroundTasks] = None
+        background_tasks: Optional[BackgroundTasks] = None,
+        db: Optional[AsyncSession] = None,
     ) -> Tuple[Users, Dict[str, Any]]:
         """
         Authenticate user and create session.
@@ -280,7 +281,7 @@ class AuthService:
 
         # Auto-accept pending workspace invitations for this user
         # This ensures existing users see workspaces they were invited to
-        await self._auto_accept_pending_invitations(db_user)
+        await self._auto_accept_pending_invitations(db_user, self.db, background_tasks)
 
         # Check for trial expiration and send notification
         if background_tasks:
@@ -811,7 +812,7 @@ class AuthService:
 
         return trial_plan
 
-    async def _auto_accept_pending_invitations(self, user: Users) -> None:
+    async def _auto_accept_pending_invitations(self, user: Users, db: AsyncSession, background_tasks: Optional[BackgroundTasks] = None) -> None:
         """
         Auto-accept all pending workspace invitations for a user during login.
 
@@ -898,7 +899,19 @@ class AuthService:
                             }
                         )
                         continue
-
+                    #  send the notification to user
+                    await schedule_if_allowed(
+                        db=db,
+                        user_id=str(invitation.invited_by_user_id),
+                        background_tasks=background_tasks,
+                        pref_flag="ws_invite_accepted",
+                        message=f"{user.email} has accepted an invitation to join a workspace.",
+                        payload = {
+                            "user_id": str(user.id),
+                            "invitation_id": str(invitation.id),
+                            "user_existed": user_exists
+                        }
+                    )
                     logger.info(
                         f"[AUTO-ACCEPT] Calling accept_invitation service method",
                         extra={

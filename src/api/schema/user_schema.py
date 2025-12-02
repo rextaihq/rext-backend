@@ -35,6 +35,22 @@ class LoginUser(BaseModel):
     password: str = Field(..., min_length=8, description="Password for the user account")
 
 
+class LoginWithInvitation(BaseModel):
+    """
+    Schema for user login with invitation acceptance.
+    
+    This endpoint handles the flow for existing users who:
+    1. Already have an account (login with email/password)
+    2. Have been invited to a workspace (via invitation token)
+    3. Want to login and accept the invitation in one step
+    
+    The invitation is automatically accepted after successful authentication.
+    """
+    email: EmailStr = Field(..., description="Email address of the user")
+    password: str = Field(..., min_length=8, description="Password for the user account")
+    invitation_token: str = Field(..., description="Invitation token from email link")
+
+
 class UpdateUser(BaseModel):
     email: Optional[EmailStr] = Field(None, description="User email")
     username: Optional[str] = Field(None, description="Username")
