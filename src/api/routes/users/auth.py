@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, Request, BackgroundTasks, Header
 from src.utils.logger import logger
 from src.api.security.dependencies import get_current_user
-from src.api.schema.user_schema import LoginUser, RegisterUser, RegisterWithInvitation
+from src.api.schema.user_schema import LoginUser, RegisterUser, RegisterWithInvitation, LoginWithInvitation
 from src.api.security.token_utils import verify_token
 from src.api.config import get_settings
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -16,6 +16,7 @@ from src.api.middleware.exceptions import (
     BusinessRuleViolationException
 )
 from datetime import datetime
+from src.services.notification_helper import schedule_if_allowed
 from user_agents import parse as parse_user_agent
 from src.api.models.user_models.notification_preferences import NotificationPreferences
 import os
@@ -24,6 +25,9 @@ from src.api.middleware.rate_limiter import (
     registration_rate_limit
 )
 from src.services.auth_service import AuthService
+from src.services.invitation_service import InvitationService
+from src.services.user_service import UserService
+from src.utils.invitation_utils import is_invitation_expired
 from uuid import UUID
 
 router = APIRouter()
@@ -235,10 +239,6 @@ async def register_with_invitation(
         ResourceNotFoundException: If invitation not found
         BusinessRuleViolationException: If invitation expired or email mismatch
     """
-    from src.services.invitation_service import InvitationService
-    from src.services.user_service import UserService
-    from src.utils.invitation_utils import is_invitation_expired
-
     try:
         # Step 1: Validate invitation token
         invitation_service = InvitationService(db)
@@ -365,6 +365,37 @@ async def register_with_invitation(
                 frontend_url=frontend_url
             )
 
+            #  add a notification preference for the user
+            logger.info("Adding notification preference for user")
+            notification_preference = NotificationPreferences(
+                user_id=current_user.id,
+                email_notifications=True,
+                in_app_notifications=True,
+                ws_invite_received=True,
+                ws_invite_accepted=True,
+                ws_role_changed=True,
+                ws_member_removed=True,
+                gen_started=True,
+                gen_completed=True,
+                gen_failed=True,
+                gen_published=True,
+                billing_payment_success=True,
+                billing_payment_failed=True,
+                billing_subscription_cancelled=True,
+                billing_subscription_expiring=True,
+                billing_trial_ending=True,
+                billing_usage_limit_warning=True,
+                billing_usage_limit_exceeded=True,
+                kb_processing_completed=True,
+                kb_processing_failed=True,
+                digest_enabled=True,
+                digest_frequency="daily",
+                marketing_updates=False
+            )
+            db.add(notification_preference)
+            await db.commit()
+            await db.refresh(notification_preference)
+
         # Step 7: Get workspace details for response
         from src.services.workspace_service import WorkspaceService
         workspace_service = WorkspaceService(db)
@@ -406,6 +437,20 @@ async def register_with_invitation(
         logger.info(
             f"User {'registered' if not user_exists else 'accepted invitation'} via invitation: {current_user.email}",
             extra={
+                "user_id": str(current_user.id),
+                "workspace_id": str(workspace.id),
+                "invitation_id": str(invitation.id),
+                "user_existed": user_exists
+            }
+        )
+        #  send the notification to user
+        await schedule_if_allowed(
+            db=db,
+            user_id=str(invitation.invited_by_user_id),
+            background_tasks=background_tasks,
+            pref_flag="ws_invite_accepted",
+            message=f"{current_user.email} has accepted an invitation to join a workspace.",
+            payload = {
                 "user_id": str(current_user.id),
                 "workspace_id": str(workspace.id),
                 "invitation_id": str(invitation.id),
@@ -465,7 +510,8 @@ async def login_user(
             email=user.email,
             password=user.password,
             device_info=device_info,
-            background_tasks=background_tasks
+            background_tasks=background_tasks,
+            db=db
         )
 
         # Commit transaction to persist auto-accepted invitations

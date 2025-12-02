@@ -21,6 +21,7 @@ from src.api.middleware.exceptions import (
     ResourceNotFoundException,
     WrextAuthenticationException
 )
+from src.services.notification_helper import schedule_if_allowed
 from src.api.middleware.usage_limiter import check_topic_limit, check_api_limit
 from src.api.middleware.rate_limiter import ai_topic_generation_rate_limit
 from src.utils.db_utils import get_or_404
@@ -192,6 +193,18 @@ async def generate_topic(
                     for topic in display_topics
                 ],
             },
+        )
+
+        #  #  send the notification to user
+        await schedule_if_allowed(
+            db=db,
+            user_id=uuid.UUID(user_id),
+            background_tasks=background_tasks,
+            pref_flag="in_app_notifications",
+            message=f"Topics generated successfully!",
+            payload = {
+                "user_id": str(user_id)
+            }
         )
         logger.info("Notification task scheduled.")
     # Note: auto_commit=False because this doesn't modify database
