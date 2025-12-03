@@ -100,6 +100,17 @@ async def generate_topic(
             model_trace.outputs = {"model_loaded": True}
     except Exception as model_load_err:
         logger.error(f"❌ Model loading failed: {model_load_err}")
+        # send the notification to user
+        await schedule_if_allowed(
+            db=db,
+            user_id=str(user_id),
+            background_tasks=background_tasks,
+            pref_flag="in_app_notifications",
+            message=f"Topics generation failed! {str(model_load_err)}",
+            payload = {
+                "user_id": str(user_id)
+            }
+        )
         raise TopicGenerationException(
             message="Model loading failed",
             generation_params=data.model_dump(),
@@ -114,6 +125,18 @@ async def generate_topic(
             prompt_trace.outputs = {"prompt_preview": str(topic_prompt)[:400]}
     except Exception as e:
         logger.error(f"❌ Prompt formatting failed: {e}")
+        # send the notification to user
+        await schedule_if_allowed(
+            db=db,
+            user_id=str(user_id),
+            background_tasks=background_tasks,
+            pref_flag="in_app_notifications",
+            message=f"Topics generation failed! {str(e)}",
+            payload = {
+                "user_id": str(user_id)
+            },
+            workspace_id=workspace_id
+        )
         raise TopicGenerationException(
             message="Prompt formatting failed",
             generation_params=data.model_dump(),
@@ -129,6 +152,18 @@ async def generate_topic(
             logger.info(f"✅ Generated {len(basic_topics)} topics via LLM")
     except Exception as model_err:
         logger.error(f"❌ Model invocation failed: {model_err}")
+        # send the notification to user
+        await schedule_if_allowed(
+            db=db,
+            user_id=str(user_id),
+            background_tasks=background_tasks,
+            pref_flag="in_app_notifications",
+            message=f"Topics generation failed! {str(model_err)}",
+            payload = {
+                "user_id": str(user_id)
+            },
+            workspace_id=workspace_id
+        )
         raise TopicGenerationException(
             message="Failed to generate topics using AI model",
             generation_params=data.model_dump(),
@@ -159,6 +194,18 @@ async def generate_topic(
             logger.info(f"✨ Enriched {len(display_topics)} topics")
     except Exception as enrichment_err:
         logger.error(f"❌ Topic enrichment failed: {enrichment_err}")
+        # send the notification to user
+        await schedule_if_allowed(
+            db=db,
+            user_id=str(user_id),
+            background_tasks=background_tasks,
+            pref_flag="in_app_notifications",
+            message=f"Topics generation failed! {str(enrichment_err)}",
+            payload = {
+                "user_id": str(user_id)
+            },
+            workspace_id=workspace_id
+        )
         raise TopicGenerationException(
             message="Failed to enrich generated topics",
             generation_params=data.model_dump(),
@@ -195,18 +242,22 @@ async def generate_topic(
             },
         )
 
-        #  #  send the notification to user
-        await schedule_if_allowed(
-            db=db,
-            user_id=uuid.UUID(user_id),
-            background_tasks=background_tasks,
-            pref_flag="in_app_notifications",
-            message=f"Topics generated successfully!",
-            payload = {
-                "user_id": str(user_id)
-            }
-        )
-        logger.info("Notification task scheduled.")
+        # send the notification to user
+        try:
+            await schedule_if_allowed(
+                db=db,
+                user_id=str(user_id),
+                background_tasks=background_tasks,
+                pref_flag="in_app_notifications",
+                message=f"Topics generated successfully!",
+                payload = {
+                    "user_id": str(user_id)
+                },
+                workspace_id=workspace_id
+            )
+            logger.info("Notification task scheduled.")
+        except Exception as e:
+            logger.error(f"Failed to schedule notification task: {e}")
     # Note: auto_commit=False because this doesn't modify database
     return {
         "topics": display_topics,

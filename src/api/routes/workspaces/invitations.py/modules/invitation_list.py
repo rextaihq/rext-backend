@@ -145,6 +145,7 @@ async def list_received_invitations(
             "invitations": invitations_data,
             "total_count": len(invitations_data),
         },
+        # workspace_id=str(workspace_id),
     )
 
     # ------------------------------------------------------------------

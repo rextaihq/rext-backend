@@ -12,6 +12,7 @@ from src.utils.workspace_utils import resolve_and_verify_workspace
 from src.services.content_service import ContentService
 from src.api.tasks.content_generation import run_content_generation_background
 from src.flow.service.process_manager import ProgressManager
+from src.services.notification_helper import schedule_if_allowed
 
 router = APIRouter()
 
@@ -52,67 +53,98 @@ async def create_content(
         - JWT authentication
         - Workspace membership verification
     """
-    user_id = user.get("identity")
+    try:
+        user_id = user.get("identity")
 
-    # Verify workspace access and membership in one call
-    workspace, membership = await resolve_and_verify_workspace(db, workspace_id, UUID(user_id))
+        # Verify workspace access and membership in one call
+        workspace, membership = await resolve_and_verify_workspace(db, workspace_id, UUID(user_id))
 
-    # If workspace_id in body is provided, verify it matches
-    if data.workspace_id:
-        if data.workspace_id != workspace.id:
-            raise WrextValidationException(
-                message="Workspace ID mismatch",
-                context={"path_workspace_id": str(workspace_id), "body_workspace_id": str(data.workspace_id)}
+        # If workspace_id in body is provided, verify it matches
+        if data.workspace_id:
+            if data.workspace_id != workspace.id:
+                raise WrextValidationException(
+                    message="Workspace ID mismatch",
+                    context={"path_workspace_id": str(workspace_id), "body_workspace_id": str(data.workspace_id)}
+                )
+
+        # Use ContentService to create content record
+        service = ContentService(db)
+        content = await service.create_content(
+            workspace_id=workspace.id,
+            user_id=UUID(user_id),
+            data=data
+        )
+
+        # Trigger background generation task if content status is "generating"
+        # (i.e., no body_markdown was provided, so AI generation is needed)
+        if content.status == "generating" and data.topic_id:
+            logger.info(
+                f"Triggering background content generation for content {content.id}",
+                extra={"workspace_id": str(workspace.id), "topic_id": str(data.topic_id)}
             )
 
-    # Use ContentService to create content record
-    service = ContentService(db)
-    content = await service.create_content(
-        workspace_id=workspace.id,
-        user_id=UUID(user_id),
-        data=data
-    )
+            # Initialize progress tracking before starting generation
+            progress_manager = ProgressManager(db)
+            await progress_manager.initialize_progress(
+                content_id=content.id,
+                step="initializing"
+            )
 
-    # Trigger background generation task if content status is "generating"
-    # (i.e., no body_markdown was provided, so AI generation is needed)
-    if content.status == "generating" and data.topic_id:
-        logger.info(
-            f"Triggering background content generation for content {content.id}",
-            extra={"workspace_id": str(workspace.id), "topic_id": str(data.topic_id)}
+            message = "Content generation started in background"
+            await schedule_if_allowed(
+                db=db,
+                user_id=str(user["identity"]),
+                background_tasks=background_tasks,
+                pref_flag="gen_started",
+                message=f"Content generation started",
+                payload={"file_name": None, "type": "content"},
+                workspace_id=str(workspace.id),
+            )
+
+            # Add background task for content generation
+            background_tasks.add_task(
+                run_content_generation_background,
+                content_id=content.id,
+                workspace_id=workspace.id,
+                topic_id=data.topic_id,
+                user_id=UUID(user_id),
+                background_tasks=background_tasks
+            )
+
+        else:
+            logger.info(
+                f"Content created without generation for content {content.id}",
+                extra={"workspace_id": str(workspace.id), "status": content.status}
+            )
+            message = "Content created successfully"
+
+        content_data = content.to_dict(include_relationships=["content_metadata", "seo_data"])
+
+        # Return content data immediately - generation runs in background
+        # Frontend can use content.id to subscribe to progress via SSE
+        return {
+            "content": content_data,
+            "operation_id": str(content.id),  # For SSE subscription
+            "message": message
+        }
+    except Exception as e:
+        await schedule_if_allowed(
+            db=db,
+            user_id=str(user["identity"]),
+            background_tasks=background_tasks,
+            pref_flag="gen_failed",
+            message=f"Failed to create content: {str(e)}",
+            payload={"file_name": None, "type": "content"},
+            workspace_id=str(workspace.id),
         )
-
-        # Initialize progress tracking before starting generation
-        progress_manager = ProgressManager(db)
-        await progress_manager.initialize_progress(
-            content_id=content.id,
-            step="initializing"
+        logger.error(
+            f"Failed to create content: {str(e)}",
+            extra={"workspace_id": str(workspace.id), "error": str(e)}
         )
-
-        # Add background task for content generation
-        background_tasks.add_task(
-            run_content_generation_background,
-            content_id=content.id,
-            workspace_id=workspace.id,
-            topic_id=data.topic_id
+        raise WrextValidationException(
+            message="Failed to create content",
+            context={"workspace_id": str(workspace_id), "error": str(e)}
         )
-
-        message = "Content generation started in background"
-    else:
-        logger.info(
-            f"Content created without generation for content {content.id}",
-            extra={"workspace_id": str(workspace.id), "status": content.status}
-        )
-        message = "Content created successfully"
-
-    content_data = content.to_dict(include_relationships=["content_metadata", "seo_data"])
-
-    # Return content data immediately - generation runs in background
-    # Frontend can use content.id to subscribe to progress via SSE
-    return {
-        "content": content_data,
-        "operation_id": str(content.id),  # For SSE subscription
-        "message": message
-    }
 
 
 # -------------------------
@@ -297,7 +329,9 @@ async def retry_content_generation(
         run_content_generation_background,
         content_id=content_id,
         workspace_id=workspace.id,
-        topic_id=content.topic_id
+        topic_id=content.topic_id,
+        user_id=UUID(user_id),
+        background_tasks=background_tasks
     )
 
     return {"content_id": str(content_id), "status": "generating"}

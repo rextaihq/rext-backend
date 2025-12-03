@@ -160,6 +160,7 @@ async def accept_invitation(
         pref_flag="ws_invite_accepted",
         message="Your invitation was accepted!",
         payload=payload,
+        workspace_id=str(invitation.workspace_id),
     )
 
     logger.info(f"User {user_id} accepted invitation to workspace {invitation.workspace_id}")

@@ -311,6 +311,7 @@ async def remove_workspace_member(
         pref_flag="ws_member_removed",
         message="You have been removed from a workspace.",
         payload=payload,
+        workspace_id=str(workspace.id),
     )
     logger.info(
         "Workspace member removed",
@@ -398,6 +399,7 @@ async def update_workspace_member_role(
         pref_flag="ws_role_changed",
         message="Your role in a workspace was updated.",
         payload=payload,
+        workspace_id=str(workspace.id),
     )
 
     logger.info(
