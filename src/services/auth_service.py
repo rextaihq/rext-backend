@@ -306,7 +306,8 @@ class AuthService:
                             "subscription_id": str(subscription.id),
                             "trial_end_date": subscription.trial_end_date.isoformat(),
                             "plan_id": str(subscription.plan_id)
-                        }
+                        },
+                        workspace_id=str(subscription.workspace_id),
                     )
 
         # Get GLOBAL roles only (workspace_id is NULL and is_primary is True)
@@ -910,7 +911,8 @@ class AuthService:
                             "user_id": str(user.id),
                             "invitation_id": str(invitation.id),
                             "user_existed": user_exists
-                        }
+                        },
+                        workspace_id=str(invitation.workspace_id),
                     )
                     logger.info(
                         f"[AUTO-ACCEPT] Calling accept_invitation service method",
