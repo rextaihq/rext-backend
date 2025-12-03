@@ -27,7 +27,7 @@ services:
 
     # Backend API Service
     langgraph-api:
-        image: revnix/content-automation:latest
+        image: revnixhq/wrext:latest
         ports:
             - "8123:2024"
         depends_on:
