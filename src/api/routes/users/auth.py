@@ -835,6 +835,9 @@ async def oauth_login(
             token_expires_at=body.get("token_expires_at")
         )
 
+        # Commit the transaction to persist user, OAuth account, and subscription data
+        await db.commit()
+
         # Extract roles and permissions from service response (same pattern as login)
         role_names = tokens.get("roles", [])
         permissions = tokens.get("permissions", [])

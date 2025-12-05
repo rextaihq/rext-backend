@@ -20,6 +20,7 @@ from datetime import datetime, timedelta
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 
 from src.api.models.user_models.users import Users
 from src.api.models.user_models.oauth_accounts import OAuthAccount
@@ -257,7 +258,15 @@ class OAuthService:
                 )
 
         # Generate JWT tokens
-        role_names = [ur.role.name for ur in user.user_roles if ur.is_primary]
+        # Explicitly query user roles to avoid lazy loading in async context
+        user_roles_result = await self.db.execute(
+            select(UserRole)
+            .options(selectinload(UserRole.role))
+            .where(UserRole.user_id == user.id)
+            .where(UserRole.is_primary == True)
+        )
+        user_roles = user_roles_result.scalars().all()
+        role_names = [ur.role.name for ur in user_roles]
 
         result = await self.db.execute(
                 select(Permission.name)
