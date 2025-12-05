@@ -326,7 +326,7 @@ class OAuthService:
             token_expires_at: Token expiration
 
         Returns:
-            OAuthAccount object
+            OAuthAccount obj
 
         Raises:
             DuplicateResourceException: If OAuth account already linked to another user
