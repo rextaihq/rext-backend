@@ -97,7 +97,9 @@ class OAuthService:
         """
         # Check if this OAuth account already exists
         result = await self.db.execute(
-            select(OAuthAccount).where(
+            select(OAuthAccount)
+            .options(selectinload(OAuthAccount.user))  # Eagerly load user to avoid async lazy loading
+            .where(
                 OAuthAccount.provider == provider,
                 OAuthAccount.provider_account_id == provider_account_id
             )
