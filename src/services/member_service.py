@@ -529,7 +529,6 @@ class MemberService(InvitationService):
         from src.api.models.user_models.users import Users
         from src.api.models.user_models.roles import Role
         from src.api.models.user_models.user_roles import UserRole
-        from datetime import datetime, timezone
 
         # Get member with validation
         member, member_user = await self.get_member_with_user(member_id, workspace_id)
@@ -572,7 +571,8 @@ class MemberService(InvitationService):
             old_role = old_role_result.scalar_one_or_none()
 
         # Update or create user role
-        timestamp = datetime.now(timezone.utc)
+        # Use utcnow() for timezone-naive datetime to match TIMESTAMP WITHOUT TIME ZONE column
+        timestamp = datetime.utcnow()
         if user_role:
             user_role.role_id = new_role_id
             user_role.assigned_by_user_id = assigned_by_user_id
