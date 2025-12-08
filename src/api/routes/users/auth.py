@@ -818,9 +818,27 @@ async def oauth_login(
     }
     """
     from src.services.oauth_service import OAuthService
+    from datetime import datetime
 
     try:
         body = await request.json()
+
+        # Parse token_expires_at from ISO string to datetime (if provided)
+        # Database uses TIMESTAMP WITHOUT TIME ZONE, so we need timezone-naive datetimes
+        token_expires_at = None
+        if body.get("token_expires_at"):
+            try:
+                expires_str = body.get("token_expires_at")
+                # Handle ISO format with 'Z' suffix (e.g., '2025-01-01T00:00:00Z')
+                if expires_str.endswith('Z'):
+                    expires_str = expires_str[:-1]  # Remove 'Z' to get naive datetime
+                parsed_dt = datetime.fromisoformat(expires_str)
+                # If parsed datetime has timezone info, convert to naive UTC
+                if parsed_dt.tzinfo is not None:
+                    parsed_dt = parsed_dt.replace(tzinfo=None)
+                token_expires_at = parsed_dt
+            except (ValueError, AttributeError) as e:
+                logger.warning(f"Failed to parse token_expires_at: {body.get('token_expires_at')}, error: {e}")
 
         oauth_service = OAuthService(db)
         user, tokens = await oauth_service.oauth_login_or_register(
@@ -832,7 +850,7 @@ async def oauth_login(
             provider_username=body.get("provider_username"),
             access_token=body.get("access_token"),
             refresh_token=body.get("refresh_token"),
-            token_expires_at=body.get("token_expires_at")
+            token_expires_at=token_expires_at
         )
 
         # Commit the transaction to persist user, OAuth account, and subscription data
@@ -903,10 +921,28 @@ async def link_oauth(
     }
     """
     from src.services.oauth_service import OAuthService
+    from datetime import datetime
 
     try:
         body = await request.json()
         user_id = UUID(current_user.get("identity"))
+
+        # Parse token_expires_at from ISO string to datetime (if provided)
+        # Database uses TIMESTAMP WITHOUT TIME ZONE, so we need timezone-naive datetimes
+        token_expires_at = None
+        if body.get("token_expires_at"):
+            try:
+                expires_str = body.get("token_expires_at")
+                # Handle ISO format with 'Z' suffix (e.g., '2025-01-01T00:00:00Z')
+                if expires_str.endswith('Z'):
+                    expires_str = expires_str[:-1]  # Remove 'Z' to get naive datetime
+                parsed_dt = datetime.fromisoformat(expires_str)
+                # If parsed datetime has timezone info, convert to naive UTC
+                if parsed_dt.tzinfo is not None:
+                    parsed_dt = parsed_dt.replace(tzinfo=None)
+                token_expires_at = parsed_dt
+            except (ValueError, AttributeError) as e:
+                logger.warning(f"Failed to parse token_expires_at: {body.get('token_expires_at')}, error: {e}")
 
         oauth_service = OAuthService(db)
         oauth_account = await oauth_service.link_oauth_account(
@@ -918,7 +954,7 @@ async def link_oauth(
             provider_avatar_url=body.get("provider_avatar_url"),
             access_token=body.get("access_token"),
             refresh_token=body.get("refresh_token"),
-            token_expires_at=body.get("token_expires_at")
+            token_expires_at=token_expires_at
         )
 
         return success(
