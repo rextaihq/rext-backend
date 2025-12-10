@@ -841,7 +841,7 @@ async def oauth_login(
                 logger.warning(f"Failed to parse token_expires_at: {body.get('token_expires_at')}, error: {e}")
 
         oauth_service = OAuthService(db)
-        user, tokens = await oauth_service.oauth_login_or_register(
+        new_user, tokens = await oauth_service.oauth_login_or_register(
             provider=body.get("provider"),
             provider_account_id=body.get("provider_account_id"),
             provider_email=body.get("provider_email"),
@@ -853,9 +853,46 @@ async def oauth_login(
             token_expires_at=token_expires_at
         )
 
-        # Commit the transaction to persist user, OAuth account, and subscription data
-        await db.commit()
-
+        # Check if notification preferences already exist for this user
+        # (OAuth can return existing users, so we should only create prefs for new users)
+        from sqlalchemy import select
+        existing_prefs_result = await db.execute(
+            select(NotificationPreferences).where(NotificationPreferences.user_id == new_user.id)
+        )
+        existing_prefs = existing_prefs_result.scalar_one_or_none()
+        
+        if not existing_prefs:
+            # Create notification preferences only for new users
+            notification_preference = NotificationPreferences(
+                user_id=new_user.id,
+                email_notifications=True,
+                in_app_notifications=True,
+                ws_invite_received=True,
+                ws_invite_accepted=True,
+                ws_role_changed=True,
+                ws_member_removed=True,
+                gen_started=True,
+                gen_completed=True,
+                gen_failed=True,
+                gen_published=True,
+                billing_payment_success=True,
+                billing_payment_failed=True,
+                billing_subscription_cancelled=True,
+                billing_subscription_expiring=True,
+                billing_trial_ending=True,
+                billing_usage_limit_warning=True,
+                billing_usage_limit_exceeded=True,
+                kb_processing_completed=True,
+                kb_processing_failed=True,
+                digest_enabled=True,
+                digest_frequency="daily",
+                marketing_updates=False
+            )
+            db.add(notification_preference)
+            await db.commit()
+            logger.info(f"Created notification preferences for new OAuth user: {new_user.id}")
+        
+        await db.refresh(new_user)
         # Extract roles and permissions from service response (same pattern as login)
         role_names = tokens.get("roles", [])
         permissions = tokens.get("permissions", [])
@@ -864,14 +901,14 @@ async def oauth_login(
             data={
                 **tokens,
                 "user": {
-                    "id": str(user.id),
-                    "username": user.username,
-                    "email": user.email,
-                    "first_name": user.first_name,
-                    "last_name": user.last_name,
-                    "avatar_url": user.avatar_url,
-                    "last_login_at": user.last_login_at,
-                    "login_count": user.login_count,
+                    "id": str(new_user.id),
+                    "username": new_user.username,
+                    "email": new_user.email,
+                    "first_name": new_user.first_name,
+                    "last_name": new_user.last_name,
+                    "avatar_url": new_user.avatar_url,
+                    "last_login_at": new_user.last_login_at,
+                    "login_count": new_user.login_count,
                     "roles": role_names,
                     "permissions": permissions
                 }
