@@ -31,6 +31,7 @@ from src.api.middleware.rate_limiter import (
     subscription_cancel_rate_limit,
     customer_portal_rate_limit
 )
+from src.services.usage_tracking_service import UsageTrackingService
 from sqlalchemy import select
 
 
@@ -384,17 +385,15 @@ async def get_usage_stats(
     """
     user_id = current_user.get("identity")
     service = SubscriptionService(db)
+    usage_service = UsageTrackingService(db)    
 
     # Get current subscription
     subscription = await service.get_subscription_by_user(user_id)
+    
+    # If no subscription, return free tier usage
     if not subscription:
-        from src.api.middleware.exceptions import ResourceNotFoundException
-        raise ResourceNotFoundException(
-            resource_type="Subscription",
-            resource_id=f"user:{user_id}",
-            message="No active subscription found"
-        )
-
+        return await usage_service.get_usage_metrics(user_id)
+        
     # Get plan
     plan = await service.get_plan_by_id(subscription.plan_id)
 
