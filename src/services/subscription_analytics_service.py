@@ -198,6 +198,7 @@ class SubscriptionAnalyticsService:
                     )
                 )
             )
+            .select_from(UserSubscription)
             .join(SubscriptionPlan, UserSubscription.plan_id == SubscriptionPlan.id)
             .where(UserSubscription.status.in_(statuses))
         )
@@ -220,6 +221,7 @@ class SubscriptionAnalyticsService:
                     )
                 )
             )
+            .select_from(UserSubscription)
             .join(SubscriptionPlan, UserSubscription.plan_id == SubscriptionPlan.id)
             .where(UserSubscription.start_date >= start_date)
         )
@@ -556,6 +558,7 @@ class SubscriptionAnalyticsService:
                     )
                 )
             )
+            .select_from(UserSubscription)
             .join(SubscriptionPlan, UserSubscription.plan_id == SubscriptionPlan.id)
             .where(
                 UserSubscription.start_date < end,
@@ -585,6 +588,7 @@ class SubscriptionAnalyticsService:
                     )
                 )
             )
+            .select_from(UserSubscription)
             .join(SubscriptionPlan, UserSubscription.plan_id == SubscriptionPlan.id)
             .where(
                 UserSubscription.start_date >= start,
@@ -610,6 +614,7 @@ class SubscriptionAnalyticsService:
                     )
                 )
             )
+            .select_from(UserSubscription)
             .join(SubscriptionPlan, UserSubscription.plan_id == SubscriptionPlan.id)
             .where(
                 UserSubscription.cancelled_at >= start,
