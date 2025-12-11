@@ -63,7 +63,7 @@ class PermissionChecker:
         self.require_all = require_all
         self.workspace_scoped = workspace_scoped
 
-    def __call__(
+    async def __call__(
         self,
         request: Request,
         current_user: dict = Depends(get_current_user),
@@ -111,7 +111,7 @@ class PermissionChecker:
                 workspace_id = request.query_params.get("workspace_id")
 
         # ENHANCEMENT 1: Check if user is super_admin (bypasses all permission checks)
-        if self._is_super_admin(db, user_id):
+        if await self._is_super_admin(db, user_id):
             logger.debug(
                 f"Permission check passed for super_admin user {user_id}",
                 extra={
@@ -125,7 +125,7 @@ class PermissionChecker:
 
         # ENHANCEMENT 2: Enhanced workspace membership validation
         if self.workspace_scoped and workspace_id:
-            is_member = self._validate_workspace_membership(db, user_id, workspace_id)
+            is_member = await self._validate_workspace_membership(db, user_id, workspace_id)
             if not is_member:
                 logger.warning(
                     f"Workspace access denied for user {user_id}: Not a workspace member",
@@ -142,7 +142,7 @@ class PermissionChecker:
                 )
 
         # Get user's permissions
-        user_permissions = self._get_user_permissions(db, user_id, workspace_id)
+        user_permissions = await self._get_user_permissions(db, user_id, workspace_id)
 
         # Check if user has required permissions
         has_permission = self._check_permissions(
@@ -183,7 +183,7 @@ class PermissionChecker:
         return True
 
     @staticmethod
-    def _get_user_permissions(
+    async def _get_user_permissions(
         db: Session,
         user_id: str,
         workspace_id: Optional[str] = None
@@ -202,26 +202,32 @@ class PermissionChecker:
         Returns:
             Set of permission names (e.g., {"user.read", "user.write"})
         """
+        from sqlalchemy import select, or_
+
         # Query to get all permissions for user via their roles
         query = (
-            db.query(Permission.name)
+            select(Permission.name)
+            .select_from(Permission)
             .join(RolePermission, RolePermission.permission_id == Permission.id)
             .join(UserRole, UserRole.role_id == RolePermission.role_id)
-            .filter(UserRole.user_id == user_id)
+            .where(UserRole.user_id == user_id)
         )
 
         # If workspace-scoped, filter by workspace or global roles (workspace_id = NULL)
         if workspace_id:
-            query = query.filter(
-                (UserRole.workspace_id == workspace_id) |
-                (UserRole.workspace_id == None)
+            query = query.where(
+                or_(
+                    UserRole.workspace_id == workspace_id,
+                    UserRole.workspace_id == None
+                )
             )
         else:
             # Only global permissions (not workspace-specific)
-            query = query.filter(UserRole.workspace_id == None)
+            query = query.where(UserRole.workspace_id == None)
 
-        permissions = query.all()
-        return {perm.name for perm in permissions}
+        result = await db.execute(query)
+        permissions = result.scalars().all()
+        return {perm for perm in permissions}
 
     @staticmethod
     def _check_permissions(
@@ -248,7 +254,7 @@ class PermissionChecker:
             return any(perm in user_permissions for perm in required_permissions)
 
     @staticmethod
-    def _is_super_admin(db: Session, user_id: str) -> bool:
+    async def _is_super_admin(db: Session, user_id: str) -> bool:
         """
         Check if user has super_admin role.
 
@@ -262,19 +268,22 @@ class PermissionChecker:
         Returns:
             True if user has super_admin role, False otherwise
         """
-        super_admin_role = (
-            db.query(UserRole)
+        from sqlalchemy import select
+
+        query = (
+            select(UserRole)
             .join(Role, UserRole.role_id == Role.id)
-            .filter(
+            .where(
                 UserRole.user_id == user_id,
                 Role.name == "super_admin"
             )
-            .first()
         )
+        result = await db.execute(query)
+        super_admin_role = result.scalars().first()
         return super_admin_role is not None
 
     @staticmethod
-    def _validate_workspace_membership(
+    async def _validate_workspace_membership(
         db: Session,
         user_id: str,
         workspace_id: str
@@ -294,17 +303,19 @@ class PermissionChecker:
         Returns:
             True if user is a workspace member, False otherwise
         """
+        from sqlalchemy import select
         from src.api.models.workspace_models.workspace_member import WorkspaceMembers
 
         # Check if user is a workspace member
-        member = (
-            db.query(WorkspaceMembers)
-            .filter(
+        query = (
+            select(WorkspaceMembers)
+            .where(
                 WorkspaceMembers.user_id == user_id,
                 WorkspaceMembers.workspace_id == workspace_id
             )
-            .first()
         )
+        result = await db.execute(query)
+        member = result.scalars().first()
 
         # Also check if user has super_admin role (can access any workspace)
         if not member:
@@ -358,7 +369,7 @@ def require_permissions(
     return PermissionChecker(permissions, require_all, workspace_scoped)
 
 
-def is_admin(
+async def is_admin(
     current_user: dict = Depends(get_current_user),
     db: Session = Depends(get_db)
 ) -> bool:
@@ -388,6 +399,8 @@ def is_admin(
             # Only admins can delete users
             return {"message": "User deleted"}
     """
+    from sqlalchemy import select
+
     user_id = current_user.get("identity")
 
     if not user_id:
@@ -401,15 +414,16 @@ def is_admin(
         )
 
     # Check if user has admin or super_admin role
-    admin_role = (
-        db.query(UserRole)
+    query = (
+        select(UserRole)
         .join(Role, UserRole.role_id == Role.id)
-        .filter(
+        .where(
             UserRole.user_id == user_id,
             Role.name.in_(["admin", "super_admin"])
         )
-        .first()
     )
+    result = await db.execute(query)
+    admin_role = result.scalars().first()
 
     if not admin_role:
         logger.warning(
@@ -433,3 +447,4 @@ def is_admin(
         }
     )
     return True
+

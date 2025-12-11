@@ -7,7 +7,7 @@ from typing import Any, Dict, List
 
 from sqlalchemy import and_, case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
-
+from src.api.models.user_models.users import Users
 from src.api.models.subscription_models.plans import SubscriptionPlan
 from src.api.models.subscription_models.subscriptions import (
     BillingPeriod,
@@ -512,8 +512,6 @@ class SubscriptionAnalyticsService:
     # Helper methods for new endpoints
     async def _get_recent_subscriptions(self, limit: int = 10) -> List[Dict[str, Any]]:
         """Get recent subscriptions with user and plan details."""
-        from src.api.models.user_models.users import Users
-
         query = (
             select(
                 UserSubscription,
@@ -521,7 +519,7 @@ class SubscriptionAnalyticsService:
                 Users.display_name,
                 SubscriptionPlan.display_name.label("plan_name"),
             )
-            .join(User, UserSubscription.user_id == Users.id)
+            .join(Users, UserSubscription.user_id == Users.id)
             .join(SubscriptionPlan, UserSubscription.plan_id == SubscriptionPlan.id)
             .order_by(UserSubscription.start_date.desc())
             .limit(limit)

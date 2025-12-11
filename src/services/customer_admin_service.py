@@ -79,7 +79,7 @@ class CustomerAdminService:
                 Users.email,
                 Users.display_name,
                 Users.created_at,
-                Users.is_active,
+                Users.status,
                 Users.last_login_at,
                 UserSubscription.id.label("subscription_id"),
                 func.count(WorkspaceModel.id).label("workspaces_count")
@@ -88,13 +88,13 @@ class CustomerAdminService:
                 UserSubscription.user_id == Users.id,
                 UserSubscription.status.in_(["active", "trial"])
             ))
-            .outerjoin(WorkspaceModel, WorkspaceModel.created_by == Users.id)
+            .outerjoin(WorkspaceModel, WorkspaceModel.user_id == Users.id)
             .group_by(
                 Users.id,
                 Users.email,
                 Users.display_name,
                 Users.created_at,
-                Users.is_active,
+                Users.status,
                 Users.last_login_at,
                 UserSubscription.id
             )
@@ -153,7 +153,8 @@ class CustomerAdminService:
                 "email": row.email,
                 "subscription": subscription_info,
                 "workspaces_count": row.workspaces_count,
-                "is_active": row.is_active,
+                "is_active": row.status == "active",
+                "status": row.status,
                 "created_at": row.created_at.isoformat() if row.created_at else None,
                 "last_active": row.last_login_at.isoformat() if row.last_login_at else None
             })
@@ -228,7 +229,8 @@ class CustomerAdminService:
                 "id": str(user.id),
                 "email": user.email,
                 "display_name": user.display_name,
-                "is_active": user.is_active,
+                "is_active": user.status == "active",
+                "status": user.status,
                 "created_at": user.created_at.isoformat() if user.created_at else None,
                 "last_login_at": user.last_login_at.isoformat() if user.last_login_at else None
             },
@@ -275,17 +277,19 @@ class CustomerAdminService:
         }
 
         if action == "deactivate":
-            if not user.is_active:
+            if user.status != "active":
                 raise WrextValidationException("User is already deactivated")
-            audit_details["previous_status"] = "active"
-            user.is_active = False
+            audit_details["previous_status"] = user.status
+            user.status = "deactivated"
+            user.deactivated_at = datetime.utcnow()
             result = {"status": "deactivated"}
 
         elif action == "activate":
-            if user.is_active:
+            if user.status == "active":
                 raise WrextValidationException("User is already active")
-            audit_details["previous_status"] = "inactive"
-            user.is_active = True
+            audit_details["previous_status"] = user.status
+            user.status = "active"
+            user.deactivated_at = None
             result = {"status": "activated"}
 
         elif action == "reset_usage":
@@ -470,7 +474,7 @@ class CustomerAdminService:
         """Get user workspaces."""
         workspaces_query = (
             select(WorkspaceModel.id, WorkspaceModel.name, WorkspaceModel.created_at)
-            .where(WorkspaceModel.created_by == user_id)
+            .where(WorkspaceModel.user_id == user_id)
             .order_by(WorkspaceModel.created_at.desc())
         )
         workspaces_result = await self.db.execute(workspaces_query)
@@ -489,18 +493,18 @@ class CustomerAdminService:
         """Get user activity summary."""
         content_count_query = select(func.count(Content.id)).join(
             WorkspaceModel, Content.workspace_id == WorkspaceModel.id
-        ).where(WorkspaceModel.created_by == user.id)
+        ).where(WorkspaceModel.user_id == user.id)
         content_count_result = await self.db.execute(content_count_query)
         content_count = content_count_result.scalar() or 0
 
         kb_count_query = select(func.count(KnowledgeBase.id)).join(
             WorkspaceModel, KnowledgeBase.workspace_id == WorkspaceModel.id
-        ).where(WorkspaceModel.created_by == user.id)
+        ).where(WorkspaceModel.user_id == user.id)
         kb_count_result = await self.db.execute(kb_count_query)
         kb_count = kb_count_result.scalar() or 0
 
         workspaces_count_query = select(func.count(WorkspaceModel.id)).where(
-            WorkspaceModel.created_by == user.id
+            WorkspaceModel.user_id == user.id
         )
         workspaces_count_result = await self.db.execute(workspaces_count_query)
         workspaces_count = workspaces_count_result.scalar() or 0
