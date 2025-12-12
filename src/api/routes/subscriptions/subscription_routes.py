@@ -392,7 +392,12 @@ async def get_usage_stats(
     
     # If no subscription, return free tier usage
     if not subscription:
-        return await usage_service.get_usage_metrics(user_id)
+        free_tier_usage = await usage_service.get_usage_metrics(user_id)
+        return success(
+            data=free_tier_usage,
+            request=request,
+            message="Usage statistics retrieved successfully"
+        )
         
     # Get plan
     plan = await service.get_plan_by_id(subscription.plan_id)

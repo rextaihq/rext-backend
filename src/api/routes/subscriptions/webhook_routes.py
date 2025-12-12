@@ -149,6 +149,11 @@ async def handle_lemonsqueezy_webhook(
         # Process webhook (includes signature verification)
         result = await webhook_service.process_webhook(body, signature)
 
+        # CRITICAL: Commit the transaction to persist subscription changes
+        # Webhook handlers use flush() which stages changes but doesn't persist them
+        # Without this commit, subscription data won't be saved to database
+        await db.commit()
+
         logger.info(
             f"LemonSqueezy webhook processed successfully: {result.get('event_type')}",
             extra={"event_id": result.get("event_id")}
@@ -200,7 +205,8 @@ async def handle_lemonsqueezy_webhook(
             detail="Invalid webhook signature"
         )
     except Exception as e:
-        # Processing failed
+        # Processing failed - rollback any staged changes
+        await db.rollback()
         logger.error(f"LemonSqueezy webhook processing failed: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

@@ -98,39 +98,27 @@ class UsageTrackingService:
         # Get API calls this month
         api_calls = subscription.current_api_calls or 0
 
-        return {
-            "workspaces": {
-                "used": workspace_count,
-                "limit": plan.max_workspaces,
-                "percentage": self._calc_percentage(workspace_count, plan.max_workspaces),
-                "unlimited": plan.max_workspaces is None or plan.max_workspaces < 0
-            },
-            "members": {
-                "used": member_count,
-                "limit": plan.max_members_per_workspace,
-                "percentage": self._calc_percentage(member_count, plan.max_members_per_workspace),
-                "unlimited": plan.max_members_per_workspace is None or plan.max_members_per_workspace < 0
-            },
-            "topics": {
-                "used": topic_count,
-                "limit": plan.max_topics,
-                "percentage": self._calc_percentage(topic_count, plan.max_topics),
-                "unlimited": plan.max_topics is None or plan.max_topics < 0
-            },
-            "knowledge_items": {
-                "used": knowledge_count,
-                "limit": plan.max_knowledge_items,
-                "percentage": self._calc_percentage(knowledge_count, plan.max_knowledge_items),
-                "unlimited": plan.max_knowledge_items is None or plan.max_knowledge_items < 0
-            },
-            "api_calls": {
-                "used": api_calls,
-                "limit": plan.max_api_calls_per_month,
-                "percentage": self._calc_percentage(api_calls, plan.max_api_calls_per_month),
-                "reset_date": subscription.usage_reset_date.isoformat() if subscription.usage_reset_date else None,
-                "unlimited": plan.max_api_calls_per_month is None or plan.max_api_calls_per_month < 0
-            }
+        usage_data = {
+            "subscription_id": str(subscription.id),
+            "plan_name": plan.name if plan else "Unknown",
+            "billing_period": subscription.billing_period.value,
+            "current_workspaces": workspace_count,
+            "current_topics": topic_count,
+            "current_knowledge_items": knowledge_count,
+            "current_api_calls": subscription.current_api_calls,
+            "max_workspaces": plan.max_workspaces if plan else 0,
+            "max_topics": plan.max_topics if plan else 0,
+            "max_knowledge_items": plan.max_knowledge_items if plan else 0,
+            "max_api_calls_per_month": plan.max_api_calls_per_month if plan else 0,
+            "workspaces_usage_percent": self._calc_percentage(workspace_count, plan.max_workspaces if plan else 0),
+            "topics_usage_percent": self._calc_percentage(topic_count, plan.max_topics if plan else 0),
+            "knowledge_items_usage_percent": self._calc_percentage(knowledge_count, plan.max_knowledge_items if plan else 0),
+            "api_calls_usage_percent": self._calc_percentage(api_calls, plan.max_api_calls_per_month if plan else 0),
+            "usage_reset_date": subscription.usage_reset_date.isoformat() if subscription.usage_reset_date else None
         }
+
+        return usage_data
+
 
     async def check_limit(
         self,
@@ -279,36 +267,29 @@ class UsageTrackingService:
         # Count knowledge items
         knowledge_count = await self._count_knowledge_items(user_id)
 
-        return {
-            "workspaces": {
-                "used": workspace_count,
-                "limit": 1,  # Free tier: 1 workspace
-                "percentage": self._calc_percentage(workspace_count, 1),
-                "unlimited": False
-            },
-            "members": {
-                "used": member_count,
-                "limit": 3,  # Free tier: 3 members
-                "percentage": self._calc_percentage(member_count, 3),
-                "unlimited": False
-            },
-            "topics": {
-                "used": topic_count,
-                "limit": 10,  # Free tier: 10 topics
-                "percentage": self._calc_percentage(topic_count, 10),
-                "unlimited": False
-            },
-            "knowledge_items": {
-                "used": knowledge_count,
-                "limit": 50,  # Free tier: 50 knowledge items
-                "percentage": self._calc_percentage(knowledge_count, 50),
-                "unlimited": False
-            },
-            "api_calls": {
-                "used": 0,
-                "limit": 100,  # Free tier: 100 API calls per month
-                "percentage": 0,
-                "reset_date": None,
-                "unlimited": False
-            }
+        # Free tier limits
+        free_max_workspaces = 1
+        free_max_topics = 10
+        free_max_knowledge_items = 50
+        free_max_api_calls = 100
+
+        usage_data = {
+            "subscription_id": None,
+            "plan_name": "Free",
+            "billing_period": None,
+            "current_workspaces": workspace_count,
+            "current_topics": topic_count,
+            "current_knowledge_items": knowledge_count,
+            "current_api_calls": 0,
+            "max_workspaces": free_max_workspaces,
+            "max_topics": free_max_topics,
+            "max_knowledge_items": free_max_knowledge_items,
+            "max_api_calls_per_month": free_max_api_calls,
+            "workspaces_usage_percent": self._calc_percentage(workspace_count, free_max_workspaces),
+            "topics_usage_percent": self._calc_percentage(topic_count, free_max_topics),
+            "knowledge_items_usage_percent": self._calc_percentage(knowledge_count, free_max_knowledge_items),
+            "api_calls_usage_percent": 0.0,
+            "usage_reset_date": None
         }
+
+        return usage_data

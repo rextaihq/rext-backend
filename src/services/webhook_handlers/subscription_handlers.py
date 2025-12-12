@@ -220,6 +220,38 @@ async def handle_subscription_created(
         await db.flush()
         subscription = existing_sub
     else:
+        # IMPORTANT: Cancel any existing active/trial subscriptions for this user
+        # This handles the case when user upgrades via a new checkout instead of upgrade endpoint
+        existing_active_subs_stmt = select(UserSubscription).where(
+            UserSubscription.user_id == user.id,
+            UserSubscription.status.in_([SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIAL]),
+            UserSubscription.lemonsqueezy_subscription_id != lemonsqueezy_subscription_id
+        )
+        existing_active_result = await db.execute(existing_active_subs_stmt)
+        existing_active_subs = existing_active_result.scalars().all()
+        
+        for old_sub in existing_active_subs:
+            logger.info(
+                f"Cancelling old subscription {old_sub.id} (LemonSqueezy: {old_sub.lemonsqueezy_subscription_id}) "
+                f"as user is now on new subscription {lemonsqueezy_subscription_id}",
+                extra={
+                    "old_subscription_id": str(old_sub.id),
+                    "new_lemonsqueezy_subscription_id": lemonsqueezy_subscription_id,
+                    "user_id": str(user.id)
+                }
+            )
+            old_sub.status = SubscriptionStatus.CANCELLED
+            old_sub.cancelled_at = datetime.utcnow()
+            old_sub.end_date = datetime.utcnow()
+            old_sub.updated_at = datetime.utcnow()
+        
+        if existing_active_subs:
+            await db.flush()
+            logger.info(
+                f"Cancelled {len(existing_active_subs)} existing subscription(s) for user {user.id}",
+                extra={"user_id": str(user.id), "count": len(existing_active_subs)}
+            )
+        
         # Create new subscription
         now = datetime.utcnow()
         trial_end_date = datetime.fromisoformat(trial_ends_at).replace(tzinfo=None) if trial_ends_at else None
@@ -426,6 +458,33 @@ async def handle_subscription_updated(
             "expired": SubscriptionStatus.EXPIRED,
         }
         internal_status = status_map.get(status.lower(), SubscriptionStatus.ACTIVE)
+
+        # IMPORTANT: Cancel any existing active/trial subscriptions for this user
+        # This handles the case when user upgrades via a new checkout instead of upgrade endpoint
+        existing_active_subs_stmt = select(UserSubscription).where(
+            UserSubscription.user_id == user.id,
+            UserSubscription.status.in_([SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIAL]),
+            UserSubscription.lemonsqueezy_subscription_id != lemonsqueezy_subscription_id
+        )
+        existing_active_result = await db.execute(existing_active_subs_stmt)
+        existing_active_subs = existing_active_result.scalars().all()
+        
+        for old_sub in existing_active_subs:
+            logger.info(
+                f"Cancelling old subscription {old_sub.id} via subscription_updated webhook",
+                extra={
+                    "old_subscription_id": str(old_sub.id),
+                    "new_lemonsqueezy_subscription_id": lemonsqueezy_subscription_id,
+                    "user_id": str(user.id)
+                }
+            )
+            old_sub.status = SubscriptionStatus.CANCELLED
+            old_sub.cancelled_at = datetime.utcnow()
+            old_sub.end_date = datetime.utcnow()
+            old_sub.updated_at = datetime.utcnow()
+        
+        if existing_active_subs:
+            await db.flush()
 
         # Create subscription
         now = datetime.utcnow()

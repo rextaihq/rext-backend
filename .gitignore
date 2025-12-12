@@ -15,6 +15,7 @@ vector_store/
 note.txt
 full_blog.csv
 test.py
+secure_uploads/
 .compose.txt
 my_faiss_index3/
 test.txt
