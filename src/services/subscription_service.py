@@ -51,6 +51,8 @@ from src.api.middleware.exceptions import (
 from src.providers.payment.provider_factory import get_payment_provider_singleton
 from src.services.audit_logger import audit_logger
 from src.api.lib.sentry_config import capture_payment_exception
+from src.utils.logger import logger
+
 
 
 class SubscriptionService:
@@ -198,19 +200,19 @@ class SubscriptionService:
         # Allow checkout if user is on free or trial plan (they can upgrade via checkout)
         existing_subscription = await self.get_subscription_by_user(user_id)
         if existing_subscription:
-            print(f"🔍 DEBUG: User has existing subscription on plan: {existing_subscription.plan.name}")
+            logger.info(f"🔍 DEBUG: User has existing subscription on plan: {existing_subscription.plan.name}")
             # Users on free/trial plans can checkout to paid plans
             # Users on paid plans must use upgrade endpoint
             allowed_plans_for_checkout = ["free", "trial"]
             if existing_subscription.plan.name.lower() not in allowed_plans_for_checkout:
-                print(f"🔍 DEBUG: Plan is not free/trial ({existing_subscription.plan.name}), blocking checkout")
+                logger.info(f"🔍 DEBUG: Plan is not free/trial ({existing_subscription.plan.name}), blocking checkout")
                 raise DuplicateResourceException(
                     message="User already has an active subscription. Use upgrade endpoint to change plans.",
                     resource_type="subscription",
                     conflicting_field="user_id",
                     conflicting_value=str(user_id)
                 )
-            print(f"🔍 DEBUG: Plan is {existing_subscription.plan.name}, allowing checkout to proceed")
+            logger.info(f"🔍 DEBUG: Plan is {existing_subscription.plan.name}, allowing checkout to proceed")
 
         # Get and validate plan
         plan = await self._get_plan_or_404(plan_id, active_only=True)
@@ -228,6 +230,7 @@ class SubscriptionService:
                 field_errors={"billing_period": [f"{billing_period.value} variant not available"]}
             )
 
+        logger.info(f"🔍 DEBUG: Variant ID is {variant_id}")
         # Get user to retrieve/store customer ID
         result = await self.db.execute(
             select(Users).where(Users.id == user_id)
@@ -265,6 +268,7 @@ class SubscriptionService:
                 extra={"user_id": str(user_id), "customer_id": customer_id}
             )
 
+        logger.info(f"🔍 DEBUG: Customer ID is {customer_id}")
         # Create checkout session
         checkout_session = await self.payment_provider.create_checkout_session(
             customer_id=customer_id,
@@ -297,7 +301,7 @@ class SubscriptionService:
         audit_logger.log_checkout_created(
             user_id=user_id,
             plan_id=plan_id,
-            plan_name=plan.name,
+            plan_name=plan.name,  
             billing_period=billing_period.value,
             checkout_url=checkout_session.checkout_url,
             discount_code=discount_code,
@@ -306,7 +310,7 @@ class SubscriptionService:
                 "affiliate_code": affiliate_code,
             }
         )
-
+        logger.info(f"Checkout session created for user {user_id}, checkout_url: {checkout_session.checkout_url}, session_id: {checkout_session.session_id}")
         return {
             "checkout_url": checkout_session.checkout_url,
             "session_id": checkout_session.session_id

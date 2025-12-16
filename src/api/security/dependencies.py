@@ -96,6 +96,9 @@ async def get_current_user(
         "username": payload.get("username"),
         "email": payload.get("email"),
         "roles": payload.get("roles", []),
+        "is_impersonating": payload.get("is_impersonating", False),
+        "original_user_id": payload.get("original_user_id"),
+        "impersonation_started_at": payload.get("impersonation_started_at"),
     }
 
     # Log identity verification without PII
@@ -198,6 +201,9 @@ async def get_current_user_sse(
         "username": payload.get("username"),
         "email": payload.get("email"),
         "roles": payload.get("roles", []),
+        "is_impersonating": payload.get("is_impersonating", False),
+        "original_user_id": payload.get("original_user_id"),
+        "impersonation_started_at": payload.get("impersonation_started_at"),
     }
 
     # Log identity verification without PII
