@@ -33,7 +33,7 @@ from src.api.middleware.rate_limiter import (
 )
 from src.services.usage_tracking_service import UsageTrackingService
 from sqlalchemy import select
-
+from src.utils.logger import logger
 
 router = APIRouter(
     prefix="/subscriptions",
@@ -119,6 +119,7 @@ async def create_checkout_session(
     """
     user_id = current_user.get("identity")
     service = SubscriptionService(db)
+    logger.info(f"Creating checkout session for user {user_id}")
 
     # Create checkout session
     checkout_session = await service.create_checkout(
@@ -131,6 +132,7 @@ async def create_checkout_session(
         affiliate_code=checkout_data.affiliate_code
     )
 
+    logger.info(f"Checkout session created for user {user_id}")
     return success(
         data=checkout_session,
         request=request,
@@ -213,9 +215,16 @@ async def get_my_subscription(
     # Schedule expiring notification if renewal is near (within 3 days)
     if subscription.renews_at:
         from datetime import datetime, timezone, timedelta
+        
+        # Ensure renews_at is timezone-aware for comparison
+        renews_at = subscription.renews_at
+        if renews_at.tzinfo is None:
+            renews_at = renews_at.replace(tzinfo=timezone.utc)
+            
         now = datetime.now(timezone.utc)
-        if 0 <= (subscription.renews_at - now).days <= 3:
+        if 0 <= (renews_at - now).days <= 3:
             await schedule_if_allowed(
+
                 db=db,
                 user_id=str(user_id),
                 background_tasks=background_tasks,
@@ -578,7 +587,6 @@ async def get_invoices(
         )
 
     except Exception as e:
-        from src.utils.logger import logger
         logger.error(
             f"Failed to retrieve invoices: {str(e)}",
             extra={"user_id": str(user_id), "error": str(e)}

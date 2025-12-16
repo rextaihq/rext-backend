@@ -32,6 +32,8 @@ from sqlalchemy.orm import sessionmaker
 
 from src.api.models.subscription_models.webhooks import WebhookEvent
 from src.api.models.subscription_models.subscriptions import UserSubscription, SubscriptionStatus
+from src.api.models.admin_models.admin_invitations import PlatformAdminInvitations
+
 
 
 async def verify_webhook_events(db: AsyncSession):
@@ -118,16 +120,22 @@ async def verify_subscription_updates(db: AsyncSession):
         print(f"{'Status':<15} {'Plan':<20} {'Updated At'}")
         print("-" * 70)
         for sub in subscriptions[:10]:
-            print(f"{sub.status.value:<15} {sub.plan_id:<20} {sub.updated_at}")
+            print(f"{sub.status.value:<15} {str(sub.plan_id):<20} {sub.updated_at}")
+
 
     # Count by status
     for status in SubscriptionStatus:
-        count_result = await db.execute(
-            select(func.count(UserSubscription.id)).where(UserSubscription.status == status)
-        )
-        count = count_result.scalar()
-        if count > 0:
-            print(f"   {status.value}: {count}")
+        try:
+            count_result = await db.execute(
+                select(func.count(UserSubscription.id)).where(UserSubscription.status == status)
+            )
+            count = count_result.scalar()
+            if count > 0:
+                print(f"   {status.value}: {count}")
+        except Exception as e:
+            # This can happen if the DB enum doesn't have the new status values yet
+            pass
+
 
     return {"total": len(subscriptions)}
 
@@ -140,7 +148,14 @@ async def main():
     print(f"Timestamp: {datetime.utcnow().isoformat()}Z")
 
     # Create database connection
-    database_url = os.getenv("DATABASE_URL", "postgresql+asyncpg://postgres:postgres@localhost:5433/wrext_db")
+    database_url = os.getenv("POSTGRES_URI_CUSTOM") or os.getenv("DATABASE_URL", "postgresql+asyncpg://postgres:postgres@localhost:5433/wrext_db")
+    
+    # Fix protocol for asyncpg if needed
+    if "postgresql+psycopg://" in database_url:
+        database_url = database_url.replace("postgresql+psycopg://", "postgresql+asyncpg://")
+    elif "postgresql://" in database_url and "+asyncpg" not in database_url:
+        database_url = database_url.replace("postgresql://", "postgresql+asyncpg://")
+
     engine = create_async_engine(database_url, echo=False)
     async_session = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 

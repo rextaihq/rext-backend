@@ -80,6 +80,16 @@ async def handle_lemonsqueezy_webhook(
     # Get signature from headers
     signature = request.headers.get("X-Signature", "")
 
+    # DEBUG: Log incoming webhook
+    logger.info(
+        f"📩 Received LemonSqueezy Webhook: {len(body)} bytes",
+        extra={
+            "signature": signature,
+            "body_preview": body[:200].decode("utf-8", errors="ignore") if body else "empty"
+        }
+    )
+
+
     if not signature:
         logger.warning("LemonSqueezy webhook received without signature")
         raise HTTPException(
