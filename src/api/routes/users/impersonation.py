@@ -41,7 +41,7 @@ async def start_impersonation(
 
     access_token = create_access_token(
         {
-            "identity": impersonation_context["target_user_id"],
+            "id": impersonation_context["target_user_id"],
             "username": impersonation_context["target_username"],
             "email": impersonation_context["target_email"],
             "roles": impersonation_context["roles"],
@@ -51,7 +51,7 @@ async def start_impersonation(
             "impersonation_started_at": impersonation_context["impersonation_started_at"],
         }
     )
-    refresh_token = create_refresh_token({"identity": impersonation_context["target_user_id"]})
+    refresh_token = create_refresh_token({"id": impersonation_context["target_user_id"]})
 
     await create_audit_log_async(
         db=db,
@@ -121,7 +121,7 @@ async def stop_impersonation(
 
     access_token = create_access_token(
         {
-            "identity": original_context["user_id"],
+            "id": original_context["user_id"],
             "username": original_context["username"],
             "email": original_context["email"],
             "roles": original_context["roles"],
@@ -129,7 +129,7 @@ async def stop_impersonation(
             "is_impersonating": False,
         }
     )
-    refresh_token = create_refresh_token({"identity": original_context["user_id"]})
+    refresh_token = create_refresh_token({"id": original_context["user_id"]})
 
     await create_audit_log_async(
         db=db,
