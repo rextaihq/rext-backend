@@ -1,6 +1,6 @@
 from langchain_huggingface import HuggingFaceEmbeddings
 
-def get_hf_embedding() -> HuggingFaceEmbeddings:
+def get_embedding() -> HuggingFaceEmbeddings:
     """
     Get HuggingFace embedding model for vector retrieval tasks.
 
