@@ -1,5 +1,6 @@
 from typing import List, Dict, Any, Optional
 from typing_extensions import TypedDict
+from langchain_core.documents import Document
 
 class SERPEngineState(TypedDict, total=False):
     # Input
@@ -67,7 +68,7 @@ class Competitor(TypedDict):
 
 class SERPPAYLOAD(TypedDict, total=False):
     query: str
-    country: str='us'
+    country: str
 
 class WREXT(TypedDict, total=False):
   serp_payload: SERPPAYLOAD
@@ -78,5 +79,5 @@ class WREXT(TypedDict, total=False):
 
   competitors: List[Competitor]
 
-  scrape_context : Dict[str, Any]
-  relevant_context : Dict[str, Any]
+  scrape_context: List[Document]
+  relevant_context: List[Document]

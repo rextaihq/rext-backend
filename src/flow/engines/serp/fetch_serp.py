@@ -1,5 +1,4 @@
-import json
-import http.client
+import httpx
 import logging
 from typing import Dict, Any, List
 from src.flow.states.wrext import WREXT, SERPEngineState
@@ -10,15 +9,81 @@ load_dotenv()
 
 logger = logging.getLogger(__name__)
 
-def fetch_serp_results(state: WREXT) -> Dict[str, Any]:
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
+
+@retry(
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1, min=4, max=10),
+    retry=retry_if_exception_type((httpx.RequestError, httpx.TimeoutException)),
+    reraise=True
+)
+async def _do_fetch_serp(client: httpx.AsyncClient, query: str, country: str, api_key: str) -> Dict[str, Any]:
+    payload = {"q": query, "gl": country}
+    headers = {
+        "X-API-KEY": api_key,
+        "Content-Type": "application/json"
+    }
+
+    logger.debug(f"Sending request to Serper.dev for query: {query}")
+    response = await client.post(
+        "https://google.serper.dev/search",
+        json=payload,
+        headers=headers,
+        timeout=30.0
+    )
+
+    if response.status_code != 200:
+        logger.error(f"Failed to fetch SERP results. Status: {response.status_code}, Reason: {response.text}")
+        response.raise_for_status()
+
+    return response.json()
+
+def _parse_serp_response(raw_data: Dict[str, Any]) -> SERPEngineState:
+    """Parses raw Serper.dev response into SERPEngineState."""
+    search_params = raw_data.get("searchParameters", {})
+    search_information = raw_data.get("searchInformation", {})
+
+    # Organic Results
+    organic_results = [
+        {
+            "position": item.get("position"),
+            "title": item.get("title", "").strip(),
+            "snippet": item.get("snippet", "").strip(),
+            "link": item.get("link"),
+            "date": item.get("date"),
+            "sitelinks": item.get("sitelinks", [])
+        }
+        for item in raw_data.get("organic", [])
+    ]
+
+    # People Also Ask
+    people_ask = [
+        {
+            "question": item.get("question"),
+            "snippet": item.get("snippet"),
+            "title": item.get("title"),
+            "link": item.get("link")
+        }
+        for item in raw_data.get("peopleAlsoAsk", [])
+    ]
+
+    # Related Searches
+    related_searches = [
+        r.get("query") for r in raw_data.get("relatedSearches", [])
+    ]
+
+    return {
+        "search_params": search_params,
+        "search_information": search_information,
+        "organic_results": organic_results,
+        "related_searches": related_searches,
+        "people_ask": people_ask,
+        "total_results": len(organic_results)
+    }
+
+async def fetch_serp_results(state: WREXT) -> Dict[str, Any]:
     """
     Fetch raw Google SERP results for a given keyword using the Serper.dev API.
-
-    Args:
-        state (WREXT): The current state containing the search query.
-
-    Returns:
-        Dict[str, Any]: A dictionary containing the updated SERP engine state.
     """
     serp_payload = state.get("serp_payload")
     if not serp_payload:
@@ -28,6 +93,10 @@ def fetch_serp_results(state: WREXT) -> Dict[str, Any]:
     query = serp_payload.get("query")
     country = serp_payload.get("country", "us")
     
+    if not query:
+        logger.error("No query provided in serp_payload")
+        return {"serp_result": {}}
+
     logger.info(f"Fetching SERP results for query: '{query}' in country: '{country}'")
 
     api_key = os.getenv("SERPER_API_KEY")
@@ -36,80 +105,13 @@ def fetch_serp_results(state: WREXT) -> Dict[str, Any]:
         return {"serp_result": {}}
 
     try:
-        conn = http.client.HTTPSConnection("google.serper.dev")
-        payload = json.dumps({"q": query, "gl": country})
-        headers = {
-            "X-API-KEY": api_key,
-            "Content-Type": "application/json"
-        }
-
-        logger.debug(f"Sending request to Serper.dev for query: {query}")
-        conn.request("POST", "/search", payload, headers)
-
-        res = conn.getresponse()
-        
-        if res.status != 200:
-            logger.error(f"Failed to fetch SERP results. Status: {res.status}, Reason: {res.reason}")
-            return {"serp_result": {}}
-
-        raw_data = json.loads(res.read().decode("utf-8"))
-        logger.debug("Successfully received response from Serper.dev")
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            raw_data = await _do_fetch_serp(client, query, country, api_key)
+            serp_data = _parse_serp_response(raw_data)
+            
+            logger.info(f"Successfully fetched and parsed {serp_data['total_results']} organic results")
+            return {"serp_result": serp_data}
 
     except Exception as e:
-        logger.exception(f"An error occurred while fetching SERP results: {str(e)}")
+        logger.exception(f"Failed to fetch SERP results for query '{query}': {str(e)}")
         return {"serp_result": {}}
-    finally:
-        if conn:
-            conn.close()
-
-
-    # -------- Search Parameters --------
-    search_params = raw_data.get("searchParameters", {})
-
-    # -------- Search Information (spelling, corrections, etc.) --------
-    search_information = raw_data.get("searchInformation", {})
-
-    # -------- Organic Results --------
-    organic_results: List[Dict[str, Any]] = []
-    for item in raw_data.get("organic", []):
-        organic_results.append({
-            "position": item.get("position"),
-            "title": item.get("title", "").strip(),
-            "snippet": item.get("snippet", "").strip(),
-            "link": item.get("link"),
-            "date": item.get("date"),
-            "sitelinks": item.get("sitelinks", [])
-        })
-    logger.debug(f"Extracted {len(organic_results)} organic results")
-
-    # -------- People Also Ask --------
-    people_ask: List[Dict[str, Any]] = []
-    for item in raw_data.get("peopleAlsoAsk", []):
-        people_ask.append({
-            "question": item.get("question"),
-            "snippet": item.get("snippet"),
-            "title": item.get("title"),
-            "link": item.get("link")
-        })
-    logger.debug(f"Extracted {len(people_ask)} 'People Also Ask' items")
-
-    # -------- Related Searches --------
-    related_searches: List[str] = [
-        r.get("query") for r in raw_data.get("relatedSearches", [])
-    ]
-    logger.debug(f"Extracted {len(related_searches)} related searches")
-
-    # -------- Build SERP Engine State --------
-    serp_data: SERPEngineState = {
-        "search_params": search_params,
-        "search_information": search_information,
-        "organic_results": organic_results,
-        "related_searches": related_searches,
-        "people_ask": people_ask,
-        "total_results": len(organic_results)
-    }
-
-    logger.info(f"Completed SERP fetching for query: '{query}'")
-    return {
-        "serp_result": serp_data
-    }
