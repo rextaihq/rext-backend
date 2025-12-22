@@ -1,0 +1,875 @@
+============================= test session starts =============================
+platform win32 -- Python 3.11.0, pytest-8.4.2, pluggy-1.6.0
+rootdir: C:\Users\mrabr\wrext-backend
+configfile: pytest.ini
+plugins: anyio-4.11.0, Faker-37.11.0, langsmith-0.4.37, asyncio-1.2.0, cov-7.0.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=function, asyncio_default_test_loop_scope=function
+collected 3 items
+
+tests\services\test_workspace_deletion_permissions.py FFF
+ERROR: Coverage failure: total of 36 is less than fail-under=57
+                                                                         [100%]
+
+================================== FAILURES ===================================
+_______________________ test_owner_can_delete_workspace _______________________
+tests\services\test_workspace_deletion_permissions.py:19: in test_owner_can_delete_workspace
+    user = Users(
+<string>:4: in __init__
+    ???
+.venv\Lib\site-packages\sqlalchemy\orm\state.py:571: in _initialize_instance
+    with util.safe_reraise():
+.venv\Lib\site-packages\sqlalchemy\util\langhelpers.py:224: in __exit__
+    raise exc_value.with_traceback(exc_tb)
+.venv\Lib\site-packages\sqlalchemy\orm\state.py:569: in _initialize_instance
+    manager.original_init(*mixed[1:], **kwargs)
+.venv\Lib\site-packages\sqlalchemy\orm\decl_base.py:2179: in _declarative_constructor
+    raise TypeError(
+E   TypeError: 'password' is an invalid keyword argument for Users
+___________________ test_non_owner_cannot_delete_workspace ____________________
+tests\services\test_workspace_deletion_permissions.py:94: in test_non_owner_cannot_delete_workspace
+    workspace = WorkspaceModel(
+<string>:4: in __init__
+    ???
+.venv\Lib\site-packages\sqlalchemy\orm\state.py:571: in _initialize_instance
+    with util.safe_reraise():
+.venv\Lib\site-packages\sqlalchemy\util\langhelpers.py:224: in __exit__
+    raise exc_value.with_traceback(exc_tb)
+.venv\Lib\site-packages\sqlalchemy\orm\state.py:569: in _initialize_instance
+    manager.original_init(*mixed[1:], **kwargs)
+.venv\Lib\site-packages\sqlalchemy\orm\decl_base.py:2179: in _declarative_constructor
+    raise TypeError(
+E   TypeError: 'title' is an invalid keyword argument for WorkspaceModel
+___________________ test_non_member_cannot_delete_workspace ___________________
+tests\services\test_workspace_deletion_permissions.py:158: in test_non_member_cannot_delete_workspace
+    workspace = WorkspaceModel(
+<string>:4: in __init__
+    ???
+.venv\Lib\site-packages\sqlalchemy\orm\state.py:571: in _initialize_instance
+    with util.safe_reraise():
+.venv\Lib\site-packages\sqlalchemy\util\langhelpers.py:224: in __exit__
+    raise exc_value.with_traceback(exc_tb)
+.venv\Lib\site-packages\sqlalchemy\orm\state.py:569: in _initialize_instance
+    manager.original_init(*mixed[1:], **kwargs)
+.venv\Lib\site-packages\sqlalchemy\orm\decl_base.py:2179: in _declarative_constructor
+    raise TypeError(
+E   TypeError: 'title' is an invalid keyword argument for WorkspaceModel
+============================== warnings summary ===============================
+src\api\database\base.py:10
+  C:\Users\mrabr\wrext-backend\src\api\database\base.py:10: MovedIn20Warning: The ``declarative_base()`` function is now available as sqlalchemy.orm.declarative_base(). (deprecated since: 2.0) (Background on SQLAlchemy 2.0 at: https://sqlalche.me/e/b8d9)
+    Base = declarative_base()
+
+src\api\schema\response_schemas.py:136
+  C:\Users\mrabr\wrext-backend\src\api\schema\response_schemas.py:136: PydanticDeprecatedSince20: Using extra keyword arguments on `Field` is deprecated and will be removed. Use `json_schema_extra` instead. (Extra keys: 'example'). Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    field: Optional[str] = Field(
+
+src\api\schema\response_schemas.py:141
+  C:\Users\mrabr\wrext-backend\src\api\schema\response_schemas.py:141: PydanticDeprecatedSince20: Using extra keyword arguments on `Field` is deprecated and will be removed. Use `json_schema_extra` instead. (Extra keys: 'example'). Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    message: str = Field(
+
+src\api\schema\response_schemas.py:146
+  C:\Users\mrabr\wrext-backend\src\api\schema\response_schemas.py:146: PydanticDeprecatedSince20: Using extra keyword arguments on `Field` is deprecated and will be removed. Use `json_schema_extra` instead. (Extra keys: 'example'). Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    code: str = Field(
+
+src\api\schema\response_schemas.py:160
+  C:\Users\mrabr\wrext-backend\src\api\schema\response_schemas.py:160: PydanticDeprecatedSince20: Using extra keyword arguments on `Field` is deprecated and will be removed. Use `json_schema_extra` instead. (Extra keys: 'example'). Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    request_id: str = Field(
+
+src\api\schema\response_schemas.py:165
+  C:\Users\mrabr\wrext-backend\src\api\schema\response_schemas.py:165: PydanticDeprecatedSince20: Using extra keyword arguments on `Field` is deprecated and will be removed. Use `json_schema_extra` instead. (Extra keys: 'example'). Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    timestamp: datetime = Field(
+
+src\api\schema\response_schemas.py:170
+  C:\Users\mrabr\wrext-backend\src\api\schema\response_schemas.py:170: PydanticDeprecatedSince20: Using extra keyword arguments on `Field` is deprecated and will be removed. Use `json_schema_extra` instead. (Extra keys: 'example'). Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    processing_time_ms: Optional[int] = Field(
+
+src\api\schema\response_schemas.py:176
+  C:\Users\mrabr\wrext-backend\src\api\schema\response_schemas.py:176: PydanticDeprecatedSince20: Using extra keyword arguments on `Field` is deprecated and will be removed. Use `json_schema_extra` instead. (Extra keys: 'example'). Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    version: str = Field(
+
+src\api\schema\response_schemas.py:181
+  C:\Users\mrabr\wrext-backend\src\api\schema\response_schemas.py:181: PydanticDeprecatedSince20: Using extra keyword arguments on `Field` is deprecated and will be removed. Use `json_schema_extra` instead. (Extra keys: 'example'). Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    server_id: Optional[str] = Field(
+
+src\api\schema\response_schemas.py:208
+  C:\Users\mrabr\wrext-backend\src\api\schema\response_schemas.py:208: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    class SuccessResponse(BaseResponse):
+
+src\api\schema\response_schemas.py:244
+  C:\Users\mrabr\wrext-backend\src\api\schema\response_schemas.py:244: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    class ErrorResponse(BaseResponse):
+
+src\api\schema\response_schemas.py:298
+  C:\Users\mrabr\wrext-backend\src\api\schema\response_schemas.py:298: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    class GenericResponse(BaseModel):
+
+src\api\config.py:13
+  C:\Users\mrabr\wrext-backend\src\api\config.py:13: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    class Settings(BaseSettings):
+
+src\api\middleware\request_tracker.py:23
+  C:\Users\mrabr\wrext-backend\src\api\middleware\request_tracker.py:23: DeprecationWarning: src.utils.logger is deprecated. Use src.api.lib.logger instead.
+    from src.utils.logger import logger
+
+src\utils\response_utils.py:103
+  C:\Users\mrabr\wrext-backend\src\utils\response_utils.py:103: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    class PaginatedData(BaseModel, Generic[T]):
+
+src\api\schema\notification_schema.py:17
+  C:\Users\mrabr\wrext-backend\src\api\schema\notification_schema.py:17: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    class NotificationPreferencesResponse(BaseModel):
+
+src\api\schema\notification_schema.py:46
+  C:\Users\mrabr\wrext-backend\src\api\schema\notification_schema.py:46: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    class UpdateNotificationPreferencesRequest(BaseModel):
+
+src\api\routes\users\profile.py:20
+  C:\Users\mrabr\wrext-backend\src\api\routes\users\profile.py:20: DeprecationWarning: 'imghdr' is deprecated and slated for removal in Python 3.13
+    import imghdr
+
+src\api\schema\user_role_schema.py:12
+  C:\Users\mrabr\wrext-backend\src\api\schema\user_role_schema.py:12: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    class AssignUserRoleRequest(BaseModel):
+
+src\api\schema\user_role_schema.py:37
+  C:\Users\mrabr\wrext-backend\src\api\schema\user_role_schema.py:37: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    class UserRoleResponse(BaseModel):
+
+src\api\schema\impersonation_schema.py:12
+  C:\Users\mrabr\wrext-backend\src\api\schema\impersonation_schema.py:12: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    class ImpersonateStartRequest(BaseModel):
+
+src\api\schema\impersonation_schema.py:24
+  C:\Users\mrabr\wrext-backend\src\api\schema\impersonation_schema.py:24: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    class ImpersonateStartResponse(BaseModel):
+
+src\api\schema\impersonation_schema.py:48
+  C:\Users\mrabr\wrext-backend\src\api\schema\impersonation_schema.py:48: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    class ImpersonateStopResponse(BaseModel):
+
+src\api\schema\impersonation_schema.py:66
+  C:\Users\mrabr\wrext-backend\src\api\schema\impersonation_schema.py:66: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    class ImpersonationStatusResponse(BaseModel):
+
+src\api\schema\knowledge_schema.py:11
+  C:\Users\mrabr\wrext-backend\src\api\schema\knowledge_schema.py:11: PydanticDeprecatedSince20: Using extra keyword arguments on `Field` is deprecated and will be removed. Use `json_schema_extra` instead. (Extra keys: 'example'). Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    name: constr(min_length=1, max_length=255) = Field(
+
+src\api\schema\knowledge_schema.py:16
+  C:\Users\mrabr\wrext-backend\src\api\schema\knowledge_schema.py:16: PydanticDeprecatedSince20: Using extra keyword arguments on `Field` is deprecated and will be removed. Use `json_schema_extra` instead. (Extra keys: 'example'). Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    description: Optional[str] = Field(
+
+src\api\schema\knowledge_schema.py:25
+  C:\Users\mrabr\wrext-backend\src\api\schema\knowledge_schema.py:25: PydanticDeprecatedSince20: Using extra keyword arguments on `Field` is deprecated and will be removed. Use `json_schema_extra` instead. (Extra keys: 'example'). Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    name: Optional[constr(min_length=1, max_length=255)] = Field(
+
+src\api\schema\knowledge_schema.py:30
+  C:\Users\mrabr\wrext-backend\src\api\schema\knowledge_schema.py:30: PydanticDeprecatedSince20: Using extra keyword arguments on `Field` is deprecated and will be removed. Use `json_schema_extra` instead. (Extra keys: 'example'). Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    description: Optional[str] = Field(
+
+src\api\schema\knowledge_schema.py:37
+  C:\Users\mrabr\wrext-backend\src\api\schema\knowledge_schema.py:37: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    class KnowledgeBaseResponseSchema(BaseModel):
+
+src\api\schema\knowledge_schema.py:56
+  C:\Users\mrabr\wrext-backend\src\api\schema\knowledge_schema.py:56: PydanticDeprecatedSince20: Using extra keyword arguments on `Field` is deprecated and will be removed. Use `json_schema_extra` instead. (Extra keys: 'example'). Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    about: str | None = Field(
+
+src\api\schema\knowledge_schema.py:61
+  C:\Users\mrabr\wrext-backend\src\api\schema\knowledge_schema.py:61: PydanticDeprecatedSince20: Using extra keyword arguments on `Field` is deprecated and will be removed. Use `json_schema_extra` instead. (Extra keys: 'example'). Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    customer_profile: str | None = Field(
+
+src\api\schema\knowledge_schema.py:66
+  C:\Users\mrabr\wrext-backend\src\api\schema\knowledge_schema.py:66: PydanticDeprecatedSince20: Using extra keyword arguments on `Field` is deprecated and will be removed. Use `json_schema_extra` instead. (Extra keys: 'example'). Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    selling_position: str | None = Field(
+
+src\api\schema\knowledge_schema.py:71
+  C:\Users\mrabr\wrext-backend\src\api\schema\knowledge_schema.py:71: PydanticDeprecatedSince20: Using extra keyword arguments on `Field` is deprecated and will be removed. Use `json_schema_extra` instead. (Extra keys: 'example'). Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    target_audience: List[str] = Field(
+
+src\api\schema\knowledge_schema.py:76
+  C:\Users\mrabr\wrext-backend\src\api\schema\knowledge_schema.py:76: PydanticDeprecatedSince20: Using extra keyword arguments on `Field` is deprecated and will be removed. Use `json_schema_extra` instead. (Extra keys: 'example'). Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    brand_voice: List[str] = Field(
+
+src\api\schema\knowledge_schema.py:81
+  C:\Users\mrabr\wrext-backend\src\api\schema\knowledge_schema.py:81: PydanticDeprecatedSince20: Using extra keyword arguments on `Field` is deprecated and will be removed. Use `json_schema_extra` instead. (Extra keys: 'example'). Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    competitors: List[str] = Field(
+
+src\api\schema\knowledge_schema.py:86
+  C:\Users\mrabr\wrext-backend\src\api\schema\knowledge_schema.py:86: PydanticDeprecatedSince20: Using extra keyword arguments on `Field` is deprecated and will be removed. Use `json_schema_extra` instead. (Extra keys: 'example'). Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    content_pillar: List[str] = Field(
+
+src\api\schema\knowledge_schema.py:97
+  C:\Users\mrabr\wrext-backend\src\api\schema\knowledge_schema.py:97: PydanticDeprecatedSince20: Using extra keyword arguments on `Field` is deprecated and will be removed. Use `json_schema_extra` instead. (Extra keys: 'example'). Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    content: constr(min_length=10, max_length=5000) = Field(
+
+src\api\schema\knowledge_schema.py:102
+  C:\Users\mrabr\wrext-backend\src\api\schema\knowledge_schema.py:102: PydanticDeprecatedSince20: Using extra keyword arguments on `Field` is deprecated and will be removed. Use `json_schema_extra` instead. (Extra keys: 'example'). Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    workspace_id: UUID = Field(
+
+src\api\schema\knowledge_schema.py:113
+  C:\Users\mrabr\wrext-backend\src\api\schema\knowledge_schema.py:113: PydanticDeprecatedSince20: Using extra keyword arguments on `Field` is deprecated and will be removed. Use `json_schema_extra` instead. (Extra keys: 'example'). Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    url: HttpUrl = Field(
+
+src\api\schema\knowledge_schema.py:118
+  C:\Users\mrabr\wrext-backend\src\api\schema\knowledge_schema.py:118: PydanticDeprecatedSince20: Using extra keyword arguments on `Field` is deprecated and will be removed. Use `json_schema_extra` instead. (Extra keys: 'example'). Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    workspace_id: UUID = Field(
+
+.venv\Lib\site-packages\crawl4ai\models.py:129
+  C:\Users\mrabr\wrext-backend\.venv\Lib\site-packages\crawl4ai\models.py:129: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    class CrawlResult(BaseModel):
+
+.venv\Lib\site-packages\crawl4ai\models.py:320
+  C:\Users\mrabr\wrext-backend\.venv\Lib\site-packages\crawl4ai\models.py:320: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    class AsyncCrawlResponse(BaseModel):
+
+src\config\payment_config.py:15
+  C:\Users\mrabr\wrext-backend\src\config\payment_config.py:15: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    class PaymentSettings(BaseSettings):
+
+src\api\schema\workspace_schema.py:5
+  C:\Users\mrabr\wrext-backend\src\api\schema\workspace_schema.py:5: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    class ChangeMemberRoleRequest(BaseModel):
+
+src\api\schema\workspace_schema.py:17
+  C:\Users\mrabr\wrext-backend\src\api\schema\workspace_schema.py:17: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    class AddWorkspaceMemberRequest(BaseModel):
+
+src\api\schema\content_schema.py:123
+  C:\Users\mrabr\wrext-backend\src\api\schema\content_schema.py:123: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    class ContentResponse(BaseModel):
+
+src\api\schema\content_schema.py:163
+  C:\Users\mrabr\wrext-backend\src\api\schema\content_schema.py:163: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    class ContentProgressResponse(BaseModel):
+
+src\api\schema\role_schema.py:12
+  C:\Users\mrabr\wrext-backend\src\api\schema\role_schema.py:12: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    class RoleCreate(BaseModel):
+
+src\api\schema\role_schema.py:54
+  C:\Users\mrabr\wrext-backend\src\api\schema\role_schema.py:54: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    class RoleUpdate(BaseModel):
+
+src\api\schema\role_schema.py:83
+  C:\Users\mrabr\wrext-backend\src\api\schema\role_schema.py:83: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    class PermissionSummary(BaseModel):
+
+src\api\schema\role_schema.py:95
+  C:\Users\mrabr\wrext-backend\src\api\schema\role_schema.py:95: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    class RoleResponse(BaseModel):
+
+src\api\schema\role_schema.py:110
+  C:\Users\mrabr\wrext-backend\src\api\schema\role_schema.py:110: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    class RoleWithPermissions(RoleResponse):
+
+src\api\schema\role_schema.py:118
+  C:\Users\mrabr\wrext-backend\src\api\schema\role_schema.py:118: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    class AssignPermissionsRequest(BaseModel):
+
+src\api\schema\permission_schema.py:12
+  C:\Users\mrabr\wrext-backend\src\api\schema\permission_schema.py:12: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    class PermissionCreate(BaseModel):
+
+src\api\schema\permission_schema.py:68
+  C:\Users\mrabr\wrext-backend\src\api\schema\permission_schema.py:68: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    class PermissionUpdate(BaseModel):
+
+src\api\schema\permission_schema.py:104
+  C:\Users\mrabr\wrext-backend\src\api\schema\permission_schema.py:104: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    class RoleSummary(BaseModel):
+
+src\api\schema\permission_schema.py:115
+  C:\Users\mrabr\wrext-backend\src\api\schema\permission_schema.py:115: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    class PermissionResponse(BaseModel):
+
+src\api\schema\permission_schema.py:129
+  C:\Users\mrabr\wrext-backend\src\api\schema\permission_schema.py:129: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    class PermissionWithRoles(PermissionResponse):
+
+src\api\schema\subscription\plan_schemas.py:12
+  C:\Users\mrabr\wrext-backend\src\api\schema\subscription\plan_schemas.py:12: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    class SubscriptionPlanCreate(BaseModel):
+
+src\api\schema\subscription\plan_schemas.py:198
+  C:\Users\mrabr\wrext-backend\src\api\schema\subscription\plan_schemas.py:198: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    class SubscriptionPlanResponse(BaseModel):
+
+src\api\schema\subscription\user_subscription_schemas.py:12
+  C:\Users\mrabr\wrext-backend\src\api\schema\subscription\user_subscription_schemas.py:12: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    class SubscriptionCreateRequest(BaseModel):
+
+src\api\schema\subscription\user_subscription_schemas.py:32
+  C:\Users\mrabr\wrext-backend\src\api\schema\subscription\user_subscription_schemas.py:32: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    class SubscriptionUpgradeRequest(BaseModel):
+
+src\api\schema\subscription\user_subscription_schemas.py:52
+  C:\Users\mrabr\wrext-backend\src\api\schema\subscription\user_subscription_schemas.py:52: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    class SubscriptionCancelRequest(BaseModel):
+
+src\api\schema\subscription\user_subscription_schemas.py:73
+  C:\Users\mrabr\wrext-backend\src\api\schema\subscription\user_subscription_schemas.py:73: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    class UserSubscriptionResponse(BaseModel):
+
+src\api\schema\subscription\usage_schemas.py:11
+  C:\Users\mrabr\wrext-backend\src\api\schema\subscription\usage_schemas.py:11: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    class UsageStatsResponse(BaseModel):
+
+src\api\schema\subscription\usage_schemas.py:61
+  C:\Users\mrabr\wrext-backend\src\api\schema\subscription\usage_schemas.py:61: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    class TrialStatusResponse(BaseModel):
+
+src\api\schema\subscription\admin_schemas.py:12
+  C:\Users\mrabr\wrext-backend\src\api\schema\subscription\admin_schemas.py:12: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    class AdminSubscriptionAssignRequest(BaseModel):
+
+src\api\schema\subscription\admin_schemas.py:43
+  C:\Users\mrabr\wrext-backend\src\api\schema\subscription\admin_schemas.py:43: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    class AdminSubscriptionExtendRequest(BaseModel):
+
+src\api\schema\subscription\admin_schemas.py:66
+  C:\Users\mrabr\wrext-backend\src\api\schema\subscription\admin_schemas.py:66: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    class AdminUsageResetRequest(BaseModel):
+
+src\api\schema\subscription\checkout_schemas.py:12
+  C:\Users\mrabr\wrext-backend\src\api\schema\subscription\checkout_schemas.py:12: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    class CheckoutSessionRequest(BaseModel):
+
+src\api\schema\subscription\checkout_schemas.py:34
+  C:\Users\mrabr\wrext-backend\src\api\schema\subscription\checkout_schemas.py:34: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    class CheckoutSessionResponse(BaseModel):
+
+src\api\schema\subscription\license_schemas.py:12
+  C:\Users\mrabr\wrext-backend\src\api\schema\subscription\license_schemas.py:12: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    class LicenseValidateRequest(BaseModel):
+
+src\api\schema\subscription\license_schemas.py:33
+  C:\Users\mrabr\wrext-backend\src\api\schema\subscription\license_schemas.py:33: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    class LicenseValidateResponse(BaseModel):
+
+src\api\schema\subscription\license_schemas.py:65
+  C:\Users\mrabr\wrext-backend\src\api\schema\subscription\license_schemas.py:65: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    class LicenseActivateRequest(BaseModel):
+
+src\api\schema\subscription\license_schemas.py:81
+  C:\Users\mrabr\wrext-backend\src\api\schema\subscription\license_schemas.py:81: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    class LicenseDeactivateRequest(BaseModel):
+
+src\api\schema\subscription\license_schemas.py:93
+  C:\Users\mrabr\wrext-backend\src\api\schema\subscription\license_schemas.py:93: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    class LicenseActivationResponse(BaseModel):
+
+src\api\schema\subscription\license_schemas.py:117
+  C:\Users\mrabr\wrext-backend\src\api\schema\subscription\license_schemas.py:117: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    class LicenseResponse(BaseModel):
+
+src\api\schema\subscription\invoice_schemas.py:20
+  C:\Users\mrabr\wrext-backend\src\api\schema\subscription\invoice_schemas.py:20: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    class Invoice(BaseModel):
+
+src\api\schema\subscription\invoice_schemas.py:65
+  C:\Users\mrabr\wrext-backend\src\api\schema\subscription\invoice_schemas.py:65: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    class InvoiceListResponse(BaseModel):
+
+src\api\schema\subscription\analytics_schemas.py:11
+  C:\Users\mrabr\wrext-backend\src\api\schema\subscription\analytics_schemas.py:11: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    class SubscriptionStatsResponse(BaseModel):
+
+src\api\schema\subscription\analytics_schemas.py:43
+  C:\Users\mrabr\wrext-backend\src\api\schema\subscription\analytics_schemas.py:43: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    class PlanBreakdown(BaseModel):
+
+src\api\schema\subscription\analytics_schemas.py:65
+  C:\Users\mrabr\wrext-backend\src\api\schema\subscription\analytics_schemas.py:65: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    class RevenueMetricsResponse(BaseModel):
+
+src\api\schema\subscription\analytics_schemas.py:96
+  C:\Users\mrabr\wrext-backend\src\api\schema\subscription\analytics_schemas.py:96: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    class ChurnAnalysisResponse(BaseModel):
+
+src\api\schema\subscription\analytics_schemas.py:120
+  C:\Users\mrabr\wrext-backend\src\api\schema\subscription\analytics_schemas.py:120: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    class TrialConversionResponse(BaseModel):
+
+src\api\routes\subscriptions\trial_routes.py:35
+  C:\Users\mrabr\wrext-backend\src\api\routes\subscriptions\trial_routes.py:35: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    class TrialExtensionRequest(BaseModel):
+
+src\api\routes\subscriptions\admin\admin_subscription_analytics.py:155
+  C:\Users\mrabr\wrext-backend\src\api\routes\subscriptions\admin\admin_subscription_analytics.py:155: DeprecationWarning: `regex` has been deprecated, please use `pattern` instead
+    period: str = Query("12_months", regex="^(3_months|6_months|12_months)$", description="Time period"),
+
+src\api\routes\admin\monitoring_routes.py:150
+  C:\Users\mrabr\wrext-backend\src\api\routes\admin\monitoring_routes.py:150: DeprecationWarning: `regex` has been deprecated, please use `pattern` instead
+    period: str = Query("24_hours", regex="^(24_hours|7_days|30_days)$", description="Time period"),
+
+src\api\routes\admin\reports_routes.py:103
+  C:\Users\mrabr\wrext-backend\src\api\routes\admin\reports_routes.py:103: DeprecationWarning: `regex` has been deprecated, please use `pattern` instead
+    format: str = Query("csv", regex="^(csv|json)$", description="Export format"),
+
+src\api\routes\admin\email_admin_routes.py:29
+  C:\Users\mrabr\wrext-backend\src\api\routes\admin\email_admin_routes.py:29: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    class EmailLogResponse(BaseModel):
+
+src\api\schema\audit_schema.py:82
+  C:\Users\mrabr\wrext-backend\src\api\schema\audit_schema.py:82: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    class AuditLogResponse(BaseModel):
+
+src\api\schema\audit_schema.py:118
+  C:\Users\mrabr\wrext-backend\src\api\schema\audit_schema.py:118: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    class AuditLogDetailResponse(BaseModel):
+
+src\api\schema\audit_schema.py:162
+  C:\Users\mrabr\wrext-backend\src\api\schema\audit_schema.py:162: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    class AuditLogListResponse(BaseModel):
+
+src\api\schema\audit_schema.py:200
+  C:\Users\mrabr\wrext-backend\src\api\schema\audit_schema.py:200: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    class AuditLogFilterParams(BaseModel):
+
+src\api\schema\audit_schema.py:240
+  C:\Users\mrabr\wrext-backend\src\api\schema\audit_schema.py:240: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    class AuditLogExportRequest(BaseModel):
+
+src\api\schema\audit_schema.py:268
+  C:\Users\mrabr\wrext-backend\src\api\schema\audit_schema.py:268: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    class AuditLogStatsResponse(BaseModel):
+
+src\api\schema\security_schema.py:28
+  C:\Users\mrabr\wrext-backend\src\api\schema\security_schema.py:28: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    class FailedLoginResponse(BaseModel):
+
+src\api\schema\security_schema.py:52
+  C:\Users\mrabr\wrext-backend\src\api\schema\security_schema.py:52: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    class LockedAccountResponse(BaseModel):
+
+src\api\schema\security_schema.py:74
+  C:\Users\mrabr\wrext-backend\src\api\schema\security_schema.py:74: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    class SecurityStatsResponse(BaseModel):
+
+src\api\schema\security_schema.py:121
+  C:\Users\mrabr\wrext-backend\src\api\schema\security_schema.py:121: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    class LoginHistoryResponse(BaseModel):
+
+src\api\schema\security_schema.py:158
+  C:\Users\mrabr\wrext-backend\src\api\schema\security_schema.py:158: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    class SuspiciousActivityResponse(BaseModel):
+
+src\api\schema\security_schema.py:194
+  C:\Users\mrabr\wrext-backend\src\api\schema\security_schema.py:194: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    class UnlockAccountRequest(BaseModel):
+
+src\api\schema\security_schema.py:206
+  C:\Users\mrabr\wrext-backend\src\api\schema\security_schema.py:206: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    class ResetFailedAttemptsRequest(BaseModel):
+
+src\api\schema\email_preview_schema.py:11
+  C:\Users\mrabr\wrext-backend\src\api\schema\email_preview_schema.py:11: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    class AuthEmailPreviewRequest(BaseModel):
+
+src\api\schema\email_preview_schema.py:48
+  C:\Users\mrabr\wrext-backend\src\api\schema\email_preview_schema.py:48: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    class WorkspaceEmailPreviewRequest(BaseModel):
+
+src\api\schema\email_preview_schema.py:131
+  C:\Users\mrabr\wrext-backend\src\api\schema\email_preview_schema.py:131: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    class EmailPreviewResponse(BaseModel):
+
+src\api\schema\webhook_schema.py:45
+  C:\Users\mrabr\wrext-backend\src\api\schema\webhook_schema.py:45: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    class ResendWebhookRequest(BaseModel):
+
+src\api\schema\onboarding_schemas.py:26
+  C:\Users\mrabr\wrext-backend\src\api\schema\onboarding_schemas.py:26: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    class OnboardingResponse(BaseModel):
+
+src\config\storage_config.py:14
+  C:\Users\mrabr\wrext-backend\src\config\storage_config.py:14: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    class StorageSettings(BaseSettings):
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=============================== tests coverage ================================
+_______________ coverage: platform win32, python 3.11.0-final-0 _______________
+
+Name                                                                    Stmts   Miss  Cover   Missing
+-----------------------------------------------------------------------------------------------------
+src\__init__.py                                                             0      0   100%
+src\api\__init__.py                                                         0      0   100%
+src\api\cache\__init__.py                                                   0      0   100%
+src\api\cache\decorators.py                                                59     59     0%   6-173
+src\api\cache\redis_client.py                                             112     87    22%   30-56, 60-62, 74-88, 107-118, 130-140, 152-177, 186-196, 205-222, 226-229, 234
+src\api\config.py                                                         145     28    81%   208, 214, 225, 228, 237, 252, 257, 267, 272, 277, 282, 287-291, 303-309, 321-327
+src\api\database\__init__.py                                                0      0   100%
+src\api\database\async_database.py                                         30     11    63%   15, 48-52, 72, 81, 118-122
+src\api\database\base.py                                                    2      0   100%
+src\api\database\deps.py                                                    6      2    67%   29-30
+src\api\lib\__init__.py                                                     0      0   100%
+src\api\lib\logger.py                                                      22     11    50%   14, 22-32
+src\api\lib\logging_config.py                                              65     26    60%   52-57, 83, 96, 126-133, 166-168, 200-230, 240
+src\api\lib\sentry_config.py                                              186    159    15%   43-144, 165-206, 221-230, 244-280, 301-320, 338, 355-367, 372, 422-475, 510-537, 565-573, 620-659, 686-696, 734-743, 777-786, 819-827, 858-864, 898-907
+src\api\middleware\__init__.py                                              6      0   100%
+src\api\middleware\error_handler.py                                       151    118    22%   43-44, 74-78, 91-100, 120-148, 171-199, 226-234, 261-275, 305-349, 369-396, 408-426, 445-472, 488-510, 518-539, 547-576
+src\api\middleware\exceptions.py                                          123     79    36%   42-48, 52, 75-85, 99-102, 121, 135-143, 157, 168, 193-205, 226-239, 258-262, 283-290, 309-314, 338-344, 363-372, 391, 415-419, 433, 444-451, 470-476, 506-529
+src\api\middleware\permissions.py                                          89     65    27%   62-64, 93-183, 205-230, 249-254, 271-283, 306-324, 369, 402-449
+src\api\middleware\rate_limiter.py                                        192    131    32%   53-60, 73-76, 91-118, 133-145, 156-169, 212-222, 239-293, 337-368, 420, 477-517, 536-581, 624, 728
+src\api\middleware\request_tracker.py                                      79     61    23%   56-60, 74-115, 128-147, 156-158, 175-182, 192, 221-232, 253-265, 282-293, 306, 319
+src\api\middleware\security.py                                             12      7    42%   23-38
+src\api\middleware\sentry_middleware.py                                    32     22    31%   39-83
+src\api\middleware\usage_limiter.py                                       136     94    31%   55-73, 89-93, 110-139, 169-214, 234-267, 287-333, 362-388, 406-407, 420-421, 430
+src\api\middleware\webhook_security.py                                     61     46    25%   61-88, 107-130, 150-207, 245
+src\api\models\__init__.py                                                 12      0   100%
+src\api\models\admin_models\__init__.py                                     4      0   100%
+src\api\models\admin_models\admin_invitations.py                           38      4    89%   206, 210, 214, 217
+src\api\models\admin_models\customer_note.py                               16      1    94%   45
+src\api\models\admin_models\error_log.py                                   21      1    95%   44
+src\api\models\audit_models\__init__.py                                     2      0   100%
+src\api\models\audit_models\audit_logs.py                                  26      0   100%
+src\api\models\base.py                                                     39     31    21%   109-166
+src\api\models\content_models\__init__.py                                  20      7    65%   16-23
+src\api\models\content_models\content.py                                   48      0   100%
+src\api\models\content_models\content_ai_config.py                         24      0   100%
+src\api\models\content_models\content_media.py                             19     19     0%   8-69
+src\api\models\content_models\content_metadata.py                          29      0   100%
+src\api\models\content_models\content_progress.py                          18      0   100%
+src\api\models\content_models\content_research_config.py                   17      0   100%
+src\api\models\content_models\content_review.py                            19      0   100%
+src\api\models\content_models\content_seo_data.py                          19      0   100%
+src\api\models\content_models\content_structure.py                         23      0   100%
+src\api\models\content_models\content_tracking.py                          17      0   100%
+src\api\models\content_models\content_version.py                           17      0   100%
+src\api\models\email_models\__init__.py                                     3      0   100%
+src\api\models\email_models\email_event.py                                 21      1    95%   35
+src\api\models\email_models\email_log.py                                   33      1    97%   47
+src\api\models\knowledge_models\__init__.py                                 0      0   100%
+src\api\models\knowledge_models\knowledge_model.py                        110     28    75%   45-68, 107-115, 144-160, 183-197
+src\api\models\media_models\__init__.py                                     2      0   100%
+src\api\models\media_models\media.py                                       61     13    79%   109, 113, 117, 127, 131, 135, 139-148
+src\api\models\notification\__init__.py                                     2      0   100%
+src\api\models\notification\notification_model.py                          57     13    77%   182, 198-199, 203-204, 208-209, 213-214, 218-219, 223-224
+src\api\models\subscription_models\__init__.py                             10      0   100%
+src\api\models\subscription_models\discount_usage.py                       28      2    93%   113, 120
+src\api\models\subscription_models\license_activations.py                  34      9    74%   104, 111-117, 121-122
+src\api\models\subscription_models\licenses.py                             59     18    69%   57, 61-65, 70-76, 81-83, 88-90
+src\api\models\subscription_models\payment_methods.py                      27      1    96%   48
+src\api\models\subscription_models\plans.py                                32      0   100%
+src\api\models\subscription_models\refunds.py                              34      2    94%   103, 112
+src\api\models\subscription_models\subscriptions.py                        59      6    90%   84-90
+src\api\models\subscription_models\trial_conversions.py                    34      5    85%   108, 113-116
+src\api\models\subscription_models\webhooks.py                             23      3    87%   34, 38-40
+src\api\models\topic_models\__init__.py                                     0      0   100%
+src\api\models\topic_models\topic_models.py                                50     13    74%   43-71, 75-86
+src\api\models\user_models\__init__.py                                     14      0   100%
+src\api\models\user_models\email_preferences.py                            37      1    97%   66
+src\api\models\user_models\invitations.py                                  24      0   100%
+src\api\models\user_models\notification_preferences.py                     39      2    95%   85-87
+src\api\models\user_models\oauth_accounts.py                               29      3    90%   62-64
+src\api\models\user_models\onboarding.py                                   27      1    96%   53
+src\api\models\user_models\permissions.py                                  17      0   100%
+src\api\models\user_models\role_permissions.py                             15      0   100%
+src\api\models\user_models\roles.py                                        21      0   100%
+src\api\models\user_models\token_blacklist.py                              16      0   100%
+src\api\models\user_models\user_preferences.py                             21      1    95%   45
+src\api\models\user_models\user_roles.py                                   20      0   100%
+src\api\models\user_models\user_sessions.py                                30      3    90%   58-60
+src\api\models\user_models\users.py                                        57      3    95%   81-83
+src\api\models\workspace_models\__init__.py                                 0      0   100%
+src\api\models\workspace_models\email_template.py                          33      4    88%   50-54
+src\api\models\workspace_models\workspace_member.py                        20      0   100%
+src\api\models\workspace_models\workspace_model.py                         33      0   100%
+src\api\routes\__init__.py                                                  0      0   100%
+src\api\routes\admin\admin_invitation_routes.py                            82     39    52%   67-74, 142-161, 186-196, 221-224, 249-264, 289-304, 330-353, 388-402, 425-439
+src\api\routes\admin\customer_routes.py                                    44     14    68%   93-104, 145-148, 188-200, 237-248
+src\api\routes\admin\email_admin_routes.py                                 94     54    43%   77-127, 150-199, 222-291
+src\api\routes\admin\email_analytics_routes.py                             54     28    48%   61-72, 113-124, 164-175, 215-226
+src\api\routes\admin\export_routes.py                                      56     29    48%   56-74, 107-122, 153-167, 198-208
+src\api\routes\admin\invitation_analytics_routes.py                        87     65    25%   61-288
+src\api\routes\admin\monitoring_routes.py                                  46     16    65%   49-52, 91-100, 125-134, 166-169, 196-199
+src\api\routes\admin\reports_routes.py                                     86     63    27%   56-75, 121-209, 235-252
+src\api\routes\admin\webhook_monitoring_routes.py                          39     19    51%   55-59, 89-93, 122-131, 155-159
+src\api\routes\audit\__init__.py                                            0      0   100%
+src\api\routes\audit\modules\__init__.py                                    9      0   100%
+src\api\routes\audit\modules\audit_export.py                               37     17    54%   42-111, 130-133
+src\api\routes\audit\modules\audit_retrieval.py                            38     17    55%   62-92, 122-134
+src\api\routes\audit\modules\audit_user.py                                 29     12    59%   49-77
+src\api\routes\audit\modules\helpers.py                                    45     36    20%   29-83, 97-121
+src\api\routes\content\__init__.py                                          0      0   100%
+src\api\routes\content\modules\__init__.py                                  9      0   100%
+src\api\routes\content\modules\content_crud.py                             93     59    37%   56-144, 165-193, 210-224, 250-270, 301-337
+src\api\routes\content\modules\content_generation.py                       50     17    66%   78-116, 153-166
+src\api\routes\content\modules\content_retrieval.py                        28     10    64%   43-60, 85-100
+src\api\routes\content\modules\helpers.py                                  23     23     0%   1-37
+src\api\routes\email\__init__.py                                            3      0   100%
+src\api\routes\email\preview.py                                            72     45    38%   46-57, 63-67, 84-144, 164-249, 269-270, 286-287
+src\api\routes\email\webhooks.py                                           67     51    24%   58-121, 138-159, 200-268, 282
+src\api\routes\events\__init__.py                                           4      0   100%
+src\api\routes\events\sse_routes.py                                        21     10    52%   40-74
+src\api\routes\events\sse_test_route.py                                    27     14    48%   27-63, 79-80
+src\api\routes\health.py                                                   70     52    26%   34, 76-189, 213-232
+src\api\routes\invitations.py                                             123     94    24%   71-138, 198-398
+src\api\routes\knowledge\__init__.py                                        0      0   100%
+src\api\routes\media\__init__.py                                            2      0   100%
+src\api\routes\media\media_routes.py                                       97     51    47%   40-61, 108-147, 189-208, 243-254, 295-318, 350-366, 398-412, 442-447, 469-474
+src\api\routes\notifications\__init__.py                                    0      0   100%
+src\api\routes\notifications\notification_routes.py                       154    125    19%   52-145, 170-265, 293-387, 402-427, 443-494
+src\api\routes\permissions\__init__.py                                      2      0   100%
+src\api\routes\permissions\modules\__init__.py                              5      0   100%
+src\api\routes\permissions\modules\helpers.py                              18     18     0%   1-61
+src\api\routes\permissions\modules\permission_crud.py                      45     15    67%   41-43, 56-58, 81-83, 103-105, 128-130
+src\api\routes\roles\__init__.py                                            2      0   100%
+src\api\routes\roles\modules\__init__.py                                    7      0   100%
+src\api\routes\roles\modules\helpers.py                                    18      9    50%   32-61
+src\api\routes\roles\modules\role_crud.py                                  84     52    38%   51-63, 94-106, 144-196, 240-301, 339-388
+src\api\routes\roles\modules\role_permissions.py                           28      9    68%   31-38, 56-62
+src\api\routes\security\__init__.py                                         0      0   100%
+src\api\routes\security\security_routes.py                                 45     14    69%   55-56, 81-82, 112-115, 146-149, 176-177, 202-203
+src\api\routes\subscriptions\__init__.py                                    0      0   100%
+src\api\routes\subscriptions\admin\__init__.py                             15      0   100%
+src\api\routes\subscriptions\admin\admin_subscription_analytics.py         72     32    56%   46-50, 69-73, 94-98, 119-123, 143-147, 168-172, 189-193, 214-218
+src\api\routes\subscriptions\admin\admin_subscription_management.py        39     16    59%   42-53, 71-81, 98-108
+src\api\routes\subscriptions\admin\admin_subscription_retrieval.py         27      9    67%   40-45, 63-67
+src\api\routes\subscriptions\admin\export_routes.py                       118     86    27%   60-149, 187, 214-317, 352-438
+src\api\routes\subscriptions\admin\refund_routes.py                        99     67    32%   48, 92-107, 131-143, 172-324
+src\api\routes\subscriptions\admin\shared\__init__.py                       0      0   100%
+src\api\routes\subscriptions\admin\shared\auth.py                          11      4    64%   18-24, 29-30
+src\api\routes\subscriptions\admin\webhook_monitoring_routes.py           129    102    21%   61-130, 172-235, 275-307, 334-398
+src\api\routes\subscriptions\checkout_routes.py                            91     47    48%   82-111, 142-187, 218-223, 248-275
+src\api\routes\subscriptions\license_routes.py                             99     57    42%   82-138, 178-209, 265-275, 304-325, 357-379, 420-443, 483-492
+src\api\routes\subscriptions\plan_routes.py                                55     23    58%   35-44, 60-65, 82-91, 108-113, 131-136, 154-159
+src\api\routes\subscriptions\subscription_routes.py                       152    100    34%   67-85, 120-134, 164-226, 253-259, 291-309, 337-363, 386-435, 460-483, 521-587
+src\api\routes\subscriptions\trial_routes.py                               63     29    54%   73-78, 120-131, 180-210, 238-254
+src\api\routes\subscriptions\webhook_routes.py                             54     41    24%   78-211
+src\api\routes\topics\__init__.py                                           0      0   100%
+src\api\routes\topics\topic_generation_route.py                           166    108    35%   46, 84-262, 288-327, 345-362, 404-444, 465-488, 506-531
+src\api\routes\users\__init__.py                                           18      0   100%
+src\api\routes\users\admin.py                                              31     12    61%   25-33, 52-60, 76-84
+src\api\routes\users\auth.py                                              293    246    16%   56-72, 90-105, 119-204, 242-478, 492-564, 595-624, 647-672, 692-719, 744-785, 820-926, 960-1007, 1030-1048
+src\api\routes\users\email_preferences.py                                  72     31    57%   76-87, 102-123, 139-160
+src\api\routes\users\impersonation.py                                      55     31    44%   36-78, 100-155, 178-201
+src\api\routes\users\invitations.py                                        90     61    32%   100-202, 246-380
+src\api\routes\users\management.py                                        129     95    26%   49-89, 106-127, 144-202, 217-270, 296-451
+src\api\routes\users\onboarding.py                                         86     62    28%   37-56, 76-99, 116-123, 141-154, 173-182, 199-213
+src\api\routes\users\password.py                                          112     82    27%   50-66, 81-129, 142-189, 208-278, 305-348
+src\api\routes\users\preferences.py                                        52     17    67%   59-74, 100-123
+src\api\routes\users\profile.py                                           276    233    16%   39-80, 96-190, 206-363, 380-478, 498-525, 543-651, 674-770
+src\api\routes\users\roles.py                                              47     24    49%   49-75, 111-123, 157-172
+src\api\routes\users\sessions.py                                           65     38    42%   30-54, 71-81, 97-129, 146
+src\api\routes\users\status.py                                              6      1    83%   12
+src\api\routes\users\user_permissions.py                                   26     11    58%   85-117
+src\api\routes\users\user_security.py                                      29      9    69%   40-44, 71-74, 95-98
+src\api\routes\users\user_status.py                                       125     95    24%   46-115, 143-210, 238-307, 337-463
+src\api\routes\users\workspaces.py                                         43     29    33%   94-161
+src\api\routes\workspaces\__init__.py                                      65     23    65%   54-75, 92-104, 120-126, 147-170
+src\api\routes\workspaces\email_template_route.py                          58     21    64%   45-46, 62-63, 88-91, 112-123, 141-152, 169-177, 193-194
+src\api\routes\workspaces\invitations.py\__init__.py                        0      0   100%
+src\api\routes\workspaces\invitations.py\modules\__init__.py                9      9     0%   1-16
+src\api\routes\workspaces\invitations.py\modules\helpers.py                10     10     0%   1-24
+src\api\routes\workspaces\invitations.py\modules\invitation_create.py      90     90     0%   1-300
+src\api\routes\workspaces\invitations.py\modules\invitation_list.py        65     65     0%   1-154
+src\api\routes\workspaces\invitations.py\modules\invitation_manage.py      89     89     0%   1-253
+src\api\routes\workspaces\members\__init__.py                               0      0   100%
+src\api\routes\workspaces\members\members_routes.py                        34     34     0%   1-77
+src\api\routes\workspaces\shared\__init__.py                                0      0   100%
+src\api\routes\workspaces\workspace_brand_voice.py                         37     13    65%   21, 44-59, 73, 91-100
+src\api\routes\workspaces\workspace_core.py                                99     61    38%   24-25, 42-50, 70-98, 117-144, 170-197, 226-254, 278-330
+src\api\routes\workspaces\workspace_invitations.py                        191    139    27%   65-80, 90-93, 125-154, 181-300, 326-443, 481-578, 600-651
+src\api\routes\workspaces\workspace_knowledge.py                          200    101    50%   72-90, 109-111, 116, 129-139, 159-208, 222-231, 250-263, 281-290, 307-317, 338-397, 411-420, 439-452, 470-482, 499-509, 529-579, 593-602, 621-644, 662-674
+src\api\routes\workspaces\workspace_knowledge_bases.py                     58     23    60%   47-49, 62-74, 92-105, 124-137, 156-170, 188-197
+src\api\routes\workspaces\workspace_members.py                            121     75    38%   53-76, 89-111, 117-123, 162-174, 196-223, 245-325, 348-416
+src\api\routes\workspaces\workspace_permissions.py                         74     48    35%   79-118, 167-206, 244, 283-343
+src\api\routes\workspaces\workspace_route.py                               67     67     0%   1-191
+src\api\routes\workspaces\workspace_stats.py                               47     28    40%   51-134
+src\api\schema\admin_invitation_schema.py                                  83      4    95%   46-51
+src\api\schema\audit_schema.py                                            123      0   100%
+src\api\schema\content_schema.py                                          128     21    84%   16-18, 23-26, 61-63, 68-70, 109-111, 116-120
+src\api\schema\email_preview_schema.py                                     35      0   100%
+src\api\schema\email_template_schema.py                                    38      0   100%
+src\api\schema\impersonation_schema.py                                     35      0   100%
+src\api\schema\invitation_schema.py                                        52      0   100%
+src\api\schema\knowledge_schema.py                                         35      0   100%
+src\api\schema\notification_schema.py                                      44      0   100%
+src\api\schema\onboarding_schemas.py                                       32      0   100%
+src\api\schema\permission_schema.py                                        50      8    84%   47-54
+src\api\schema\response_schemas.py                                        139     31    78%   190-192, 263-267, 332-334, 364, 412-429, 467-478, 503-517, 530-535
+src\api\schema\role_schema.py                                              44      0   100%
+src\api\schema\security_schema.py                                          72      0   100%
+src\api\schema\subscription\__init__.py                                    10      0   100%
+src\api\schema\subscription\admin_schemas.py                               21      0   100%
+src\api\schema\subscription\analytics_schemas.py                           50      0   100%
+src\api\schema\subscription\checkout_schemas.py                            17      0   100%
+src\api\schema\subscription\enums.py                                       11      0   100%
+src\api\schema\subscription\invoice_schemas.py                             30      0   100%
+src\api\schema\subscription\license_schemas.py                             63      0   100%
+src\api\schema\subscription\plan_schemas.py                                56      0   100%
+src\api\schema\subscription\refund_schemas.py                              52      1    98%   45
+src\api\schema\subscription\usage_schemas.py                               28      0   100%
+src\api\schema\subscription\user_subscription_schemas.py                   39      0   100%
+src\api\schema\topic_schema.py                                             25      0   100%
+src\api\schema\user_role_schema.py                                         22      0   100%
+src\api\schema\user_schema.py                                             109      6    94%   80-82, 133-135
+src\api\schema\webhook_schema.py                                           64      0   100%
+src\api\schema\workspace_schema.py                                         21      0   100%
+src\api\security\__init__.py                                                0      0   100%
+src\api\security\auth.py                                                   22     22     0%   1-39
+src\api\security\dependencies.py                                           76     66    13%   31-103, 115-122, 135-205
+src\api\security\token_utils.py                                            73     52    29%   53, 67, 81-92, 106-116, 131-135, 149-153, 189-200, 221-249, 268-274
+src\api\server.py                                                         291    151    48%   99-127, 137-210, 336-337, 349, 371-438, 450-451, 467-504, 510, 537-546
+src\api\tasks\__init__.py                                                   0      0   100%
+src\api\tasks\content_generation.py                                        42     31    26%   50-206
+src\api\tasks\grace_period_expiration_task.py                              38     38     0%   21-108
+src\api\tasks\knowledge_task.py                                            53     53     0%   1-102
+src\api\tasks\payment_dunning_task.py                                      56     56     0%   20-141
+src\api\tasks\send_mail.py                                                 29     29     0%   1-76
+src\api\tasks\subscription_tasks.py                                       106    106     0%   13-260
+src\api\tasks\trial_expiration_task.py                                     94     94     0%   7-274
+src\config\__init__.py                                                      2      0   100%
+src\config\cleanup_config.py                                               20      2    90%   36, 46
+src\config\email_config.py                                                 20      0   100%
+src\config\payment_config.py                                               25      1    96%   40
+src\config\storage_config.py                                               27      0   100%
+src\flow\__init__.py                                                        0      0   100%
+src\flow\flow.py                                                           39     26    33%   29-64
+src\flow\langsmith\__init__.py                                              0      0   100%
+src\flow\langsmith\get_client.py                                           11      3    73%   14-20
+src\flow\model\__init__.py                                                  0      0   100%
+src\flow\model\llm_manager.py                                              26     13    50%   20-21, 34-36, 48-49, 59-60, 64-65, 69-70
+src\flow\nodes\__init__.py                                                  0      0   100%
+src\flow\nodes\blog_generation\__init__.py                                  0      0   100%
+src\flow\nodes\blog_generation\generate_blog.py                            51     41    20%   22-113
+src\flow\nodes\content\__init__.py                                          0      0   100%
+src\flow\nodes\content\save_content.py                                     66     57    14%   28-126
+src\flow\nodes\get_context\__init__.py                                      0      0   100%
+src\flow\nodes\get_context\web_context.py                                  55     45    18%   28-124
+src\flow\nodes\get_context\workspace_context.py                            44     38    14%   20-93
+src\flow\nodes\info\__init__.py                                             0      0   100%
+src\flow\nodes\info\get_topics.py                                          29     22    24%   21-89
+src\flow\nodes\info\get_user.py                                            28     21    25%   21-71
+src\flow\nodes\info\get_workspace.py                                       30     23    23%   21-77
+src\flow\nodes\reranker\__init__.py                                         0      0   100%
+src\flow\nodes\reranker\reranker.py                                        55     46    16%   27-108
+src\flow\nodes\scrapping\__init__.py                                        0      0   100%
+src\flow\nodes\scrapping\clean_context.py                                  17     13    24%   21-55
+src\flow\nodes\scrapping\scrapper.py                                       45     36    20%   28-87
+src\flow\prompts\prompt_manager.py                                         55     42    24%   20, 32-97, 104-190, 198-208, 216-224, 237-262
+src\flow\service\__init__.py                                                0      0   100%
+src\flow\service\assistant_manager.py                                      10     10     0%   1-56
+src\flow\service\base_clinet.py                                            23     23     0%   1-68
+src\flow\service\process_manager.py                                       102     82    20%   48, 65-101, 121-175, 200-226, 237-255, 264-293, 315-327, 342-350, 367-377
+src\flow\service\run_manager.py                                            33     33     0%   1-149
+src\flow\service\service.py                                                12     12     0%   1-30
+src\flow\service\thread_manager.py                                         28     28     0%   1-158
+src\flow\service\utils.py                                                   3      3     0%   1-13
+src\flow\states\__init__.py                                                 0      0   100%
+src\flow\states\blog_state.py                                              36     15    58%   28-50, 55
+src\flow\states\content_state.py                                           26      1    96%   12
+src\flow\states\payload_state.py                                           40      0   100%
+src\flow\utils\progress_helper.py                                          17     11    35%   46-50, 64-81
+src\providers\__init__.py                                                   0      0   100%
+src\providers\email\__init__.py                                             6      0   100%
+src\providers\email\base.py                                                55     17    69%   21-22, 45-52, 69-70, 95, 105, 115, 128-129
+src\providers\email\factory.py                                             79     48    39%   47-50, 67-88, 104-133, 146-147, 160-161, 171-172, 181-183, 193, 206-215, 236, 253
+src\providers\email\mock_provider.py                                       56     38    32%   41-46, 70-139, 152-156, 165, 174-175, 191-202, 212, 221, 233, 248, 257-260, 269
+src\providers\email\resend_provider.py                                     60     46    23%   34-42, 66-113, 138-172, 184-186, 195, 209-226, 248-268
+src\providers\email\smtp_provider.py                                      107     91    15%   39-55, 80-209, 225-252, 264-273, 282, 294-329, 352-367
+src\providers\payment\__init__.py                                           3      0   100%
+src\providers\payment\base_provider.py                                     55      9    84%   68, 84, 110, 126, 145, 163, 181, 201, 220
+src\providers\payment\provider_factory.py                                  24     18    25%   26-56, 78-81
+src\providers\payment\providers\__init__.py                                 2      0   100%
+src\providers\payment\providers\lemonsqueezy.py                           194    159    18%   46-49, 73-89, 117-242, 254-279, 301-309, 324-331, 362-479, 499-537, 576-618, 635-683, 705-712, 731-769, 784-792, 823-841, 865-883, 906-922, 947-959, 981-1031, 1046-1068, 1072-1073
+src\scripts\__init__.py                                                     0      0   100%
+src\scripts\send_invitation_reminders.py                                   72     72     0%   13-185
+src\services\__init__.py                                                    0      0   100%
+src\services\admin_invitation_service.py                                  135    108    20%   61, 73-76, 89-103, 122-143, 182-258, 276-289, 307-320, 339-352, 380-466, 491-513, 535-553, 578-606
+src\services\audit_logger.py                                               87     21    76%   131-148, 168, 193, 215, 242, 269, 298, 323, 349, 378, 403, 424, 445, 471, 497, 522, 542, 565, 586
+src\services\audit_service.py                                              42     29    31%   20, 39-67, 78-85, 95-146
+src\services\auth_service.py                                              255    221    13%   76, 110-199, 231-389, 404-434, 456-488, 506-588, 606-643, 661-678, 695-725, 738-757, 770-794, 803-814, 837-1012
+src\services\billing_email_service.py                                      95     95     0%   7-315
+src\services\brand_voice_service.py                                        44     29    34%   41, 62-70, 99-132, 156-170, 181-186
+src\services\content_service.py                                           202    175    13%   58, 84-177, 205-344, 357-364, 390-420, 446-493, 518-549, 566-575, 593-615, 633-647, 662-669, 689-699
+src\services\customer_admin_service.py                                    191    163    15%   48, 76-167, 191-227, 271-349, 374-401, 414-432, 440-457, 475-483, 494-512, 521-531, 544-554, 558-566, 570-578
+src\services\data_cleanup_service.py                                      172    150    13%   36-37, 49-105, 117-172, 184-244, 256-319, 331-391, 407-457, 466-484
+src\services\dunning_service.py                                           139    139     0%   15-411
+src\services\email_analytics_service.py                                   106     89    16%   24-25, 29-39, 47-50, 67-173, 202-246, 265-308, 325-362
+src\services\email_event_service.py                                        90     72    20%   45, 65-192, 215-222, 237-242, 266-319, 344-350, 367-377
+src\services\email_helpers.py                                              88     88     0%   6-299
+src\services\email_preferences_service.py                                  55     40    27%   22, 26-41, 45-58, 67-86, 95-119, 123-124
+src\services\email_service.py                                             112     85    24%   34-38, 60-64, 120-234, 254-308, 322-333, 345-348, 367-374, 393-400, 417-430, 447-492
+src\services\email_template_service.py                                     97     76    22%   56, 71-79, 111-132, 163-176, 214-275, 309-346, 370-384, 402-411, 434-445, 465-479
+src\services\grace_period_service.py                                       73     73     0%   13-239
+src\services\image_processing_service.py                                  141    128     9%   44-50, 66-73, 100-148, 167-196, 214-252, 272-295, 314-350
+src\services\impersonation_service.py                                      67     44    34%   49, 78-131, 158-166, 187-197, 222-233, 245-257, 269-278, 282-304, 311-312, 316-318
+src\services\invitation_service.py                                        155    128    17%   54, 67-70, 108-220, 238-247, 265-276, 297-309, 330-342, 369-459, 485-503, 519-538, 559-582, 599-611
+src\services\knowledge_base_service.py                                     82     66    20%   45, 68-99, 116-135, 157-185, 212-266, 285-309, 328-353
+src\services\knowledge_service.py                                         215    178    17%   75, 110-209, 226-247, 254-257, 261-262, 278-292, 314-352, 356-359, 363-377, 396-427, 444-467, 474-477, 481-482, 492-567, 571-575, 579-592, 616-630, 637-649, 659-726
+src\services\langgraph_content_service.py                                 209    176    16%   56, 84-222, 239-284, 300-394, 405-452, 463-471, 484-485, 498-529, 546-586, 603-638
+src\services\lemonsqueezy_webhook_service.py                              122     98    20%   68-74, 109-179, 194-198, 215-251, 274-281, 299-305, 322-328, 362-363, 381-432, 449-460, 473-502
+src\services\license_service.py                                           113     91    19%   44, 61-87, 116-200, 224-267, 279-283, 295-297, 318-333, 356-386, 392-403, 411-418, 422-429
+src\services\media_service.py                                             224    192    14%   62-64, 76-98, 142-318, 335-344, 372-414, 449-474, 493-515, 534-552, 574-622, 652-657, 661-666, 679-720, 741-810
+src\services\member_service.py                                            155    128    17%   47, 78-128, 148-174, 199-211, 232-244, 267-304, 326-365, 382-390, 407-425, 451-466, 486-504, 529-593, 607-626, 643-669, 684-700
+src\services\monitoring_service.py                                        112     93    17%   45, 55-108, 138-190, 218-235, 253-319, 337-376
+src\services\notification_helper.py                                       104     95     9%   30-168
+src\services\notifications_services.py                                     32     11    66%   22-33, 40, 49-50, 59, 68, 77, 86
+src\services\oauth_service.py                                             133    133     0%   17-472
+src\services\onboarding_service.py                                        141    115    18%   32-58, 72-74, 89-117, 132-165, 180-184, 198-211, 225-235, 251-290, 315-328
+src\services\permission_service.py                                        143    116    19%   29, 37-51, 62-70, 80-108, 119-148, 158-180, 191-228, 242-265, 277-293, 299-308, 311-312, 315-319, 322-339, 342-348
+src\services\refund_service.py                                            125    105    16%   36, 65-93, 110-130, 147-166, 181-186, 216-303, 324-350, 374-414
+src\services\role_service.py                                              163    135    17%   60, 101-151, 167, 202-252, 277-326, 363-435, 455-482, 515-551, 566-571, 588-615, 633-655, 670-678, 697-708
+src\services\security_service.py                                          136    111    18%   47, 77-108, 134-168, 196-218, 234-250, 270-325, 358-380, 405-416, 435-444, 465-505, 538-551, 566-573, 585-588, 605-620, 638-648
+src\services\session_service.py                                            59     43    27%   42, 54-76, 102-140, 168-209, 214-218
+src\services\sse_service.py                                               202    136    33%   18, 89-126, 130-137, 141-150, 154-186, 197-208, 212-215, 219-229, 233-234, 238-240, 248-277, 281-286, 289-301, 305-311, 318-328, 334-338, 348-350, 365, 387, 410, 432-433, 453-464
+src\services\storage_service.py                                           104     64    38%   46, 56, 70, 83, 112-120, 136-157, 161-162, 178-193, 197-209, 218-219, 245-247, 257-267, 271-273, 285, 289-290, 308, 329-339, 364-366, 375, 388, 400, 434-450
+src\services\subscription_analytics_service.py                            213    171    20%   23, 27-51, 70-76, 93-104, 119-128, 141-142, 145-151, 154-158, 161-172, 175-181, 184-207, 210-230, 233-271, 274-283, 286-291, 294-300, 303-309, 312-319, 322-329, 332-338, 341-351, 356-391, 414-451, 458-465, 473-507, 515-542, 546-572, 576-598, 602-624, 628-634, 640-651, 655-657
+src\services\subscription_export_service.py                               122    105    14%   30, 51-155, 182, 205-308, 323-412
+src\services\subscription_management_service.py                            78     57    27%   34, 41-83, 94-117, 128-148, 158-162, 165-174, 177-184, 192-198
+src\services\subscription_plan_service.py                                  83     59    29%   30, 33-38, 41-42, 48-76, 87-100, 106-126, 129-147, 150-176, 186-190, 193-197
+src\services\subscription_retrieval_service.py                             46     33    28%   21, 31-75, 87-108
+src\services\subscription_service.py                                      268    231    14%   66-67, 100-158, 199-310, 344-485, 514, 545-647, 669-722, 748-767, 795-836, 849-867, 882, 899-919, 943-995, 1022-1068, 1092-1101, 1119-1134
+src\services\topic_enrichment_service.py                                  121     97    20%   31-47, 57-104, 126-147, 168-190, 200-218, 230-250, 260-272, 281-300, 308, 323, 337-354, 358-363, 367-375, 379-384, 388, 396, 404-405, 409-410, 414-424, 434
+src\services\topic_service.py                                             116     95    18%   48-49, 76-150, 172-222, 248-304, 335-346, 363-381, 401, 421-435
+src\services\trial_service.py                                             100     79    21%   33, 48-61, 70-80, 100-134, 164-193, 219-279, 297-333, 359-375
+src\services\usage_tracking_service.py                                     97     75    23%   33, 53-120, 141-158, 167-179, 188-198, 203-229, 233-235, 243-295
+src\services\user_preferences_service.py                                   45     34    24%   38, 54-74, 100-127
+src\services\user_service.py                                              179    147    18%   48, 66-77, 92-95, 117-153, 181-208, 228-239, 259-270, 274, 278, 282, 297-303, 324-342, 361-371, 388-407, 440-481, 501-505, 525-541, 561-568, 588-603, 618-626
+src\services\webhook_handlers\__init__.py                                   1      0   100%
+src\services\webhook_handlers\order_handlers.py                           150    134    11%   72-248, 280-363, 396-459
+src\services\webhook_handlers\subscription_handlers.py                    394    368     7%   84-345, 380-624, 656-686, 712-740, 768-815, 853-982, 1020-1135, 1166-1194, 1224-1254
+src\services\webhook_monitoring_service.py                                150    134    11%   26-27, 57-136, 161-220, 237-311, 335-454, 466-485, 489
+src\services\webhook_security_monitor.py                                   71     43    39%   85-115, 124-132, 145-156, 166-220, 235-247, 262-268
+src\services\workspace_permission_service.py                               47     30    36%   41-120, 148-156, 179-185
+src\services\workspace_pipeline.py                                        137    100    27%   54-63, 67-110, 114-155, 163-202, 216-268, 275-321, 325, 332, 340-348, 373-382
+src\services\workspace_service.py                                         330    273    17%   68, 72-74, 83-85, 105-185, 205-263, 269-272, 283-296, 312-377, 396-483, 500-542, 557-570, 588-602, 622-663, 682-702, 734-770, 791-807, 831-854, 873-884, 899-907, 914-923, 928-943, 962-975, 980-996, 1001-1017, 1022-1070, 1076-1079, 1085-1092, 1100, 1125-1130, 1146-1164
+src\states\__init__.py                                                      0      0   100%
+src\states\schemas.py                                                     130      0   100%
+src\tasks\__init__.py                                                       0      0   100%
+src\tasks\scheduled_tasks.py                                               64     40    38%   15-16, 38-73, 84-88, 92-113, 125-136, 145, 150, 163
+src\utils\__init__.py                                                       0      0   100%
+src\utils\account_cleanup.py                                               58     51    12%   35-77, 98-123, 144-168
+src\utils\audit_helper.py                                                  43     34    21%   49-94, 135-180
+src\utils\auth_utils.py                                                    11      5    55%   25-36
+src\utils\db_utils.py                                                      24     16    33%   39-54, 81-90
+src\utils\email_template_utils.py                                          55     44    20%   189-194, 207-209, 223-234, 247-251, 264, 285-333, 357-359
+src\utils\embedding.py                                                      8      6    25%   40-49
+src\utils\file_security.py                                                154    124    19%   65-67, 90-117, 138-179, 192-207, 231-264, 281-290, 303-352, 368-419, 447-448
+src\utils\file_upload_utils.py                                            140    112    20%   42, 124-253, 275-292, 308-342, 358-378, 391-408
+src\utils\helper.py                                                        95     68    28%   35-41, 50-63, 71-85, 93-100, 114-123, 136-168, 186-223, 238, 249-250
+src\utils\invitation_utils.py                                              40     32    20%   19-29, 42-66, 80-104
+src\utils\lemonsqueezy_webhook.py                                          88     56    36%   67-111, 151-175, 199-219, 243-265, 289-307, 324-334
+src\utils\logger.py                                                         4      0   100%
+src\utils\rbac_utils.py                                                    75     58    23%   86-127, 154-157, 184-187, 218-226, 264-303, 338-362
+src\utils\response_utils.py                                               191    143    25%   54-62, 91-93, 143-164, 194-219, 241-254, 282-292, 311-313, 331-343, 365-374, 402-408, 432, 457-459, 491-496, 519, 543-547, 570-624, 641-705, 723-727, 748-766
+src\utils\route_decorators.py                                              79     57    28%   140-215, 333-412
+src\utils\slug_utils.py                                                    29     29     0%   4-102
+src\utils\splitter.py                                                      25     19    24%   67-107
+src\utils\token_cleanup.py                                                 17     12    29%   46-66
+src\utils\transactional_decorator.py                                       49     49     0%   21-158
+src\utils\trial_manager.py                                                146    146     0%   8-503
+src\utils\utils.py                                                         20     15    25%   10-31
+src\utils\vector_store.py                                                 107     94    12%   34-43, 100-171, 200-212, 267-324
+src\utils\workspace_utils.py                                               46     32    30%   24-32, 46-53, 69-70, 86-97, 111-112, 136-160, 195-205
+-----------------------------------------------------------------------------------------------------
+TOTAL                                                                   22432  14433    36%
+Coverage HTML written to dir htmlcov
+FAIL Required test coverage of 57% not reached. Total coverage: 35.66%
+=========================== short test summary info ===========================
+FAILED tests/services/test_workspace_deletion_permissions.py::test_owner_can_delete_workspace
+FAILED tests/services/test_workspace_deletion_permissions.py::test_non_owner_cannot_delete_workspace
+FAILED tests/services/test_workspace_deletion_permissions.py::test_non_member_cannot_delete_workspace
+====================== 3 failed, 108 warnings in 43.93s =======================

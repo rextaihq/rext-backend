@@ -34,7 +34,7 @@ async def fix_workspace_permissions():
             # Get all workspace admin roles (name contains 'workspace_admin')
             result = await db.execute(
                 select(Role).where(
-                    Role.name.like("%workspace_admin%")
+                    Role.name.like("%workspace_admin%") | Role.name.like("%workspace_owner%")
                 )
             )
             workspace_admin_roles = result.scalars().all()
