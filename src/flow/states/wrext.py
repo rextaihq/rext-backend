@@ -1,6 +1,7 @@
 from typing import List, Dict, Any, Optional
 from typing_extensions import TypedDict
 from langchain_core.documents import Document
+from src.flow.states.countries import SUPPORTED_COUNTRIES
 
 class SERPEngineState(TypedDict, total=False):
     # Input
@@ -38,7 +39,7 @@ class SERPNORMALIZED(TypedDict):
     normalize_results: List[NormalizedOrganicResult]
 
     # Intent & semantic expansion
-    intent: Dict[str, Any]
+    intent: Optional[Dict[str, Any]]
     related_topics: List[str]
     questions: List[str]
 
@@ -68,7 +69,7 @@ class Competitor(TypedDict):
 
 class SERPPAYLOAD(TypedDict, total=False):
     query: str
-    country: str
+    country: SUPPORTED_COUNTRIES
 
 class WREXT(TypedDict, total=False):
   serp_payload: SERPPAYLOAD

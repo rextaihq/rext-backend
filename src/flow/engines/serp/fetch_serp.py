@@ -2,6 +2,7 @@ import httpx
 import logging
 from typing import Dict, Any, List
 from src.flow.states.wrext import WREXT, SERPEngineState
+from src.flow.states.countries import VALID_COUNTRY_CODES
 from dotenv import load_dotenv
 import os
 
@@ -93,6 +94,10 @@ async def fetch_serp_results(state: WREXT) -> Dict[str, Any]:
     query = serp_payload.get("query")
     country = serp_payload.get("country", "us")
     
+    if country not in VALID_COUNTRY_CODES:
+        logger.warning(f"Invalid country code '{country}' provided. Defaulting to 'us'.")
+        country = "us"
+
     if not query:
         logger.error("No query provided in serp_payload")
         return {"serp_result": {}}
