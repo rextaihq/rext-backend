@@ -52,27 +52,28 @@ def filter_relevant_content(
 
     extractor = SemanticSimilarityExtractor(query=query, threshold=threshold)
     
-    all_chunks = []
-    for idx, doc in enumerate(scrape_context):
-        # doc is a Document object
-        doc_chunks = chunker.chunk(doc)
-        
-        if not doc_chunks:
-            continue
+    from concurrent.futures import ThreadPoolExecutor
 
-        # Clean chunks and filter by length
+    def process_document(doc):
+        doc_chunks = chunker.chunk(doc)
+        if not doc_chunks:
+            return []
+        
         cleaned_doc_chunks = []
         for c in doc_chunks:
             cleaned_text = clean_content(c['chunk'])
-            
-            # Only keep chunks with a minimum word count to ensure meaningful context
             if len(cleaned_text.split()) >= 30:
                 cleaned_doc_chunks.append({
                     'chunk': cleaned_text,
                     'metadata': c['metadata']
                 })
-        
-        all_chunks.extend(cleaned_doc_chunks)
+        return cleaned_doc_chunks
+
+    all_chunks = []
+    with ThreadPoolExecutor() as executor:
+        results = list(executor.map(process_document, scrape_context))
+        for res in results:
+            all_chunks.extend(res)
 
     if not all_chunks:
         logger.info("No meaningful chunks extracted from the scraped content")

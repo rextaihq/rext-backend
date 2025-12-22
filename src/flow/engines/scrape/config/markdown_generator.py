@@ -46,7 +46,7 @@ class MarkdownGeneratorFactory:
             },
         )
 
-    def _get_bm25_filter(self, threshold: float = 0.5) -> BM25ContentFilter:
+    def _get_bm25_filter(self, threshold: float = 0.6) -> BM25ContentFilter:
         """
         Create a BM25 content filter based on the user query.
 

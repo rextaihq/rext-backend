@@ -53,12 +53,14 @@ def fetch_serp_results(state: WREXT) -> Dict[str, Any]:
             return {"serp_result": {}}
 
         raw_data = json.loads(res.read().decode("utf-8"))
-        conn.close()
         logger.debug("Successfully received response from Serper.dev")
 
     except Exception as e:
         logger.exception(f"An error occurred while fetching SERP results: {str(e)}")
         return {"serp_result": {}}
+    finally:
+        if conn:
+            conn.close()
 
 
     # -------- Search Parameters --------

@@ -50,7 +50,10 @@ async def scrape_serp_content(state: WREXT) -> Dict[str, Any]:
     try:
         async with AsyncWebCrawler(config=browser_config) as crawler:
             logger.debug("Initializing AsyncWebCrawler and starting concurrent crawl")
-            results = await crawler.arun_many(urls=urls[:3], config=run_config)
+            results = await crawler.arun_many(
+                urls=urls[:], 
+                config=run_config,
+            )
             logger.info(f"Crawling completed for {len(results)} URLs")
 
         for idx, result in enumerate(results, start=1):

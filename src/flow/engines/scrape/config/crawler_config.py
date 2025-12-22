@@ -58,7 +58,7 @@ class CrawlerConfiguration(MarkdownGeneratorFactory):
             text_mode=False,
         )
 
-    def get_run_config(self) -> CrawlerRunConfig:
+    def get_run_config(self, cache_mode: CacheMode = CacheMode.ENABLED) -> CrawlerRunConfig:
         """
         Generate the run configuration for the crawler.
 
@@ -68,18 +68,19 @@ class CrawlerConfiguration(MarkdownGeneratorFactory):
         Returns:
             CrawlerRunConfig: The configured crawler run settings.
         """
-        logger.debug("Generating crawler run config")
+        logger.debug(f"Generating crawler run config with cache_mode={cache_mode}")
         return CrawlerRunConfig(
             word_count_threshold=200,
             markdown_generator=self.get_markdown_generator(),
-            remove_forms=False,
+            remove_forms=True, # Optimization: remove forms
             prettiify=True,
             parser_type="lxml",
             scraping_strategy=LXMLWebScrapingStrategy(),
-            cache_mode=CacheMode.BYPASS,
+            cache_mode=cache_mode,
             score_links=True,
             link_preview_config=self._get_link_score(
                 threshold=0.3,
-                verbose=True
+                max_links=10,
+                verbose=False
             )
         )

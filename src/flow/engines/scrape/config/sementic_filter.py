@@ -13,7 +13,7 @@ class SemanticSimilarityExtractor:
      and filters them based on a cosine similarity threshold.
     """
 
-    def __init__(self, query: str, threshold: float = 0.3):
+    def __init__(self, query: str, threshold: float = 0.3,token_threshold: int = 30000):
         """
         Initialize the extractor with a query and similarity threshold.
 
@@ -23,6 +23,7 @@ class SemanticSimilarityExtractor:
         """
         self.query = query
         self.threshold = threshold
+        self.token_threshold = token_threshold
         self.model = get_embedding()
         logger.debug(f"Initialized SemanticSimilarityExtractor (threshold={threshold})")
 
@@ -46,12 +47,25 @@ class SemanticSimilarityExtractor:
             return []
 
         chunks = [c['chunk'] for c in chunk_dicts]
-        logger.debug(f"Computing embeddings for {len(chunks)} chunks")
+        
+        # Estimate tokens and limit chunks to stay under self.token_threshold
+        limited_chunks = []
+        current_tokens = 0
+        for chunk in chunks:
+            # Rough estimate: 1 word ~= 1.33 tokens
+            estimated_tokens = len(chunk.split()) * 1.33
+            if current_tokens + estimated_tokens > self.token_threshold:
+                logger.warning(f"Reached token threshold ({self.token_threshold}). Truncating chunks for embedding.")
+                break
+            limited_chunks.append(chunk)
+            current_tokens += estimated_tokens
+
+        logger.debug(f"Computing embeddings for {len(limited_chunks)} chunks (estimated {int(current_tokens)} tokens)")
 
         try:
-            # Compute embeddings using the provided embedding model (e.g., Ollama)
+            # Compute embeddings using the provided embedding model
             query_emb = self.model.embed_query(self.query)
-            chunk_embs = self.model.embed_documents(chunks)
+            chunk_embs = self.model.embed_documents(limited_chunks)
 
             # Compute cosine similarities
             # Note: util.cos_sim expects tensors or arrays. 
@@ -65,7 +79,7 @@ class SemanticSimilarityExtractor:
                     'metadata': chunk_dicts[i]['metadata'],
                     'score': float(similarities[i])
                 }
-                for i in range(len(chunks))
+                for i in range(len(limited_chunks))
                 if similarities[i] > self.threshold
             ]
 

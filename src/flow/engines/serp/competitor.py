@@ -4,6 +4,7 @@ from urllib.parse import urlparse
 from collections import Counter
 from typing import List, Dict, Any
 from src.flow.states.wrext import WREXT, Competitor
+from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
@@ -56,7 +57,7 @@ def extract_competitors_from_serp(state: WREXT) -> Dict[str, Any]:
             match = re.search(r"\b(20\d{2})\b", date)
             if match:
                 year = match.group(1)
-                if year.isdigit() and int(year) >= 2024:  # consider recent
+                if year.isdigit() and int(year) >= datetime.now().year - 2:  # consider recent
                     group["freshness"]["recent"] += 1
                 else:
                     group["freshness"]["older"] += 1

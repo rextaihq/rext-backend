@@ -67,7 +67,7 @@ class Competitor(TypedDict):
 
 class SERPPAYLOAD(TypedDict, total=False):
     query: str
-    country: str
+    country: str='us'
 
 class WREXT(TypedDict, total=False):
   serp_payload: SERPPAYLOAD
