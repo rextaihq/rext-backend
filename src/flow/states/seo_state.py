@@ -19,7 +19,8 @@ class SearchIntentState(TypedDict):
 
 
 # ---------------------------------------------------------
-# 2. Keyword Difficulty
+# 2. Keyword Difficulty 
+# Latest Tech News for Dec 20 2025
 # ---------------------------------------------------------
 
 class KeywordDifficultyState(TypedDict):

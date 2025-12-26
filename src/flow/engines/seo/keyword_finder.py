@@ -2,7 +2,7 @@ from typing import Dict, Any
 from src.flow.states.wrext import WREXT
 from src.services.seo_service import KeywordExtractor
 
-def keyword_finder(state: WREXT) -> Dict[str, Any]:
+def relevance_keyword_finder(state: WREXT) -> Dict[str, Any]:
     """
     LangGraph node: Extract keywords from SERP data using N-grams + TF-IDF.
     
@@ -32,7 +32,7 @@ def keyword_finder(state: WREXT) -> Dict[str, Any]:
                 },
                 "keyword_difficulty": {
                     "keywords": [],
-                    "difficulty_level": "medium",
+                    "difficulty_level": "None",
                     "serp_competition": 0,
                     "authority_barrier": "low",
                 }
@@ -60,10 +60,19 @@ def keyword_finder(state: WREXT) -> Dict[str, Any]:
     body_keywords = [k for k in keywords if k["type"] == "body"]
     longtail_keywords = [k for k in keywords if k["type"] == "long-tail"]
     
-    # Build keyword difficulty state (for SEORESULT compatibility)
+    # get the diffuculity score of each keyword
+    difficulty_score = list(set([k["score"] for k in keywords if k["keyword"] in query]))
+    
+    # calculate the difficulity level in this range easy, medium, hard, very hard
+    avg_score = sum(difficulty_score) / len(difficulty_score)
+
+    difficulty_level = f"easy {avg_score}" if avg_score < 50 else f"medium {avg_score}" if avg_score < 75 else f"hard {avg_score}" if avg_score < 90 else f"very hard {avg_score}"
+
+    # Build keyword difficulty only for those keywords that are in query
     keyword_difficulty = {
-        "keywords": [k["keyword"] for k in keywords[:10]],
-        "difficulty_level": "medium",
+        "keywords": [k["keyword"] for k in keywords if k["keyword"] in query],
+        # calculate the score based on the difficulty score
+        "difficulty_level": difficulty_level,
         "serp_competition": len(normalize_results) if normalize_results else 0,
         "authority_barrier": "medium",
     }
