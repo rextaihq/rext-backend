@@ -1,7 +1,7 @@
 # from src.flow.flow import create_workflow
-from src.flow.engines.serp.serp_flow import get_serp_flow
+from src.flow.engines.wrext import create_wrext_engine
 
 # workflow = create_workflow()
 # graph = workflow.compile()
 
-graph = get_serp_flow()
+graph = create_wrext_engine()
