@@ -2,9 +2,10 @@
 
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from migrate import status
 from src.api.database.async_database import get_async_db
 from src.api.middleware.exceptions import WrextValidationException
 from src.api.middleware.permissions import is_admin
@@ -18,7 +19,9 @@ from src.services.impersonation_service import ImpersonationService
 from src.utils.audit_helper import create_audit_log_async
 from src.utils.logger import logger
 from src.utils.route_decorators import db_transaction_handler, require_permissions
-
+from uuid import uuid4
+from fastapi import HTTPException
+from fastapi import status
 
 router = APIRouter()
 
@@ -35,6 +38,12 @@ async def start_impersonation(
     """Start impersonating another user and return new auth tokens."""
     admin_user_id = UUID(str(current_user.get("identity")))
     target_user_id = UUID(str(impersonate_request.user_id))
+    
+    # Generate unique session ID
+    session_id = str(uuid4())
+
+    
+    
 
     service = ImpersonationService(db)
     impersonation_context = await service.start_impersonation(admin_user_id, target_user_id)
@@ -49,9 +58,13 @@ async def start_impersonation(
             "is_impersonating": True,
             "original_user_id": str(admin_user_id),
             "impersonation_started_at": impersonation_context["impersonation_started_at"],
+            "session_id": session_id
         }
     )
-    refresh_token = create_refresh_token({"id": impersonation_context["target_user_id"]})
+    refresh_token = create_refresh_token({
+    "id": impersonation_context["target_user_id"],
+    "session_id": session_id
+})
 
     await create_audit_log_async(
         db=db,
@@ -64,6 +77,7 @@ async def start_impersonation(
             "admin_user_email": impersonation_context["impersonated_by_email"],
             "target_user_email": impersonation_context["target_email"],
             "target_user_name": impersonation_context["target_display_name"] or impersonation_context["target_username"],
+            "session_id": session_id
         },
     )
 
@@ -85,29 +99,37 @@ async def start_impersonation(
         "access_token": access_token,
         "refresh_token": refresh_token,
         "started_at": impersonation_context["impersonation_started_at"],
+        "session_id": session_id
     }
 
+from src.api.middleware.exceptions import WrextValidationException
 
 @router.post("/impersonate/stop")
 @require_permissions("user.update")
-@db_transaction_handler("stop impersonation", auto_commit=False)
+@db_transaction_handler("stop impersonation", auto_commit=True) 
 async def stop_impersonation(
     request: Request,
     db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user)
 ) -> dict:
     """Stop impersonation and return tokens for the original user."""
+    
+    # Use WrextValidationException without validation_errors
     if not current_user.get("is_impersonating", False):
         raise WrextValidationException(
-            message="Not currently impersonating",
-            validation_errors={"impersonation": "You are not impersonating anyone"}
+            message="Not currently impersonating"
         )
 
     original_user_id = current_user.get("original_user_id")
     if not original_user_id:
         raise WrextValidationException(
-            message="Original user ID not found in token",
-            validation_errors={"token": "Invalid impersonation token"}
+            message="Original user ID not found in token"
+        )
+    
+    session_id = current_user.get("session_id")
+    if not session_id:
+        raise WrextValidationException(
+            message="Session ID not found in token"
         )
 
     impersonated_user_id = current_user.get("identity")
@@ -115,6 +137,11 @@ async def stop_impersonation(
     impersonated_user_uuid = UUID(str(impersonated_user_id))
 
     service = ImpersonationService(db)
+    
+    # Invalidate the impersonation session
+    await service.invalidate_session(session_id)
+    
+    # Stop impersonation in service layer
     stop_payload = await service.stop_impersonation(original_user_uuid, impersonated_user_uuid)
 
     original_context = await service.get_user_context(original_user_uuid)
@@ -141,19 +168,21 @@ async def stop_impersonation(
         metadata={
             "original_user_email": original_context["email"],
             "impersonated_user_id": str(impersonated_user_id),
+            "session_id": session_id,
         },
     )
 
     logger.info(
-        "Impersonation stopped",
+        "Impersonation stopped and session invalidated",
         extra={
             "original_user_id": original_context["user_id"],
             "impersonated_user_id": str(impersonated_user_uuid),
+            "session_id": session_id,
         },
     )
 
     return {
-        "message": "Impersonation stopped",
+        "message": "Impersonation stopped successfully",
         "admin_user_id": original_context["user_id"],
         "impersonation_stopped_at": stop_payload["impersonation_stopped_at"],
         "access_token": access_token,
@@ -162,9 +191,9 @@ async def stop_impersonation(
         "permissions": original_context["permissions"],
     }
 
-
 @router.get("/impersonate/status", response_model=ImpersonationStatusResponse)
 async def get_impersonation_status(
+    db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user)
 ) -> dict:
     """
@@ -176,6 +205,17 @@ async def get_impersonation_status(
     This endpoint reads from the JWT token and does not require database access or permissions.
     """
     is_impersonating = current_user.get("is_impersonating", False)
+    session_id = current_user.get("session_id")
+    
+    if is_impersonating and session_id:
+        service = ImpersonationService(db)
+        is_valid = await service.is_session_valid(session_id)
+        
+        if not is_valid:
+            raise HTTPException(
+        status_code=401,  
+        detail="Impersonation session has been invalidated. Please obtain a new token.",
+    )
     
     if not is_impersonating:
         return {"is_impersonating": False}
@@ -188,6 +228,7 @@ async def get_impersonation_status(
         "impersonated_user_email": current_user.get("email"),
         "impersonated_user_name": current_user.get("username"),
         "started_at": current_user.get("impersonation_started_at"),
+        "session_id": session_id
     }
     
     logger.debug(
@@ -195,6 +236,7 @@ async def get_impersonation_status(
         extra={
             "is_impersonating": is_impersonating,
             "impersonated_user_id": response.get("impersonated_user_id"),
+            "session_id": session_id
         },
     )
     

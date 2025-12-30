@@ -300,7 +300,7 @@ async def upgrade_subscription(
     user_id = current_user.get("identity")
     service = SubscriptionService(db)
 
-    # Upgrade/downgrade subscription
+    # Upgrade  subscription
     updated_subscription = await service.upgrade(
         user_id=user_id,
         new_plan_id=upgrade_data.new_plan_id,
@@ -320,6 +320,54 @@ async def upgrade_subscription(
         request=request,
         message=f"Successfully updated to {plan.display_name}"
     )
+    
+#downgrade route
+@router.post("/downgrade", response_model=dict)
+@require_permissions("subscription.manage")
+@db_transaction_handler("downgrade subscription")
+async def downgrade_subscription(
+    request: Request,
+    downgrade_data: SubscriptionUpgradeRequest,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: dict = Depends(get_current_user),
+    _rate_limit: None = Depends(subscription_update_rate_limit())
+):
+    """
+    Downgrade subscription plan.
+
+    Validates that current usage doesn't exceed new plan limits.
+
+    Body:
+    - new_plan_id: UUID of the lower plan
+    - billing_period: (optional) Change billing period
+
+    Returns:
+    - Updated subscription details
+    """
+    user_id = current_user.get("identity")
+    service = SubscriptionService(db)
+
+    # Downgrade subscription (same logic as upgrade)
+    updated_subscription = await service.upgrade(
+        user_id=user_id,
+        new_plan_id=downgrade_data.new_plan_id,
+        billing_period=downgrade_data.billing_period
+    )
+
+    # Get new plan details
+    plan = await service.get_plan_by_id(downgrade_data.new_plan_id)
+
+    # Build response
+    response_data = updated_subscription.to_dict()
+    response_data["plan_name"] = plan.name
+    response_data["plan_display_name"] = plan.display_name
+
+    return success(
+        data=response_data,
+        request=request,
+        message=f"Successfully downgraded to {plan.display_name}"
+    )
+
 
 
 @router.post("/cancel", response_model=dict)

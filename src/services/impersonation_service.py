@@ -34,7 +34,9 @@ from src.api.middleware.exceptions import (
     WrextValidationException,
     WrextAuthenticationException
 )
-
+from datetime import datetime
+from sqlalchemy import select
+from src.api.models.user_models.impersonation_session import ImpersonationSession
 
 class ImpersonationService:
     """Service for user impersonation management"""
@@ -323,3 +325,66 @@ class ImpersonationService:
             "roles": auth_context["roles"],
             "permissions": auth_context["permissions"],
         }
+    async def invalidate_session(self, session_id: str) -> bool:
+        """
+        Invalidate an impersonation session by session_id.
+        Store invalidated session in database.
+
+        Args:
+            session_id: Unique session identifier from JWT token
+
+        Returns:
+            bool: True if successfully invalidated, False otherwise
+        """
+        try:
+            invalidated_session = ImpersonationSession(
+                session_id=session_id,
+                invalidated_at=datetime.utcnow(),
+                is_valid=False
+            )
+            self.db.add(invalidated_session)
+            await self.db.flush()
+
+            logger.info(
+                "Session invalidated successfully",
+                extra={"session_id": session_id}
+            )
+            return True
+        except Exception as e:
+            logger.error(f"Failed to invalidate session: {e}", extra={"session_id": session_id})
+            return False
+
+    async def is_session_valid(self, session_id: str) -> bool:
+        """
+        Check if a session_id is still valid (not invalidated).
+
+        Args:
+            session_id: Unique session identifier from JWT token
+
+        Returns:
+            bool: True if session is valid (not in invalidated table), False if invalidated
+        """
+        try:
+            stmt = select(ImpersonationSession).where(
+                ImpersonationSession.session_id == session_id,
+                ImpersonationSession.is_valid == False
+            )
+            result = await self.db.execute(stmt)
+            invalidated_session = result.scalar_one_or_none()
+
+            # If found in invalidated table → invalid
+            is_valid = invalidated_session is None
+
+            logger.debug(
+                "Session validity checked",
+                extra={"session_id": session_id, "is_valid": is_valid}
+            )
+
+            return is_valid
+        except Exception as e:
+            logger.error(
+                f"Failed to check session validity: {e}",
+                extra={"session_id": session_id}
+            )
+            # Fail closed for security
+            return False
