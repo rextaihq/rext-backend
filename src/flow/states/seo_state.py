@@ -122,10 +122,31 @@ class ExtractedKeywordsState(TypedDict):
 # 8. Final SEO Engine Result State
 # ---------------------------------------------------------
 
+#  Title Recommendation State
+class TitleRecommendation(TypedDict):
+    """Individual title recommendation with scoring."""
+    title: str
+    score: float
+    char_count: int
+    word_count: int
+    reasons: List[str]
+    rank: int
+
+class TitleRecommendationState(TypedDict):
+    """Title recommendation result state."""
+    original_title: str
+    recommendations: List[TitleRecommendation]
+    patterns_found: Dict[str, Any]
+    top_keywords_used: List[str]
+    total_competitors_analyzed: int
+    error: Optional[str]    
+    
+
 class SEORESULT(TypedDict, total=False):
     """SEO analysis result - fields are optional as they may be populated by different nodes."""
     extracted_keywords: ExtractedKeywordsState
     keyword_difficulty: KeywordDifficultyState
+    title_recommendations: TitleRecommendationState
     intent: SearchIntentState
     content_pattern: ContentPatternState
     content_gaps: ContentGapState
