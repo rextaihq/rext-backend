@@ -2,6 +2,7 @@ from typing import List, Dict, Any, Optional
 from typing_extensions import TypedDict
 from langchain_core.documents import Document
 from src.flow.states.countries import SUPPORTED_COUNTRIES
+from src.flow.states.seo_state import SEORESULT
 
 class SERPEngineState(TypedDict, total=False):
     # Input
@@ -82,3 +83,5 @@ class WREXT(TypedDict, total=False):
 
   scrape_context: List[Document]
   relevant_context: List[Document]
+
+  seo_result: SEORESULT

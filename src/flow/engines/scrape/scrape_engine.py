@@ -4,7 +4,7 @@ from src.flow.states.wrext import WREXT
 from langgraph.graph import StateGraph,START,END
 
 
-def scrape_flow()-> StateGraph:
+def create_scrape_engine()-> StateGraph:
     scrape_graph = StateGraph(WREXT)
 
     #  add node
