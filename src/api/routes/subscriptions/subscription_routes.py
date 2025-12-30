@@ -35,6 +35,9 @@ from src.services.usage_tracking_service import UsageTrackingService
 from sqlalchemy import select
 from src.utils.logger import logger
 
+from fastapi import HTTPException
+
+
 router = APIRouter(
     prefix="/subscriptions",
     tags=["subscriptions"]
@@ -346,7 +349,29 @@ async def downgrade_subscription(
     """
     user_id = current_user.get("identity")
     service = SubscriptionService(db)
+    
+    #  Validate plan id
+    if not downgrade_data.new_plan_id:
+        raise HTTPException(
+            status_code=400,
+            detail="plan id is required"
+        )
+    # Fetch current subscription and plan
+    subscription = await service.get_subscription_by_user(user_id)
+    current_plan = await service._get_plan_or_404(subscription.plan_id)
 
+    # Fetch new plan
+    new_plan = await service.get_plan_by_id(downgrade_data.new_plan_id)
+
+        
+    #Prevent downgrade to higher plan
+    if new_plan.price_monthly > current_plan.price_monthly:
+        raise HTTPException(
+        status_code=400,
+        detail="Use upgrade subscription to move to the higher plan"
+    )
+
+    
     # Downgrade subscription (same logic as upgrade)
     updated_subscription = await service.upgrade(
         user_id=user_id,
@@ -354,20 +379,16 @@ async def downgrade_subscription(
         billing_period=downgrade_data.billing_period
     )
 
-    # Get new plan details
-    plan = await service.get_plan_by_id(downgrade_data.new_plan_id)
-
     # Build response
     response_data = updated_subscription.to_dict()
-    response_data["plan_name"] = plan.name
-    response_data["plan_display_name"] = plan.display_name
+    response_data["plan_name"] = new_plan.name
+    response_data["plan_display_name"] = new_plan.display_name
 
     return success(
         data=response_data,
         request=request,
-        message=f"Successfully downgraded to {plan.display_name}"
+        message=f"Successfully downgraded to {new_plan.display_name}"
     )
-
 
 
 @router.post("/cancel", response_model=dict)
