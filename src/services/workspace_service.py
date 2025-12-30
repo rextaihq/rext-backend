@@ -268,7 +268,7 @@ class WorkspaceService:
         """Delete workspace after verifying membership and cleanup."""
         await self._ensure_active_user(user_id)
         workspace = await self._ensure_membership(workspace_id, user_id)
-        self._delete_vectors_safe(workspace.id)
+        self._delete_vectors_safe(workspace.id) 
         await self.delete_workspace(workspace_id, user_id)
 
     async def update_workspace_for_user(
@@ -678,34 +678,24 @@ class WorkspaceService:
         Raises:
             ForbiddenException: If user is not workspace owner
         """
-        from src.api.models.user_models.roles import Role
-
-        # Get user's membership
-        member_result = await self.db.execute(
-            select(WorkspaceMembers).where(
-                WorkspaceMembers.workspace_id == workspace_id,
-                WorkspaceMembers.user_id == user_id,
+        # Query UserRole and Role to check for workspace_owner
+        query = (
+            select(UserRole)
+            .join(Role, UserRole.role_id == Role.id)
+            .where(
+                UserRole.user_id == user_id,
+                UserRole.workspace_id == workspace_id,
+                Role.name == "workspace_owner",
             )
         )
-        member = member_result.scalar_one_or_none()
+        
+        result = await self.db.execute(query)
+        user_role = result.scalar_one_or_none()
 
-        if not member or not member.role_id:
-            from src.api.middleware.exceptions import ForbiddenException
+        if not user_role:
+            from src.api.middleware.exceptions import WrextAuthorizationException
 
-            raise ForbiddenException(
-                message="Only workspace owners can perform this action"
-            )
-
-        # Get role details
-        role_result = await self.db.execute(
-            select(Role).where(Role.id == member.role_id)
-        )
-        role = role_result.scalar_one_or_none()
-
-        if not role or role.name not in ["workspace_owner", "super_admin"]:
-            from src.api.middleware.exceptions import ForbiddenException
-
-            raise ForbiddenException(
+            raise WrextAuthorizationException(
                 message="Only workspace owners can perform this action"
             )
 
@@ -882,6 +872,9 @@ class WorkspaceService:
         """
         from datetime import datetime
 
+        # Verify ownership first
+        await self.verify_user_is_workspace_owner(workspace_id, user_id )
+         
         workspace = await self.get_workspace(workspace_id)
 
         # Soft delete: set deleted_at and deleted_by

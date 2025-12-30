@@ -272,52 +272,55 @@ def delete_vectors(
 
     try:
         vector_store = load_vector_store()
+        
+        if vector_store:
+            # Collect all doc IDs matching the filter criteria
+            ids_to_delete = []
+            for doc_id, doc in vector_store.docstore._dict.items():
+                # Check workspace_id match
+                if doc.metadata.get("workspace_id") != workspace_id:
+                    continue
 
-        # Collect all doc IDs matching the filter criteria
-        ids_to_delete = []
-        for doc_id, doc in vector_store.docstore._dict.items():
-            # Check workspace_id match
-            if doc.metadata.get("workspace_id") != workspace_id:
-                continue
+                # If knowledge_base_id specified, also check that
+                if knowledge_base_id and doc.metadata.get("knowledge_base_id") != knowledge_base_id:
+                    continue
 
-            # If knowledge_base_id specified, also check that
-            if knowledge_base_id and doc.metadata.get("knowledge_base_id") != knowledge_base_id:
-                continue
+                # If knowledge_id specified, also check that
+                if knowledge_id and doc.metadata.get("knowledge_id") != knowledge_id:
+                    continue
 
-            # If knowledge_id specified, also check that
-            if knowledge_id and doc.metadata.get("knowledge_id") != knowledge_id:
-                continue
+                ids_to_delete.append(doc_id)
 
-            ids_to_delete.append(doc_id)
+            if not ids_to_delete:
+                filter_desc = f"workspace {workspace_id}"
+                if knowledge_base_id:
+                    filter_desc += f", KB {knowledge_base_id}"
+                if knowledge_id:
+                    filter_desc += f", knowledge {knowledge_id}"
+                logger.info(f"No vectors found for {filter_desc}")
+                return False
 
-        if not ids_to_delete:
+            # Delete matching documents
             filter_desc = f"workspace {workspace_id}"
             if knowledge_base_id:
                 filter_desc += f", KB {knowledge_base_id}"
             if knowledge_id:
                 filter_desc += f", knowledge {knowledge_id}"
-            logger.info(f"No vectors found for {filter_desc}")
-            return False
+            logger.info(f"Deleting {len(ids_to_delete)} vectors for {filter_desc}")
+            result = vector_store.delete(ids=ids_to_delete)
 
-        # Delete matching documents
-        filter_desc = f"workspace {workspace_id}"
-        if knowledge_base_id:
-            filter_desc += f", KB {knowledge_base_id}"
-        if knowledge_id:
-            filter_desc += f", knowledge {knowledge_id}"
-        logger.info(f"Deleting {len(ids_to_delete)} vectors for {filter_desc}")
-        result = vector_store.delete(ids=ids_to_delete)
-
-        # Save the updated index after deletion
-        if result:
-            config = load_yaml()
-            vector_store_path = config["vectorStore"]["store_path"]
-            vector_store.save_local(vector_store_path)
-            logger.info(f"Successfully deleted {len(ids_to_delete)} vectors")
-            return True
+            # Save the updated index after deletion
+            if result:
+                config = load_yaml()
+                vector_store_path = config["vectorStore"]["store_path"]
+                vector_store.save_local(vector_store_path)
+                logger.info(f"Successfully deleted {len(ids_to_delete)} vectors")
+                return True
+            else:
+                logger.error(f"Failed to delete vectors")
+                return False
         else:
-            logger.error(f"Failed to delete vectors")
-            return False
+            logger.info(f"No Vector Store Found")
 
     except Exception as e:
         logger.error(f"Error deleting vectors: {str(e)}")
