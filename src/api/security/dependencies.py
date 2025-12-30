@@ -99,6 +99,7 @@ async def get_current_user(
         "is_impersonating": payload.get("is_impersonating", False),
         "original_user_id": payload.get("original_user_id"),
         "impersonation_started_at": payload.get("impersonation_started_at"),
+        "session_id": payload.get("session_id"),
     }
 
     # Log identity verification without PII
@@ -204,7 +205,8 @@ async def get_current_user_sse(
         "is_impersonating": payload.get("is_impersonating", False),
         "original_user_id": payload.get("original_user_id"),
         "impersonation_started_at": payload.get("impersonation_started_at"),
-    }
+        "session_id": payload.get("session_id")
+        }
 
     # Log identity verification without PII
     logger.info("Identity verified for SSE", extra={"user_id": user_id})
