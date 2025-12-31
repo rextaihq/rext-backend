@@ -103,16 +103,12 @@ class ExtractedKeyword(TypedDict):
     raw_tfidf: float  # Raw TF-IDF score
     rank: int
     word_count: int
-    type: Literal["head", "body", "long-tail"]
     in_query: bool
     in_topics: bool
 
 class ExtractedKeywordsState(TypedDict):
     """Collection of extracted keywords categorized by type."""
     all: List[ExtractedKeyword]
-    head: List[ExtractedKeyword]
-    body: List[ExtractedKeyword]
-    long_tail: List[ExtractedKeyword]
     total_count: int
     query: str
     extraction_method: str

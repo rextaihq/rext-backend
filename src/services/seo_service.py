@@ -181,11 +181,14 @@ class KeywordExtractor:
         
         try:
             # Initialize TF-IDF Vectorizer with pre-built vocabulary
+            # If only one document, max_df must be 1.0
+            max_df = 1.0 if len(cleaned_docs) == 1 else 0.95
+            
             vectorizer = TfidfVectorizer(
                 ngram_range=ngram_range,
                 vocabulary=vocabulary,  # Use NLTK-filtered vocabulary
                 min_df=1,
-                max_df=0.95,
+                max_df=max_df,
                 lowercase=True,
                 token_pattern=r'(?u)\b[a-zA-Z][a-zA-Z]+\b',  # Only alphabetic tokens
             )            
@@ -195,11 +198,12 @@ class KeywordExtractor:
             
             # Calculate average TF-IDF score across all documents for each term
             keyword_scores = {}
+            threshold = 0.001 if len(cleaned_docs) == 1 else 0.01
             for idx, term in enumerate(feature_names):
                 # Average score across all documents
                 avg_score = tfidf_matrix[:, idx].mean()
                 # Skip very low scores
-                if avg_score > 0.01:
+                if avg_score > threshold:
                     keyword_scores[term] = float(avg_score)
             
             return keyword_scores
@@ -254,11 +258,12 @@ class KeywordExtractor:
     
     def extract_keywords(
         self,
-        normalize_results: List[Dict[str, Any]],
-        related_topics: List[str],
-        questions: List[str],
-        query: str,
-        top_n: int = 50
+        normalize_results: List[Dict[str, Any]] = None,
+        related_topics: List[str] = None,
+        questions: List[str] = None,
+        query: str = None,
+        top_n: int = 50,
+        text: str = None
     ) -> List[Dict[str, Any]]:
         """
         Extract and rank keywords using N-grams + TF-IDF.
@@ -269,17 +274,21 @@ class KeywordExtractor:
             questions: People Also Ask questions
             query: Original search query
             top_n: Number of top keywords to return
+            text: Optional single document text to extract from
             
         Returns:
             List of keyword dictionaries with scores and metadata
         """
-        # Extract corpus from SERP data
-        documents = self._extract_corpus_from_serp(
-            normalize_results, 
-            related_topics, 
-            questions, 
-            query
-        )
+        if text:
+            documents = [text]
+        else:
+            # Extract corpus from SERP data
+            documents = self._extract_corpus_from_serp(
+                normalize_results or [], 
+                related_topics or [], 
+                questions or [], 
+                query or ""
+            )
         
         if not documents:
             return []
@@ -322,7 +331,6 @@ class KeywordExtractor:
                 "raw_tfidf": round(score, 4),
                 "rank": rank,
                 "word_count": word_count,
-                "type": self._classify_keyword_type(word_count),
                 "in_query": keyword in (query or "").lower(),
                 "in_topics": any(
                     keyword in (topic or "").lower() 
@@ -647,15 +655,6 @@ class KeywordExtractor:
             item["rank"] = i
         
         return scored
-    
-    def _classify_keyword_type(self, word_count: int) -> str:
-        """Classify keyword as head, body, or long-tail."""
-        if word_count == 1:
-            return "head"
-        elif word_count == 2:
-            return "body"
-        else:
-            return "long-tail"
 
 
 if __name__ == "__main__":

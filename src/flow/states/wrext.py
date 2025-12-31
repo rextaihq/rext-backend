@@ -1,9 +1,17 @@
+# =========================
+# Imports
+# =========================
 from typing import List, Dict, Any, Optional
 from typing_extensions import TypedDict
 from langchain_core.documents import Document
+
 from src.flow.states.countries import SUPPORTED_COUNTRIES
 from src.flow.states.seo_state import SEORESULT
 
+
+# =========================
+# SERP ENGINE STATE
+# =========================
 class SERPEngineState(TypedDict, total=False):
     # Input
     search_params: dict
@@ -20,7 +28,9 @@ class SERPEngineState(TypedDict, total=False):
     total_results: int
 
 
-
+# =========================
+# NORMALIZED SERP STATE
+# =========================
 class NormalizedOrganicResult(TypedDict):
     position: int
     title: str
@@ -58,6 +68,9 @@ class SERPNORMALIZED(TypedDict):
     features: Dict[str, bool]
 
 
+# =========================
+# COMPETITOR STATE
+# =========================
 class Competitor(TypedDict):
     domain: str
     top_positions: List[int]
@@ -67,21 +80,47 @@ class Competitor(TypedDict):
     freshness: Dict[str, int]
     avg_snippet_length: float
     featured_snippet: bool
+    is_brand: bool
 
+
+# =========================
+# SERP PAYLOAD
+# =========================
 class SERPPAYLOAD(TypedDict, total=False):
     query: str
     country: SUPPORTED_COUNTRIES
 
+
+# =========================
+# SCRAPING STATE
+# =========================
+class DocumentScrapeData(TypedDict):
+    document: Document
+    content_length: int
+    keywords: List[str]
+    headings: List[str]
+
+
+class ScrapeContext(TypedDict, total=False):
+    documents: List[DocumentScrapeData]
+    total_documents: int
+
+
+# =========================
+# ROOT WORKFLOW STATE
+# =========================
 class WREXT(TypedDict, total=False):
-  serp_payload: SERPPAYLOAD
-  serp_result: SERPEngineState
+    # SERP
+    serp_payload: SERPPAYLOAD
+    serp_result: SERPEngineState
+    serp_normalized: SERPNORMALIZED
 
-  # Normalized output (used by SEO + AI agents)
-  serp_normalized: SERPNORMALIZED
+    # Competition
+    competitors: List[Competitor]
 
-  competitors: List[Competitor]
+    # Content & Scraping
+    scrape_context: ScrapeContext
+    relevant_context: List[Document]
 
-  scrape_context: List[Document]
-  relevant_context: List[Document]
-
-  seo_result: SEORESULT
+    # SEO Output
+    seo_result: SEORESULT
