@@ -25,11 +25,11 @@ import logging
 from langgraph.graph import StateGraph, START, END
 from src.flow.states.wrext import WREXT
 
-from src.flow.engines.seo.keyword_score import keyword_score_node
+# from src.flow.engines.seo.keyword_score import keyword_score_node
 from src.flow.engines.seo.keyword_difficulty import keyword_difficulty_node
-from src.flow.engines.seo.competetor_gap import competitor_gap_node
-from src.flow.engines.seo.seo_opportunity import seo_opportunity_node
-from src.flow.engines.seo.article_decision import article_decision_node
+# from src.flow.engines.seo.competetor_gap import competitor_gap_node
+# from src.flow.engines.seo.seo_opportunity import seo_opportunity_node
+# from src.flow.engines.seo.article_decision import article_decision_node
 
 logger = logging.getLogger(__name__)
 
