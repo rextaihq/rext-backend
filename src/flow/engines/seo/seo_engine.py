@@ -45,17 +45,17 @@ def create_seo_engine():
             return result
         return wrapped
 
-    graph.add_node("keyword_score", debug_node(keyword_score_node, "keyword_score"))
+    # graph.add_node("keyword_score", debug_node(keyword_score_node, "keyword_score"))
     graph.add_node("keyword_difficulty", debug_node(keyword_difficulty_node, "keyword_difficulty"))
-    graph.add_node("competitor_gap", debug_node(competitor_gap_node, "competitor_gap"))
-    graph.add_node("seo_opportunity", debug_node(seo_opportunity_node, "seo_opportunity"))
-    graph.add_node("article_decision", debug_node(article_decision_node, "article_decision"))
+    # graph.add_node("competitor_gap", debug_node(competitor_gap_node, "competitor_gap"))
+    # graph.add_node("seo_opportunity", debug_node(seo_opportunity_node, "seo_opportunity"))
+    # graph.add_node("article_decision", debug_node(article_decision_node, "article_decision"))
 
-    graph.add_edge(START, "keyword_score")
-    graph.add_edge("keyword_score", "keyword_difficulty")
-    graph.add_edge("keyword_difficulty", "competitor_gap")
-    graph.add_edge("competitor_gap", "seo_opportunity")
-    graph.add_edge("seo_opportunity", "article_decision")
-    graph.add_edge("article_decision", END)
+    graph.add_edge(START, "keyword_difficulty")
+    # graph.add_edge("keyword_score", "keyword_difficulty")
+    # graph.add_edge("keyword_difficulty", "competitor_gap")
+    # graph.add_edge("competitor_gap", "seo_opportunity")
+    # graph.add_edge("seo_opportunity", "article_decision")
+    graph.add_edge("keyword_difficulty", END)
 
     return graph.compile()

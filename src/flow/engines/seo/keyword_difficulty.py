@@ -7,10 +7,9 @@ def keyword_difficulty_node(state: WREXT) -> Dict[str, Any]:
     serp = state.get("serp_normalized", {})
     features = serp.get("features", {})
     serp_intent = serp.get("intent", {}).get("primary")
+    keyword = state.get("serp_payload", {}).get("query", "")
 
-    # --------------------------------------------------
-    # 1️⃣ SERP DOMINANCE & DOMAIN CONCENTRATION (30)
-    # --------------------------------------------------
+    # 1️ DOMAIN CONCENTRATION (30)
     unique_domains = set()
     dominance_points = 0
     sitelink_domains = set()
@@ -24,10 +23,10 @@ def keyword_difficulty_node(state: WREXT) -> Dict[str, Any]:
         for pos in comp.get("top_positions", []):
             if pos <= 3:
                 dominance_points += 3
-            elif pos <= 5:
+            elif pos <= 6:
                 dominance_points += 2
-            elif pos <= 10:
-                dominance_points += 1
+            # elif pos <= 10:
+            #     dominance_points += 1
 
         if comp.get("has_sitelinks"):
             sitelink_domains.add(domain)
@@ -36,9 +35,9 @@ def keyword_difficulty_node(state: WREXT) -> Dict[str, Any]:
             featured_snippet_domains.add(domain)
 
     domain_concentration_score = 0
-    if len(unique_domains) <= 4:
+    if len(unique_domains) <= 5:
         domain_concentration_score = 10
-    elif len(unique_domains) <= 7:
+    elif len(unique_domains) <= 8:
         domain_concentration_score = 5
 
     authority_score = min(
@@ -49,24 +48,17 @@ def keyword_difficulty_node(state: WREXT) -> Dict[str, Any]:
         (5 if featured_snippet_domains else 0)
     )
 
-    # --------------------------------------------------
-    # 2️⃣ SERP CROWDING / FEATURE PRESSURE (20)
-    # --------------------------------------------------
+    # 2️ SERP CROWDING / FEATURE PRESSURE (15)
     crowding_features = [
-        "featured_snippet",
+        "wikipedia",
         "people_also_ask",
-        "knowledge_graph",
-        "local_pack",
-        "video_carousel",
-        "shopping_results"
+        "sitelinks"
     ]
 
     active_features = sum(1 for f in crowding_features if features.get(f))
-    crowding_score = min(20, active_features * 4)
+    crowding_score = min(15, active_features * 5)
 
-    # --------------------------------------------------
-    # 3️⃣ CONTENT DEPTH BARRIER (15)
-    # --------------------------------------------------
+    # 3️ CONTENT DEPTH BARRIER (15)
     avg_snippet_length = (
         sum(c.get("avg_snippet_length", 0) for c in competitors) / len(competitors)
         if competitors else 0
@@ -78,9 +70,7 @@ def keyword_difficulty_node(state: WREXT) -> Dict[str, Any]:
     elif avg_snippet_length >= 150:
         content_score = 8
 
-    # --------------------------------------------------
-    # 4️⃣ TITLE OPTIMIZATION BARRIER (10)
-    # --------------------------------------------------
+    # 4️ TITLE OPTIMIZATION BARRIER (15)
     normalized_results = serp.get("normalize_results", [])
     avg_title_length = (
         sum(len(r.get("title", "")) for r in normalized_results) /
@@ -88,16 +78,25 @@ def keyword_difficulty_node(state: WREXT) -> Dict[str, Any]:
     )
 
     title_score = 0
+    title_length_score = 0
     if 65 <= avg_title_length <= 75:
-        title_score = 10
+        title_length_score = 7.5
     elif 60 <= avg_title_length <= 80:
-        title_score = 5
-    else:
-        title_score = 0
+        title_length_score = 3.5
 
-    # --------------------------------------------------
-    # 5️⃣ INTENT LOCK (10) — WREXT SAFE
-    # --------------------------------------------------
+    kw_in_title = sum(
+        1 for r in normalized_results
+        if keyword.lower() in r.get("title", "").lower())
+    intitle_ratio = kw_in_title / max(1, len(normalized_results)
+    )
+
+    intitle_score = 0
+    if intitle_ratio >= 0.7:
+        intitle_score = 7.5
+    elif intitle_ratio >= 0.4:
+        intitle_score = 3.5
+
+    # 5️ INTENT LOCK (10)
     intent_score = 0
 
     if serp_intent:
@@ -113,12 +112,10 @@ def keyword_difficulty_node(state: WREXT) -> Dict[str, Any]:
         elif intent_ratio >= 0.5:
             intent_score = 5
 
-    # --------------------------------------------------
-    # 6️⃣ FRESHNESS PRESSURE (10)
-    # --------------------------------------------------
+    # 6️ FRESHNESS PRESSURE (10)
     fresh_pages = sum(
         1 for c in competitors
-        if c.get("freshness", {}).get("last_6_months", 0) > 0
+        if c.get("freshness", {}).get("recent", 0) == 1
     )
 
     freshness_score = 0
@@ -127,23 +124,19 @@ def keyword_difficulty_node(state: WREXT) -> Dict[str, Any]:
     elif fresh_pages >= 3:
         freshness_score = 5
 
-    # --------------------------------------------------
-    # 7️⃣ SERP STABILITY / VOLATILITY (5)
-    # --------------------------------------------------
+    # 7️ SERP STABILITY (5)
     stable_competitors = sum(
         1 for c in competitors
         if c.get("total_occurrences", 0) >= 3
     )
 
     stability_score = 0
-    if stable_competitors >= 6:
+    if stable_competitors >= 2:
         stability_score = 5
-    elif stable_competitors >= 4:
+    elif stable_competitors >= 1:
         stability_score = 3
 
-    # --------------------------------------------------
     # FINAL DIFFICULTY SCORE
-    # --------------------------------------------------
     final_score = min(
         100,
         authority_score +
@@ -157,9 +150,9 @@ def keyword_difficulty_node(state: WREXT) -> Dict[str, Any]:
 
     if final_score >= 75:
         level = "very_hard"
-    elif final_score >= 55:
+    elif final_score >= 60:
         level = "hard"
-    elif final_score >= 35:
+    elif final_score >= 40:
         level = "medium"
     else:
         level = "easy"
