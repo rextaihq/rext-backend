@@ -9,6 +9,7 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 import nltk
 import re
 import math
+import random
 
 # Download required NLTK data
 nltk.download("punkt", quiet=True)
@@ -384,7 +385,6 @@ class KeywordExtractor:
         if extracted_keywords:
             top_keywords = [
                 kw["keyword"] for kw in extracted_keywords[:10]
-                if kw.get("type") in ["body", "long-tail"]
             ]
         
         # Generate title recommendations
@@ -501,70 +501,152 @@ class KeywordExtractor:
         top_n: int
     ) -> List[str]:
         """
-        Generate title recommendations based on patterns and keywords.
+        Generate title recommendations dynamically based on SERP patterns and components.
+        AVOIDS: Static templates (e.g., "10 Best...")
+        USES: Component assembly (Prefix + Core + Suffix) adjusted by probability.
         """
-        recommendations = []
+        recommendations = set()
         
-        # Extract core topic from user title
+        # --- 1. analyze Inputs ---
         core_topic = user_title.strip()
         if len(user_keywords) >= 2:
-            core_topic = ' '.join(user_keywords[:3]).title()
-        
-        # Get power words to use
-        power_words = patterns.get("power_words", ["Best", "Complete", "Ultimate"])
+            # Maybe use a slightly different core topic variation
+            core_topic_alt = ' '.join(user_keywords[:3]).title()
+        else:
+            core_topic_alt = core_topic
+
+        # Normalize power words or pick defaults
+        power_words = patterns.get("power_words", [])
         if not power_words:
-            power_words = ["Best", "Complete", "Ultimate", "Essential", "Top"]
+            power_words = ["Best", "Ultimate", "Complete", "Essential", "Top", "Proven"]
         
-        # Template-based generation
-        templates = []
+        # Current data for dynamic injection
+        import datetime
+        current_year = str(datetime.datetime.now().year)
         
-        # 1. Listicle format (if pattern shows numbers work)
-        if patterns.get("uses_numbers", False) or patterns.get("dominant_structure") == "listicle":
-            templates.append(f"10 {power_words[0].title()} {core_topic} Tips for 2024")
-            templates.append(f"7 {core_topic} Strategies That Actually Work")
+        # --- 2. Component Pools ---
         
-        # 2. How-to format
-        templates.append(f"How to Master {core_topic}: A Complete Guide")
-        templates.append(f"How to {core_topic} Like a Pro in 2024")
+        # Prefixes for different structures
+        prefixes = {
+            "listicle": [
+                "10", "7", "5", "15", "Top 10", "7 Best", "5 Essential", "The Top 10"
+            ],
+            "how_to": [
+                "How to", "How to Master", "The Guide to", "Beginner's Guide to", 
+                "Step-by-Step:", "Tutorial:"
+            ],
+            "guide": [
+                "The Ultimate Guide to", "Complete Guide to", "The Definitive Guide to",
+                "All About", "Everything You Need to Know About"
+            ],
+            "question": [
+                "What is", "Why You Need", "When to Use", "Where to Find", "Which"
+            ],
+            "power": [
+                f"The {random.choice(power_words)}", 
+                f"{random.choice(power_words)} Strategies for",
+                "Simple Ways to", "Quick Tips for"
+            ]
+        }
         
-        # 3. Ultimate/Complete guide
-        templates.append(f"The Ultimate Guide to {core_topic}")
-        templates.append(f"{core_topic}: Everything You Need to Know")
+        # Suffixes
+        suffixes = [
+            f"in {current_year}",
+            f"[{current_year} Updated]",
+            "(Step-by-Step)",
+            "for Beginners",
+            "Explained",
+            "That Actually Work",
+            "Made Simple",
+            "Examples"
+        ]
         
-        # 4. Question format
-        templates.append(f"What is {core_topic}? A Beginner's Guide")
+        # --- 3. Determine Strategy Mix ---
+        # We want a mix of titles. If dominant structure is Listicle, we lean 40-50% that way, etc.
+        # But we always want variety.
         
-        # 5. With year (if pattern shows it works)
-        if patterns.get("uses_year", False):
-            templates.append(f"{core_topic} in 2024: Complete Guide")
-            templates.append(f"Best {core_topic} Guide [2024 Updated]")
+        dom_struct = patterns.get("dominant_structure", "standard")
         
-        # 6. Power word enhanced
-        if power_words:
-            templates.append(f"The {power_words[0].title()} {core_topic} Tutorial for Beginners")
+        # Loop until we have enough unique recommendations
+        attempts = 0
+        max_attempts = top_n * 5
         
-        # 7. Include related topics if available
-        if related_topics and len(related_topics) > 0:
-            related = related_topics[0].split()[-1] if related_topics[0] else ""
-            if related:
-                templates.append(f"{core_topic} and {related.title()}: Complete Guide")
-        
-        # 8. Include top keywords
-        if top_keywords:
-            kw = top_keywords[0].title() if top_keywords else ""
-            if kw and kw.lower() not in core_topic.lower():
-                templates.append(f"{core_topic}: {kw} Explained")
-        
-        # Remove duplicates and select top_n
-        seen = set()
-        for template in templates:
-            if template not in seen:
-                recommendations.append(template)
-                seen.add(template)
-            if len(recommendations) >= top_n + 2:
-                break
-        
-        return recommendations[:top_n + 2]  # Return a few extra for scoring
+        while len(recommendations) < top_n + 3 and attempts < max_attempts:
+            attempts += 1
+            
+            # Pick a structure type for this iteration
+            # Bias towards the dominant structure found in patterns
+            r = random.random()
+            if r < 0.4:
+                # 40% chance: Follow the dominant pattern
+                current_struct = dom_struct if dom_struct in prefixes else "guide"
+            elif r < 0.7:
+                 # 30% chance: Listicle or How-to (high CTR usually)
+                current_struct = random.choice(["listicle", "how_to"])
+            else:
+                 # 30% chance: Random other
+                current_struct = random.choice(list(prefixes.keys()))
+            
+            # --- Build the Title ---
+            # 1. Prefix
+            prefix_opts = prefixes.get(current_struct, prefixes["guide"])
+            prefix = random.choice(prefix_opts)
+            
+            # 2. Core (Variation)
+            # 50/50 chance to use alt topic if valid
+            topic = core_topic
+            if core_topic_alt and core_topic_alt != core_topic and random.random() > 0.5:
+                topic = core_topic_alt
+                
+            # 3. Middle/Connector (Implicit in English usually, but sometimes needed)
+            # E.g. "10 Tips for [Topic]" vs "The Ultimate Guide to [Topic]"
+            # If prefix is a number, we often need a noun before the topic? 
+            # actually usually "10 [Topic] Tips" or "10 Tips for [Topic]"
+            
+            title_candidate = ""
+            
+            if current_struct == "listicle":
+                # Handle: "10 [Topic] Tips" vs "10 Tips for [Topic]"
+                if random.random() > 0.5:
+                    noun = random.choice(["Tips", "Strategies", "Examples", "Secrets", "Tools"])
+                    title_candidate = f"{prefix} {topic} {noun}"
+                else:
+                    noun = random.choice(["Ways to", "Reasons to", "Steps to"]) 
+                    # "10 Ways to [Topic]" (if topic is verb-like) or "10 Reasons to Use [Topic]"
+                    # Heuristic: just append
+                    title_candidate = f"{prefix} {topic} {noun}" # Might be grammar soup, check later
+                    # Safer default for listicle:
+                    title_candidate = f"{prefix} {topic} {random.choice(['Tips', 'Hacks'])}"
+                    
+            elif current_struct == "how_to":
+                title_candidate = f"{prefix} {topic}"
+                
+            else:
+                title_candidate = f"{prefix} {topic}"
+            
+            # 4. Suffix (Optional)
+            if random.random() > 0.6: # 40% chance of suffix
+                suffix = random.choice(suffixes)
+                # Avoid redundant year if already in prefix (unlikely) or if not appropriate
+                title_candidate = f"{title_candidate} {suffix}"
+            
+            # 5. Injection of Top Keyword (if not present)
+            if top_keywords and random.random() > 0.7:
+                kw = random.choice(top_keywords[:3]).title()
+                if kw.lower() not in title_candidate.lower():
+                     # Simple append: ": [Keyword]"
+                     title_candidate = f"{title_candidate}: {kw}"
+
+            # Final Polish
+            # Ensure title case (simple version)
+            # title_candidate = title_candidate.title() # Be careful with acronyms, but okay for MVP
+            
+            # Clean up double spaces
+            title_candidate = " ".join(title_candidate.split())
+            
+            recommendations.add(title_candidate)
+            
+        return list(recommendations)[:top_n + 2]
     
     def _score_titles(
         self,
@@ -739,7 +821,7 @@ if __name__ == "__main__":
     print(f"✅ Extracted {len(keywords)} keywords")
     print("\nTop 5 Keywords:")
     for kw in keywords[:5]:
-        print(f"  - {kw['keyword']} (score: {kw['score']}, type: {kw['type']})")
+        print(f"  - {kw['keyword']} (score: {kw['score']})")
     
     # Test 2: Title Recommendation
     print("\n📌 TEST 2: Title Recommendation")
