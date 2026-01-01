@@ -49,8 +49,6 @@ class SERPNORMALIZED(TypedDict):
     # Cleaned organic results
     normalize_results: List[NormalizedOrganicResult]
 
-    # Intent & semantic expansion
-    intent: Optional[Dict[str, Any]]
     related_topics: List[str]
     questions: List[str]
 
