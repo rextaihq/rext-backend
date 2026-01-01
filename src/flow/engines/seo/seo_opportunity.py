@@ -62,7 +62,19 @@ def seo_opportunity_node(state: WREXT) -> Dict[str, SEORESULT]:
         opportunity_level = "low"
 
     # 3. STRATEGY DERIVATION
-    intent = (serp.get("intent") or {}).get("primary_intent", "informational")
+    intent_lock = 0
+
+    # Count how many competitors have the keyword intent as the top intent
+    intent_counts = {}
+    for c in competitors:
+        dist = c.get("intent_distribution", {})
+        for intent_name, value in dist.items():
+            if value > 0:
+                intent_counts[intent_name] = intent_counts.get(intent_name, 0) + 1
+
+    # Find the most common intent among competitors
+    if intent_counts:
+        top_intent_count = max(intent_counts.values())
 
     recommended_content_type = (
         "comparison" if intent == "commercial"
@@ -95,7 +107,7 @@ def seo_opportunity_node(state: WREXT) -> Dict[str, SEORESULT]:
     return {
         "seo_result": {
             "seo_strategy": {
-                "target_intent": intent,
+                "target_intent": top_intent_count,
                 "recommended_content_type": recommended_content_type,
                 "ideal_word_count": ideal_word_count,
                 "priority_topics": missing_topics[:5],

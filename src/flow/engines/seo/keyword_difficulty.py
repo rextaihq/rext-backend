@@ -34,16 +34,16 @@ def keyword_difficulty_node(state: WREXT) -> Dict[str, SEORESULT]:
         dominance + (5 if len(unique_domains) <= 8 else 0) + authority_pressure,
     )
 
-    # 2. SERP FEATURE PRESSURE (0–10)
+    # 2. SERP FEATURE PRESSURE (0–15)
     serp_features = serp.get("features", {})
 
     feature_points = 0
-    feature_points += 3 if serp_features.get("people_also_ask") else 0
-    feature_points += 3 if serp_features.get("sitelinks") else 0
-    feature_points += min(2, len(serp.get("related_topics", [])))  
-    feature_points += min(2, len(serp.get("questions", [])))     
+    feature_points += 4 if serp_features.get("people_also_ask") else 0
+    feature_points += 4 if serp_features.get("sitelinks") else 0
+    feature_points += min(4, len(serp.get("related_topics", [])))  
+    feature_points += min(3, len(serp.get("questions", [])))     
 
-    serp_feature_pressure = min(10, feature_points)
+    serp_feature_pressure = min(15, feature_points)
 
     # 3. CONTENT DEPTH (0–15)
     documents = scrape_context.get("documents", [])
@@ -118,17 +118,24 @@ def keyword_difficulty_node(state: WREXT) -> Dict[str, SEORESULT]:
 
     # 5. INTENT LOCK (0–10)
     intent_lock = 0
-    if intent:
-        matching = sum(
-            1 for c in competitors
-            if c.get("intent_distribution", {}).get(intent, 0) > 0
-        )
 
-        ratio = matching / max(1, len(competitors))
+    # Count how many competitors have the keyword intent as the top intent
+    intent_counts = {}
+    for c in competitors:
+        dist = c.get("intent_distribution", {})
+        for intent_name, value in dist.items():
+            if value > 0:
+                intent_counts[intent_name] = intent_counts.get(intent_name, 0) + 1
+
+    # Find the most common intent among competitors
+    if intent_counts:
+        top_intent_count = max(intent_counts.values())
+        ratio = top_intent_count / max(1, len(competitors))
         if ratio >= 0.7:
             intent_lock = 10
         elif ratio >= 0.5:
             intent_lock = 5
+
 
     # 6. FRESHNESS PRESSURE (0–10)
     fresh_pages = sum(
