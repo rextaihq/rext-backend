@@ -80,14 +80,13 @@ def normalize_serp_results(state: WREXT) -> Dict[str, Any]:
     freshness = {
         "recent": year_counter.get(str(current_year), 0),
         "older": sum(year_counter.values()) - year_counter.get(str(current_year), 0),
-        "distribution": dict(year_counter)
     }
 
     # -------- SERP Features --------
     features = {
         "people_also_ask": bool(people_ask),
         "sitelinks": any(r["has_sitelinks"] for r in normalized_results),
-        "wikipedia": any("wikipedia.org" in d for d in domains)
+        # "wikipedia": any("wikipedia.org" in d for d in domains)
     }
 
     # -------- Domain Stats --------
@@ -97,7 +96,7 @@ def normalize_serp_results(state: WREXT) -> Dict[str, Any]:
     }
 
     # -------- Final Normalized State --------
-    serp_normalized: SERPNORMALIZED = {
+    serp_normalized = {
         "query": query,
         "engine": engine,
         "normalize_results": normalized_results,
@@ -109,7 +108,7 @@ def normalize_serp_results(state: WREXT) -> Dict[str, Any]:
         "domains": unique_domains,
         "domain_stats": domain_stats,
         "freshness": freshness,
-        "features": features
+        "features": features,
     }
 
     logger.info("Completed SERP normalization")

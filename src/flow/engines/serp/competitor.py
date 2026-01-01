@@ -5,6 +5,10 @@ from collections import Counter
 from typing import List, Dict, Any
 from src.flow.states.wrext import WREXT, Competitor
 from datetime import datetime
+from src.flow.model.llm_manager import load_model
+from src.flow.prompts.system.intent import SEO_INTENT_SYSTEM_PROMPT
+from src.flow.model.structure.intent import SEOIntentOutput
+from langchain.messages import SystemMessage,HumanMessage
 
 logger = logging.getLogger(__name__)
 
@@ -21,6 +25,9 @@ def extract_competitors_from_serp(state: WREXT) -> Dict[str, Any]:
     logger.info("Starting competitor extraction from SERP")
     serp_result = state.get("serp_result", {})
     organic = serp_result.get("organic_results", [])
+    query = state.get("serp_payload", {}).get("query", "")
+    
+    model = load_model().with_structured_output(SEOIntentOutput)
 
     domain_groups = {}
 
@@ -35,15 +42,27 @@ def extract_competitors_from_serp(state: WREXT) -> Dict[str, Any]:
                 "top_positions": [],
                 "total_occurrences": 0,
                 "has_sitelinks": False,
-                "intent_distribution": {"informational": 0, "commercial": 0},
+                "intent_distribution": {
+                    "INFORMATIONAL": 0, 
+                    "COMMERCIAL": 0,
+                    "NAVIGATIONAL": 0,
+                    "TRANSACTIONAL": 0
+                },
                 "freshness": {"recent": 0, "older": 0},
                 "avg_snippet_length": 0.0,
-                "featured_snippet": False
+                "featured_snippet": False,
+                "is_brand": False,
+                "top_result": item # Store top result for classification
             }
 
         group = domain_groups[domain]
         group["top_positions"].append(item.get("position", 0))
         group["total_occurrences"] += 1
+        
+        # Update top result if this one is higher
+        if item.get("position", 999) < group["top_result"].get("position", 999):
+            group["top_result"] = item
+
         if item.get("sitelinks"):
             group["has_sitelinks"] = True
 
@@ -73,8 +92,29 @@ def extract_competitors_from_serp(state: WREXT) -> Dict[str, Any]:
     competitors: List[Competitor] = []
 
     for domain, data in domain_groups.items():
+        # LLM Classification for Intent and Brand (Once per domain)
+        top_item = data["top_result"]
+        title = top_item.get("title", "")
+        snippet = top_item.get("snippet", "")
+        
+        try:
+            classification = model.invoke([
+                SystemMessage(content=SEO_INTENT_SYSTEM_PROMPT),
+                HumanMessage(content=f"Query: {query}\nDomain: {domain}\nTop Result Title: {title}\nTop Result Snippet: {snippet}")
+            ])
+            
+            intent = classification.intent.upper()
+            if intent in data["intent_distribution"]:
+                data["intent_distribution"][intent] = 1 # Mark the primary intent
+            
+            data["is_brand"] = classification.is_brand
+                
+        except Exception as e:
+            logger.error(f"Error classifying intent for {domain}: {e}")
+
         total_snippets = data["total_occurrences"]
         data["avg_snippet_length"] = data["avg_snippet_length"] / total_snippets if total_snippets else 0.0
+        
         competitors.append(
             Competitor(
                 domain=domain,
@@ -84,7 +124,8 @@ def extract_competitors_from_serp(state: WREXT) -> Dict[str, Any]:
                 intent_distribution=data["intent_distribution"],
                 freshness=data["freshness"],
                 avg_snippet_length=data["avg_snippet_length"],
-                featured_snippet=data["featured_snippet"]
+                featured_snippet=data["featured_snippet"],
+                is_brand=data["is_brand"]
             )
         )
 
@@ -92,6 +133,7 @@ def extract_competitors_from_serp(state: WREXT) -> Dict[str, Any]:
     competitors.sort(key=lambda x: min(x["top_positions"]))
     
     logger.info(f"Extracted {len(competitors)} competitors from SERP")
+    
     return {
-        "competitors": competitors
+       "competitors": competitors
     }

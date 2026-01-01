@@ -37,6 +37,7 @@ def filter_relevant_content(
     scrape_context = state.get('scrape_context', [])
     serp_payload = state.get('serp_payload', {})
     query = serp_payload.get('query', '')
+    serp_normalized = state.get('serp_normalized', {})
 
     if not scrape_context:
         logger.warning("No scrape_context found in state - skipping filtering")
@@ -88,4 +89,6 @@ def filter_relevant_content(
         logger.exception(f"Error during semantic similarity extraction: {str(e)}")
         return {'relevant_context': []}
 
-    return {'relevant_context': relevant_data}
+    return {
+        "relevant_context": relevant_data
+    }
