@@ -89,5 +89,3 @@ def recommendation(state: WREXT) -> Dict[str, Any]:
             },
             goto="generate_outline"
         )
-        
-    
