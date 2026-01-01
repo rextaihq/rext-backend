@@ -6,6 +6,7 @@ Routes handle HTTP concerns and delegate business logic to SubscriptionService.
 """
 
 from fastapi import APIRouter, Depends, status, Request, Query, BackgroundTasks
+from src.api.routes.subscriptions.plan_routes import get_plan
 from src.services.notification_helper import schedule_if_allowed
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -34,6 +35,9 @@ from src.api.middleware.rate_limiter import (
 from src.services.usage_tracking_service import UsageTrackingService
 from sqlalchemy import select
 from src.utils.logger import logger
+
+from fastapi import HTTPException
+
 
 router = APIRouter(
     prefix="/subscriptions",
@@ -82,11 +86,12 @@ async def subscribe_to_plan(
     response_data["plan_name"] = plan.name
     response_data["plan_display_name"] = plan.display_name
 
-    return created(
-        data=response_data,
-        request=request,
-        message=f"Successfully subscribed to {plan.display_name}"
-    )
+    return {
+    "success": True,
+    "message": f"Successfully subscribed to {plan.display_name}",
+    "data": response_data
+}
+
 
 
 @router.post("/checkout", response_model=dict, status_code=status.HTTP_200_OK)
@@ -286,13 +291,13 @@ async def upgrade_subscription(
     _rate_limit: None = Depends(subscription_update_rate_limit())
 ):
     """
-    Upgrade or downgrade subscription plan.
+    Upgrade a subscription plan.
 
-    Validates that current usage doesn't exceed new plan limits for downgrades.
+    Validates the new plan ID and ensures subscription upgrade.
 
     Body:
-    - new_plan_id: UUID of the new plan
-    - billing_period: (optional) Change billing period
+    - new_plan_id: UUID of the new plan (required)
+    - billing_period: optional, monthly/yearly/lifetime
 
     Returns:
     - Updated subscription details
@@ -300,26 +305,54 @@ async def upgrade_subscription(
     user_id = current_user.get("identity")
     service = SubscriptionService(db)
 
-    # Upgrade  subscription
+    # Validate new_plan_id
+    if not upgrade_data.new_plan_id:
+        raise HTTPException(
+            status_code=400,
+            detail="new_plan_id is required and must be a valid UUID"
+        )
+
+    # Fetch the new plan
+    new_plan = await service.get_plan_by_id(upgrade_data.new_plan_id)
+    if not new_plan:
+        raise HTTPException(
+            status_code=404,
+            detail="The specified plan does not exist"
+        )
+
+    # Fetch current subscription
+    current_subscription = await service.get_subscription_by_user(user_id)
+    if not current_subscription:
+        raise HTTPException(
+            status_code=404,
+            detail="Current subscription not found"
+        )
+
+    # Prevent upgrade to lower plan accidentally
+    if new_plan.price_monthly < current_subscription.plan.price_monthly:
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot upgrade to a lower-priced plan. Use downgrade endpoint instead."
+        )
+
+    # Perform upgrade
     updated_subscription = await service.upgrade(
         user_id=user_id,
         new_plan_id=upgrade_data.new_plan_id,
         billing_period=upgrade_data.billing_period
     )
 
-    # Get new plan details
-    plan = await service.get_plan_by_id(upgrade_data.new_plan_id)
-
     # Build response
     response_data = updated_subscription.to_dict()
-    response_data["plan_name"] = plan.name
-    response_data["plan_display_name"] = plan.display_name
+    response_data["plan_name"] = new_plan.name
+    response_data["plan_display_name"] = new_plan.display_name
 
     return success(
         data=response_data,
         request=request,
-        message=f"Successfully updated to {plan.display_name}"
+        message=f"Successfully upgraded to {new_plan.display_name}"
     )
+
     
 #downgrade route
 @router.post("/downgrade", response_model=dict)
@@ -346,7 +379,29 @@ async def downgrade_subscription(
     """
     user_id = current_user.get("identity")
     service = SubscriptionService(db)
+    
+    #  Validate plan id
+    if not downgrade_data.new_plan_id:
+        raise HTTPException(
+            status_code=400,
+            detail="plan id is required"
+        )
+    # Fetch current subscription and plan
+    subscription = await service.get_subscription_by_user(user_id)
+    current_plan = await service._get_plan_or_404(subscription.plan_id)
 
+    # Fetch new plan
+    new_plan = await service.get_plan_by_id(downgrade_data.new_plan_id)
+
+        
+    #Prevent downgrade to higher plan
+    if new_plan.price_monthly > current_plan.price_monthly:
+        raise HTTPException(
+        status_code=400,
+        detail="Use upgrade subscription to move to the higher plan"
+    )
+ 
+    
     # Downgrade subscription (same logic as upgrade)
     updated_subscription = await service.upgrade(
         user_id=user_id,
@@ -354,21 +409,16 @@ async def downgrade_subscription(
         billing_period=downgrade_data.billing_period
     )
 
-    # Get new plan details
-    plan = await service.get_plan_by_id(downgrade_data.new_plan_id)
-
     # Build response
     response_data = updated_subscription.to_dict()
-    response_data["plan_name"] = plan.name
-    response_data["plan_display_name"] = plan.display_name
+    response_data["plan_name"] = new_plan.name
+    response_data["plan_display_name"] = new_plan.display_name
 
-    return success(
-        data=response_data,
-        request=request,
-        message=f"Successfully downgraded to {plan.display_name}"
-    )
-
-
+    return {
+        "success": True,
+        "message": f"Successfully downgraded to {new_plan.display_name}",
+        "data": response_data
+}
 
 @router.post("/cancel", response_model=dict)
 @require_permissions("subscription.manage")
@@ -381,48 +431,66 @@ async def cancel_subscription(
     current_user: dict = Depends(get_current_user),
     _rate_limit: None = Depends(subscription_cancel_rate_limit())
 ):
-    """
-    Cancel current subscription.
-
-    Body:
-    - reason: (optional) Reason for cancellation
-    - cancel_immediately: If true, cancel now. If false, cancel at end of billing period.
-
-    Returns:
-    - Updated subscription with cancellation details
-    """
     user_id = current_user.get("identity")
     service = SubscriptionService(db)
 
-    # Cancel subscription
-    subscription = await service.cancel(
-        user_id=user_id,
-        reason=cancel_data.reason,
-        cancel_immediately=cancel_data.cancel_immediately,
-        background_tasks=background_tasks
-    )
+    try:
+        # Cancel subscription
+        subscription = await service.cancel(
+            user_id=user_id,
+            reason=cancel_data.reason,
+            cancel_immediately=cancel_data.cancel_immediately,
+            background_tasks=background_tasks
+        )
 
-    message = (
-        "Subscription cancelled immediately"
-        if cancel_data.cancel_immediately
-        else f"Subscription will end on {subscription.end_date.strftime('%Y-%m-%d') if subscription.end_date else 'N/A'}"
-    )
+        if not subscription:
+            return {
+                "success": False,
+                "meta": {"request_id": request.headers.get("X-Request-ID")},
+                "data": None,
+                "error": {
+                    "code": "not_found",
+                    "message": "No active subscription found to cancel",
+                    "severity": "high",
+                    "status_code": 404
+                }
+            }
 
-    # Schedule cancellation notification
-    await schedule_if_allowed(
-        db=db,
-        user_id=str(user_id),
-        background_tasks=background_tasks,
-        pref_flag="subscription_cancelled",
-        message="Your subscription has been cancelled.",
-        payload={"subscription_id": str(subscription.id), "type": "cancelled"},
-    )
-    return success(
-        data=subscription.to_dict(),
-        request=request,
-        message=message
-    )
+        message = (
+            "Subscription cancelled immediately"
+            if cancel_data.cancel_immediately
+            else f"Subscription will end on {subscription.end_date.strftime('%Y-%m-%d') if subscription.end_date else 'N/A'}"
+        )
 
+        # Schedule cancellation notification
+        await schedule_if_allowed(
+            db=db,
+            user_id=str(user_id),
+            background_tasks=background_tasks,
+            pref_flag="subscription_cancelled",
+            message="Your subscription has been cancelled.",
+            payload={"subscription_id": str(subscription.id), "type": "cancelled"},
+        )
+
+        return {
+            "success": True,
+            "meta": {"request_id": request.headers.get("X-Request-ID")},
+            "data": subscription.to_dict(),
+            "message": message
+        }
+
+    except Exception as e:
+        return {
+            "success": False,
+            "meta": {"request_id": request.headers.get("X-Request-ID")},
+            "data": None,
+            "error": {
+                "code": "internal_server_error",
+                "message": str(e),
+                "severity": "high",
+                "status_code": 500
+            }
+        }
 
 @router.get("/usage", response_model=dict)
 @require_permissions("usage.read", workspace_scoped=False)
