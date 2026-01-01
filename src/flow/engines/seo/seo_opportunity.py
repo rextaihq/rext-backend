@@ -1,83 +1,118 @@
-# # src/flow/engines/seo/seo_opportunity.py
+from typing import Dict
+from src.flow.states.wrext import WREXT
+from src.flow.states.seo_state import SEORESULT
 
-# from typing import Dict, Any
-# from src.flow.states.wrext import WREXT
 
-# def seo_opportunity_node(state: WREXT) -> Dict[str, Any]:
-#     seo = state.get("seo_result", {})
-#     serp = state.get("serp_normalized", {})
+def seo_opportunity_node(state: WREXT) -> Dict[str, SEORESULT]:
+    seo = state.get("seo_result", {})
 
-#     # Pull values with safe defaults
-#     keyword_score = seo.get("keyword_score", {}).get("score", 0)
-#     difficulty = seo.get("keyword_difficulty", {}).get("difficulty_score", 50)  # neutral default
-#     gap_score = seo.get("competitor_gap", {}).get("gap_score", 0)
+    kd = seo.get("keyword_difficulty", {})
+    gaps = seo.get("content_gaps", {})
+    serp = state.get("serp_normalized", {})
+    competitors = state.get("competitors", [])
 
-#     # Base opportunity (weighted)
-#     base_value = (keyword_score * 0.5) + (gap_score * 0.5)
-    
-#     # Difficulty dampening
-#     difficulty_penalty = difficulty * 0.7
-#     opportunity = base_value - difficulty_penalty
+    difficulty_score = kd.get("difficulty_score", 100)
+    difficulty_level = kd.get("difficulty_level", "very_hard")
+    signals = kd.get("difficulty_signals", {})
 
-#     # SERP feature adjustments
-#     features = serp.get("features", {})
-#     feature_count = sum(1 for v in features.values() if v)
+    missing_topics = gaps.get("missing_topics", [])
+    missing_questions = gaps.get("missing_questions", [])
+    weak_areas = gaps.get("weak_coverage_areas", [])
 
-#     if feature_count >= 4:
-#         opportunity -= 10  # CTR loss due to SERP features
-#     elif feature_count >= 2:
-#         opportunity -= 5
+    # 1. OPPORTUNITY SCORE (0–100)
+    score = 0
 
-#     # Intent diversity penalty
-#     intent = serp.get("intent", {})
-#     intent_types = len(intent.keys()) if isinstance(intent, dict) else 0
-#     if intent_types > 2:
-#         opportunity -= 10  # Mixed intent penalty
+    # Difficulty inverse (easy = more opportunity)
+    if difficulty_level == "easy":
+        score += 40
+    elif difficulty_level == "medium":
+        score += 25
+    elif difficulty_level == "hard":
+        score += 10
+    else:
+        score += 0
 
-#     # Freshness penalty
-#     freshness = serp.get("freshness", {})
-#     recent = freshness.get("recent", 0)
-#     older = freshness.get("older", 0)
-#     total = recent + older
-#     is_fresh = total > 0 and (recent / total) > 0.3
+    # Content gaps
+    score += min(20, len(missing_topics) * 4)
+    score += min(15, len(missing_questions) * 3)
+    score += min(15, len(weak_areas) * 3)
 
-#     if is_fresh:
-#         opportunity -= 5  # News-driven SERP
+    # Brand dominance penalty
+    brand_penalty = signals.get("brand_dominance", 0)
+    score -= brand_penalty * 0.5
 
-#     # Clamp & normalize
-#     opportunity = int(max(0, min(100, opportunity)))
+    # Freshness penalty
+    score -= signals.get("freshness_pressure", 0) * 0.3
 
-#     # Opportunity level
-#     if opportunity >= 65:
-#         level = "high"
-#     elif opportunity >= 35:
-#         level = "medium"
-#     else:
-#         level = "low"
+    # SERP feature opportunity
+    features = serp.get("features", {})
+    if features.get("people_also_ask"):
+        score += 5
+    if features.get("featured_snippet"):
+        score += 5
 
-#     # Return structured result
-#     return {
-#         "seo_result": {
-#             "seo_opportunity": {
-#                 "opportunity_score": opportunity,
-#                 "level": level,
-#                 "signals": {
-#                     "keyword_score": keyword_score,
-#                     "gap_score": gap_score,
-#                     "difficulty_score": difficulty,
-#                     "serp_features": feature_count,
-#                     "intent_types_detected": intent_types,
-#                     "freshness_ratio": recent / max(1, total),
-#                     "is_fresh": is_fresh,
-#                 },
-#                 "explanation": [
-#                     f"Keyword value score: {keyword_score}",
-#                     f"Competitor gap score: {gap_score}",
-#                     f"Difficulty penalty applied: {difficulty_penalty}",
-#                     f"Active SERP features: {feature_count}",
-#                     f"Intent types detected: {intent_types}",
-#                     f"Freshness ratio: {recent}/{total} ({is_fresh})"
-#                 ],
-#             }
-#         }
-#     }
+    score = max(0, min(100, int(score)))
+
+    # 2. OPPORTUNITY LEVEL
+    if score >= 65:
+        opportunity_level = "high"
+    elif score >= 30:
+        opportunity_level = "medium"
+    else:
+        opportunity_level = "low"
+
+    # 3. STRATEGY DERIVATION
+    intent = (serp.get("intent") or {}).get("primary_intent", "informational")
+
+    recommended_content_type = (
+        "comparison" if intent == "commercial"
+        else "landing_page" if intent == "transactional"
+        else "blog"
+    )
+
+    avg_competitor_length = 0
+    docs = (state.get("scrape_context") or {}).get("documents", [])
+    if docs:
+        avg_competitor_length = int(
+            sum(d.get("content_length", 0) for d in docs) / len(docs)
+        )
+
+    ideal_word_count = max(1200, avg_competitor_length + 300)
+
+    ranking_time = (
+        "1–2 months" if difficulty_level == "easy"
+        else "3–4 months" if difficulty_level == "medium"
+        else "6+ months"
+    )
+
+    content_angle = (
+        "Gap-focused guide answering missed questions"
+        if missing_questions
+        else "More comprehensive & structured content"
+    )
+
+    # 4. OUTPUT
+    return {
+        "seo_result": {
+            "seo_strategy": {
+                "target_intent": intent,
+                "recommended_content_type": recommended_content_type,
+                "ideal_word_count": ideal_word_count,
+                "priority_topics": missing_topics[:5],
+                "questions_to_answer": missing_questions[:5],
+                "difficulty": difficulty_level,
+                "ranking_time_estimate": ranking_time,
+                "content_angle": content_angle,
+            },
+            "seo_opportunity": {
+                "opportunity_score": score,
+                "opportunity_level": opportunity_level,
+                "key_drivers": {
+                    "missing_topics": len(missing_topics),
+                    "missing_questions": len(missing_questions),
+                    "brand_pressure": signals.get("brand_dominance", 0),
+                    "freshness_pressure": signals.get("freshness_pressure", 0),
+                },
+            },
+        }
+    }

@@ -1,49 +1,49 @@
-# from typing import Dict, Any
-# from src.flow.states.wrext import WREXT
-# from src.services.seo_service import KeywordExtractor
+# # from typing import Dict, Any
+# # from src.flow.states.wrext import WREXT
+# # from src.services.seo_service import KeywordExtractor
 
-# def relevance_keyword_finder(state: WREXT) -> Dict[str, Any]:
-#     """
-#     LangGraph node: Extract keywords from SERP data using N-grams + TF-IDF.
+# # def relevance_keyword_finder(state: WREXT) -> Dict[str, Any]:
+# #     """
+# #     LangGraph node: Extract keywords from SERP data using N-grams + TF-IDF.
     
-#     This implements the classic SEO keyword extraction approach used by
-#     early Ahrefs and SEMrush - combining NLTK n-gram generation with
-#     TF-IDF scoring to identify valuable keywords from SERP data.
-#     """
-#     serp_normalized = state.get("serp_normalized")
+# #     This implements the classic SEO keyword extraction approach used by
+# #     early Ahrefs and SEMrush - combining NLTK n-gram generation with
+# #     TF-IDF scoring to identify valuable keywords from SERP data.
+# #     """
+# #     serp_normalized = state.get("serp_normalized")
     
-#     if not serp_normalized:
-#         return {
-#             "seo_result": {
-#                 "extracted_keywords":{
-#                     "all": [],
-#                     "head": [],
-#                     "body": [],
-#                     "long_tail": [],
-#                     "total_count": 0,
-#                     "query": "",
-#                     "extraction_method": "nltk_ngram_tfidf",
-#                     "sources": {
-#                         "titles": 0,
-#                         "snippets": 0,
-#                         "related_topics": 0,
-#                         "questions": 0
-#                     }
-#                 },
-#                 "keyword_difficulty": {
-#                     "keywords": [],
-#                     "difficulty_level": "None",
-#                     "serp_competition": 0,
-#                     "authority_barrier": "low",
-#                 }
-#             }
-#         }
+# #     if not serp_normalized:
+# #         return {
+# #             "seo_result": {
+# #                 "extracted_keywords":{
+# #                     "all": [],
+# #                     "head": [],
+# #                     "body": [],
+# #                     "long_tail": [],
+# #                     "total_count": 0,
+# #                     "query": "",
+# #                     "extraction_method": "nltk_ngram_tfidf",
+# #                     "sources": {
+# #                         "titles": 0,
+# #                         "snippets": 0,
+# #                         "related_topics": 0,
+# #                         "questions": 0
+# #                     }
+# #                 },
+# #                 "keyword_difficulty": {
+# #                     "keywords": [],
+# #                     "difficulty_level": "None",
+# #                     "serp_competition": 0,
+# #                     "authority_barrier": "low",
+# #                 }
+# #             }
+# #         }
     
-#     # Extract data from normalized SERP
-#     query = serp_normalized.get("query", "")
-#     normalize_results = serp_normalized.get("normalize_results", [])
-#     related_topics = serp_normalized.get("related_topics", [])
-#     questions = serp_normalized.get("questions", [])
+# #     # Extract data from normalized SERP
+# #     query = serp_normalized.get("query", "")
+# #     normalize_results = serp_normalized.get("normalize_results", [])
+# #     related_topics = serp_normalized.get("related_topics", [])
+# #     questions = serp_normalized.get("questions", [])
     
 #     # Initialize extractor and extract keywords
 #     extractor = KeywordExtractor()
@@ -55,35 +55,10 @@
 #         top_n=50
 #     )
     
-#     # Categorize keywords by type
-#     head_keywords = [k for k in keywords if k["type"] == "head"]
-#     body_keywords = [k for k in keywords if k["type"] == "body"]
-#     longtail_keywords = [k for k in keywords if k["type"] == "long-tail"]
-    
-#     # get the diffuculity score of each keyword
-#     difficulty_score = list(set([k["score"] for k in keywords if k["keyword"] in query]))
-    
-#     # calculate the difficulity level in this range easy, medium, hard, very hard
-#     avg_score = sum(difficulty_score) / len(difficulty_score)
-
-#     difficulty_level = f"easy {avg_score}" if avg_score < 50 else f"medium {avg_score}" if avg_score < 75 else f"hard {avg_score}" if avg_score < 90 else f"very hard {avg_score}"
-
-#     # Build keyword difficulty only for those keywords that are in query
-#     keyword_difficulty = {
-#         "keywords": [k["keyword"] for k in keywords if k["keyword"] in query],
-#         # calculate the score based on the difficulty score
-#         "difficulty_level": difficulty_level,
-#         "serp_competition": len(normalize_results) if normalize_results else 0,
-#         "authority_barrier": "medium",
-#     }
-    
 #     return {
 #         "seo_result": {
 #             "extracted_keywords": {
 #                 "all": keywords,
-#                 "head": head_keywords,
-#                 "body": body_keywords,
-#                 "long_tail": longtail_keywords,
 #                 "total_count": len(keywords),
 #                 "query": query,
 #                 "extraction_method": "nltk_ngram_tfidf",
@@ -93,8 +68,7 @@
 #                     "related_topics": len(related_topics) if related_topics else 0,
 #                     "questions": len(questions) if questions else 0
 #                 }
-#             },
-#             "keyword_difficulty": keyword_difficulty
+#             }
 #         }
 #     }
 

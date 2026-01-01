@@ -1,158 +1,165 @@
-from typing import Dict, Any
+from typing import Dict
 from src.flow.states.wrext import WREXT
+from src.flow.states.seo_state import SEORESULT
 
 
-def keyword_difficulty_node(state: WREXT) -> Dict[str, Any]:
+def keyword_difficulty_node(state: WREXT) -> Dict[str, SEORESULT]:
     competitors = state.get("competitors", [])
     serp = state.get("serp_normalized", {})
-    features = serp.get("features", {})
-    serp_intent = serp.get("intent", {}).get("primary")
-    keyword = state.get("serp_payload", {}).get("query", "")
+    scrape_context = state.get("scrape_context", {}) or {}
 
-    # 1️ DOMAIN CONCENTRATION (30)
-    unique_domains = set()
-    dominance_points = 0
-    sitelink_domains = set()
-    featured_snippet_domains = set()
+    keyword = (state.get("serp_payload") or {}).get("query", "").lower()
+    intent = (serp.get("intent") or {}).get("primary_intent")
 
-    for comp in competitors:
-        domain = comp.get("domain")
-        if domain:
-            unique_domains.add(domain)
-
-        for pos in comp.get("top_positions", []):
-            if pos <= 3:
-                dominance_points += 3
-            elif pos <= 6:
-                dominance_points += 2
-            # elif pos <= 10:
-            #     dominance_points += 1
-
-        if comp.get("has_sitelinks"):
-            sitelink_domains.add(domain)
-
-        if comp.get("featured_snippet"):
-            featured_snippet_domains.add(domain)
-
-    domain_concentration_score = 0
-    if len(unique_domains) <= 5:
-        domain_concentration_score = 10
-    elif len(unique_domains) <= 8:
-        domain_concentration_score = 5
-
-    authority_score = min(
-        30,
-        dominance_points +
-        domain_concentration_score +
-        (5 if len(sitelink_domains) >= 2 else 0) +
-        (5 if featured_snippet_domains else 0)
-    )
-
-    # 2️ SERP CROWDING / FEATURE PRESSURE (15)
-    crowding_features = [
-        "wikipedia",
-        "people_also_ask",
-        "sitelinks"
-    ]
-
-    active_features = sum(1 for f in crowding_features if features.get(f))
-    crowding_score = min(15, active_features * 5)
-
-    # 3️ CONTENT DEPTH BARRIER (15)
-    avg_snippet_length = (
-        sum(c.get("avg_snippet_length", 0) for c in competitors) / len(competitors)
-        if competitors else 0
-    )
-
-    content_score = 0
-    if avg_snippet_length >= 250:
-        content_score = 15
-    elif avg_snippet_length >= 150:
-        content_score = 8
-
-    # 4️ TITLE OPTIMIZATION BARRIER (15)
     normalized_results = serp.get("normalize_results", [])
-    avg_title_length = (
-        sum(len(r.get("title", "")) for r in normalized_results) /
-        max(1, len(normalized_results))
+
+    # 1. AUTHORITY PRESSURE (0–15)
+    dominance = 0
+    unique_domains = set()
+
+    for c in competitors:
+        if c.get("domain"):
+            unique_domains.add(c["domain"])
+
+        for pos in c.get("top_positions", []):
+            if pos <= 2:
+                dominance += 2
+            elif pos <= 3:
+                dominance += 1
+        total_occurrences_sum = sum(c.get("total_occurrences", 0) for c in competitors)
+        authority_pressure = min(5, total_occurrences_sum)
+
+    authority_pressure = min(
+        15,
+        dominance + (5 if len(unique_domains) <= 8 else 0) + authority_pressure,
     )
 
-    title_score = 0
-    title_length_score = 0
-    if 65 <= avg_title_length <= 75:
-        title_length_score = 7.5
-    elif 60 <= avg_title_length <= 80:
-        title_length_score = 3.5
+    # 2. SERP FEATURE PRESSURE (0–10)
+    serp_features = serp.get("features", {})
 
+    feature_points = 0
+    feature_points += 3 if serp_features.get("people_also_ask") else 0
+    feature_points += 3 if serp_features.get("sitelinks") else 0
+    feature_points += min(2, len(serp.get("related_topics", [])))  
+    feature_points += min(2, len(serp.get("questions", [])))     
+
+    serp_feature_pressure = min(10, feature_points)
+
+    # 3. CONTENT DEPTH (0–15)
+    documents = scrape_context.get("documents", [])
+    avg_content = (
+        sum(d.get("content_length", 0) for d in documents) / len(documents)
+        if documents else 0
+    )
+
+    avg_headings = (
+        sum(len(d.get("headings", [])) for d in documents) / len(documents)
+        if documents else 0
+    )
+
+    content_depth = 0
+    if avg_content >= 2500:
+        content_depth += 5
+    elif avg_content >= 1200:
+        content_depth += 5
+
+    if avg_headings >= 15:
+        content_depth += 5
+    elif avg_headings >= 8:
+        content_depth += 3
+
+    keyword_presence_score = 0
+    in_headings = False
+
+    for d in documents:
+        # Check headings
+        for h in d.get("headings", []):
+            if keyword and keyword in h.lower():
+                in_headings = True
+                break
+
+    if in_headings:
+        content_depth += 5
+
+    content_depth = min(15, content_depth)
+    # 4. TITLE OPTIMIZATION BARRIER (0–15)
+    title_barrier = 0
+    # Count keyword in URL
+    kw_in_url = sum(1 for r in normalized_results if keyword and keyword in r.get("url", "").lower())
+    url_ratio = kw_in_url / max(1, len(normalized_results))
+
+    # Average title length
+    avg_title_length = (
+        sum(len(r.get("title", "")) for r in normalized_results)
+        / max(1, len(normalized_results))
+    )
+
+    # Count keyword in title
     kw_in_title = sum(
         1 for r in normalized_results
-        if keyword.lower() in r.get("title", "").lower())
-    intitle_ratio = kw_in_title / max(1, len(normalized_results)
+        if keyword and keyword in r.get("title", "").lower()
     )
 
-    intitle_score = 0
+    intitle_ratio = kw_in_title / max(1, len(normalized_results))
+    
+    if url_ratio >= 0.5:
+        title_barrier += 3
+    elif url_ratio >= 0.2:
+        title_barrier += 1
+
+    if 60 <= avg_title_length <= 75:
+        title_barrier += 6
+
     if intitle_ratio >= 0.7:
-        intitle_score = 7.5
-    elif intitle_ratio >= 0.4:
-        intitle_score = 3.5
+        title_barrier += 6
 
-    # 5️ INTENT LOCK (10)
-    intent_score = 0
 
-    if serp_intent:
-        matching_intent_competitors = sum(
+    title_barrier = min(15, title_barrier)
+
+    # 5. INTENT LOCK (0–10)
+    intent_lock = 0
+    if intent:
+        matching = sum(
             1 for c in competitors
-            if c.get("intent_distribution", {}).get(serp_intent, 0) > 0
+            if c.get("intent_distribution", {}).get(intent, 0) > 0
         )
 
-        intent_ratio = matching_intent_competitors / max(1, len(competitors))
+        ratio = matching / max(1, len(competitors))
+        if ratio >= 0.7:
+            intent_lock = 10
+        elif ratio >= 0.5:
+            intent_lock = 5
 
-        if intent_ratio >= 0.7:
-            intent_score = 10
-        elif intent_ratio >= 0.5:
-            intent_score = 5
-
-    # 6️ FRESHNESS PRESSURE (10)
+    # 6. FRESHNESS PRESSURE (0–10)
     fresh_pages = sum(
         1 for c in competitors
-        if c.get("freshness", {}).get("recent", 0) == 1
+        if c.get("freshness", {}).get("recent") == 1
     )
 
-    freshness_score = 0
-    if fresh_pages >= 5:
-        freshness_score = 10
-    elif fresh_pages >= 3:
-        freshness_score = 5
+    freshness_pressure = 10 if fresh_pages >= 8 else 5 if fresh_pages >= 3 else 0
 
-    # 7️ SERP STABILITY (5)
-    stable_competitors = sum(
-        1 for c in competitors
-        if c.get("total_occurrences", 0) >= 3
-    )
+    # 7. BRAND DOMINANCE (0–20)
+    brand_count = sum(1 for c in competitors if c.get("is_brand"))
+    brand_dominance = 20 if brand_count >= 6 else 10 if brand_count >= 3 else 0
 
-    stability_score = 0
-    if stable_competitors >= 2:
-        stability_score = 5
-    elif stable_competitors >= 1:
-        stability_score = 3
 
-    # FINAL DIFFICULTY SCORE
-    final_score = min(
+    # FINAL SCORE
+    score = min(
         100,
-        authority_score +
-        crowding_score +
-        content_score +
-        title_score +
-        intent_score +
-        freshness_score +
-        stability_score
+        authority_pressure
+        + serp_feature_pressure
+        + content_depth
+        + title_barrier
+        + intent_lock
+        + freshness_pressure
+        + brand_dominance
     )
 
-    if final_score >= 75:
+    if score >= 75:
         level = "very_hard"
-    elif final_score >= 60:
+    elif score >= 55:
         level = "hard"
-    elif final_score >= 40:
+    elif score >= 35:
         level = "medium"
     else:
         level = "easy"
@@ -160,17 +167,18 @@ def keyword_difficulty_node(state: WREXT) -> Dict[str, Any]:
     return {
         "seo_result": {
             "keyword_difficulty": {
-                "difficulty_score": final_score,
+                "keyword": keyword,
+                "difficulty_score": score,
                 "difficulty_level": level,
-                "signals": {
-                    "serp_dominance": authority_score,
-                    "feature_pressure": crowding_score,
-                    "content_depth": content_score,
-                    "title_barrier": title_score,
-                    "intent_lock": intent_score,
-                    "freshness_pressure": freshness_score,
-                    "serp_stability": stability_score
-                }
+                "difficulty_signals": {
+                    "authority_pressure": authority_pressure,
+                    "serp_feature_pressure": serp_feature_pressure,
+                    "content_depth": content_depth,
+                    "title_barrier": title_barrier,
+                    "intent_lock": intent_lock,
+                    "freshness_pressure": freshness_pressure,
+                    "brand_dominance": brand_dominance,
+                },
             }
         }
     }
