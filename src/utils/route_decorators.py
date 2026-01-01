@@ -29,7 +29,7 @@ Usage:
 
 import functools
 from typing import Any, Callable, Optional
-from fastapi import Request
+from fastapi import HTTPException, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -158,9 +158,14 @@ def db_transaction_handler(
                         message=success_message or f"{operation_name.capitalize()} completed successfully"
                     )
 
-                return result
+            except HTTPException:
+                if db and hasattr(db, "rollback"):
+                    await db.rollback()
+                raise
 
             except WrextAPIException as e:
+    # existing code...
+
                 # Business/validation exceptions - rollback and re-raise
                 # These are handled by the global exception middleware
                 if db and hasattr(db, "rollback"):

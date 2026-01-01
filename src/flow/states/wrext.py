@@ -7,7 +7,7 @@ from langchain_core.documents import Document
 
 from src.flow.states.countries import SUPPORTED_COUNTRIES
 from src.flow.states.seo_state import SEORESULT
-
+from src.flow.states.content import CONTENT
 
 # =========================
 # SERP ENGINE STATE
@@ -49,8 +49,6 @@ class SERPNORMALIZED(TypedDict):
     # Cleaned organic results
     normalize_results: List[NormalizedOrganicResult]
 
-    # Intent & semantic expansion
-    intent: Optional[Dict[str, Any]]
     related_topics: List[str]
     questions: List[str]
 
@@ -124,3 +122,6 @@ class WREXT(TypedDict, total=False):
 
     # SEO Output
     seo_result: SEORESULT
+
+    # Content Output
+    content: CONTENT
