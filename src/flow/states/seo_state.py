@@ -23,6 +23,34 @@ class SearchIntentState(TypedDict):
 # Latest Tech News for Dec 20 2025
 # ---------------------------------------------------------
 
+class KDBreakdown(TypedDict, total=False):
+    link_score: float
+    serp_score: float
+    content_score: float
+    context_modifier: float
+
+
+class KeywordDifficultyState2(TypedDict, total=False):
+    keyword: str
+    kd: float
+    breakdown: KDBreakdown
+    notes: List[str]
+
+
+class KDBreakdown(TypedDict, total=False):
+    link_score: float
+    serp_score: float
+    content_score: float
+    context_modifier: float
+
+
+class KeywordDifficultyState2(TypedDict, total=False):
+    keyword: str
+    kd: float
+    breakdown: KDBreakdown
+    notes: List[str]
+
+
 class KeywordDifficultyState(TypedDict):
     keywords: List[str]
     difficulty_level: Literal["easy", "medium", "hard", "very_hard"]
@@ -142,6 +170,7 @@ class SEORESULT(TypedDict, total=False):
     """SEO analysis result - fields are optional as they may be populated by different nodes."""
     extracted_keywords: ExtractedKeywordsState
     keyword_difficulty: KeywordDifficultyState
+    keyword_difficulty2: KeywordDifficultyState2
     title_recommendations: TitleRecommendationState
     intent: SearchIntentState
     content_pattern: ContentPatternState
