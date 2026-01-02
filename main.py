@@ -24,7 +24,7 @@ graph = create_wrext_engine()
 result = asyncio.run(graph.ainvoke(
     {
         "serp_payload": {
-            "query": "what is machine learning",
+            "query": "seo tools for beginners",
             "country": "us"
         }
     }

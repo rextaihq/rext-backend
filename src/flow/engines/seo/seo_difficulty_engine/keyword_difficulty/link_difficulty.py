@@ -4,71 +4,9 @@ from collections import Counter
 from typing import List, Dict, Any
 from src.flow.states.wrext import Competitor, NormalizedOrganicResult
 from datetime import datetime
-# ------------------------
-# Domain authority mapping
-# ------------------------
-DOMAIN_AUTHORITY_MAP = {
-    "gov": 100,
-    "edu": 90,
-    "publisher": 80,
-    "brand": 70,
-    "ugc": 55,
-    "other": 30
-}
+from src.flow.engines.seo.seo_difficulty_engine.utils.utils import DOMAIN_AUTHORITY_MAP, normalize_freshness, classify_domain_type, clamp
 
-def normalize_freshness(date_str):
-    if not date_str:
-        return 0.3  # unknown freshness
 
-    try:
-        dt = datetime.fromisoformat(date_str)
-        days = (datetime.now() - dt).days
-
-        if days <= 30:
-            return 1.0
-        elif days <= 180:
-            return 0.85
-        elif days <= 365:
-            return 0.7
-        elif days <= 730:
-            return 0.5
-        elif days <= 1095:
-            return 0.3
-        else:
-            return 0.1
-        
-    except:
-        return 0.3
-
-def classify_domain_type(domain: str) -> str:
-    domain = domain.lower()
-    if domain.endswith(".gov") or ".gov." in domain:
-        return "gov"
-    if domain.endswith(".edu") or ".edu." in domain:
-        return "edu"
-
-    publisher_keywords = [
-        "wikipedia", "forbes", "nytimes", "bbc", "cnn",
-        "techcrunch", "medium", "investopedia", "coursera",
-        "datacamp", "geeksforgeeks", "ibm", "sap", "mit"
-    ]
-    if any(p in domain for p in publisher_keywords):
-        return "publisher"
-
-    brand_keywords = [
-        "google", "microsoft", "amazon", "ibm", "sap", "oracle"
-    ]
-    if any(b in domain for b in brand_keywords):
-        return "brand"
-
-    ugc_keywords = ["reddit", "quora", "stackexchange", "stackoverflow"]
-    if any(u in domain for u in ugc_keywords):
-        return "ugc"
-
-    return "other"
-
-def clamp(val, min_v=0, max_v=1):
-    return max(min(val, max_v), min_v)
 
 def normalize_rd(rd, cap=1000):
     """Referring domains proxy log-scale normalization with freshness boost"""

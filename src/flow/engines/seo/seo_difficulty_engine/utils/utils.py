@@ -2,6 +2,8 @@ import math
 import statistics
 from collections import Counter
 from typing import List, Dict, Any
+from datetime import datetime
+
 
 # ------------------------
 # Domain authority mapping
@@ -42,8 +44,19 @@ def classify_domain_type(domain: str) -> str:
 
     return "other"
 
+
+
 def clamp(val, min_v=0, max_v=1):
+    '''
+    clamp(1.5)     # → 1
+    clamp(-0.3)    # → 0
+    clamp(0.6)     # → 0.6
+    clamp(75, 0, 100)  # → 75
+    clamp(120, 0, 100) # → 100
+    '''
+
     return max(min(val, max_v), min_v)
+
 
 def normalize_rd(rd, cap=1000):
     """Referring domains proxy log-scale normalization with freshness boost"""
@@ -140,3 +153,27 @@ def brand_share(competitors: List[Dict[str, Any]]) -> float:
     brands = [c for c in competitors if classify_domain_type(c["domain"]) == "brand"]
     return len(brands) / max(len(competitors), 1)
 
+
+def normalize_freshness(date_str):
+    if not date_str:
+        return 0.3  # unknown freshness
+
+    try:
+        dt = datetime.fromisoformat(date_str)
+        days = (datetime.now() - dt).days
+
+        if days <= 30:
+            return 1.0
+        elif days <= 180:
+            return 0.85
+        elif days <= 365:
+            return 0.7
+        elif days <= 730:
+            return 0.5
+        elif days <= 1095:
+            return 0.3
+        else:
+            return 0.1
+        
+    except:
+        return 0.3

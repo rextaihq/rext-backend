@@ -1,32 +1,6 @@
 from collections import Counter
 from src.flow.states.wrext import SERPNORMALIZED, Competitor
-
-def classify_domain_type(domain: str) -> str:
-    domain = domain.lower()
-    if domain.endswith(".gov") or ".gov." in domain:
-        return "gov"
-    if domain.endswith(".edu") or ".edu." in domain:
-        return "edu"
-
-    publisher_keywords = [
-        "wikipedia", "forbes", "nytimes", "bbc", "cnn",
-        "techcrunch", "medium", "investopedia", "coursera",
-        "datacamp", "geeksforgeeks", "ibm", "sap", "mit"
-    ]
-    if any(p in domain for p in publisher_keywords):
-        return "publisher"
-
-    brand_keywords = [
-        "google", "microsoft", "amazon", "ibm", "sap", "oracle"
-    ]
-    if any(b in domain for b in brand_keywords):
-        return "brand"
-
-    ugc_keywords = ["reddit", "quora", "stackexchange", "stackoverflow"]
-    if any(u in domain for u in ugc_keywords):
-        return "ugc"
-
-    return "other"
+from src.flow.engines.seo.seo_difficulty_engine.utils.utils import classify_domain_type
 
 
 def context_modifier(competitors: list[Competitor], serp_normalized: SERPNORMALIZED, keyword_intent: str) -> float:

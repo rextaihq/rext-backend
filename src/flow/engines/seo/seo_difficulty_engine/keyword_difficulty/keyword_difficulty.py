@@ -79,6 +79,7 @@ def calculate_final_kd(
     notes = []
 
     # Brand dominance
+
     brands = {"brand", "publisher", "gov", "edu"}
     brand_count = sum(1 for c in wrext_data["competitors"]
                       if wrext_data["serp_normalized"]["domain_stats"].get(c["domain"], {}).get("type") in brands)
@@ -118,7 +119,7 @@ def compute_keyword_difficulty(wrext_data: WREXT, keyword_intent: str = "informa
     Node function to calculate final Keyword Difficulty (KD)
     Stores results in wrext_data['seo_result']['keyword_difficulty']
     """
-    wrext_data.setdefault("seo_result", {})
+    # wrext_data.setdefault("seo_result", {})
 
     keyword = wrext_data["serp_normalized"]["query"]
 

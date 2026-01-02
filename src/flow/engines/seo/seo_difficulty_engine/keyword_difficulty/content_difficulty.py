@@ -1,49 +1,16 @@
-import math
 import statistics
-from datetime import datetime
 from src.flow.states.wrext import Competitor, NormalizedOrganicResult, ScrapeContext
 from typing import List
-def clamp(val, min_v=0, max_v=1):
-    return max(min(val, max_v), min_v)
-
-'''
-clamp(1.5)     # → 1
-clamp(-0.3)    # → 0
-clamp(0.6)     # → 0.6
-clamp(75, 0, 100)  # → 75
-clamp(120, 0, 100) # → 100
-'''
+from src.flow.engines.seo.seo_difficulty_engine.utils.utils import clamp, normalize_freshness
+    
 
 def normalize_word_count(wc, max_wc=2000):
     """Assume max deep content ~2000 words"""
     return clamp(wc / max_wc)
 
+
 def normalize_structure(h2_count, h3_count, max_h2=10, max_h3=20):
     return clamp((h2_count/max_h2 * 0.6 + h3_count/max_h3 * 0.4))
-
-def normalize_freshness(date_str):
-    if not date_str:
-        return 0.3  # unknown freshness
-
-    try:
-        dt = datetime.fromisoformat(date_str)
-        days = (datetime.now() - dt).days
-
-        if days <= 30:
-            return 1.0
-        elif days <= 180:
-            return 0.85
-        elif days <= 365:
-            return 0.7
-        elif days <= 730:
-            return 0.5
-        elif days <= 1095:
-            return 0.3
-        else:
-            return 0.1
-        
-    except:
-        return 0.3
 
 
 def intent_match(keyword_intent, page_intent):
@@ -51,13 +18,6 @@ def intent_match(keyword_intent, page_intent):
     keyword_intent: 'informational', 'commercial', etc.
     page_intent: dict from competitor intent_distribution
     """
-    if not page_intent:
-        return 0.5  # unknown
-    total = sum(page_intent.values())
-    if total == 0:
-        return 0.5
-    page_score = page_intent.get(keyword_intent, 0) / total
-    return clamp(page_score)
 
     """
     page_intent
@@ -69,13 +29,21 @@ def intent_match(keyword_intent, page_intent):
 
     """
 
+    if not page_intent:
+        return 0.5  # unknown
+    total = sum(page_intent.values())
+    if total == 0:
+        return 0.5
+    page_score = page_intent.get(keyword_intent, 0) / total
+    return clamp(page_score)
+
+
+
 def content_strength(keyword_intent: str, competitor: Competitor, normalized_result: NormalizedOrganicResult, scrape_data: ScrapeContext) -> float:
     # Word count proxy
     wc = sum(d["content_length"] for d in scrape_data["documents"]) / len(scrape_data["documents"])
     wc_score = normalize_word_count(wc)
-
-    # i need to extrat heading for each article and then count heading and give score to each article and finally tack the avg count of heading.
-
+    
     # Content structure proxy
     # if no headings, approximate: snippet length => structure \
     # # Match lines starting with #, ##, ###, etc.
