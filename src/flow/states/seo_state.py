@@ -122,15 +122,24 @@ class TitleRecommendationState(TypedDict):
     total_competitors_analyzed: int
     error: Optional[str]    
     
-class KeywordDifficultySignals(TypedDict, total=False):
-    authority_pressure: int       
-    serp_feature_pressure: int         
-    content_depth: int            
-    title_barrier: int            
-    intent_lock: int               
-    freshness_pressure: int        
-    brand_dominance: int          
+# class KeywordDifficultySignals(TypedDict, total=False):
+#     authority_pressure: int       
+#     serp_feature_pressure: int         
+#     content_depth: int            
+#     title_barrier: int            
+#     intent_lock: int               
+#     freshness_pressure: int        
+#     brand_dominance: int          
 
+class KeywordDifficultySignals(TypedDict, total=False):
+    link_difficulty: int              
+    domain_monopoly: int              
+    authority_pressure: int           
+    serp_feature_pressure: int       
+    intent_lock: int                 
+    freshness_pressure: int           
+    onpage_pressure: int            
+    brand_dominance: int             
 
 class KeywordDifficultyState(TypedDict):
     keyword: str
