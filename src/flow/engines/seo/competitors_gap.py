@@ -55,8 +55,11 @@ def competitors_gap_node(state: WREXT) -> Dict[str, SEORESULT]:
         recommended_sections.append(q.capitalize())
 
     # Output
+    # Output
+    prev_seo = state.get("seo_result", {})
     return {
         "seo_result": {
+            **prev_seo,
             "content_gaps": {
                 "missing_topics": missing_topics[:5],
                 "missing_questions": missing_questions[:5],

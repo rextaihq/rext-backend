@@ -11,9 +11,10 @@ def seo_opportunity_node(state: WREXT) -> Dict[str, SEORESULT]:
     serp = state.get("serp_normalized", {})
     competitors = state.get("competitors", [])
 
+    # Unified KD State usage
     difficulty_score = kd.get("difficulty_score", 100)
     difficulty_level = kd.get("difficulty_level", "very_hard")
-    signals = kd.get("difficulty_signals", {})
+    breakdown = kd.get("breakdown", {})
 
     missing_topics = gaps.get("missing_topics", [])
     missing_questions = gaps.get("missing_questions", [])
@@ -38,11 +39,11 @@ def seo_opportunity_node(state: WREXT) -> Dict[str, SEORESULT]:
     score += min(15, len(weak_areas) * 3)
 
     # Brand dominance penalty
-    brand_penalty = signals.get("brand_dominance", 0)
+    brand_penalty = breakdown.get("brand_dominance", 0)
     score -= brand_penalty * 0.5
 
     # Freshness penalty
-    score -= signals.get("freshness_pressure", 0) * 0.3
+    score -= breakdown.get("freshness_pressure", 0) * 0.3
 
     # SERP feature opportunity
     features = serp.get("features", {})
@@ -62,8 +63,8 @@ def seo_opportunity_node(state: WREXT) -> Dict[str, SEORESULT]:
         opportunity_level = "low"
 
     # 3. STRATEGY DERIVATION
-    intent_lock = 0
-
+    intent = (seo.get("intent") or {}).get("primary_intent", "informational")
+    
     # Count how many competitors have the keyword intent as the top intent
     intent_counts = {}
     for c in competitors:
@@ -73,6 +74,7 @@ def seo_opportunity_node(state: WREXT) -> Dict[str, SEORESULT]:
                 intent_counts[intent_name] = intent_counts.get(intent_name, 0) + 1
 
     # Find the most common intent among competitors
+    top_intent_count = 0
     if intent_counts:
         top_intent_count = max(intent_counts.values())
 
@@ -106,8 +108,9 @@ def seo_opportunity_node(state: WREXT) -> Dict[str, SEORESULT]:
     # 4. OUTPUT
     return {
         "seo_result": {
+            **seo,
             "seo_strategy": {
-                "target_intent": top_intent_count,
+                "target_intent": str(top_intent_count),
                 "recommended_content_type": recommended_content_type,
                 "ideal_word_count": ideal_word_count,
                 "priority_topics": missing_topics[:5],
@@ -122,8 +125,8 @@ def seo_opportunity_node(state: WREXT) -> Dict[str, SEORESULT]:
                 "key_drivers": {
                     "missing_topics": len(missing_topics),
                     "missing_questions": len(missing_questions),
-                    "brand_pressure": signals.get("brand_dominance", 0),
-                    "freshness_pressure": signals.get("freshness_pressure", 0),
+                    "brand_pressure": breakdown.get("brand_dominance", 0),
+                    "freshness_pressure": breakdown.get("freshness_pressure", 0),
                 },
             },
         }

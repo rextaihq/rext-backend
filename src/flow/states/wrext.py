@@ -2,7 +2,7 @@
 # Imports
 # =========================
 from typing import List, Dict, Any, Optional
-from typing_extensions import TypedDict
+from typing_extensions import TypedDict, Annotated
 from langchain_core.documents import Document
 
 from src.flow.states.countries import SUPPORTED_COUNTRIES
@@ -121,7 +121,7 @@ class WREXT(TypedDict, total=False):
     relevant_context: List[Document]
 
     # SEO Output
-    seo_result: SEORESULT
+    seo_result: Annotated[SEORESULT, lambda x, y: {**x, **y} if x and y else (y or x)]
 
     # Content Output
     content: CONTENT

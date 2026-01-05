@@ -18,20 +18,30 @@ class SearchIntentState(TypedDict):
     intent_signals: Dict[str, int]  # keyword → frequency
 
 
-# # ---------------------------------------------------------
-# # 2. Keyword Difficulty
-# # ---------------------------------------------------------
+# ---------------------------------------------------------
+# 2. Keyword Difficulty (Unified)
+# ---------------------------------------------------------
 
-# class KeywordDifficultyState(TypedDict):
-#     keywords: List[str]
-#     difficulty_level: Literal["easy", "medium", "hard", "very_hard"]
-#     serp_competition: int
-#     authority_barrier: Literal["low", "medium", "high"]
+class KDBreakdown(TypedDict, total=False):
+    link_score: float
+    serp_score: float
+    content_score: float
+    context_modifier: float
+    # Extended signals for Opportunity calculation
+    brand_dominance: float
+    freshness_pressure: float
+
+class KeywordDifficultyState(TypedDict):
+    keyword: str
+    difficulty_score: float
+    difficulty_level: Literal["easy", "medium", "hard", "very_hard"]
+    breakdown: KDBreakdown
+    notes: List[str]
 
 
-# # ---------------------------------------------------------
-# # 3. Content Pattern Analysis
-# # ---------------------------------------------------------
+# ---------------------------------------------------------
+# 3. Content Pattern Analysis
+# ---------------------------------------------------------
 class ContentPatternState(TypedDict):
     content_type: Literal[
         "blog",
@@ -122,31 +132,6 @@ class TitleRecommendationState(TypedDict):
     total_competitors_analyzed: int
     error: Optional[str]    
     
-# class KeywordDifficultySignals(TypedDict, total=False):
-#     authority_pressure: int       
-#     serp_feature_pressure: int         
-#     content_depth: int            
-#     title_barrier: int            
-#     intent_lock: int               
-#     freshness_pressure: int        
-#     brand_dominance: int          
-
-class KeywordDifficultySignals(TypedDict, total=False):
-    link_difficulty: int              
-    domain_monopoly: int              
-    authority_pressure: int           
-    serp_feature_pressure: int       
-    intent_lock: int                 
-    freshness_pressure: int           
-    onpage_pressure: int            
-    brand_dominance: int             
-
-class KeywordDifficultyState(TypedDict):
-    keyword: str
-    difficulty_score: int                    
-    difficulty_level: Literal["easy", "medium", "hard", "very_hard"]
-    difficulty_signals: KeywordDifficultySignals
-
 class SEOOpportunityState(TypedDict):
     opportunity_score: int
     opportunity_level: Literal["low", "medium", "high"]
