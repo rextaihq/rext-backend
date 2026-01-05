@@ -6,7 +6,7 @@ from langgraph.graph import StateGraph, START, END
 def review_content():
     graph = StateGraph(WREXT)
     
-    # add nodes
+    # add nodes 
     graph.add_node("calculate_readability", calculate_readability)
     # add edges
     graph.add_edge(START, "calculate_readability")
@@ -14,5 +14,5 @@ def review_content():
 
     # compile the graph
     app = graph.compile()
-    
+
     return app
