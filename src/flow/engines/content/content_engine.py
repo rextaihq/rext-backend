@@ -1,9 +1,9 @@
 import logging
 from langgraph.graph import StateGraph, START, END
 from src.flow.states.wrext import WREXT
-from src.flow.engines.content.outline import generate_outline
-from src.flow.engines.content.review_outline import review_outline
+from src.flow.engines.content.generation.outline import generate_outline
 from src.flow.engines.content.generation.content import generate_content
+from src.flow.engines.content.review.outline import review_outline
 from src.flow.engines.content.review.content.content_review import review_content
 
 def create_content_engine():

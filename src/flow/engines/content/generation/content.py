@@ -11,19 +11,32 @@ def generate_content(state: WREXT):
     """
     Generates content using an LLM.
     """
-    # 1. Get outline and context from state
-    outline = state.get("outline", {})
+    # 1. Get outline and context from stats
+    content_state = state.get("content", {})
+    print("Content State: ", content_state)
 
-    # 1. Get query and context from state
+    outline = content_state.get("outline", {})
+    print("Outline: ", outline)
+
+    # 1. Get query and context from stats
     serp_payload = state.get("serp_payload", {})
     query = serp_payload.get("query")
 
+    import json
+    
     # prepare data for content generation
+    # Ensure outline is a string for the prompt
+    outline_str = json.dumps(outline, indent=2) if outline else "NO OUTLINE FOUND"
+    
     data = {
         "query": query,
-        "outline": outline,
+        "outline": outline_str,
+        "title": outline.get("title", "")
     }
     
+    logger.info(f"Generating content using Title: '{data['title']}'")
+    # logger.info(f"Outline Payload: {outline_str[:500]}...") # Log start of outline
+
     # 2. Load model and generate content
     try:
         content_model = load_model().with_structured_output(GeneratedContent)
