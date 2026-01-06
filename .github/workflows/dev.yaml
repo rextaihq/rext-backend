@@ -3,9 +3,16 @@ name: DEV_CI_CD
 on:
   push:
     branches:
-      - main
+      - dev
+  pull_request:
+    types:
+      - closed
+    branches:
+      - dev
+
 jobs:
   build:
+    if: github.event_name == 'push' || github.event.pull_request.merged == true
     runs-on: ubuntu-latest
 
     steps:
