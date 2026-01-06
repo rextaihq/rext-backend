@@ -105,8 +105,6 @@ jobs:
       # Core API Keys
       OPENAI_API_KEY: ${{ secrets.DEV_OPENAI_API_KEY }}
       LANGSMITH_API_KEY: ${{ secrets.DEV_LANGSMITH_API_KEY }}
-      COHERE_API_KEY: ${{ secrets.DEV_COHERE_API_KEY }}
-      PERPLEXITY_API_KEY: ${{ secrets.DEV_PERPLEXITY_API_KEY }}
       
       # Database
       POSTGRES_URI_CUSTOM: ${{ secrets.DEV_POSTGRES_URI_CUSTOM }}
@@ -150,8 +148,6 @@ jobs:
           # Core API Keys
           OPENAI_API_KEY=${{ secrets.DEV_OPENAI_API_KEY }}
           LANGSMITH_API_KEY=${{ secrets.DEV_LANGSMITH_API_KEY }}
-          COHERE_API_KEY=${{ secrets.DEV_COHERE_API_KEY }}
-          PERPLEXITY_API_KEY=${{ secrets.DEV_PERPLEXITY_API_KEY }}
 
           # Database
           POSTGRES_URI_CUSTOM=${{ secrets.DEV_POSTGRES_URI_CUSTOM }}
