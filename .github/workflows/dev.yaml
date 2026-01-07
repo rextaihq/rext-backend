@@ -1,8 +1,9 @@
 name: DEV_CI_CD
 
 on:
-  branch:
-    - main
+  push:
+    branches:
+      - main
 jobs:
   build:
     runs-on: ubuntu-latest
