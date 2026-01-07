@@ -1,5 +1,5 @@
 from typing import List, Optional, Literal
-from typing_extensions import TypedDict
+from typing_extensions import TypedDict,Annotated
 
 
 class ContentSection(TypedDict):
@@ -30,17 +30,24 @@ class ContentDraft(TypedDict):
     status: Literal["approved", "rejected"]
     rejected_reason: Optional[str]
 
+# Readability Metrics
+class ReadabilityMetrics(TypedDict):
+    flesch_reading_ease: float
+    flesch_kincaid_grade: float
+    gunning_fog_index: float
+    smog_index: float
+    automated_readability_index: float
+    coleman_liau_index: float
+    dale_chall_score: float
 
 class ContentReview(TypedDict):
     seo_score: float
-    readability_score: float
-    tone_alignment: bool
+    readability_metrics: ReadabilityMetrics
 
     eeat_score: Optional[float]
     plagiarism_score: Optional[float]
 
     passed: bool
-    rejected_reason: Optional[str]
 
     missing_points: List[str]
     improvement_suggestions: List[str]
@@ -56,9 +63,9 @@ class FinalContent(TypedDict):
 
     primary_keyword: Optional[str]
     secondary_keywords: Optional[List[str]]
-    canonical_url: Optional[str]
-
     word_count: int
+    status: Literal["approved", "rejected"]
+    rejected_reason: Optional[str]
 
 
 class CONTENT(TypedDict, total=False):

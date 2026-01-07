@@ -2,7 +2,7 @@ from typing import Dict, Any
 from src.flow.states.wrext import WREXT
 from src.services.seo_service import KeywordExtractor
 from langgraph.types import interrupt, Command
-
+from langgraph.graph import END
 
 def recommendation(state: WREXT) -> Dict[str, Any]:
     """
@@ -87,7 +87,5 @@ def recommendation(state: WREXT) -> Dict[str, Any]:
                     "country": state.get("serp_payload", {}).get("country", "us")
                 }
             },
-            goto="generate_outline"
+            goto=END 
         )
-        
-    

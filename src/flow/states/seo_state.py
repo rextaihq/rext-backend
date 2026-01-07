@@ -19,8 +19,7 @@ class SearchIntentState(TypedDict):
 
 
 # ---------------------------------------------------------
-# 2. Keyword Difficulty 
-# Latest Tech News for Dec 20 2025
+# 2. Keyword Difficulty (Unified)
 # ---------------------------------------------------------
 
 class KDBreakdown(TypedDict, total=False):
@@ -28,34 +27,16 @@ class KDBreakdown(TypedDict, total=False):
     serp_score: float
     content_score: float
     context_modifier: float
-
-
-class KeywordDifficultyState2(TypedDict, total=False):
-    keyword: str
-    kd: float
-    breakdown: KDBreakdown
-    notes: List[str]
-
-
-class KDBreakdown(TypedDict, total=False):
-    link_score: float
-    serp_score: float
-    content_score: float
-    context_modifier: float
-
-
-class KeywordDifficultyState2(TypedDict, total=False):
-    keyword: str
-    kd: float
-    breakdown: KDBreakdown
-    notes: List[str]
-
+    # Extended signals for Opportunity calculation
+    brand_dominance: float
+    freshness_pressure: float
 
 class KeywordDifficultyState(TypedDict):
-    keywords: List[str]
+    keyword: str
+    difficulty_score: float
     difficulty_level: Literal["easy", "medium", "hard", "very_hard"]
-    serp_competition: int
-    authority_barrier: Literal["low", "medium", "high"]
+    breakdown: KDBreakdown
+    notes: List[str]
 
 
 # ---------------------------------------------------------
@@ -110,25 +91,11 @@ class SERPFeatureImpactState(TypedDict):
     opportunity_features: List[str]
 
 
-# ---------------------------------------------------------
-# 7. SEO Strategy (Actionable Output)
-# ---------------------------------------------------------
-
-class SEOStrategyState(TypedDict):
-    target_intent: str
-    recommended_content_type: str
-    ideal_word_count: int
-    priority_topics: List[str]
-    questions_to_answer: List[str]
-    difficulty: str
-    ranking_time_estimate: str
-    content_angle: str
-
 class ExtractedKeyword(TypedDict):
     """Individual extracted keyword with TF-IDF scoring."""
     keyword: str
-    score: float  # Normalized 0-100 score
-    raw_tfidf: float  # Raw TF-IDF score
+    score: float  
+    raw_tfidf: float  
     rank: int
     word_count: int
     in_query: bool
@@ -165,12 +132,25 @@ class TitleRecommendationState(TypedDict):
     total_competitors_analyzed: int
     error: Optional[str]    
     
+class SEOOpportunityState(TypedDict):
+    opportunity_score: int
+    opportunity_level: Literal["low", "medium", "high"]
+    key_drivers: Dict[str, Any]
+
+class SEOStrategyState(TypedDict):
+    target_intent: str
+    recommended_content_type: str
+    ideal_word_count: int
+    priority_topics: List[str]
+    questions_to_answer: List[str]
+    difficulty: str
+    ranking_time_estimate: str
+    content_angle: str
 
 class SEORESULT(TypedDict, total=False):
     """SEO analysis result - fields are optional as they may be populated by different nodes."""
     extracted_keywords: ExtractedKeywordsState
     keyword_difficulty: KeywordDifficultyState
-    keyword_difficulty2: KeywordDifficultyState2
     title_recommendations: TitleRecommendationState
     intent: SearchIntentState
     content_pattern: ContentPatternState
@@ -178,3 +158,4 @@ class SEORESULT(TypedDict, total=False):
     authority: AuthorityState
     serp_features: SERPFeatureImpactState
     seo_strategy: SEOStrategyState
+    seo_opportunity: SEOOpportunityState 

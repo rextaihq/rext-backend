@@ -1,44 +1,46 @@
 import logging
 from langgraph.graph import StateGraph, START, END
 from src.flow.states.wrext import WREXT
+
 from src.flow.engines.seo.seo_difficulty_engine.keyword_difficulty.keyword_difficulty import compute_keyword_difficulty
+from src.flow.engines.seo.competitors_gap import competitors_gap_node
+from src.flow.engines.seo.seo_opportunity import seo_opportunity_node
 from src.flow.engines.seo.keyword_finder import relevance_keyword_finder
 from src.flow.engines.seo.recomendation import recommendation
-# from src.flow.engines.seo.seo_engine.keyword
+
 logger = logging.getLogger(__name__)
 
 def create_seo_engine():
-    flow = StateGraph(WREXT)
+    """
+    Creates the Hybrid SEO Engine Graph.
+    
+    Flow:
+    1. Keyword Difficulty (Advanced) - Calculates detailed difficulty breakdown
+    2. Competitors Gap - Identifies missing topics and questions
+    3. SEO Opportunity - Scores opportunity based on difficulty and gaps
+    4. Keyword Finder - Extracts relevant keywords from SERP
+    5. Recommendation - Interactive title recommendation
+    """
+    graph = StateGraph(WREXT)
 
-    def debug_node(func, node_name):
-        def wrapped(state):
-            result = func(state)
-            print(f"\n{'='*20} NODE: {node_name} {'='*20}")
-            print(result)
-            print('='*50 + "\n")
-            return result
-        return wrapped
+    # Add Nodes
+    graph.add_node("compute_keyword_difficulty", compute_keyword_difficulty)
+    graph.add_node("competitors_gap", competitors_gap_node)
+    graph.add_node("seo_opportunity", seo_opportunity_node)
+    graph.add_node("relevance_keyword_finder", relevance_keyword_finder)
+    graph.add_node("recommendation", recommendation)
+
+    # Add Edges (Linear Flow)
+    graph.add_edge(START, "compute_keyword_difficulty")
+    graph.add_edge(START, "competitors_gap")
+    graph.add_edge(START, "seo_opportunity")
+    graph.add_edge(START, "relevance_keyword_finder")
 
 
-    flow.add_node(
-    "keyword_difficulty_engine",
-    debug_node(compute_keyword_difficulty, "keyword_difficulty_engine")
-    )
+    graph.add_edge("compute_keyword_difficulty", "recommendation")
+    graph.add_edge("competitors_gap", "recommendation")
+    graph.add_edge("seo_opportunity", "recommendation")
+    graph.add_edge("relevance_keyword_finder", "recommendation")
+    graph.add_edge("recommendation", END)
 
-
-    # add nodes
-    # flow.add_node("seo_engine", SEOEngine)
-    # flow.add_node("seo_engine", compute_keyword_difficulty)
-    # flow.add_node("relevance_keyword_finder", relevance_keyword_finder)
-    # flow.add_node("recommendation", recommendation)
-
-    # add edges
-    # flow.add_edge(START, "seo_engine")
-    flow.add_edge(START, "keyword_difficulty_engine")
-    # flow.add_edge("keyword_difficulty_engine", "relevance_keyword_finder")
-    # flow.add_edge("relevance_keyword_finder", "recommendation")
-    flow.add_edge("keyword_difficulty_engine", END)
-
-    # compile and return
-    app = flow.compile()
-    return app
+    return graph.compile()
