@@ -5,9 +5,13 @@ build/
 dist/
 wheels/
 *.egg-info
+.env.dev
+.env.stage
+.env.production
 
 # Virtual environments
 uploads/
+secrets/
 .venv
 vector_store/
 .langgraph_api

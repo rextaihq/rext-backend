@@ -4,10 +4,13 @@
 from typing import List, Dict, Any, Optional
 from typing_extensions import TypedDict, Annotated
 from langchain_core.documents import Document
-
 from src.flow.states.countries import SUPPORTED_COUNTRIES
 from src.flow.states.seo_state import SEORESULT
 from src.flow.states.content import CONTENT
+
+# Reducer fun
+def override(_: dict, new: dict) -> dict:
+    return new
 
 # =========================
 # SERP ENGINE STATE
@@ -98,7 +101,6 @@ class DocumentScrapeData(TypedDict):
     keywords: List[str]
     headings: List[str]
 
-
 class ScrapeContext(TypedDict, total=False):
     documents: List[DocumentScrapeData]
     total_documents: int
@@ -124,4 +126,4 @@ class WREXT(TypedDict, total=False):
     seo_result: Annotated[SEORESULT, lambda x, y: {**x, **y} if x and y else (y or x)]
 
     # Content Output
-    content: CONTENT
+    content: Annotated[CONTENT, override]

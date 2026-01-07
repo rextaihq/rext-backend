@@ -1,51 +1,78 @@
 import logging
+import json
 from src.flow.states.wrext import WREXT
 from src.flow.model.llm_manager import load_model
 from src.flow.model.structure.content import GeneratedContent
 from src.flow.prompts.human.content import get_content_prompt
+from src.flow.engines.content.generation.eeat_injection import get_eeat_persona
 
 logger = logging.getLogger(__name__)
 
-
 def generate_content(state: WREXT):
     """
-    Generates content using an LLM.
+    Generates SEO content using an LLM, integrating outline, context, and EEAT persona.
     """
-    # 1. Get outline and context from state
-    outline = state.get("outline", {})
-
-    # 1. Get query and context from state
-    serp_payload = state.get("serp_payload", {})
-    query = serp_payload.get("query")
-
-    # prepare data for content generation
-    data = {
-        "query": query,
-        "outline": outline,
-    }
-    
-    # 2. Load model and generate content
     try:
+        # 1️⃣ Get content state and outline
+        content_state = state.get("content", {})
+        outline = content_state.get("outline", {})
+        if not outline:
+            logger.warning("No outline found in state. Proceeding without it.")
+        outline_str = json.dumps(outline, indent=2) if outline else "NO OUTLINE FOUND"
+
+        # 2️⃣ Get query
+        serp_payload = state.get("serp_payload", {})
+        query = serp_payload.get("query", "")
+        logger.info(f"Query extracted: {query}")
+
+        # 3️⃣ Get relevant context
+        relevant_context = state.get("relevant_context", [])
+        page_content = "\n\n".join(
+            chunk.get("chunk", "") for chunk in relevant_context
+        )
+        logger.info(f"Page content length: {len(page_content.split())} words")
+        
+        # 4️⃣ Get EEAT persona safely
+        persona = get_eeat_persona()  # defaults to eeat_persona_001
+        persona_str = json.dumps(persona, indent=2)
+
+        # 5️⃣ Prepare prompt data
+        prompt_data = {
+            "query": query,
+            "title": outline.get("title", query),
+            "outline": outline_str,
+            "reference_text": page_content,
+            "persona": persona_str
+        }
+
+        # 6️⃣ Load model and prepare messages
         content_model = load_model().with_structured_output(GeneratedContent)
-        
-        # Prepare context
-        messages = get_content_prompt().format_messages(**data)
-        
-        # Invoke LLM 
+        messages = get_content_prompt().format_messages(**prompt_data)
+        logger.info(f"Number of messages sent to LLM: {len(messages)}")
+
+        # 7️⃣ Invoke LLM
         generated_content = content_model.invoke(messages)
-        logger.info("Content generated successfully")
-        
+        content_dict = generated_content.model_dump()
+        logger.info(f"Content generated successfully. Keys: {content_dict.keys()}")
+
+        # 8️⃣ Return structured content
         return {
             "content": {
+                "outline": outline,
                 "final_content": {
-                    **generated_content.model_dump(),
+                    **content_dict,
                     "status": "reviewing",
                     "rejected_reason": ""
                 },
-                "status": "content_generation",
+                "status": "content_generation"
             }
         }
-        
+
     except Exception as e:
         logger.exception(f"Error generating content: {str(e)}")
-        return {"content": {**outline, "error": f"Generation failed: {str(e)}"}}
+        return {
+            "content": {
+                **content_state,
+                "error": f"Generation failed: {str(e)}"
+            }
+        }
