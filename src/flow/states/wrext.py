@@ -82,7 +82,6 @@ class Competitor(TypedDict):
     featured_snippet: bool
     is_brand: bool
 
-
 # =========================
 # SERP PAYLOAD
 # =========================

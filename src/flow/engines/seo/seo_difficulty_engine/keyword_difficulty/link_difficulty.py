@@ -41,7 +41,7 @@ def is_homepage(url: str) -> bool:
 
 
 
-def url_link_strength(keyword: str, comp: Dict[str, Any], serp_entry: Dict[str, Any], normalized_result: List[NormalizedOrganicResult]) -> float:
+def url_link_strength(keyword: str, comp: Competitor, serp_entry: NormalizedOrganicResult, normalized_result: List[NormalizedOrganicResult]) -> float:
     """Compute link strength for one competitor with all improvements"""
 
     """
@@ -51,15 +51,21 @@ def url_link_strength(keyword: str, comp: Dict[str, Any], serp_entry: Dict[str, 
 
     """
 
+    
     # RD score + freshness boost
     rd_proxy = comp.get("total_occurrences", 1) * 10
 
+    freshness = normalize_freshness(serp_entry.get("date"))
+    
+    
+    '''
     scores = [
         normalize_freshness(res.get("date"))
         for res in normalized_result
         ]
+ 
     freshness = sum(scores) / len(normalized_result)
-   
+    '''
     rd_score = normalize_rd(rd_proxy) + (0.05 * freshness) 
 
 
@@ -129,6 +135,7 @@ def brand_share(competitors: Competitor) -> float:
 # ------------------------
 # Main link difficulty function
 # ------------------------
+'''
 def link_difficulty_score(keyword: str, competitors: Competitor, serp_normalized: NormalizedOrganicResult) -> Dict[str, Any]:
     link_strength = median_link_strength(keyword, competitors, serp_normalized)
     serp_repeted_score = serp_lock_penalty(competitors) 
@@ -147,4 +154,76 @@ def link_difficulty_score(keyword: str, competitors: Competitor, serp_normalized
             "brand_share": round(Branded, 2)
         }
     }
+'''
 
+
+
+
+def competitor_link_kd(
+    keyword: str,
+    comp: Competitor,
+    serp_entry: NormalizedOrganicResult,
+    normalized_results: List[NormalizedOrganicResult],
+    competitors: List[Competitor]
+) -> float:
+    """
+    Full Link KD for ONE competitor (New Approach)
+    """
+
+    # Base link strength (unchanged logic)
+    base_strength = url_link_strength(
+        keyword=keyword,
+        comp=comp,
+        serp_entry=serp_entry,
+        normalized_result=normalized_results
+    )
+
+    # -------- Per-competitor SERP lock --------
+    domains = [c["domain"] for c in competitors]
+    repeat_count = domains.count(comp["domain"])
+
+    serp_lock = 0.0
+    if repeat_count >= 3:
+        serp_lock = 0.15
+    elif repeat_count == 2:
+        serp_lock = 0.07
+
+    # -------- Per-competitor brand pressure --------
+    brand_boost = 0.10 if classify_domain_type(comp["domain"]) == "brand" else 0.0
+
+    # Final per-competitor link KD
+    return clamp(base_strength + serp_lock + brand_boost)
+
+'''
+def link_difficulty_score(
+    keyword: str,
+    competitors: List[Competitor],
+    serp_normalized: List[NormalizedOrganicResult]
+) -> Dict[str, Any]:
+        
+
+        domain_map = {r["domain"]: r for r in serp_normalized}
+
+        competitor_link_kds = [
+            competitor_link_kd(
+                keyword=keyword,
+                comp=comp,
+                serp_entry=domain_map.get(comp["domain"], {}),
+                normalized_results=serp_normalized,
+                competitors=competitors
+            )
+            for comp in competitors
+        ]
+
+        final_link_kd = statistics.median(competitor_link_kds)
+        KD_score = round(final_link_kd * 100, 2)
+
+        return {
+            "link_difficulty": KD_score,
+            "details": {
+                "median_competitor_link_kd": round(final_link_kd, 3),
+                "competitor_count": len(competitor_link_kds)
+            }
+        }
+
+        '''

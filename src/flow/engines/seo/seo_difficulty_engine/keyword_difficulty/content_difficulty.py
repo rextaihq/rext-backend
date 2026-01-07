@@ -34,6 +34,8 @@ def intent_match(keyword_intent, page_intent):
     total = sum(page_intent.values())
     if total == 0:
         return 0.5
+    
+
     page_score = page_intent.get(keyword_intent, 0) / total
     return clamp(page_score)
 
@@ -87,11 +89,11 @@ def content_strength(keyword_intent: str, competitor: Competitor, normalized_res
     intent_score = intent_match(keyword_intent, competitor.get("intent_distribution", {}))
 
     # Weighted aggregation (example weights)
-    # depth / structure 40%, freshness 20%, intent 40%
-    strength = 0.4 * (wc_score + avg_struct_score)/2 + 0.2 * freshness_score + 0.4 * intent_score
+    # depth / structure 30%, freshness 30%, intent 40%
+    strength = 0.3 * (wc_score + avg_struct_score)/2 + 0.3 * freshness_score + 0.4 * intent_score
     return clamp(strength)
 
-
+'''
 def content_difficulty_score(keyword_intent: str, normalized_results: List[NormalizedOrganicResult], competitors: list[Competitor], scrape_context: ScrapeContext) -> dict:
     strengths = []
     for c in competitors:
@@ -113,3 +115,5 @@ def content_difficulty_score(keyword_intent: str, normalized_results: List[Norma
             "num_pages": len(strengths)
         }
     }
+'''
+

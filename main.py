@@ -24,12 +24,12 @@ graph = create_wrext_engine()
 result = asyncio.run(graph.ainvoke(
     {
         "serp_payload": {
-            "query": "seo tools for beginners",
+            "query": "wordpress editing service",
             "country": "us"
         }
     }
 ))
 
-print(result)
+
 
 # print(result['seo_result']['keyword_difficulty2'])
