@@ -29,7 +29,7 @@ services:
     langgraph-api:
         image: revnix/wrext:${IMAGE_TAG:-latest}
         ports:
-            - "8123:2024"
+            - "2024:2024"
         depends_on:
             langgraph-redis:
                 condition: service_healthy
@@ -78,10 +78,6 @@ services:
             # Email (Resend)
             EMAIL_PROVIDER: ${EMAIL_PROVIDER:-resend}
             EMAIL_ENABLED: ${EMAIL_ENABLED:-true}
-            RESEND_API_KEY: ${RESEND_API_KEY}
-            RESEND_FROM_EMAIL: ${RESEND_FROM_EMAIL:-noreply@notifications.wrext.com}
-            RESEND_FROM_NAME: ${RESEND_FROM_NAME:-WREXT}
-            RESEND_WEBHOOK_SECRET: ${RESEND_WEBHOOK_SECRET:-}
             SMTP_SERVER: ${SMTP_SERVER:-}
             SMTP_PORT: ${SMTP_PORT:-587}
             SMTP_USERNAME: ${SMTP_USERNAME:-}
@@ -96,13 +92,10 @@ services:
             PAYMENT_CURRENCY: ${PAYMENT_CURRENCY:-USD}
             PAYMENT_SUCCESS_URL: ${PAYMENT_SUCCESS_URL}
             PAYMENT_CANCEL_URL: ${PAYMENT_CANCEL_URL}
-            LEMONSQUEEZY_API_KEY: ${LEMONSQUEEZY_API_KEY}
-            LEMONSQUEEZY_STORE_ID: ${LEMONSQUEEZY_STORE_ID}
-            LEMONSQUEEZY_WEBHOOK_SECRET: ${LEMONSQUEEZY_WEBHOOK_SECRET}
-            LEMONSQUEEZY_SANDBOX_MODE: ${LEMONSQUEEZY_SANDBOX_MODE:-true}
 
             # AI + External
             PERPLEXITY_API_KEY: ${PERPLEXITY_API_KEY}
+            SERPER_API_KEY: ${SERPER_API_KEY}
 
             # Admin
             SUPER_ADMIN_EMAIL: ${SUPER_ADMIN_EMAIL}

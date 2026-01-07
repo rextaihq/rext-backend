@@ -166,6 +166,12 @@ jobs:
           # Admin
           SUPER_ADMIN_EMAIL=${{ secrets.DEV_SUPER_ADMIN_EMAIL }}
           SUPER_ADMIN_PASSWORD=${{ secrets.DEV_SUPER_ADMIN_PASSWORD }}
+
+          # LangGraph
+          SERPER_API_KEY=${{ secrets.DEV_SERPER_API_KEY }}
+          PERPLEXITY_API_KEY=${{ secrets.DEV_PERPLEXITY_API_KEY }}
+          PAYMENT_CANCEL_URL=${{ secrets.PAYMENT_CANCEL_URL }}
+          PAYMENT_SUCCESS_URL=${{ secrets.PAYMENT_SUCCESS_URL }}
           EOF
 
           echo ".env file created ✅"

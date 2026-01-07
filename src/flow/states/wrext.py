@@ -100,7 +100,7 @@ class DocumentScrapeData(TypedDict):
     content_length: int
     keywords: List[str]
     headings: List[str]
-
+    # domain/position
 
 class ScrapeContext(TypedDict, total=False):
     documents: List[DocumentScrapeData]
