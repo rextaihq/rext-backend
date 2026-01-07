@@ -1,11 +1,14 @@
 name: DEV_CI_CD
 
 on:
-  push:
+  pull_request:
+    types:
+      - closed
     branches:
-      - main
+      - dev
 jobs:
   build:
+    if: github.event.pull_request.merged == true && github.event.pull_request.head.ref == 'dev'
     runs-on: ubuntu-latest
 
     steps:
