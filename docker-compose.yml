@@ -27,20 +27,20 @@ services:
 
     # Backend API Service
     langgraph-api:
-        image: revnixhq/wrext:${IMAGE_TAG:-latest}
+        image: revnix/wrext:${IMAGE_TAG:-latest}
         ports:
             - "8123:2024"
         depends_on:
             langgraph-redis:
                 condition: service_healthy
+        env_file:
+            - .env
         environment:
             # Core API + Database
             OPENAI_API_KEY: ${OPENAI_API_KEY}
             LANGSMITH_API_KEY: ${LANGSMITH_API_KEY}
-            LANGSMITH_DEV_URL: ${LANGSMITH_DEV_URL:-http://127.0.0.1:2024}
             LANGSMITH_PROJECT: ${LANGSMITH_PROJECT:-WREXT}
             LANGSMITH_TRACING: ${LANGSMITH_TRACING:-true}
-            COHERE_API_KEY: ${COHERE_API_KEY}
 
             # Database (Connect to host PostgreSQL)
             POSTGRES_URI_CUSTOM: ${POSTGRES_URI_CUSTOM}
