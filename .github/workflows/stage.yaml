@@ -1,178 +1,186 @@
-# name: STAGE_CI_CD
+name: STAGE_CI_CD
 
-# on:
-#   pull_request:
-#     types:
-#       - closed
-#     branches:
-#       - stage
+on:
+  pull_request:
+    types:
+      - closed
+    branches:
+      - stage
 
-# jobs:
-#   build:
-#     if: github.event.pull_request.merged == true
-#     runs-on: ubuntu-latest
+jobs:
+  build:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
 
-#     steps:
-#       - name: Checkout code
-#         uses: actions/checkout@v3
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
         
-#       - name: Set up Python
-#         uses: actions/setup-python@v4
-#         with:
-#           python-version: '3.11'
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
       
-#       - name: Install uv
-#         run: pip install uv
-      
-#       - name: Cache uv dependencies
-#         uses: actions/cache@v3
-#         with:
-#           path: ~/.cache/uv
-#           key: ${{ runner.os }}-uv-${{ hashFiles('**/uv.lock') }}
-#           restore-keys: |
-#             ${{ runner.os }}-uv-
+      - name: Cache uv dependencies
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/uv
+          key: ${{ runner.os }}-uv-${{ hashFiles('**/uv.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-uv-
 
-#       - name: Install dependencies
-#         run: uv sync
+      - name: Cache pip packages
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/uv.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
 
-#       - name: Cache pip packages
-#         uses: actions/cache@v3
-#         with:
-#           path: ~/.cache/pip
-#           key: ${{ runner.os }}-pip-${{ hashFiles('**/uv.lock') }}
-#           restore-keys: |
-#             ${{ runner.os }}-pip-
-     
-#       - name: Install system dependencies
-#         run: |
-#           sudo apt-get update
-#           sudo apt-get install -y \
-#             chromium-browser \
-#             libnss3 \
-#             libfreetype6 \
-#             libharfbuzz0b \
-#             ca-certificates \
-#             bash \
-#             libstdc++6 \
-#             && sudo apt-get clean
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            chromium-browser \
+            libnss3 \
+            libfreetype6 \
+            libharfbuzz0b \
+            ca-certificates \
+            bash \
+            libstdc++6 \
+            && sudo apt-get clean
 
-#       - name: Install uv and Python dependencies
-#         run: pip install uv && uv pip install --system --no-cache-dir playwright crawl4ai
+      - name: Install UV and Python dependencies
+        run: |
+          pip install uv
+          uv sync
+          uv pip install --system --no-cache-dir playwright crawl4ai
 
-#       - name: Install Playwright browser
-#         run: playwright install chromium
+      - name: Install Playwright browser
+        run: playwright install chromium
 
-#       - name: Setup Crawl4AI
-#         run: |
-#           crawl4ai-setup
-#           crawl4ai-doctor
+      - name: Setup Crawl4AI
+        run: |
+          crawl4ai-setup
+          crawl4ai-doctor
 
-#   docker_job:
-#     needs: build
-#     runs-on: ubuntu-latest
+  docker_job:
+    needs: build
+    runs-on: ubuntu-latest
 
-#     steps:
-#       - name: Checkout code
-#         uses: actions/checkout@v3
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
 
-#       - name: Set up Docker Buildx
-#         uses: docker/setup-buildx-action@v3
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
-#       - name: Log into Docker Hub
-#         uses: docker/login-action@v2
-#         with:
-#           username: ${{ secrets.DOCKER_USERNAME }}
-#           password: ${{ secrets.DOCKER_PASSWORD }}
+      - name: Log into Docker Hub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
 
-#       - name: Install LangGraph CLI
-#         run: pip install langgraph-cli
+      - name: Install LangGraph CLI
+        run: pip install langgraph-cli
           
-#       - name: Build Docker image with LangGraph
-#         run: langgraph build -t revnixhq/wrext:stage
+      - name: Build Docker image with LangGraph
+        run: langgraph build -t ${{ secrets.DOCKER_USERNAME }}/wrext:stage
 
-#       - name: Push Docker image
-#         run: docker push revnixhq/wrext:stage
+      - name: Push Docker image
+        run: docker push ${{ secrets.DOCKER_USERNAME }}/wrext:stage
   
-#   deploy:
-#     needs: docker_job
-#     runs-on: self-hosted
+  deploy:
+    needs: docker_job
+    runs-on: self-hosted
 
-#     env:
-#       # Image tag for docker-compose
-#       IMAGE_TAG: stage
-      
-#       # Environment settings
-#       ENVIRONMENT: staging
-#       DEBUG: "true"
-      
-#       # Core API Keys
-#       OPENAI_API_KEY: ${{ secrets.STAGE_OPENAI_API_KEY }}
-#       LANGSMITH_API_KEY: ${{ secrets.STAGE_LANGSMITH_API_KEY }}
-#       COHERE_API_KEY: ${{ secrets.STAGE_COHERE_API_KEY }}
-#       PERPLEXITY_API_KEY: ${{ secrets.STAGE_PERPLEXITY_API_KEY }}
-      
-#       # Database
-#       POSTGRES_URI_CUSTOM: ${{ secrets.STAGE_POSTGRES_URI_CUSTOM }}
-#       DATABASE_URI: ${{ secrets.STAGE_DATABASE_URI }}
-#       REDIS_URI: ${{ secrets.STAGE_REDIS_URI }}
-#       REDIS_URL: ${{ secrets.STAGE_REDIS_URL }}
-      
-#       # Security
-#       SECRET_KEY: ${{ secrets.STAGE_SECRET_KEY }}
-#       REFRESH_SECRET_KEY: ${{ secrets.STAGE_REFRESH_SECRET_KEY }}
-#       ALGORITHM: ${{ secrets.STAGE_ALGORITHM }}
-      
-#       # Frontend + CORS
-#       FRONTEND_URL: ${{ secrets.STAGE_FRONTEND_URL }}
-#       ALLOWED_ORIGINS: ${{ secrets.STAGE_ALLOWED_ORIGINS }}
-      
-#       # Email (Resend)
-#       RESEND_API_KEY: ${{ secrets.STAGE_RESEND_API_KEY }}
-      
-#       # Payment (LemonSqueezy)
-#       PAYMENT_SUCCESS_URL: ${{ secrets.STAGE_PAYMENT_SUCCESS_URL }}
-#       PAYMENT_CANCEL_URL: ${{ secrets.STAGE_PAYMENT_CANCEL_URL }}
-#       LEMONSQUEEZY_API_KEY: ${{ secrets.STAGE_LEMONSQUEEZY_API_KEY }}
-#       LEMONSQUEEZY_STORE_ID: ${{ secrets.STAGE_LEMONSQUEEZY_STORE_ID }}
-#       LEMONSQUEEZY_WEBHOOK_SECRET: ${{ secrets.STAGE_LEMONSQUEEZY_WEBHOOK_SECRET }}
-      
-#       # Admin
-#       SUPER_ADMIN_EMAIL: ${{ secrets.STAGE_SUPER_ADMIN_EMAIL }}
-#       SUPER_ADMIN_PASSWORD: ${{ secrets.STAGE_SUPER_ADMIN_PASSWORD }}
-      
-#       # Monitoring
-#       SENTRY_DSN: ${{ secrets.STAGE_SENTRY_DSN }}
+    env:
+      IMAGE_TAG: stage
+      ENVIRONMENT: staging
+      DEBUG: "true"
 
-#     steps:
-#       - name: Checkout code
-#         uses: actions/checkout@v3
+      # Core API Keys
+      OPENAI_API_KEY: ${{ secrets.STAGE_OPENAI_API_KEY }}
+      LANGSMITH_API_KEY: ${{ secrets.STAGE_LANGSMITH_API_KEY }}
+      PERPLEXITY_API_KEY: ${{ secrets.STAGE_PERPLEXITY_API_KEY }}
+      SERPER_API_KEY: ${{ secrets.STAGE_SERPER_API_KEY }}
 
-#       - name: Deploy Docker to STAGE
-#         run: |
-#           # Ensure correct working directory for STAGE
-#           DEPLOY_DIR=~/WREXT/stage/backend
-#           mkdir -p $DEPLOY_DIR
-#           cp -r $GITHUB_WORKSPACE/* $DEPLOY_DIR/
-#           cd $DEPLOY_DIR
+      # Database
+      POSTGRES_URI_CUSTOM: ${{ secrets.STAGE_POSTGRES_URI_CUSTOM }}
+      DATABASE_URI: ${{ secrets.STAGE_DATABASE_URI }}
+      REDIS_URI: ${{ secrets.STAGE_REDIS_URI }}
+      REDIS_URL: ${{ secrets.STAGE_REDIS_URL }}
 
-#           echo "🚀 Starting STAGE deployment..."
+      # Security
+      SECRET_KEY: ${{ secrets.STAGE_SECRET_KEY }}
+      REFRESH_SECRET_KEY: ${{ secrets.STAGE_REFRESH_SECRET_KEY }}
+      ALGORITHM: ${{ secrets.STAGE_ALGORITHM }}
 
-#           # Log in to Docker
-#           echo "${{ secrets.DOCKER_PASSWORD }}" | docker login -u "${{ secrets.DOCKER_USERNAME }}" --password-stdin
+      # Frontend + CORS
+      FRONTEND_URL: ${{ secrets.STAGE_FRONTEND_URL }}
+      ALLOWED_ORIGINS: ${{ secrets.STAGE_ALLOWED_ORIGINS }}
 
-#           # Pull latest STAGE image
-#           docker pull revnixhq/wrext:stage
+      # Admin
+      SUPER_ADMIN_EMAIL: ${{ secrets.STAGE_SUPER_ADMIN_EMAIL }}
+      SUPER_ADMIN_PASSWORD: ${{ secrets.STAGE_SUPER_ADMIN_PASSWORD }}
 
-#           # Stop and remove old containers
-#           docker compose down || true
+      # Payment
+      PAYMENT_CANCEL_URL: ${{ secrets.STAGE_PAYMENT_CANCEL_URL }}
+      PAYMENT_SUCCESS_URL: ${{ secrets.STAGE_PAYMENT_SUCCESS_URL }}
 
-#           # Start containers (env vars are automatically passed from job env)
-#           docker compose up -d
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
 
-#           # Clean up old images
-#           docker image prune -f
+      - name: Deploy Docker to STAGE
+        run: |
+          DEPLOY_DIR=~/WREXT/stage/backend
+          mkdir -p $DEPLOY_DIR
+          cp -r $GITHUB_WORKSPACE/* $DEPLOY_DIR/
+          cd $DEPLOY_DIR
 
-#           # Show running containers
-#           docker ps
+          echo "🚀 Starting STAGE deployment..."
+          cat > .env <<EOF
+IMAGE_TAG=stage
+ENVIRONMENT=staging
+DEBUG=true
 
-#           echo "✅ STAGE Deployment completed successfully."
+# Core API Keys
+OPENAI_API_KEY=${{ secrets.STAGE_OPENAI_API_KEY }}
+LANGSMITH_API_KEY=${{ secrets.STAGE_LANGSMITH_API_KEY }}
+PERPLEXITY_API_KEY=${{ secrets.STAGE_PERPLEXITY_API_KEY }}
+SERPER_API_KEY=${{ secrets.STAGE_SERPER_API_KEY }}
+
+# Database
+POSTGRES_URI_CUSTOM=${{ secrets.STAGE_POSTGRES_URI_CUSTOM }}
+DATABASE_URI=${{ secrets.STAGE_DATABASE_URI }}
+REDIS_URI=${{ secrets.STAGE_REDIS_URI }}
+REDIS_URL=${{ secrets.STAGE_REDIS_URL }}
+
+# Security
+SECRET_KEY=${{ secrets.STAGE_SECRET_KEY }}
+REFRESH_SECRET_KEY=${{ secrets.STAGE_REFRESH_SECRET_KEY }}
+ALGORITHM=${{ secrets.STAGE_ALGORITHM }}
+
+# Frontend + CORS
+FRONTEND_URL=${{ secrets.STAGE_FRONTEND_URL }}
+ALLOWED_ORIGINS=${{ secrets.STAGE_ALLOWED_ORIGINS }}
+
+# Admin
+SUPER_ADMIN_EMAIL=${{ secrets.STAGE_SUPER_ADMIN_EMAIL }}
+SUPER_ADMIN_PASSWORD=${{ secrets.STAGE_SUPER_ADMIN_PASSWORD }}
+
+# Payment
+PAYMENT_CANCEL_URL=${{ secrets.STAGE_PAYMENT_CANCEL_URL }}
+PAYMENT_SUCCESS_URL=${{ secrets.STAGE_PAYMENT_SUCCESS_URL }}
+EOF
+
+          echo ".env file created ✅"
+
+          # Pull latest STAGE image
+          docker pull ${{ secrets.DOCKER_USERNAME }}/wrext:stage
+
+          # Start containers
+          docker compose up -d
+
+          echo "✅ STAGE Deployment completed successfully."
