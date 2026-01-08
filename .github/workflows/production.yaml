@@ -88,10 +88,10 @@ jobs:
         run: pip install langgraph-cli
           
       - name: Build Docker image with LangGraph
-        run: langgraph build -t revnixhq/wrext:latest
+        run: langgraph build -t ${{ secrets.DOCKER_USERNAME }}/wrext:latest
 
       - name: Push Docker image
-        run: docker push revnixhq/wrext:latest
+        run: docker push ${{ secrets.DOCKER_USERNAME }}/wrext:latest
   
   deploy:
     needs: docker_job
@@ -108,9 +108,9 @@ jobs:
       # Core API Keys
       OPENAI_API_KEY: ${{ secrets.PROD_OPENAI_API_KEY }}
       LANGSMITH_API_KEY: ${{ secrets.PROD_LANGSMITH_API_KEY }}
-      COHERE_API_KEY: ${{ secrets.PROD_COHERE_API_KEY }}
       PERPLEXITY_API_KEY: ${{ secrets.PROD_PERPLEXITY_API_KEY }}
-      
+      SERPER_API_KEY: ${{ secrets.PROD_SERPER_API_KEY }}
+
       # Database
       POSTGRES_URI_CUSTOM: ${{ secrets.PROD_POSTGRES_URI_CUSTOM }}
       DATABASE_URI: ${{ secrets.PROD_DATABASE_URI }}
@@ -126,22 +126,15 @@ jobs:
       FRONTEND_URL: ${{ secrets.PROD_FRONTEND_URL }}
       ALLOWED_ORIGINS: ${{ secrets.PROD_ALLOWED_ORIGINS }}
       
-      # Email (Resend)
-      RESEND_API_KEY: ${{ secrets.PROD_RESEND_API_KEY }}
       
       # Payment (LemonSqueezy)
       PAYMENT_SUCCESS_URL: ${{ secrets.PROD_PAYMENT_SUCCESS_URL }}
       PAYMENT_CANCEL_URL: ${{ secrets.PROD_PAYMENT_CANCEL_URL }}
-      LEMONSQUEEZY_API_KEY: ${{ secrets.PROD_LEMONSQUEEZY_API_KEY }}
-      LEMONSQUEEZY_STORE_ID: ${{ secrets.PROD_LEMONSQUEEZY_STORE_ID }}
-      LEMONSQUEEZY_WEBHOOK_SECRET: ${{ secrets.PROD_LEMONSQUEEZY_WEBHOOK_SECRET }}
       
       # Admin
       SUPER_ADMIN_EMAIL: ${{ secrets.PROD_SUPER_ADMIN_EMAIL }}
       SUPER_ADMIN_PASSWORD: ${{ secrets.PROD_SUPER_ADMIN_PASSWORD }}
       
-      # Monitoring
-      SENTRY_DSN: ${{ secrets.PROD_SENTRY_DSN }}
 
     steps:
       - name: Checkout code
@@ -156,17 +149,49 @@ jobs:
           cd $DEPLOY_DIR
 
           echo "🚀 Starting PRODUCTION deployment..."
+          # Create .env file dynamically from GitHub secrets
+          cat > .env <<EOF
+          IMAGE_TAG=latest
+          ENVIRONMENT=Production
+          DEBUG=true
+
+          # Core API Keys
+          OPENAI_API_KEY=${{ secrets.PROD_OPENAI_API_KEY }}
+          LANGSMITH_API_KEY=${{ secrets.PROD_LANGSMITH_API_KEY }}
+          PERPLEXITY_API_KEY: ${{ secrets.PROD_PERPLEXITY_API_KEY }}
+          SERPER_API_KEY: ${{ secrets.PROD_SERPER_API_KEY }}
+          # Database
+          POSTGRES_URI_CUSTOM=${{ secrets.PROD_POSTGRES_URI_CUSTOM }}
+          DATABASE_URI=${{ secrets.PROD_DATABASE_URI }}
+          REDIS_URI=${{ secrets.PROD_REDIS_URI }}
+          REDIS_URL=${{ secrets.PROD_REDIS_URL }}
+
+          # Security
+          SECRET_KEY=${{ secrets.PROD_SECRET_KEY }}
+          REFRESH_SECRET_KEY=${{ secrets.PROD_REFRESH_SECRET_KEY }}
+          ALGORITHM=${{ secrets.PROD_ALGORITHM }}
+
+          # Frontend + CORS
+          FRONTEND_URL=${{ secrets.PROD_FRONTEND_URL }}
+          ALLOWED_ORIGINS=${{ secrets.PROD_ALLOWED_ORIGINS }}
+
+          # Admin
+          SUPER_ADMIN_EMAIL=${{ secrets.PROD_SUPER_ADMIN_EMAIL }}
+          SUPER_ADMIN_PASSWORD=${{ secrets.PROD_SUPER_ADMIN_PASSWORD }}
+          EOF
+
+          echo ".env file created ✅"
+
 
           # Log in to Docker
           echo "${{ secrets.DOCKER_PASSWORD }}" | docker login -u "${{ secrets.DOCKER_USERNAME }}" --password-stdin
 
           # Pull latest PRODUCTION image
-          docker pull revnixhq/wrext:latest
-
+          docker pull ${{ secrets.DOCKER_USERNAME }}/wrext:latest
           # Stop and remove old containers
           docker compose down || true
 
-          # Start containers (env vars are automatically passed from job env)
+          # Start containers (Docker Compose will automatically load .env)
           docker compose up -d
 
           # Clean up old images
