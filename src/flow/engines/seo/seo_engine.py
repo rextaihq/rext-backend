@@ -6,7 +6,7 @@ from src.flow.engines.seo.seo_difficulty_engine.keyword_difficulty.keyword_diffi
 from src.flow.engines.seo.competitors_gap import competitors_gap_node
 from src.flow.engines.seo.seo_opportunity import seo_opportunity_node
 from src.flow.engines.seo.keyword_finder import relevance_keyword_finder
-from src.flow.engines.seo.recomendation import recommendation
+from src.flow.engines.seo.recomendation.keyword_recomendation import keyword_recommendation
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +28,7 @@ def create_seo_engine():
     graph.add_node("competitors_gap", competitors_gap_node)
     graph.add_node("seo_opportunity", seo_opportunity_node)
     graph.add_node("relevance_keyword_finder", relevance_keyword_finder)
-    graph.add_node("recommendation", recommendation)
+    graph.add_node("keyword_recommendation", keyword_recommendation)
 
     # Add Edges (Linear Flow)
     graph.add_edge(START, "compute_keyword_difficulty")
@@ -37,10 +37,10 @@ def create_seo_engine():
     graph.add_edge(START, "relevance_keyword_finder")
 
 
-    graph.add_edge("compute_keyword_difficulty", "recommendation")
-    graph.add_edge("competitors_gap", "recommendation")
-    graph.add_edge("seo_opportunity", "recommendation")
-    graph.add_edge("relevance_keyword_finder", "recommendation")
-    graph.add_edge("recommendation", END)
+    graph.add_edge("compute_keyword_difficulty", "keyword_recommendation")
+    graph.add_edge("competitors_gap", "keyword_recommendation")
+    graph.add_edge("seo_opportunity", "keyword_recommendation")
+    graph.add_edge("relevance_keyword_finder", "keyword_recommendation")
+    graph.add_edge("keyword_recommendation", END)
 
     return graph.compile()
