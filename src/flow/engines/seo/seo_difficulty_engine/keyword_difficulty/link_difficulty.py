@@ -10,10 +10,11 @@ from src.flow.engines.seo.seo_difficulty_engine.utils.utils import DOMAIN_AUTHOR
 
 def normalize_rd(rd, cap=1000):
     """Referring domains proxy log-scale normalization with freshness boost"""
-    return clamp(math.log1p(rd) / math.log1p(cap))
+    return clamp(math.log1p(rd)  /math.log1p(cap))
 
 def dofollow_proxy(domain_type: str) -> float:
     mapping = {"gov": 0.95, "edu": 0.90, "publisher": 0.85, "brand": 0.75, "ugc": 0.4, "other": 0.55}
+    
     return mapping.get(domain_type, 0.5)
 
 def anchor_proxy(keyword: str, title: str) -> float:
@@ -25,14 +26,14 @@ def anchor_proxy(keyword: str, title: str) -> float:
         return 0.6
     return 0.1
 
-"""
+
 def is_homepage(url: str) -> bool:
     try:
         parts = url.rstrip("/").split("/")
         return url.rstrip("/").endswith(parts[2]) or url.rstrip("/") == parts[0] + "://" + parts[2]
     except IndexError:
         return False
-"""
+
 
 
 # ------------------------
@@ -50,7 +51,7 @@ def url_link_strength(keyword: str, comp: Competitor, serp_entry: NormalizedOrga
     normalize_rd(50) ~ 0.39   # meaningful score
 
     """
-
+    
     
     # RD score + freshness boost
     rd_proxy = comp.get("total_occurrences", 1) * 10
@@ -117,8 +118,17 @@ def serp_lock_penalty(competitors: Competitor) -> float:
         return 0.07
     return 0.0
 
-"""
-def homepage_penalty(competitors: Competitor) -> float:
+
+def homepage_score(comp: Competitor) -> float:
+    homepage_count = is_homepage(comp.get("domain", ""))
+    
+    if homepage_count:
+        return 0.10
+    
+    return 0.0
+'''
+
+def homepage_score(competitors: Competitor) -> float:
     homepage_count = sum(1 for c in competitors if c.get("has_sitelinks") or is_homepage(c.get("domain", "")))
     share = homepage_count / len(competitors)
     if share > 0.6:
@@ -126,7 +136,8 @@ def homepage_penalty(competitors: Competitor) -> float:
     elif share > 0.4:
         return 0.05
     return 0.0
-"""
+'''
+
 def brand_share(competitors: Competitor) -> float:
     # Fraction of top competitors that are brand domains
     brands = [c for c in competitors if classify_domain_type(c["domain"]) == "brand"]
@@ -190,9 +201,10 @@ def competitor_link_kd(
 
     # -------- Per-competitor brand pressure --------
     brand_boost = 0.10 if classify_domain_type(comp["domain"]) == "brand" else 0.0
+    homepage_scoring = homepage_score(comp)
 
     # Final per-competitor link KD
-    return clamp(base_strength + serp_lock + brand_boost)
+    return clamp(base_strength + serp_lock + brand_boost + homepage_scoring)
 
 '''
 def link_difficulty_score(

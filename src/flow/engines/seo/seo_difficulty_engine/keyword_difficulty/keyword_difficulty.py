@@ -3,6 +3,7 @@ from typing import List, Dict, Any
 from src.flow.engines.seo.seo_difficulty_engine.keyword_difficulty.link_difficulty import competitor_link_kd
 from src.flow.engines.seo.seo_difficulty_engine.keyword_difficulty.serp_score import competitor_serp_kd
 from src.flow.engines.seo.seo_difficulty_engine.keyword_difficulty.content_difficulty import content_strength
+from src.flow.engines.seo.seo_difficulty_engine.keyword_difficulty.context_modifier import context_modifier
 import statistics
 from src.flow.engines.seo.seo_difficulty_engine.utils.utils import INTENT_WEIGHTS
 def calculate_final_kd(keyword: str, keyword_intent: str, wrext_data: WREXT) -> dict:
@@ -13,6 +14,7 @@ def calculate_final_kd(keyword: str, keyword_intent: str, wrext_data: WREXT) -> 
     Final KD = median(all total_kd values)
     Context modifier ignored for now.
     """
+    weights = INTENT_WEIGHTS.get(keyword_intent, INTENT_WEIGHTS["informational"])
 
     serp_normalized = wrext_data.get("serp_normalized", {}).get("normalize_results", [])
     competitors = wrext_data.get("competitors", [])
@@ -46,7 +48,7 @@ def calculate_final_kd(keyword: str, keyword_intent: str, wrext_data: WREXT) -> 
 
 
 
-        weights = INTENT_WEIGHTS.get(keyword_intent, INTENT_WEIGHTS["informational"])
+        # weights = INTENT_WEIGHTS.get(keyword_intent, INTENT_WEIGHTS["informational"])
 
         total_kd = (
             link_kd * weights["link"] +
@@ -68,7 +70,15 @@ def calculate_final_kd(keyword: str, keyword_intent: str, wrext_data: WREXT) -> 
 
     # Final KD = median of total_kds
     final_kd = statistics.median(competitor_total_kds) * 100 if competitor_total_kds else 0
-    final_kd = max(0, min(final_kd, 100))  # clamp 0–100
+
+    # Apply SERP-level context modifier (± KD points)
+    cont_modifier = context_modifier(competitors, wrext_data["serp_normalized"], keyword_intent)
+
+    final_kd = final_kd + cont_modifier
+
+    # Clamp final KD
+    final_kd = max(0, min(final_kd, 100))
+
 
     # Notes
     notes = []

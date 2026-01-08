@@ -1,31 +1,7 @@
 from src.flow.states.wrext import SERPNORMALIZED, Competitor
 from datetime import datetime
 import statistics
-def normalize_freshness(date_str):
-    if not date_str:
-        return 0.3  # unknown freshness
-
-    try:
-        dt = datetime.fromisoformat(date_str)
-        days = (datetime.now() - dt).days
-
-        if days <= 30:
-            return 1.0
-        elif days <= 180:
-            return 0.85
-        elif days <= 365:
-            return 0.10
-        else:
-            return 0.1
-        
-    except:
-        return 0.3
-    
-
-ugc_keywords = ["reddit.com", "quora.com", "stackexchange.com", "stackoverflow.com"]
-
-def clamp(val, min_v=0, max_v=100):
-    return max(min(val, max_v), min_v)
+from src.flow.engines.seo.seo_difficulty_engine.utils.utils import normalize_freshness, ugc_keywords, clamp
 
 
 # def serp_saturation_score(serp_normalized: SERPNORMALIZED, competitors: list[Competitor]) -> dict:
@@ -119,7 +95,7 @@ def competitor_serp_kd(
 
     # People Also Ask (PAA)
 
-    paa_present = serp_normalized.get("features", {}).get('people_also_ask', False) or len(serp_normalized.get("questions", [])) > 0
+    paa_present = serp_normalized.get("features", {}).get('people_also_ask', False) or len(serp_normalized.get(u"qestions", [])) > 0
     if paa_present:
         score += 3
 
@@ -148,18 +124,22 @@ def competitor_serp_kd(
         score += 2
 
     # SERP lock / repeated domain penalty (per competitor)
+    """
     domains = [c["domain"] for c in competitors]
     repeat_count = domains.count(comp["domain"])
+    
     serp_lock = 0.0
     if repeat_count >= 3:
         serp_lock = 0.15
     elif repeat_count == 2:
         serp_lock = 0.07
 
+    """
+
     # Brand boost (per competitor)
     brand_boost = 0.10 if comp.get("is_brand", False) else 0.0
 
-    final_score = clamp(score / 14 * 1.0 + serp_lock + brand_boost, 0, 1)  # normalize 0–1
+    final_score = clamp(score / 14 * 1.0 + brand_boost, 0, 1)  # normalize 0–1
 
     return final_score
 
