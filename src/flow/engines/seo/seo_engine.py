@@ -6,7 +6,7 @@ from src.flow.engines.seo.seo_difficulty_engine.keyword_difficulty.keyword_diffi
 from src.flow.engines.seo.competitors_gap import competitors_gap_node
 from src.flow.engines.seo.seo_opportunity import seo_opportunity_node
 from src.flow.engines.seo.keyword_finder import relevance_keyword_finder
-from src.flow.engines.seo.recomendation.recomendation import keyword_recommendation
+from src.flow.engines.seo.recomendation.keyword_recomendation import keyword_recommendation
 
 logger = logging.getLogger(__name__)
 
