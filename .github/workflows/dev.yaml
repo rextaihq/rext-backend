@@ -8,7 +8,7 @@ on:
       - dev
 jobs:
   build:
-    if: github.event.pull_request.merged == true && github.event.pull_request.head.ref == 'dev'
+    if: github.event.pull_request.merged == true
     runs-on: ubuntu-latest
 
     steps:
