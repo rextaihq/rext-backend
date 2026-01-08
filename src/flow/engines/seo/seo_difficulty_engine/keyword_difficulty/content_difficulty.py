@@ -40,6 +40,10 @@ def intent_match(keyword_intent, page_intent):
 
 
 def content_strength(keyword_intent: str, competitor: Competitor, normalized_result: NormalizedOrganicResult, scrape_data: ScrapeContext) -> float:
+    # Check if we have any documents
+    if not scrape_data.get("documents") or len(scrape_data["documents"]) == 0:
+        return 0.5  # Default neutral strength when no data available
+    
     # Word count proxy
     wc = sum(d["content_length"] for d in scrape_data["documents"]) / len(scrape_data["documents"])
     wc_score = normalize_word_count(wc)

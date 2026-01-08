@@ -1,6 +1,6 @@
 from typing import Dict, Any
 from src.flow.states.wrext import WREXT
-from src.services.seo_service import KeywordExtractor
+from src.services.keyword_service import KeywordExtractor
 from langgraph.types import interrupt, Command
 from langgraph.graph import END
 
@@ -29,29 +29,22 @@ def keyword_recommendation(state: WREXT) -> Dict[str, Any]:
             }
         }
     
-    # Get data from state
-    query = serp_normalized.get("query", "")
-    normalize_results = serp_normalized.get("normalize_results", [])
-    related_topics = serp_normalized.get("related_topics", [])
-    
     # Get extracted keywords if available
     extracted_keywords = seo_result.get("extracted_keywords", {}).get("all", [])
     
     # Initialize extractor and generate recommendations
     extractor = KeywordExtractor()
-    title_result = extractor.title_recommendation(
-        user_title=query,
-        normalize_results=normalize_results,
-        related_topics=related_topics,
+    title_result = extractor.keyword_recommendation(
+        serp_normalized=serp_normalized,
         extracted_keywords=extracted_keywords,
         top_n=5
     )
     
-    # recomendation
+    # Keyword recommendations
     user_selection = interrupt({
-        "instruction": "Select a title for your content",
+        "instruction": "Select keywords for your content",
         "Primary Keyword": title_result.get("original_title", ""),
-        "Related Keywords": [data.get("title") for data in title_result.get("recommendations", [])],
+        "Related Keywords": [data.get("keyword") for data in title_result.get("recommendations", [])],
     })
 
     if user_selection:
