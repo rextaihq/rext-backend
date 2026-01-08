@@ -108,8 +108,7 @@ jobs:
       # Core API Keys
       OPENAI_API_KEY: ${{ secrets.STAGE_OPENAI_API_KEY }}
       LANGSMITH_API_KEY: ${{ secrets.STAGE_LANGSMITH_API_KEY }}
-      COHERE_API_KEY: ${{ secrets.STAGE_COHERE_API_KEY }}
-      PERPLEXITY_API_KEY: ${{ secrets.STAGE_PERPLEXITY_API_KEY }}
+      
       
       # Database
       POSTGRES_URI_CUSTOM: ${{ secrets.STAGE_POSTGRES_URI_CUSTOM }}
@@ -126,23 +125,10 @@ jobs:
       FRONTEND_URL: ${{ secrets.STAGE_FRONTEND_URL }}
       ALLOWED_ORIGINS: ${{ secrets.STAGE_ALLOWED_ORIGINS }}
       
-      # Email (Resend)
-      RESEND_API_KEY: ${{ secrets.STAGE_RESEND_API_KEY }}
-      
-      # Payment (LemonSqueezy)
-      PAYMENT_SUCCESS_URL: ${{ secrets.STAGE_PAYMENT_SUCCESS_URL }}
-      PAYMENT_CANCEL_URL: ${{ secrets.STAGE_PAYMENT_CANCEL_URL }}
-      LEMONSQUEEZY_API_KEY: ${{ secrets.STAGE_LEMONSQUEEZY_API_KEY }}
-      LEMONSQUEEZY_STORE_ID: ${{ secrets.STAGE_LEMONSQUEEZY_STORE_ID }}
-      LEMONSQUEEZY_WEBHOOK_SECRET: ${{ secrets.STAGE_LEMONSQUEEZY_WEBHOOK_SECRET }}
-      
       # Admin
       SUPER_ADMIN_EMAIL: ${{ secrets.STAGE_SUPER_ADMIN_EMAIL }}
       SUPER_ADMIN_PASSWORD: ${{ secrets.STAGE_SUPER_ADMIN_PASSWORD }}
-      
-      # Monitoring
-      SENTRY_DSN: ${{ secrets.STAGE_SENTRY_DSN }}
-
+    
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
