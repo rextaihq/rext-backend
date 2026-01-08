@@ -106,42 +106,42 @@ jobs:
       DEBUG: "false"
       
       # Core API Keys
-      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-      LANGSMITH_API_KEY: ${{ secrets.LANGSMITH_API_KEY }}
-      COHERE_API_KEY: ${{ secrets.COHERE_API_KEY }}
-      PERPLEXITY_API_KEY: ${{ secrets.PERPLEXITY_API_KEY }}
+      OPENAI_API_KEY: ${{ secrets.PROD_OPENAI_API_KEY }}
+      LANGSMITH_API_KEY: ${{ secrets.PROD_LANGSMITH_API_KEY }}
+      COHERE_API_KEY: ${{ secrets.PROD_COHERE_API_KEY }}
+      PERPLEXITY_API_KEY: ${{ secrets.PROD_PERPLEXITY_API_KEY }}
       
       # Database
-      POSTGRES_URI_CUSTOM: ${{ secrets.POSTGRES_URI_CUSTOM }}
-      DATABASE_URI: ${{ secrets.DATABASE_URI }}
-      REDIS_URI: ${{ secrets.REDIS_URI }}
-      REDIS_URL: ${{ secrets.REDIS_URL }}
+      POSTGRES_URI_CUSTOM: ${{ secrets.PROD_POSTGRES_URI_CUSTOM }}
+      DATABASE_URI: ${{ secrets.PROD_DATABASE_URI }}
+      REDIS_URI: ${{ secrets.PROD_REDIS_URI }}
+      REDIS_URL: ${{ secrets.PROD_REDIS_URL }}
       
       # Security
-      SECRET_KEY: ${{ secrets.SECRET_KEY }}
-      REFRESH_SECRET_KEY: ${{ secrets.REFRESH_SECRET_KEY }}
-      ALGORITHM: ${{ secrets.ALGORITHM }}
+      SECRET_KEY: ${{ secrets.PROD_SECRET_KEY }}
+      REFRESH_SECRET_KEY: ${{ secrets.PROD_REFRESH_SECRET_KEY }}
+      ALGORITHM: ${{ secrets.PROD_ALGORITHM }}
       
       # Frontend + CORS
-      FRONTEND_URL: ${{ secrets.FRONTEND_URL }}
-      ALLOWED_ORIGINS: ${{ secrets.ALLOWED_ORIGINS }}
+      FRONTEND_URL: ${{ secrets.PROD_FRONTEND_URL }}
+      ALLOWED_ORIGINS: ${{ secrets.PROD_ALLOWED_ORIGINS }}
       
       # Email (Resend)
-      RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+      RESEND_API_KEY: ${{ secrets.PROD_RESEND_API_KEY }}
       
       # Payment (LemonSqueezy)
-      PAYMENT_SUCCESS_URL: ${{ secrets.PAYMENT_SUCCESS_URL }}
-      PAYMENT_CANCEL_URL: ${{ secrets.PAYMENT_CANCEL_URL }}
-      LEMONSQUEEZY_API_KEY: ${{ secrets.LEMONSQUEEZY_API_KEY }}
-      LEMONSQUEEZY_STORE_ID: ${{ secrets.LEMONSQUEEZY_STORE_ID }}
-      LEMONSQUEEZY_WEBHOOK_SECRET: ${{ secrets.LEMONSQUEEZY_WEBHOOK_SECRET }}
+      PAYMENT_SUCCESS_URL: ${{ secrets.PROD_PAYMENT_SUCCESS_URL }}
+      PAYMENT_CANCEL_URL: ${{ secrets.PROD_PAYMENT_CANCEL_URL }}
+      LEMONSQUEEZY_API_KEY: ${{ secrets.PROD_LEMONSQUEEZY_API_KEY }}
+      LEMONSQUEEZY_STORE_ID: ${{ secrets.PROD_LEMONSQUEEZY_STORE_ID }}
+      LEMONSQUEEZY_WEBHOOK_SECRET: ${{ secrets.PROD_LEMONSQUEEZY_WEBHOOK_SECRET }}
       
       # Admin
-      SUPER_ADMIN_EMAIL: ${{ secrets.SUPER_ADMIN_EMAIL }}
-      SUPER_ADMIN_PASSWORD: ${{ secrets.SUPER_ADMIN_PASSWORD }}
+      SUPER_ADMIN_EMAIL: ${{ secrets.PROD_SUPER_ADMIN_EMAIL }}
+      SUPER_ADMIN_PASSWORD: ${{ secrets.PROD_SUPER_ADMIN_PASSWORD }}
       
       # Monitoring
-      SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+      SENTRY_DSN: ${{ secrets.PROD_SENTRY_DSN }}
 
     steps:
       - name: Checkout code
