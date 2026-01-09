@@ -130,6 +130,7 @@ class KeywordRecommendationState(TypedDict):
     patterns_found: Dict[str, Any]
     top_keywords_used: List[str]
     total_competitors_analyzed: int
+    is_changed: bool
     error: Optional[str]    
     
 class SEOOpportunityState(TypedDict):

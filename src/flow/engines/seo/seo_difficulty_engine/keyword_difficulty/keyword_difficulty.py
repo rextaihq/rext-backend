@@ -130,7 +130,7 @@ def compute_keyword_difficulty(wrext_data: WREXT) -> WREXT:
     Stores results in wrext_data['seo_result']['keyword_difficulty']
     """
     # wrext_data.setdefault("seo_result", {})
-
+    print("keyword_difficulty....")
     keyword = wrext_data["serp_normalized"]["query"]
     # Default intent to informational if not found
     keyword_intent = (wrext_data.get("seo_result") or {}).get("intent", {}).get("primary_intent", "informational")
