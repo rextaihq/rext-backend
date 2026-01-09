@@ -11,6 +11,7 @@ def relevance_keyword_finder(state: WREXT) -> Dict[str, Any]:
     TF-IDF scoring to identify valuable keywords from SERP data.
     """
     serp_normalized = state.get("serp_normalized")
+    print("Relevance Keyword finder...")
     
     if not serp_normalized:
         return {
