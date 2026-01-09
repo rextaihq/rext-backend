@@ -72,9 +72,9 @@ def calculate_final_kd(keyword: str, keyword_intent: str, wrext_data: WREXT) -> 
     final_kd = statistics.median(competitor_total_kds) * 100 if competitor_total_kds else 0
 
     # Apply SERP-level context modifier (± KD points)
-    cont_modifier = context_modifier(competitors, wrext_data["serp_normalized"], keyword_intent)
+    # cont_modifier = context_modifier(competitors, wrext_data["serp_normalized"], keyword_intent)
 
-    final_kd = final_kd + cont_modifier
+    # final_kd = final_kd + cont_modifier
 
     # Clamp final KD
     final_kd = max(0, min(final_kd, 100))
