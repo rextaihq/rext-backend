@@ -11,13 +11,13 @@ graph = create_wrext_engine()
 result = asyncio.run(graph.ainvoke(
     {
         "serp_payload": {
-            "query": "wordpress backup solutions",
+            "query": "seo tools for beginners",
             "country": "us"
         }
     }
 ))
 
-print(
-    result['seo_result']
-)
+# print(
+#     result['scrape_context']
+# )
 

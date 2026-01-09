@@ -86,7 +86,6 @@ def competitor_serp_kd(
     Compute SERP KD for ONE competitor using the new approach.
     Each competitor gets its own SERP KD.
     """
-
     score = 0
 
     # Featured Snippet
@@ -94,18 +93,9 @@ def competitor_serp_kd(
         score += 5
 
     # People Also Ask (PAA)
-
-    paa_present = serp_normalized.get("features", {}).get('people_also_ask', False) or len(serp_normalized.get(u"qestions", [])) > 0
+    paa_present = serp_normalized.get("features", {}).get('people_also_ask', False) == True or len(serp_normalized.get("questions", [])) > 0
     if paa_present:
         score += 3
-
-
-
-
-    # paa_present = serp_normalized.get("features", {}).get('people_also_ask', False) \
-    #               or len(serp_normalized.get("questions", [])) > 0
-    # if paa_present:
-    #     score += 3
 
     # Sitelinks
     if comp.get("has_sitelinks", False):
@@ -137,9 +127,10 @@ def competitor_serp_kd(
     """
 
     # Brand boost (per competitor)
-    brand_boost = 0.10 if comp.get("is_brand", False) else 0.0
+    # brand_boost = 0.10 if comp.get("is_brand", False) else 0.0
 
-    final_score = clamp(score / 14 * 1.0 + brand_boost, 0, 1)  # normalize 0–1
+    # final_score = clamp(score / 14 * 1.0 + brand_boost, 0, 1)  # normalize 0–1
+    final_score = clamp(score / 14 * 1.0, 0, 1)  # normalize 0–1
 
     return final_score
 

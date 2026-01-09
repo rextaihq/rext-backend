@@ -1,12 +1,11 @@
 import math
 import statistics
+from urllib.parse import urlparse
 from collections import Counter
 from typing import List, Dict, Any
 from src.flow.states.wrext import Competitor, NormalizedOrganicResult
 from datetime import datetime
 from src.flow.engines.seo.seo_difficulty_engine.utils.utils import DOMAIN_AUTHORITY_MAP, normalize_freshness, classify_domain_type, clamp
-
-
 
 def normalize_rd(rd, cap=1000):
     """Referring domains proxy log-scale normalization with freshness boost"""
@@ -17,14 +16,21 @@ def dofollow_proxy(domain_type: str) -> float:
     
     return mapping.get(domain_type, 0.5)
 
-def anchor_proxy(keyword: str, title: str) -> float:
+def anchor_proxy(keyword: str, title: str, url: str) -> float:
+    anchor_score = 0.0
     keyword = keyword.lower()
     title = title.lower()
     if title.startswith(keyword):
-        return 0.7
+        anchor_score += 0.7
     elif keyword in title:
-        return 0.6
-    return 0.1
+        anchor_score += 0.6
+    else:
+        anchor_score += 0.1
+
+    if keyword in url:
+        anchor_score += 0.3
+
+    return anchor_score
 
 
 def is_homepage(url: str) -> bool:
@@ -34,13 +40,9 @@ def is_homepage(url: str) -> bool:
     except IndexError:
         return False
 
-
-
-# ------------------------
+# -----------------------
 # Link strength calculation
 # ------------------------
-
-
 
 def url_link_strength(keyword: str, comp: Competitor, serp_entry: NormalizedOrganicResult, normalized_result: List[NormalizedOrganicResult]) -> float:
     """Compute link strength for one competitor with all improvements"""
@@ -58,17 +60,7 @@ def url_link_strength(keyword: str, comp: Competitor, serp_entry: NormalizedOrga
 
     freshness = normalize_freshness(serp_entry.get("date"))
     
-    
-    '''
-    scores = [
-        normalize_freshness(res.get("date"))
-        for res in normalized_result
-        ]
- 
-    freshness = sum(scores) / len(normalized_result)
-    '''
     rd_score = normalize_rd(rd_proxy) + (0.05 * freshness) 
-
 
     # Domain authority
     domain_type = classify_domain_type(comp["domain"])
@@ -77,7 +69,8 @@ def url_link_strength(keyword: str, comp: Competitor, serp_entry: NormalizedOrga
 
     # Anchor relevance using title
     title = serp_entry.get("title", comp["domain"])
-    exact_anchor_pct = anchor_proxy(keyword, title)
+    url = serp_entry.get("url", None)
+    exact_anchor_pct = anchor_proxy(keyword, title, url)
 
     # Base link strength
     base = (
@@ -85,7 +78,6 @@ def url_link_strength(keyword: str, comp: Competitor, serp_entry: NormalizedOrga
         0.20 * dofollow +
         0.20 * authority
     )
-
 
     if exact_anchor_pct > 0.6:
         base += 0.15
@@ -97,7 +89,7 @@ def url_link_strength(keyword: str, comp: Competitor, serp_entry: NormalizedOrga
         base += 0.05
 
     return clamp(base)
-
+'''
 def median_link_strength(keyword: str, competitors: Competitor, serp_normalized: NormalizedOrganicResult) -> float:
     """Median link strength across competitors"""
     domain_map = {entry["domain"]: entry for entry in serp_normalized}
@@ -108,7 +100,8 @@ def median_link_strength(keyword: str, competitors: Competitor, serp_normalized:
     ]
 
     return statistics.median(scores)
-
+'''
+"""
 def serp_lock_penalty(competitors: Competitor) -> float:
     domains = [c["domain"] for c in competitors]
     max_repeat = Counter(domains).most_common(1)[0][1]
@@ -118,6 +111,7 @@ def serp_lock_penalty(competitors: Competitor) -> float:
         return 0.07
     return 0.0
 
+"""
 
 def homepage_score(comp: Competitor) -> float:
     homepage_count = is_homepage(comp.get("domain", ""))
@@ -137,12 +131,12 @@ def homepage_score(competitors: Competitor) -> float:
         return 0.05
     return 0.0
 '''
-
+"""
 def brand_share(competitors: Competitor) -> float:
     # Fraction of top competitors that are brand domains
     brands = [c for c in competitors if classify_domain_type(c["domain"]) == "brand"]
     return len(brands) / max(len(competitors), 1)
-
+"""
 # ------------------------
 # Main link difficulty function
 # ------------------------
@@ -190,14 +184,18 @@ def competitor_link_kd(
     )
 
     # -------- Per-competitor SERP lock --------
+    brands = {"publisher", "gov", "edu"}
     domains = [c["domain"] for c in competitors]
-    repeat_count = domains.count(comp["domain"])
+    authority_domains = sum(1 for d in domains if classify_domain_type(d) in brands)
+    
+    # repeat_count = domains.count(comp["domain"])
 
     serp_lock = 0.0
-    if repeat_count >= 3:
-        serp_lock = 0.15
-    elif repeat_count == 2:
-        serp_lock = 0.07
+    if authority_domains >= 4:
+        serp_lock = 0.20
+
+    elif authority_domains >= 2:
+        serp_lock = 0.5
 
     # -------- Per-competitor brand pressure --------
     brand_boost = 0.10 if classify_domain_type(comp["domain"]) == "brand" else 0.0
