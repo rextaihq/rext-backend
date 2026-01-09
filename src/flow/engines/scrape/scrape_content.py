@@ -5,7 +5,7 @@ from typing import Dict, Any, List
 
 from crawl4ai import AsyncWebCrawler
 from langchain_core.documents import Document
-
+from src.flow.engines.scrape.config.clean_content import clean_content
 from src.flow.engines.scrape.config.crawler_config import CrawlerConfiguration
 from src.flow.states.wrext import WREXT
 
@@ -90,7 +90,7 @@ async def scrape_serp_content(state: WREXT) -> Dict[str, Any]:
                 })
                 continue
 
-            text = result.markdown or result.text or ""
+            text = clean_content(result.markdown or result.text or "")
             content_length = len(text.strip())
 
             headings = _extract_headings(text)
