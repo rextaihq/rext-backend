@@ -74,6 +74,8 @@ class CONTENT(TypedDict, total=False):
     """
 
     # Core artifacts
+    topics: List[str]
+    selected_topic: str
     outline: ContentOutline
     draft: ContentDraft
     review: ContentReview

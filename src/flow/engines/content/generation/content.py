@@ -15,15 +15,26 @@ def generate_content(state: WREXT):
     try:
         # 1️⃣ Get content state and outline
         content_state = state.get("content", {})
+        topic = content_state.get("selected_topic", "")
+
+        if not topic:
+            logger.error("No topic found in state")
+            return {
+                "content": {
+                    **state.get("content", {}),
+                    "error": "No topic found in state",
+                }
+            }
+
+        logger.info(f"Generating content for: {topic}")
+
+        
         outline = content_state.get("outline", {})
         if not outline:
             logger.warning("No outline found in state. Proceeding without it.")
         outline_str = json.dumps(outline, indent=2) if outline else "NO OUTLINE FOUND"
 
-        # 2️⃣ Get query
-        serp_payload = state.get("serp_payload", {})
-        query = serp_payload.get("query", "")
-        logger.info(f"Query extracted: {query}")
+        logger.info(f"Outline extracted: {outline_str}")
 
         # 3️⃣ Get relevant context
         relevant_context = state.get("relevant_context", [])
@@ -38,8 +49,7 @@ def generate_content(state: WREXT):
 
         # 5️⃣ Prepare prompt data
         prompt_data = {
-            "query": query,
-            "title": outline.get("title", query),
+            "topic": topic,
             "outline": outline_str,
             "reference_text": page_content,
             "persona": persona_str

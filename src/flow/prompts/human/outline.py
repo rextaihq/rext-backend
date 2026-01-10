@@ -16,7 +16,7 @@ def get_outline_prompt() -> ChatPromptTemplate:
 I need a high-quality SEO outline for the following:
 
 ### 1. TARGET KEYWORD / TOPIC
-Primary Query: {query}
+Primary Query: {topic}
 
 ### 2. SERP ANALYSIS & COMPETITION
 - Related Topics: {related_topics}
