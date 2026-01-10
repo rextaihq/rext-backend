@@ -12,19 +12,17 @@ def get_content_prompt() -> ChatPromptTemplate:
             (
                 "human",
                 """
-Topic: {topic}
+                    Topic: {topic}
 
-Approved Outline:
-{outline}
+                    Approved Outline:
+                    {outline}
 
-Author Persona (E-E-A-T):
-{persona}
+                    Author Persona (E-E-A-T):
+                    {persona}
 
-Reference / Source Content:
-{reference_text}
-
-Write the full SEO-optimized article strictly following the outline.
-""",
+                    Reference / Source Content:
+                    {reference_text}
+                """,
             ),
         ]
     )

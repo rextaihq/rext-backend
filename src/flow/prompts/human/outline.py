@@ -31,6 +31,9 @@ Primary Query: {topic}
 ### 3. ITERATION FEEDBACK (IF ANY)
 Previous Rejection Reason: {rejected_reason}
 
+### 4. Previous Outline (IF ANY)
+Previous Outline: {previous_outline}
+
 Please generate a complete SEO outline strictly following the system guidelines.
 """,
             ),

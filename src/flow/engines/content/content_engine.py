@@ -6,6 +6,7 @@ from src.flow.engines.content.generation.outline import generate_outline
 from src.flow.engines.content.generation.content import generate_content
 from src.flow.engines.content.review.outline import review_outline
 from src.flow.engines.content.review.content.content_review import review_content
+from src.flow.engines.router.outline import outline_router
 
 def create_content_engine():
     graph = StateGraph(WREXT)
@@ -21,10 +22,19 @@ def create_content_engine():
     graph.add_edge(START, "topic_generation")
     graph.add_edge("topic_generation", "generate_outline")
     graph.add_edge("generate_outline", "review_outline")
-    graph.add_edge("review_outline", "generate_content")
+    graph.add_conditional_edges(
+        "review_outline",
+        outline_router,
+        {
+            "generate_content": "generate_content",
+            "generate_outline": "generate_outline" 
+        }
+    )
+    
     graph.add_edge("generate_content", "review_content")
     graph.add_edge("review_content", END)
 
+    
     # compile the graph
     app = graph.compile()
 

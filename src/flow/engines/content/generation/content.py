@@ -17,14 +17,14 @@ def generate_content(state: WREXT):
         content_state = state.get("content", {})
         topic = content_state.get("selected_topic", "")
 
-        if not topic:
-            logger.error("No topic found in state")
-            return {
-                "content": {
-                    **state.get("content", {}),
-                    "error": "No topic found in state",
-                }
-            }
+        # if not topic:
+        #     logger.error("No topic found in state")
+        #     return {
+        #         "content": {
+        #             **state.get("content", {}),
+        #             "error": "No topic found in state",
+        #         }
+        #     }
 
         logger.info(f"Generating content for: {topic}")
 
@@ -46,6 +46,7 @@ def generate_content(state: WREXT):
         # 4️⃣ Get EEAT persona safely
         persona = get_eeat_persona()  # defaults to eeat_persona_001
         persona_str = json.dumps(persona, indent=2)
+        logger.info(f"EEAT persona extracted: {persona_str}")
 
         # 5️⃣ Prepare prompt data
         prompt_data = {

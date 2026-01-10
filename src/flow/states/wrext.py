@@ -126,4 +126,4 @@ class WREXT(TypedDict, total=False):
     seo_result: Annotated[SEORESULT, merge_dicts]
 
     # Content Output
-    content: Annotated[CONTENT, override]
+    content: Annotated[CONTENT, merge_dicts]

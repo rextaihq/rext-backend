@@ -35,23 +35,19 @@ def review_outline(state: WREXT):
     else:
         action = ""
         review_data = {}
-    
+    # 
     if action == "approve":
         logger.info("Outline approved by human")
-        return Command(
-            update={
-                "content": {
-                    **content_state,
-                    "outline": {
-                        **outline_dict,
-                        "rejected_reason": "",
-                        "status": "approved"
-                    },
-                    "status": "planning"
-                }
-            },
-            goto="generate_content"
-        )
+        return {
+            "content":{
+                **content_state,
+                "outline":{
+                    **outline_dict,
+                    "rejected_reason": "",
+                    "status": "approved"
+                },
+            }
+        }
     
     if action == "reject":
         # If reason wasn't provided in the first interrupt, ask for it
@@ -69,27 +65,13 @@ def review_outline(state: WREXT):
                 reject_reason = "No reason provided"
         
         logger.info(f"Outline rejected: {reject_reason}")
-        return Command(
-            update={
-                "content": {
-                    **content_state,
-                    "outline": {
-                        **outline_dict,
-                        "status": "rejected",
-                        "rejected_reason": reject_reason
-                    },
-                    "status": "planning",
-                    "error": f"Outline rejected: {reject_reason}"
-                }
-            },
-            goto="generate_outline"
-        )
-    
-    # Fallback for unknown actions
-    logger.warning(f"Unknown review action: {action}")
-    return Command(
-        update={
-            "content": {**content_state, "error": f"Unknown review action: {action}"}
-        },
-        goto="generate_outline"
-    )
+        return  {
+            "content":{
+                **content_state,
+                "outline":{
+                    **outline_dict,
+                    "rejected_reason": reject_reason,
+                    "status": "rejected"
+                },
+            }
+        }
