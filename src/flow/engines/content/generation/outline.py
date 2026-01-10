@@ -12,20 +12,21 @@ def generate_outline(state: WREXT):
     Generates a content outline using an LLM.
     """
 
-    # 1. Get query and context from state
-    serp_payload = state.get("serp_payload", {})
-    query = serp_payload.get("query")
+    # 1. Get topic from state
+    content_state = state.get("content", {})
+    topic = content_state.get("selected_topic", "")
+    
 
-    if not query:
-        logger.error("No query found in state")
+    if not topic:
+        logger.error("No topic found in state")
         return {
             "content": {
                 **state.get("content", {}),
-                "error": "No query found in serp_payload",
+                "error": "No topic found in state",
             }
         }
 
-    logger.info(f"Generating outline for: {query}")
+    logger.info(f"Generating outline for: {topic}")
 
     serp_normalized = state.get("serp_normalized", {})
     seo_result = state.get("seo_result", {})
@@ -58,7 +59,7 @@ def generate_outline(state: WREXT):
         prompt_template = get_outline_prompt()
 
         messages = prompt_template.format_messages(
-            query=query,
+            topic=topic,
             related_topics=", ".join(related_topics),
             questions="\n".join(f"- {q}" for q in questions),
             competitors_context="\n".join(competitors_context),
@@ -68,7 +69,7 @@ def generate_outline(state: WREXT):
 
         # 🔒 Fail-fast guard
         for m in messages:
-            assert "{query}" not in m.content, "Prompt variables not interpolated"
+            assert "{topic}" not in m.content, "Prompt variables not interpolated"
 
         logger.info("Outline prompt formatted successfully")
 
