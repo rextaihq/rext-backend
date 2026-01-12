@@ -47,7 +47,7 @@ def calculate_final_kd(keyword: str, keyword_intent: str, wrext_data: WREXT) -> 
         for doc_data in scrape_context.get("documents", []):
             doc = doc_data["document"]
             if doc.metadata.get("domain") == comp["domain"]:
-                content_kd = content_strength(
+                content_kd,clean_text = content_strength(
                     keyword_intent=keyword_intent,
                     competitor=comp,
                     normalized_result=nr,
@@ -98,6 +98,7 @@ def calculate_final_kd(keyword: str, keyword_intent: str, wrext_data: WREXT) -> 
         "breakdown": {
             "competitor_details": breakdown_details
         },
+        "clean_text":clean_text,
         "notes": notes,
     }
 

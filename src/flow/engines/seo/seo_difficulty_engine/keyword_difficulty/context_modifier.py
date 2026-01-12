@@ -40,28 +40,6 @@ def context_modifier(competitors: list[Competitor], serp_normalized: SERPNORMALI
     elif brand_count >= len(competitors) * 0.3:
         modifier += 2.0
 
-
-    # Forums dominance (>30% of top competitors are UGC)
-    # forums_count = sum(1 for c in competitors if c.get("domain_type") == "ugc")
-    # forums_dominance = forums_count >= len(competitors) * 0.3
-    # if forums_dominance:
-    #     score += 3
-
-
-
-
-    # all_domains = serp_normalized.get("domains", [])
-
-    # forums_count = sum(1 for c in all_domains if any(u in c for u in ugc_keywords))
-    # forums_dominance = forums_count >= len(all_domains) * 0.3
-    # if forums_dominance:
-    #     score += 3
-
-    # # 2️⃣ SERP dominated by forums / UGC
-    # ugc_count = sum(1 for c in competitors if wrext_normalized["domain_stats"].get(c["domain"], {}).get("type") == "ugc")
-    # if ugc_count >= len(competitors) * 0.3:
-    #     modifier -= 2.0
-
     # 3️⃣ Poor intent alignment
     
     intent_mismatches = sum(
@@ -72,13 +50,12 @@ def context_modifier(competitors: list[Competitor], serp_normalized: SERPNORMALI
         modifier -= 4.0
 
 
-
-
     '''
     # 2️⃣ Homepage rankings dominate
     homepage_count = sum(1 for c in competitors if c.get("has_sitelinks", False))
     if homepage_count >= len(competitors) * 0.6:
         modifier += 2.0
     '''
+    
     # Clamp modifier to ±5
     return max(min(modifier, 5), -5)
