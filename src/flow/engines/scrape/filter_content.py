@@ -3,7 +3,6 @@ from typing import Dict, Any, List
 from src.flow.states.wrext import WREXT
 from src.flow.engines.scrape.config.chunker import SlidingWindowChunker
 from src.flow.engines.scrape.config.sementic_filter import SemanticSimilarityExtractor
-from src.flow.engines.scrape.config.clean_content import clean_content
 
 logger = logging.getLogger(__name__)
 
@@ -17,9 +16,9 @@ def filter_relevant_content(
     Filters scraped content to identify and return only the most relevant chunks based on the query.
 
     This function:
-    1. Retrieves the search query and scraped context from the state.
+    1. Retrieves the search query and scraped documents from the state.
     2. Chunks the scraped documents using a sliding window approach.
-    3. Cleans each chunk to remove excessive noise.
+    3. Filters chunks by minimum word count (content already cleaned in scrape_content.py).
     4. Uses semantic similarity to score and filter chunks against the query.
     5. Returns the top relevant chunks sorted by their similarity score.
 
@@ -34,13 +33,15 @@ def filter_relevant_content(
     """
     logger.info("Starting content filtering process")
     
-    scrape_context = state.get('scrape_context', [])
+    scrape_context = state.get('scrape_context', {})
     serp_payload = state.get('serp_payload', {})
     query = serp_payload.get('query', '')
-    serp_normalized = state.get('serp_normalized', {})
+    
+    # Extract documents list from scrape_context dict
+    documents = scrape_context.get('documents', [])
 
-    if not scrape_context:
-        logger.warning("No scrape_context found in state - skipping filtering")
+    if not documents:
+        logger.warning("No documents found in scrape_context - skipping filtering")
         return {'relevant_context': []}
     
     if not query:
@@ -55,24 +56,26 @@ def filter_relevant_content(
     
     from concurrent.futures import ThreadPoolExecutor
 
-    def process_document(doc):
+    def process_document(doc_data):
+        # doc_data is a DocumentScrapeData dict with 'document' key
+        doc = doc_data.get('document')
+        if not doc:
+            return []
+        
         doc_chunks = chunker.chunk(doc)
         if not doc_chunks:
             return []
         
-        cleaned_doc_chunks = []
-        for c in doc_chunks:
-            cleaned_text = clean_content(c['chunk'])
-            if len(cleaned_text.split()) >= 30:
-                cleaned_doc_chunks.append({
-                    'chunk': cleaned_text,
-                    'metadata': c['metadata']
-                })
-        return cleaned_doc_chunks
+        # Filter chunks with at least 30 words (content already cleaned in scrape_content.py)
+        return [
+            {'chunk': c['chunk'], 'metadata': c['metadata']}
+            for c in doc_chunks
+            if len(c['chunk'].split()) >= 30
+        ]
 
     all_chunks = []
     with ThreadPoolExecutor() as executor:
-        results = list(executor.map(process_document, scrape_context))
+        results = list(executor.map(process_document, documents))
         for res in results:
             all_chunks.extend(res)
 

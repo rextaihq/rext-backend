@@ -1,5 +1,5 @@
 from langchain_community.vectorstores import FAISS
-from  src.utils.embedding import get_hf_embedding
+from  src.utils.embedding import get_embedding
 from langchain_community.docstore.in_memory import InMemoryDocstore
 from langchain_core.documents import Document
 from src.utils.logger import logger

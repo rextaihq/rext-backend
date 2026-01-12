@@ -8,7 +8,7 @@ on:
       - dev
 jobs:
   build:
-    if: github.event.pull_request.merged == true
+    if: github.event.pull_request.merged == true && github.event.pull_request.head.ref == 'dev'
     runs-on: ubuntu-latest
 
     steps:
@@ -169,12 +169,6 @@ jobs:
           # Admin
           SUPER_ADMIN_EMAIL=${{ secrets.DEV_SUPER_ADMIN_EMAIL }}
           SUPER_ADMIN_PASSWORD=${{ secrets.DEV_SUPER_ADMIN_PASSWORD }}
-
-          # LangGraph
-          SERPER_API_KEY=${{ secrets.DEV_SERPER_API_KEY }}
-          PERPLEXITY_API_KEY=${{ secrets.DEV_PERPLEXITY_API_KEY }}
-          PAYMENT_CANCEL_URL=${{ secrets.PAYMENT_CANCEL_URL }}
-          PAYMENT_SUCCESS_URL=${{ secrets.PAYMENT_SUCCESS_URL }}
           EOF
 
           echo ".env file created ✅"
@@ -183,7 +177,7 @@ jobs:
           echo "${{ secrets.DOCKER_PASSWORD }}" | docker login -u "${{ secrets.DOCKER_USERNAME }}" --password-stdin
 
           # Pull latest DEV image
-          docker pull ${{ secrets.DOCKER_USERNAME }}/wrext:dev
+          docker pull revnixhq/wrext:dev
 
           # Stop and remove old containers
           docker compose down || true

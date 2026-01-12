@@ -2,153 +2,150 @@ import logging
 import re
 from urllib.parse import urlparse
 from typing import Dict, Any, List
+
 from crawl4ai import AsyncWebCrawler
 from langchain_core.documents import Document
+from src.flow.engines.scrape.config.clean_content import clean_content
 from src.flow.engines.scrape.config.crawler_config import CrawlerConfiguration
 from src.flow.states.wrext import WREXT
-from src.services.seo_service import KeywordExtractor
 
 logger = logging.getLogger(__name__)
 
+
 def _extract_headings(markdown_text: str) -> List[str]:
-    """Extracts headings (h1-h6) from markdown text."""
+    """Extract h1–h6 headings from markdown text."""
     if not markdown_text:
         return []
-    # Match lines starting with #, ##, ###, etc.
-    heading_pattern = r'^(#{1,6})\s+(.*)$'
-    headings = re.findall(heading_pattern, markdown_text, re.MULTILINE)
-    return [h[1].strip() for h in headings]
+
+    pattern = r'^(#{1,6})\s+(.*)$'
+    matches = re.findall(pattern, markdown_text, re.MULTILINE)
+    return [heading.strip() for _, heading in matches]
+
 
 async def scrape_serp_content(state: WREXT) -> Dict[str, Any]:
     """
-    Scrapes full content from SERP results using Crawl4AI.
-
-    This function:
-    1. Extracts URLs from the SERP results in the state.
-    2. Configures the AsyncWebCrawler with appropriate settings.
-    3. Performs concurrent scraping of all identified URLs.
-    4. Processes the results, extracting markdown content and detailed link information.
-    5. Returns a list of DocumentScrapeData objects containing the scraped content and metadata.
-
-    Args:
-        state (WREXT): The current state containing 'serp_result' and 'serp_payload'.
-
-    Returns:
-        Dict[str, Any]: A dictionary containing 'scrape_context' which is a list of DocumentScrapeData objects.
+    Scrape full content from SERP URLs and attach domain + rank position
+    to each scraped document.
     """
-    logger.info("Starting SERP content scraping process")
+    logger.info("Starting SERP content scraping")
 
     serp_result = state.get("serp_result", {})
-    organic = serp_result.get("organic_results", [])
+    organic_results = serp_result.get("organic_results", [])
     serp_payload = state.get("serp_payload", {})
-    
-    if not organic:
-        logger.warning("No organic results found in state - exiting early")
+    competitors = state.get("competitors", [])
+
+    if not organic_results:
+        logger.warning("No organic SERP results found")
         return {"scrape_context": {"documents": [], "total_documents": 0}}
 
     query = serp_payload.get("query")
-    config = CrawlerConfiguration(query=query) 
-    
-    urls = [item.get("link") for item in organic if item.get("link")]
-    logger.info(f"Queued {len(urls)} URLs for crawling based on query: '{query}'")
+    crawler_config = CrawlerConfiguration(query=query)
 
-    browser_config = config.get_browser_config()
-    run_config = config.get_run_config()
+    urls = [item["link"] for item in organic_results if item.get("link")]
+    logger.info("Queued %d URLs for crawling", len(urls))
+
+    browser_config = crawler_config.get_browser_config()
+    run_config = crawler_config.get_run_config()
 
     scrape_data_list = []
-    keyword_extractor = KeywordExtractor()
+
+    # Domain → best rank position map
+    domain_rank_map = {
+        comp["domain"]: min(comp["top_positions"])
+        for comp in competitors
+        if comp.get("domain") and comp.get("top_positions")
+    }
 
     try:
         async with AsyncWebCrawler(config=browser_config) as crawler:
-            logger.debug(f"Initializing AsyncWebCrawler and starting concurrent crawl with SemaphoreDispatcher (limit=3)")
-            results = await crawler.arun_many(
-                urls=urls[:], 
-                config=run_config,
-            )
-            logger.info(f"Crawling completed for {len(results)} URLs")
+            results = await crawler.arun_many(urls=urls, config=run_config)
 
         for idx, result in enumerate(results, start=1):
-            url = result.url
-            domain = urlparse(url).netloc.replace("www.", "")
+            parsed_domain = urlparse(result.url).netloc.lower()
+            domain = parsed_domain.replace("www.", "")
+            rank_position = domain_rank_map.get(domain)
 
-            logger.debug(f"Processing result [{idx}/{len(results)}]: {url}")
+            logger.debug(
+                "Processing [%d/%d]: %s", idx, len(results), result.url
+            )
 
-            if result.success:
-                text = result.markdown or result.text or ""
-                content_length = len(text.strip())
-                logger.debug(f"Successfully scraped {url} ({content_length} characters)")
-
-                # Extract headings and keywords
-                headings = _extract_headings(text)
-                keyword_results = keyword_extractor.extract_keywords(text=text, top_n=15)
-                keywords = [kw["keyword"] for kw in keyword_results]
-
-                # Safely handle internal and external links
-                internal_links = result.links.get('internal', []) if result.links else []
-                external_links = result.links.get('external', []) if result.links else []
-
-                links_detail = []
-                for link in internal_links:
-                    href = link.get("href", "N/A")
-                    link_text = link.get("text", "No text")[:50]
-                    intrinsic = link.get("intrinsic_score")
-                    contextual = link.get("contextual_score")
-                    total = link.get("total_score")
-                    head_data = link.get("head_data", {})
-
-                    links_detail.append({
-                        "href": href,
-                        "text": link_text,
-                        "intrinsic_score": round(intrinsic, 2) if intrinsic is not None else None,
-                        "contextual_score": round(contextual, 3) if contextual is not None else None,
-                        "total_score": total,
-                        "head_data": head_data,
-                    })
-
-                doc = Document(
-                    page_content=text,
-                    metadata={
-                        "url": url,
-                        "domain": domain,
-                        "status": "success",
-                        "links_detail": links_detail,
-                        "length": content_length
-                    }
-                )
-                
-                scrape_data_list.append({
-                    "document": doc,
-                    "content_length": content_length,
-                    "keywords": keywords,
-                    "headings": headings
-                })
-            else:
-                logger.error(f"Failed to scrape {url}: {result.error_message}")
+            if not result.success:
+                logger.error("Failed to scrape %s: %s", result.url, result.error_message)
                 doc = Document(
                     page_content="",
                     metadata={
-                        "url": url,
+                        "url": result.url,
                         "domain": domain,
+                        "rank_position": rank_position,
                         "status": "error",
                         "error_message": result.error_message,
-                        "links_detail": []
-                    }
+                        "links_detail": [],
+                    },
                 )
                 scrape_data_list.append({
                     "document": doc,
                     "content_length": 0,
                     "keywords": [],
-                    "headings": []
+                    "headings": [],
+                })
+                continue
+
+            text = clean_content(result.markdown or result.text or "")
+            content_length = len(text.strip())
+
+            headings = _extract_headings(text)
+            # Note: Keyword extraction removed - should be done in SEO engine with SERP data
+            keywords = []
+
+            internal_links = result.links.get("internal", []) if result.links else []
+
+            links_detail = []
+            for link in internal_links:
+                links_detail.append({
+                    "href": link.get("href"),
+                    "text": (link.get("text") or "")[:50],
+                    "intrinsic_score": (
+                        round(link["intrinsic_score"], 2)
+                        if link.get("intrinsic_score") is not None
+                        else None
+                    ),
+                    "contextual_score": (
+                        round(link["contextual_score"], 3)
+                        if link.get("contextual_score") is not None
+                        else None
+                    ),
+                    "total_score": link.get("total_score"),
+                    "head_data": link.get("head_data", {}),
                 })
 
-    except Exception as e:
-        logger.exception(f"An unexpected error occurred during the scraping process: {str(e)}")
+            doc = Document(
+                page_content=text,
+                metadata={
+                    "url": result.url,
+                    "domain": domain,
+                    "rank_position": rank_position,
+                    "status": "success",
+                    "length": content_length,
+                    "links_detail": links_detail,
+                },
+            )
+
+            scrape_data_list.append({
+                "document": doc,
+                "content_length": content_length,
+                "keywords": keywords,
+                "headings": headings,
+            })
+
+    except Exception as exc:
+        logger.exception("Scraping failed: %s", exc)
         return {"scrape_context": {"documents": [], "total_documents": 0}}
 
-    logger.info(f"Scraping finished. Successfully created {len(scrape_data_list)} context documents")
+    logger.info("Scraping completed: %d documents", len(scrape_data_list))
+
     return {
         "scrape_context": {
             "documents": scrape_data_list,
-            "total_documents": len(scrape_data_list)
+            "total_documents": len(scrape_data_list),
         }
     }

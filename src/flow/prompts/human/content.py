@@ -12,10 +12,7 @@ def get_content_prompt() -> ChatPromptTemplate:
             (
                 "human",
                 """
-Topic: {title}
-
-Search Query:
-{query}
+Topic: {topic}
 
 Approved Outline:
 {outline}

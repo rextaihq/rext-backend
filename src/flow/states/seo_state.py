@@ -123,13 +123,14 @@ class TitleRecommendation(TypedDict):
     reasons: List[str]
     rank: int
 
-class TitleRecommendationState(TypedDict):
-    """Title recommendation result state."""
+class KeywordRecommendationState(TypedDict):
+    """Keyword recommendation result state."""
     original_title: str
     recommendations: List[TitleRecommendation]
     patterns_found: Dict[str, Any]
     top_keywords_used: List[str]
     total_competitors_analyzed: int
+    is_changed: bool
     error: Optional[str]    
     
 class SEOOpportunityState(TypedDict):
@@ -151,7 +152,7 @@ class SEORESULT(TypedDict, total=False):
     """SEO analysis result - fields are optional as they may be populated by different nodes."""
     extracted_keywords: ExtractedKeywordsState
     keyword_difficulty: KeywordDifficultyState
-    title_recommendations: TitleRecommendationState
+    keyword_recommendations: KeywordRecommendationState
     intent: SearchIntentState
     content_pattern: ContentPatternState
     content_gaps: ContentGapState

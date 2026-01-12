@@ -4,6 +4,10 @@ from crawl4ai.async_configs import BrowserConfig, CrawlerRunConfig
 from crawl4ai import CacheMode
 from crawl4ai.content_scraping_strategy import LXMLWebScrapingStrategy
 from src.flow.engines.scrape.config.markdown_generator import MarkdownGeneratorFactory
+from dotenv import load_dotenv
+import os
+
+load_dotenv()
 
 logger = logging.getLogger(__name__)
 
@@ -29,9 +33,8 @@ class CrawlerConfiguration(MarkdownGeneratorFactory):
     def get_browser_config(
         self,
         headless: bool = True,
-        user_data_dir: Optional[str] = None,
         ignore_https_errors: bool = True,
-        verbose: bool = True,
+        verbose: bool = os.getenv("DEBUG", "false").lower() == "true",
     ) -> BrowserConfig:
         """
         Generate the browser configuration for scraping.

@@ -7,10 +7,9 @@ from langchain_core.documents import Document
 from src.flow.states.countries import SUPPORTED_COUNTRIES
 from src.flow.states.seo_state import SEORESULT
 from src.flow.states.content import CONTENT
-
-# Reducer fun
-def override(_: dict, new: dict) -> dict:
-    return new
+from src.flow.states.reducers.custom_reducer import merge_dicts
+from src.flow.states.reducers.custom_reducer import override
+import operator
 
 # =========================
 # SERP ENGINE STATE
@@ -102,7 +101,6 @@ class DocumentScrapeData(TypedDict):
     keywords: List[str]
     headings: List[str]
 
-
 class ScrapeContext(TypedDict, total=False):
     documents: List[DocumentScrapeData]
     total_documents: int
@@ -113,19 +111,19 @@ class ScrapeContext(TypedDict, total=False):
 # =========================
 class WREXT(TypedDict, total=False):
     # SERP
-    serp_payload: SERPPAYLOAD
-    serp_result: SERPEngineState
-    serp_normalized: SERPNORMALIZED
+    serp_payload: Annotated[SERPPAYLOAD, merge_dicts]
+    serp_result: Annotated[SERPEngineState, merge_dicts]
+    serp_normalized: Annotated[SERPNORMALIZED, merge_dicts]
 
     # Competition
     competitors: List[Competitor]
 
     # Content & Scraping
-    scrape_context: ScrapeContext
+    scrape_context: Annotated[ScrapeContext, merge_dicts]
     relevant_context: List[Document]
 
     # SEO Output
-    seo_result: Annotated[SEORESULT, lambda x, y: {**x, **y} if x and y else (y or x)]
+    seo_result: Annotated[SEORESULT, merge_dicts]
 
     # Content Output
     content: Annotated[CONTENT, override]
