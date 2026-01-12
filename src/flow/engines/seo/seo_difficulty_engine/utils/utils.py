@@ -4,6 +4,8 @@ from collections import Counter
 from typing import List, Dict, Any
 from datetime import datetime
 
+ugc_keywords = ["reddit.com", "quora.com", "stackexchange.com", "stackoverflow.com"]
+
 
 # ------------------------
 # Domain authority mapping
@@ -16,6 +18,14 @@ DOMAIN_AUTHORITY_MAP = {
     "ugc": 55,
     "other": 30
 }
+
+INTENT_WEIGHTS = {
+    "informational": {"link": 0.50, "serp": 0.30, "content": 0.20},
+    "commercial": {"link": 0.55, "serp": 0.30, "content": 0.15},
+    "transactional": {"link": 0.60, "serp": 0.30, "content": 0.10},
+    "navigational": {"link": 0.70, "serp": 0.25, "content": 0.05},
+}
+
 
 def classify_domain_type(domain: str) -> str:
     domain = domain.lower()
@@ -38,7 +48,7 @@ def classify_domain_type(domain: str) -> str:
     if any(b in domain for b in brand_keywords):
         return "brand"
 
-    ugc_keywords = ["reddit", "quora", "stackexchange", "stackoverflow"]
+    
     if any(u in domain for u in ugc_keywords):
         return "ugc"
 
@@ -167,13 +177,9 @@ def normalize_freshness(date_str):
         elif days <= 180:
             return 0.85
         elif days <= 365:
-            return 0.7
-        elif days <= 730:
-            return 0.5
-        elif days <= 1095:
-            return 0.3
+            return 0.4
         else:
-            return 0.1
+            return 0.0
         
     except:
         return 0.3

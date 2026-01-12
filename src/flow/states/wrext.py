@@ -83,6 +83,7 @@ class Competitor(TypedDict):
     is_brand: bool
 
 
+
 # =========================
 # SERP PAYLOAD
 # =========================

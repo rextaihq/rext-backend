@@ -19,11 +19,23 @@ def create_seo_engine():
     """
     graph = StateGraph(WREXT)
 
-    # set entry node
-    graph.add_node("seo_entry", lambda state: state)
+    def debug_node(func, node_name):
+        def wrapped(state):
+            result = func(state)
+            print(f"\n{'='*20} NODE: {node_name} {'='*20}")
+            print(result)
+            print('='*50 + "\n")
+            return result
+        return wrapped
+
+
+    graph.add_node(
+    "compute_keyword_difficulty",
+    debug_node(compute_keyword_difficulty, "compute_keyword_difficulty")
+    )
 
     # Add Nodes
-    graph.add_node("compute_keyword_difficulty", compute_keyword_difficulty)
+    # graph.add_node("compute_keyword_difficulty", compute_keyword_difficulty)
     graph.add_node("competitors_gap", competitors_gap_node)
     graph.add_node("seo_opportunity", seo_opportunity_node)
     graph.add_node("relevance_keyword_finder", relevance_keyword_finder)
