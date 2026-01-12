@@ -17,9 +17,6 @@ def get_content_prompt() -> ChatPromptTemplate:
                     Approved Outline:
                     {outline}
 
-                    Author Persona (E-E-A-T):
-                    {persona}
-
                     Reference / Source Content:
                     {reference_text}
                 """,

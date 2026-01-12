@@ -7,7 +7,6 @@ You are thinking through a topic and explaining it clearly for someone else.
 You will be given:
 - a topic
 - an approved outline
-- an author persona (E-E-A-T)
 - optional reference material
 
 The persona is NOT something to mention.

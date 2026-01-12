@@ -42,18 +42,12 @@ def generate_content(state: WREXT):
             chunk.get("chunk", "") for chunk in relevant_context
         )
         logger.info(f"Page content length: {len(page_content.split())} words")
-        
-        # 4️⃣ Get EEAT persona safely
-        persona = get_eeat_persona()  # defaults to eeat_persona_001
-        persona_str = json.dumps(persona, indent=2)
-        logger.info(f"EEAT persona extracted: {persona_str}")
 
         # 5️⃣ Prepare prompt data
         prompt_data = {
             "topic": topic,
             "outline": outline_str,
             "reference_text": page_content,
-            "persona": persona_str
         }
 
         # 6️⃣ Load model and prepare messages
