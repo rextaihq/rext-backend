@@ -28,6 +28,7 @@ def create_seo_engine():
             return result
         return wrapped
 
+    graph.add_node("seo_entry", debug_node(lambda state: state, "seo_entry"))
 
     graph.add_node(
     "compute_keyword_difficulty",

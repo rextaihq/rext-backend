@@ -8,14 +8,14 @@ from src.flow.engines.wrext import create_wrext_engine
 
 graph = create_wrext_engine()
 
-result = asyncio.run(graph.ainvoke(
-    {
-        "serp_payload": {
-            "query": "wordpress support and maintenance",
-            "country": "us"
-        }
-    }
-))
+# result = asyncio.run(graph.ainvoke(
+#     {
+#         "serp_payload": {
+#             "query": "wordpress support and maintenance",
+#             "country": "us"
+#         }
+#     }
+# ))
 
 # print(
 #     result['scrape_context']

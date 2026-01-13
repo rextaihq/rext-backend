@@ -18,7 +18,7 @@ class GeneratedContent(BaseModel):
     )
 
     word_count: int = Field(
-        ge=100,
-        le=300,
+        ge=800,
+        le=5000,
         description="Total word count of the article."
     )   
