@@ -56,21 +56,23 @@ def keyword_difficulty_node(state: WREXT) -> Dict[str, SEORESULT]:
         if documents else 0
     )
 
-    avg_content = avg_content / 10
-
     avg_headings = (
         sum(len(d.get("headings", [])) for d in documents) / len(documents)
         if documents else 0
     )
-    if avg_content >= 3000:
+    if avg_content >= 35000:
         authority_pressure += 6
-    elif avg_content >= 1800:
-        authority_pressure += 3
+    elif avg_content >= 25000:
+        authority_pressure += 4
+    elif avg_content >= 18000:
+        authority_pressure += 2
 
     if avg_headings >= 35:
         authority_pressure += 6
     elif avg_headings >= 25:
-        authority_pressure += 3
+        authority_pressure += 4
+    elif avg_headings >= 20:
+        authority_pressure += 2
 
     authority_pressure = min(16, authority_pressure)
 
