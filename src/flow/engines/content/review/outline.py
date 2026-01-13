@@ -21,7 +21,7 @@ def review_outline(state: WREXT):
     review_result = interrupt({
         "type": "outline_review",
         "data": outline_dict,
-        "instructions": "Please approve or reject the generated outline. If rejecting, provide a reason.",
+        "instruction": "Please approve or reject the generated outline. If rejecting, provide a reason.",
         # "action": ""
     })
     
@@ -55,7 +55,7 @@ def review_outline(state: WREXT):
         if not reject_reason:
             reject_response = interrupt({
                 "type": "outline_reject",
-                "instructions": "Please provide a reason for rejecting the outline."
+                "instruction": "Please provide a reason for rejecting the outline."
             })
             if isinstance(reject_response, str):
                 reject_reason = reject_response
