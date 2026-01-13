@@ -3,35 +3,56 @@ from src.flow.prompts.system.outline import OUTLINE_GENERATION_PROMPT
 
 
 def get_outline_prompt() -> ChatPromptTemplate:
-    """
-    Returns a properly templated ChatPromptTemplate
-    (DO NOT use SystemMessage / HumanMessage directly).
-    """
     return ChatPromptTemplate.from_messages(
         [
             ("system", OUTLINE_GENERATION_PROMPT),
             (
                 "human",
                 """
-I need a high-quality SEO outline for the following:
+Generate a HIGH-QUALITY, SEO-OPTIMIZED CONTENT OUTLINE.
 
-### 1. TARGET KEYWORD / TOPIC
-Primary Query: {topic}
+### INPUT DATA
 
-### 2. SERP ANALYSIS & COMPETITION
+Primary Topic / Query:
+{topic}
+
+SERP Insights:
 - Related Topics: {related_topics}
-- Common Questions (PAA):
+- People Also Ask Questions:
 {questions}
 
-- Top Competitors Context:
+- Competitor Coverage Summary:
 {competitors_context}
 
-- Intent Distribution: {intent_distribution}
+- Intent Distribution:
+{intent_distribution}
 
-### 3. ITERATION FEEDBACK (IF ANY)
-Previous Rejection Reason: {rejected_reason}
+Iteration Feedback:
+- Previous Rejection Reason: {rejected_reason}
+- Previous Outline (if any):
+{previous_outline}
 
-Please generate a complete SEO outline strictly following the system guidelines.
+### STRICT REQUIREMENTS (DO NOT IGNORE)
+
+1. Output MUST be valid JSON matching the `Outline` Pydantic schema.
+2. Use 4–8 sections total.
+3. All main sections MUST be H2.
+4. H3 sections only when logically required.
+5. Each section must:
+   - Map to a clear search intent
+   - Include 2–4 key points
+   - Answer real user questions
+6. Include:
+   - At least 1 featured snippet–targeted section
+   - A dedicated FAQ section using PAA questions
+7. Primary keyword must be reflected in:
+   - Title
+   - First section
+   - At least one other section
+8. Do NOT repeat competitor structure verbatim.
+9. Add unique angles, frameworks, or insights.
+
+Return ONLY the JSON. No explanations.
 """,
             ),
         ]

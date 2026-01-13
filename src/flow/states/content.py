@@ -1,5 +1,6 @@
 from typing import List, Optional, Literal
 from typing_extensions import TypedDict,Annotated
+import operator
 
 
 class ContentSection(TypedDict):
@@ -18,7 +19,7 @@ class ContentOutline(TypedDict):
     keywords_to_include: List[str]
 
     status: Literal["approved", "rejected"]
-    rejected_reason: Optional[str]
+    rejected_reason: Annotated[Optional[str],operator.add]
 
 
 class ContentDraft(TypedDict):
@@ -73,7 +74,7 @@ class CONTENT(TypedDict, total=False):
     Main LangGraph state for AI-powered SEO content engine
     """
 
-    # Core artifacts
+    # Core artifact
     topics: List[str]
     selected_topic: str
     outline: ContentOutline

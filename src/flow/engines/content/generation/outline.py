@@ -17,14 +17,14 @@ def generate_outline(state: WREXT):
     topic = content_state.get("selected_topic", "")
     
 
-    if not topic:
-        logger.error("No topic found in state")
-        return {
-            "content": {
-                **state.get("content", {}),
-                "error": "No topic found in state",
-            }
-        }
+    # if not topic:
+    #     logger.error("No topic found in state")
+    #     return {
+    #         "content": {
+    #             **state.get("content", {}),
+    #             "error": "No topic found in state",
+    #         }
+    #     }
 
     logger.info(f"Generating outline for: {topic}")
 
@@ -65,6 +65,7 @@ def generate_outline(state: WREXT):
             competitors_context="\n".join(competitors_context),
             intent_distribution=intent_distribution,
             rejected_reason=outline_rejected_reason,
+            previous_outline=outline_state,
         )
 
         # 🔒 Fail-fast guard
