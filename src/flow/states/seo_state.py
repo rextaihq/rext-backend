@@ -22,22 +22,47 @@ class SearchIntentState(TypedDict):
 # 2. Keyword Difficulty (Unified)
 # ---------------------------------------------------------
 
-class KDBreakdown(TypedDict, total=False):
-    link_score: float
-    serp_score: float
-    content_score: float
-    context_modifier: float
-    # Extended signals for Opportunity calculation
-    brand_dominance: float
-    freshness_pressure: float
+# class KDBreakdown(TypedDict, total=False):
+#     link_score: float
+#     serp_score: float
+#     content_score: float
+#     context_modifier: float
+#     # Extended signals for Opportunity calculation
+#     brand_dominance: float
+#     freshness_pressure: float
+
+# class KeywordDifficultyState(TypedDict):
+#     keyword: str
+#     difficulty_score: float
+#     difficulty_level: Literal["easy", "medium", "hard", "very_hard"]
+#     breakdown: KDBreakdown
+#     notes: List[str]
+class KeywordDifficultySignals(TypedDict, total=False):
+    link_difficulty: int              
+    domain_monopoly: int              
+    authority_pressure: int           
+    serp_feature_pressure: int       
+    intent_lock: int                 
+    freshness_pressure: int           
+    onpage_pressure: int            
+    brand_dominance: int  
+    # monopoly_ratio: float
+    # fs_ratio: float
+    # sitelink_ratio: float
+    # avg_content: float
+    # avg_headings: float
+    # url_ratio: float
+    # intitle_ratio: float    
+    # brand_ratio: float
+    # top_ratio: float
+    # avg_title_length: float
+    # recent_ratio: float
 
 class KeywordDifficultyState(TypedDict):
     keyword: str
-    difficulty_score: float
+    difficulty_score: int                    
     difficulty_level: Literal["easy", "medium", "hard", "very_hard"]
-    breakdown: KDBreakdown
-    notes: List[str]
-
+    difficulty_signals: KeywordDifficultySignals
 
 # ---------------------------------------------------------
 # 3. Content Pattern Analysis
