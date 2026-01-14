@@ -4,7 +4,8 @@ from src.flow.prompts.system.content import CONTENT_SYSTEM_PROMPT
 
 def get_content_prompt() -> ChatPromptTemplate:
     """
-    Properly templated content generation prompt with E-E-A-T persona data.
+    Content generation prompt focused on pure content creation.
+    E-E-A-T persona injection is handled by a separate node.
     """
     return ChatPromptTemplate.from_messages(
         [
@@ -16,9 +17,6 @@ Topic: {topic}
 
 Primary Keyword: {primary_keyword}
 Target Word Count: {target_word_count} words (minimum)
-
-Write as: {persona_name}, {persona_role} with {years_experience} years of experience
-Expertise areas: {focus_areas}
 
 COMPETITIVE LANDSCAPE:
 {competitor_insights}
@@ -32,8 +30,7 @@ Approved Outline:
 Reference / Source Content:
 {reference_text}
 
-Generate complete SEO-optimized content with E-E-A-T signals built-in.
-Include your experience and expertise naturally throughout the content.
+Generate complete SEO-optimized content following the outline.
 Ensure you outperform the competitors listed above.
                 """,
             ),

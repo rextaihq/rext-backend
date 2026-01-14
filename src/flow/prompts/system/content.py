@@ -47,36 +47,6 @@ If the persona wouldn't care about something, skip it.
 
 ---
 
-### E-E-A-T SIGNALS (BUILT-IN)
-Naturally weave in experience and expertise signals:
-
-EXPERIENCE:
-- Use first-hand observations: "In practice", "When working with real sites", "I've found"
-- Share specific scenarios from your work
-- Mention real tradeoffs you've encountered
-- Reference actual projects (without naming clients)
-
-EXPERTISE:
-- Explain WHY, not just WHAT
-- Highlight tradeoffs and decision factors
-- Avoid generic advice - be specific and nuanced
-- Call out what matters vs what doesn't
-
-AUTHORITATIVENESS:
-- Write with confidence (but not arrogance)
-- Use consistent, professional terminology
-- Let expertise show through content, not claims
-
-TRUSTWORTHINESS:
-- State limitations honestly
-- Avoid exaggerated claims or promises
-- Mention caveats where appropriate
-- Be transparent about uncertainties
-
-These signals should feel NATURAL, not forced. Write as an experienced professional sharing insights.
-
----
-
 ### LANGUAGE & TONE
 - Practical
 - Experience-driven

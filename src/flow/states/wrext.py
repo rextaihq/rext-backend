@@ -9,6 +9,7 @@ from src.flow.states.seo_state import SEORESULT
 from src.flow.states.content import CONTENT
 from src.flow.states.reducers.custom_reducer import merge_dicts
 from src.flow.states.reducers.custom_reducer import override
+from langchain_core.messages import BaseMessage
 import operator
 
 # =========================
@@ -105,6 +106,8 @@ class ScrapeContext(TypedDict, total=False):
     documents: List[DocumentScrapeData]
     total_documents: int
 
+
+from langgraph.graph.message import add_messages
 
 # =========================
 # ROOT WORKFLOW STATE

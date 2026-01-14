@@ -1,6 +1,36 @@
 from typing import List, Optional, Literal
 from pydantic import BaseModel, Field, conlist
 
+
+class ImageSuggestion(BaseModel):
+    """Suggested image for a section with SEO context."""
+    
+    description: str = Field(
+        description="Description of what the image should show."
+    )
+    alt_text_template: str = Field(
+        description="Template for SEO-optimized alt text (should include keyphrase or synonyms)."
+    )
+    section: str = Field(
+        description="Which section this image belongs to (e.g., 'introduction', 'section-2')."
+    )
+
+
+class LinkSuggestion(BaseModel):
+    """Suggested link with context."""
+    
+    anchor_text: str = Field(description="Suggested anchor text.")
+    link_type: Literal["internal", "outbound"] = Field(
+        description="Type of link to suggest."
+    )
+    context: str = Field(
+        description="Context about what this link should point to or why it's needed."
+    )
+    section: str = Field(
+        description="Which section this link should appear in."
+    )
+
+
 class Section(BaseModel):
     heading: str = Field(description="Section heading text.")
     heading_level: Literal["H2", "H3"] = Field(description="Heading level.")
@@ -12,12 +42,53 @@ class Section(BaseModel):
     snippet_target: Optional[bool] = False
     search_intent: Literal["informational", "commercial"] = "informational"
     suggested_word_count: Optional[int] = 200
+    include_keyphrase_in_heading: bool = Field(
+        default=False,
+        description="Whether this heading should include the focus keyphrase or a variant."
+    )
+
 
 class Outline(BaseModel):
-    title: str = Field(description="SEO-optimized article title.")
+    title: str = Field(description="SEO-optimized article title starting with the focus keyphrase.")
+    slug_suggestion: str = Field(
+        description="Suggested URL slug containing the focus keyphrase."
+    )
     brief: str = Field(description="Article goal and value proposition.")
+    
+    # Keyphrase Strategy
+    focus_keyphrase: str = Field(
+        description="The primary focus keyphrase for this article (2-4 words recommended)."
+    )
+    keywords_to_include: conlist(str, min_length=1)
+    
+    # Structure
     sections: conlist(Section, min_length=4, max_length=8)
     faqs: Optional[List[str]] = Field(description="FAQ questions for schema.")
+    
+    # Images Planning
+    image_suggestions: List[ImageSuggestion] = Field(
+        min_length=1,
+        description="Suggested images with SEO context (minimum 1 required)."
+    )
+    
+    # Links Planning
+    link_suggestions: List[LinkSuggestion] = Field(
+        min_length=2,
+        description="Suggested internal and outbound links (minimum 2 required)."
+    )
+    
+    # Schema
+    schema_type: Literal["Article", "HowTo", "FAQPage", "BlogPosting"] = Field(
+        default="Article",
+        description="Primary schema.org type for structured data."
+    )
+    
+    # Content Strategy
     target_audience: List[str]
     tone: Literal["Professional", "Conversational", "Authoritative"]
-    keywords_to_include: conlist(str, min_length=1)
+    target_word_count: int = Field(
+        ge=800,
+        le=5000,
+        description="Target word count for the complete article."
+    )
+

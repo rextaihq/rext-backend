@@ -29,7 +29,7 @@ def get_embedding() -> HuggingFaceEmbeddings:
         RuntimeError: If model loading fails (re-raised after CPU fallback)
 
     Example:
-        >>> embeddings = get_hf_embedding()
+        >>> embeddings = get_embedding()
         >>> vector = embeddings.embed_query("sample text")
         >>> print(len(vector))
         384
