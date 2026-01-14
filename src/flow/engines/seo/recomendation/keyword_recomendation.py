@@ -94,6 +94,12 @@ def keyword_recommendation(state: WREXT) -> Dict[str, Any] | Command:
         "instruction": "Select a keyword for your content",
         "Primary Keyword": original_query,
         "Recommendations": keyword_options,
+        "seo_state": {
+            # Full KeywordDifficultyState object
+            "keyword_difficulty": seo_result.get("keyword_difficulty", {}),
+            "intent": seo_result.get("intent", {}),
+            "volume": "50"  
+        }
     })
     
     # Safely extract primary keyword (handles str|dict|fallback)
