@@ -15,7 +15,7 @@ def create_seo_engine():
     Creates the Hybrid SEO Engine Graph with keyword_router.
     
     Flow:
-    Parallel SEO analysis → keyword_recommendation → ROUTER → Loop/Restart or END
+    Parallel SEO analysis --> keyword_recommendation --> ROUTER --> Loop/Restart or END
     """
     graph = StateGraph(WREXT)
 
