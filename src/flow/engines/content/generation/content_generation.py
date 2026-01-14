@@ -1,57 +1,58 @@
+"""
+Pure Content Generation Node
+
+This module generates SEO-optimized content without E-E-A-T signals.
+E-E-A-T injection and humanization are handled in separate nodes.
+"""
+
 import logging
 import json
 from src.flow.states.wrext import WREXT
 from src.flow.model.llm_manager import load_model
 from src.flow.model.structure.content import GeneratedContent
 from src.flow.prompts.human.content import get_content_prompt
-from src.flow.model.personas import get_eeat_persona
 
 logger = logging.getLogger(__name__)
 
-def generate_content(state: WREXT):
+
+def generate_content(state: WREXT) -> dict:
     """
-    Generates SEO content using an LLM, integrating outline, context, and EEAT persona.
-    Now includes E-E-A-T persona data in a single pass to save 1 LLM call.
+    Generates SEO-optimized content using an LLM.
+    
+    This node focuses on pure content generation based on outline and context.
+    E-E-A-T signals and humanization are applied in subsequent nodes.
+    
+    Args:
+        state: WREXT state containing outline and context
+    
+    Returns:
+        dict: Updated state with generated content
     """
     try:
         # 1️⃣ Get content state and outline
         content_state = state.get("content", {})
         topic = content_state.get("selected_topic", "")
 
-        # if not topic:
-        #     logger.error("No topic found in state")
-        #     return {
-        #         "content": {
-        #             **state.get("content", {}),
-        #             "error": "No topic found in state",
-        #         }
-        #     }
-
         logger.info(f"Generating content for: {topic}")
 
-        
         outline = content_state.get("outline", {})
         if not outline:
             logger.warning("No outline found in state. Proceeding without it.")
         outline_str = json.dumps(outline, indent=2) if outline else "NO OUTLINE FOUND"
 
-        logger.info(f"Outline extracted: {outline_str}")
+        logger.info(f"Outline extracted: {outline_str[:200]}...")
 
-        # 2️⃣ Get E-E-A-T persona (merged into content generation)
-        persona = get_eeat_persona("eeat_persona_001")
-        logger.info(f"Using E-E-A-T persona: {persona['name']} - {persona['role']}")
-
-        # 3️⃣ Get relevant context
+        # 2️⃣ Get relevant context
         relevant_context = state.get("relevant_context", [])
         page_content = "\n\n".join(
             chunk.get("chunk", "") for chunk in relevant_context
         )
         logger.info(f"Page content length: {len(page_content.split())} words")
 
-        # 4️⃣ Get primary keyword from outline
+        # 3️⃣ Get primary keyword from outline
         primary_keyword = outline.get("keywords_to_include", [""])[0] if outline.get("keywords_to_include") else topic
 
-        # 5️⃣ Extract Competitor Insights
+        # 4️⃣ Extract Competitor Insights
         competitors = state.get("competitors", [])
         competitor_insights = "No competitor data available."
         target_word_count = 1500  # Default fallback
@@ -72,18 +73,12 @@ def generate_content(state: WREXT):
 
         logger.info(f"Target word count: {target_word_count}")
 
-        # 6️⃣ Prepare prompt data with persona information & competitor insights
+        # 5️⃣ Prepare prompt data
         prompt_data = {
             "topic": topic,
             "outline": outline_str,
             "reference_text": page_content,
-            # E-E-A-T persona data (merged)
-            "persona_name": persona["name"],
-            "persona_role": persona["role"],
-            "years_experience": persona["years_experience"],
-            "focus_areas": ", ".join(persona["focus_areas"]),
             "primary_keyword": primary_keyword,
-            # Competitor Data
             "competitor_insights": competitor_insights,
             "target_word_count": target_word_count,
         }
@@ -94,9 +89,10 @@ def generate_content(state: WREXT):
         logger.info(f"Number of messages sent to LLM: {len(messages)}")
 
         # 7️⃣ Invoke LLM
+        logger.info("Invoking LLM for content generation...")
         generated_content = content_model.invoke(messages)
         content_dict = generated_content.model_dump()
-        logger.info(f"Content generated successfully. Keys: {content_dict.keys()}")
+        logger.info(f"Content generated successfully. Word count: {content_dict.get('word_count', 0)}")
 
         # 8️⃣ Return structured content
         return {
@@ -104,10 +100,10 @@ def generate_content(state: WREXT):
                 "outline": outline,
                 "final_content": {
                     **content_dict,
-                    "status": "reviewing",
+                    "status": "generated",
                     "rejected_reason": ""
                 },
-                "status": "content_generation"
+                "status": "content_generated"
             }
         }
 

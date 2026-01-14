@@ -15,8 +15,9 @@ from src.api.schema.workspace_schema import WorkspaceSchema
 from src.api.security.dependencies import get_current_user
 from src.services.workspace_service import WorkspaceService
 from src.utils.response_utils import created, success
-from src.utils.route_decorators import db_transaction_handler
+from src.utils.route_decorators import db_transaction_handler, require_permissions
 from src.api.middleware.exceptions import WrextValidationException
+from src.api.middleware.usage_limiter import check_workspace_limit
 
 router = APIRouter(prefix="/workspace", tags=["workspace"])
 
@@ -38,12 +39,14 @@ workspaces_router.add_api_route("/slug/{workspace_slug}", get_workspace_by_slug,
 
 # POST/PUT/DELETE endpoints - RESTful wrappers
 @workspaces_router.post("")
+@require_permissions("workspace.create")
 @db_transaction_handler("create workspace", auto_commit=True)
 async def create_workspace_restful(
     data: WorkspaceSchema,
     request: Request,
     db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user),
+    _: None = Depends(check_workspace_limit()),
 ):
     """
     Create a new workspace for the current user (RESTful endpoint).
