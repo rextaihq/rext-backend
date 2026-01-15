@@ -90,8 +90,13 @@ class FinalContent(TypedDict):
     primary_keyword: Optional[str]
     secondary_keywords: Optional[List[str]]
     word_count: int
-    status: Literal["approved", "rejected"]
+    status: Literal["approved", "rejected", "draft"]
     rejected_reason: Optional[str]
+    
+    # WordPress publishing fields
+    wordpress_post_id: Optional[int]
+    wordpress_link: Optional[str]
+    publish_error: Optional[str]
 
 
 class CONTENT(TypedDict, total=False):
@@ -103,7 +108,6 @@ class CONTENT(TypedDict, total=False):
     topics: List[str]
     selected_topic: str
     outline: ContentOutline
-    draft: ContentDraft
     review: ContentReview
     final_content: FinalContent
 
@@ -112,6 +116,7 @@ class CONTENT(TypedDict, total=False):
         "planning",
         "drafting",
         "reviewing",
+        "editing",
         "optimizing",
         "completed",
         "failed",
@@ -122,12 +127,9 @@ class CONTENT(TypedDict, total=False):
         "report",
         "whitepaper",
     ]
-
-    # Retry management
-    outline_retries: int
-    draft_retries: int
-    review_retries: int
-    max_retries: int
+    
+    # Post-review action tracking
+    action: Optional[Literal["publish", "edit", "save"]]
 
     # Error handling
     error: Optional[str]
