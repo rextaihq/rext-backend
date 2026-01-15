@@ -2,6 +2,7 @@ from pydantic import BaseModel, HttpUrl, Field, constr
 from typing import Optional, List
 from uuid import UUID
 from datetime import datetime
+from src.api.schema.persona_schema import PersonaExtract
 
 # -------------------------------------
 # Knowledge Base Schema
@@ -87,6 +88,18 @@ class BrandSchema(BaseModel):
         default_factory=list,
         description="Main content themes or pillars",
         example=["Sustainability", "Fashion Trends", "Eco-lifestyle"]
+    )
+    personas: List[PersonaExtract] = Field(
+        default_factory=list,
+        description="User personas extracted from website content",
+        example=[{
+            "name": "Busy Executive",
+            "description": "C-level decision maker focused on efficiency",
+            "demographics": "40-55 years old, urban, high income",
+            "pain_points": "Too many disconnected tools, lack of integration",
+            "goals": "Streamline operations, reduce costs, improve team productivity",
+            "behaviors": "Data-driven decision making, delegates to team, values ROI"
+        }]
     )
 
 

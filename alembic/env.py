@@ -33,7 +33,6 @@ from src.api.models.workspace_models.workspace_member import WorkspaceMembers
 from src.api.models.knowledge_models.knowledge_model import (
     BrandVoice, Website, KnowledgeFiles, TextKnowledge
 )
-from src.api.models.topic_models.topic_models import TopicsModel
 from src.api.models.subscription_models.plans import SubscriptionPlan
 from src.api.models.subscription_models.subscriptions import UserSubscription
 from src.api.models.audit_models.audit_logs import AuditLog

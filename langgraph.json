@@ -7,6 +7,9 @@
   },
   "env": ".env",
   "image_distro": "wolfi",
+  "http": {
+    "app": "src/api/server.py:app"
+  },
   "pip_installer": "uv",
   "dockerfile_lines": [
     "RUN pip install playwright crawl4ai",

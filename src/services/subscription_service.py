@@ -36,7 +36,6 @@ from src.api.models.subscription_models.subscriptions import (
 from src.api.models.user_models.users import Users
 from src.api.models.workspace_models.workspace_model import WorkspaceModel
 from src.api.models.workspace_models.workspace_member import WorkspaceMembers
-from src.api.models.topic_models.topic_models import TopicsModel
 from src.api.models.knowledge_models.knowledge_model import (
     KnowledgeFiles,
     TextKnowledge,
@@ -688,14 +687,6 @@ class SubscriptionService:
         )
         members_count = members_result.scalar() or 0
 
-        # Count topics across all user's workspaces
-        topics_result = await self.db.execute(
-            select(func.count(TopicsModel.id))
-            .join(WorkspaceModel)
-            .where(WorkspaceModel.user_id == user_id)
-        )
-        topics_count = topics_result.scalar() or 0
-
         # Count knowledge files
         files_result = await self.db.execute(
             select(func.count(KnowledgeFiles.id))
@@ -726,7 +717,6 @@ class SubscriptionService:
         return {
             "workspaces": workspaces_count,
             "members": members_count,
-            "topics": topics_count,
             "knowledge_files": knowledge_files_count,
             "knowledge_text": knowledge_text_count,
             "knowledge_web": knowledge_web_count,
@@ -810,14 +800,13 @@ class SubscriptionService:
         # Map resource type to plan limit
         limit_map = {
             "workspace": (plan.max_workspaces, current_usage["workspaces"]),
-            "topic": (plan.max_topics, current_usage["topics"]),
             "knowledge": (plan.max_knowledge_items, current_usage["knowledge_items"])
         }
 
         if resource_type not in limit_map:
             raise WrextValidationException(
                 message=f"Invalid resource type: {resource_type}",
-                field_errors={"resource_type": ["Must be workspace, topic, or knowledge"]}
+                field_errors={"resource_type": ["Must be workspace or knowledge"]}
             )
 
         max_allowed, current_count = limit_map[resource_type]
@@ -1124,13 +1113,6 @@ class SubscriptionService:
             raise WrextValidationException(
                 message=f"Cannot downgrade: You have {current_usage['workspaces']} workspaces, new plan allows {new_plan.max_workspaces}",
                 field_errors={"new_plan_id": ["Workspace limit exceeded"]}
-            )
-
-        # Check topic limit
-        if new_plan.max_topics != -1 and current_usage["topics"] > new_plan.max_topics:
-            raise WrextValidationException(
-                message=f"Cannot downgrade: You have {current_usage['topics']} topics, new plan allows {new_plan.max_topics}",
-                field_errors={"new_plan_id": ["Topic limit exceeded"]}
             )
 
         # Check knowledge items limit

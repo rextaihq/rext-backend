@@ -15,7 +15,7 @@ from src.api.models.user_models.users import Users
 from src.api.models.workspace_models.workspace_model import WorkspaceModel
 from src.api.models.workspace_models.workspace_member import WorkspaceMembers
 from src.api.models.content_models.content import Content
-from src.api.models.topic_models.topic_models import TopicsModel
+
 from src.api.models.user_models.invitations import UserInvitations
 from src.api.models.user_models.roles import Role
 from src.api.models.knowledge_models.knowledge_model import KnowledgeBase, Website, KnowledgeFiles, TextKnowledge

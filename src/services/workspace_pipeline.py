@@ -271,11 +271,15 @@ class WorkspacePipeline:
         self,
         brand_voice_schema: Optional[BrandSchema],
     ) -> Optional[BrandVoice]:
-        """Persist brand voice data if available."""
+        """Persist brand voice data and extract personas to separate table."""
         if brand_voice_schema is None:
             return None
 
         data = brand_voice_schema.model_dump()
+        
+        # Extract personas before processing brand voice
+        personas_data = data.pop("personas", [])
+        
         try:
             result = await self.db.execute(
                 select(BrandVoice).where(BrandVoice.workspace_id == self.workspace_id)
@@ -305,13 +309,17 @@ class WorkspacePipeline:
                 self.db.add(brand_voice_record)
 
             await self.db.flush()
+            
+            # Persist personas separately
+            await self._persist_personas(personas_data)
+            
             await self.db.commit()
             return brand_voice_record
 
         except Exception as exc:  # noqa: BLE001 - rollback and propagate
             await self.db.rollback()
             logger.error(
-                "Failed to persist brand voice",
+                "Failed to persist brand voice and personas",
                 extra={
                     "workspace_id": str(self.workspace_id),
                     "operation_id": self.operation_id,
@@ -319,6 +327,42 @@ class WorkspacePipeline:
                 },
             )
             raise
+
+    async def _persist_personas(self, personas_data: list[dict]) -> None:
+        """Save extracted personas to persona table."""
+        if not personas_data:
+            logger.info(
+                "No personas to persist",
+                extra={"workspace_id": str(self.workspace_id), "operation_id": self.operation_id}
+            )
+            return
+        
+        from sqlalchemy import delete
+        from src.api.models.knowledge_models.persona_model import Persona
+        
+        # Delete existing personas for this workspace
+        await self.db.execute(
+            delete(Persona).where(Persona.workspace_id == self.workspace_id)
+        )
+        
+        # Insert new personas
+        for persona_data in personas_data:
+            persona = Persona(
+                workspace_id=self.workspace_id,
+                name=persona_data.get("name"),
+                description=persona_data.get("description"),
+                demographics=persona_data.get("demographics"),
+                pain_points=persona_data.get("pain_points"),
+                goals=persona_data.get("goals"),
+                behaviors=persona_data.get("behaviors"),
+            )
+            self.db.add(persona)
+        
+        await self.db.flush()
+        logger.info(
+            f"Persisted {len(personas_data)} persona(s)",
+            extra={"workspace_id": str(self.workspace_id), "operation_id": self.operation_id}
+        )
 
     @staticmethod
     async def _default_scraper(url: str) -> Tuple[List[Any], List[Any]]:
