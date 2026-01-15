@@ -9,10 +9,11 @@ def get_outline_prompt() -> ChatPromptTemplate:
             (
                 "human",
                 """
-Generate a HIGH-QUALITY, SEO-OPTIMIZED CONTENT OUTLINE.
+Generate a HIGH-QUALITY, SEO-OPTIMIZED CONTENT OUTLINE for a **{content_type}**.
 
 ### INPUT DATA
 
+Content Type: {content_type}
 Primary Topic / Query:
 {topic}
 

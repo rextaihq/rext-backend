@@ -29,11 +29,12 @@ def generate_content(state: WREXT) -> dict:
         dict: Updated state with generated content
     """
     try:
-        # 1️⃣ Get content state and outline
+        # 1️⃣ Get content state, topic, and content type
         content_state = state.get("content", {})
         topic = content_state.get("selected_topic", "")
+        content_type = content_state.get("content_type", "article")  # Default to article
 
-        logger.info(f"Generating content for: {topic}")
+        logger.info(f"Generating content for: {topic} (content type: {content_type})")
 
         outline = content_state.get("outline", {})
         if not outline:
@@ -75,6 +76,7 @@ def generate_content(state: WREXT) -> dict:
 
         # 5️⃣ Prepare prompt data
         prompt_data = {
+            "content_type": content_type,
             "topic": topic,
             "outline": outline_str,
             "reference_text": page_content,

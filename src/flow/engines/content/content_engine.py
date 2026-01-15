@@ -2,6 +2,7 @@ import logging
 from langgraph.graph import StateGraph, START, END
 from src.flow.states.wrext import WREXT
 from src.flow.engines.content.generation.topic_generation import topic_generation
+from src.flow.engines.content.generation.content_type import content_type
 from src.flow.engines.content.generation.outline import generate_outline
 from src.flow.engines.content.generation.content_generation import generate_content
 from src.flow.engines.content.generation.eeat_injection import inject_eeat
@@ -15,6 +16,7 @@ def create_content_engine():
 
     # add nodes
     graph.add_node("topic_generation", topic_generation)
+    graph.add_node("content_type", content_type)
     graph.add_node("generate_outline", generate_outline)
     graph.add_node("review_outline", review_outline)
     graph.add_node("generate_content", generate_content)
@@ -24,7 +26,8 @@ def create_content_engine():
 
     # add edges
     graph.add_edge(START, "topic_generation")
-    graph.add_edge("topic_generation", "generate_outline")
+    graph.add_edge("topic_generation", "content_type")
+    graph.add_edge("content_type", "generate_outline")
     graph.add_edge("generate_outline", "review_outline")
     graph.add_conditional_edges(
         "review_outline",

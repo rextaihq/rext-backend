@@ -13,6 +13,7 @@ def get_content_prompt() -> ChatPromptTemplate:
             (
                 "human",
                 """
+Content Type: {content_type}
 Topic: {topic}
 
 Primary Keyword: {primary_keyword}

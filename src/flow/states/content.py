@@ -91,6 +91,12 @@ class CONTENT(TypedDict, total=False):
         "completed",
         "failed",
     ]
+    content_type: Literal[
+        "article",
+        "blog",
+        "report",
+        "whitepaper",
+    ]
 
     # Retry management
     outline_retries: int
