@@ -1,7 +1,5 @@
 {
-  "dependencies": [
-    "."
-  ],
+  "dependencies": [ "." ],
   "graphs": {
     "agent": "main:graph"
   },
@@ -9,7 +7,24 @@
   "image_distro": "wolfi",
   "pip_installer": "uv",
   "http": {
-    "app": "src/api/server.py:app"
+    "app": "src/api/server.py:app",
+    "cors": {
+      "allow_origins": [
+        "http://127.0.0.1",
+        "http://127.0.0.1:*",
+        "https://127.0.0.1",
+        "https://127.0.0.1:*",
+        "http://localhost",
+        "http://localhost:*",
+        "https://localhost",
+        "https://localhost:*"
+      ],
+      "allow_origin_regex": "^https?://(127\\.0\\.0\\.1|localhost|192\\.168\\..*)(:\\d{1,5})?$",
+      "allow_methods": ["*"],
+      "allow_headers": ["*"],
+      "allow_credentials": true,
+      "max_age": 600
+    }
   },
   "dockerfile_lines": [
     "RUN pip install playwright crawl4ai",
