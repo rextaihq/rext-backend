@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 
 
 class Persona(Base, SerializableMixin):
-    """Persona model - Stores extracted user personas for workspaces."""
+    """Persona model - Stores extracted user personas for workspaces...."""
     __tablename__ = "persona"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, unique=True, nullable=False)
