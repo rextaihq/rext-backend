@@ -2,16 +2,14 @@ from typing import List, Optional
 from pydantic import BaseModel, Field, HttpUrl
 
 
-class ImageAsset(BaseModel):
-    """Represents an image asset with SEO-optimized attributes."""
+class ImageAltText(BaseModel):
+    """Represents an SEO-optimized alt text suggestion for an image placeholder."""
     
-    url: str = Field(description="Image URL or path.")
     alt_text: str = Field(
-        description="SEO-optimized alt text containing the keyphrase or synonyms."
+        description="SEO-optimized alt text containing the keyphrase or synonyms for the suggested image."
     )
-    caption: Optional[str] = Field(
-        default=None,
-        description="Optional image caption for context."
+    context: str = Field(
+        description="Description of what type of image should be placed here (e.g., 'screenshot of dashboard', 'infographic showing statistics', 'diagram of process')."
     )
     placement: str = Field(
         description="Where in the article this image should appear (e.g., 'introduction', 'section-2', 'conclusion')."
@@ -93,10 +91,10 @@ class GeneratedContent(BaseModel):
         max_length=30000,
     )
     
-    # Images
-    images: List[ImageAsset] = Field(
+    # Image Alt Text Suggestions
+    images: List[ImageAltText] = Field(
         min_length=1,
-        description="List of images with SEO-optimized alt text containing the keyphrase or synonyms."
+        description="List of SEO-optimized alt text suggestions for images that should be added to the content. Each suggestion includes placement and context for what type of image is needed."
     )
     
     # Links

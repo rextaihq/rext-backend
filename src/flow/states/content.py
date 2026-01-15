@@ -1,4 +1,4 @@
-from typing import List, Optional, Literal
+from typing import List, Optional, Literal, Any
 from typing_extensions import TypedDict,Annotated
 import operator
 
@@ -41,17 +41,42 @@ class ReadabilityMetrics(TypedDict):
     coleman_liau_index: float
     dale_chall_score: float
 
-class ContentReview(TypedDict):
-    seo_score: float
+# On-Page SEO Scoring
+class SEOCheckItem(TypedDict):
+    """Individual SEO check with status."""
+    category: str  # e.g., "title_optimization", "meta_description"
+    label: str     # Human-readable label (e.g., "Focus keyword in H1")
+    status: Literal["pass", "warning", "fail"]  # Visual indicator
+    score: float   # Score for this check
+    max_score: float  # Maximum possible score
+    message: Optional[str]  # Detailed message/issue
+    
+class OnPageMetrics(TypedDict):
+    """
+    Complete on-page SEO scoring metrics.
+    Designed to match UI requirements with status, checks, and optimization count.
+    """
+    # Overall Score
+    score: float            # Score as percentage (0-100) - e.g., 92
+    overall_score: float    # Actual score out of max_score
+    max_score: float        # Maximum possible score (100)
+    passed: bool           # Whether score meets 70% threshold
+    
+    # Status Display
+    status_message: str    # e.g., "Almost Perfect!", "Needs Improvement", "Excellent!"
+    optimizations_needed: int  # Number of items that need fixing
+    
+    # Individual Checks (for UI list)
+    checks: List[SEOCheckItem]  # All check items with pass/warning/fail status
+    
+    # Detailed Breakdown (for advanced view)
+    all_issues: List[str]  # All issues found
+    breakdown: dict[str, Any]  # Detailed breakdown by category
+
+class ContentReview(TypedDict, total=False):
     readability_metrics: ReadabilityMetrics
-
-    eeat_score: Optional[float]
-    plagiarism_score: Optional[float]
-
-    passed: bool
-
-    missing_points: List[str]
-    improvement_suggestions: List[str]
+    # SEO metrics are hidden - on_page_metrics is optional
+    on_page_metrics: Optional[OnPageMetrics]
 
 
 class FinalContent(TypedDict):
