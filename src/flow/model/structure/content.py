@@ -6,11 +6,7 @@ class ImageAltText(BaseModel):
     """Represents an SEO-optimized alt text suggestion for an image placeholder."""
     
     alt_text: str = Field(
-<<<<<<< Updated upstream
         description="SEO-optimized alt text containing the keyphrase or synonyms for the suggested image."
-=======
-        description="SEO-optimized alt text containing the keyphrase or synonyms for the image."
->>>>>>> Stashed changes
     )
     context: str = Field(
         description="Description of what type of image should be placed here (e.g., 'screenshot of dashboard', 'infographic showing statistics', 'diagram of process')."
