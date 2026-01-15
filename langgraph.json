@@ -1,5 +1,7 @@
 {
-  "dependencies": [ "." ],
+  "dependencies": [
+    "."
+  ],
   "graphs": {
     "agent": "main:graph"
   },
@@ -20,8 +22,12 @@
         "https://localhost:*"
       ],
       "allow_origin_regex": "^https?://(127\\.0\\.0\\.1|localhost|192\\.168\\..*)(:\\d{1,5})?$",
-      "allow_methods": ["*"],
-      "allow_headers": ["*"],
+      "allow_methods": [
+        "*"
+      ],
+      "allow_headers": [
+        "*"
+      ],
       "allow_credentials": true,
       "max_age": 600
     }

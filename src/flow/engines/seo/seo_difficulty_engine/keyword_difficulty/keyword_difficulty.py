@@ -131,6 +131,6 @@ def compute_keyword_difficulty(wrext_data: WREXT, keyword_intent: str = "informa
 
     return {
         "seo_result": {
-            "keyword_difficulty2": kd_result
+            "keyword_difficulty": kd_result
         }
     }
