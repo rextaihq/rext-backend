@@ -160,7 +160,7 @@ def add_to_vector_store(
             batch_ids = uuids[i:i+batch_size]
             vector_store.add_documents(documents=batch_docs, ids=batch_ids)
         except Exception as e:
-            logger.info(f"⚠️ Error during batch insertion: {str(e)}")
+            logger.error(f"⚠️ Error during batch insertion: {str(e)}", exc_info=True)
             return False
 
     logger.info("✅ Documents successfully inserted into FAISS")
