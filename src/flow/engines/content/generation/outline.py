@@ -12,9 +12,10 @@ def generate_outline(state: WREXT):
     Generates a content outline using an LLM.
     """
 
-    # 1. Get topic from state
+    # 1. Get topic and content type from state
     content_state = state.get("content", {})
     topic = content_state.get("selected_topic", "")
+    content_type = content_state.get("content_type", "article")  # Default to article
     
 
     # if not topic:
@@ -26,7 +27,7 @@ def generate_outline(state: WREXT):
     #         }
     #     }
 
-    logger.info(f"Generating outline for: {topic}")
+    logger.info(f"Generating outline for: {topic} (content type: {content_type})")
 
     serp_normalized = state.get("serp_normalized", {})
     seo_result = state.get("seo_result", {})
@@ -59,6 +60,7 @@ def generate_outline(state: WREXT):
         prompt_template = get_outline_prompt()
 
         messages = prompt_template.format_messages(
+            content_type=content_type,
             topic=topic,
             related_topics=", ".join(related_topics),
             questions="\n".join(f"- {q}" for q in questions),
