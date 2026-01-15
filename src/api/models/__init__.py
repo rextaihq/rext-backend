@@ -7,7 +7,6 @@ from src.api.database.base import Base
 # Core models
 from src.api.models.workspace_models.workspace_model import WorkspaceModel
 from src.api.models.workspace_models.email_template import EmailTemplate
-from src.api.models.topic_models.topic_models import TopicsModel
 from src.api.models.user_models.users import Users
 
 # Knowledge base models
@@ -17,6 +16,8 @@ from src.api.models.knowledge_models.knowledge_model import (
     KnowledgeFiles,
     TextKnowledge,
 )
+from src.api.models.knowledge_models.persona_model import Persona
+
 
 # Subscription models
 from src.api.models.subscription_models.plans import SubscriptionPlan
@@ -34,12 +35,12 @@ __all__ = [
     "Base",
     "WorkspaceModel",
     "EmailTemplate",
-    "TopicsModel",
     "Users",
     "BrandVoice",
     "Website",
     "KnowledgeFiles",
     "TextKnowledge",
+    "Persona",
     "SubscriptionPlan",
     "UserSubscription",
     "PaymentMethod",
