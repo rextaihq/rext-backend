@@ -133,6 +133,15 @@ You MUST follow these SEO rules strictly:
    - Use numbered lists for steps/processes
    - Keep paragraphs 2-4 sentences
    - Add subheadings for scannability
+6. IMAGE ALT TEXT (Required):
+   - Provide at least 1-3 image alt text suggestions
+   - Each suggestion should specify:
+     * SEO-optimized alt text containing the primary keyword or synonyms
+     * Description of what type of image is needed (e.g., "screenshot of dashboard", "infographic showing statistics")
+     * Where in the article the image should be placed
+   - Alt text should be descriptive, accessible, and keyword-rich
+   - You are NOT generating actual images, only alt text suggestions for images to be added later
+
 SEO and readability must BOTH be achieved. Do not sacrifice SEO for readability.
 ---
 

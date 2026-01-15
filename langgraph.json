@@ -8,37 +8,9 @@
   "env": ".env",
   "image_distro": "wolfi",
   "pip_installer": "uv",
-  "http": {
-    "app": "src/api/server.py:app",
-    "cors": {
-      "allow_origins": [
-        "http://127.0.0.1",
-        "http://127.0.0.1:*",
-        "https://127.0.0.1",
-        "https://127.0.0.1:*",
-        "http://localhost",
-        "http://localhost:*",
-        "https://localhost",
-        "https://localhost:*",
-        "http://192.168.1.1",
-        "http://192.168.1.1:*",
-        "https://192.168.1.1",
-        "https://192.168.1.1:*"
-      ],
-      "allow_origin_regex": "^https?://(127\\.0\\.0\\.1|localhost|192\\.168\\..*)(:\\d{1,5})?$",
-      "allow_methods": [
-        "*"
-      ],
-      "allow_headers": [
-        "*"
-      ],
-      "allow_credentials": true,
-      "max_age": 600
-    }
-  },
   "dockerfile_lines": [
     "RUN pip install playwright crawl4ai",
-    "RUN apk add --no-cache nss freetype harfbuzz ca-certificates chromium curl bash",
+    "RUN apk add --no-cache nss freetype harfb  uzz ca-certificates chromium curl bash",
     "RUN playwright install",
     "RUN crawl4ai-setup",
     "RUN crawl4ai-doctor"
