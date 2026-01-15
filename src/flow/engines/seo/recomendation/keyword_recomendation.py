@@ -23,6 +23,34 @@ def keyword_recommendation(state: WREXT) -> Dict[str, Any] | Command:
     """
     serp_normalized = state.get("serp_normalized")
     seo_result = state.get("seo_result", {})
+
+    competitors = state.get("competitors", [])
+    
+    # Calculate dominant intent from competitors
+    intent_aggregation = {}
+    for competitor in competitors:
+        intent_dist = competitor.get("intent_distribution", {})
+        for intent_type, count in intent_dist.items():
+            if intent_type not in intent_aggregation:
+                intent_aggregation[intent_type] = []
+            intent_aggregation[intent_type].append(count)
+    
+    # Calculate mean for each intent and find the one with highest mean
+    dominant_intent = None
+    max_mean = 0
+    
+    if intent_aggregation:
+        for intent_type, counts in intent_aggregation.items():
+            mean_count = sum(counts) / len(counts)
+            if mean_count > max_mean:
+                max_mean = mean_count
+                dominant_intent = intent_type
+        
+        print(f"📊 Intent Analysis:")
+        for intent_type, counts in intent_aggregation.items():
+            mean_val = sum(counts) / len(counts)
+            print(f"   - {intent_type}: mean={mean_val:.2f}, occurrences={len(counts)}")
+        print(f"🎯 Dominant Intent: {dominant_intent} (mean={max_mean:.2f})")
     
     # Scrape Data from SERP
     original_query = serp_normalized.get("query", "") if serp_normalized else ""
@@ -92,8 +120,8 @@ def keyword_recommendation(state: WREXT) -> Dict[str, Any] | Command:
         "Recommendations": keyword_options,
         "seo_state": {
             # Full KeywordDifficultyState object
-            "keyword_difficulty": seo_result.get("keyword_difficulty", {}),
-            "intent": seo_result.get("intent", {}),
+            "keyword_difficulty": keyword_difficulty.get("kd", {}),
+            "intent": dominant_intent if dominant_intent else "informational",
             "volume": "50"  
         }
     })
