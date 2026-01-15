@@ -45,10 +45,6 @@ def keyword_recommendation(state: WREXT) -> Dict[str, Any] | Command:
             }
         }
     
-    # ==================================
-    # EXTRACT ALL SEO DATA FROM STATE
-    # ==================================
-    
     # From relevance_keyword_finder node
     extracted_keywords = seo_result.get("extracted_keywords", {}).get("all", [])
     
