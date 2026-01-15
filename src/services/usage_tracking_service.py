@@ -16,7 +16,6 @@ from src.api.models.subscription_models.subscriptions import UserSubscription, S
 from src.api.models.subscription_models.plans import SubscriptionPlan
 from src.api.models.workspace_models.workspace_model import WorkspaceModel
 from src.api.models.workspace_models.workspace_member import WorkspaceMembers
-from src.api.models.topic_models.topic_models import TopicsModel
 from src.api.models.knowledge_models.knowledge_model import (
     KnowledgeFiles,
     TextKnowledge,
@@ -83,15 +82,6 @@ class UsageTrackingService:
         member_count_result = await self.db.execute(member_count_query)
         member_count = member_count_result.scalar() or 0
 
-        # Count topics across all user's workspaces
-        topic_count_query = select(func.count(TopicsModel.id)).join(
-            WorkspaceModel
-        ).where(
-            WorkspaceModel.user_id == user_id
-        )
-        topic_count_result = await self.db.execute(topic_count_query)
-        topic_count = topic_count_result.scalar() or 0
-
         # Count knowledge items
         knowledge_count = await self._count_knowledge_items(user_id)
 
@@ -103,15 +93,12 @@ class UsageTrackingService:
             "plan_name": plan.name if plan else "Unknown",
             "billing_period": subscription.billing_period.value,
             "current_workspaces": workspace_count,
-            "current_topics": topic_count,
             "current_knowledge_items": knowledge_count,
             "current_api_calls": subscription.current_api_calls,
             "max_workspaces": plan.max_workspaces if plan else 0,
-            "max_topics": plan.max_topics if plan else 0,
             "max_knowledge_items": plan.max_knowledge_items if plan else 0,
             "max_api_calls_per_month": plan.max_api_calls_per_month if plan else 0,
             "workspaces_usage_percent": self._calc_percentage(workspace_count, plan.max_workspaces if plan else 0),
-            "topics_usage_percent": self._calc_percentage(topic_count, plan.max_topics if plan else 0),
             "knowledge_items_usage_percent": self._calc_percentage(knowledge_count, plan.max_knowledge_items if plan else 0),
             "api_calls_usage_percent": self._calc_percentage(api_calls, plan.max_api_calls_per_month if plan else 0),
             "usage_reset_date": subscription.usage_reset_date.isoformat() if subscription.usage_reset_date else None
@@ -255,21 +242,11 @@ class UsageTrackingService:
         member_count_result = await self.db.execute(member_count_query)
         member_count = member_count_result.scalar() or 0
 
-        # Count topics
-        topic_count_query = select(func.count(TopicsModel.id)).join(
-            WorkspaceModel
-        ).where(
-            WorkspaceModel.user_id == user_id
-        )
-        topic_count_result = await self.db.execute(topic_count_query)
-        topic_count = topic_count_result.scalar() or 0
-
         # Count knowledge items
         knowledge_count = await self._count_knowledge_items(user_id)
 
         # Free tier limits
         free_max_workspaces = 1
-        free_max_topics = 10
         free_max_knowledge_items = 50
         free_max_api_calls = 100
 
@@ -278,15 +255,12 @@ class UsageTrackingService:
             "plan_name": "Free",
             "billing_period": None,
             "current_workspaces": workspace_count,
-            "current_topics": topic_count,
             "current_knowledge_items": knowledge_count,
             "current_api_calls": 0,
             "max_workspaces": free_max_workspaces,
-            "max_topics": free_max_topics,
             "max_knowledge_items": free_max_knowledge_items,
             "max_api_calls_per_month": free_max_api_calls,
             "workspaces_usage_percent": self._calc_percentage(workspace_count, free_max_workspaces),
-            "topics_usage_percent": self._calc_percentage(topic_count, free_max_topics),
             "knowledge_items_usage_percent": self._calc_percentage(knowledge_count, free_max_knowledge_items),
             "api_calls_usage_percent": 0.0,
             "usage_reset_date": None

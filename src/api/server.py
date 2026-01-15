@@ -24,7 +24,6 @@ from dotenv import load_dotenv
 # Local application imports
 from src.api.routes.users import router as users_router
 from src.api.routes.health import router as health_router
-from src.api.routes.topics.topic_generation_route import router as topic_router
 from src.api.routes.workspaces import router as workspace_router, workspaces_router
 from src.api.routes.workspaces.workspace_knowledge import router as workspace_knowledge_router
 from src.api.routes.workspaces.workspace_knowledge_bases import router as workspace_knowledge_bases_router
@@ -282,7 +281,6 @@ setup_exception_handlers(app)
 # Include all API routes with consistent prefix (/api/v1)
 app.include_router(users_router, prefix="/api/v1", tags=["Authentication"])
 app.include_router(health_router, prefix="/api/v1", tags=["Health"])
-app.include_router(topic_router, prefix="/api/v1", tags=["Topic Generation"])
 app.include_router(workspace_router, prefix="/api/v1", tags=["Workspaces"])
 app.include_router(workspaces_router, prefix="/api/v1", tags=["Workspaces"])  # Alias for frontend compatibility
 app.include_router(workspace_knowledge_router, prefix="/api/v1", tags=["Workspace Knowledge"])
@@ -512,7 +510,6 @@ def api_status(request: Request):
             "api_status": "operational",
             "endpoints": {
                 "authentication": "/api/v1/user",
-                "topics": "/api/v1/topic",
                 "workspaces": "/api/v1/workspace",
                 "content": "/api/v1/content",
                 "knowledge": "/api/v1/knowledge"

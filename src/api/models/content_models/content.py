@@ -13,7 +13,6 @@ class Content(Base, SerializableMixin):
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, unique=True, nullable=False)
     workspace_id = Column(UUID(as_uuid=True), ForeignKey("workspace.id", ondelete="CASCADE"), nullable=False, index=True)
-    topic_id = Column(UUID(as_uuid=True), ForeignKey("topics.id", ondelete="SET NULL"), nullable=True, index=True)
     created_by_user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=False, index=True)
     assigned_to_user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
     author_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
@@ -51,7 +50,6 @@ class Content(Base, SerializableMixin):
 
     # Relationships
     workspace = relationship("WorkspaceModel", back_populates="content_items")
-    topic = relationship("TopicsModel", back_populates="content_items")
     created_by = relationship("Users", foreign_keys=[created_by_user_id])
     assigned_to = relationship("Users", foreign_keys=[assigned_to_user_id])
     author = relationship("Users", foreign_keys=[author_id])

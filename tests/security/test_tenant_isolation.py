@@ -33,7 +33,7 @@ from src.api.models.knowledge_models.knowledge_model import (
     Website,
 )
 from src.api.models.user_models.users import Users
-from src.api.models.topic_models.topic_models import TopicsModel as Topics
+ as Topics
 from src.services.content_service import ContentService
 from src.services.workspace_service import WorkspaceService
 from src.services.knowledge_service import KnowledgeService

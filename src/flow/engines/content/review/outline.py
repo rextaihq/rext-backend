@@ -22,7 +22,6 @@ def review_outline(state: WREXT):
         "type": "outline_review",
         "data": outline_dict,
         "instruction": "Please approve or reject the generated outline. If rejecting, provide a reason.",
-        # "action": ""
     })
     
     # 2. Handle review result
