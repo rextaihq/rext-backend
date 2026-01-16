@@ -33,7 +33,8 @@ def content_type(state: WREXT) -> WREXT:
     selected_content_type = interrupt({
         "instruction": "Select a content type for your topic",
         "topic": selected_topic,
-        "content_types": ["article", "blog", "report", "whitepaper"]
+        "content_types": ["article", "blog", "report", "whitepaper"],
+        "type": "content_type"
     })
 
     # Save the selected content type to the state
