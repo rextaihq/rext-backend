@@ -1,7 +1,7 @@
 import logging
 from src.flow.states.wrext import WREXT
 from src.services.wordpress_publisher import WordPressPublisher
-from src.api.models.content_models import ConnectedSite
+from src.api.models.content_models import Integration
 from src.api.database.async_database import get_async_db_context
 from sqlalchemy import select
 
@@ -34,7 +34,7 @@ async def handle_publish(state: WREXT):
     if site_id:
         try:
             async with get_async_db_context() as db:
-                query = select(ConnectedSite).where(ConnectedSite.id == site_id)
+                query = select(Integration).where(Integration.id == site_id)
                 result = await db.execute(query)
                 site = result.scalar_one_or_none()
                 

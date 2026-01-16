@@ -174,7 +174,7 @@ class ContentProgressResponse(BaseModel):
         from_attributes = True
 
 
-class ConnectedSiteBase(BaseModel):
+class IntegrationBase(BaseModel):
     """Base schema for connected sites."""
     integration_type: str = Field(default="wordpress", description="Integration type (only 'wordpress' supported)", examples=["wordpress"])
     is_active: bool = Field(True, examples=[True])
@@ -189,11 +189,11 @@ class ConnectedSiteBase(BaseModel):
     # Meta
     config_json: Optional[Dict[str, Any]] = Field(None, examples=[{"category_default": "News"}])
 
-class ConnectedSiteCreate(ConnectedSiteBase):
+class IntegrationCreate(IntegrationBase):
     """Schema for connecting a new site."""
     pass
 
-class ConnectedSiteUpdate(BaseModel):
+class IntegrationUpdate(BaseModel):
     """Schema for updating a connected site."""
     integration_type: Optional[str] = None
     is_active: Optional[bool] = None
@@ -205,7 +205,7 @@ class ConnectedSiteUpdate(BaseModel):
     config_json: Optional[Dict[str, Any]] = None
 
 
-class ConnectedSiteResponse(ConnectedSiteBase):
+class IntegrationResponse(IntegrationBase):
     """Schema for connected site responses."""
     id: UUID
     workspace_id: UUID
@@ -216,9 +216,9 @@ class ConnectedSiteResponse(ConnectedSiteBase):
         from_attributes = True
 
 
-class ConnectedSiteListResponse(BaseModel):
+class IntegrationListResponse(BaseModel):
     """Schema for listing connected sites"""
-    sites: List[ConnectedSiteResponse]
+    sites: List[IntegrationResponse]
     total_count: int
     workspace_id: UUID
 

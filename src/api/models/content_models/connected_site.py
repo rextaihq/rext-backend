@@ -10,10 +10,10 @@ import uuid
 class Integration(Base, SerializableMixin):
     """
     Connected Site Model
-
+    
     Stores WordPress integration credentials for workspaces.
     """
-    __tablename__ = "integration"
+    __tablename__ = "integrations"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, unique=True, nullable=False)
     workspace_id = Column(UUID(as_uuid=True), ForeignKey("workspace.id", ondelete="CASCADE"), nullable=False, index=True)

@@ -11,13 +11,13 @@ from src.api.database.async_database import get_async_db
 from src.api.security.dependencies import get_current_user
 from src.api.middleware.exceptions import WrextValidationException
 from src.api.schema.content_schema import (
-    ConnectedSiteCreate, 
-    ConnectedSiteUpdate, 
-    ConnectedSiteResponse,
-    ConnectedSiteListResponse,
+    IntegrationCreate, 
+    IntegrationUpdate, 
+    IntegrationResponse,
+    IntegrationListResponse,
     PublishToSiteRequest
 )
-from src.api.models.content_models import ConnectedSite, Content
+from src.api.models.content_models import Integration, Content
 from src.services.wordpress_publisher import WordPressPublisher
 from src.utils.workspace_utils import resolve_and_verify_workspace
 
@@ -35,7 +35,7 @@ async def list_connected_sites(
     user_id = user.get("identity")
     workspace, _ = await resolve_and_verify_workspace(db, workspace_id, UUID(user_id))
     
-    query = select(ConnectedSite).where(ConnectedSite.workspace_id == workspace.id)
+    query = select(Integration).where(Integration.workspace_id == workspace.id)
     result = await db.execute(query)
     sites = result.scalars().all()
     
@@ -50,7 +50,7 @@ async def list_connected_sites(
 @db_transaction_handler("connect site", "Site connected successfully")
 @require_permissions("content.create", workspace_scoped=True)
 async def connect_site(
-    data: ConnectedSiteCreate,
+    data: IntegrationCreate,
     workspace_id: str,
     db: AsyncSession = Depends(get_async_db),
     user: dict = Depends(get_current_user)
@@ -78,7 +78,7 @@ async def connect_site(
                 context={"error": str(e)}
             )
 
-    new_site = ConnectedSite(
+    new_site = Integration(
         workspace_id=workspace.id,
         integration_type=data.integration_type,
         is_active=data.is_active,
@@ -107,9 +107,9 @@ async def get_site_details(
     user_id = user.get("identity")
     workspace, _ = await resolve_and_verify_workspace(db, workspace_id, UUID(user_id))
     
-    query = select(ConnectedSite).where(
-        ConnectedSite.id == site_id,
-        ConnectedSite.workspace_id == workspace.id
+    query = select(Integration).where(
+        Integration.id == site_id,
+        Integration.workspace_id == workspace.id
     )
     result = await db.execute(query)
     site = result.scalar_one_or_none()
@@ -125,7 +125,7 @@ async def get_site_details(
 @require_permissions("content.update", workspace_scoped=True)
 async def update_site(
     site_id: UUID,
-    data: ConnectedSiteUpdate,
+    data: IntegrationUpdate,
     workspace_id: str,
     db: AsyncSession = Depends(get_async_db),
     user: dict = Depends(get_current_user)
@@ -134,9 +134,9 @@ async def update_site(
     user_id = user.get("identity")
     workspace, _ = await resolve_and_verify_workspace(db, workspace_id, UUID(user_id))
     
-    query = select(ConnectedSite).where(
-        ConnectedSite.id == site_id,
-        ConnectedSite.workspace_id == workspace.id
+    query = select(Integration).where(
+        Integration.id == site_id,
+        Integration.workspace_id == workspace.id
     )
     result = await db.execute(query)
     site = result.scalar_one_or_none()
@@ -168,9 +168,9 @@ async def delete_site(
     user_id = user.get("identity")
     workspace, _ = await resolve_and_verify_workspace(db, workspace_id, UUID(user_id))
     
-    query = select(ConnectedSite).where(
-        ConnectedSite.id == site_id,
-        ConnectedSite.workspace_id == workspace.id
+    query = select(Integration).where(
+        Integration.id == site_id,
+        Integration.workspace_id == workspace.id
     )
     result = await db.execute(query)
     site = result.scalar_one_or_none()
@@ -195,9 +195,9 @@ async def activate_site(
     user_id = user.get("identity")
     workspace, _ = await resolve_and_verify_workspace(db, workspace_id, UUID(user_id))
     
-    query = select(ConnectedSite).where(
-        ConnectedSite.id == site_id,
-        ConnectedSite.workspace_id == workspace.id
+    query = select(Integration).where(
+        Integration.id == site_id,
+        Integration.workspace_id == workspace.id
     )
     result = await db.execute(query)
     site = result.scalar_one_or_none()
@@ -221,9 +221,9 @@ async def deactivate_site(
     user_id = user.get("identity")
     workspace, _ = await resolve_and_verify_workspace(db, workspace_id, UUID(user_id))
     
-    query = select(ConnectedSite).where(
-        ConnectedSite.id == site_id,
-        ConnectedSite.workspace_id == workspace.id
+    query = select(Integration).where(
+        Integration.id == site_id,
+        Integration.workspace_id == workspace.id
     )
     result = await db.execute(query)
     site = result.scalar_one_or_none()
@@ -250,9 +250,9 @@ async def publish_to_site(
     workspace, _ = await resolve_and_verify_workspace(db, workspace_id, UUID(user_id))
     
     # Fetch site
-    site_query = select(ConnectedSite).where(
-        ConnectedSite.id == site_id,
-        ConnectedSite.workspace_id == workspace.id
+    site_query = select(Integration).where(
+        Integration.id == site_id,
+        Integration.workspace_id == workspace.id
     )
     site_result = await db.execute(site_query)
     site = site_result.scalar_one_or_none()

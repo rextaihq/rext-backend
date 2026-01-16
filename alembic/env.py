@@ -40,7 +40,7 @@ from src.api.models.subscription_models import (
 from src.api.models.audit_models.audit_logs import AuditLog
 from src.api.models.content_models import (
     Content, ContentProgress, ContentSEOData, ContentReview, 
-    ContentVersion, ConnectedSite, ContentMedia
+    ContentVersion, Integration, ContentMedia
 )
 from src.api.models.admin_models import (
     CustomerNote, ErrorLog, PlatformAdminInvitations
