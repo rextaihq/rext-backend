@@ -2,6 +2,7 @@ from fastapi import APIRouter
 from .content_retrieval import router as retrieval_router
 from .content_crud import router as crud_router
 from .content_generation import router as generation_router
+from .sites import router as sites_router
 
 router = APIRouter(
     prefix="/content",
@@ -12,5 +13,6 @@ router = APIRouter(
 router.include_router(retrieval_router)
 router.include_router(crud_router)
 router.include_router(generation_router)
+router.include_router(sites_router, prefix="/sites")
 
 __all__ = ["router"]

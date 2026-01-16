@@ -130,6 +130,7 @@ class CONTENT(TypedDict, total=False):
     
     # Post-review action tracking
     action: Optional[Literal["publish", "edit", "save"]]
+    site_id: Optional[str]
 
     # Error handling
     error: Optional[str]
