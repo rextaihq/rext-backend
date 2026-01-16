@@ -1,42 +1,35 @@
 import requests
 import urllib3
 
-# Disable SSL warnings for local development (remove in production!)
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-# WordPress REST API endpoint
-url = "https://rextpostpublisher.local/wp-json/wp/v2/posts"
+SITE_URL = "https://staging.wpaegis.com"
+API_ENDPOINT = f"{SITE_URL}/wp-json/rext-ai/v1/posts"
+API_KEY = "rext_1aad9bb0cb9c6aa8d930bb0ff6ba41e01a0749dcef5773d38f618d86a7788aff"
 
-# Authentication using Application Password (HTTP Basic Auth)
-username = "admin"
-app_password = "DBC4 ziu3 5ojH AOwf AMjR sApb"  # Remove spaces for auth
+headers = {
+    "Authorization": f"Bearer {API_KEY}",
+    "Content-Type": "application/json",
+    "Accept": "application/json",
+}
 
-# Test: Create a new post
 post_data = {
     "title": "Test Post from Python",
-    "content": "This is a test post created via WordPress REST API",
-    "status": "draft"  # Use 'publish' to publish immediately
+    "content": "This is a test post created via custom API",
+    "status": "draft"
 }
 
 try:
     response = requests.post(
-        url,
+        API_ENDPOINT,
+        headers=headers,
         json=post_data,
-        auth=(username, app_password.replace(" ", "")),  # Remove spaces from app password
-        verify=False  # Disable SSL verification for self-signed certificates (LOCAL ONLY!)
+        verify=False,
+        timeout=10
     )
-    
-    response.raise_for_status()  # Raise exception for 4xx/5xx status codes
-    
-    post = response.json()
-    print(f"✅ Success! Post created:")
-    print(f"   ID: {post.get('id')}")
-    print(f"   Title: {post.get('title', {}).get('rendered')}")
-    print(f"   Link: {post.get('link')}")
-    print(f"   Status: {post.get('status')}")
-    
-except requests.exceptions.HTTPError as e:
-    print(f"❌ HTTP Error: {e}")
-    print(f"   Response: {response.text}")
+
+    print("Status:", response.status_code)
+    print("Response:", response.text)
+
 except Exception as e:
-    print(f"❌ Error: {e}")
+    print("❌ Error:", e)

@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 import uuid
 
 
-class Integration(Base, SerializableMixin):
+class WorkspaceIntegration(Base, SerializableMixin):
     """
     Connected Site Model
     
@@ -31,8 +31,8 @@ class Integration(Base, SerializableMixin):
     config_json = Column(JSONB, nullable=True, comment="Additional integration configuration and settings")
 
     # Timestamps
-    created_at = Column(DateTime(timezone=True), nullable=False, default=datetime.utcnow)
-    updated_at = Column(DateTime(timezone=True), nullable=True, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime(timezone=True), nullable=True, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
     deleted_at = Column(DateTime(timezone=True), nullable=True)
 
     # Relationships

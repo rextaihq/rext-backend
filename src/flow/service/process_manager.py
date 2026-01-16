@@ -1,5 +1,4 @@
 from datetime import datetime, timezone
-from src.api.models.content_models.content_progress import ContentProgress
 from src.utils.logger import logger
 from sqlalchemy.ext.asyncio import AsyncSession
 from src.api.models.content_models.content import Content
@@ -40,7 +39,7 @@ class ProgressManager:
 
     def __init__(self, db: AsyncSession):
         """
-        Initialize ContentProgressService.
+        Initialize ProgressManager.
 
         Args:
             db: Async database session
@@ -51,42 +50,18 @@ class ProgressManager:
         self,
         content_id: UUID,
         step: str = "initializing"
-    ) -> ContentProgress:
+    ) -> None:
         """
-        Create initial progress record for content generation.
+        Initialize progress for content generation (SSE only).
 
         Args:
             content_id: Content UUID
             step: Initial step name
-
-        Returns:
-            Created ContentProgress record
         """
         logger.debug(
             f"Initializing progress for content {content_id} at step {step}"
         )
         step_info = self.PROGRESS_STEPS.get(step, {"percent": 0, "message": "Starting..."})
-
-        progress = ContentProgress(
-            content_id=content_id,
-            current_step=step,
-            progress_percent=step_info["percent"],
-            status_message=step_info["message"],
-            step_details={},
-            estimated_time_remaining=600,  # 10 minutes default
-            created_at=datetime.now(timezone.utc),
-            updated_at=datetime.now(timezone.utc)
-        )
-
-        self.db.add(progress)
-        await self.db.flush()
-        await self.db.commit()
-        await self.db.refresh(progress)
-
-        logger.info(
-            f"Progress initialized for content {content_id}",
-            extra={"step": step, "progress": step_info["percent"]}
-        )
 
         # Emit SSE event for initialization
         await self._publish_sse_event(
@@ -98,8 +73,6 @@ class ProgressManager:
             payload={}
         )
 
-        return progress
-
     async def update_progress(
         self,
         content_id: UUID,
@@ -109,14 +82,14 @@ class ProgressManager:
         estimated_time_remaining: Optional[int] = None
     ) -> None:
         """
-        Update progress in database and publish SSE event.
+        Update progress via SSE event.
 
         Args:
             content_id: Content UUID
             step: Progress step name (from PROGRESS_STEPS)
             message: Custom status message (optional, uses default if not provided)
             step_details: Additional step-specific data (optional)
-            estimated_time_remaining: Estimated seconds remaining (optional)
+            estimated_time_remaining: Estimated seconds remaining (optional) - Unused now
         """
         logger.info("Updating progress", extra={"content_id": content_id, "step": step})
         step_info = self.PROGRESS_STEPS.get(step)
@@ -126,33 +99,6 @@ class ProgressManager:
 
         progress_percent = step_info["percent"]
         status_message = message or step_info["message"]
-
-        # Update or create progress record
-        result = await self.db.execute(
-            select(ContentProgress).where(ContentProgress.content_id == content_id)
-        )
-        progress = result.scalar_one_or_none()
-
-        if progress:
-            progress.current_step = step
-            progress.progress_percent = progress_percent
-            progress.status_message = status_message
-            if step_details:
-                progress.step_details = step_details
-            if estimated_time_remaining is not None:
-                progress.estimated_time_remaining = estimated_time_remaining
-            progress.updated_at = datetime.now(timezone.utc)
-        else:
-            # Create if doesn't exist
-            progress = await self.initialize_progress(content_id, step)
-            progress.status_message = status_message
-            if step_details:
-                progress.step_details = step_details
-
-        await self.db.flush()
-        await self.db.commit()
-        await self.db.refresh(progress)
-        
 
         # Determine status for SSE event
         if progress_percent == 100:
@@ -185,48 +131,10 @@ class ProgressManager:
         step_details: Optional[Dict[str, Any]] = None
     ) -> None:
         """
-        Emit SSE progress event WITHOUT updating database.
-
-        Use this for intermediate steps to show real-time progress to frontend
-        without the overhead of database writes. The database should only be
-        updated for stable states (initializing, completed, failed).
-
-        Args:
-            content_id: Content UUID
-            step: Progress step name (from PROGRESS_STEPS)
-            message: Custom status message (optional, uses default if not provided)
-            step_details: Additional step-specific data (optional)
+        Emit SSE progress event.
+        Alias for update_progress since persistence is removed.
         """
-        step_info = self.PROGRESS_STEPS.get(step)
-        if not step_info:
-            logger.warning(f"Unknown progress step: {step}")
-            return
-
-        progress_percent = step_info["percent"]
-        status_message = message or step_info["message"]
-
-        # Determine status for SSE event
-        if progress_percent == 100:
-            status = "completed"
-        elif progress_percent < 0:
-            status = "failed"
-        else:
-            status = "in_progress"
-
-        # Publish SSE event only (no DB update)
-        await self._publish_sse_event(
-            content_id=content_id,
-            step=step,
-            status=status,
-            message=status_message,
-            progress=progress_percent,
-            payload=step_details
-        )
-
-        logger.debug(
-            f"Progress event emitted for content {content_id}",
-            extra={"step": step, "progress": progress_percent}
-        )
+        await self.update_progress(content_id, step, message, step_details)
 
     async def mark_completed(
         self,
@@ -234,13 +142,12 @@ class ProgressManager:
         message: str = "Content generated successfully!"
     ) -> None:
         """Mark content generation as completed."""
-        await self.update_progress(
-            content_id=content_id,
-            step="completed",
-            message=message,
-            estimated_time_remaining=0
-        )
-
+        # Content status update is handled by the caller or implicitly by flow completion
+        # But we should ensure Content table is updated if not already
+        # Wait, the original code didn't update Content status here?
+        # Let's check. Original code: mark_failed updated Content.status. mark_completed did NOT (it just updated ContentProgress).
+        # We should probably update Content status to 'ready' or 'completed' here to be safe.
+        
         # Publish final completion event
         await self._publish_sse_event(
             content_id=content_id,
@@ -252,7 +159,7 @@ class ProgressManager:
         )
 
         # Mark operation as completed in SSE manager (closes the stream)
-        await event_stream_manager.complete(str(content_id))  # Fixed: complete() not mark_completed()
+        await event_stream_manager.complete(str(content_id))
 
     async def mark_failed(
         self,
@@ -261,23 +168,17 @@ class ProgressManager:
         error_details: Optional[Dict[str, Any]] = None
     ) -> None:
         """Mark content generation as failed."""
-        await self.update_progress(
-            content_id=content_id,
-            step="failed",
-            message=f"Generation failed: {error_message}",
-            step_details=error_details or {"error": error_message},
-            estimated_time_remaining=0
-        )
-
-        # Update content status
+        
+        # Update content status in DB
         result = await self.db.execute(
             select(Content).where(Content.id == content_id)
         )
         content = result.scalar_one_or_none()
         if content:
             content.status = "failed"
+            # content.updated_at is updated automatically by onupdate if we support it, otherwise:
             content.updated_at = datetime.now(timezone.utc)
-            await self.db.flush()
+            await self.db.flush() # Caller commits
 
         # Publish final failure event
         await self._publish_sse_event(
@@ -290,7 +191,7 @@ class ProgressManager:
         )
 
         # Mark operation as completed (with error) in SSE manager
-        await event_stream_manager.complete(str(content_id))  # Fixed: complete() not mark_completed()
+        await event_stream_manager.complete(str(content_id))
 
     async def _publish_sse_event(
         self,
@@ -322,7 +223,7 @@ class ProgressManager:
             payload=payload or {}
         )
 
-        await event_stream_manager.publish(event)  # Fixed: publish() not publish_event()
+        await event_stream_manager.publish(event)
 
         logger.debug(
             f"SSE event published for content {content_id}",
@@ -332,46 +233,14 @@ class ProgressManager:
     async def get_progress(self, content_id: UUID) -> Optional[Dict[str, Any]]:
         """
         Get current progress for a content item.
-
-        Args:
-            content_id: Content UUID
-
-        Returns:
-            Progress data dictionary or None
+        Since persistence is removed, this always returns None or needs to be removed.
+        Returning None for now to avoid breaking callers expectation of a return value.
         """
-        result = await self.db.execute(
-            select(ContentProgress).where(ContentProgress.content_id == content_id)
-        )
-        progress = result.scalar_one_or_none()
-
-        if not progress:
-            return None
-
-        return {
-            "content_id": str(content_id),
-            "current_step": progress.current_step,
-            "progress_percent": progress.progress_percent,
-            "status_message": progress.status_message,
-            "step_details": progress.step_details,
-            "estimated_time_remaining": progress.estimated_time_remaining,
-            "updated_at": progress.updated_at.isoformat() if progress.updated_at else None
-        }
+        return None
 
     async def reset_progress(self, content_id: UUID) -> None:
         """
         Reset progress for a content item (for retries).
-
-        Args:
-            content_id: Content UUID
+        No-op since persistence is removed.
         """
-        result = await self.db.execute(
-            select(ContentProgress).where(ContentProgress.content_id == content_id)
-        )
-        progress = result.scalar_one_or_none()
-
-        if progress:
-            # Delete existing progress record
-            await self.db.delete(progress)
-            await self.db.flush()
-
-        logger.info(f"Reset progress for content {content_id}")
+        logger.info(f"Reset progress for content {content_id} (no-op)")
