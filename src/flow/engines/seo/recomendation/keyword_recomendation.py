@@ -116,6 +116,7 @@ def keyword_recommendation(state: WREXT) -> Dict[str, Any] | Command:
     # Interrupt for user selection - simple keyword list
     user_selection = interrupt({
         "instruction": "Select a keyword for your content",
+        "type": "keyword Selection",
         "Primary Keyword": original_query,
         "Recommendations": keyword_options,
         "seo_state": {

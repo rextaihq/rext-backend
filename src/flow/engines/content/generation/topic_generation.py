@@ -52,6 +52,7 @@ def topic_generation(state: WREXT) -> Dict[str, Any]:
     # ========================================
     user_selection = interrupt({
         "instruction": "Select a topic for your content",
+        "type": "topic",
         "topics": topics,
     })
     
