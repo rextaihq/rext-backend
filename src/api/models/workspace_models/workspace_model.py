@@ -42,4 +42,4 @@ class WorkspaceModel(Base, SerializableMixin):
     notifications = relationship("Notification", back_populates="workspace", cascade="all, delete-orphan")
     integrations = relationship("Integration", back_populates="workspace", cascade="all, delete-orphan")
 
-    # to_dict() inherited from SerializableMixin
+    
