@@ -30,6 +30,7 @@ from src.api.models.user_models.token_blacklist import TokenBlacklist
 from src.api.models.user_models.notification_preferences import NotificationPreferences
 from src.api.models.workspace_models.workspace_model import WorkspaceModel
 from src.api.models.workspace_models.workspace_member import WorkspaceMembers
+from src.api.models.workspace_models.workspace_integration import WorkspaceIntegration
 from src.api.models.knowledge_models.knowledge_model import (
     BrandVoice, Website, KnowledgeFiles, TextKnowledge
 )
@@ -39,8 +40,7 @@ from src.api.models.subscription_models import (
 )
 from src.api.models.audit_models.audit_logs import AuditLog
 from src.api.models.content_models import (
-    Content, ContentProgress, ContentSEOData, ContentReview, 
-    ContentVersion, Integration, ContentMedia
+    Content, ContentSEOData, ContentMedia
 )
 from src.api.models.admin_models import (
     CustomerNote, ErrorLog, PlatformAdminInvitations

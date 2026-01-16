@@ -50,6 +50,9 @@ def update_node_progress(
     return
 
 
+from src.flow.service.process_manager import ProgressManager
+
+
 async def _async_update_progress(
     content_id: str,
     step: str,
@@ -63,7 +66,7 @@ async def _async_update_progress(
     """
     async for db in get_async_db():
         try:
-            progress_service = ContentProgressService(db)
+            progress_service = ProgressManager(db)
 
             await progress_service.update_progress(
                 content_id=UUID(content_id),

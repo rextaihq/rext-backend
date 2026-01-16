@@ -9,7 +9,6 @@ from src.flow.engines.content.generation.eeat_injection import inject_eeat
 from src.flow.engines.content.generation.humanize_content import humanize_content
 from src.flow.engines.content.review.outline import review_outline
 from src.flow.engines.content.review.content.content_review import review_content
-from src.flow.engines.content.publish.save_content import save_content
 from src.flow.engines.router.outline import outline_router
 
 def create_content_engine():
@@ -20,7 +19,6 @@ def create_content_engine():
     1. Generate topic → content type → outline → review outline
     2. Generate content → inject E-E-A-T → humanize
     3. Review content (SEO scoring + readability)
-    4. Save to database
     """
     graph = StateGraph(WREXT)
 
@@ -33,7 +31,6 @@ def create_content_engine():
     graph.add_node("inject_eeat", inject_eeat)
     graph.add_node("humanize_content", humanize_content)
     graph.add_node("review_content", review_content())
-    graph.add_node("save_content", save_content)
 
     # Add edges
     graph.add_edge(START, "topic_generation")
@@ -56,9 +53,8 @@ def create_content_engine():
     graph.add_edge("inject_eeat", "humanize_content")
     graph.add_edge("humanize_content", "review_content")
     
-    # Review then save to database
-    graph.add_edge("review_content", "save_content")
-    graph.add_edge("save_content", END)
+    # Review then end (saving is handled by service after workflow completion)
+    graph.add_edge("review_content", END)
     
     # Compile the graph
     app = graph.compile()

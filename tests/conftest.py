@@ -100,7 +100,9 @@ async def setup_factories(db_session: AsyncSession):
     """
     from tests.factories import (
         UserFactory, WorkspaceFactory, WorkspaceMemberFactory,
-        ContentFactory, TopicFactory, RoleFactory, InvitationFactory
+        ContentFactory, RoleFactory, InvitationFactory,
+        KnowledgeBaseFactory, WebsiteFactory, KnowledgeFilesFactory, 
+        TextKnowledgeFactory, PersonaFactory
     )
 
     # Set session for all factories
@@ -108,18 +110,26 @@ async def setup_factories(db_session: AsyncSession):
     WorkspaceFactory._session = db_session
     WorkspaceMemberFactory._session = db_session
     ContentFactory._session = db_session
-    TopicFactory._session = db_session
     RoleFactory._session = db_session
     InvitationFactory._session = db_session
+    KnowledgeBaseFactory._session = db_session
+    WebsiteFactory._session = db_session
+    KnowledgeFilesFactory._session = db_session
+    TextKnowledgeFactory._session = db_session
+    PersonaFactory._session = db_session
 
     yield {
         "user": UserFactory,
         "workspace": WorkspaceFactory,
         "workspace_member": WorkspaceMemberFactory,
         "content": ContentFactory,
-        "topic": TopicFactory,
         "role": RoleFactory,
         "invitation": InvitationFactory,
+        "knowledge_base": KnowledgeBaseFactory,
+        "website": WebsiteFactory,
+        "knowledge_file": KnowledgeFilesFactory,
+        "text_knowledge": TextKnowledgeFactory,
+        "persona": PersonaFactory,
     }
 
     # Cleanup is handled by db_session rollback
