@@ -22,8 +22,10 @@ class WordPressPublisher:
     def __init__(
         self,
         site_url: Optional[str] = None,
+        api_endpoint: Optional[str] = None,
         username: Optional[str] = None,
         app_password: Optional[str] = None,
+        api_key: Optional[str] = None,
         verify_ssl: bool = True
     ):
         """
@@ -31,27 +33,70 @@ class WordPressPublisher:
         
         Args:
             site_url: WordPress site URL (e.g., https://example.com)
+            api_endpoint: Custom Rext-AI Plugin API endpoint (e.g. https://site.com/wp-json/rext-ai/v1/)
             username: WordPress username
             app_password: WordPress Application Password
+            api_key: Rext-AI Plugin API Key (Bearer Token)
             verify_ssl: Whether to verify SSL certificates (set False for local dev)
         """
         self.site_url = site_url or os.getenv("WORDPRESS_SITE_URL", "")
+        self.api_endpoint = api_endpoint or os.getenv("WORDPRESS_API_ENDPOINT", "")
         self.username = username or os.getenv("WORDPRESS_USERNAME", "")
         self.app_password = app_password or os.getenv("WORDPRESS_APP_PASSWORD", "")
+        self.api_key = api_key or os.getenv("WORDPRESS_API_KEY", "")
         self.verify_ssl = verify_ssl if os.getenv("ENVIRONMENT") == "production" else False
         
-        # Remove trailing slash from site URL
+        # Remove trailing slash from URLs
         self.site_url = self.site_url.rstrip("/")
+        if self.api_endpoint:
+            self.api_endpoint = self.api_endpoint.rstrip("/")
         
         # Remove spaces from application password
         self.app_password = self.app_password.replace(" ", "")
         
-        if not all([self.site_url, self.username, self.app_password]):
+        self.session = requests.Session()
+        self.session.verify = self.verify_ssl
+        
+        # Set headers based on auth type
+        if self.api_key:
+            self.session.headers.update({
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json",
+                "Accept": "application/json"
+            })
+        elif self.username and self.app_password:
+            # Session auth for standard WP
+            pass # Standard requests usage will handle auth arg
             logger.warning(
                 "WordPress credentials not fully configured. "
                 "Set WORDPRESS_SITE_URL, WORDPRESS_USERNAME, and WORDPRESS_APP_PASSWORD"
             )
     
+    def validate_plugin(self) -> bool:
+        """
+        Validate the Rext-AI WordPress plugin connection.
+        
+        Returns:
+            True if valid, raises an exception if invalid.
+        """
+        # Use custom endpoint if provided, else fallback to site_url/wp-json/rext-ai/v1/
+        endpoint = self.api_endpoint if self.api_endpoint else f"{self.site_url}/wp-json/rext-ai/v1/"
+        
+        try:
+            response = self.session.get(endpoint, timeout=15)
+            
+            if response.status_code == 200:
+                return True
+            else:
+                error_msg = f"Rext-AI validation failed (Status {response.status_code}): {response.text}"
+                logger.error(error_msg)
+                raise Exception(error_msg)
+                
+        except requests.exceptions.RequestException as e:
+            error_msg = f"Failed to connect to Rext-AI plugin at {endpoint}: {str(e)}"
+            logger.error(error_msg)
+            raise Exception(error_msg)
+
     def publish_post(
         self,
         title: str,

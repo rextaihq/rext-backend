@@ -172,3 +172,58 @@ class ContentProgressResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class ConnectedSiteBase(BaseModel):
+    """Base schema for connected sites."""
+    integration_type: str = Field(default="wordpress", description="Integration type (only 'wordpress' supported)", examples=["wordpress"])
+    is_active: bool = Field(True, examples=[True])
+    
+    # WordPress fields
+    site_url: Optional[str] = Field(None, examples=["https://your-wordpress-site.com"])
+    api_endpoint: Optional[str] = Field(None, examples=["https://your-wordpress-site.com/wp-json/rext-ai/v1/"])
+    username: Optional[str] = Field(None, examples=["admin"])
+    app_password: Optional[str] = Field(None, examples=["abcd 1234 efgh 5678"])
+    api_key: Optional[str] = Field(None, examples=["rext_1aad9bb0cb9c6aa8d930bb0ff6ba41e01a0749dcef5773d38f618d86a7788aff"])
+    
+    # Meta
+    config_json: Optional[Dict[str, Any]] = Field(None, examples=[{"category_default": "News"}])
+
+class ConnectedSiteCreate(ConnectedSiteBase):
+    """Schema for connecting a new site."""
+    pass
+
+class ConnectedSiteUpdate(BaseModel):
+    """Schema for updating a connected site."""
+    integration_type: Optional[str] = None
+    is_active: Optional[bool] = None
+    site_url: Optional[str] = None
+    api_endpoint: Optional[str] = None
+    username: Optional[str] = None
+    app_password: Optional[str] = None
+    api_key: Optional[str] = None
+    config_json: Optional[Dict[str, Any]] = None
+
+
+class ConnectedSiteResponse(ConnectedSiteBase):
+    """Schema for connected site responses."""
+    id: UUID
+    workspace_id: UUID
+    created_at: datetime
+    updated_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+class ConnectedSiteListResponse(BaseModel):
+    """Schema for listing connected sites"""
+    sites: List[ConnectedSiteResponse]
+    total_count: int
+    workspace_id: UUID
+
+
+class PublishToSiteRequest(BaseModel):
+    """Schema for publishing content to a specific site"""
+    site_id: UUID
+    status: Optional[str] = Field(default="publish", description="Post status (publish, draft, etc.)")
