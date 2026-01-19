@@ -11,6 +11,7 @@ from src.flow.states.reducers.custom_reducer import merge_dicts
 from src.flow.states.reducers.custom_reducer import override
 from langchain_core.messages import BaseMessage
 import operator
+import uuid
 
 # =========================
 # SERP ENGINE STATE
@@ -89,6 +90,8 @@ class Competitor(TypedDict):
 # SERP PAYLOAD
 # =========================
 class SERPPAYLOAD(TypedDict, total=False):
+    user_id: uuid.UUID
+    workspace_id: uuid.UUID
     query: str
     country: SUPPORTED_COUNTRIES
 

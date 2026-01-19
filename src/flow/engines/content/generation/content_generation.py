@@ -41,7 +41,7 @@ def generate_content(state: WREXT) -> dict:
             logger.warning("No outline found in state. Proceeding without it.")
         outline_str = json.dumps(outline, indent=2) if outline else "NO OUTLINE FOUND"
 
-        logger.info(f"Outline extracted: {outline_str[:200]}...")
+        logger.info(f"Outline extracted: {outline_str[:20]}...")
 
         # 2️⃣ Get relevant context
         relevant_context = state.get("relevant_context", [])

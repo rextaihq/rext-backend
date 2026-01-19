@@ -5,16 +5,7 @@ import sys
 if sys.platform.startswith("win"):
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 import os
-from typing import Union
 from contextlib import asynccontextmanager
-import src.api.models
-from src.api.models.user_models.invitations import UserInvitations
-from src.api.models.user_models.role_permissions import RolePermission
-from src.api.models.user_models.roles import Role
-from src.api.models.user_models.user_roles import UserRole
-from src.api.models.user_models.permissions import Permission
-from src.api.models.subscription_models.plans import SubscriptionPlan
-from src.api.models.subscription_models.subscriptions import UserSubscription
 # Third-party imports
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -60,8 +51,6 @@ from src.api.routes.media import router as media_router
 from src.api.routes.invitations import router as invitations_router
 from src.api.routes.notifications.notification_routes import router as notification_router
 from src.api.database.async_database import async_engine
-from src.api.database.base import Base
-from src.api.database.async_database import async_engine
 # Middleware imports
 from src.api.middleware.request_tracker import RequestTrackerMiddleware
 from src.api.middleware.error_handler import ErrorHandlerMiddleware, setup_exception_handlers
@@ -72,6 +61,7 @@ from src.tasks.scheduled_tasks import start_scheduled_tasks, shutdown_scheduled_
 from src.api.cache.redis_client import cache
 from src.api.config import settings
 from src.utils.response_utils import success
+from src.api.database.base import Base
 from src.utils.logger import logger
 
 # Structured logging
@@ -80,52 +70,10 @@ from src.api.lib.logging_config import configure_logging, RequestIDMiddleware
 # Sentry error monitoring
 from src.api.lib.sentry_config import init_sentry
 
-# Prompts
-from src.flow.prompts.prompt_manager import PromptManager
-
 load_dotenv()
 
 # Configure structured logging at startup
 configure_logging()
-
-DB_URI = settings.POSTGRES_URI_CUSTOM
-
-# Database tables are managed by Alembic migrations
-# Run migrations with: alembic upgrade head
-
-
-async def check_migrations():
-    """Check if database migrations are up to date."""
-    try:
-        from alembic.config import Config
-        from alembic.script import ScriptDirectory
-        from alembic.runtime.migration import MigrationContext
-
-        alembic_cfg = Config("alembic.ini")
-        script = ScriptDirectory.from_config(alembic_cfg)
-
-        # Use run_sync to execute sync Alembic code with async engine
-        def do_check(connection):
-            context = MigrationContext.configure(connection)
-            return context.get_current_revision()
-
-        async with async_engine.begin() as connection:
-            current_rev = await connection.run_sync(do_check)
-            head_rev = script.get_current_head()
-
-            if current_rev != head_rev:
-                logger.warning(
-                    f"Database migration out of date. "
-                    f"Current: {current_rev}, Expected: {head_rev}. "
-                    f"Run 'alembic upgrade head' to update."
-                )
-                return False
-            logger.info(f"Database migrations up to date (revision: {current_rev})")
-            return True
-    except Exception as e:
-        logger.error(f"Error checking migrations: {e}")
-        return False
-
 
 @asynccontextmanager
 async def lifespan(app):
@@ -145,16 +93,17 @@ async def lifespan(app):
         logger.warning(f"⚠️ Failed to initialize Sentry: {e}")
 
     # --- Ensure database tables exist ---
-    try:
-        async with async_engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
-        logger.info("✅ Verified database tables exist or created if missing")
-    except Exception as e:
-        logger.error(f"❌ Failed to verify/create database tables: {e}")
+    # try:
+    #     async with async_engine.begin() as conn:
+    #         await conn.run_sync(Base.metadata.create_all)
+    #     logger.info("✅ Verified database tables exist or created if missing")
+    # except Exception as e:
+    #     logger.error(f"❌ Failed to verify/create database tables: {e}")
 
     # --- Connect Redis cache ---
     try:
-        await cache.connect()
+        if not cache.redis:
+            await cache.connect()
         logger.info("✅ Redis cache connected")
     except Exception as e:
         logger.error(f"❌ Failed to connect to Redis: {e}")
@@ -173,13 +122,6 @@ async def lifespan(app):
         except Exception as e:
             logger.critical(f"🚨 Invalid production config: {e}")
             raise
-
-    # --- Initialize prompt system ---
-    try:
-        PromptManager(auto_register=False)
-        logger.info("✅ Prompts initialized successfully")
-    except Exception as e:
-        logger.warning(f"⚠️ Failed to initialize PromptManager: {e}")
 
     # --- Start background scheduled tasks ---
     try:
@@ -420,20 +362,6 @@ async def health_check(request: Request):
             status["status"] = "degraded"
     except Exception as e:
         status["checks"]["disk_space"] = f"error: {str(e)}"
-
-    # OpenAI check (optional - non-blocking)
-    try:
-        import httpx
-        async with httpx.AsyncClient() as client:
-            response = await client.get(
-                "https://api.openai.com/v1/models",
-                headers={"Authorization": f"Bearer {settings.OPENAI_API_KEY}"},
-                timeout=5.0
-            )
-            status["checks"]["openai"] = "healthy" if response.status_code == 200 else "degraded"
-    except Exception:
-        status["checks"]["openai"] = "unavailable"
-        # Don't mark overall status as degraded for external service
 
     # Return appropriate status code
     status_code = 200 if status["status"] == "healthy" else 503

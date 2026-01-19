@@ -1,10 +1,10 @@
 import logging
 from src.flow.states.wrext import WREXT
-from src.flow.engines.content.review.content.readability import calculate_readability
-from src.flow.engines.content.review.content.on_page_scoring import calculate_on_page_seo
 from langgraph.graph import StateGraph, START, END
 
 def review_content():
+    from src.flow.engines.content.review.content.readability import calculate_readability
+    from src.flow.engines.content.review.content.on_page_scoring import calculate_on_page_seo
     graph = StateGraph(WREXT)
     
     # add nodes 

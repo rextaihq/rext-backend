@@ -21,6 +21,8 @@ from src.api.models.content_models.content import Content
 from src.api.models.content_models.content_seo_data import ContentSEOData
 from src.api.models.knowledge_models.persona_model import Persona
 
+# Admin models
+from src.api.models.admin_models.admin_invitations import PlatformAdminInvitations
 
 # Subscription models
 from src.api.models.subscription_models.plans import SubscriptionPlan
@@ -52,4 +54,5 @@ __all__ = [
     "PaymentMethod",
     "Media",
     "Notification",
+    "PlatformAdminInvitations",
 ]
