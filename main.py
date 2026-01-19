@@ -11,7 +11,7 @@ graph = create_wrext_engine()
 result = asyncio.run(graph.ainvoke(
     {
         "serp_payload": {
-            "query": "wordpress core updates",
+            "query": "wordpress malware removal service",
             "country": "us"
         }
     }

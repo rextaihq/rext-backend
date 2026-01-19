@@ -37,6 +37,7 @@ class SearchIntentState(TypedDict):
 #     difficulty_level: Literal["easy", "medium", "hard", "very_hard"]
 #     breakdown: KDBreakdown
 #     notes: List[str]
+
 class KeywordDifficultySignals(TypedDict, total=False):
     link_difficulty: int              
     domain_monopoly: int              
@@ -46,17 +47,6 @@ class KeywordDifficultySignals(TypedDict, total=False):
     freshness_pressure: int           
     onpage_pressure: int            
     brand_dominance: int  
-    # monopoly_ratio: float
-    # fs_ratio: float
-    # sitelink_ratio: float
-    # avg_content: float
-    # avg_headings: float
-    # url_ratio: float
-    # intitle_ratio: float    
-    # brand_ratio: float
-    # top_ratio: float
-    # avg_title_length: float
-    # recent_ratio: float
 
 class KeywordDifficultyState(TypedDict):
     keyword: str

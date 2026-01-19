@@ -76,7 +76,7 @@ def seo_opportunity_node(state: WREXT) -> Dict[str, SEORESULT]:
     # Find the most common intent among competitors
     top_intent_count = 0
     if intent_counts:
-        top_intent_count = max(intent_counts.values())
+        top_intent_count = max(intent_counts)
 
     recommended_content_type = (
         "comparison" if intent == "commercial"

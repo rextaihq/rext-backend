@@ -2,7 +2,7 @@ import streamlit as st
 import asyncio
 import pandas as pd
 import time
-from src.flow.engines.serp.serp_flow import get_serp_flow
+from src.flow.engines.serp.serp_engine import create_serp_engine
 from src.flow.states.wrext import WREXT
 
 # Page configuration
@@ -54,7 +54,7 @@ with st.sidebar:
     run_button = st.button("Run Flow")
 
 async def run_flow(query, country):
-    flow = get_serp_flow()
+    flow = create_serp_engine()
     
     initial_state: WREXT = {
         "serp_payload": {
