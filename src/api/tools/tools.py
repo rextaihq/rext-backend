@@ -1,29 +1,27 @@
 import os
 import json
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
 from dotenv import load_dotenv
 from openai import OpenAI
+from src.api.schema.tools_schema import SchemaRequest
 
-# Load environment variables (.env)
+# -----------------------------
+# Environment Setup
+# -----------------------------
 load_dotenv()
-
-# Initialize OpenAI client
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
+# -----------------------------
 # FastAPI Router
+# -----------------------------
 router = APIRouter(
     prefix="/tools",
     tags=["Tools"],
 )
 
-# -----------------------------
-# Request Model
-# -----------------------------
-class SchemaRequest(BaseModel):
-    schema_type: str
-    description: str
-
+@router.get("/")
+def get_tools():
+    return {"message": "Tools"}
 
 # -----------------------------
 # AI Schema Generator Function
@@ -31,7 +29,6 @@ class SchemaRequest(BaseModel):
 def generate_schema_with_ai(schema_type: str, description: str):
     prompt = f"""
 You are an SEO and Schema.org expert.
-
 Generate a VALID Schema.org JSON-LD for schema type "{schema_type}".
 
 STRICT RULES:
@@ -55,6 +52,7 @@ User description:
             temperature=0.1
         )
 
+        # Parse AI output directly without Pydantic validation
         content = response.choices[0].message.content.strip()
         return json.loads(content)
 
@@ -69,10 +67,10 @@ User description:
             detail=str(e)
         )
 
-
 # -----------------------------
 # API Endpoint
-# -----------------------------
+
+
 @router.post("/schema-generator")
 def schema_generator(payload: SchemaRequest):
     """
