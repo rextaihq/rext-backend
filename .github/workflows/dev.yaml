@@ -175,6 +175,10 @@ jobs:
           PERPLEXITY_API_KEY=${{ secrets.DEV_PERPLEXITY_API_KEY }}
           PAYMENT_CANCEL_URL=${{ secrets.PAYMENT_CANCEL_URL }}
           PAYMENT_SUCCESS_URL=${{ secrets.PAYMENT_SUCCESS_URL }}
+
+          # For Langgraph Task
+          BG_JOB_ISOLATED_LOOPS=true
+          N_JOBS_PER_WORKER=50
           EOF
 
           echo ".env file created ✅"
