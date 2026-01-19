@@ -8,9 +8,6 @@
   "env": ".env",
   "image_distro": "wolfi",
   "pip_installer": "uv",
-  "http": {
-    "app": "src/api/server.py:app"
-  },
   "dockerfile_lines": [
     "RUN pip install playwright crawl4ai",
     "RUN apk add --no-cache nss freetype harfbuzz ca-certificates chromium curl bash",

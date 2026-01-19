@@ -152,7 +152,7 @@ async def get_analytics_overview(
 @db_transaction_handler("get revenue history", auto_commit=False)
 async def get_revenue_history(
     request: Request,
-    period: str = Query("12_months", regex="^(3_months|6_months|12_months)$", description="Time period"),
+    period: str = Query("12_months", pattern="^(3_months|6_months|12_months)$", description="Time period"),
     db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user)
 ):

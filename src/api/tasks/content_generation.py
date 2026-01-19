@@ -12,7 +12,6 @@ from uuid import UUID
 from fastapi import BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.services.langgraph_content_service import LangGraphContentService
 from src.flow.service.process_manager import ProgressManager
 
 from src.api.database.async_database import get_async_db

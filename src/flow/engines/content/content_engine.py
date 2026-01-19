@@ -1,15 +1,6 @@
 import logging
 from langgraph.graph import StateGraph, START, END
 from src.flow.states.wrext import WREXT
-from src.flow.engines.content.generation.topic_generation import topic_generation
-from src.flow.engines.content.generation.content_type import content_type
-from src.flow.engines.content.generation.outline import generate_outline
-from src.flow.engines.content.generation.content_generation import generate_content
-from src.flow.engines.content.generation.eeat_injection import inject_eeat
-from src.flow.engines.content.generation.humanize_content import humanize_content
-from src.flow.engines.content.review.outline import review_outline
-from src.flow.engines.content.review.content.content_review import review_content
-from src.flow.engines.router.outline import outline_router
 
 def create_content_engine():
     """
@@ -20,6 +11,16 @@ def create_content_engine():
     2. Generate content → inject E-E-A-T → humanize
     3. Review content (SEO scoring + readability)
     """
+    from src.flow.engines.content.generation.topic_generation import topic_generation
+    from src.flow.engines.content.generation.content_type import content_type
+    from src.flow.engines.content.generation.outline import generate_outline
+    from src.flow.engines.content.generation.content_generation import generate_content
+    from src.flow.engines.content.generation.eeat_injection import inject_eeat
+    from src.flow.engines.content.generation.humanize_content import humanize_content
+    from src.flow.engines.content.review.outline import review_outline
+    from src.flow.engines.content.review.content.content_review import review_content
+    from src.flow.engines.router.outline import outline_router
+
     graph = StateGraph(WREXT)
 
     # Add nodes

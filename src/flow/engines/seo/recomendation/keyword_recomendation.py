@@ -45,16 +45,9 @@ def keyword_recommendation(state: WREXT) -> Dict[str, Any] | Command:
             if mean_count > max_mean:
                 max_mean = mean_count
                 dominant_intent = intent_type
-        
-        print(f"📊 Intent Analysis:")
-        for intent_type, counts in intent_aggregation.items():
-            mean_val = sum(counts) / len(counts)
-            print(f"   - {intent_type}: mean={mean_val:.2f}, occurrences={len(counts)}")
-        print(f"🎯 Dominant Intent: {dominant_intent} (mean={max_mean:.2f})")
     
     # Scrape Data from SERP
     original_query = serp_normalized.get("query", "") if serp_normalized else ""
-    print(f"🔍 Original Query: {original_query}")
     
     # Early return if no SERP data
     if not serp_normalized:
@@ -84,12 +77,6 @@ def keyword_recommendation(state: WREXT) -> Dict[str, Any] | Command:
     
     # From competitors_gap_node
     competitors_gap = seo_result.get("content_gaps", {})
-    
-    print(f"📊 SEO Data Collected:")
-    print(f"   - Keywords extracted: {len(extracted_keywords)}")
-    print(f"   - Difficulty level: {keyword_difficulty.get('difficulty_level', 'N/A')}")
-    print(f"   - Opportunity score: {seo_opportunity.get('opportunity_score', 'N/A')}")
-    print(f"   - Content gaps: {len(competitors_gap.get('missing_topics', []))} missing topics")
     
     # ==================================
     # GENERATE SMART RECOMMENDATIONS
@@ -133,13 +120,11 @@ def keyword_recommendation(state: WREXT) -> Dict[str, Any] | Command:
         else user_selection.get("Primary Keyword", "").strip() if isinstance(user_selection, dict)
         else original_query
     )
-    print(f"✅ User Selection: {primary_keyword}")
     
     # ==================================
     # ROUTE BASED ON KEYWORD SELECTION
     # ==================================
     if primary_keyword.lower() == original_query.lower():
-        print("➡️ Original keyword selected - continuing to content engine")
         return {
             "seo_result":{
                 **seo_result,
@@ -162,9 +147,6 @@ def keyword_recommendation(state: WREXT) -> Dict[str, Any] | Command:
         }
 
     else:
-        print(f"🔄 New keyword selected: '{primary_keyword}' - re-running SEO analysis")
-        # New keyword → Restart SEO engine to regenerate recommendations
-
         return {
             "seo_result":{
                 **seo_result,

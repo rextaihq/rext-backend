@@ -104,6 +104,14 @@ async def fetch_serp_results(state: WREXT) -> Dict[str, Any]:
 
     logger.info(f"Fetching SERP results for query: '{query}' in country: '{country}'")
 
+    # get the user_id and workspace_id from the state
+    user_id = serp_payload.get("user_id")
+    workspace_id = serp_payload.get("workspace_id")
+    
+    if not user_id or not workspace_id:
+        logger.error("No user_id or workspace_id found in serp_payload")
+        return {"serp_result": {}}
+
     api_key = os.getenv("SERPER_API_KEY")
     if not api_key:
         logger.error("SERPER_API_KEY not found in environment variables")
