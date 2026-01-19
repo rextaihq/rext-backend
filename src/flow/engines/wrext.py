@@ -10,7 +10,7 @@ def create_wrext_engine():
 
     flow = StateGraph(WREXT)
 
-    # add engines
+    # add enginess and do connection
     flow.add_node("serp_engine", create_serp_engine())
     flow.add_node("seo_engine", create_seo_engine())
     flow.add_node("content_engine", create_content_engine())
