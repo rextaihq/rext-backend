@@ -9,6 +9,7 @@ import os
 import requests
 import urllib3
 from typing import Dict, Optional
+from src.api.schema.content_schema import ContentCreate, ContentUpdate, ContentResponse
 
 # Disable SSL warnings for local development (remove in production!)
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -64,6 +65,9 @@ class WordPressPublisher:
                 "Content-Type": "application/json",
                 "Accept": "application/json"
             })
+            # Debug: Log masked API key for troubleshooting
+            masked_key = f"{self.api_key[:10]}...{self.api_key[-6:]}" if len(self.api_key) > 16 else "***"
+            logger.info(f"WordPress publisher initialized with API key: {masked_key}")
         elif self.username and self.app_password:
             # Session auth for standard WP
             pass # Standard requests usage will handle auth arg
@@ -99,8 +103,7 @@ class WordPressPublisher:
 
     def publish_post(
         self,
-        title: str,
-        content: str,
+        data: ContentCreate,
         status: str = "publish",
         excerpt: Optional[str] = None,
         tags: Optional[list] = None,
@@ -111,11 +114,10 @@ class WordPressPublisher:
         Publish a post to WordPress.
         
         Args:
-            title: Post title
-            content: Post content (HTML or markdown converted to HTML)
+            data: ContentCreate schema with content data
             status: Post status ('publish', 'draft', 'pending', 'private')
-            excerpt: Post excerpt/meta description
-            tags: List of tag names
+            excerpt: Post excerpt/meta description (falls back to SEO meta_description)
+            tags: List of tag names (falls back to data.tags)
             categories: List of category names or IDs
             meta: Custom meta fields
         
@@ -125,7 +127,38 @@ class WordPressPublisher:
         Raises:
             Exception: If publishing fails
         """
-        endpoint = f"{self.site_url}/wp-json/wp/v2/posts"
+        # Use Rext-AI endpoint if api_key is provided, otherwise standard WP endpoint
+        if self.api_key and self.api_endpoint:
+            endpoint = f"{self.api_endpoint}/posts"
+        else:
+            endpoint = f"{self.site_url}/wp-json/wp/v2/posts"
+        
+        # Extract content from ContentCreate schema
+        title = data.title
+        
+        # Prefer HTML content over markdown, combine introduction if present
+        content_parts = []
+        if data.introduction:
+            content_parts.append(data.introduction)
+        
+        if data.body_html:
+            content_parts.append(data.body_html)
+        elif data.body_markdown:
+            # If only markdown is available, use it (WordPress will handle it)
+            content_parts.append(data.body_markdown)
+        
+        content = "\n\n".join(content_parts) if content_parts else ""
+        
+        if not content:
+            raise ValueError("Content body (HTML or Markdown) is required for publishing")
+        
+        # Use provided excerpt or fallback to SEO meta description
+        if not excerpt and data.seo_data and data.seo_data.meta_description:
+            excerpt = data.seo_data.meta_description
+        
+        # Use provided tags or fallback to data.tags
+        if not tags and data.tags:
+            tags = data.tags
         
         # Prepare post data
         post_data = {
@@ -151,14 +184,23 @@ class WordPressPublisher:
         
         try:
             logger.info(f"Publishing post to WordPress: {title}")
+            logger.info(f"Using endpoint: {endpoint}")
             
-            response = requests.post(
-                endpoint,
-                json=post_data,
-                auth=(self.username, self.app_password),
-                verify=self.verify_ssl,
-                timeout=30
-            )
+            # Use session for Bearer token auth, otherwise use Basic Auth
+            if self.api_key:
+                response = self.session.post(
+                    endpoint,
+                    json=post_data,
+                    timeout=30
+                )
+            else:
+                response = requests.post(
+                    endpoint,
+                    json=post_data,
+                    auth=(self.username, self.app_password),
+                    verify=self.verify_ssl,
+                    timeout=30
+                )
             
             response.raise_for_status()
             
@@ -199,32 +241,50 @@ class WordPressPublisher:
             List of tag IDs
         """
         tag_ids = []
-        endpoint = f"{self.site_url}/wp-json/wp/v2/tags"
+        # Use Rext-AI endpoint if api_key is provided, otherwise standard WP endpoint
+        if self.api_key and self.api_endpoint:
+            endpoint = f"{self.api_endpoint}/tags"
+        else:
+            endpoint = f"{self.site_url}/wp-json/wp/v2/tags"
         
         for tag_name in tag_names:
             try:
-                # Search for existing tag
-                response = requests.get(
-                    endpoint,
-                    params={"search": tag_name},
-                    auth=(self.username, self.app_password),
-                    verify=self.verify_ssl,
-                    timeout=10
-                )
+                # Search for existing tag - use session for Bearer token auth
+                if self.api_key:
+                    response = self.session.get(
+                        endpoint,
+                        params={"search": tag_name},
+                        timeout=10
+                    )
+                else:
+                    response = requests.get(
+                        endpoint,
+                        params={"search": tag_name},
+                        auth=(self.username, self.app_password),
+                        verify=self.verify_ssl,
+                        timeout=10
+                    )
                 
                 if response.status_code == 200:
                     tags = response.json()
                     if tags:
                         tag_ids.append(tags[0]["id"])
                     else:
-                        # Create new tag
-                        create_response = requests.post(
-                            endpoint,
-                            json={"name": tag_name},
-                            auth=(self.username, self.app_password),
-                            verify=self.verify_ssl,
-                            timeout=10
-                        )
+                        # Create new tag - use session for Bearer token auth
+                        if self.api_key:
+                            create_response = self.session.post(
+                                endpoint,
+                                json={"name": tag_name},
+                                timeout=10
+                            )
+                        else:
+                            create_response = requests.post(
+                                endpoint,
+                                json={"name": tag_name},
+                                auth=(self.username, self.app_password),
+                                verify=self.verify_ssl,
+                                timeout=10
+                            )
                         if create_response.status_code == 201:
                             tag_ids.append(create_response.json()["id"])
             
@@ -245,16 +305,28 @@ class WordPressPublisher:
         Returns:
             Dict containing updated post data
         """
-        endpoint = f"{self.site_url}/wp-json/wp/v2/posts/{post_id}"
+        # Use Rext-AI endpoint if api_key is provided, otherwise standard WP endpoint
+        if self.api_key and self.api_endpoint:
+            endpoint = f"{self.api_endpoint}/posts/{post_id}"
+        else:
+            endpoint = f"{self.site_url}/wp-json/wp/v2/posts/{post_id}"
         
         try:
-            response = requests.post(
-                endpoint,
-                json=kwargs,
-                auth=(self.username, self.app_password),
-                verify=self.verify_ssl,
-                timeout=30
-            )
+            # Use session for Bearer token auth, otherwise use Basic Auth
+            if self.api_key:
+                response = self.session.post(
+                    endpoint,
+                    json=kwargs,
+                    timeout=30
+                )
+            else:
+                response = requests.post(
+                    endpoint,
+                    json=kwargs,
+                    auth=(self.username, self.app_password),
+                    verify=self.verify_ssl,
+                    timeout=30
+                )
             
             response.raise_for_status()
             return response.json()

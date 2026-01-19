@@ -81,6 +81,12 @@ class ContentUpdate(BaseModel):
 
     # LangGraph workflow tracking
     langgraph_thread_id: Optional[UUID] = None
+    
+    # WordPress fields
+    wordpress_post_id: Optional[int] = None
+    wordpress_url: Optional[str] = None
+    wordpress_published_at: Optional[datetime] = None
+
 
 
 class ContentResponse(BaseModel):
@@ -176,5 +182,25 @@ class WorkspaceIntegrationListResponse(BaseModel):
 
 
 class PublishToSiteRequest(BaseModel):
+    """Request schema for publishing content to WordPress site(s)"""
+    site_id: Optional[UUID] = None  # If None, publishes to all active sites
+    status: Optional[str] = "publish"  # publish, draft, pending, private
+
+
+class PublishResponse(BaseModel):
+    """Response for publishing to a single site"""
     site_id: UUID
-    status: Optional[str] = "publish"
+    site_url: str
+    success: bool
+    wordpress_post_id: Optional[int] = None
+    wordpress_url: Optional[str] = None
+    error: Optional[str] = None
+
+
+class PublishToSitesResponse(BaseModel):
+    """Response for publishing to multiple sites"""
+    content_id: UUID
+    total_sites: int
+    successful: int
+    failed: int
+    results: List[PublishResponse]

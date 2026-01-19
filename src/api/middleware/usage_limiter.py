@@ -134,10 +134,10 @@ class WorkspaceLimitChecker:
         )
         current_count = result.scalar() or 0
 
-        if current_count >= plan.max_workspaces:
+        if current_count >= 100:
             raise HTTPException(
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                detail=f"Workspace limit reached ({current_count}/{plan.max_workspaces}). Upgrade your plan to create more workspaces."
+                detail="Workspace limit reached (100/100). Please subscribe to a plan to create more workspaces."
             )
 
 
