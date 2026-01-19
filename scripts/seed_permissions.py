@@ -41,6 +41,7 @@ import uuid
 WORKSPACE_PERMISSIONS = [
     # Workspace Management
     ("workspace.read", "View Workspace", "workspace", "read", "View workspace details and settings"),
+    ("workspace.write", "Write Workspace", "workspace", "write", "Write workspace details and settings"),
     ("workspace.update", "Update Workspace", "workspace", "update", "Edit workspace settings"),
     ("workspace.delete", "Delete Workspace", "workspace", "delete", "Delete workspace permanently"),
     ("workspace.transfer", "Transfer Ownership", "workspace", "transfer", "Transfer workspace ownership to another user"),
