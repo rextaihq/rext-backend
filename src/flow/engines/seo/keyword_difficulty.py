@@ -21,6 +21,7 @@ def keyword_difficulty_node(state: WREXT) -> Dict[str, SEORESULT]:
     dofollow_links = dataforseo_data.get("dofollow_links", 0)
     images = dataforseo_data.get("images", False)
     videos = dataforseo_data.get("videos", False)
+    monthly_search_volume = dataforseo_data.get("search_volume", 0)
     link_score = 0
     # sitelink_ratio = sum(1 for c in competitors if c.get("has_sitelinks")) / max(1, len(competitors))
     # if sitelink_ratio >= 0.3:
@@ -216,6 +217,7 @@ def keyword_difficulty_node(state: WREXT) -> Dict[str, SEORESULT]:
         "seo_result": {
             "keyword_difficulty": {
                 "keyword": keyword,
+                "monthly_search_volume": monthly_search_volume,
                 "difficulty_score": score,
                 "difficulty_level": level,
                 "difficulty_signals": {

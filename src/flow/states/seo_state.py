@@ -50,6 +50,7 @@ class KeywordDifficultySignals(TypedDict, total=False):
 
 class KeywordDifficultyState(TypedDict):
     keyword: str
+    monthly_search_volume: float
     difficulty_score: int                    
     difficulty_level: Literal["easy", "medium", "hard", "very_hard"]
     difficulty_signals: KeywordDifficultySignals
