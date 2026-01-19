@@ -1,28 +1,14 @@
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, HttpUrl
 from openai import OpenAI
 import os
 from urllib.parse import urlparse, urlunparse
+from src.api.schema.tools_schema import CanonicalTagRequest, CanonicalTagResponse
 
 router = APIRouter(
     prefix="/tools",
     tags=["Tools"],
 )
 
-
-# =========================
-# Models
-# =========================
-
-class CanonicalTagRequest(BaseModel):
-    url: HttpUrl
-    description: str | None = None
-
-
-class CanonicalTagResponse(BaseModel):
-    canonical_tag: str
-    url: str
-    normalized_url: str
 
 
 # =========================
@@ -86,7 +72,6 @@ Return ONLY the canonical tag.
 Example:
 <link rel="canonical" href="https://example.com/page" />
 
-{f"Additional context: {request.description}" if request.description else ""}
 """
 
         response = client.chat.completions.create(
