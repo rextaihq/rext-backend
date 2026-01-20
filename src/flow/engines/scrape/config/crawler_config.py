@@ -141,9 +141,9 @@ class CrawlerConfiguration(MarkdownGeneratorFactory):
             adjust_viewport_to_content=True,
             cache_mode=cache_mode,
             score_links=True,
-            link_preview_config=self._get_link_score(
-                threshold=0.3,
-                max_links=10,
-                verbose=False
-            )
+            # link_preview_config=self._get_link_score(
+            #     threshold=0.3,
+            #     max_links=10,
+            #     verbose=False
+            # )
         )

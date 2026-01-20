@@ -51,7 +51,10 @@ async def _publish_to_all_sites(
     
     if not sites:
         logger.warning(f"No active sites found for workspace {workspace_id}")
-        return results
+        raise HTTPException(
+            status_code=400,
+            detail="No active WordPress sites found in this workspace. Please connect a site before publishing."
+        )
     
     for site in sites:
         try:
@@ -264,3 +267,65 @@ async def publish_existing_content(
             "results": [r.model_dump() for r in results]
         }
     }
+
+# -------------------------
+# 4. Update Content
+# -------------------------
+@router.patch("/{content_id}", response_model=ContentResponse)
+@db_transaction_handler("update content", "Content updated successfully")
+@require_permissions("content.update", workspace_scoped=True)
+async def update_content(
+    content_id: UUID,
+    data: ContentUpdate,
+    request: Request,
+    workspace_id: str,
+    db: AsyncSession = Depends(get_async_db),
+    user: dict = Depends(get_current_user)
+):
+    """
+    Update existing content.
+    
+    Allows partial updates of content fields, SEO data, and media links.
+    """
+    user_id = user.get("identity")
+    workspace, _ = await resolve_and_verify_workspace(db, workspace_id, UUID(user_id))
+
+    service = ContentService(db)
+    content = await service.update_content(
+        content_id=content_id,
+        workspace_id=workspace.id,
+        user_id=UUID(user_id),
+        data=data
+    )
+
+    return content.to_dict(include_relationships=["seo_data"])
+
+
+# -------------------------
+# 5. Delete Content
+# -------------------------
+@router.delete("/{content_id}")
+@db_transaction_handler("delete content", "Content deleted successfully")
+@require_permissions("content.delete", workspace_scoped=True)
+async def delete_content(
+    content_id: UUID,
+    request: Request,
+    workspace_id: str,
+    db: AsyncSession = Depends(get_async_db),
+    user: dict = Depends(get_current_user)
+):
+    """
+    Soft-delete content.
+    
+    Sets deleted_at timestamp instead of permanent removal.
+    """
+    user_id = user.get("identity")
+    workspace, _ = await resolve_and_verify_workspace(db, workspace_id, UUID(user_id))
+
+    service = ContentService(db)
+    await service.delete_content(
+        content_id=content_id,
+        workspace_id=workspace.id
+    )
+
+    return {"deleted_id": str(content_id)}
