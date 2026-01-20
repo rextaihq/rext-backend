@@ -12,9 +12,9 @@ def review_outline(state: WREXT):
     content_state = state.get("content", {})
     outline_dict = content_state.get("outline", {})
     
-    if not outline_dict:
-        logger.error("No outline found in state to review")
-        return Command(goto="generate_outline")
+    # if not outline_dict:
+    #     logger.error("No outline found in state to review")
+    #     return Command(goto="generate_outline")
 
     # 1. Interrupt for human approval
     logger.info("Interrupting for human review of outline...")
@@ -47,10 +47,10 @@ def review_outline(state: WREXT):
                         "rejected_reason": "",
                         "status": "approved"
                     },
-                    "status": "outline"
+                    "status": "planning"
                 }
             },
-            goto=END
+            goto="generate_content"
         )
     
     if action == "reject":

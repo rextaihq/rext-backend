@@ -1,53 +1,39 @@
-import time
-import logging
-from langchain_ollama import OllamaEmbeddings
+import textstat
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+# The content you want to analyze
+test_data = """
+Playing games is fun. It helps you relax and enjoy your time with friends. 
+However, some games are very complex and require a high level of strategic thinking.
+"""
 
-def test_ollama_embeddings():
-    print("\n--- Ollama Embedding Model Test ---")
-    
-    model_name = "nomic-embed-text:latest"
-    print(f"Testing model: {model_name}")
-    
-    try:    
-        # Initialize embeddings
-        start_time = time.time()
-        embeddings = OllamaEmbeddings(model=model_name, num_gpu=0)
-        print(f"Initialization took: {time.time() - start_time:.2f} seconds")
-        
-        # Test single query embedding
-        query = "What are the latest advancements in AI in 2025?"
-        print(f"\n1. Testing embed_query with: '{query}'")
-        start_time = time.time()
-        query_vector = embeddings.embed_query(query)
-        print(f"   Success! Vector length: {len(query_vector)}")
-        print(f"   Success! Vector: {query_vector}")
+# 1. READABILITY (0 to 100, higher is easier)
+reading_ease = textstat.flesch_reading_ease(test_data)
+print(f"Flesch Reading Ease: {reading_ease}")
 
-        print(f"   Time taken: {time.time() - start_time:.2f} seconds")
-        
-        # Test batch document embedding
-        docs = [
-            "Artificial Intelligence is evolving rapidly.",
-            "Large Language Models are becoming more efficient.",
-            "Agentic workflows are the next big thing in software development."
-        ]
-        print(f"\n2. Testing embed_documents with {len(docs)} documents")
-        start_time = time.time()
-        doc_vectors = embeddings.embed_documents(docs)
-        print(f"   Success! Created {len(doc_vectors)} vectors.")
-        print(f"   Time taken: {time.time() - start_time:.2f} seconds")
-        
-        print("\n✅ Ollama embedding model is working correctly!")
-        
-    except Exception as e:
-        print(f"\n❌ Error testing Ollama: {str(e)}")
-        print("\nTroubleshooting tips:")
-        print("1. Ensure Ollama is running (`ollama serve`)")
-        print(f"2. Ensure the model is pulled (`ollama pull {model_name}`)")
-        print("3. Check if Ollama is reachable at http://localhost:11434")
+# 2. GRADE LEVEL (The school grade required to understand the text)
+kincaid_grade = textstat.flesch_kincaid_grade(test_data)
+print(f"Flesch-Kincaid Grade Level: {kincaid_grade}")
 
-if __name__ == "__main__":
-    test_ollama_embeddings()
+# 3. COMPLEXITY / TECHNICAL LEVEL
+# Gunning Fog is great for checking if text is too "business-heavy" or wordy
+fog_index = textstat.gunning_fog(test_data)
+# SMOG is the gold standard for medical or healthcare complexity
+smog = textstat.smog_index(test_data)
+
+print(f"Gunning Fog Index: {fog_index}")
+print(f"SMOG Index: {smog}")
+
+# 4. OTHER POPULAR METRICS
+print(f"Automated Readability Index: {textstat.automated_readability_index(test_data)}")
+print(f"Coleman-Liau Index: {textstat.coleman_liau_index(test_data)}")
+print(f"Dale-Chall Score: {textstat.dale_chall_readability_score(test_data)}")
+
+# 5. THE CONSENSUS (Best for a general "Final Score")
+# This combines all the above tests into one simple grade recommendation
+consensus = textstat.text_standard(test_data)
+print(f"Overall Consensus: {consensus}")
+
+# 6. BASE STATISTICS (Raw counts)
+print(f"Syllable Count: {textstat.syllable_count(test_data)}")
+print(f"Word Count: {textstat.lexicon_count(test_data)}")
+print(f"Sentence Count: {textstat.sentence_count(test_data)}")

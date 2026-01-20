@@ -2,11 +2,11 @@ from typing import Dict, Any
 from src.flow.states.wrext import WREXT
 from src.services.seo_service import KeywordExtractor
 from langgraph.types import interrupt, Command
+from langgraph.graph import END
 
-
-def recommendation(state: WREXT) -> Dict[str, Any]:
+def keyword_recommendation(state: WREXT) -> Dict[str, Any]:
     """
-    LangGraph node: Generate title recommendations based on SERP analysis.
+    LangGraph node: Generate keyword recommendations based on SERP analysis.
     
     Uses competitor title patterns and extracted keywords to suggest
     optimized titles for the user's content.
@@ -18,7 +18,7 @@ def recommendation(state: WREXT) -> Dict[str, Any]:
         return {
             "seo_result": {
                 **seo_result,
-                "title_recommendations": {
+                "keyword_recommendation": {
                     "original_title": "",
                     "recommendations": [],
                     "patterns_found": {},
@@ -73,7 +73,7 @@ def recommendation(state: WREXT) -> Dict[str, Any]:
             update={
                 "seo_result": {
                     **seo_result,
-                    "title_recommendations": {
+                    "keyword_recommendations": {
                         "original_title": primary_keyword,
                         "recommendations": related_keywords,
                         "patterns_found": title_result.get("patterns_found", {}),
@@ -87,7 +87,5 @@ def recommendation(state: WREXT) -> Dict[str, Any]:
                     "country": state.get("serp_payload", {}).get("country", "us")
                 }
             },
-            goto="generate_outline"
+            goto=END 
         )
-        
-    

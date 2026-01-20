@@ -17,9 +17,6 @@ def relevance_keyword_finder(state: WREXT) -> Dict[str, Any]:
             "seo_result": {
                 "extracted_keywords":{
                     "all": [],
-                    "head": [],
-                    "body": [],
-                    "long_tail": [],
                     "total_count": 0,
                     "query": "",
                     "extraction_method": "nltk_ngram_tfidf",
@@ -55,8 +52,10 @@ def relevance_keyword_finder(state: WREXT) -> Dict[str, Any]:
         top_n=50
     )
     
+    prev_seo = state.get("seo_result", {})
     return {
         "seo_result": {
+            **prev_seo,
             "extracted_keywords": {
                 "all": keywords,
                 "total_count": len(keywords),
@@ -71,4 +70,3 @@ def relevance_keyword_finder(state: WREXT) -> Dict[str, Any]:
             }
         }
     }
-

@@ -1,6 +1,6 @@
 from src.flow.states.wrext import WREXT, Competitor, NormalizedOrganicResult, SERPNORMALIZED
 from typing import List, Dict, Any
-from src.flow.engines.seo.seo_difficulty_engine.keyword_difficulty.link_difficulty import competitor_link_kd
+from src.flow.engines.seo.seo_difficulty_engine.keyword_difficulty.link_difficulty2 import competitor_link_kd2
 from src.flow.engines.seo.seo_difficulty_engine.keyword_difficulty.serp_score import competitor_serp_kd
 from src.flow.engines.seo.seo_difficulty_engine.keyword_difficulty.content_difficulty import content_strength
 import statistics
@@ -17,6 +17,7 @@ def calculate_final_kd(keyword: str, keyword_intent: str, wrext_data: WREXT) -> 
     serp_normalized = wrext_data.get("serp_normalized", {}).get("normalize_results", [])
     competitors = wrext_data.get("competitors", [])
     scrape_context = wrext_data.get("scrape_context", {})
+    weights = INTENT_WEIGHTS.get(keyword_intent, INTENT_WEIGHTS["informational"])
 
     competitor_total_kds = []
 
@@ -36,7 +37,7 @@ def calculate_final_kd(keyword: str, keyword_intent: str, wrext_data: WREXT) -> 
 
 
         # 1️⃣ Link KD per competitor
-        link_kd = competitor_link_kd(keyword=keyword, comp=comp, serp_entry=nr or {}, normalized_results=serp_normalized, competitors=competitors)
+        # link_kd = competitor_link_kd(keyword=keyword, comp=comp, serp_entry=nr or {}, normalized_results=serp_normalized, competitors=competitors)
 
         # 2️⃣ SERP KD per competitor
         serp_kd = competitor_serp_kd(comp=comp, serp_normalized=wrext_data.get("serp_normalized", {}), competitors=competitors)
@@ -45,11 +46,8 @@ def calculate_final_kd(keyword: str, keyword_intent: str, wrext_data: WREXT) -> 
         content_kd = content_strength(keyword_intent=keyword_intent, competitor=comp, normalized_result=nr, scrape_data=scrape_context) if nr else 0
 
 
-
-        weights = INTENT_WEIGHTS.get(keyword_intent, INTENT_WEIGHTS["informational"])
-
         total_kd = (
-            link_kd * weights["link"] +
+            # link_kd * weights["link"] +
             serp_kd * weights["serp"] +
             content_kd * weights["content"]
         )
@@ -60,7 +58,7 @@ def calculate_final_kd(keyword: str, keyword_intent: str, wrext_data: WREXT) -> 
 
         breakdown_details.append({
             "domain": comp["domain"],
-            "link_kd": round(link_kd * 100, 2),
+            # "link_kd": round(link_kd * 100, 2),
             "serp_kd": round(serp_kd * 100, 2),
             "content_kd": round(content_kd * 100, 2),
             "total_kd": round(total_kd * 100, 2)
@@ -68,6 +66,10 @@ def calculate_final_kd(keyword: str, keyword_intent: str, wrext_data: WREXT) -> 
 
     # Final KD = median of total_kds
     final_kd = statistics.median(competitor_total_kds) * 100 if competitor_total_kds else 0
+    link_kd = competitor_link_kd2()
+    find_link_kd = link_kd * weights["link"]
+
+    final_kd = final_kd + find_link_kd*100
     final_kd = max(0, min(final_kd, 100))  # clamp 0–100
 
     # Notes
@@ -110,8 +112,6 @@ def compute_keyword_difficulty(wrext_data: WREXT, keyword_intent: str = "informa
 
 
     keyword = wrext_data["serp_normalized"]["query"]
-    # Default intent to informational if not found
-    keyword_intent = (wrext_data.get("seo_result") or {}).get("intent", {}).get("primary_intent", "informational")
 
 
 
