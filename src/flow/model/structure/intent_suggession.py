@@ -1,26 +1,33 @@
-INTENT_TO_CONTENT_TYPES = {
+INTENT_TO_CONTENT_TYPES ={
     "INFORMATIONAL": [
         "blog",
-        "article",
         "how-to-guide",
-        "tutorial"
+        "explainer",
+        "pillar-content",
+        "checklist",
+        "tutorial",
+        "faq"
     ],
     "COMMERCIAL": [
         "comparison",
-        "review",
-        "case-study",
-        "landing-page"
+        "best-tools",
+        "alternatives",
+        "in-depth-review",
+        "pros-cons"
     ],
     "NAVIGATIONAL": [
         "brand-page",
-        "product-page",
-        "category-page",
-        "documentation"
+        "product-homepage",
+        "feature-overview",
+        "documentation",
+        "login-guide"
     ],
     "TRANSACTIONAL": [
-        "product-page",
+        "sales-page",
         "pricing-page",
-        "checkout-page",
-        "sales-landing-page"
+        "signup-page",
+        "demo-page",
+        "coupon-page",
+        "checkout-page"
     ]
 }

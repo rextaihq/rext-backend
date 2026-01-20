@@ -32,7 +32,7 @@ def generate_content(state: WREXT) -> dict:
         # 1️⃣ Get content state, topic, and content type
         content_state = state.get("content", {})
         topic = content_state.get("selected_topic", "")
-        content_type = content_state.get("content_type", "article")  # Default to article
+        content_type = content_state.get("content_type", "article")
 
         logger.info(f"Generating content for: {topic} (content type: {content_type})")
 
