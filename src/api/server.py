@@ -53,6 +53,7 @@ from src.api.routes.audit.modules import router as audit_router
 from src.api.routes.security.security_routes import router as security_router
 from src.api.routes.events import router as events_router
 # Email routes (Phase 3 complete - Python-based templates)
+from src.api.routes.tool_routes.tool_routes import router
 from src.api.routes.email import preview_router, webhook_router
 from src.api.routes.users.email_preferences import router as email_prefs_router
 from src.api.routes.users.onboarding import router as onboarding_router
@@ -73,7 +74,6 @@ from src.api.cache.redis_client import cache
 from src.api.config import settings
 from src.utils.response_utils import success
 from src.utils.logger import logger
-
 # Structured logging
 from src.api.lib.logging_config import configure_logging, RequestIDMiddleware
 
