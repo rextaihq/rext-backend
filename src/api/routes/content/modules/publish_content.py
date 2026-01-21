@@ -117,6 +117,19 @@ async def save_content(
     user_id = user.get("identity")
     workspace, _ = await resolve_and_verify_workspace(db, workspace_id, UUID(user_id))
 
+    # Check if title already exists in workspace
+    title_query = select(Content).where(
+        Content.workspace_id == workspace.id,
+        Content.title == data.title,
+        Content.deleted_at == None
+    )
+    existing_result = await db.execute(title_query)
+    if existing_result.scalar_one_or_none():
+        raise HTTPException(
+            status_code=400,
+            detail=f"Content with title '{data.title}' already exists in this workspace."
+        )
+
     # Force draft status
     data.status = "draft"
 
@@ -152,6 +165,19 @@ async def save_and_publish(
     """
     user_id = user.get("identity")
     workspace, _ = await resolve_and_verify_workspace(db, workspace_id, UUID(user_id))
+
+    # Check if title already exists in workspace
+    title_query = select(Content).where(
+        Content.workspace_id == workspace.id,
+        Content.title == data.title,
+        Content.deleted_at == None
+    )
+    existing_result = await db.execute(title_query)
+    if existing_result.scalar_one_or_none():
+        raise HTTPException(
+            status_code=400,
+            detail=f"Content with title '{data.title}' already exists in this workspace."
+        )
 
     # Save content first
     service = ContentService(db)
@@ -289,6 +315,21 @@ async def update_content(
     """
     user_id = user.get("identity")
     workspace, _ = await resolve_and_verify_workspace(db, workspace_id, UUID(user_id))
+
+    # Check for duplicate title if title is being updated
+    if data.title:
+        title_query = select(Content).where(
+            Content.workspace_id == workspace.id,
+            Content.title == data.title,
+            Content.deleted_at == None,
+            Content.id != content_id
+        )
+        existing_result = await db.execute(title_query)
+        if existing_result.scalar_one_or_none():
+            raise HTTPException(
+                status_code=400,
+                detail=f"Content with title '{data.title}' already exists in this workspace."
+            )
 
     service = ContentService(db)
     content = await service.update_content(

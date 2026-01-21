@@ -27,16 +27,14 @@ def calculate_readability(state: WREXT):
             "dale_chall_score": textstat.dale_chall_readability_score(body_content),
         }
 
-        # Ensure review exists
-        review = content_state.get("review", {})
-        review["readability_metrics"] = metrics
-
         logger.info(f"Readability metrics calculated: {metrics}")
 
+        # Return only the update delta for deep merging
         return {
             "content": {
-                **content_state,
-                "review": review
+                "review": {
+                    "readability_metrics": metrics
+                }
             }
         }
     except Exception as e:

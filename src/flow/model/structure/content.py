@@ -91,6 +91,11 @@ class GeneratedContent(BaseModel):
         max_length=30000,
     )
     
+    # Html content
+    html_content: str = Field(
+        description="Complete article body written in HTML format following the approved outline.",
+    )
+
     # Image Alt Text Suggestions
     images: List[ImageAltText] = Field(
         min_length=1,

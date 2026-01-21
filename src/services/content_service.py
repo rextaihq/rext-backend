@@ -22,7 +22,8 @@ from src.api.schema.content_schema import ContentCreate, ContentUpdate
 from src.utils.logger import logger
 from src.api.middleware.exceptions import (
     WrextValidationException,
-    ResourceNotFoundException
+    ResourceNotFoundException,
+    DuplicateResourceException
 )
 
 
@@ -38,6 +39,20 @@ class ContentService:
         self, workspace_id: UUID, user_id: UUID, data: ContentCreate
     ) -> Content:
         """Create new content with nested SEO and Media data."""
+        # Check for duplicate title within the same workspace
+        existing_query = select(Content).where(
+            Content.workspace_id == workspace_id,
+            Content.title == data.title,
+            Content.deleted_at == None
+        )
+        existing_content = (await self.db.execute(existing_query)).scalar_one_or_none()
+        if existing_content:
+            raise DuplicateResourceException(
+                resource_type="Content",
+                conflicting_field="title",
+                conflicting_value=data.title
+            )
+
         base_slug = self._slugify(data.title)
         unique_slug = await self._generate_unique_slug(workspace_id, base_slug)
 
@@ -101,6 +116,21 @@ class ContentService:
         content = await self._get_content_or_404(content_id, workspace_id, include_seo=True)
 
         if data.title and data.title != content.title:
+            # Check for duplicate title within the same workspace
+            existing_query = select(Content).where(
+                Content.workspace_id == workspace_id,
+                Content.title == data.title,
+                Content.deleted_at == None,
+                Content.id != content_id
+            )
+            existing_content = (await self.db.execute(existing_query)).scalar_one_or_none()
+            if existing_content:
+                raise DuplicateResourceException(
+                    resource_type="Content",
+                    conflicting_field="title",
+                    conflicting_value=data.title
+                )
+
             content.slug = await self._generate_unique_slug(workspace_id, self._slugify(data.title), exclude_id=content.id)
             content.title = data.title
 
