@@ -145,7 +145,20 @@ class WorkspaceIntegrationBase(BaseModel):
 
 
 class WorkspaceIntegrationCreate(WorkspaceIntegrationBase):
-    pass
+    @field_validator('site_url')
+    @classmethod
+    def validate_site_url(cls, v):
+        if not v or not v.strip():
+            raise ValueError('Site URL is required')
+        return v.strip()
+
+    @field_validator('integration_type')
+    @classmethod
+    def validate_integration_type(cls, v):
+        allowed_types = ["wordpress"]
+        if v.lower() not in allowed_types:
+            raise ValueError(f'Integration type must be one of: {", ".join(allowed_types)}')
+        return v.lower()
 
 
 class WorkspaceIntegrationUpdate(BaseModel):

@@ -59,6 +59,25 @@ async def connect_site(
     user_id = user.get("identity")
     workspace, _ = await resolve_and_verify_workspace(db, workspace_id, UUID(user_id))
     
+    # Basic presence validation for required fields
+    if not data.site_url:
+        raise WrextValidationException(message="Site URL is required")
+    
+    # Validation based on integration type
+    if data.integration_type.lower() == "wordpress":
+        # Check for authentication: either api_key OR (username AND app_password)
+        has_api_key = bool(data.api_key and data.api_key.strip())
+        has_user_pass = bool(data.username and data.username.strip() and data.app_password and data.app_password.strip())
+        
+        if not (has_api_key or has_user_pass):
+            raise WrextValidationException(
+                message="Authentication is required. Provide either an API Key or both Username and Application Password."
+            )
+            
+        # If API key is used, api_endpoint is often required for the Rext-AI plugin
+        if has_api_key and not data.api_endpoint:
+            raise WrextValidationException(message="API Endpoint is required when using an API Key")
+
     # Validate connection if API Key is provided
     if data.api_key:
         try:
