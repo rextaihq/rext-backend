@@ -1,10 +1,10 @@
 from fastapi import FastAPI
-from dotenv import load_dotenv
-from src.app.tool.schemas.title_schema import TitleRequest
-from src.app.tool.tools.title_tool import generate_title_tags
+# from dotenv import load_dotenv
+from src.api.tool.schemas.title_schema import TitleRequest
+from src.api.tool.tools.title_tool import generate_title_tags
 
-# Load LangSmith API key
-load_dotenv()
+# # Load LangSmith API key
+# load_dotenv()
 
 app = FastAPI(
     title="Title Tag Generator API",
