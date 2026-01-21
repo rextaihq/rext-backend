@@ -24,7 +24,7 @@ from dotenv import load_dotenv
 # Local application imports
 from src.api.routes.users import router as users_router
 from src.api.routes.health import router as health_router
-from src.api.tools.tools import router as tools_router
+from src.api.tools.tools_seo import router as tools_router
 from src.api.routes.workspaces import router as workspace_router, workspaces_router
 from src.api.routes.workspaces.workspace_knowledge import router as workspace_knowledge_router
 from src.api.routes.workspaces.workspace_knowledge_bases import router as workspace_knowledge_bases_router

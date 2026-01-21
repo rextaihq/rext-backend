@@ -5,8 +5,8 @@ import re
 
 class SchemaRequest(BaseModel):
     # Required fields
-    schema_type: str = Field(..., description="Schema.org type (e.g. Article, Product)")
-    name: str = Field(..., description="Main title or name of the schema item")
+    schema_type: str = Field(...,min_length=1, description="Schema.org type (e.g. Article, Product)")
+    name: str = Field(...,min_length=1,description="Main title or name of the schema item")
 
     # Optional fields
     description: Optional[str] = Field(
