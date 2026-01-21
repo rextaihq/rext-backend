@@ -1,58 +1,64 @@
 """
 On-Page SEO Scoring Node
-
-This module provides the LangGraph node function for calculating on-page SEO scores.
 """
 
 import logging
 from typing import Dict
 from src.flow.states.wrext import WREXT
-from src.services.seo_scoring_service import OnPageSEOScorer
+from src.flow.engines.content.utils.utils import calculate_seokar
 
 logger = logging.getLogger(__name__)
 
 
 def calculate_on_page_seo(state: WREXT) -> Dict:
     """
-    Main function to calculate on-page SEO score for generated content.
-    
-    Args:
-        state: WREXT state containing generated content
-    
-    Returns:
-        Updated state with SEO score in the review section
+    LangGraph node to calculate on-page SEO metrics using Seokar
+    and store them as SeokarSEOState.
     """
     logger.info("Starting on-page SEO scoring")
-    
-    content_state = state.get("content", {})
-    final_content = content_state.get("final_content", {})
-    
-    if not final_content:
-        logger.warning("No final content found for SEO scoring")
-        return {"content": content_state}
-    
-    try:
-        scorer = OnPageSEOScorer()
-        seo_results = scorer.calculate_overall_score(final_content)
-        
-        logger.info(f"On-page SEO score: {seo_results['score']}% ({seo_results['overall_score']}/{seo_results['max_score']})")
-        logger.info(f"Status: {seo_results['status_message']}")
-        logger.info(f"Optimizations needed: {seo_results['optimizations_needed']}")
 
-        
-        # Log top issues for debugging
-        if seo_results['all_issues']:
-            logger.warning(f"SEO Issues: {seo_results['all_issues'][:5]}")  # Log first 5 issues
-        
+    # ---- Safely extract content ----
+    content_state = state.get("content", {})
+    content_type = content_state.get("content_type")
+    final_content = content_state.get("final_content")
+
+    if not final_content:
+        logger.warning("Final content not found, skipping SEO analysis")
+        return {}
+
+    html_content = final_content.get("html_content")
+
+    if not html_content:
+        logger.warning("HTML content missing, skipping SEO analysis")
+        return {}
+
+    # ---- Run Seokar ----
+    try:
+        seokar_state = calculate_seokar(
+            html_content=html_content or final_content.get("body_markdown"),
+            title=final_content.get("meta_title") or final_content.get("title"),
+            meta_description=final_content.get("meta_description"),
+            slug=final_content.get("slug"),
+            schema_markup=final_content.get("schema_markup"),
+            focus_keyphrase=final_content.get("focus_keyphrase"),
+            content_type=content_type
+        )
+    except Exception as e:
+        logger.exception("Seokar SEO analysis failed")
         return {
             "content": {
-                **content_state,
                 "review": {
-                    "on_page_metrics": seo_results
+                    "on_page_metrics": None
                 }
+            },
+            "error": str(e)
+        }
+
+    # ---- Return LangGraph-compatible state update ----
+    return {
+        "content": {
+            "review": {
+                "on_page_metrics": seokar_state
             }
         }
-    
-    except Exception as e:
-        logger.exception(f"Error calculating on-page SEO score: {str(e)}")
-        return {"content": content_state}
+    }

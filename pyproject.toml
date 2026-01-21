@@ -57,6 +57,7 @@ dependencies = [
     "langchain-openai>=1.0.1",
     "scikit-learn>=1.8.0",
     "textstat>=0.7.12",
+    "seokar>=1.0.0",
 ]
 
 [project.scripts]
