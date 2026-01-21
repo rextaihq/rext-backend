@@ -59,6 +59,7 @@ from src.api.routes.users.onboarding import router as onboarding_router
 from src.api.routes.media import router as media_router
 from src.api.routes.invitations import router as invitations_router
 from src.api.routes.notifications.notification_routes import router as notification_router
+from src.api.routes.tool_routes.tool_routes import router as tool_router
 from src.api.database.async_database import async_engine
 from src.api.database.base import Base
 from src.api.database.async_database import async_engine
