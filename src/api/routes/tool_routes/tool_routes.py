@@ -1,9 +1,9 @@
-from fastapi import FastAPI, HTTPException, APIRouter
+from fastapi import  HTTPException, APIRouter
 from pydantic import BaseModel, Field
 from src.api.tool.tools import count_text_metrics 
 
 # 1. Initialize App and Router
-app = FastAPI()
+
 router = APIRouter(prefix='/api', tags=['tools'])
 
 # 2. Define Schemas
@@ -33,4 +33,4 @@ async def get_metrics(input_data: TextInput):
         raise HTTPException(status_code=500, detail=str(e))
 
 # 4. Include the Router in the App
-app.include_router(router)
+
