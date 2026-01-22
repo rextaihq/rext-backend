@@ -17,7 +17,6 @@ from src.api.security.dependencies import get_current_user
 from src.api.middleware.exceptions import WrextValidationException
 from src.api.middleware.rate_limiter import ai_content_generation_rate_limit
 from src.utils.workspace_utils import resolve_and_verify_workspace
-from src.services.langgraph_content_service import LangGraphContentService
 
 
 router = APIRouter()

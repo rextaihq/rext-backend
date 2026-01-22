@@ -7,10 +7,11 @@ from langchain_core.documents import Document
 from src.flow.states.countries import SUPPORTED_COUNTRIES
 from src.flow.states.seo_state import SEORESULT
 from src.flow.states.content import CONTENT
-
-# Reducer fun
-def override(_: dict, new: dict) -> dict:
-    return new
+from src.flow.states.reducers.custom_reducer import merge_dicts, deep_merge_dicts
+from src.flow.states.reducers.custom_reducer import override
+from langchain_core.messages import BaseMessage
+import operator
+import uuid
 
 # =========================
 # SERP ENGINE STATE
@@ -84,10 +85,13 @@ class Competitor(TypedDict):
     is_brand: bool
 
 
+
 # =========================
 # SERP PAYLOAD
 # =========================
 class SERPPAYLOAD(TypedDict, total=False):
+    user_id: uuid.UUID
+    workspace_id: uuid.UUID
     query: str
     country: SUPPORTED_COUNTRIES
 
@@ -106,24 +110,26 @@ class ScrapeContext(TypedDict, total=False):
     total_documents: int
 
 
+from langgraph.graph.message import add_messages
+
 # =========================
 # ROOT WORKFLOW STATE
 # =========================
 class WREXT(TypedDict, total=False):
     # SERP
-    serp_payload: SERPPAYLOAD
-    serp_result: SERPEngineState
-    serp_normalized: SERPNORMALIZED
+    serp_payload: Annotated[SERPPAYLOAD, merge_dicts]
+    serp_result: Annotated[SERPEngineState, merge_dicts]
+    serp_normalized: Annotated[SERPNORMALIZED, merge_dicts]
 
     # Competition
     competitors: List[Competitor]
 
     # Content & Scraping
-    scrape_context: ScrapeContext
+    scrape_context: Annotated[ScrapeContext, merge_dicts]
     relevant_context: List[Document]
 
     # SEO Output
-    seo_result: Annotated[SEORESULT, lambda x, y: {**x, **y} if x and y else (y or x)]
+    seo_result: Annotated[SEORESULT, merge_dicts]
 
     # Content Output
-    content: Annotated[CONTENT, override]
+    content: Annotated[CONTENT, deep_merge_dicts]

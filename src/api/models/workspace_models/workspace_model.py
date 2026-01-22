@@ -32,13 +32,14 @@ class WorkspaceModel(Base, SerializableMixin):
 
     # Other related entities
     brand_voices = relationship("BrandVoice", back_populates="workspace", cascade="all, delete-orphan")
+    personas = relationship("Persona", back_populates="workspace", cascade="all, delete-orphan")
     knowledge_bases = relationship("KnowledgeBase", back_populates="workspace", cascade="all, delete-orphan")
     websites = relationship("Website", back_populates="workspace", cascade="all, delete-orphan")
     knowledge_files = relationship("KnowledgeFiles", back_populates="workspace", cascade="all, delete-orphan")
     text_knowledge = relationship("TextKnowledge", back_populates="workspace", cascade="all, delete-orphan")
     content_items = relationship("Content", back_populates="workspace", cascade="all, delete-orphan")
-    topics = relationship("TopicsModel", back_populates="workspace", cascade="all, delete-orphan")
     media = relationship("Media", back_populates="workspace", cascade="all, delete-orphan")
     notifications = relationship("Notification", back_populates="workspace", cascade="all, delete-orphan")
+    integrations = relationship("WorkspaceIntegration", back_populates="workspace", cascade="all, delete-orphan")
 
-    # to_dict() inherited from SerializableMixin
+    

@@ -157,6 +157,9 @@ def db_transaction_handler(
                         request=request,
                         message=success_message or f"{operation_name.capitalize()} completed successfully"
                     )
+                
+                # Return the JSONResponse as-is
+                return result
 
             except HTTPException:
                 if db and hasattr(db, "rollback"):

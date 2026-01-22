@@ -18,7 +18,7 @@ from unittest.mock import Mock, patch, MagicMock
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.services.topic_service import TopicService
-from src.api.models.topic_models.topic_models import TopicsModel as Topics
+ as Topics
 from src.api.schema.topic_schema import UpdateTopicRequest
 from src.states.schemas import (
     SaveTopicRequest,

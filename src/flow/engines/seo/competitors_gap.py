@@ -7,6 +7,7 @@ QUESTION_PREFIXES = ("what", "how", "why", "can", "does", "is", "are")
 
 
 def competitors_gap_node(state: WREXT) -> Dict[str, SEORESULT]:
+    print("Competitors Gap...")
     serp = state.get("serp_normalized", {})
     scrape_context = state.get("scrape_context", {}) or {}
 
