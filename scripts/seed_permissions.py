@@ -41,6 +41,7 @@ import uuid
 WORKSPACE_PERMISSIONS = [
     # Workspace Management
     ("workspace.read", "View Workspace", "workspace", "read", "View workspace details and settings"),
+    ("workspace.write", "Write Workspace", "workspace", "write", "Write workspace details and settings"),
     ("workspace.update", "Update Workspace", "workspace", "update", "Edit workspace settings"),
     ("workspace.delete", "Delete Workspace", "workspace", "delete", "Delete workspace permanently"),
     ("workspace.transfer", "Transfer Ownership", "workspace", "transfer", "Transfer workspace ownership to another user"),
@@ -155,7 +156,7 @@ ROLE_PERMISSION_ASSIGNMENTS = {
 
     "workspace_owner": [
         # Full workspace control including billing
-        "workspace.read", "workspace.update", "workspace.delete", "workspace.transfer",
+        "workspace.read", "workspace.write", "workspace.update", "workspace.delete", "workspace.transfer",
         "workspace.manage_members", "workspace.manage_roles", "workspace.invite",
 
         # BILLING & SUBSCRIPTION (OWNER ONLY!)
@@ -189,7 +190,7 @@ ROLE_PERMISSION_ASSIGNMENTS = {
 
     "workspace_admin": [
         # Workspace management (NO delete, NO transfer, NO billing)
-        "workspace.read", "workspace.update",
+        "workspace.read", "workspace.write", "workspace.update",
         "workspace.manage_members", "workspace.manage_roles", "workspace.invite",
 
         # NO BILLING/SUBSCRIPTION ACCESS!
@@ -274,7 +275,7 @@ ROLE_PERMISSION_ASSIGNMENTS = {
         # NOTE: Super admin bypasses all checks in code, but we assign all permissions for audit purposes
 
         # All workspace permissions
-        "workspace.create", "workspace.read", "workspace.update", "workspace.delete", "workspace.transfer",
+        "workspace.create", "workspace.read", "workspace.write", "workspace.update", "workspace.delete", "workspace.transfer",
         "workspace.manage_members", "workspace.manage_roles", "workspace.invite",
 
         # All billing
@@ -317,7 +318,7 @@ ROLE_PERMISSION_ASSIGNMENTS = {
         # Platform management (similar to super_admin but less destructive permissions)
 
         # All workspace permissions
-        "workspace.create", "workspace.read", "workspace.update", "workspace.delete", "workspace.transfer",
+        "workspace.create", "workspace.read", "workspace.write", "workspace.update", "workspace.delete", "workspace.transfer",
         "workspace.manage_members", "workspace.manage_roles", "workspace.invite",
 
         # All billing (admin can manage billing)

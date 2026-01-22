@@ -89,7 +89,7 @@ async def get_persona(
 
 @router.post("/{workspace_id}/personas", status_code=status.HTTP_201_CREATED)
 @db_transaction_handler("create persona", auto_commit=True)
-@require_permissions("workspace.write", workspace_scoped=True)
+@require_permissions("workspace.create", workspace_scoped=True)
 async def create_persona(
     workspace_id: str,
     persona_data: PersonaCreate,
@@ -132,7 +132,7 @@ async def create_persona(
 
 @router.put("/{workspace_id}/personas/{persona_id}")
 @db_transaction_handler("update persona", auto_commit=True)
-@require_permissions("workspace.write", workspace_scoped=True)
+@require_permissions("workspace.update", workspace_scoped=True)
 async def update_persona(
     workspace_id: str,
     persona_id: str,
@@ -180,7 +180,7 @@ async def update_persona(
 
 @router.delete("/{workspace_id}/personas/{persona_id}", status_code=status.HTTP_204_NO_CONTENT)
 @db_transaction_handler("delete persona", auto_commit=True)
-@require_permissions("workspace.write", workspace_scoped=True)
+@require_permissions("workspace.delete", workspace_scoped=True)
 async def delete_persona(
     workspace_id: str,
     persona_id: str,

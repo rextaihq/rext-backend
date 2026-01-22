@@ -30,12 +30,33 @@ from src.api.models.user_models.token_blacklist import TokenBlacklist
 from src.api.models.user_models.notification_preferences import NotificationPreferences
 from src.api.models.workspace_models.workspace_model import WorkspaceModel
 from src.api.models.workspace_models.workspace_member import WorkspaceMembers
+from src.api.models.workspace_models.workspace_integration import WorkspaceIntegration
 from src.api.models.knowledge_models.knowledge_model import (
     BrandVoice, Website, KnowledgeFiles, TextKnowledge
 )
-from src.api.models.subscription_models.plans import SubscriptionPlan
-from src.api.models.subscription_models.subscriptions import UserSubscription
+from src.api.models.subscription_models import (
+    SubscriptionPlan, UserSubscription, PaymentMethod, WebhookEvent,
+    License, LicenseActivation, DiscountUsage, TrialConversion, Refund
+)
 from src.api.models.audit_models.audit_logs import AuditLog
+from src.api.models.content_models import (
+    Content, ContentSEOData, ContentMedia
+)
+from src.api.models.admin_models import (
+    CustomerNote, ErrorLog, PlatformAdminInvitations
+)
+from src.api.models.user_models import (
+    Users, Role, Permission, UserRole, RolePermission, 
+    UserInvitations, TokenBlacklist, NotificationPreferences,
+    UserSession, OAuthAccount, UserOnboarding, EmailPreferences,
+    UserPreferences
+)
+from src.api.models.user_models.impersonation_session import ImpersonationSession
+from src.api.models.media_models.media import Media
+from src.api.models.knowledge_models.persona_model import Persona
+from src.api.models.notification.notification_model import Notification
+from src.api.models.workspace_models.email_template import EmailTemplate
+from src.api.models.email_models import EmailLog, EmailEvent
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

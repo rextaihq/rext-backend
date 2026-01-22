@@ -7,10 +7,11 @@ from langchain_core.documents import Document
 from src.flow.states.countries import SUPPORTED_COUNTRIES
 from src.flow.states.seo_state import SEORESULT
 from src.flow.states.content import CONTENT
-from src.flow.states.reducers.custom_reducer import merge_dicts
+from src.flow.states.reducers.custom_reducer import merge_dicts, deep_merge_dicts
 from src.flow.states.reducers.custom_reducer import override
 from langchain_core.messages import BaseMessage
 import operator
+import uuid
 
 # =========================
 # SERP ENGINE STATE
@@ -89,6 +90,8 @@ class Competitor(TypedDict):
 # SERP PAYLOAD
 # =========================
 class SERPPAYLOAD(TypedDict, total=False):
+    user_id: uuid.UUID
+    workspace_id: uuid.UUID
     query: str
     country: SUPPORTED_COUNTRIES
 
@@ -129,4 +132,4 @@ class WREXT(TypedDict, total=False):
     seo_result: Annotated[SEORESULT, merge_dicts]
 
     # Content Output
-    content: Annotated[CONTENT, merge_dicts]
+    content: Annotated[CONTENT, deep_merge_dicts]

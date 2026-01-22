@@ -42,10 +42,7 @@ def topic_generation(state: WREXT) -> Dict[str, Any]:
     results: SEOTopics = model.invoke(messages)
     topics = results.topics
     
-    logger.info(f"Generated {len(topics)} topics")
-    print(f"📝 Generated Topics:")
-    for i, topic in enumerate(topics, 1):
-        print(f"   {i}. {topic}")
+    logger.info(f"Generated {len(topics)} topics")   
     
     # ========================================
     # INTERRUPT FOR USER SELECTION
@@ -81,7 +78,6 @@ def topic_generation(state: WREXT) -> Dict[str, Any]:
     if not selected_topic:
         selected_topic = topics[0] if topics else ""
     
-    print(f"✅ Selected Topic: {selected_topic}")
     logger.info(f"User selected topic: {selected_topic}")
     
     return {

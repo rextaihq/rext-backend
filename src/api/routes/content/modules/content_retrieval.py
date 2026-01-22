@@ -50,8 +50,6 @@ async def list_content(
     result = await service.list_content(
         workspace_id=workspace.id,
         status=status,
-        include_metadata=include_metadata,
-        include_seo=include_seo,
         limit=limit,
         offset=offset
     )
@@ -91,9 +89,7 @@ async def get_content(
     service = ContentService(db)
     content_data = await service.get_content(
         content_id=content_id,
-        workspace_id=workspace.id,
-        include_metadata=include_metadata,
-        include_seo=include_seo
+        workspace_id=workspace.id
     )
 
     # Return raw data - decorator handles success response

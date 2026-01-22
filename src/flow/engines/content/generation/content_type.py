@@ -5,6 +5,7 @@ from src.flow.model.structure.topics import SEOTopics
 from src.flow.model.llm_manager import load_model
 from langgraph.types import interrupt
 from langchain_core.messages import SystemMessage, HumanMessage
+from src.flow.model.structure.intent_suggession import INTENT_TO_CONTENT_TYPES
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +26,21 @@ def content_type(state: WREXT) -> WREXT:
     content_state = state.get("content", {})
     selected_topic = content_state.get("selected_topic", "")
     
+    # get the intent from the state - aggregate intent distribution across all competitors
+    competitors = state.get("competitors", [])
+    
+    # Aggregate intent distributions from all competitors
+    aggregated_intent: Dict[str, int] = {}
+    for competitor in competitors:
+        intent_distribution = competitor.get("intent_distribution", {})
+        for intent, count in intent_distribution.items():
+            aggregated_intent[intent] = aggregated_intent.get(intent, 0) + count
+    
+    # Find the intent with maximum distribution
+    max_intent = None
+    if aggregated_intent:
+        max_intent = max(aggregated_intent, key=aggregated_intent.get)
+
     if not selected_topic:
         logger.warning("No selected topic found in state")
         return state
@@ -33,7 +49,7 @@ def content_type(state: WREXT) -> WREXT:
     selected_content_type = interrupt({
         "instruction": "Select a content type for your topic",
         "topic": selected_topic,
-        "content_types": ["article", "blog", "report", "whitepaper"],
+        "content_types": INTENT_TO_CONTENT_TYPES.get(max_intent, []),
         "type": "content_type"
     })
 

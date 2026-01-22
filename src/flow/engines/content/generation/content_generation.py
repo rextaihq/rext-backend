@@ -32,7 +32,7 @@ def generate_content(state: WREXT) -> dict:
         # 1️⃣ Get content state, topic, and content type
         content_state = state.get("content", {})
         topic = content_state.get("selected_topic", "")
-        content_type = content_state.get("content_type", "article")  # Default to article
+        content_type = content_state.get("content_type", "article")
 
         logger.info(f"Generating content for: {topic} (content type: {content_type})")
 
@@ -41,7 +41,7 @@ def generate_content(state: WREXT) -> dict:
             logger.warning("No outline found in state. Proceeding without it.")
         outline_str = json.dumps(outline, indent=2) if outline else "NO OUTLINE FOUND"
 
-        logger.info(f"Outline extracted: {outline_str[:200]}...")
+        logger.info(f"Outline extracted: {outline_str[:20]}...")
 
         # 2️⃣ Get relevant context
         relevant_context = state.get("relevant_context", [])

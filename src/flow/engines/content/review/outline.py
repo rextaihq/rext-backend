@@ -74,3 +74,5 @@ def review_outline(state: WREXT):
                 },
             }
         }
+    
+    return {}
