@@ -8,7 +8,7 @@ on:
       - dev
 jobs:
   build:
-    if: github.event.pull_request.merged == true && github.event.pull_request.head.ref == 'dev'
+    if: github.event.pull_request.merged == true
     runs-on: ubuntu-latest
 
     steps:
@@ -175,6 +175,10 @@ jobs:
           PERPLEXITY_API_KEY=${{ secrets.DEV_PERPLEXITY_API_KEY }}
           PAYMENT_CANCEL_URL=${{ secrets.PAYMENT_CANCEL_URL }}
           PAYMENT_SUCCESS_URL=${{ secrets.PAYMENT_SUCCESS_URL }}
+
+          # For Langgraph Task
+          BG_JOB_ISOLATED_LOOPS=true
+          N_JOBS_PER_WORKER=50
           EOF
 
           echo ".env file created ✅"

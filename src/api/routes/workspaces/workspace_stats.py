@@ -11,7 +11,6 @@ from uuid import UUID
 
 from src.api.database.async_database import get_async_db
 from src.api.security.dependencies import get_current_user
-from src.api.models.topic_models.topic_models import TopicsModel
 from src.api.models.content_models.content import Content
 from src.api.models.knowledge_models.knowledge_model import Website, KnowledgeFiles, TextKnowledge
 from src.api.models.workspace_models.workspace_member import WorkspaceMembers
@@ -36,11 +35,10 @@ async def get_workspace_stats(
     Get workspace statistics for onboarding tracking and dashboard.
 
     Returns real-time counts for:
-    - Topics
     - Content items
     - Knowledge base items
     - Team members
-    - Feature availability (topic/content builders)
+    - Feature availability (content builder)
 
     Args:
         workspace_id: Workspace UUID (path parameter)
@@ -53,13 +51,6 @@ async def get_workspace_stats(
 
     workspace_uuid = UUID(workspace_id)
 
-    # Count topics
-    result = await db.execute(
-        select(func.count(TopicsModel.id)).where(
-            TopicsModel.workspace_id == workspace_uuid
-        )
-    )
-    topics_count = result.scalar() or 0
 
     # Count content items (non-deleted)
     result = await db.execute(
@@ -107,7 +98,6 @@ async def get_workspace_stats(
     user_subscription = await subscription_service.get_subscription_by_user(UUID(user_id))
 
     # Default to True if no subscription (free tier) or if plan doesn't specify
-    has_topic_builder = True
     has_content_builder = True
 
     if user_subscription and user_subscription.plan:
@@ -115,19 +105,14 @@ async def get_workspace_stats(
 
         # Check if features are explicitly set to False (disabled)
         # If not set, default to True (enabled)
-        if 'topic_builder' in plan_features:
-            has_topic_builder = bool(plan_features.get('topic_builder'))
-
         if 'content_builder' in plan_features:
             has_content_builder = bool(plan_features.get('content_builder'))
 
     stats = {
         "workspace_exists": True,  # If we got here, workspace exists
-        "topics_count": topics_count,
         "content_count": content_count,
         "knowledge_items_count": knowledge_items_count,
         "members_count": members_count,
-        "has_topic_builder": has_topic_builder,
         "has_content_builder": has_content_builder,
     }
 

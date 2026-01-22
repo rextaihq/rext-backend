@@ -4,6 +4,7 @@ from src.flow.states.seo_state import SEORESULT
 
 
 def seo_opportunity_node(state: WREXT) -> Dict[str, SEORESULT]:
+    print("Seo Oppournity....")
     seo = state.get("seo_result", {})
 
     kd = seo.get("keyword_difficulty", {})

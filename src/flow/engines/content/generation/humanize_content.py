@@ -1,0 +1,101 @@
+"""
+Content Humanization Node
+
+This module transforms AI-generated content to appear naturally human-written,
+targeting 90% human-written detection score (10% AI detection).
+"""
+
+import logging
+from src.flow.states.wrext import WREXT
+from src.flow.model.llm_manager import load_model
+from src.flow.model.structure.content import GeneratedContent
+from src.flow.prompts.human.humanize import get_humanize_prompt
+
+logger = logging.getLogger(__name__)
+
+
+def humanize_content(state: WREXT) -> dict:
+    """
+    Humanizes AI-generated content to make it appear naturally written by a human.
+    
+    This node applies aggressive techniques to reduce AI detection and make content
+    feel authentic, conversational, and genuinely human-like. Target: 90% human score.
+    
+    Humanization strategies:
+    - Add natural language variations and imperfections
+    - Use conversational tone with contractions and casual language
+    - Include personal voice and relatable examples
+    - Vary sentence structure dramatically (short, long, fragments)
+    - Add transitional phrases and natural flow
+    - Use informal language and colloquialisms
+    - Active voice with direct reader engagement
+    - Rhetorical questions and storytelling elements
+    - Break formal writing rules occasionally
+    - Add personality and unique voice
+    
+    Args:
+        state: WREXT state containing content to humanize
+    
+    Returns:
+        dict: Updated state with humanized content (90% human-written)
+    """
+    try:
+        # 1️⃣ Get content from state
+        content_state = state.get("content", {})
+        final_content = content_state.get("final_content", {})
+        
+        if not final_content:
+            logger.warning("No final_content found in state. Skipping humanization.")
+            return {"content": content_state}
+        
+        title = final_content.get("title", "")
+        body_markdown = final_content.get("body_markdown", "")
+        
+        if not body_markdown:
+            logger.warning("No body content found. Skipping humanization.")
+            return {"content": content_state}
+        
+        logger.info(f"Humanizing content: {title}")
+        
+        # 2️⃣ Prepare prompt data
+        prompt_data = {
+            "title": title,
+            "body_markdown": body_markdown
+        }
+        
+        # 3️⃣ Load model and prepare messages
+        model = load_model().with_structured_output(GeneratedContent)
+        messages = get_humanize_prompt().format_messages(**prompt_data)
+        
+        # 4️⃣ Invoke LLM for humanization
+        logger.info("Invoking LLM for content humanization (target: 90% human-written)...")
+        humanized_content = model.invoke(messages)
+        humanized_dict = humanized_content.model_dump()
+        
+        logger.info(f"Humanization completed (90% human target). Keys: {humanized_dict.keys()}")
+        
+        # 5️⃣ Update state with humanized content
+        return {
+            "content": {
+                **content_state,
+                "final_content": {
+                    **final_content,
+                    "title": humanized_dict.get("title", title),
+                    "body_markdown": humanized_dict.get("body_markdown", body_markdown),
+                    "word_count": humanized_dict.get("word_count", final_content.get("word_count", 0)),
+                    "meta_title": humanized_dict.get("meta_title", final_content.get("meta_title", "")),
+                    "meta_description": humanized_dict.get("meta_description", final_content.get("meta_description", "")),
+                    "tags": humanized_dict.get("tags", final_content.get("tags", [])),
+                },
+                "status": "humanized"
+            }
+        }
+        
+    except Exception as e:
+        logger.exception(f"Error humanizing content: {str(e)}")
+        return {
+            "content": {
+                **content_state,
+                "error": f"Humanization failed: {str(e)}"
+            }
+        }

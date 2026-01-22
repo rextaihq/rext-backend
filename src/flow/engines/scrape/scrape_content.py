@@ -5,10 +5,9 @@ from typing import Dict, Any, List
 
 from crawl4ai import AsyncWebCrawler
 from langchain_core.documents import Document
-
+from src.flow.engines.scrape.config.clean_content import clean_content
 from src.flow.engines.scrape.config.crawler_config import CrawlerConfiguration
 from src.flow.states.wrext import WREXT
-from src.services.seo_service import KeywordExtractor
 
 logger = logging.getLogger(__name__)
 
@@ -48,7 +47,6 @@ async def scrape_serp_content(state: WREXT) -> Dict[str, Any]:
     browser_config = crawler_config.get_browser_config()
     run_config = crawler_config.get_run_config()
 
-    keyword_extractor = KeywordExtractor()
     scrape_data_list = []
 
     # Domain → best rank position map
@@ -92,14 +90,12 @@ async def scrape_serp_content(state: WREXT) -> Dict[str, Any]:
                 })
                 continue
 
-            text = result.markdown or result.text or ""
+            text = clean_content(result.markdown or result.text or "")
             content_length = len(text.strip())
 
             headings = _extract_headings(text)
-            keyword_results = keyword_extractor.extract_keywords(
-                text=text, top_n=15
-            )
-            keywords = [kw["keyword"] for kw in keyword_results]
+            # Note: Keyword extraction removed - should be done in SEO engine with SERP data
+            keywords = []
 
             internal_links = result.links.get("internal", []) if result.links else []
 

@@ -27,7 +27,7 @@ class EmailTemplate(Base, SerializableMixin):
     __tablename__ = "email_templates"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, unique=True, nullable=False)
-    workspace_id = Column(UUID(as_uuid=True), ForeignKey("workspace.id"), nullable=False)
+    workspace_id = Column(UUID(as_uuid=True), ForeignKey("workspace.id"), nullable=True)
     template_type = Column(SQLEnum(TemplateType), nullable=False)
 
     # Template content

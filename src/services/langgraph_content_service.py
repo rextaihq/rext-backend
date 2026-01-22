@@ -23,7 +23,6 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from src.api.models.content_models.content import Content
-from src.api.models.topic_models.topic_models import TopicsModel
 from src.api.models.knowledge_models.knowledge_model import BrandVoice
 from src.api.models.workspace_models.workspace_model import WorkspaceModel
 from src.api.models.user_models.users import Users
@@ -89,7 +88,7 @@ class LangGraphContentService:
 
         # Fetch required data for workflow
         content_data = await self._fetch_content_data(
-            content_id, workspace_id, topic_id
+            content_id, workspace_id
         )
 
         # Prepare initial state for LangGraph
@@ -227,13 +226,12 @@ class LangGraphContentService:
     async def _fetch_content_data(
         self,
         content_id: UUID,
-        workspace_id: UUID,
-        topic_id: Optional[UUID]
+        workspace_id: UUID
     ) -> Dict[str, Any]:
         """
         Fetch all required data for content generation.
 
-        Returns dict with content, topic, workspace, and brand voice data.
+        Returns dict with content, workspace, and brand voice data.
         """
         # Fetch content with eager loading of relationships
         result = await self.db.execute(
@@ -264,17 +262,6 @@ class LangGraphContentService:
                 resource_id=str(workspace_id)
             )
 
-        # Fetch topic if provided
-        topic = None
-        if topic_id:
-            result = await self.db.execute(
-                select(TopicsModel).where(
-                    TopicsModel.id == topic_id,
-                    TopicsModel.workspace_id == workspace_id
-                )
-            )
-            topic = result.scalar_one_or_none()
-
         # Fetch brand voice
         result = await self.db.execute(
             select(BrandVoice).where(BrandVoice.workspace_id == workspace_id)
@@ -284,7 +271,6 @@ class LangGraphContentService:
         return {
             "content": content,
             "workspace": workspace,
-            "topic": topic,
             "brand_voice": brand_voice
         }
 
@@ -299,26 +285,12 @@ class LangGraphContentService:
         """
         content = content_data["content"]
         workspace = content_data["workspace"]
-        topic = content_data["topic"]
         brand_voice = content_data["brand_voice"]
-
-        # Prepare topic data
-        topics_data = []
-        if topic:
-            topics_data.append({
-                "id": str(topic.id),
-                "title": topic.title,
-                "angle": topic.angle,
-                "description": topic.description,
-                "tags": topic.tags or [],
-                "suggested_defaults": topic.suggested_defaults or {}
-            })
 
         # Prepare payload with all content metadata
         payload = {
             "content_id": str(content.id),
             "workspace_id": str(workspace.id),
-            "topic_id": str(topic.id) if topic else None,
             "thread_id": str(thread_id),
             "regenerate": regenerate,
             "title": content.title,
@@ -371,7 +343,7 @@ class LangGraphContentService:
 
         # Initialize content state for LangGraph
         initial_state = ContentState(
-            topics=topics_data,
+            topics=[],  # No topic data
             workspace=workspace_data,
             user=user_data,
             request_payload=payload,  # Changed from 'payload' to 'request_payload'
