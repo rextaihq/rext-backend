@@ -2,8 +2,23 @@ from fastapi import HTTPException, APIRouter
 from pydantic import BaseModel, Field
 from typing import List
 
-from src.api.tool.tools import count_text_metrics, generate_meta_description, validate_meta_description, generate_title_tags
-from src.api.tool.schema import MetaDescriptionRequest, MetaDescriptionResponse, TitleRequest, TitleResponse
+from src.api.tool.tools import (
+    count_text_metrics, 
+    generate_meta_description, 
+    validate_meta_description, 
+    generate_title_tags,
+    build_schema,
+    calculate_readability
+)
+from src.api.tool.schema import (
+    MetaDescriptionRequest, 
+    MetaDescriptionResponse, 
+    TitleRequest, 
+    TitleResponse,
+    SchemaRequest,
+    ReadabilityRequest,
+    ReadabilityResponse
+)
 
 router = APIRouter(prefix='/tools', tags=['tools'])
 
@@ -75,4 +90,23 @@ async def generate_titles(request: TitleRequest):
         return TitleResponse(titles=titles)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to generate title tags: {str(e)}")
+
+# Schema Generator Endpoint
+@router.post("/schema-generator")
+async def schema_generator(payload: SchemaRequest):
+    """Generate Schema.org JSON-LD"""
+    try:
+        return build_schema(payload)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to generate schema: {str(e)}")
+
+# Readability Checker Endpoint
+@router.post("/readability-checker", response_model=ReadabilityResponse)
+async def readability_checker(payload: ReadabilityRequest):
+    """Analyze text readability"""
+    try:
+        return calculate_readability(payload.content)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to calculate readability: {str(e)}")
+
 

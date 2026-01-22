@@ -128,3 +128,49 @@ def generate_title_tags(keyword: str, topic: str, brand: str, tone: str) -> List
     
     return titles_list[:5]
 
+
+# Schema Builder Tool
+def build_schema(data) -> dict: # Using data as flexible input (SchemaRequest or dict-like)
+    """Build Schema.org JSON-LD directly from request data."""
+    schema = {
+        "@context": "https://schema.org",
+        "@type": data.schema_type,
+        "name": data.name
+    }
+    if data.description: schema["description"] = data.description
+    if data.url: schema["url"] = data.url
+    if data.image_url: schema["image"] = data.image_url
+    if data.author_name:
+        schema["author"] = {"@type": "Person", "name": data.author_name}
+    if data.date_published: schema["datePublished"] = data.date_published
+    return schema
+
+
+# Readability Checker Tool
+def calculate_readability(content: str) -> dict:
+    try:
+        import textstat
+    except ImportError:
+        raise ImportError("textstat library is required for readability analysis. Please install it.")
+
+    flesch = round(textstat.flesch_reading_ease(content), 2)
+    fk_grade = round(textstat.flesch_kincaid_grade(content), 2)
+
+    metrics = {
+        "readability_score": flesch,
+        "grade_level": fk_grade,
+        "sentence_complexity": round(textstat.gunning_fog(content), 2),
+        "word_count": textstat.lexicon_count(content, removepunct=True),
+        "sentence_count": textstat.sentence_count(content),
+    }
+    # Add a human-readable level
+    if flesch >= 70:
+        metrics["reading_level"] = "Easy"
+    elif flesch >= 50:
+        metrics["reading_level"] = "Standard"
+    else:
+        metrics["reading_level"] = "Difficult"
+
+    return metrics
+
+
