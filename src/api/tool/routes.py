@@ -10,21 +10,22 @@ from src.api.tool.tools import (
     build_schema,
     calculate_readability,
     generate_canonical_tag,
-    generate_hreflang_tags
+    generate_hreflang_tags,
+    broken_link_checker
 )
-from src.api.tool.schema import (
-    MetaDescriptionRequest, 
-    MetaDescriptionResponse, 
-    TitleRequest, 
-    TitleResponse,
-    SchemaRequest,
-    ReadabilityRequest,
-    ReadabilityResponse,
-    CanonicalTagRequest,
-    CanonicalTagResponse,
-    HreflangRequest,
-    HreflangResponse
-)
+
+from src.api.tool.schema.schema import MetaDescriptionRequest, MetaDescriptionResponse, BrokenLinkRequest, BrokenLinkResponse
+# from src.api.tool.schema import (
+#     TitleRequest, 
+#     TitleResponse,
+#     SchemaRequest,
+#     ReadabilityRequest,
+#     ReadabilityResponse,
+#     CanonicalTagRequest,
+#     CanonicalTagResponse,
+#     HreflangRequest,
+#     HreflangResponse
+# )
 
 router = APIRouter(prefix='/tools', tags=['tools'])
 
@@ -80,71 +81,85 @@ async def generate_meta_desc(request: MetaDescriptionRequest):
         raise HTTPException(status_code=500, detail=f"Failed to generate meta description: {str(e)}")
 
 # Title Tag Generator Endpoint
-@router.post("/title-tags/generate", response_model=TitleResponse)
-async def generate_titles(request: TitleRequest):
-    """
-    API endpoint to generate SEO-friendly title tags.
-    URL will be: POST /tools/title-tags/generate
-    """
-    try:
-        titles = generate_title_tags(
-            keyword=request.keyword,
-            topic=request.topic,
-            brand=request.brand,
-            tone=request.tone
-        )
-        return TitleResponse(titles=titles)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to generate title tags: {str(e)}")
+# @router.post("/title-tags/generate", response_model=TitleResponse)
+# async def generate_titles(request: TitleRequest):
+#     """
+#     API endpoint to generate SEO-friendly title tags.
+#     URL will be: POST /tools/title-tags/generate
+#     """
+#     try:
+#         titles = generate_title_tags(
+#             keyword=request.keyword,
+#             topic=request.topic,
+#             brand=request.brand,
+#             tone=request.tone
+#         )
+#         return TitleResponse(titles=titles)
+#     except Exception as e:
+#         raise HTTPException(status_code=500, detail=f"Failed to generate title tags: {str(e)}")
 
-# Schema Generator Endpoint
-@router.post("/schema-generator")
-async def schema_generator(payload: SchemaRequest):
-    """Generate Schema.org JSON-LD"""
-    try:
-        return build_schema(payload)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to generate schema: {str(e)}")
+# # Schema Generator Endpoint
+# @router.post("/schema-generator")
+# async def schema_generator(payload: SchemaRequest):
+#     """Generate Schema.org JSON-LD"""
+#     try:
+#         return build_schema(payload)
+#     except Exception as e:
+#         raise HTTPException(status_code=500, detail=f"Failed to generate schema: {str(e)}")
 
-# Readability Checker Endpoint
-@router.post("/readability-checker", response_model=ReadabilityResponse)
-async def readability_checker(payload: ReadabilityRequest):
-    """Analyze text readability"""
-    try:
-        return calculate_readability(payload.content)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to calculate readability: {str(e)}")
+# # Readability Checker Endpoint
+# @router.post("/readability-checker", response_model=ReadabilityResponse)
+# async def readability_checker(payload: ReadabilityRequest):
+#     """Analyze text readability"""
+#     try:
+#         return calculate_readability(payload.content)
+#     except Exception as e:
+#         raise HTTPException(status_code=500, detail=f"Failed to calculate readability: {str(e)}")
 
-# Canonical Tag Generator Endpoint
-@router.post("/canonical-tag-generator", response_model=CanonicalTagResponse)
-async def canonical_tag_generator(request: CanonicalTagRequest):
+# # Canonical Tag Generator Endpoint
+# @router.post("/canonical-tag-generator", response_model=CanonicalTagResponse)
+# async def canonical_tag_generator(request: CanonicalTagRequest):
+#     """
+#     AI-powered Canonical Tag Generator.
+#     Generates an SEO-friendly canonical tag to prevent duplicate content issues.
+#     """
+#     try:
+#         return generate_canonical_tag(str(request.url))
+#     except Exception as e:
+#         raise HTTPException(
+#             status_code=500,
+#             detail=f"Failed to generate canonical tag: {str(e)}"
+#         )
+
+# # Hreflang Tag Generator Endpoint
+# @router.post("/hreflang-tag-generator", response_model=HreflangResponse)
+# async def hreflang_tag_generator(request: HreflangRequest):
+#     """
+#     AI-powered Google-compliant Hreflang Tag Generator.
+#     """
+#     try:
+#         return generate_hreflang_tags(request)
+#     except ValueError as ve:
+#         raise HTTPException(status_code=400, detail=str(ve))
+#     except Exception as e:
+#         raise HTTPException(
+#             status_code=500,
+#             detail=f"Failed to generate hreflang tags: {str(e)}"
+#         )
+
+
+@router.post("/link-checker", response_model=BrokenLinkResponse)
+async def broken_link_checker_route(request: BrokenLinkRequest):
     """
-    AI-powered Canonical Tag Generator.
-    Generates an SEO-friendly canonical tag to prevent duplicate content issues.
+    URL: POST /tools/link-checker
     """
     try:
-        return generate_canonical_tag(str(request.url))
+        result = broken_link_checker(request.url)
+        return BrokenLinkResponse(working=result)
     except Exception as e:
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to generate canonical tag: {str(e)}"
+            detail=f"Failed to check link: {str(e)}"
         )
-
-# Hreflang Tag Generator Endpoint
-@router.post("/hreflang-tag-generator", response_model=HreflangResponse)
-async def hreflang_tag_generator(request: HreflangRequest):
-    """
-    AI-powered Google-compliant Hreflang Tag Generator.
-    """
-    try:
-        return generate_hreflang_tags(request)
-    except ValueError as ve:
-        raise HTTPException(status_code=400, detail=str(ve))
-    except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to generate hreflang tags: {str(e)}"
-        )
-
 
 

@@ -1,4 +1,5 @@
 import re
+import requests
 from typing import List, Dict, Any
 from langchain_core.prompts import PromptTemplate
 from langchain_core.output_parsers import StrOutputParser
@@ -6,7 +7,7 @@ from langchain_core.messages import SystemMessage, HumanMessage
 from urllib.parse import urlparse, urlunparse
 
 from src.flow.model.llm_manager import load_model, tools_model
-from src.api.tool.schema import MetaDescriptionValidation
+from src.api.tool.schema.schema import MetaDescriptionValidation
 from src.api.tool.prompts.title_prompt import title_prompt
 
 # Word Counter Tool
@@ -353,3 +354,18 @@ Include x-default:
         "hreflang_tags": hreflang_tags,
         "warnings": warnings if warnings else None
     }
+
+
+# =========================
+# Broken Link Checker Tool
+# =========================
+
+def broken_link_checker(url):
+    try:
+        response = requests.get(url, timeout=2)
+        if response.status_code == 200:
+            return True
+        else:
+            return False
+    except requests.exceptions.RequestException:
+        return False
