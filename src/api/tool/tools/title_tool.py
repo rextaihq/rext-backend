@@ -1,8 +1,8 @@
 # Change the import path if you moved get_llm to avoid the streamlit error
-from src.api.tool.llm.ollama_llm import get_llm 
 from src.api.tool.prompts.title_prompt import title_prompt
+from src.flow.model.llm_manager import load_model
 
-llm = get_llm()
+llm = load_model()
 
 def generate_title_tags(keyword: str, topic: str, brand: str, tone: str):
     """
