@@ -3,9 +3,7 @@ from fastapi import APIRouter, HTTPException, FastAPI
 from src.api.tool.tools import generate_meta_description, validate_meta_description
 from src.api.tool.schema import MetaDescriptionRequest, MetaDescriptionResponse
 
-app=  FastAPI()
 router = APIRouter(prefix="/tools", tags=["tools"])
-
 
 @router.post("/meta-description/generate", response_model=MetaDescriptionResponse)
 async def generate_meta_desc(request: MetaDescriptionRequest):
@@ -27,4 +25,3 @@ async def generate_meta_desc(request: MetaDescriptionRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to generate meta description: {str(e)}")
     
-app.include_router(router)
