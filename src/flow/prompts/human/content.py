@@ -31,6 +31,9 @@ Approved Outline:
 Reference / Source Content:
 {reference_text}
 
+Meta Data:
+{meta_data}
+
 Generate complete SEO-optimized content following the outline.
 Ensure you outperform the competitors listed above.
                 """,

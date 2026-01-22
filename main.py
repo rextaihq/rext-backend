@@ -1,16 +1,19 @@
-# import asyncio
-# import os
+import asyncio
+
 from src.flow.engines.wrext import create_wrext_engine
 graph = create_wrext_engine()
 
-# result = asyncio.run(graph.ainvoke(
-#     {
-#         "serp_payload": {
-#             "query": "wordpress support and maintenance",
-#             "country": "us"
-#         }
-#     }
-# ))
+result = asyncio.run(graph.ainvoke(
+    {
+    "serp_payload": {
+        "query": "wordpress maintenance",
+        "country": "us",
+        "user_id": "test3-user3-123",
+        "workspace_id": "test3-workspace3-456"
+    }
+}
+))
+
 
 # print(
 #     result['scrape_context']

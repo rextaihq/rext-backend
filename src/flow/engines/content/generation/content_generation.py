@@ -11,6 +11,7 @@ from src.flow.states.wrext import WREXT
 from src.flow.model.llm_manager import load_model
 from src.flow.model.structure.content import GeneratedContent
 from src.flow.prompts.human.content import get_content_prompt
+from src.flow.store.search_chunks import search_scraped_chunks
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +31,7 @@ def generate_content(state: WREXT) -> dict:
     """
     try:
         # 1️⃣ Get content state, topic, and content type
+        payload = state.get("serp_payload")
         content_state = state.get("content", {})
         topic = content_state.get("selected_topic", "")
         content_type = content_state.get("content_type", "article")
@@ -44,11 +46,16 @@ def generate_content(state: WREXT) -> dict:
         logger.info(f"Outline extracted: {outline_str[:20]}...")
 
         # 2️⃣ Get relevant context
-        relevant_context = state.get("relevant_context", [])
-        page_content = "\n\n".join(
-            chunk.get("chunk", "") for chunk in relevant_context
-        )
+        query = payload.get("query")
+        user_id = payload.get("user_id")
+        workspace_id = payload.get("workspace_id")
+
+        relevant_context = search_scraped_chunks(user_id, workspace_id, query , limit = 10)
+        page_content = relevant_context.get("text", "")
         logger.info(f"Page content length: {len(page_content.split())} words")
+
+        meta_data = relevant_context.get("metadata", {})
+        logger.info(f"Meta data: {meta_data}")
 
         # 3️⃣ Get primary keyword from outline
         primary_keyword = outline.get("keywords_to_include", [""])[0] if outline.get("keywords_to_include") else topic
@@ -83,6 +90,7 @@ def generate_content(state: WREXT) -> dict:
             "primary_keyword": primary_keyword,
             "competitor_insights": competitor_insights,
             "target_word_count": target_word_count,
+            "meta_data": meta_data
         }
 
         # 6️⃣ Load model and prepare messages
