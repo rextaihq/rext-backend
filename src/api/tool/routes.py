@@ -10,21 +10,22 @@ from src.api.tool.tools import (
     build_schema,
     calculate_readability,
     generate_canonical_tag,
-    generate_hreflang_tags
+    generate_hreflang_tags,
+    broken_link_checker
 )
-from src.api.tool.schema import (
-    MetaDescriptionRequest, 
-    MetaDescriptionResponse, 
-    TitleRequest, 
-    TitleResponse,
-    SchemaRequest,
-    ReadabilityRequest,
-    ReadabilityResponse,
-    CanonicalTagRequest,
-    CanonicalTagResponse,
-    HreflangRequest,
-    HreflangResponse
-)
+
+from src.api.tool.schema.schema import MetaDescriptionRequest, MetaDescriptionResponse, BrokenLinkRequest, BrokenLinkResponse
+# from src.api.tool.schema import (
+#     TitleRequest, 
+#     TitleResponse,
+#     SchemaRequest,
+#     ReadabilityRequest,
+#     ReadabilityResponse,
+#     CanonicalTagRequest,
+#     CanonicalTagResponse,
+#     HreflangRequest,
+#     HreflangResponse
+# )
 
 router = APIRouter(prefix='/tools', tags=['tools'])
 
@@ -146,5 +147,19 @@ async def hreflang_tag_generator(request: HreflangRequest):
             detail=f"Failed to generate hreflang tags: {str(e)}"
         )
 
+
+@router.post("/link-checker", response_model=BrokenLinkResponse)
+async def broken_link_checker_route(request: BrokenLinkRequest):
+    """
+    URL: POST /tools/link-checker
+    """
+    try:
+        result = broken_link_checker(request.url)
+        return BrokenLinkResponse(working=result)
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to check link: {str(e)}"
+        )
 
 
