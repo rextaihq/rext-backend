@@ -1,7 +1,0 @@
-langchain
-langchain-community
-langsmith
-python-dotenv
-fastapi
-uvicorn
-pydantic
