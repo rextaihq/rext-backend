@@ -95,6 +95,7 @@ class ReadabilityRequest(BaseModel):
     content: str = Field(..., min_length=10,description="The text content you want to analyze for readability. Minimum 10 characters.")
 
 
+
 class ReadabilityResponse(BaseModel):
     readability_score: float
     grade_level: float
@@ -102,4 +103,33 @@ class ReadabilityResponse(BaseModel):
     reading_level: str
     word_count: int
     sentence_count: int
+
+
+class CanonicalTagRequest(BaseModel):
+    url: str  # Using str to avoid Pydantic strict URL validation issues if desired, or duplicate validation logic
+
+
+class CanonicalTagResponse(BaseModel):
+    canonical_tag: str
+    url: str
+    normalized_url: str
+
+
+class HreflangEntry(BaseModel):
+    language: str | None = None
+    region: str | None = None
+    url: str
+
+
+class HreflangRequest(BaseModel):
+    default_url: str
+    language_region_urls: list[HreflangEntry]
+    include_x_default: bool = True
+    output_format: str = "html"  # "html" or "sitemap"
+
+
+class HreflangResponse(BaseModel):
+    hreflang_tags: str
+    warnings: list[str] | None = None
+
 

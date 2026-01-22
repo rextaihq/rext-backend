@@ -8,7 +8,9 @@ from src.api.tool.tools import (
     validate_meta_description, 
     generate_title_tags,
     build_schema,
-    calculate_readability
+    calculate_readability,
+    generate_canonical_tag,
+    generate_hreflang_tags
 )
 from src.api.tool.schema import (
     MetaDescriptionRequest, 
@@ -17,7 +19,11 @@ from src.api.tool.schema import (
     TitleResponse,
     SchemaRequest,
     ReadabilityRequest,
-    ReadabilityResponse
+    ReadabilityResponse,
+    CanonicalTagRequest,
+    CanonicalTagResponse,
+    HreflangRequest,
+    HreflangResponse
 )
 
 router = APIRouter(prefix='/tools', tags=['tools'])
@@ -108,5 +114,37 @@ async def readability_checker(payload: ReadabilityRequest):
         return calculate_readability(payload.content)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to calculate readability: {str(e)}")
+
+# Canonical Tag Generator Endpoint
+@router.post("/canonical-tag-generator", response_model=CanonicalTagResponse)
+async def canonical_tag_generator(request: CanonicalTagRequest):
+    """
+    AI-powered Canonical Tag Generator.
+    Generates an SEO-friendly canonical tag to prevent duplicate content issues.
+    """
+    try:
+        return generate_canonical_tag(str(request.url))
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to generate canonical tag: {str(e)}"
+        )
+
+# Hreflang Tag Generator Endpoint
+@router.post("/hreflang-tag-generator", response_model=HreflangResponse)
+async def hreflang_tag_generator(request: HreflangRequest):
+    """
+    AI-powered Google-compliant Hreflang Tag Generator.
+    """
+    try:
+        return generate_hreflang_tags(request)
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to generate hreflang tags: {str(e)}"
+        )
+
 
 

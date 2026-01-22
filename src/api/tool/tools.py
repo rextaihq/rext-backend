@@ -2,8 +2,10 @@ import re
 from typing import List, Dict, Any
 from langchain_core.prompts import PromptTemplate
 from langchain_core.output_parsers import StrOutputParser
+from langchain_core.messages import SystemMessage, HumanMessage
+from urllib.parse import urlparse, urlunparse
 
-from src.flow.model.llm_manager import load_model
+from src.flow.model.llm_manager import load_model, tools_model
 from src.api.tool.schema import MetaDescriptionValidation
 from src.api.tool.prompts.title_prompt import title_prompt
 
@@ -93,7 +95,6 @@ def validate_meta_description(meta_description: str) -> MetaDescriptionValidatio
 
     length = len(meta_description)
 
-
     return MetaDescriptionValidation(
         length=length,
         is_optimal_length=120 <= length <= 160,
@@ -174,3 +175,181 @@ def calculate_readability(content: str) -> dict:
     return metrics
 
 
+# =========================
+# Canonical Tag Tool
+# =========================
+
+def normalize_url(url: str) -> str:
+    """
+    Normalize URL for canonical usage.
+    - Force https
+    - Lowercase domain
+    - Remove query params & fragments
+    - Normalize trailing slash
+    """
+    parsed = urlparse(url)
+
+    scheme = "https"
+    netloc = parsed.netloc.lower()
+    path = parsed.path.rstrip("/") or "/"
+
+    return urlunparse((scheme, netloc, path, "", "", ""))
+
+
+def generate_canonical_tag(url: str):
+    """
+    AI-powered Canonical Tag Generator logic.
+    """
+    normalized_url = normalize_url(url)
+    
+    try:
+        model = tools_model()
+    except NameError:
+         model = load_model()
+    except Exception:
+        model = load_model()
+
+    prompt = f"""
+You are an SEO expert.
+
+Generate a valid HTML canonical tag for the given URL.
+
+URL:
+{url}
+
+Rules:
+- Use https
+- Remove tracking parameters
+- Normalize trailing slashes
+- Prefer lowercase URLs
+- Follow SEO best practices
+
+Return ONLY the canonical tag.
+Example:
+<link rel="canonical" href="https://example.com/page" />
+
+"""
+
+    response = model.invoke([
+        SystemMessage(content="You generate SEO ONLY valid HTML canonical tags."),
+        HumanMessage(content=prompt)
+    ])
+
+    canonical_tag = response.content if hasattr(response, 'content') else str(response)
+    canonical_tag = canonical_tag.strip()
+
+    # Safety fallback
+    if not canonical_tag.startswith("<link") or 'rel="canonical"' not in canonical_tag:
+        canonical_tag = f'<link rel="canonical" href="{normalized_url}" />'
+
+    return {
+        "canonical_tag": canonical_tag,
+        "url": url,
+        "normalized_url": normalized_url
+    }
+
+
+# =========================
+# Hreflang Tag Tool
+# =========================
+
+def generate_hreflang_tags(request):
+    """
+    AI-powered Google-compliant Hreflang Tag Generator logic.
+    Expects a HreflangRequest object (duck-typed).
+    """
+    if len(request.language_region_urls) > 50:
+        raise ValueError("Maximum of 50 URLs allowed for hreflang generation.")
+
+    try:
+        model = tools_model()
+    except:
+        model = load_model()
+
+    if request.output_format == "sitemap":
+        format_rule = "- Output ONLY valid XML <xhtml:link> tags"
+        format_instruction = 'Return ONLY valid XML <xhtml:link rel="alternate" hreflang="..." href="..." /> tags.'
+        context_note = "Your output must be ready to paste directly inside a <url> block of an XML sitemap."
+    else:
+        format_rule = "- Output ONLY valid HTML <link> tags"
+        format_instruction = 'Return ONLY valid HTML <link rel="alternate" hreflang="..." href="..." /> tags.'
+        context_note = "Your output must be ready to paste directly inside the <head> section of an HTML document."
+
+    # Identical URL check for SEO warnings
+    warnings = []
+    urls_seen = {}
+    for entry in request.language_region_urls:
+        url_str = str(entry.url)
+        if url_str in urls_seen:
+            warnings.append(f"Identical URL used for both '{urls_seen[url_str]}' and '{entry.language or 'unknown'}'. Google recommends unique URLs for different language versions.")
+        urls_seen[url_str] = entry.language or "unknown"
+
+    system_prompt = f"""
+You are a senior SEO engineer and international search optimization expert.
+
+Your sole task is to generate Google Search–compliant hreflang tags for multilingual and multi-regional websites.
+
+STRICT RULES (DO NOT VIOLATE):
+- Follow Google's official hreflang implementation guidelines
+- Use ISO 639-1 language codes (lowercase)
+- Use ISO 3166-1 Alpha-2 region codes (uppercase) when provided
+- Format hreflang values strictly as: language-REGION (e.g., en-US, es-ES)
+- Normalize incorrect input formats (e.g., EN_us → en-US)
+- If language or region are not provided for a URL, infer them from the URL path, subdomain, or TLD if possible.
+- Do NOT invent, guess, or modify URLs
+- Remove duplicate hreflang entries
+- Each hreflang value must be unique
+- Self-referencing URLs MUST be included in the output for all versions.
+- Generate x-default for the default URL provided.
+{format_rule}
+- One tag per line
+- No explanations
+- No comments
+- No markdown
+- No code blocks
+- No additional text before or after output
+
+{context_note}
+"""
+
+    # Prepare input for LLM
+    lang_region_urls_str = "\n".join([
+        f"- url: {entry.url}, language: {entry.language or 'unknown'}, region: {entry.region or 'unknown'}"
+        for entry in request.language_region_urls
+    ])
+
+    user_prompt = f"""
+Generate hreflang tags using the following input.
+
+Default URL (for x-default):
+{request.default_url}
+
+Language and Region URLs:
+{lang_region_urls_str}
+
+Include x-default:
+{str(request.include_x_default).lower()}
+
+{format_instruction}
+"""
+
+    response = model.invoke([
+        SystemMessage(content=system_prompt.strip()),
+        HumanMessage(content=user_prompt.strip())
+    ])
+
+    hreflang_tags = response.content if hasattr(response, 'content') else str(response)
+    hreflang_tags = hreflang_tags.strip()
+
+    # Final cleanup: Remove markdown code blocks if any
+    if hreflang_tags.startswith("```"):
+        lines = hreflang_tags.split("\n")
+        if lines[0].startswith("```") and lines[-1].startswith("```"):
+            hreflang_tags = "\n".join(lines[1:-1]).strip()
+        else:
+            hreflang_tags = hreflang_tags.replace("```html", "").replace("```xml", "").replace("```", "").strip()
+
+    return {
+        "hreflang_tags": hreflang_tags,
+        "warnings": warnings if warnings else None
+    }

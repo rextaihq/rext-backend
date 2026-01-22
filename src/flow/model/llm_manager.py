@@ -69,3 +69,16 @@ def query_decomposer_model():
     llm  = load_model()
     return llm.with_structured_output(QueryDecomposer)
 
+
+def tools_model():
+    """
+    Returns a chat model for SEO tools (canonical tag, hreflang generators).
+    Uses gpt-4o-mini via LangChain for consistency with other flow models.
+
+    Returns:
+        BaseChatModel: An instance of the initialized chat model.
+    """
+    model = init_chat_model("gpt-4o-mini", model_provider="openai", api_key=settings.OPENAI_API_KEY)
+    return model
+
+
