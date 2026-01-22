@@ -5,6 +5,7 @@ from langchain_core.output_parsers import StrOutputParser
 
 from src.flow.model.llm_manager import load_model
 from src.api.tool.schema import MetaDescriptionValidation
+from src.api.tool.prompts.title_prompt import title_prompt
 
 # Word Counter Tool
 def count_text_metrics(text: str):
@@ -92,9 +93,38 @@ def validate_meta_description(meta_description: str) -> MetaDescriptionValidatio
 
     length = len(meta_description)
 
+
     return MetaDescriptionValidation(
         length=length,
         is_optimal_length=120 <= length <= 160,
         character_count=f"{length}/160",
         warnings=[] if 120 <= length <= 160 else ["Length not in optimal range (120-160 characters)"]
     )
+
+
+# Title Tag Generator Tool
+def generate_title_tags(keyword: str, topic: str, brand: str, tone: str) -> List[str]:
+    """
+    Generate 5 SEO-friendly title tags and return them as a clean list.
+    """
+    llm = load_model()
+    
+    prompt = title_prompt.format(
+        keyword=keyword,
+        topic=topic,
+        brand=brand,
+        tone=tone
+    )
+    
+    # Get the response from the LLM
+    response = llm.invoke(prompt)
+    
+    raw_content = response.content if hasattr(response, 'content') else str(response)
+    titles_list = [
+        line.strip("- ").strip() 
+        for line in raw_content.split("\n") 
+        if line.strip()
+    ]
+    
+    return titles_list[:5]
+

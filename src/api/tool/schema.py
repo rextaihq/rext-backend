@@ -20,4 +20,15 @@ class MetaDescriptionResponse(BaseModel):
 
     meta_description: str
     validation: MetaDescriptionValidation
-    
+
+
+class TitleRequest(BaseModel):
+    keyword: str
+    topic: str
+    brand: str
+    tone: str
+
+
+class TitleResponse(BaseModel):
+    titles: List[str]
+

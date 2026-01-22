@@ -2,8 +2,8 @@ from fastapi import HTTPException, APIRouter
 from pydantic import BaseModel, Field
 from typing import List
 
-from src.api.tool.tools import count_text_metrics, generate_meta_description, validate_meta_description
-from src.api.tool.schema import MetaDescriptionRequest, MetaDescriptionResponse
+from src.api.tool.tools import count_text_metrics, generate_meta_description, validate_meta_description, generate_title_tags
+from src.api.tool.schema import MetaDescriptionRequest, MetaDescriptionResponse, TitleRequest, TitleResponse
 
 router = APIRouter(prefix='/tools', tags=['tools'])
 
@@ -57,3 +57,22 @@ async def generate_meta_desc(request: MetaDescriptionRequest):
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to generate meta description: {str(e)}")
+
+# Title Tag Generator Endpoint
+@router.post("/title-tags/generate", response_model=TitleResponse)
+async def generate_titles(request: TitleRequest):
+    """
+    API endpoint to generate SEO-friendly title tags.
+    URL will be: POST /tools/title-tags/generate
+    """
+    try:
+        titles = generate_title_tags(
+            keyword=request.keyword,
+            topic=request.topic,
+            brand=request.brand,
+            tone=request.tone
+        )
+        return TitleResponse(titles=titles)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to generate title tags: {str(e)}")
+
