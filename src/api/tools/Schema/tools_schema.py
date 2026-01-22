@@ -1,5 +1,5 @@
-from typing import Optional
-from pydantic import BaseModel, Field, field_validator
+from typing import Optional, List, Dict
+from pydantic import BaseModel, Field, field_validator, HttpUrl
 import re
 
 
@@ -59,3 +59,14 @@ class SchemaRequest(BaseModel):
             )
         return v
 
+
+class ReadabilityRequest(BaseModel):
+    content: str = Field(..., min_length=10,description="The text content you want to analyze for readability. Minimum 10 characters.")
+
+class ReadabilityResponse(BaseModel):
+    readability_score: float
+    grade_level: float
+    sentence_complexity: float
+    reading_level: str
+    word_count: int
+    sentence_count: int
