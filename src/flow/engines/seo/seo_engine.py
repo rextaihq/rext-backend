@@ -6,7 +6,7 @@ from src.flow.engines.seo.seo_difficulty_engine.keyword_difficulty.keyword_diffi
 from src.flow.engines.seo.competitors_gap import competitors_gap_node
 from src.flow.engines.seo.seo_opportunity import seo_opportunity_node
 from src.flow.engines.seo.keyword_finder import relevance_keyword_finder
-from src.flow.engines.seo.recomendation.recomendation import keyword_recommendation
+from src.flow.engines.seo.recomendation.recomendation import recommendation
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +28,7 @@ def create_seo_engine():
     graph.add_node("competitors_gap", competitors_gap_node)
     graph.add_node("seo_opportunity", seo_opportunity_node)
     graph.add_node("relevance_keyword_finder", relevance_keyword_finder)
-    graph.add_node("keyword_recommendation", keyword_recommendation)
+    graph.add_node("keyword_recommendation", recommendation)
 
     # Add Edges (Linear Flow)
     graph.add_edge(START, "compute_keyword_difficulty")
