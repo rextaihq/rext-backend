@@ -68,15 +68,3 @@ def validate_meta_description(meta_description: str) -> MetaDescriptionValidatio
         character_count=f"{length}/160",
         warnings=[] if 120 <= length <= 160 else ["Length not in optimal range (120-160 characters)"]
     )
-
-
-# Example usage:
-if __name__ == "__main__":
-    title = "Best AI Tools for 2024"
-    keywords = ["AI tools", "keyword research", "content optimization"]
-
-    description = generate_meta_description(title, keywords)
-    validation = validate_meta_description(description)
-
-    print(f"Generated Meta Description: {description}")
-    print(f"Validation: {validation}")
