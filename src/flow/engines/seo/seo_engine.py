@@ -24,7 +24,6 @@ def create_seo_engine():
         def wrapped(state):
             result = func(state)
             print(f"\n{'='*20} NODE: {node_name} {'='*20}")
-            print(result)
             print('='*50 + "\n")
             return result
         return wrapped
