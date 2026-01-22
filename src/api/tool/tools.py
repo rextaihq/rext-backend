@@ -6,7 +6,6 @@ from langchain_core.output_parsers import StrOutputParser
 from src.flow.model.llm_manager import load_model
 from src.api.tool.schema import MetaDescriptionValidation
 
-
 def generate_meta_description(page_title: str, target_keywords: List[str]) -> str:
 
     # Join keywords for the prompt
@@ -68,3 +67,18 @@ def validate_meta_description(meta_description: str) -> MetaDescriptionValidatio
         character_count=f"{length}/160",
         warnings=[] if 120 <= length <= 160 else ["Length not in optimal range (120-160 characters)"]
     )
+<<<<<<< Updated upstream
+=======
+
+
+# Example usage:
+if __name__ == "__main__":
+    title = "Best AI Tools for 2024"
+    keywords = ["AI tools", "MLOPs", "Gen AI"]
+
+    description = generate_meta_description(title, keywords)
+    validation = validate_meta_description(description)
+
+    print(f"Generated Meta Description: {description}")
+    print(f"Validation: {validation}")
+>>>>>>> Stashed changes
