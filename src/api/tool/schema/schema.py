@@ -20,3 +20,13 @@ class BrokenLinkRequest(BaseModel):
 
 class BrokenLinkResponse(BaseModel):
     working: bool
+
+from pydantic import BaseModel, HttpUrl
+from typing import List
+
+class SitemapRequest(BaseModel):
+    url: HttpUrl
+
+class SitemapResponse(BaseModel):
+    urls: List[HttpUrl]
+    sitemap_xml: str

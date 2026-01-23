@@ -369,3 +369,82 @@ def broken_link_checker(url):
             return False
     except requests.exceptions.RequestException:
         return False
+
+
+
+# =========================
+# XML Sitemap Generator Tool
+# =========================
+import requests
+from bs4 import BeautifulSoup
+from urllib.parse import urljoin, urlparse
+import xml.etree.ElementTree as ET
+from datetime import datetime
+from typing import List
+
+
+def generate_sitemap(url: str) -> List[str]:
+    """
+    Crawls a website and returns a list of internal URLs
+    to be used for sitemap generation.
+    """
+
+    domain = urlparse(url).netloc
+    visited = set()
+    to_visit = [url]
+
+    def is_internal(link: str) -> bool:
+        return urlparse(link).netloc == domain
+
+    while to_visit:
+        current_url = to_visit.pop(0)
+
+        if current_url in visited or not is_internal(current_url):
+            continue
+
+        try:
+            response = requests.get(current_url, timeout=5)
+            visited.add(current_url)
+
+            if 'text/html' in response.headers.get('Content-Type', ''):
+                soup = BeautifulSoup(response.text, 'html.parser')
+
+                for anchor in soup.find_all('a', href=True):
+                    full_url = (
+                        urljoin(url, anchor['href'])
+                        .split('#')[0]
+                        .rstrip('/')
+                    )
+
+                    if is_internal(full_url) and full_url not in visited:
+                        to_visit.append(full_url)
+
+        except requests.RequestException:
+            continue
+
+    return sorted(list(visited))
+
+
+def build_sitemap_xml(urls: List[str]) -> str:
+    """
+    Converts URL list into sitemap XML string.
+    """
+
+    root = ET.Element("urlset", xmlns="http://www.sitemaps.org/schemas/sitemap/0.9")
+
+    for link in urls:
+        url_tag = ET.SubElement(root, "url")
+        ET.SubElement(url_tag, "loc").text = link
+        ET.SubElement(url_tag, "lastmod").text = datetime.utcnow().strftime("%Y-%m-%d")
+        ET.SubElement(url_tag, "changefreq").text = "daily"
+
+    tree = ET.ElementTree(root)
+    ET.indent(tree, space="\t", level=0)
+
+    xml_bytes = ET.tostring(
+        root,
+        encoding="utf-8",
+        xml_declaration=True
+    )
+
+    return xml_bytes.decode("utf-8")
