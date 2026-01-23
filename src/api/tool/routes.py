@@ -1,14 +1,15 @@
 from fastapi import HTTPException, APIRouter
-from pydantic import BaseModel, Field
 from typing import List
+import traceback
 
 from src.api.tool.tools import (
+    build_schema,
+    calculate_readability,
+    generate_content_ideas,
     count_text_metrics, 
     generate_meta_description, 
     validate_meta_description, 
     generate_title_tags,
-    build_schema,
-    calculate_readability,
     generate_canonical_tag,
     generate_hreflang_tags,
     broken_link_checker,
@@ -35,24 +36,28 @@ from src.api.tool.schema.schema import (
     RobotsTxtRequest,
     RobotsTxtResponse,
     GrammarCheckerRequest,
-    GrammarCheckerResponse
+    GrammarCheckerResponse,
+    IdeaGeneratorRequest,
+    IdeaGeneratorResponse
 )
 
 router = APIRouter(prefix='/tools', tags=['tools'])
 
+@router.get("/")
+def get_tools():
+    return {"message": "tools"}
 
 # Word Counter Endpoint
 @router.post("/count_metrics", response_model=TextMetricsOutput)
 async def get_metrics(input_data: TextInput):
     """
     API endpoint to receive text via POST request and return metrics.
-    URL will be: POST /tools/count_metrics
+    URL: POST /tools/count_metrics
     """
     try:
         metrics = count_text_metrics(input_data.text)
         return metrics
     except Exception as e:
-        # Generic error handling for the underlying logic
         raise HTTPException(status_code=500, detail=str(e))
 
 # Meta Description Generator Endpoint
@@ -60,23 +65,18 @@ async def get_metrics(input_data: TextInput):
 async def generate_meta_desc(request: MetaDescriptionRequest):
     """
     API endpoint to generate meta description.
-    URL will be: POST /tools/meta-description/generate
+    URL: POST /tools/meta-description/generate
     """
     try:
-        # Generate the meta description
         meta_description = generate_meta_description(
             page_title=request.page_title,
             target_keywords=request.target_keywords
         )
-
-        # Validate it
         validation = validate_meta_description(meta_description)
-
         return MetaDescriptionResponse(
             meta_description=meta_description,
             validation=validation
         )
-
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to generate meta description: {str(e)}")
 
@@ -85,7 +85,7 @@ async def generate_meta_desc(request: MetaDescriptionRequest):
 async def generate_titles(request: TitleRequest):
     """
     API endpoint to generate SEO-friendly title tags.
-    URL will be: POST /tools/title-tags/generate
+    URL: POST /tools/title-tags/generate
     """
     try:
         titles = generate_title_tags(
@@ -116,7 +116,10 @@ async def schema_generator(payload: SchemaRequest):
 # Readability Checker Endpoint
 @router.post("/readability-checker", response_model=ReadabilityResponse)
 async def readability_checker(payload: ReadabilityRequest):
-    """Analyze text readability"""
+    """
+    Analyze text readability.
+    URL: POST /tools/readability-checker
+    """
     try:
         return calculate_readability(payload.content)
     except Exception as e:
@@ -127,7 +130,7 @@ async def readability_checker(payload: ReadabilityRequest):
 async def canonical_tag_generator(request: CanonicalTagRequest):
     """
     AI-powered Canonical Tag Generator.
-    Generates an SEO-friendly canonical tag to prevent duplicate content issues.
+    URL: POST /tools/canonical-tag-generator
     """
     try:
         return generate_canonical_tag(str(request.url))
@@ -142,6 +145,7 @@ async def canonical_tag_generator(request: CanonicalTagRequest):
 async def hreflang_tag_generator(request: HreflangRequest):
     """
     AI-powered Google-compliant Hreflang Tag Generator.
+    URL: POST /tools/hreflang-tag-generator
     """
     try:
         return generate_hreflang_tags(request)
@@ -153,10 +157,11 @@ async def hreflang_tag_generator(request: HreflangRequest):
             detail=f"Failed to generate hreflang tags: {str(e)}"
         )
 
-
+# Link Checker Endpoint
 @router.post("/link-checker", response_model=BrokenLinkResponse)
 async def broken_link_checker_route(request: BrokenLinkRequest):
     """
+    Check if a link is broken.
     URL: POST /tools/link-checker
     """
     try:
@@ -168,7 +173,23 @@ async def broken_link_checker_route(request: BrokenLinkRequest):
             detail=f"Failed to check link: {str(e)}"
         )
 
+# Content Idea Generator Endpoint
+@router.post("/content-idea-generator", response_model=IdeaGeneratorResponse)
+def content_idea_generator(payload: IdeaGeneratorRequest):
+    """
+    Generate curated content ideas for various platforms.
+    URL: POST /tools/content-idea-generator
+    """
+    try:
+        return generate_content_ideas(payload)
+    except Exception:
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to generate content ideas"
+        )
 
+# Robots.txt Generator Endpoint
 @router.post("/robots-txt/generate", response_model=RobotsTxtResponse, summary="Robots.txt Generator")
 async def generate_robots_txt_route(request: RobotsTxtRequest):
     """
@@ -189,7 +210,7 @@ async def generate_robots_txt_route(request: RobotsTxtRequest):
             detail=f"Failed to generate robots.txt file: {str(e)}"
         )
 
-
+# Grammar Checker Endpoint
 @router.post("/grammar-checker", response_model=GrammarCheckerResponse, summary="Grammar Checker")
 async def grammar_checker_route(request: GrammarCheckerRequest):
     """
@@ -207,5 +228,3 @@ async def grammar_checker_route(request: GrammarCheckerRequest):
             status_code=500,
             detail=f"Grammar calculation failed: {str(e)}"
         )
-
-

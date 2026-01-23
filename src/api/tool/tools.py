@@ -1,5 +1,6 @@
 import re
 import requests
+import textstat
 from typing import List, Dict, Any, Optional
 from langchain_core.prompts import PromptTemplate
 from langchain_core.output_parsers import StrOutputParser
@@ -7,8 +8,12 @@ from langchain_core.messages import SystemMessage, HumanMessage
 from urllib.parse import urlparse, urlunparse
 
 from src.flow.model.llm_manager import load_model
-from src.api.tool.schema.schema import MetaDescriptionValidation
-from src.api.tool.prompts.title_prompt import title_prompt
+from src.api.tool.schema.schema import (
+    MetaDescriptionValidation, 
+    IdeaGeneratorResponse, 
+    IdeaGeneratorRequest
+)
+from src.api.tool.prompts.title_prompt import title_prompt, idea_prompt
 from src.api.tool.prompts.meta_prompt import meta_prompt
 from src.api.tool.prompts.canonical_prompt import canonical_prompt
 from src.api.tool.prompts.hreflang_prompt import hreflang_system_prompt, hreflang_user_prompt
@@ -17,7 +22,7 @@ def _get_model():
     """Internal helper to consistently load the model."""
     return load_model()
 
-# Word Counter Tool
+#Word Counter Tool
 def count_text_metrics(text: str):
     # Count characters including spaces
     char_count = len(text)
@@ -130,10 +135,6 @@ def build_schema(data) -> dict: # Using data as flexible input (SchemaRequest or
 
 # Readability Checker Tool
 def calculate_readability(content: str) -> dict:
-    try:
-        import textstat
-    except ImportError:
-        raise ImportError("textstat library is required for readability analysis. Please install it.")
 
     flesch = round(textstat.flesch_reading_ease(content), 2)
     fk_grade = round(textstat.flesch_kincaid_grade(content), 2)
@@ -397,3 +398,15 @@ def grammar_checker(text: str):
     finally:
         # Close the connection
         tool.close()
+
+#Ai Content idea Generater tool
+def generate_content_ideas(data: IdeaGeneratorRequest) -> IdeaGeneratorResponse:
+    """Generate high-quality content ideas using structured LLM output."""
+    llm = _get_model()
+    structured_llm = llm.with_structured_output(IdeaGeneratorResponse)
+    prompt = idea_prompt.format(
+        ideas_count=data.ideas_count,
+        topic=data.topic,
+        content_type=data.content_type
+    )
+    return structured_llm.invoke(prompt)
