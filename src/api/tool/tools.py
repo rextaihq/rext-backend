@@ -1,5 +1,6 @@
 import re
 import requests
+import textstat
 from typing import List, Dict, Any
 from langchain_core.prompts import PromptTemplate
 from langchain_core.output_parsers import StrOutputParser
@@ -7,10 +8,10 @@ from langchain_core.messages import SystemMessage, HumanMessage
 from urllib.parse import urlparse, urlunparse
 
 from src.flow.model.llm_manager import load_model, tools_model
-from src.api.tool.schema.schema import MetaDescriptionValidation
-from src.api.tool.prompts.title_prompt import title_prompt
+from src.api.tool.schema.schema import  MetaDescriptionValidation, IdeaGeneratorResponse,IdeaGeneratorRequest
+from src.api.tool.prompts.title_prompt import idea_prompt,title_prompt
 
-# Word Counter Tool
+#Word Counter Tool
 def count_text_metrics(text: str):
     # Count characters including spaces
     char_count = len(text)
@@ -150,10 +151,6 @@ def build_schema(data) -> dict: # Using data as flexible input (SchemaRequest or
 
 # Readability Checker Tool
 def calculate_readability(content: str) -> dict:
-    try:
-        import textstat
-    except ImportError:
-        raise ImportError("textstat library is required for readability analysis. Please install it.")
 
     flesch = round(textstat.flesch_reading_ease(content), 2)
     fk_grade = round(textstat.flesch_kincaid_grade(content), 2)
@@ -369,82 +366,14 @@ def broken_link_checker(url):
             return False
     except requests.exceptions.RequestException:
         return False
-
-
-
-# =========================
-# XML Sitemap Generator Tool
-# =========================
-import requests
-from bs4 import BeautifulSoup
-from urllib.parse import urljoin, urlparse
-import xml.etree.ElementTree as ET
-from datetime import datetime
-from typing import List
-
-
-def generate_sitemap(url: str) -> List[str]:
-    """
-    Crawls a website and returns a list of internal URLs
-    to be used for sitemap generation.
-    """
-
-    domain = urlparse(url).netloc
-    visited = set()
-    to_visit = [url]
-
-    def is_internal(link: str) -> bool:
-        return urlparse(link).netloc == domain
-
-    while to_visit:
-        current_url = to_visit.pop(0)
-
-        if current_url in visited or not is_internal(current_url):
-            continue
-
-        try:
-            response = requests.get(current_url, timeout=5)
-            visited.add(current_url)
-
-            if 'text/html' in response.headers.get('Content-Type', ''):
-                soup = BeautifulSoup(response.text, 'html.parser')
-
-                for anchor in soup.find_all('a', href=True):
-                    full_url = (
-                        urljoin(url, anchor['href'])
-                        .split('#')[0]
-                        .rstrip('/')
-                    )
-
-                    if is_internal(full_url) and full_url not in visited:
-                        to_visit.append(full_url)
-
-        except requests.RequestException:
-            continue
-
-    return sorted(list(visited))
-
-
-def build_sitemap_xml(urls: List[str]) -> str:
-    """
-    Converts URL list into sitemap XML string.
-    """
-
-    root = ET.Element("urlset", xmlns="http://www.sitemaps.org/schemas/sitemap/0.9")
-
-    for link in urls:
-        url_tag = ET.SubElement(root, "url")
-        ET.SubElement(url_tag, "loc").text = link
-        ET.SubElement(url_tag, "lastmod").text = datetime.utcnow().strftime("%Y-%m-%d")
-        ET.SubElement(url_tag, "changefreq").text = "daily"
-
-    tree = ET.ElementTree(root)
-    ET.indent(tree, space="\t", level=0)
-
-    xml_bytes = ET.tostring(
-        root,
-        encoding="utf-8",
-        xml_declaration=True
+#Ai Content idea Generater tool
+def generate_content_ideas(data: IdeaGeneratorRequest) -> IdeaGeneratorResponse:
+    """Generate high-quality content ideas using structured LLM output."""
+    llm = load_model()
+    structured_llm = llm.with_structured_output(IdeaGeneratorResponse)
+    prompt = idea_prompt.format(
+        ideas_count=data.ideas_count,
+        topic=data.topic,
+        content_type=data.content_type
     )
-
-    return xml_bytes.decode("utf-8")
+    return structured_llm.invoke(prompt)
