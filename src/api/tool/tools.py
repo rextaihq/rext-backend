@@ -1,14 +1,21 @@
 import re
 import requests
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from langchain_core.prompts import PromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.messages import SystemMessage, HumanMessage
 from urllib.parse import urlparse, urlunparse
 
-from src.flow.model.llm_manager import load_model, tools_model
+from src.flow.model.llm_manager import load_model
 from src.api.tool.schema.schema import MetaDescriptionValidation
 from src.api.tool.prompts.title_prompt import title_prompt
+from src.api.tool.prompts.meta_prompt import meta_prompt
+from src.api.tool.prompts.canonical_prompt import canonical_prompt
+from src.api.tool.prompts.hreflang_prompt import hreflang_system_prompt, hreflang_user_prompt
+
+def _get_model():
+    """Internal helper to consistently load the model."""
+    return load_model()
 
 # Word Counter Tool
 def count_text_metrics(text: str):
@@ -19,18 +26,15 @@ def count_text_metrics(text: str):
     words = re.split(r'\s+', text.strip())
     word_count = len([word for word in words if word])
     
-    # Count sentences: a rough estimate by counting common end punctuation
-    sentence_count = text.count('.') + text.count('!') + text.count('?')
+    # Count sentences: more robust estimate
+    sentence_count = len(re.findall(r'[^.!?]+[.!?]', text)) or (1 if text.strip() else 0)
 
-    # Count paragraphs: split by double newline characters using a loop
-    paragraph_list = text.strip().split('\n\n')
-    paragraph_count = 0
-    for p in paragraph_list:
-        if p.strip(): # Check if the paragraph content is not empty
-            paragraph_count += 1
+    # Count paragraphs: split by one or more newline characters
+    paragraphs = [p for p in re.split(r'\n+', text) if p.strip()]
+    paragraph_count = len(paragraphs)
 
     # Estimate reading time (e.g., 200 words per minute average)
-    min_read = round(word_count / 200) if word_count > 0 else 0
+    min_read = max(1, round(word_count / 200)) if word_count > 0 else 0
 
     return {
         'words': word_count,
@@ -46,32 +50,11 @@ def generate_meta_description(page_title: str, target_keywords: List[str]) -> st
     # Join keywords for the prompt
     keywords_str = ", ".join(target_keywords)
 
-    # Create the prompt template
-    prompt_template = PromptTemplate(
-        input_variables=["page_title", "keywords"],
-        template="""
-You are an expert SEO copywriter. Create a compelling meta description for a webpage that will improve click-through rates from search results.
-
-Page Title: {page_title}
-Target Keywords: {keywords}
-
-Requirements:
-- Length: Between 120-160 characters (aim for 140-150)
-- Include the primary keyword naturally
-- Write compelling, benefit-focused copy that encourages clicks
-- Make it unique and specific to this page
-- Include a call-to-action when appropriate
-- Focus on value proposition and urgency/benefits
-
-Generate only the meta description text, no additional explanations or quotes.
-"""
-    )
-
     # Load the LLM
-    llm = load_model()
+    llm = _get_model()
 
     # Create the chain
-    chain = prompt_template | llm | StrOutputParser()
+    chain = meta_prompt | llm | StrOutputParser()
 
     # Generate the meta description
     result = chain.invoke({
@@ -79,15 +62,12 @@ Generate only the meta description text, no additional explanations or quotes.
         "keywords": keywords_str
     })
 
-    # Clean up the result (remove any extra whitespace)
-    meta_description = result.strip()
+    # Clean up the result (remove any extra whitespace or quotes)
+    meta_description = result.strip().strip('"').strip("'")
 
-    # Ensure it's within character limits (though the prompt should handle this)
+    # Ensure it's within character limits
     if len(meta_description) > 160:
         meta_description = meta_description[:157] + "..."
-    elif len(meta_description) < 120:
-        # If too short, we could regenerate, but for now, return as is
-        pass
 
     return meta_description
 
@@ -109,7 +89,7 @@ def generate_title_tags(keyword: str, topic: str, brand: str, tone: str) -> List
     """
     Generate 5 SEO-friendly title tags and return them as a clean list.
     """
-    llm = load_model()
+    llm = _get_model()
     
     prompt = title_prompt.format(
         keyword=keyword,
@@ -140,8 +120,8 @@ def build_schema(data) -> dict: # Using data as flexible input (SchemaRequest or
         "name": data.name
     }
     if data.description: schema["description"] = data.description
-    if data.url: schema["url"] = data.url
-    if data.image_url: schema["image"] = data.image_url
+    if data.url: schema["url"] = str(data.url)
+    if data.image_url: schema["image"] = str(data.image_url)
     if data.author_name:
         schema["author"] = {"@type": "Person", "name": data.author_name}
     if data.date_published: schema["datePublished"] = data.date_published
@@ -185,16 +165,27 @@ def normalize_url(url: str) -> str:
     Normalize URL for canonical usage.
     - Force https
     - Lowercase domain
-    - Remove query params & fragments
+    - Remove tracking parameters (fbclid, gclid, utm_*)
     - Normalize trailing slash
     """
     parsed = urlparse(url)
 
     scheme = "https"
     netloc = parsed.netloc.lower()
+    
+    # Filter out common tracking parameters
+    query_params = []
+    if parsed.query:
+        for param in parsed.query.split('&'):
+            if '=' in param:
+                key = param.split('=')[0].lower()
+                if key not in ['fbclid', 'gclid'] and not key.startswith('utm_'):
+                    query_params.append(param)
+    
+    query = '&'.join(query_params)
     path = parsed.path.rstrip("/") or "/"
 
-    return urlunparse((scheme, netloc, path, "", "", ""))
+    return urlunparse((scheme, netloc, path, "", query, ""))
 
 
 def generate_canonical_tag(url: str):
@@ -203,41 +194,18 @@ def generate_canonical_tag(url: str):
     """
     normalized_url = normalize_url(url)
     
-    try:
-        model = tools_model()
-    except NameError:
-         model = load_model()
-    except Exception:
-        model = load_model()
+    model = _get_model()
 
-    prompt = f"""
-You are an SEO expert.
-
-Generate a valid HTML canonical tag for the given URL.
-
-URL:
-{url}
-
-Rules:
-- Use https
-- Remove tracking parameters
-- Normalize trailing slashes
-- Prefer lowercase URLs
-- Follow SEO best practices
-
-Return ONLY the canonical tag.
-Example:
-<link rel="canonical" href="https://example.com/page" />
-
-"""
+    # Format the prompt
+    formatted_prompt = canonical_prompt.format(url=url)
 
     response = model.invoke([
         SystemMessage(content="You generate SEO ONLY valid HTML canonical tags."),
-        HumanMessage(content=prompt)
+        HumanMessage(content=formatted_prompt)
     ])
 
     canonical_tag = response.content if hasattr(response, 'content') else str(response)
-    canonical_tag = canonical_tag.strip()
+    canonical_tag = canonical_tag.strip().strip('`').replace('html\n', '').strip()
 
     # Safety fallback
     if not canonical_tag.startswith("<link") or 'rel="canonical"' not in canonical_tag:
@@ -259,22 +227,10 @@ def generate_hreflang_tags(request):
     AI-powered Google-compliant Hreflang Tag Generator logic.
     Expects a HreflangRequest object (duck-typed).
     """
+    model = _get_model()
+
     if len(request.language_region_urls) > 50:
         raise ValueError("Maximum of 50 URLs allowed for hreflang generation.")
-
-    try:
-        model = tools_model()
-    except:
-        model = load_model()
-
-    if request.output_format == "sitemap":
-        format_rule = "- Output ONLY valid XML <xhtml:link> tags"
-        format_instruction = 'Return ONLY valid XML <xhtml:link rel="alternate" hreflang="..." href="..." /> tags.'
-        context_note = "Your output must be ready to paste directly inside a <url> block of an XML sitemap."
-    else:
-        format_rule = "- Output ONLY valid HTML <link> tags"
-        format_instruction = 'Return ONLY valid HTML <link rel="alternate" hreflang="..." href="..." /> tags.'
-        context_note = "Your output must be ready to paste directly inside the <head> section of an HTML document."
 
     # Identical URL check for SEO warnings
     warnings = []
@@ -285,33 +241,15 @@ def generate_hreflang_tags(request):
             warnings.append(f"Identical URL used for both '{urls_seen[url_str]}' and '{entry.language or 'unknown'}'. Google recommends unique URLs for different language versions.")
         urls_seen[url_str] = entry.language or "unknown"
 
-    system_prompt = f"""
-You are a senior SEO engineer and international search optimization expert.
-
-Your sole task is to generate Google Search–compliant hreflang tags for multilingual and multi-regional websites.
-
-STRICT RULES (DO NOT VIOLATE):
-- Follow Google's official hreflang implementation guidelines
-- Use ISO 639-1 language codes (lowercase)
-- Use ISO 3166-1 Alpha-2 region codes (uppercase) when provided
-- Format hreflang values strictly as: language-REGION (e.g., en-US, es-ES)
-- Normalize incorrect input formats (e.g., EN_us → en-US)
-- If language or region are not provided for a URL, infer them from the URL path, subdomain, or TLD if possible.
-- Do NOT invent, guess, or modify URLs
-- Remove duplicate hreflang entries
-- Each hreflang value must be unique
-- Self-referencing URLs MUST be included in the output for all versions.
-- Generate x-default for the default URL provided.
-{format_rule}
-- One tag per line
-- No explanations
-- No comments
-- No markdown
-- No code blocks
-- No additional text before or after output
-
-{context_note}
-"""
+    # Determine format rules
+    if request.output_format == "sitemap":
+        format_rule = "- Output ONLY valid XML <xhtml:link> tags"
+        format_instruction = 'Return ONLY valid XML <xhtml:link rel="alternate" hreflang="..." href="..." /> tags.'
+        context_note = "Your output must be ready to paste directly inside a <url> block of an XML sitemap."
+    else:
+        format_rule = "- Output ONLY valid HTML <link> tags"
+        format_instruction = 'Return ONLY valid HTML <link rel="alternate" hreflang="..." href="..." /> tags.'
+        context_note = "Your output must be ready to paste directly inside the <head> section of an HTML document."
 
     # Prepare input for LLM
     lang_region_urls_str = "\n".join([
@@ -319,24 +257,22 @@ STRICT RULES (DO NOT VIOLATE):
         for entry in request.language_region_urls
     ])
 
-    user_prompt = f"""
-Generate hreflang tags using the following input.
-
-Default URL (for x-default):
-{request.default_url}
-
-Language and Region URLs:
-{lang_region_urls_str}
-
-Include x-default:
-{str(request.include_x_default).lower()}
-
-{format_instruction}
-"""
+    # Format prompts
+    system_content = hreflang_system_prompt.format(
+        format_rule=format_rule,
+        context_note=context_note
+    )
+    
+    user_content = hreflang_user_prompt.format(
+        default_url=request.default_url,
+        lang_region_urls_str=lang_region_urls_str,
+        include_x_default=str(request.include_x_default).lower(),
+        format_instruction=format_instruction
+    )
 
     response = model.invoke([
-        SystemMessage(content=system_prompt.strip()),
-        HumanMessage(content=user_prompt.strip())
+        SystemMessage(content=system_content.strip()),
+        HumanMessage(content=user_content.strip())
     ])
 
     hreflang_tags = response.content if hasattr(response, 'content') else str(response)
@@ -369,3 +305,95 @@ def broken_link_checker(url):
             return False
     except requests.exceptions.RequestException:
         return False
+
+
+# =========================
+# Robots.txt Generator Tool
+# =========================
+
+def generate_robots_txt(user_agent: str, allow: List[str], disallow: List[str], sitemap_url: Optional[str] = None) -> str:
+    """
+    Robots.txt Generator: Generates a valid robots.txt file as formatted plain text.
+    Follows Google's robots.txt standards and best practices.
+    """
+    lines = []
+    
+    # 1. User-agent (Mandatory)
+    # Default to * if not provided, though schema handles this
+    ua = user_agent.strip() if user_agent else "*"
+    lines.append(f"User-agent: {ua}")
+    
+    # 2. Allow rules (Best practice to group rules)
+    for path in allow:
+        if path and str(path).strip():
+            lines.append(f"Allow: {str(path).strip()}")
+            
+    # 3. Disallow rules
+    for path in disallow:
+        if path and str(path).strip():
+            lines.append(f"Disallow: {str(path).strip()}")
+            
+    # 4. Sitemap URL (Optional but highly recommended)
+    if sitemap_url:
+        # Ensure sitemap URL is a string and not just "None"
+        url_str = str(sitemap_url).strip()
+        if url_str and url_str.lower() != "none":
+            lines.append(f"Sitemap: {url_str}")
+        
+    return "\n".join(lines)
+
+
+# =========================
+# Grammar Checker Tool
+# =========================
+def grammar_checker(text: str):
+    """
+    Grammar Checker: Detects grammar, spelling, and punctuation issues.
+    Uses LanguageTool (Remote API - No Java, No LLM).
+    """
+    try:
+        import language_tool_python
+    except ImportError:
+        raise ImportError("language-tool-python library is required. Please install it with 'uv add language-tool-python'.")
+
+    # Use Public LanguageTool API (No Java required)
+    try:
+        # We use api.languagetool.org as a reliable high-accuracy source
+        tool = language_tool_python.LanguageTool('en-US', remote_server='https://api.languagetool.org/v2')
+    except Exception as e:
+        raise RuntimeError(f"Failed to connect to Grammar Checker service: {str(e)}")
+
+    try:
+        # Perform the check
+        matches = tool.check(text)
+        
+        # Generate corrected text
+        corrected_text = tool.correct(text)
+        
+        # Extract issues
+        issues = []
+        for match in matches:
+            # Determine issue type from category or ruleId
+            issue_type = "grammar"
+            cat = match.category.lower()
+            if "spelling" in cat:
+                issue_type = "spelling"
+            elif "punctuation" in cat or "typographical" in cat:
+                issue_type = "punctuation"
+                
+            issues.append({
+                "original_phrase": text[match.offset : match.offset + match.error_length],
+                "suggested_correction": match.replacements[0] if match.replacements else "",
+                "issue_type": issue_type
+            })
+
+        return {
+            "corrected_text": corrected_text,
+            "issues": issues
+        }
+
+    except Exception as e:
+        raise RuntimeError(f"Grammar processing failed: {str(e)}")
+    finally:
+        # Close the connection
+        tool.close()

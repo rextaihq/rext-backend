@@ -11,35 +11,35 @@ from src.api.tool.tools import (
     calculate_readability,
     generate_canonical_tag,
     generate_hreflang_tags,
-    broken_link_checker
+    broken_link_checker,
+    generate_robots_txt,
+    grammar_checker
 )
 
-from src.api.tool.schema.schema import MetaDescriptionRequest, MetaDescriptionResponse, BrokenLinkRequest, BrokenLinkResponse
-# from src.api.tool.schema import (
-#     TitleRequest, 
-#     TitleResponse,
-#     SchemaRequest,
-#     ReadabilityRequest,
-#     ReadabilityResponse,
-#     CanonicalTagRequest,
-#     CanonicalTagResponse,
-#     HreflangRequest,
-#     HreflangResponse
-# )
+from src.api.tool.schema.schema import (
+    TextInput,
+    TextMetricsOutput,
+    MetaDescriptionRequest, 
+    MetaDescriptionResponse, 
+    BrokenLinkRequest, 
+    BrokenLinkResponse,
+    TitleRequest,
+    TitleResponse,
+    SchemaRequest,
+    ReadabilityRequest,
+    ReadabilityResponse,
+    CanonicalTagRequest,
+    CanonicalTagResponse,
+    HreflangRequest,
+    HreflangResponse,
+    RobotsTxtRequest,
+    RobotsTxtResponse,
+    GrammarCheckerRequest,
+    GrammarCheckerResponse
+)
 
 router = APIRouter(prefix='/tools', tags=['tools'])
 
-# Define Schemas for Word Counter
-class TextInput(BaseModel):
-    # Ensures text is not just an empty string at the schema level
-    text: str = Field(..., min_length=1)
-
-class TextMetricsOutput(BaseModel):
-    words: int
-    characters: int
-    sentences: int
-    paragraphs: int
-    min_read: int
 
 # Word Counter Endpoint
 @router.post("/count_metrics", response_model=TextMetricsOutput)
@@ -99,13 +99,19 @@ async def generate_titles(request: TitleRequest):
         raise HTTPException(status_code=500, detail=f"Failed to generate title tags: {str(e)}")
 
 # Schema Generator Endpoint
-@router.post("/schema-generator")
+@router.post("/schema-generator", response_model=dict)
 async def schema_generator(payload: SchemaRequest):
-    """Generate Schema.org JSON-LD"""
+    """
+    Generate Schema.org JSON-LD.
+    URL: POST /tools/schema-generator
+    """
     try:
         return build_schema(payload)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to generate schema: {str(e)}")
+        raise HTTPException(
+            status_code=500, 
+            detail=f"Internal error while generating schema: {str(e)}"
+        )
 
 # Readability Checker Endpoint
 @router.post("/readability-checker", response_model=ReadabilityResponse)
@@ -160,6 +166,46 @@ async def broken_link_checker_route(request: BrokenLinkRequest):
         raise HTTPException(
             status_code=500,
             detail=f"Failed to check link: {str(e)}"
+        )
+
+
+@router.post("/robots-txt/generate", response_model=RobotsTxtResponse, summary="Robots.txt Generator")
+async def generate_robots_txt_route(request: RobotsTxtRequest):
+    """
+    Robots.txt Generator: API endpoint to generate a robots.txt file.
+    URL: POST /tools/robots-txt/generate
+    """
+    try:
+        robots_txt = generate_robots_txt(
+            user_agent=request.user_agent,
+            allow=request.allow,
+            disallow=request.disallow,
+            sitemap_url=str(request.sitemap_url) if request.sitemap_url else None
+        )
+        return RobotsTxtResponse(robots_txt=robots_txt)
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to generate robots.txt file: {str(e)}"
+        )
+
+
+@router.post("/grammar-checker", response_model=GrammarCheckerResponse, summary="Grammar Checker")
+async def grammar_checker_route(request: GrammarCheckerRequest):
+    """
+    Grammar Checker: Detects grammar, spelling, and punctuation issues.
+    URL: POST /tools/grammar-checker
+    """
+    try:
+        return grammar_checker(request.text)
+    except ImportError as ie:
+        raise HTTPException(status_code=500, detail=str(ie))
+    except RuntimeError as re:
+        raise HTTPException(status_code=500, detail=str(re))
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Grammar calculation failed: {str(e)}"
         )
 
 
