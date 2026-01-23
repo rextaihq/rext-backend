@@ -25,3 +25,16 @@ You are a Senior SEO Content Strategist. Your goal is to generate 5 distinct, hi
 Return ONLY the 5 bullet points. No introductory text. No conversational filler.
 """
 )
+
+idea_prompt = PromptTemplate(
+    input_variables=["ideas_count", "topic", "content_type"],
+    template="""
+You are an expert Content Strategist and Creative Director. Your goal is to generate {ideas_count} high-performing, engaging, and unique content ideas for the topic: '{topic}' specifically tailored as a '{content_type}'.
+
+Guidelines:
+- Focus on viral potential and high audience engagement.
+- Ensure ideas are practical, non-technical, and easy for humans to relate to.
+- Mix different content styles (e.g., educational, storytelling, trend-based).
+- Return a clear list of ideas matching the requested schema.
+"""
+)
