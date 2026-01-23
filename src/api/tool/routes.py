@@ -13,7 +13,9 @@ from src.api.tool.tools import (
     generate_title_tags,
     generate_canonical_tag,
     generate_hreflang_tags,
-    broken_link_checker
+    broken_link_checker,
+    generate_sitemap,
+    build_sitemap_xml
 )
 
 
@@ -159,7 +161,6 @@ async def hreflang_tag_generator(request: HreflangRequest):
             detail=f"Failed to generate hreflang tags: {str(e)}"
         )
 
-
 @router.post("/link-checker", response_model=BrokenLinkResponse)
 async def broken_link_checker_route(request: BrokenLinkRequest):
     """
@@ -187,3 +188,22 @@ def content_idea_generator(payload: IdeaGeneratorRequest):
         )
 
 
+@router.post("/sitemap-generator", response_model=SitemapResponse)
+async def sitemap_generator_route(request: SitemapRequest):
+    """
+    URL: POST /tools/sitemap-generator
+    """
+    try:
+        urls = generate_sitemap(str(request.url))
+        sitemap_xml = build_sitemap_xml(urls)
+
+        return SitemapResponse(
+            urls=urls,
+            sitemap_xml=sitemap_xml
+        )
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to generate sitemap: {str(e)}"
+        )
