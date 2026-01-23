@@ -110,3 +110,12 @@ class HreflangResponse(BaseModel):
     warnings: list[str] | None = None
 
 
+class IdeaGeneratorRequest(BaseModel):
+    topic: str = Field(..., description="The main topic to generate ideas for")
+    content_type: str = Field(..., description="The type of content (e.g., blog, social media piece, video script)")
+    ideas_count: int = Field(3, ge=1, le=20, description="Number of ideas to generate (1-20)")
+
+
+class IdeaGeneratorResponse(BaseModel):
+    topic: str
+    ideas: List[str]

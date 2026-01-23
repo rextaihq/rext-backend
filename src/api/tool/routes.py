@@ -1,33 +1,45 @@
 from fastapi import HTTPException, APIRouter
 from pydantic import BaseModel, Field
 from typing import List
+import traceback
 
 from src.api.tool.tools import (
+    build_schema,
+    calculate_readability,
+    generate_content_ideas,
     count_text_metrics, 
     generate_meta_description, 
     validate_meta_description, 
     generate_title_tags,
-    build_schema,
-    calculate_readability,
     generate_canonical_tag,
     generate_hreflang_tags,
     broken_link_checker
 )
 
-from src.api.tool.schema.schema import MetaDescriptionRequest, MetaDescriptionResponse, BrokenLinkRequest, BrokenLinkResponse
-# from src.api.tool.schema import (
-#     TitleRequest, 
-#     TitleResponse,
-#     SchemaRequest,
-#     ReadabilityRequest,
-#     ReadabilityResponse,
-#     CanonicalTagRequest,
-#     CanonicalTagResponse,
-#     HreflangRequest,
-#     HreflangResponse
-# )
+
+from src.api.tool.schema.schema import (
+    TitleRequest, 
+    BrokenLinkRequest,
+    BrokenLinkResponse,
+    TitleResponse,
+    SchemaRequest,
+    ReadabilityRequest,
+    ReadabilityResponse,
+     IdeaGeneratorRequest,
+    IdeaGeneratorResponse,
+    MetaDescriptionRequest,
+    MetaDescriptionResponse,
+    CanonicalTagRequest,
+    CanonicalTagResponse,
+    HreflangRequest,
+    HreflangResponse
+)
 
 router = APIRouter(prefix='/tools', tags=['tools'])
+
+@router.get("/")
+def get_tools():
+    return {"message": "tools"}
 
 # Define Schemas for Word Counter
 class TextInput(BaseModel):
@@ -98,7 +110,7 @@ async def generate_titles(request: TitleRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to generate title tags: {str(e)}")
 
-# Schema Generator Endpoint
+#Schema Generator Endpoint
 @router.post("/schema-generator")
 async def schema_generator(payload: SchemaRequest):
     """Generate Schema.org JSON-LD"""
@@ -116,7 +128,7 @@ async def readability_checker(payload: ReadabilityRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to calculate readability: {str(e)}")
 
-# Canonical Tag Generator Endpoint
+#Canonical Tag Generator Endpoint
 @router.post("/canonical-tag-generator", response_model=CanonicalTagResponse)
 async def canonical_tag_generator(request: CanonicalTagRequest):
     """
@@ -160,6 +172,18 @@ async def broken_link_checker_route(request: BrokenLinkRequest):
         raise HTTPException(
             status_code=500,
             detail=f"Failed to check link: {str(e)}"
+        )
+#content idea genration tool endpoints
+@router.post("/content-idea-generator", response_model=IdeaGeneratorResponse)
+def content_idea_generator(payload: IdeaGeneratorRequest):
+    """Generate curated content ideas for various platforms."""
+    try:
+        return generate_content_ideas(payload)
+    except Exception:
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to generate content ideas"
         )
 
 
