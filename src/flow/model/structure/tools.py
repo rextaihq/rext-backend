@@ -26,7 +26,7 @@ class HreflangRequest(BaseModel):
     include_x_default: bool = Field(True, description="Whether to include the x-default tag.")
     output_format: str = Field("html", description="The output format: 'html' or 'sitemap'.")
 
-
+ 
 class HreflangResponse(BaseModel):
     """Response structure for generated hreflang tags."""
     hreflang_tags: str = Field(description="The generated hreflang tags as a single string (one per line).")
