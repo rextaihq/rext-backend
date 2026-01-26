@@ -128,6 +128,12 @@ services:
             SENTRY_DSN: ${SENTRY_DSN}
             SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-production}
 
+            # Payment
+            LEMONSQUEEZY_WEBHOOK_SECRET: ${LEMONSQUEEZY_WEBHOOK_SECRET}
+            LEMONSQUEEZY_API_KEY: ${LEMONSQUEEZY_API_KEY}
+            LEMONSQUEEZY_SANDBOX_MODE: ${LEMONSQUEEZY_SANDBOX_MODE}
+            LEMONSQUEEZY_STORE_ID: ${LEMONSQUEEZY_STORE_ID}
+
 networks:
     rext-network:
         driver: bridge
