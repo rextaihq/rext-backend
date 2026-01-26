@@ -25,12 +25,33 @@ services:
             timeout: 1s
             retries: 5
 
+    # Postgres Database
+    postgres:
+        image: postgres:17-alpine
+        container_name: rext-postgres
+        environment:
+            POSTGRES_USER: exec
+            POSTGRES_PASSWORD: rextserver
+            POSTGRES_DB: rext
+        volumes:
+            - langgraph-data:/var/lib/postgresql/data
+        ports:
+            - "5432:5432"
+        healthcheck:
+            test: ["CMD-SHELL", "pg_isready -U exec"]
+            interval: 5s
+            retries: 5
+        networks:
+            - rext-network
+
     # Backend API Service
     langgraph-api:
         image: revnix/rext:${IMAGE_TAG:-latest}
         ports:
             - "2024:2024"
         depends_on:
+            postgres:
+                condition: service_healthy
             langgraph-redis:
                 condition: service_healthy
         env_file:
@@ -43,8 +64,8 @@ services:
             LANGSMITH_TRACING: ${LANGSMITH_TRACING:-true}
 
             # Database (Connect to host PostgreSQL)
-            POSTGRES_URI_CUSTOM: ${POSTGRES_URI_CUSTOM}
-            DATABASE_URI: ${DATABASE_URI}
+            POSTGRES_URI_CUSTOM: postgresql+asyncpg://exec:rextserver@postgres:5432/rext
+            DATABASE_URI: postgresql+asyncpg://exec:rextserver@postgres:5432/rext
             REDIS_URI: ${REDIS_URI:-redis://langgraph-redis:6379}
             REDIS_URL: ${REDIS_URL:-redis://langgraph-redis:6379}
             CACHE_URL: ${CACHE_URL:-redis://langgraph-redis:6379}
