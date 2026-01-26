@@ -35,7 +35,7 @@ Generate a preview of authentication email templates with full metadata.
   "user_name": "John Doe",
   "user_email": "john@example.com",  // Optional, for password_reset
   "token": "preview_token_123",      // Optional, defaults provided
-  "frontend_url": "https://app.wrext.com"  // Optional, uses env default
+  "frontend_url": "https://app.rext.com"  // Optional, uses env default
 }
 ```
 
@@ -44,12 +44,12 @@ Generate a preview of authentication email templates with full metadata.
 {
   "html": "<!DOCTYPE html><html>...</html>",
   "template_type": "verification",
-  "subject": "Verify Your Email Address - WREXT",
-  "preview_text": "Welcome to WREXT! Verify your email to get started.",
+  "subject": "Verify Your Email Address - REXT",
+  "preview_text": "Welcome to REXT! Verify your email to get started.",
   "metadata": {
     "template_name": "Auth - Verification",
     "size_bytes": 8192,
-    "frontend_url": "https://app.wrext.com"
+    "frontend_url": "https://app.rext.com"
   }
 }
 ```
@@ -107,7 +107,7 @@ Generate a preview of workspace email templates with full metadata.
   "invitation_token": "preview_token",  // Optional, defaults provided
   "expiry_days": 7,
   "reason": "Project concluded",  // For member_removed
-  "frontend_url": "https://app.wrext.com"  // Optional
+  "frontend_url": "https://app.rext.com"  // Optional
 }
 ```
 
@@ -117,12 +117,12 @@ Generate a preview of workspace email templates with full metadata.
   "html": "<!DOCTYPE html><html>...</html>",
   "template_type": "invitation",
   "subject": "You've been invited to join Acme Corporation",
-  "preview_text": "You've been invited to join Acme Corporation on WREXT",
+  "preview_text": "You've been invited to join Acme Corporation on REXT",
   "metadata": {
     "template_name": "Workspace - Invitation",
     "size_bytes": 9312,
     "workspace_name": "Acme Corporation",
-    "frontend_url": "https://app.wrext.com"
+    "frontend_url": "https://app.rext.com"
   }
 }
 ```

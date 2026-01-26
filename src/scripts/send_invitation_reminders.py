@@ -8,7 +8,7 @@ Usage:
     python -m src.scripts.send_invitation_reminders
 
 Or with cron:
-    0 9 * * * cd /path/to/wrext-backend && /path/to/python -m src.scripts.send_invitation_reminders
+    0 9 * * * cd /path/to/rext-backend && /path/to/python -m src.scripts.send_invitation_reminders
 """
 import asyncio
 from datetime import datetime, timedelta

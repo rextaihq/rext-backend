@@ -142,7 +142,7 @@ class EmailTestRunner:
             plan_price=plan_price,
             billing_period=billing_period,
             features=features,
-            customer_portal_url="https://app.wrext.com/subscription"
+            customer_portal_url="https://app.rext.com/subscription"
         )
         
         # Test 2: Payment Succeeded
@@ -167,7 +167,7 @@ class EmailTestRunner:
             plan_name=plan_name,
             amount=plan_price,
             retry_date="December 24, 2025",
-            update_payment_url="https://app.wrext.com/billing",
+            update_payment_url="https://app.rext.com/billing",
             customer_portal_url="https://lemonsqueezy.com/portal"
         )
         
@@ -178,8 +178,8 @@ class EmailTestRunner:
             user_name=user_name,
             plan_name=plan_name,
             end_date="January 21, 2026",
-            reactivate_url="https://app.wrext.com/pricing",
-            feedback_url="https://app.wrext.com/feedback"
+            reactivate_url="https://app.rext.com/pricing",
+            feedback_url="https://app.rext.com/feedback"
         )
         
         # Test 5: Subscription Upgraded
@@ -220,7 +220,7 @@ class EmailTestRunner:
             order_id="ORD-123456",
             payment_method="Visa ****4242",
             original_plan_name=plan_name,
-            dashboard_url="https://app.wrext.com/dashboard"
+            dashboard_url="https://app.rext.com/dashboard"
         )
         
         # Test 8-11: Trial Reminders
@@ -233,7 +233,7 @@ class EmailTestRunner:
             plan_name=plan_name,
             trial_end_date=trial_end_date,
             plan_price=plan_price,
-            pricing_url="https://app.wrext.com/pricing"
+            pricing_url="https://app.rext.com/pricing"
         )
         
         await self.test_email_template_rendering(
@@ -243,7 +243,7 @@ class EmailTestRunner:
             plan_name=plan_name,
             trial_end_date=trial_end_date,
             plan_price=plan_price,
-            pricing_url="https://app.wrext.com/pricing"
+            pricing_url="https://app.rext.com/pricing"
         )
         
         await self.test_email_template_rendering(
@@ -252,7 +252,7 @@ class EmailTestRunner:
             user_name=user_name,
             plan_name=plan_name,
             plan_price=plan_price,
-            pricing_url="https://app.wrext.com/pricing"
+            pricing_url="https://app.rext.com/pricing"
         )
         
         await self.test_email_template_rendering(
@@ -260,7 +260,7 @@ class EmailTestRunner:
             render_trial_expired_email,
             user_name=user_name,
             plan_name=plan_name,
-            pricing_url="https://app.wrext.com/pricing"
+            pricing_url="https://app.rext.com/pricing"
         )
         
         # Test 12-14: Payment Dunning
@@ -299,7 +299,7 @@ class EmailTestRunner:
             render_subscription_suspended_email,
             user_name=user_name,
             plan_name=plan_name,
-            reactivate_url="https://app.wrext.com/pricing"
+            reactivate_url="https://app.rext.com/pricing"
         )
         
         # Test 16: Payment Recovered
@@ -310,7 +310,7 @@ class EmailTestRunner:
             plan_name=plan_name,
             amount=plan_price,
             next_billing_date="January 21, 2026",
-            dashboard_url="https://app.wrext.com/subscription"
+            dashboard_url="https://app.rext.com/subscription"
         )
         
     def print_summary(self):

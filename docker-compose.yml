@@ -5,7 +5,7 @@ services:
     # Redis for application cache (separate from LangGraph)
     redis:
         image: redis:7-alpine
-        container_name: wrext-redis
+        container_name: rext-redis
         ports:
             - "6379:6379"
         healthcheck:
@@ -27,7 +27,7 @@ services:
 
     # Backend API Service
     langgraph-api:
-        image: revnix/wrext:${IMAGE_TAG:-latest}
+        image: revnix/rext:${IMAGE_TAG:-latest}
         ports:
             - "2024:2024"
         depends_on:
@@ -39,7 +39,7 @@ services:
             # Core API + Database
             OPENAI_API_KEY: ${OPENAI_API_KEY}
             LANGSMITH_API_KEY: ${LANGSMITH_API_KEY}
-            LANGSMITH_PROJECT: ${LANGSMITH_PROJECT:-WREXT}
+            LANGSMITH_PROJECT: ${LANGSMITH_PROJECT:-REXT}
             LANGSMITH_TRACING: ${LANGSMITH_TRACING:-true}
 
             # Database (Connect to host PostgreSQL)
@@ -108,5 +108,5 @@ services:
             SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-production}
 
 networks:
-    wrext-network:
+    rext-network:
         driver: bridge

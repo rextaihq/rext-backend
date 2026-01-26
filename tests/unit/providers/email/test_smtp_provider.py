@@ -80,7 +80,7 @@ class TestSMTPEmailProviderSendEmail:
             to=[EmailRecipient(email="recipient@example.com", name="Recipient")],
             subject="Test Email",
             html="<p>Test Body</p>",
-            from_email="sender@wrext.com",
+            from_email="sender@rext.com",
             from_name="Sender"
         )
 
@@ -118,7 +118,7 @@ class TestSMTPEmailProviderSendEmail:
             to=[EmailRecipient(email="to@example.com")],
             subject="Test",
             html="<p>Test</p>",
-            from_email="from@wrext.com",
+            from_email="from@rext.com",
             cc=[EmailRecipient(email="cc@example.com")],
             bcc=[EmailRecipient(email="bcc@example.com")]
         )
@@ -129,7 +129,7 @@ class TestSMTPEmailProviderSendEmail:
         # Verify sendmail was called with all recipients
         mock_smtp_instance.sendmail.assert_called_once()
         call_args = mock_smtp_instance.sendmail.call_args[0]
-        assert call_args[0] == "from@wrext.com"  # from_email
+        assert call_args[0] == "from@rext.com"  # from_email
         assert set(call_args[1]) == {"to@example.com", "cc@example.com", "bcc@example.com"}  # all recipients
 
     @pytest.mark.asyncio
@@ -153,8 +153,8 @@ class TestSMTPEmailProviderSendEmail:
             to=[EmailRecipient(email="to@example.com")],
             subject="Test",
             html="<p>Test</p>",
-            from_email="from@wrext.com",
-            reply_to="reply@wrext.com"
+            from_email="from@rext.com",
+            reply_to="reply@rext.com"
         )
 
         result = await provider.send_email(message)
@@ -185,7 +185,7 @@ class TestSMTPEmailProviderErrorHandling:
             to=[EmailRecipient(email="to@example.com")],
             subject="Test",
             html="<p>Test</p>",
-            from_email="from@wrext.com"
+            from_email="from@rext.com"
         )
 
         result = await provider.send_email(message)
@@ -215,7 +215,7 @@ class TestSMTPEmailProviderErrorHandling:
             to=[EmailRecipient(email="to@example.com")],
             subject="Test",
             html="<p>Test</p>",
-            from_email="from@wrext.com"
+            from_email="from@rext.com"
         )
 
         result = await provider.send_email(message)
@@ -244,7 +244,7 @@ class TestSMTPEmailProviderErrorHandling:
             to=[EmailRecipient(email="to@example.com")],
             subject="Test",
             html="<p>Test</p>",
-            from_email="from@wrext.com"
+            from_email="from@rext.com"
         )
 
         result = await provider.send_email(message)

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Database management script for wrext-backend
+Database management script for rext-backend
 
 Usage:
     python scripts/db.py reset    - Reset database (drops all data)
@@ -120,7 +120,7 @@ async def seed_database():
 
     print("\n✅ Database seeded successfully!")
     print("   Super admin credentials:")
-    print(f"   Email: {os.getenv('SUPER_ADMIN_EMAIL', 'admin@wrext.com')}")
+    print(f"   Email: {os.getenv('SUPER_ADMIN_EMAIL', 'admin@rext.com')}")
     print(f"   Password: {os.getenv('SUPER_ADMIN_PASSWORD', '[see .env]')}")
 
 

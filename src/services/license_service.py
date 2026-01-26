@@ -25,9 +25,9 @@ from src.api.models.subscription_models.license_activations import LicenseActiva
 from src.utils.logger import logger
 from src.api.middleware.exceptions import (
     ResourceNotFoundException,
-    WrextValidationException,
+    RextValidationException,
     DuplicateResourceException,
-    WrextAuthorizationException as UnauthorizedException
+    RextAuthorizationException as UnauthorizedException
 )
 
 
@@ -55,7 +55,7 @@ class LicenseService:
 
         Raises:
             ResourceNotFoundException: If license not found
-            WrextValidationException: If license is invalid/expired/disabled
+            RextValidationException: If license is invalid/expired/disabled
         """
         # Find license by key
         stmt = select(License).where(License.license_key == license_key)
@@ -71,14 +71,14 @@ class LicenseService:
 
         # Check if license is disabled
         if license_obj.status == LicenseStatus.DISABLED:
-            raise WrextValidationException(
+            raise RextValidationException(
                 message="This license has been disabled",
                 field_errors={"license_key": ["License is disabled"]}
             )
 
         # Check if license is expired
         if license_obj.is_expired:
-            raise WrextValidationException(
+            raise RextValidationException(
                 message="This license has expired",
                 field_errors={"license_key": ["License expired"]}
             )
@@ -109,7 +109,7 @@ class LicenseService:
 
         Raises:
             ResourceNotFoundException: If license not found
-            WrextValidationException: If license invalid or activation limit exceeded
+            RextValidationException: If license invalid or activation limit exceeded
             DuplicateResourceException: If instance already activated
         """
         # Validate license
@@ -146,7 +146,7 @@ class LicenseService:
         # Check activation limits
         if not license_obj.can_activate:
             active_count = await self._count_active_activations(license_obj.id)
-            raise WrextValidationException(
+            raise RextValidationException(
                 message=f"Activation limit reached ({license_obj.activation_limit} max)",
                 field_errors={
                     "license_key": [
@@ -242,7 +242,7 @@ class LicenseService:
             )
 
         if not activation.is_active:
-            raise WrextValidationException(
+            raise RextValidationException(
                 message="This activation is already inactive",
                 field_errors={"instance_id": ["Activation already deactivated"]}
             )

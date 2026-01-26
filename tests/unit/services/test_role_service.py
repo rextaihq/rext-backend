@@ -20,9 +20,9 @@ from datetime import datetime
 from src.services.role_service import RoleService
 from src.api.middleware.exceptions import (
     DuplicateResourceException,
-    WrextValidationException,
+    RextValidationException,
     ResourceNotFoundException,
-    WrextAPIException
+    RextAPIException
 )
 
 
@@ -198,7 +198,7 @@ class TestRoleServiceUpdateRole:
         assert updated.hierarchy_level == 5
 
     async def test_update_role_invalid_hierarchy_level(self, db_session):
-        """Should raise WrextValidationException for invalid hierarchy level"""
+        """Should raise RextValidationException for invalid hierarchy level"""
         # Arrange
         service = RoleService(db_session)
         role = await service.create_role(
@@ -207,7 +207,7 @@ class TestRoleServiceUpdateRole:
         )
 
         # Act & Assert
-        with pytest.raises(WrextValidationException) as exc_info:
+        with pytest.raises(RextValidationException) as exc_info:
             await service.update_role(role.id, hierarchy_level=150)
 
         assert "hierarchy level must be between 0 and 100" in exc_info.value.message.lower()
@@ -224,7 +224,7 @@ class TestRoleServiceUpdateRole:
         )
 
         # Act & Assert
-        with pytest.raises(WrextValidationException) as exc_info:
+        with pytest.raises(RextValidationException) as exc_info:
             await service.update_role(
                 role.id,
                 display_name="Super Admin"
@@ -278,13 +278,13 @@ class TestRoleServiceDeleteRole:
         )
 
         # Act & Assert
-        with pytest.raises(WrextValidationException) as exc_info:
+        with pytest.raises(RextValidationException) as exc_info:
             await service.delete_role(role.id)
 
         assert "cannot delete system roles" in exc_info.value.message.lower()
 
     async def test_delete_role_in_use_without_reassignment(self, db_session, setup_factories):
-        """Should raise WrextValidationException when role assigned to users"""
+        """Should raise RextValidationException when role assigned to users"""
         # Arrange
         user = await setup_factories["user"].create()
         service = RoleService(db_session)
@@ -298,7 +298,7 @@ class TestRoleServiceDeleteRole:
         await service.assign_role(user.id, role.id)
 
         # Act & Assert
-        with pytest.raises(WrextValidationException) as exc_info:
+        with pytest.raises(RextValidationException) as exc_info:
             await service.delete_role(role.id)
 
         assert "cannot delete role assigned to" in exc_info.value.message.lower()
@@ -418,7 +418,7 @@ class TestRoleServiceAssignRole:
         assert user_role.workspace_id == workspace.id
 
     async def test_assign_role_workspace_not_member(self, db_session, setup_factories):
-        """Should raise WrextValidationException when user not workspace member"""
+        """Should raise RextValidationException when user not workspace member"""
         # Arrange
         user = await setup_factories["user"].create()
         workspace = await setup_factories["workspace"].create()
@@ -430,7 +430,7 @@ class TestRoleServiceAssignRole:
         )
 
         # Act & Assert
-        with pytest.raises(WrextValidationException) as exc_info:
+        with pytest.raises(RextValidationException) as exc_info:
             await service.assign_role(
                 user_id=user.id,
                 role_id=role.id,

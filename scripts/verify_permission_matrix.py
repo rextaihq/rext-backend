@@ -575,7 +575,7 @@ def generate_markdown_report(
         lines.append("")
         lines.append("**Command to fix:**")
         lines.append("```bash")
-        lines.append("cd wrext-backend")
+        lines.append("cd rext-backend")
         lines.append("python scripts/seed_permissions.py")
         lines.append("python scripts/verify_permission_matrix.py")
         lines.append("```")

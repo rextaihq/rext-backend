@@ -88,10 +88,10 @@ jobs:
         run: pip install langgraph-cli
           
       - name: Build Docker image with LangGraph
-        run: langgraph build -t revnixhq/wrext:latest
+        run: langgraph build -t revnixhq/rext:latest
 
       - name: Push Docker image
-        run: docker push revnixhq/wrext:latest
+        run: docker push revnixhq/rext:latest
   
   deploy:
     needs: docker_job
@@ -104,7 +104,7 @@ jobs:
       - name: Deploy Docker
         run: |
           # Ensure correct working directory
-          DEPLOY_DIR=~/WREXT/backend
+          DEPLOY_DIR=~/REXT/backend
           mkdir -p $DEPLOY_DIR
           cp -r $GITHUB_WORKSPACE/* $DEPLOY_DIR/
           cd $DEPLOY_DIR
@@ -133,7 +133,7 @@ jobs:
           echo "${{ secrets.DOCKER_PASSWORD }}" | docker login -u "${{ secrets.DOCKER_USERNAME }}" --password-stdin
 
           # Pull latest image
-          docker pull revnixhq/wrext:latest
+          docker pull revnixhq/rext:latest
 
           # Stop and remove old containers
           docker compose down || true

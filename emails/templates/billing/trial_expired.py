@@ -10,9 +10,9 @@ from emails.utils.renderer import compose_email
 def render_trial_expired_email(
     user_name: str,
     plan_name: str,
-    upgrade_url: str = "https://app.wrext.com/pricing",
-    support_url: str = "https://app.wrext.com/support",
-    frontend_url: str = "https://app.wrext.com"
+    upgrade_url: str = "https://app.rext.com/pricing",
+    support_url: str = "https://app.rext.com/support",
+    frontend_url: str = "https://app.rext.com"
 ) -> str:
     """
     Render trial expired email template.
@@ -95,7 +95,7 @@ def render_trial_expired_email(
         """,
         """
         <p style="color: #6b7280; font-size: 14px; line-height: 20px; margin: 16px 0 0 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
-            We're here to help you get the most out of WREXT. Thank you for trying our platform!
+            We're here to help you get the most out of REXT. Thank you for trying our platform!
         </p>
         """,
         simple_footer()

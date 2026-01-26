@@ -1,6 +1,6 @@
 import logging
 from langgraph.graph import StateGraph, START, END
-from src.flow.states.wrext import WREXT
+from src.flow.states.rext import REXT
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +21,7 @@ def create_serp_engine() -> StateGraph:
     from src.flow.engines.serp.competitor import extract_competitors_from_serp
     from src.flow.engines.scrape.scrape_engine import create_scrape_engine
 
-    serp_flow = StateGraph(WREXT)
+    serp_flow = StateGraph(REXT)
 
     # Add nodes
     serp_flow.add_node("fetch_serp", fetch_serp_results)

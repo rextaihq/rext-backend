@@ -1,4 +1,4 @@
-# WREXT Email Templates
+# REXT Email Templates
 
 Python-based email template system with reusable components for generating professional, email-client-compatible HTML emails.
 
@@ -59,9 +59,9 @@ html = compose_email([
     simple_header("My Workspace"),
     "<h1>Welcome!</h1>",
     "<p>Thanks for signing up.</p>",
-    primary_button("Get Started", "https://app.wrext.com"),
+    primary_button("Get Started", "https://app.rext.com"),
     simple_footer()
-], preview_text="Welcome to WREXT")
+], preview_text="Welcome to REXT")
 ```
 
 ### Variable Substitution
@@ -147,18 +147,18 @@ footer1 = simple_footer()
 
 # Standard footer with links
 footer2 = standard_footer(
-    company_name="WREXT",
+    company_name="REXT",
     company_address="123 Main St, San Francisco, CA 94105",
-    unsubscribe_url="https://app.wrext.com/unsubscribe"
+    unsubscribe_url="https://app.rext.com/unsubscribe"
 )
 
 # Custom footer
 from emails.components.footer import footer, FooterProps, FooterLink
 footer3 = footer(FooterProps(
-    company_name="WREXT",
+    company_name="REXT",
     links=[
-        FooterLink(text="Help", url="https://help.wrext.com"),
-        FooterLink(text="Privacy", url="https://wrext.com/privacy")
+        FooterLink(text="Help", url="https://help.rext.com"),
+        FooterLink(text="Privacy", url="https://rext.com/privacy")
     ]
 ))
 ```
@@ -403,4 +403,4 @@ Current version: **1.0.0**
 
 ## License
 
-Internal use only - WREXT
+Internal use only - REXT

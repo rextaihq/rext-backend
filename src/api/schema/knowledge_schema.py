@@ -91,14 +91,16 @@ class BrandSchema(BaseModel):
     )
     personas: List[PersonaExtract] = Field(
         default_factory=list,
-        description="User personas extracted from website content",
+        description="Author/Expert personas - REAL PEOPLE from the website (founders, authors, team members, experts). NOT customer personas.",
         example=[{
-            "name": "Busy Executive",
-            "description": "C-level decision maker focused on efficiency",
-            "demographics": "40-55 years old, urban, high income",
-            "pain_points": "Too many disconnected tools, lack of integration",
-            "goals": "Streamline operations, reduce costs, improve team productivity",
-            "behaviors": "Data-driven decision making, delegates to team, values ROI"
+            "name": "Mobheen Abdullah",
+            "description": "Founder & CEO specializing in sustainable fashion",
+            "full_name": "Mobheen Abdullah",
+            "professional_title": "Founder & Chief Executive Officer",
+            "areas_of_expertise": "Sustainable Fashion, E-commerce, Brand Strategy",
+            "tone_of_voice": "Passionate, Authentic, Educational",
+            "bio": "Mobheen Abdullah founded the company in 2020 with a mission to make sustainable fashion accessible...",
+            "linkedin_url": "https://linkedin.com/in/mobheenabdullah"
         }]
     )
 

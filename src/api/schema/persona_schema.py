@@ -4,16 +4,22 @@ from uuid import UUID
 
 
 class PersonaExtract(BaseModel):
-    """Single persona extracted from website content."""
+    """Author/Expert persona extracted from website content.
+    
+    This represents REAL PEOPLE who create content, run the business, or are mentioned as experts.
+    DO NOT use this for customer/user personas or target audience segments.
+    
+    Examples: Blog authors, founders, team members, consultants, experts
+    """
     name: str = Field(
         ...,
-        description="Persona name or title",
-        example="Tech-Savvy Professional"
+        description="Person's actual name (e.g., 'Mobheen Abdullah', 'Dr. Sarah Mitchell')",
+        example="Mobheen Abdullah"
     )
     description: Optional[str] = Field(
         None,
-        description="Brief description of the persona",
-        example="Early adopter seeking efficiency and innovation"
+        description="Brief description of the person's role or expertise",
+        example="Founder & CEO with expertise in sustainable fashion"
     )
     
     # E-E-A-T professional fields (for expert/author personas)

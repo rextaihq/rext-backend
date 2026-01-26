@@ -85,10 +85,10 @@
 #         run: pip install langgraph-cli
           
 #       - name: Build Docker image with LangGraph
-#         run: langgraph build -t ${{ secrets.DOCKER_USERNAME }}/wrext:stage
+#         run: langgraph build -t ${{ secrets.DOCKER_USERNAME }}/rext:stage
 
 #       - name: Push Docker image
-#         run: docker push ${{ secrets.DOCKER_USERNAME }}/wrext:stage
+#         run: docker push ${{ secrets.DOCKER_USERNAME }}/rext:stage
   
 #   deploy:
 #     needs: docker_job
@@ -134,7 +134,7 @@
 
 #       - name: Deploy Docker to STAGE
 #         run: |
-#           DEPLOY_DIR=~/WREXT/stage/backend
+#           DEPLOY_DIR=~/REXT/stage/backend
 #           mkdir -p $DEPLOY_DIR
 #           cp -r $GITHUB_WORKSPACE/* $DEPLOY_DIR/
 #           cd $DEPLOY_DIR
@@ -178,7 +178,7 @@
 #           echo ".env file created ✅"
 
 #           # Pull latest STAGE image
-#           docker pull ${{ secrets.DOCKER_USERNAME }}/wrext:stage
+#           docker pull ${{ secrets.DOCKER_USERNAME }}/rext:stage
 
 #           # Start containers
 #           docker compose up -d

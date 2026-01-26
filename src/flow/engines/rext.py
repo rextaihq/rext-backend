@@ -1,14 +1,14 @@
 import logging
 from langgraph.graph import StateGraph, START, END
-from src.flow.states.wrext import WREXT
+from src.flow.states.rext import REXT
 logger = logging.getLogger(__name__)
 
-def create_wrext_engine():
+def create_rext_engine():
     from src.flow.engines.serp.serp_engine import create_serp_engine
     from src.flow.engines.seo.seo_engine import create_seo_engine
     from src.flow.engines.content.content_engine import create_content_engine
 
-    flow = StateGraph(WREXT)
+    flow = StateGraph(REXT)
 
     # add enginess and do connection
     flow.add_node("serp_engine", create_serp_engine())

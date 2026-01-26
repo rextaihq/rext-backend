@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from src.api.middleware.exceptions import WrextValidationException
+from src.api.middleware.exceptions import RextValidationException
 from src.api.models.user_models.permissions import Permission
 from src.api.schema.permission_schema import PermissionCreate, PermissionUpdate
 from src.services.permission_service import PermissionService
@@ -134,7 +134,7 @@ async def test_delete_permission_raises_when_assigned():
     service._get_permission_or_404 = AsyncMock(return_value=permission)
     mock_db.execute.return_value = FakeResult(scalar=2)
 
-    with pytest.raises(WrextValidationException):
+    with pytest.raises(RextValidationException):
         await service.delete_permission(user_id=uuid4(), permission_id=uuid4())
 
 

@@ -11,9 +11,9 @@ def render_subscription_cancelled_email(
     user_name: str,
     plan_name: str,
     end_date: str,
-    reactivate_url: str = "https://app.wrext.com/pricing",
-    feedback_url: str = "https://app.wrext.com/feedback",
-    frontend_url: str = "https://app.wrext.com"
+    reactivate_url: str = "https://app.rext.com/pricing",
+    feedback_url: str = "https://app.rext.com/feedback",
+    frontend_url: str = "https://app.rext.com"
 ) -> str:
     """
     Render subscription cancelled email template.
@@ -92,7 +92,7 @@ def render_subscription_cancelled_email(
             We'd love to know why you cancelled and how we can improve. Your feedback helps us build a better product for everyone.
         </p>
         <p style="color: #6b7280; font-size: 14px; line-height: 20px; margin: 16px 0 0 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
-            Thank you for being part of WREXT. We hope to see you again soon!
+            Thank you for being part of REXT. We hope to see you again soon!
         </p>
         """,
         simple_footer()

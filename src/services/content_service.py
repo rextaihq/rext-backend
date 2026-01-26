@@ -21,7 +21,7 @@ from src.api.models.content_models.content_media import ContentMedia
 from src.api.schema.content_schema import ContentCreate, ContentUpdate
 from src.utils.logger import logger
 from src.api.middleware.exceptions import (
-    WrextValidationException,
+    RextValidationException,
     ResourceNotFoundException,
     DuplicateResourceException
 )
@@ -200,8 +200,8 @@ class ContentService:
 
     async def publish_content(self, content_id: UUID, workspace_id: UUID, user_id: UUID) -> Content:
         content = await self._get_content_or_404(content_id, workspace_id)
-        if content.status != "ready": raise WrextValidationException(message="Content must be 'ready' to publish")
-        if not content.body_markdown: raise WrextValidationException(message="Cannot publish empty content")
+        if content.status != "ready": raise RextValidationException(message="Content must be 'ready' to publish")
+        if not content.body_markdown: raise RextValidationException(message="Cannot publish empty content")
         content.status = "published"
         content.updated_at = datetime.now(timezone.utc)
         return content
@@ -229,4 +229,4 @@ class ContentService:
 
     async def _validate_status_transition(self, current: str, new: str) -> None:
         ALLOWED = {"generating": ["ready", "archived", "draft"], "draft": ["ready", "archived", "generating"], "ready": ["published", "draft", "archived", "generating"], "published": ["archived", "ready"], "archived": []}
-        if new not in ALLOWED.get(current, []): raise WrextValidationException(message=f"Invalid transition: {current} -> {new}")
+        if new not in ALLOWED.get(current, []): raise RextValidationException(message=f"Invalid transition: {current} -> {new}")

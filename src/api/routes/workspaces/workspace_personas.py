@@ -63,7 +63,7 @@ async def get_persona(
     user: dict = Depends(get_current_user),
 ):
     """Get a single persona by ID."""
-    user_id = UUID(str(user.get("identity")))
+    user_id = UUID(str(user.get("identity") ))
     await verify_current_user(db, str(user_id))
     
     # Verify workspace access

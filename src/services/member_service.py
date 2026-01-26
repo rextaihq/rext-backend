@@ -30,7 +30,7 @@ from src.utils.logger import logger
 from src.api.middleware.exceptions import (
     ResourceNotFoundException,
     DuplicateResourceException,
-    WrextValidationException
+    RextValidationException
 )
 from src.services.invitation_service import InvitationService
 
@@ -262,11 +262,11 @@ class MemberService(InvitationService):
 
         Raises:
             ResourceNotFoundException: If member not found
-            WrextValidationException: If status invalid
+            RextValidationException: If status invalid
         """
         valid_statuses = ["active", "inactive", "pending"]
         if status not in valid_statuses:
-            raise WrextValidationException(
+            raise RextValidationException(
                 message=f"Invalid status: {status}",
                 field_errors={
                     "status": [f"Status must be one of: {', '.join(valid_statuses)}"]
@@ -524,7 +524,7 @@ class MemberService(InvitationService):
 
         Raises:
             ResourceNotFoundException: If member or role not found
-            WrextValidationException: If member is workspace owner
+            RextValidationException: If member is workspace owner
         """
         from src.api.models.user_models.users import Users
         from src.api.models.user_models.roles import Role
@@ -535,7 +535,7 @@ class MemberService(InvitationService):
 
         # Validate member can be updated
         if member.is_default:
-            raise WrextValidationException(
+            raise RextValidationException(
                 message="Cannot change role of workspace owner",
                 field_errors={"member_id": ["Workspace owner role is immutable"]},
                 error_code="VALIDATION_ERROR",

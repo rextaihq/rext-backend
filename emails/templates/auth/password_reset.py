@@ -12,7 +12,7 @@ def render_password_reset_email(
     user_name: str,
     reset_url: str,
     user_email: Optional[str] = None,
-    frontend_url: str = "https://app.wrext.com"
+    frontend_url: str = "https://app.rext.com"
 ) -> str:
     """
     Render password reset email template.
@@ -29,7 +29,7 @@ def render_password_reset_email(
     Example:
         >>> html = render_password_reset_email(
         ...     user_name="John",
-        ...     reset_url="https://app.wrext.com/reset-password?token=xyz789",
+        ...     reset_url="https://app.rext.com/reset-password?token=xyz789",
         ...     user_email="john@example.com"
         ... )
     """
@@ -55,7 +55,7 @@ def render_password_reset_email(
         """,
         """
         <p style="color: #374151; font-size: 16px; line-height: 24px; margin: 0 0 16px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
-            We received a request to reset the password for your WREXT account.
+            We received a request to reset the password for your REXT account.
         </p>
         """,
         email_info,
@@ -96,7 +96,7 @@ def render_password_reset_email(
         </div>
         """,
         simple_footer()
-    ], preview_text="Reset your WREXT password")
+    ], preview_text="Reset your REXT password")
 
     return email_html
 
@@ -106,7 +106,7 @@ def create_password_reset_email(
     user_name: str,
     reset_token: str,
     user_email: Optional[str] = None,
-    frontend_url: str = "https://app.wrext.com",
+    frontend_url: str = "https://app.rext.com",
     unsubscribe_token: Optional[str] = None
 ) -> str:
     """
@@ -161,7 +161,7 @@ def create_password_reset_email(
         """,
         """
         <p style="color: #374151; font-size: 16px; line-height: 24px; margin: 0 0 16px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
-            We received a request to reset the password for your WREXT account.
+            We received a request to reset the password for your REXT account.
         </p>
         """,
         email_info,
@@ -203,6 +203,6 @@ def create_password_reset_email(
         """,
         unsubscribe_html,
         simple_footer()
-    ], preview_text="Reset your WREXT password")
+    ], preview_text="Reset your REXT password")
 
     return email_html

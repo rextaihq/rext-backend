@@ -11,7 +11,7 @@ from src.api.database.async_database import get_async_db
 from src.api.config import get_settings
 from src.api.middleware.exceptions import (
     ResourceNotFoundException,
-    WrextValidationException,
+    RextValidationException,
 )
 from src.api.models.user_models.roles import Role
 from src.api.models.user_models.user_roles import UserRole
@@ -256,7 +256,7 @@ async def remove_workspace_member(
 
     # Validate member can be removed
     if member.is_default:
-        raise WrextValidationException(
+        raise RextValidationException(
             message="Cannot remove workspace owner",
             field_errors={
                 "member_id": ["This member is the workspace owner and cannot be removed"]

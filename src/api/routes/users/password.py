@@ -19,7 +19,7 @@ from src.utils.response_utils import success, error
 from src.api.schema.response_schemas import ErrorCode, ErrorSeverity
 from src.api.middleware.exceptions import (
     ResourceNotFoundException,
-    WrextValidationException
+    RextValidationException
 )
 from src.services.user_service import UserService
 from src.api.middleware.rate_limiter import password_reset_rate_limit
@@ -262,7 +262,7 @@ async def change_password(
             severity=ErrorSeverity.MEDIUM,
             request=request
         )
-    except WrextValidationException as e:
+    except RextValidationException as e:
         # Service returns validation errors for incorrect password
         logger.warning(f"Password change validation error for user {current_user.get('identity')}: {e.message}")
         return error(

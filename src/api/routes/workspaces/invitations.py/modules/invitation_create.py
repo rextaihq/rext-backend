@@ -18,8 +18,8 @@ from src.api.config import get_settings
 from src.api.middleware.exceptions import (
     DuplicateResourceException,
     ResourceNotFoundException,
-    WrextAuthenticationException,
-    WrextAPIException
+    RextAuthenticationException,
+    RextAPIException
 )
 from src.api.schema.invitation_schema import (
     CreateInvitationRequest,

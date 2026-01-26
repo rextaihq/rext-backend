@@ -134,7 +134,7 @@ jobs:
       - name: Deploy Docker to DEV
         run: |
           # Ensure correct working directory for DEV
-          DEPLOY_DIR=~/WREXT/dev/backend
+          DEPLOY_DIR=~/REXT/dev/backend
           mkdir -p $DEPLOY_DIR
           cp -r $GITHUB_WORKSPACE/* $DEPLOY_DIR/
           cd $DEPLOY_DIR
@@ -187,7 +187,7 @@ jobs:
           echo "${{ secrets.DOCKER_PASSWORD }}" | docker login -u "${{ secrets.DOCKER_USERNAME }}" --password-stdin
 
           # Pull latest DEV image
-          docker pull ${{ secrets.DOCKER_USERNAME }}/wrext:dev
+          docker pull ${{ secrets.DOCKER_USERNAME }}/rext:dev
 
           # Stop and remove old containers
           docker compose down || true

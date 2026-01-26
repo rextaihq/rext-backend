@@ -1,5 +1,5 @@
 import statistics
-from src.flow.states.wrext import Competitor, NormalizedOrganicResult, DocumentScrapeData
+from src.flow.states.rext import Competitor, NormalizedOrganicResult, DocumentScrapeData
 from typing import List
 from src.flow.engines.seo.seo_difficulty_engine.utils.utils import clamp, normalize_freshness
 import re

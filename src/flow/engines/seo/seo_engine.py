@@ -1,6 +1,6 @@
 import logging
 from langgraph.graph import StateGraph, START, END
-from src.flow.states.wrext import WREXT
+from src.flow.states.rext import REXT
 
 logger = logging.getLogger(__name__)
 
@@ -18,7 +18,7 @@ def create_seo_engine():
     from src.flow.engines.seo.keyword_finder import relevance_keyword_finder
     from src.flow.engines.seo.recomendation.keyword_recomendation import keyword_recommendation
 
-    graph = StateGraph(WREXT)
+    graph = StateGraph(REXT)
 
     def debug_node(func, node_name):
         def wrapped(state):

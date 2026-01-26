@@ -41,9 +41,9 @@ from src.api.models.user_models.user_roles import UserRole
 from src.api.models.content_models.content import Content
 from src.api.middleware.exceptions import (
     ResourceNotFoundException,
-    WrextValidationException,
+    RextValidationException,
     DuplicateResourceException,
-    WrextAuthenticationException,
+    RextAuthenticationException,
 )
 from src.api.schema.knowledge_schema import BrandSchema
 from src.flow.model.llm_manager import load_model
@@ -88,7 +88,7 @@ class WorkspaceService:
         name="Create Workspace",
         metadata={"operation": "workspace_create"},
         tags=["WorkspaceService", "Create"],
-        project_name="WREXT",
+        project_name="REXT",
     )
     async def create_workspace_for_user(
         self,
@@ -206,7 +206,7 @@ class WorkspaceService:
         workspace = await self._ensure_membership(workspace_id, user_id)
 
         if not workspace.url:
-            raise WrextValidationException(
+            raise RextValidationException(
                 message="Workspace URL is required to refresh brand voice",
                 field_errors={
                     "url": ["Workspace must have a valid URL before refreshing"]
@@ -693,9 +693,9 @@ class WorkspaceService:
         user_role = result.scalar_one_or_none()
 
         if not user_role:
-            from src.api.middleware.exceptions import WrextAuthorizationException
+            from src.api.middleware.exceptions import RextAuthorizationException
 
-            raise WrextAuthorizationException(
+            raise RextAuthorizationException(
                 message="Only workspace owners can perform this action"
             )
 
@@ -916,7 +916,7 @@ class WorkspaceService:
         )
         user = result.scalar_one_or_none()
         if not user:
-            raise WrextAuthenticationException(
+            raise RextAuthenticationException(
                 message="User not found",
                 context={"user_id": str(user_id)},
             )

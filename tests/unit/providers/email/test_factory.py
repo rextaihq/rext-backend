@@ -40,8 +40,8 @@ class TestEmailProviderFactoryGetProvider:
         """Should create Resend provider when configured"""
         mock_config.email_provider = "resend"
         mock_config.resend_api_key = "re_test_key"
-        mock_config.resend_from_email = "noreply@wrext.com"
-        mock_config.resend_from_name = "WREXT"
+        mock_config.resend_from_email = "noreply@rext.com"
+        mock_config.resend_from_name = "REXT"
 
         provider = get_email_provider()
 
@@ -179,8 +179,8 @@ class TestEmailProviderFactoryInstanceManagement:
         mock_config.email_provider = "resend"
         mock_config.email_fallback_provider = "mock"
         mock_config.resend_api_key = "re_test_key"
-        mock_config.resend_from_email = "noreply@wrext.com"
-        mock_config.resend_from_name = "WREXT"
+        mock_config.resend_from_email = "noreply@rext.com"
+        mock_config.resend_from_name = "REXT"
 
         # Clear instances
         EmailProviderFactory.reset()

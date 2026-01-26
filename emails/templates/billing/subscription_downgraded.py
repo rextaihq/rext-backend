@@ -15,9 +15,9 @@ def render_subscription_downgraded_email(
     new_price: str,
     effective_date: str,
     proration_amount: str = None,
-    dashboard_url: str = "https://app.wrext.com/settings/billing",
+    dashboard_url: str = "https://app.rext.com/settings/billing",
     customer_portal_url: str = None,
-    frontend_url: str = "https://app.wrext.com"
+    frontend_url: str = "https://app.rext.com"
 ) -> str:
     """
     Render subscription downgraded email template.

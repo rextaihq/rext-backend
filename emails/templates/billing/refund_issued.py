@@ -14,7 +14,7 @@ def render_refund_issued_email(
     refund_date: str,
     refund_method: str = None,
     original_plan_name: str = None,
-    frontend_url: str = "https://app.wrext.com"
+    frontend_url: str = "https://app.rext.com"
 ) -> str:
     """
     Render refund issued email template.
@@ -132,7 +132,7 @@ def render_refund_issued_email(
             <strong>Questions about your refund?</strong> Contact our support team and we'll be happy to help.
         </p>
         <p style="color: #6b7280; font-size: 14px; line-height: 20px; margin: 16px 0 0 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
-            We appreciate the time you spent with WREXT and hope to see you again in the future.
+            We appreciate the time you spent with REXT and hope to see you again in the future.
         </p>
         """,
         simple_footer()

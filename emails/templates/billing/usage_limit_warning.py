@@ -14,9 +14,9 @@ def render_usage_limit_warning_email(
     usage_limit: int,
     percentage_used: int,
     plan_name: str,
-    upgrade_url: str = "https://app.wrext.com/pricing",
-    usage_url: str = "https://app.wrext.com/usage",
-    frontend_url: str = "https://app.wrext.com"
+    upgrade_url: str = "https://app.rext.com/pricing",
+    usage_url: str = "https://app.rext.com/usage",
+    frontend_url: str = "https://app.rext.com"
 ) -> str:
     """
     Render usage limit warning email template.

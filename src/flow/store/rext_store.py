@@ -24,12 +24,12 @@ def _create_store() -> AsyncPostgresStore:
     )
 
 @asynccontextmanager
-async def get_wrext_store():
+async def get_rext_store():
     """Async context manager to safely use the store connection pool."""
     async with _create_store() as store:
         yield store
 
-async def setup_wrext_store():
+async def setup_rext_store():
     """Run this once at app startup to create tables and pgvector extension."""
     async with _create_store() as store:
         await store.setup()

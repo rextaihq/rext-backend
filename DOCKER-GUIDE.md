@@ -19,7 +19,7 @@ Imagine Docker as a **"shipping container" for software**:
 When you run `docker-compose up`, these containers start:
 
 ### 1. PostgreSQL Database
-- **Container Name**: `wrext-backend-langgraph-postgres-1`
+- **Container Name**: `rext-backend-langgraph-postgres-1`
 - **Image**: `postgres:16`
 - **Port**: 5433 (on your computer) → 5432 (inside container)
 - **Username**: `postgres`
@@ -27,7 +27,7 @@ When you run `docker-compose up`, these containers start:
 - **Database**: `postgres`
 
 ### 2. Redis (App Cache)
-- **Container Name**: `wrext-redis`
+- **Container Name**: `rext-redis`
 - **Image**: `redis:7-alpine`
 - **Port**: 6379 (shared with your computer)
 
@@ -62,7 +62,7 @@ docker ps
 
 # Example output:
 # NAME                          STATUS                   PORTS
-# wrext-redis                   Up 5 minutes (healthy)   6379/tcp
+# rext-redis                   Up 5 minutes (healthy)   6379/tcp
 # langgraph-postgres            Up 5 minutes (healthy)   0.0.0.0:5433->5432/tcp
 ```
 
@@ -127,7 +127,7 @@ python scripts/db.py seed
 **Option 1: Using Docker exec**
 ```bash
 # Open PostgreSQL shell inside container
-docker exec -it wrext-backend-langgraph-postgres-1 psql -U postgres
+docker exec -it rext-backend-langgraph-postgres-1 psql -U postgres
 
 # Once inside, you can run SQL:
 \dt              # List tables
@@ -144,10 +144,10 @@ psql -h localhost -p 5433 -U postgres -d postgres
 ### Run SQL Files
 ```bash
 # Execute SQL file inside container
-docker exec -i wrext-backend-langgraph-postgres-1 psql -U postgres < backup.sql
+docker exec -i rext-backend-langgraph-postgres-1 psql -U postgres < backup.sql
 
 # Create a backup
-docker exec wrext-backend-langgraph-postgres-1 pg_dump -U postgres postgres > backup.sql
+docker exec rext-backend-langgraph-postgres-1 pg_dump -U postgres postgres > backup.sql
 ```
 
 ---
@@ -171,7 +171,7 @@ docker-compose ps | grep postgres
 
 | Field      | Value              | Notes                              |
 |------------|--------------------|------------------------------------|
-| **Name**   | Wrext Local (Docker) | Any name you want             |
+| **Name**   | Rext Local (Docker) | Any name you want             |
 | **Host**   | `localhost`        | Or `127.0.0.1`                     |
 | **Port**   | `5433`             | **NOT 5432!** (Docker mapped port) |
 | **User**   | `postgres`         | Default from docker-compose.yml    |
@@ -189,7 +189,7 @@ docker-compose ps | grep postgres
 ┌─────────────────────────────────────┐
 │  TablePlus Connection               │
 ├─────────────────────────────────────┤
-│  Name: Wrext Local (Docker)         │
+│  Name: Rext Local (Docker)         │
 │  Host: localhost                    │
 │  Port: 5433  ← IMPORTANT!           │
 │  User: postgres                     │
@@ -221,7 +221,7 @@ python scripts/db.py migrate    # Run migrations
 python -c "from src.api.database.async_database import async_engine; import asyncio; asyncio.run(async_engine.connect())"
 
 # From Docker
-docker exec wrext-backend-langgraph-postgres-1 pg_isready -U postgres
+docker exec rext-backend-langgraph-postgres-1 pg_isready -U postgres
 ```
 
 ### View Container Resource Usage
@@ -296,10 +296,10 @@ Docker stores data in **volumes**:
 docker volume ls
 
 # Inspect volume
-docker volume inspect wrext-backend_langgraph-data
+docker volume inspect rext-backend_langgraph-data
 
 # Output shows where data is stored:
-# "Mountpoint": "/var/lib/docker/volumes/wrext-backend_langgraph-data/_data"
+# "Mountpoint": "/var/lib/docker/volumes/rext-backend_langgraph-data/_data"
 ```
 
 ### Backup & Restore
@@ -307,16 +307,16 @@ docker volume inspect wrext-backend_langgraph-data
 **Create Backup:**
 ```bash
 # Database backup
-docker exec wrext-backend-langgraph-postgres-1 pg_dump -U postgres postgres > backup_$(date +%Y%m%d).sql
+docker exec rext-backend-langgraph-postgres-1 pg_dump -U postgres postgres > backup_$(date +%Y%m%d).sql
 
 # Volume backup (all data)
-docker run --rm -v wrext-backend_langgraph-data:/data -v $(pwd):/backup alpine tar czf /backup/db-backup.tar.gz -C /data .
+docker run --rm -v rext-backend_langgraph-data:/data -v $(pwd):/backup alpine tar czf /backup/db-backup.tar.gz -C /data .
 ```
 
 **Restore Backup:**
 ```bash
 # Database restore
-cat backup_20251016.sql | docker exec -i wrext-backend-langgraph-postgres-1 psql -U postgres postgres
+cat backup_20251016.sql | docker exec -i rext-backend-langgraph-postgres-1 psql -U postgres postgres
 ```
 
 ---
@@ -331,8 +331,8 @@ cat backup_20251016.sql | docker exec -i wrext-backend-langgraph-postgres-1 psql
 | Reset database | `python scripts/db.py seed` |
 | Run migrations | `python scripts/db.py migrate` |
 | Check status | `docker-compose ps` |
-| Open database shell | `docker exec -it wrext-backend-langgraph-postgres-1 psql -U postgres` |
-| Backup database | `docker exec wrext-backend-langgraph-postgres-1 pg_dump -U postgres postgres > backup.sql` |
+| Open database shell | `docker exec -it rext-backend-langgraph-postgres-1 psql -U postgres` |
+| Backup database | `docker exec rext-backend-langgraph-postgres-1 pg_dump -U postgres postgres > backup.sql` |
 
 ---
 

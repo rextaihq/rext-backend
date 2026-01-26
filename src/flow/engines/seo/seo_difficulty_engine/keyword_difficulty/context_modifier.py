@@ -1,5 +1,5 @@
 from collections import Counter
-from src.flow.states.wrext import SERPNORMALIZED, Competitor
+from src.flow.states.rext import SERPNORMALIZED, Competitor
 from src.flow.engines.seo.seo_difficulty_engine.utils.utils import classify_domain_type
 
 
@@ -31,7 +31,7 @@ def context_modifier(competitors: list[Competitor], serp_normalized: SERPNORMALI
     
     brands = {"brand", "publisher", "gov", "edu"}
     brand_count = sum(1 for domain in serp_normalized["domains"] if classify_domain_type(domain) in brands)
-    # brand_count = sum(1 for c in competitors if wrext_normalized["domain_stats"].get(c["domain"], {}).get("type") in brands)
+    # brand_count = sum(1 for c in competitors if rext_normalized["domain_stats"].get(c["domain"], {}).get("type") in brands)
 
     if brand_count >= len(competitors) * 0.8:
         modifier += 10.0

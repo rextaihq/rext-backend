@@ -1,6 +1,6 @@
 ============================= test session starts =============================
 platform win32 -- Python 3.11.0, pytest-8.4.2, pluggy-1.6.0
-rootdir: C:\Users\mrabr\wrext-backend
+rootdir: C:\Users\mrabr\rext-backend
 configfile: pytest.ini
 plugins: anyio-4.11.0, Faker-37.11.0, langsmith-0.4.37, asyncio-1.2.0, cov-7.0.0
 asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=function, asyncio_default_test_loop_scope=function
@@ -55,435 +55,435 @@ tests\services\test_workspace_deletion_permissions.py:158: in test_non_member_ca
 E   TypeError: 'title' is an invalid keyword argument for WorkspaceModel
 ============================== warnings summary ===============================
 src\api\database\base.py:10
-  C:\Users\mrabr\wrext-backend\src\api\database\base.py:10: MovedIn20Warning: The ``declarative_base()`` function is now available as sqlalchemy.orm.declarative_base(). (deprecated since: 2.0) (Background on SQLAlchemy 2.0 at: https://sqlalche.me/e/b8d9)
+  C:\Users\mrabr\rext-backend\src\api\database\base.py:10: MovedIn20Warning: The ``declarative_base()`` function is now available as sqlalchemy.orm.declarative_base(). (deprecated since: 2.0) (Background on SQLAlchemy 2.0 at: https://sqlalche.me/e/b8d9)
     Base = declarative_base()
 
 src\api\schema\response_schemas.py:136
-  C:\Users\mrabr\wrext-backend\src\api\schema\response_schemas.py:136: PydanticDeprecatedSince20: Using extra keyword arguments on `Field` is deprecated and will be removed. Use `json_schema_extra` instead. (Extra keys: 'example'). Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+  C:\Users\mrabr\rext-backend\src\api\schema\response_schemas.py:136: PydanticDeprecatedSince20: Using extra keyword arguments on `Field` is deprecated and will be removed. Use `json_schema_extra` instead. (Extra keys: 'example'). Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
     field: Optional[str] = Field(
 
 src\api\schema\response_schemas.py:141
-  C:\Users\mrabr\wrext-backend\src\api\schema\response_schemas.py:141: PydanticDeprecatedSince20: Using extra keyword arguments on `Field` is deprecated and will be removed. Use `json_schema_extra` instead. (Extra keys: 'example'). Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+  C:\Users\mrabr\rext-backend\src\api\schema\response_schemas.py:141: PydanticDeprecatedSince20: Using extra keyword arguments on `Field` is deprecated and will be removed. Use `json_schema_extra` instead. (Extra keys: 'example'). Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
     message: str = Field(
 
 src\api\schema\response_schemas.py:146
-  C:\Users\mrabr\wrext-backend\src\api\schema\response_schemas.py:146: PydanticDeprecatedSince20: Using extra keyword arguments on `Field` is deprecated and will be removed. Use `json_schema_extra` instead. (Extra keys: 'example'). Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+  C:\Users\mrabr\rext-backend\src\api\schema\response_schemas.py:146: PydanticDeprecatedSince20: Using extra keyword arguments on `Field` is deprecated and will be removed. Use `json_schema_extra` instead. (Extra keys: 'example'). Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
     code: str = Field(
 
 src\api\schema\response_schemas.py:160
-  C:\Users\mrabr\wrext-backend\src\api\schema\response_schemas.py:160: PydanticDeprecatedSince20: Using extra keyword arguments on `Field` is deprecated and will be removed. Use `json_schema_extra` instead. (Extra keys: 'example'). Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+  C:\Users\mrabr\rext-backend\src\api\schema\response_schemas.py:160: PydanticDeprecatedSince20: Using extra keyword arguments on `Field` is deprecated and will be removed. Use `json_schema_extra` instead. (Extra keys: 'example'). Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
     request_id: str = Field(
 
 src\api\schema\response_schemas.py:165
-  C:\Users\mrabr\wrext-backend\src\api\schema\response_schemas.py:165: PydanticDeprecatedSince20: Using extra keyword arguments on `Field` is deprecated and will be removed. Use `json_schema_extra` instead. (Extra keys: 'example'). Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+  C:\Users\mrabr\rext-backend\src\api\schema\response_schemas.py:165: PydanticDeprecatedSince20: Using extra keyword arguments on `Field` is deprecated and will be removed. Use `json_schema_extra` instead. (Extra keys: 'example'). Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
     timestamp: datetime = Field(
 
 src\api\schema\response_schemas.py:170
-  C:\Users\mrabr\wrext-backend\src\api\schema\response_schemas.py:170: PydanticDeprecatedSince20: Using extra keyword arguments on `Field` is deprecated and will be removed. Use `json_schema_extra` instead. (Extra keys: 'example'). Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+  C:\Users\mrabr\rext-backend\src\api\schema\response_schemas.py:170: PydanticDeprecatedSince20: Using extra keyword arguments on `Field` is deprecated and will be removed. Use `json_schema_extra` instead. (Extra keys: 'example'). Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
     processing_time_ms: Optional[int] = Field(
 
 src\api\schema\response_schemas.py:176
-  C:\Users\mrabr\wrext-backend\src\api\schema\response_schemas.py:176: PydanticDeprecatedSince20: Using extra keyword arguments on `Field` is deprecated and will be removed. Use `json_schema_extra` instead. (Extra keys: 'example'). Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+  C:\Users\mrabr\rext-backend\src\api\schema\response_schemas.py:176: PydanticDeprecatedSince20: Using extra keyword arguments on `Field` is deprecated and will be removed. Use `json_schema_extra` instead. (Extra keys: 'example'). Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
     version: str = Field(
 
 src\api\schema\response_schemas.py:181
-  C:\Users\mrabr\wrext-backend\src\api\schema\response_schemas.py:181: PydanticDeprecatedSince20: Using extra keyword arguments on `Field` is deprecated and will be removed. Use `json_schema_extra` instead. (Extra keys: 'example'). Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+  C:\Users\mrabr\rext-backend\src\api\schema\response_schemas.py:181: PydanticDeprecatedSince20: Using extra keyword arguments on `Field` is deprecated and will be removed. Use `json_schema_extra` instead. (Extra keys: 'example'). Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
     server_id: Optional[str] = Field(
 
 src\api\schema\response_schemas.py:208
-  C:\Users\mrabr\wrext-backend\src\api\schema\response_schemas.py:208: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+  C:\Users\mrabr\rext-backend\src\api\schema\response_schemas.py:208: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
     class SuccessResponse(BaseResponse):
 
 src\api\schema\response_schemas.py:244
-  C:\Users\mrabr\wrext-backend\src\api\schema\response_schemas.py:244: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+  C:\Users\mrabr\rext-backend\src\api\schema\response_schemas.py:244: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
     class ErrorResponse(BaseResponse):
 
 src\api\schema\response_schemas.py:298
-  C:\Users\mrabr\wrext-backend\src\api\schema\response_schemas.py:298: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+  C:\Users\mrabr\rext-backend\src\api\schema\response_schemas.py:298: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
     class GenericResponse(BaseModel):
 
 src\api\config.py:13
-  C:\Users\mrabr\wrext-backend\src\api\config.py:13: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+  C:\Users\mrabr\rext-backend\src\api\config.py:13: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
     class Settings(BaseSettings):
 
 src\api\middleware\request_tracker.py:23
-  C:\Users\mrabr\wrext-backend\src\api\middleware\request_tracker.py:23: DeprecationWarning: src.utils.logger is deprecated. Use src.api.lib.logger instead.
+  C:\Users\mrabr\rext-backend\src\api\middleware\request_tracker.py:23: DeprecationWarning: src.utils.logger is deprecated. Use src.api.lib.logger instead.
     from src.utils.logger import logger
 
 src\utils\response_utils.py:103
-  C:\Users\mrabr\wrext-backend\src\utils\response_utils.py:103: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+  C:\Users\mrabr\rext-backend\src\utils\response_utils.py:103: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
     class PaginatedData(BaseModel, Generic[T]):
 
 src\api\schema\notification_schema.py:17
-  C:\Users\mrabr\wrext-backend\src\api\schema\notification_schema.py:17: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+  C:\Users\mrabr\rext-backend\src\api\schema\notification_schema.py:17: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
     class NotificationPreferencesResponse(BaseModel):
 
 src\api\schema\notification_schema.py:46
-  C:\Users\mrabr\wrext-backend\src\api\schema\notification_schema.py:46: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+  C:\Users\mrabr\rext-backend\src\api\schema\notification_schema.py:46: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
     class UpdateNotificationPreferencesRequest(BaseModel):
 
 src\api\routes\users\profile.py:20
-  C:\Users\mrabr\wrext-backend\src\api\routes\users\profile.py:20: DeprecationWarning: 'imghdr' is deprecated and slated for removal in Python 3.13
+  C:\Users\mrabr\rext-backend\src\api\routes\users\profile.py:20: DeprecationWarning: 'imghdr' is deprecated and slated for removal in Python 3.13
     import imghdr
 
 src\api\schema\user_role_schema.py:12
-  C:\Users\mrabr\wrext-backend\src\api\schema\user_role_schema.py:12: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+  C:\Users\mrabr\rext-backend\src\api\schema\user_role_schema.py:12: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
     class AssignUserRoleRequest(BaseModel):
 
 src\api\schema\user_role_schema.py:37
-  C:\Users\mrabr\wrext-backend\src\api\schema\user_role_schema.py:37: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+  C:\Users\mrabr\rext-backend\src\api\schema\user_role_schema.py:37: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
     class UserRoleResponse(BaseModel):
 
 src\api\schema\impersonation_schema.py:12
-  C:\Users\mrabr\wrext-backend\src\api\schema\impersonation_schema.py:12: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+  C:\Users\mrabr\rext-backend\src\api\schema\impersonation_schema.py:12: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
     class ImpersonateStartRequest(BaseModel):
 
 src\api\schema\impersonation_schema.py:24
-  C:\Users\mrabr\wrext-backend\src\api\schema\impersonation_schema.py:24: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+  C:\Users\mrabr\rext-backend\src\api\schema\impersonation_schema.py:24: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
     class ImpersonateStartResponse(BaseModel):
 
 src\api\schema\impersonation_schema.py:48
-  C:\Users\mrabr\wrext-backend\src\api\schema\impersonation_schema.py:48: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+  C:\Users\mrabr\rext-backend\src\api\schema\impersonation_schema.py:48: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
     class ImpersonateStopResponse(BaseModel):
 
 src\api\schema\impersonation_schema.py:66
-  C:\Users\mrabr\wrext-backend\src\api\schema\impersonation_schema.py:66: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+  C:\Users\mrabr\rext-backend\src\api\schema\impersonation_schema.py:66: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
     class ImpersonationStatusResponse(BaseModel):
 
 src\api\schema\knowledge_schema.py:11
-  C:\Users\mrabr\wrext-backend\src\api\schema\knowledge_schema.py:11: PydanticDeprecatedSince20: Using extra keyword arguments on `Field` is deprecated and will be removed. Use `json_schema_extra` instead. (Extra keys: 'example'). Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+  C:\Users\mrabr\rext-backend\src\api\schema\knowledge_schema.py:11: PydanticDeprecatedSince20: Using extra keyword arguments on `Field` is deprecated and will be removed. Use `json_schema_extra` instead. (Extra keys: 'example'). Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
     name: constr(min_length=1, max_length=255) = Field(
 
 src\api\schema\knowledge_schema.py:16
-  C:\Users\mrabr\wrext-backend\src\api\schema\knowledge_schema.py:16: PydanticDeprecatedSince20: Using extra keyword arguments on `Field` is deprecated and will be removed. Use `json_schema_extra` instead. (Extra keys: 'example'). Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+  C:\Users\mrabr\rext-backend\src\api\schema\knowledge_schema.py:16: PydanticDeprecatedSince20: Using extra keyword arguments on `Field` is deprecated and will be removed. Use `json_schema_extra` instead. (Extra keys: 'example'). Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
     description: Optional[str] = Field(
 
 src\api\schema\knowledge_schema.py:25
-  C:\Users\mrabr\wrext-backend\src\api\schema\knowledge_schema.py:25: PydanticDeprecatedSince20: Using extra keyword arguments on `Field` is deprecated and will be removed. Use `json_schema_extra` instead. (Extra keys: 'example'). Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+  C:\Users\mrabr\rext-backend\src\api\schema\knowledge_schema.py:25: PydanticDeprecatedSince20: Using extra keyword arguments on `Field` is deprecated and will be removed. Use `json_schema_extra` instead. (Extra keys: 'example'). Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
     name: Optional[constr(min_length=1, max_length=255)] = Field(
 
 src\api\schema\knowledge_schema.py:30
-  C:\Users\mrabr\wrext-backend\src\api\schema\knowledge_schema.py:30: PydanticDeprecatedSince20: Using extra keyword arguments on `Field` is deprecated and will be removed. Use `json_schema_extra` instead. (Extra keys: 'example'). Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+  C:\Users\mrabr\rext-backend\src\api\schema\knowledge_schema.py:30: PydanticDeprecatedSince20: Using extra keyword arguments on `Field` is deprecated and will be removed. Use `json_schema_extra` instead. (Extra keys: 'example'). Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
     description: Optional[str] = Field(
 
 src\api\schema\knowledge_schema.py:37
-  C:\Users\mrabr\wrext-backend\src\api\schema\knowledge_schema.py:37: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+  C:\Users\mrabr\rext-backend\src\api\schema\knowledge_schema.py:37: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
     class KnowledgeBaseResponseSchema(BaseModel):
 
 src\api\schema\knowledge_schema.py:56
-  C:\Users\mrabr\wrext-backend\src\api\schema\knowledge_schema.py:56: PydanticDeprecatedSince20: Using extra keyword arguments on `Field` is deprecated and will be removed. Use `json_schema_extra` instead. (Extra keys: 'example'). Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+  C:\Users\mrabr\rext-backend\src\api\schema\knowledge_schema.py:56: PydanticDeprecatedSince20: Using extra keyword arguments on `Field` is deprecated and will be removed. Use `json_schema_extra` instead. (Extra keys: 'example'). Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
     about: str | None = Field(
 
 src\api\schema\knowledge_schema.py:61
-  C:\Users\mrabr\wrext-backend\src\api\schema\knowledge_schema.py:61: PydanticDeprecatedSince20: Using extra keyword arguments on `Field` is deprecated and will be removed. Use `json_schema_extra` instead. (Extra keys: 'example'). Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+  C:\Users\mrabr\rext-backend\src\api\schema\knowledge_schema.py:61: PydanticDeprecatedSince20: Using extra keyword arguments on `Field` is deprecated and will be removed. Use `json_schema_extra` instead. (Extra keys: 'example'). Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
     customer_profile: str | None = Field(
 
 src\api\schema\knowledge_schema.py:66
-  C:\Users\mrabr\wrext-backend\src\api\schema\knowledge_schema.py:66: PydanticDeprecatedSince20: Using extra keyword arguments on `Field` is deprecated and will be removed. Use `json_schema_extra` instead. (Extra keys: 'example'). Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+  C:\Users\mrabr\rext-backend\src\api\schema\knowledge_schema.py:66: PydanticDeprecatedSince20: Using extra keyword arguments on `Field` is deprecated and will be removed. Use `json_schema_extra` instead. (Extra keys: 'example'). Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
     selling_position: str | None = Field(
 
 src\api\schema\knowledge_schema.py:71
-  C:\Users\mrabr\wrext-backend\src\api\schema\knowledge_schema.py:71: PydanticDeprecatedSince20: Using extra keyword arguments on `Field` is deprecated and will be removed. Use `json_schema_extra` instead. (Extra keys: 'example'). Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+  C:\Users\mrabr\rext-backend\src\api\schema\knowledge_schema.py:71: PydanticDeprecatedSince20: Using extra keyword arguments on `Field` is deprecated and will be removed. Use `json_schema_extra` instead. (Extra keys: 'example'). Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
     target_audience: List[str] = Field(
 
 src\api\schema\knowledge_schema.py:76
-  C:\Users\mrabr\wrext-backend\src\api\schema\knowledge_schema.py:76: PydanticDeprecatedSince20: Using extra keyword arguments on `Field` is deprecated and will be removed. Use `json_schema_extra` instead. (Extra keys: 'example'). Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+  C:\Users\mrabr\rext-backend\src\api\schema\knowledge_schema.py:76: PydanticDeprecatedSince20: Using extra keyword arguments on `Field` is deprecated and will be removed. Use `json_schema_extra` instead. (Extra keys: 'example'). Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
     brand_voice: List[str] = Field(
 
 src\api\schema\knowledge_schema.py:81
-  C:\Users\mrabr\wrext-backend\src\api\schema\knowledge_schema.py:81: PydanticDeprecatedSince20: Using extra keyword arguments on `Field` is deprecated and will be removed. Use `json_schema_extra` instead. (Extra keys: 'example'). Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+  C:\Users\mrabr\rext-backend\src\api\schema\knowledge_schema.py:81: PydanticDeprecatedSince20: Using extra keyword arguments on `Field` is deprecated and will be removed. Use `json_schema_extra` instead. (Extra keys: 'example'). Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
     competitors: List[str] = Field(
 
 src\api\schema\knowledge_schema.py:86
-  C:\Users\mrabr\wrext-backend\src\api\schema\knowledge_schema.py:86: PydanticDeprecatedSince20: Using extra keyword arguments on `Field` is deprecated and will be removed. Use `json_schema_extra` instead. (Extra keys: 'example'). Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+  C:\Users\mrabr\rext-backend\src\api\schema\knowledge_schema.py:86: PydanticDeprecatedSince20: Using extra keyword arguments on `Field` is deprecated and will be removed. Use `json_schema_extra` instead. (Extra keys: 'example'). Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
     content_pillar: List[str] = Field(
 
 src\api\schema\knowledge_schema.py:97
-  C:\Users\mrabr\wrext-backend\src\api\schema\knowledge_schema.py:97: PydanticDeprecatedSince20: Using extra keyword arguments on `Field` is deprecated and will be removed. Use `json_schema_extra` instead. (Extra keys: 'example'). Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+  C:\Users\mrabr\rext-backend\src\api\schema\knowledge_schema.py:97: PydanticDeprecatedSince20: Using extra keyword arguments on `Field` is deprecated and will be removed. Use `json_schema_extra` instead. (Extra keys: 'example'). Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
     content: constr(min_length=10, max_length=5000) = Field(
 
 src\api\schema\knowledge_schema.py:102
-  C:\Users\mrabr\wrext-backend\src\api\schema\knowledge_schema.py:102: PydanticDeprecatedSince20: Using extra keyword arguments on `Field` is deprecated and will be removed. Use `json_schema_extra` instead. (Extra keys: 'example'). Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+  C:\Users\mrabr\rext-backend\src\api\schema\knowledge_schema.py:102: PydanticDeprecatedSince20: Using extra keyword arguments on `Field` is deprecated and will be removed. Use `json_schema_extra` instead. (Extra keys: 'example'). Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
     workspace_id: UUID = Field(
 
 src\api\schema\knowledge_schema.py:113
-  C:\Users\mrabr\wrext-backend\src\api\schema\knowledge_schema.py:113: PydanticDeprecatedSince20: Using extra keyword arguments on `Field` is deprecated and will be removed. Use `json_schema_extra` instead. (Extra keys: 'example'). Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+  C:\Users\mrabr\rext-backend\src\api\schema\knowledge_schema.py:113: PydanticDeprecatedSince20: Using extra keyword arguments on `Field` is deprecated and will be removed. Use `json_schema_extra` instead. (Extra keys: 'example'). Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
     url: HttpUrl = Field(
 
 src\api\schema\knowledge_schema.py:118
-  C:\Users\mrabr\wrext-backend\src\api\schema\knowledge_schema.py:118: PydanticDeprecatedSince20: Using extra keyword arguments on `Field` is deprecated and will be removed. Use `json_schema_extra` instead. (Extra keys: 'example'). Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+  C:\Users\mrabr\rext-backend\src\api\schema\knowledge_schema.py:118: PydanticDeprecatedSince20: Using extra keyword arguments on `Field` is deprecated and will be removed. Use `json_schema_extra` instead. (Extra keys: 'example'). Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
     workspace_id: UUID = Field(
 
 .venv\Lib\site-packages\crawl4ai\models.py:129
-  C:\Users\mrabr\wrext-backend\.venv\Lib\site-packages\crawl4ai\models.py:129: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+  C:\Users\mrabr\rext-backend\.venv\Lib\site-packages\crawl4ai\models.py:129: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
     class CrawlResult(BaseModel):
 
 .venv\Lib\site-packages\crawl4ai\models.py:320
-  C:\Users\mrabr\wrext-backend\.venv\Lib\site-packages\crawl4ai\models.py:320: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+  C:\Users\mrabr\rext-backend\.venv\Lib\site-packages\crawl4ai\models.py:320: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
     class AsyncCrawlResponse(BaseModel):
 
 src\config\payment_config.py:15
-  C:\Users\mrabr\wrext-backend\src\config\payment_config.py:15: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+  C:\Users\mrabr\rext-backend\src\config\payment_config.py:15: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
     class PaymentSettings(BaseSettings):
 
 src\api\schema\workspace_schema.py:5
-  C:\Users\mrabr\wrext-backend\src\api\schema\workspace_schema.py:5: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+  C:\Users\mrabr\rext-backend\src\api\schema\workspace_schema.py:5: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
     class ChangeMemberRoleRequest(BaseModel):
 
 src\api\schema\workspace_schema.py:17
-  C:\Users\mrabr\wrext-backend\src\api\schema\workspace_schema.py:17: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+  C:\Users\mrabr\rext-backend\src\api\schema\workspace_schema.py:17: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
     class AddWorkspaceMemberRequest(BaseModel):
 
 src\api\schema\content_schema.py:123
-  C:\Users\mrabr\wrext-backend\src\api\schema\content_schema.py:123: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+  C:\Users\mrabr\rext-backend\src\api\schema\content_schema.py:123: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
     class ContentResponse(BaseModel):
 
 src\api\schema\content_schema.py:163
-  C:\Users\mrabr\wrext-backend\src\api\schema\content_schema.py:163: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+  C:\Users\mrabr\rext-backend\src\api\schema\content_schema.py:163: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
     class ContentProgressResponse(BaseModel):
 
 src\api\schema\role_schema.py:12
-  C:\Users\mrabr\wrext-backend\src\api\schema\role_schema.py:12: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+  C:\Users\mrabr\rext-backend\src\api\schema\role_schema.py:12: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
     class RoleCreate(BaseModel):
 
 src\api\schema\role_schema.py:54
-  C:\Users\mrabr\wrext-backend\src\api\schema\role_schema.py:54: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+  C:\Users\mrabr\rext-backend\src\api\schema\role_schema.py:54: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
     class RoleUpdate(BaseModel):
 
 src\api\schema\role_schema.py:83
-  C:\Users\mrabr\wrext-backend\src\api\schema\role_schema.py:83: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+  C:\Users\mrabr\rext-backend\src\api\schema\role_schema.py:83: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
     class PermissionSummary(BaseModel):
 
 src\api\schema\role_schema.py:95
-  C:\Users\mrabr\wrext-backend\src\api\schema\role_schema.py:95: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+  C:\Users\mrabr\rext-backend\src\api\schema\role_schema.py:95: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
     class RoleResponse(BaseModel):
 
 src\api\schema\role_schema.py:110
-  C:\Users\mrabr\wrext-backend\src\api\schema\role_schema.py:110: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+  C:\Users\mrabr\rext-backend\src\api\schema\role_schema.py:110: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
     class RoleWithPermissions(RoleResponse):
 
 src\api\schema\role_schema.py:118
-  C:\Users\mrabr\wrext-backend\src\api\schema\role_schema.py:118: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+  C:\Users\mrabr\rext-backend\src\api\schema\role_schema.py:118: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
     class AssignPermissionsRequest(BaseModel):
 
 src\api\schema\permission_schema.py:12
-  C:\Users\mrabr\wrext-backend\src\api\schema\permission_schema.py:12: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+  C:\Users\mrabr\rext-backend\src\api\schema\permission_schema.py:12: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
     class PermissionCreate(BaseModel):
 
 src\api\schema\permission_schema.py:68
-  C:\Users\mrabr\wrext-backend\src\api\schema\permission_schema.py:68: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+  C:\Users\mrabr\rext-backend\src\api\schema\permission_schema.py:68: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
     class PermissionUpdate(BaseModel):
 
 src\api\schema\permission_schema.py:104
-  C:\Users\mrabr\wrext-backend\src\api\schema\permission_schema.py:104: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+  C:\Users\mrabr\rext-backend\src\api\schema\permission_schema.py:104: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
     class RoleSummary(BaseModel):
 
 src\api\schema\permission_schema.py:115
-  C:\Users\mrabr\wrext-backend\src\api\schema\permission_schema.py:115: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+  C:\Users\mrabr\rext-backend\src\api\schema\permission_schema.py:115: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
     class PermissionResponse(BaseModel):
 
 src\api\schema\permission_schema.py:129
-  C:\Users\mrabr\wrext-backend\src\api\schema\permission_schema.py:129: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+  C:\Users\mrabr\rext-backend\src\api\schema\permission_schema.py:129: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
     class PermissionWithRoles(PermissionResponse):
 
 src\api\schema\subscription\plan_schemas.py:12
-  C:\Users\mrabr\wrext-backend\src\api\schema\subscription\plan_schemas.py:12: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+  C:\Users\mrabr\rext-backend\src\api\schema\subscription\plan_schemas.py:12: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
     class SubscriptionPlanCreate(BaseModel):
 
 src\api\schema\subscription\plan_schemas.py:198
-  C:\Users\mrabr\wrext-backend\src\api\schema\subscription\plan_schemas.py:198: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+  C:\Users\mrabr\rext-backend\src\api\schema\subscription\plan_schemas.py:198: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
     class SubscriptionPlanResponse(BaseModel):
 
 src\api\schema\subscription\user_subscription_schemas.py:12
-  C:\Users\mrabr\wrext-backend\src\api\schema\subscription\user_subscription_schemas.py:12: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+  C:\Users\mrabr\rext-backend\src\api\schema\subscription\user_subscription_schemas.py:12: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
     class SubscriptionCreateRequest(BaseModel):
 
 src\api\schema\subscription\user_subscription_schemas.py:32
-  C:\Users\mrabr\wrext-backend\src\api\schema\subscription\user_subscription_schemas.py:32: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+  C:\Users\mrabr\rext-backend\src\api\schema\subscription\user_subscription_schemas.py:32: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
     class SubscriptionUpgradeRequest(BaseModel):
 
 src\api\schema\subscription\user_subscription_schemas.py:52
-  C:\Users\mrabr\wrext-backend\src\api\schema\subscription\user_subscription_schemas.py:52: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+  C:\Users\mrabr\rext-backend\src\api\schema\subscription\user_subscription_schemas.py:52: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
     class SubscriptionCancelRequest(BaseModel):
 
 src\api\schema\subscription\user_subscription_schemas.py:73
-  C:\Users\mrabr\wrext-backend\src\api\schema\subscription\user_subscription_schemas.py:73: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+  C:\Users\mrabr\rext-backend\src\api\schema\subscription\user_subscription_schemas.py:73: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
     class UserSubscriptionResponse(BaseModel):
 
 src\api\schema\subscription\usage_schemas.py:11
-  C:\Users\mrabr\wrext-backend\src\api\schema\subscription\usage_schemas.py:11: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+  C:\Users\mrabr\rext-backend\src\api\schema\subscription\usage_schemas.py:11: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
     class UsageStatsResponse(BaseModel):
 
 src\api\schema\subscription\usage_schemas.py:61
-  C:\Users\mrabr\wrext-backend\src\api\schema\subscription\usage_schemas.py:61: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+  C:\Users\mrabr\rext-backend\src\api\schema\subscription\usage_schemas.py:61: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
     class TrialStatusResponse(BaseModel):
 
 src\api\schema\subscription\admin_schemas.py:12
-  C:\Users\mrabr\wrext-backend\src\api\schema\subscription\admin_schemas.py:12: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+  C:\Users\mrabr\rext-backend\src\api\schema\subscription\admin_schemas.py:12: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
     class AdminSubscriptionAssignRequest(BaseModel):
 
 src\api\schema\subscription\admin_schemas.py:43
-  C:\Users\mrabr\wrext-backend\src\api\schema\subscription\admin_schemas.py:43: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+  C:\Users\mrabr\rext-backend\src\api\schema\subscription\admin_schemas.py:43: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
     class AdminSubscriptionExtendRequest(BaseModel):
 
 src\api\schema\subscription\admin_schemas.py:66
-  C:\Users\mrabr\wrext-backend\src\api\schema\subscription\admin_schemas.py:66: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+  C:\Users\mrabr\rext-backend\src\api\schema\subscription\admin_schemas.py:66: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
     class AdminUsageResetRequest(BaseModel):
 
 src\api\schema\subscription\checkout_schemas.py:12
-  C:\Users\mrabr\wrext-backend\src\api\schema\subscription\checkout_schemas.py:12: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+  C:\Users\mrabr\rext-backend\src\api\schema\subscription\checkout_schemas.py:12: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
     class CheckoutSessionRequest(BaseModel):
 
 src\api\schema\subscription\checkout_schemas.py:34
-  C:\Users\mrabr\wrext-backend\src\api\schema\subscription\checkout_schemas.py:34: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+  C:\Users\mrabr\rext-backend\src\api\schema\subscription\checkout_schemas.py:34: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
     class CheckoutSessionResponse(BaseModel):
 
 src\api\schema\subscription\license_schemas.py:12
-  C:\Users\mrabr\wrext-backend\src\api\schema\subscription\license_schemas.py:12: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+  C:\Users\mrabr\rext-backend\src\api\schema\subscription\license_schemas.py:12: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
     class LicenseValidateRequest(BaseModel):
 
 src\api\schema\subscription\license_schemas.py:33
-  C:\Users\mrabr\wrext-backend\src\api\schema\subscription\license_schemas.py:33: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+  C:\Users\mrabr\rext-backend\src\api\schema\subscription\license_schemas.py:33: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
     class LicenseValidateResponse(BaseModel):
 
 src\api\schema\subscription\license_schemas.py:65
-  C:\Users\mrabr\wrext-backend\src\api\schema\subscription\license_schemas.py:65: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+  C:\Users\mrabr\rext-backend\src\api\schema\subscription\license_schemas.py:65: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
     class LicenseActivateRequest(BaseModel):
 
 src\api\schema\subscription\license_schemas.py:81
-  C:\Users\mrabr\wrext-backend\src\api\schema\subscription\license_schemas.py:81: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+  C:\Users\mrabr\rext-backend\src\api\schema\subscription\license_schemas.py:81: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
     class LicenseDeactivateRequest(BaseModel):
 
 src\api\schema\subscription\license_schemas.py:93
-  C:\Users\mrabr\wrext-backend\src\api\schema\subscription\license_schemas.py:93: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+  C:\Users\mrabr\rext-backend\src\api\schema\subscription\license_schemas.py:93: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
     class LicenseActivationResponse(BaseModel):
 
 src\api\schema\subscription\license_schemas.py:117
-  C:\Users\mrabr\wrext-backend\src\api\schema\subscription\license_schemas.py:117: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+  C:\Users\mrabr\rext-backend\src\api\schema\subscription\license_schemas.py:117: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
     class LicenseResponse(BaseModel):
 
 src\api\schema\subscription\invoice_schemas.py:20
-  C:\Users\mrabr\wrext-backend\src\api\schema\subscription\invoice_schemas.py:20: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+  C:\Users\mrabr\rext-backend\src\api\schema\subscription\invoice_schemas.py:20: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
     class Invoice(BaseModel):
 
 src\api\schema\subscription\invoice_schemas.py:65
-  C:\Users\mrabr\wrext-backend\src\api\schema\subscription\invoice_schemas.py:65: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+  C:\Users\mrabr\rext-backend\src\api\schema\subscription\invoice_schemas.py:65: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
     class InvoiceListResponse(BaseModel):
 
 src\api\schema\subscription\analytics_schemas.py:11
-  C:\Users\mrabr\wrext-backend\src\api\schema\subscription\analytics_schemas.py:11: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+  C:\Users\mrabr\rext-backend\src\api\schema\subscription\analytics_schemas.py:11: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
     class SubscriptionStatsResponse(BaseModel):
 
 src\api\schema\subscription\analytics_schemas.py:43
-  C:\Users\mrabr\wrext-backend\src\api\schema\subscription\analytics_schemas.py:43: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+  C:\Users\mrabr\rext-backend\src\api\schema\subscription\analytics_schemas.py:43: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
     class PlanBreakdown(BaseModel):
 
 src\api\schema\subscription\analytics_schemas.py:65
-  C:\Users\mrabr\wrext-backend\src\api\schema\subscription\analytics_schemas.py:65: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+  C:\Users\mrabr\rext-backend\src\api\schema\subscription\analytics_schemas.py:65: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
     class RevenueMetricsResponse(BaseModel):
 
 src\api\schema\subscription\analytics_schemas.py:96
-  C:\Users\mrabr\wrext-backend\src\api\schema\subscription\analytics_schemas.py:96: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+  C:\Users\mrabr\rext-backend\src\api\schema\subscription\analytics_schemas.py:96: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
     class ChurnAnalysisResponse(BaseModel):
 
 src\api\schema\subscription\analytics_schemas.py:120
-  C:\Users\mrabr\wrext-backend\src\api\schema\subscription\analytics_schemas.py:120: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+  C:\Users\mrabr\rext-backend\src\api\schema\subscription\analytics_schemas.py:120: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
     class TrialConversionResponse(BaseModel):
 
 src\api\routes\subscriptions\trial_routes.py:35
-  C:\Users\mrabr\wrext-backend\src\api\routes\subscriptions\trial_routes.py:35: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+  C:\Users\mrabr\rext-backend\src\api\routes\subscriptions\trial_routes.py:35: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
     class TrialExtensionRequest(BaseModel):
 
 src\api\routes\subscriptions\admin\admin_subscription_analytics.py:155
-  C:\Users\mrabr\wrext-backend\src\api\routes\subscriptions\admin\admin_subscription_analytics.py:155: DeprecationWarning: `regex` has been deprecated, please use `pattern` instead
+  C:\Users\mrabr\rext-backend\src\api\routes\subscriptions\admin\admin_subscription_analytics.py:155: DeprecationWarning: `regex` has been deprecated, please use `pattern` instead
     period: str = Query("12_months", regex="^(3_months|6_months|12_months)$", description="Time period"),
 
 src\api\routes\admin\monitoring_routes.py:150
-  C:\Users\mrabr\wrext-backend\src\api\routes\admin\monitoring_routes.py:150: DeprecationWarning: `regex` has been deprecated, please use `pattern` instead
+  C:\Users\mrabr\rext-backend\src\api\routes\admin\monitoring_routes.py:150: DeprecationWarning: `regex` has been deprecated, please use `pattern` instead
     period: str = Query("24_hours", regex="^(24_hours|7_days|30_days)$", description="Time period"),
 
 src\api\routes\admin\reports_routes.py:103
-  C:\Users\mrabr\wrext-backend\src\api\routes\admin\reports_routes.py:103: DeprecationWarning: `regex` has been deprecated, please use `pattern` instead
+  C:\Users\mrabr\rext-backend\src\api\routes\admin\reports_routes.py:103: DeprecationWarning: `regex` has been deprecated, please use `pattern` instead
     format: str = Query("csv", regex="^(csv|json)$", description="Export format"),
 
 src\api\routes\admin\email_admin_routes.py:29
-  C:\Users\mrabr\wrext-backend\src\api\routes\admin\email_admin_routes.py:29: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+  C:\Users\mrabr\rext-backend\src\api\routes\admin\email_admin_routes.py:29: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
     class EmailLogResponse(BaseModel):
 
 src\api\schema\audit_schema.py:82
-  C:\Users\mrabr\wrext-backend\src\api\schema\audit_schema.py:82: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+  C:\Users\mrabr\rext-backend\src\api\schema\audit_schema.py:82: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
     class AuditLogResponse(BaseModel):
 
 src\api\schema\audit_schema.py:118
-  C:\Users\mrabr\wrext-backend\src\api\schema\audit_schema.py:118: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+  C:\Users\mrabr\rext-backend\src\api\schema\audit_schema.py:118: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
     class AuditLogDetailResponse(BaseModel):
 
 src\api\schema\audit_schema.py:162
-  C:\Users\mrabr\wrext-backend\src\api\schema\audit_schema.py:162: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+  C:\Users\mrabr\rext-backend\src\api\schema\audit_schema.py:162: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
     class AuditLogListResponse(BaseModel):
 
 src\api\schema\audit_schema.py:200
-  C:\Users\mrabr\wrext-backend\src\api\schema\audit_schema.py:200: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+  C:\Users\mrabr\rext-backend\src\api\schema\audit_schema.py:200: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
     class AuditLogFilterParams(BaseModel):
 
 src\api\schema\audit_schema.py:240
-  C:\Users\mrabr\wrext-backend\src\api\schema\audit_schema.py:240: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+  C:\Users\mrabr\rext-backend\src\api\schema\audit_schema.py:240: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
     class AuditLogExportRequest(BaseModel):
 
 src\api\schema\audit_schema.py:268
-  C:\Users\mrabr\wrext-backend\src\api\schema\audit_schema.py:268: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+  C:\Users\mrabr\rext-backend\src\api\schema\audit_schema.py:268: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
     class AuditLogStatsResponse(BaseModel):
 
 src\api\schema\security_schema.py:28
-  C:\Users\mrabr\wrext-backend\src\api\schema\security_schema.py:28: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+  C:\Users\mrabr\rext-backend\src\api\schema\security_schema.py:28: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
     class FailedLoginResponse(BaseModel):
 
 src\api\schema\security_schema.py:52
-  C:\Users\mrabr\wrext-backend\src\api\schema\security_schema.py:52: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+  C:\Users\mrabr\rext-backend\src\api\schema\security_schema.py:52: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
     class LockedAccountResponse(BaseModel):
 
 src\api\schema\security_schema.py:74
-  C:\Users\mrabr\wrext-backend\src\api\schema\security_schema.py:74: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+  C:\Users\mrabr\rext-backend\src\api\schema\security_schema.py:74: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
     class SecurityStatsResponse(BaseModel):
 
 src\api\schema\security_schema.py:121
-  C:\Users\mrabr\wrext-backend\src\api\schema\security_schema.py:121: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+  C:\Users\mrabr\rext-backend\src\api\schema\security_schema.py:121: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
     class LoginHistoryResponse(BaseModel):
 
 src\api\schema\security_schema.py:158
-  C:\Users\mrabr\wrext-backend\src\api\schema\security_schema.py:158: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+  C:\Users\mrabr\rext-backend\src\api\schema\security_schema.py:158: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
     class SuspiciousActivityResponse(BaseModel):
 
 src\api\schema\security_schema.py:194
-  C:\Users\mrabr\wrext-backend\src\api\schema\security_schema.py:194: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+  C:\Users\mrabr\rext-backend\src\api\schema\security_schema.py:194: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
     class UnlockAccountRequest(BaseModel):
 
 src\api\schema\security_schema.py:206
-  C:\Users\mrabr\wrext-backend\src\api\schema\security_schema.py:206: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+  C:\Users\mrabr\rext-backend\src\api\schema\security_schema.py:206: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
     class ResetFailedAttemptsRequest(BaseModel):
 
 src\api\schema\email_preview_schema.py:11
-  C:\Users\mrabr\wrext-backend\src\api\schema\email_preview_schema.py:11: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+  C:\Users\mrabr\rext-backend\src\api\schema\email_preview_schema.py:11: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
     class AuthEmailPreviewRequest(BaseModel):
 
 src\api\schema\email_preview_schema.py:48
-  C:\Users\mrabr\wrext-backend\src\api\schema\email_preview_schema.py:48: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+  C:\Users\mrabr\rext-backend\src\api\schema\email_preview_schema.py:48: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
     class WorkspaceEmailPreviewRequest(BaseModel):
 
 src\api\schema\email_preview_schema.py:131
-  C:\Users\mrabr\wrext-backend\src\api\schema\email_preview_schema.py:131: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+  C:\Users\mrabr\rext-backend\src\api\schema\email_preview_schema.py:131: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
     class EmailPreviewResponse(BaseModel):
 
 src\api\schema\webhook_schema.py:45
-  C:\Users\mrabr\wrext-backend\src\api\schema\webhook_schema.py:45: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+  C:\Users\mrabr\rext-backend\src\api\schema\webhook_schema.py:45: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
     class ResendWebhookRequest(BaseModel):
 
 src\api\schema\onboarding_schemas.py:26
-  C:\Users\mrabr\wrext-backend\src\api\schema\onboarding_schemas.py:26: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+  C:\Users\mrabr\rext-backend\src\api\schema\onboarding_schemas.py:26: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
     class OnboardingResponse(BaseModel):
 
 src\config\storage_config.py:14
-  C:\Users\mrabr\wrext-backend\src\config\storage_config.py:14: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+  C:\Users\mrabr\rext-backend\src\config\storage_config.py:14: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
     class StorageSettings(BaseSettings):
 
 -- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html

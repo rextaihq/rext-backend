@@ -13,9 +13,9 @@ def render_payment_dunning_6_days_email(
     plan_name: str,
     amount: str,
     grace_period_end_date: str,
-    update_payment_url: str = "https://app.wrext.com/settings/billing",
+    update_payment_url: str = "https://app.rext.com/settings/billing",
     customer_portal_url: str = None,
-    frontend_url: str = "https://app.wrext.com"
+    frontend_url: str = "https://app.rext.com"
 ) -> str:
     """
     Render payment dunning email (6 days after failure - FINAL WARNING).

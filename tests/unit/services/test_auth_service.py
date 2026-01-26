@@ -24,7 +24,7 @@ from src.api.models.user_models.token_blacklist import TokenBlacklist
 from src.api.models.user_models.user_sessions import UserSession
 from src.api.middleware.exceptions import (
     DuplicateResourceException,
-    WrextAuthenticationException,
+    RextAuthenticationException,
     ResourceNotFoundException
 )
 
@@ -203,7 +203,7 @@ class TestAuthServiceLoginUser:
 
     @pytest.mark.asyncio
     async def test_login_user_invalid_email(self):
-        """Should raise WrextAuthenticationException when user not found"""
+        """Should raise RextAuthenticationException when user not found"""
         # Arrange
         mock_db = Mock()
         mock_db.query.return_value.filter.return_value.first.return_value = None
@@ -211,7 +211,7 @@ class TestAuthServiceLoginUser:
         service = AuthService(mock_db)
 
         # Act & Assert
-        with pytest.raises(WrextAuthenticationException) as exc_info:
+        with pytest.raises(RextAuthenticationException) as exc_info:
             await service.login_user(
                 email="nonexistent@example.com",
                 password="password123",
@@ -222,7 +222,7 @@ class TestAuthServiceLoginUser:
 
     @pytest.mark.asyncio
     async def test_login_user_invalid_password(self):
-        """Should raise WrextAuthenticationException and increment failed attempts"""
+        """Should raise RextAuthenticationException and increment failed attempts"""
         # Arrange
         user_id = uuid4()
         db_user = Users(
@@ -240,7 +240,7 @@ class TestAuthServiceLoginUser:
 
         with patch('src.services.auth_service.verify_password', return_value=False):
             # Act & Assert
-            with pytest.raises(WrextAuthenticationException) as exc_info:
+            with pytest.raises(RextAuthenticationException) as exc_info:
                 await service.login_user(
                     email="test@example.com",
                     password="wrong_password",
@@ -271,7 +271,7 @@ class TestAuthServiceLoginUser:
 
         with patch('src.services.auth_service.verify_password', return_value=False):
             # Act & Assert
-            with pytest.raises(WrextAuthenticationException):
+            with pytest.raises(RextAuthenticationException):
                 await service.login_user(
                     email="test@example.com",
                     password="wrong_password",
@@ -284,7 +284,7 @@ class TestAuthServiceLoginUser:
 
     @pytest.mark.asyncio
     async def test_login_user_account_already_locked(self):
-        """Should raise WrextAuthenticationException when account is locked"""
+        """Should raise RextAuthenticationException when account is locked"""
         # Arrange
         user_id = uuid4()
         db_user = Users(
@@ -301,7 +301,7 @@ class TestAuthServiceLoginUser:
         service = AuthService(mock_db)
 
         # Act & Assert
-        with pytest.raises(WrextAuthenticationException) as exc_info:
+        with pytest.raises(RextAuthenticationException) as exc_info:
             await service.login_user(
                 email="test@example.com",
                 password="password123",
@@ -380,14 +380,14 @@ class TestAuthServiceVerifyEmail:
 
     @pytest.mark.asyncio
     async def test_verify_email_invalid_token(self):
-        """Should raise WrextAuthenticationException when token has no user_id"""
+        """Should raise RextAuthenticationException when token has no user_id"""
         # Arrange
         mock_db = Mock()
         service = AuthService(mock_db)
 
         with patch('src.services.auth_service.verify_token', return_value={}):
             # Act & Assert
-            with pytest.raises(WrextAuthenticationException) as exc_info:
+            with pytest.raises(RextAuthenticationException) as exc_info:
                 await service.verify_email("invalid_token")
 
         assert "Invalid token payload" in exc_info.value.message
@@ -451,7 +451,7 @@ class TestAuthServiceRefreshToken:
 
     @pytest.mark.asyncio
     async def test_refresh_token_blacklisted(self):
-        """Should raise WrextAuthenticationException when token is blacklisted"""
+        """Should raise RextAuthenticationException when token is blacklisted"""
         # Arrange
         mock_db = Mock()
         service = AuthService(mock_db)
@@ -460,14 +460,14 @@ class TestAuthServiceRefreshToken:
              patch('src.services.auth_service.is_token_blacklisted', return_value=True):
 
             # Act & Assert
-            with pytest.raises(WrextAuthenticationException) as exc_info:
+            with pytest.raises(RextAuthenticationException) as exc_info:
                 await service.refresh_token("blacklisted_token")
 
         assert "revoked" in exc_info.value.message.lower()
 
     @pytest.mark.asyncio
     async def test_refresh_token_user_inactive(self):
-        """Should raise WrextAuthenticationException when user is not active"""
+        """Should raise RextAuthenticationException when user is not active"""
         # Arrange
         user_id = str(uuid4())
         db_user = Users(
@@ -484,7 +484,7 @@ class TestAuthServiceRefreshToken:
              patch('src.services.auth_service.is_token_blacklisted', return_value=False):
 
             # Act & Assert
-            with pytest.raises(WrextAuthenticationException) as exc_info:
+            with pytest.raises(RextAuthenticationException) as exc_info:
                 await service.refresh_token("refresh_token")
 
         assert "not active" in exc_info.value.message.lower()
@@ -533,13 +533,13 @@ class TestAuthServiceLogoutUser:
 
     @pytest.mark.asyncio
     async def test_logout_user_no_jti(self):
-        """Should raise WrextAuthenticationException when JTI is missing"""
+        """Should raise RextAuthenticationException when JTI is missing"""
         # Arrange
         mock_db = Mock()
         service = AuthService(mock_db)
 
         # Act & Assert
-        with pytest.raises(WrextAuthenticationException) as exc_info:
+        with pytest.raises(RextAuthenticationException) as exc_info:
             await service.logout_user(uuid4(), None, 123)
 
         assert "missing jti" in exc_info.value.message.lower()
@@ -631,14 +631,14 @@ class TestAuthServicePasswordReset:
 
     @pytest.mark.asyncio
     async def test_complete_password_reset_invalid_token(self):
-        """Should raise WrextAuthenticationException when token invalid"""
+        """Should raise RextAuthenticationException when token invalid"""
         # Arrange
         mock_db = Mock()
         service = AuthService(mock_db)
 
         with patch('src.services.auth_service.verify_token', return_value={}):
             # Act & Assert
-            with pytest.raises(WrextAuthenticationException) as exc_info:
+            with pytest.raises(RextAuthenticationException) as exc_info:
                 await service.complete_password_reset("invalid_token", "new_password")
 
         assert "Invalid token payload" in exc_info.value.message

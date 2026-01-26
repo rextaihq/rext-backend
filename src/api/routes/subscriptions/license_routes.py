@@ -370,8 +370,8 @@ async def get_license_endpoint(
 
     # Check ownership
     if license_obj.user_id != user_id:
-        from src.api.middleware.exceptions import WrextAuthorizationException
-        raise WrextAuthorizationException(
+        from src.api.middleware.exceptions import RextAuthorizationException
+        raise RextAuthorizationException(
             message="You do not own this license",
             required_permission="license.read"
         )

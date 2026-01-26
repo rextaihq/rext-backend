@@ -31,7 +31,7 @@ from src.api.models.workspace_models.workspace_model import WorkspaceModel
 from src.api.models.content_models.content import Content
 from src.api.models.knowledge_models.knowledge_model import KnowledgeBase
 from src.api.models.admin_models.customer_note import CustomerNote
-from src.api.middleware.exceptions import ResourceNotFoundException, WrextValidationException
+from src.api.middleware.exceptions import ResourceNotFoundException, RextValidationException
 from src.utils.logger import logger
 
 
@@ -265,7 +265,7 @@ class CustomerAdminService:
 
         Raises:
             ResourceNotFoundException: If user not found
-            WrextValidationException: If action invalid
+            RextValidationException: If action invalid
         """
         # Get user
         user = await self._get_user(user_id)
@@ -278,7 +278,7 @@ class CustomerAdminService:
 
         if action == "deactivate":
             if user.status != "active":
-                raise WrextValidationException("User is already deactivated")
+                raise RextValidationException("User is already deactivated")
             audit_details["previous_status"] = user.status
             user.status = "deactivated"
             user.deactivated_at = datetime.utcnow()
@@ -286,7 +286,7 @@ class CustomerAdminService:
 
         elif action == "activate":
             if user.status == "active":
-                raise WrextValidationException("User is already active")
+                raise RextValidationException("User is already active")
             audit_details["previous_status"] = user.status
             user.status = "active"
             user.deactivated_at = None
@@ -330,7 +330,7 @@ class CustomerAdminService:
             result = {"status": "subscription_cancelled"}
 
         else:
-            raise WrextValidationException(f"Invalid action: {action}")
+            raise RextValidationException(f"Invalid action: {action}")
 
         # Log to audit
         from src.services.audit_service import AuditService

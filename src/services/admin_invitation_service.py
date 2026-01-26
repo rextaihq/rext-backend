@@ -42,9 +42,9 @@ from src.utils.logger import logger
 from src.api.middleware.exceptions import (
     ResourceNotFoundException,
     DuplicateResourceException,
-    WrextValidationException,
+    RextValidationException,
     BusinessRuleViolationException,
-    WrextAuthorizationException
+    RextAuthorizationException
 )
 
 
@@ -83,7 +83,7 @@ class AdminInvitationService:
             user_id: User UUID to check
 
         Raises:
-            WrextAuthorizationException: If user is not super_admin
+            RextAuthorizationException: If user is not super_admin
         """
         # Check if user has super_admin role
         result = await self.db.execute(
@@ -100,7 +100,7 @@ class AdminInvitationService:
         super_admin_role = result.scalar_one_or_none()
 
         if not super_admin_role:
-            raise WrextAuthorizationException(
+            raise RextAuthorizationException(
                 message="Only super admins can create admin invitations",
                 required_permission="admin.invite"
             )
@@ -116,7 +116,7 @@ class AdminInvitationService:
             Role object
 
         Raises:
-            WrextValidationException: If role invalid
+            RextValidationException: If role invalid
         """
         # Query role
         result = await self.db.execute(
@@ -125,7 +125,7 @@ class AdminInvitationService:
         role = result.scalar_one_or_none()
 
         if not role:
-            raise WrextValidationException(
+            raise RextValidationException(
                 message=f"Admin role '{admin_role}' does not exist",
                 field_errors={"admin_role": [f"Role '{admin_role}' not found"]}
             )
@@ -133,7 +133,7 @@ class AdminInvitationService:
         # Verify it's an admin role (you may want to add a flag to Role model)
         valid_admin_roles = ['super_admin', 'support_admin', 'platform_admin']
         if admin_role not in valid_admin_roles:
-            raise WrextValidationException(
+            raise RextValidationException(
                 message=f"'{admin_role}' is not a valid admin role",
                 field_errors={"admin_role": [
                     f"Must be one of: {', '.join(valid_admin_roles)}"
@@ -173,8 +173,8 @@ class AdminInvitationService:
             Created PlatformAdminInvitations object
 
         Raises:
-            WrextAuthorizationException: If inviter is not super_admin
-            WrextValidationException: If role invalid or expiry invalid
+            RextAuthorizationException: If inviter is not super_admin
+            RextValidationException: If role invalid or expiry invalid
             DuplicateResourceException: If pending invitation exists
             BusinessRuleViolationException: If user already admin
         """
@@ -183,7 +183,7 @@ class AdminInvitationService:
 
         # Validate expiry_days
         if not 1 <= expiry_days <= 30:
-            raise WrextValidationException(
+            raise RextValidationException(
                 message="Expiry days must be between 1 and 30",
                 field_errors={"expiry_days": ["Must be between 1 and 30 days"]}
             )
@@ -483,7 +483,7 @@ class AdminInvitationService:
             Updated PlatformAdminInvitations object
 
         Raises:
-            WrextAuthorizationException: If revoker not super_admin
+            RextAuthorizationException: If revoker not super_admin
             ResourceNotFoundException: If invitation not found
             BusinessRuleViolationException: If invitation already processed
         """
@@ -570,16 +570,16 @@ class AdminInvitationService:
             Updated PlatformAdminInvitations object
 
         Raises:
-            WrextAuthorizationException: If resender not super_admin
+            RextAuthorizationException: If resender not super_admin
             ResourceNotFoundException: If invitation not found
-            WrextValidationException: If expiry invalid
+            RextValidationException: If expiry invalid
         """
         # Verify resender is super_admin
         await self._verify_super_admin(resent_by_admin_id)
 
         # Validate expiry
         if not 1 <= expiry_days <= 30:
-            raise WrextValidationException(
+            raise RextValidationException(
                 message="Expiry days must be between 1 and 30",
                 field_errors={"expiry_days": ["Must be between 1 and 30 days"]}
             )

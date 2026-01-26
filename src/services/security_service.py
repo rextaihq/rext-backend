@@ -30,7 +30,7 @@ from src.api.models.audit_models.audit_logs import AuditLog
 from src.utils.logger import logger
 from src.api.middleware.exceptions import (
     ResourceNotFoundException,
-    WrextValidationException
+    RextValidationException
 )
 
 
@@ -190,14 +190,14 @@ class SecurityService:
 
         Raises:
             ResourceNotFoundException: If user not found
-            WrextValidationException: If account not locked
+            RextValidationException: If account not locked
         """
         # Get user
         user = await self._get_user_or_404(user_id)
 
         # Check if account is actually locked
         if not user.locked_until or user.locked_until <= datetime.utcnow():
-            raise WrextValidationException(
+            raise RextValidationException(
                 message="Account is not currently locked",
                 field_errors={"user_id": ["Account not locked"]}
             )

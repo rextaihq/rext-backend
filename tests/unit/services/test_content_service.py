@@ -22,7 +22,7 @@ from src.api.schema.content_schema import (
 )
 from src.api.middleware.exceptions import (
     ResourceNotFoundException,
-    WrextValidationException
+    RextValidationException
 )
 
 
@@ -241,7 +241,7 @@ class TestContentServiceUpdate:
         service = ContentService(db_session)
 
         # Act & Assert
-        with pytest.raises(WrextValidationException) as exc:
+        with pytest.raises(RextValidationException) as exc:
             await service.update_content(
                 content_id=content.id,
                 workspace_id=workspace.id,
@@ -323,7 +323,7 @@ class TestContentServicePublish:
         service = ContentService(db_session)
 
         # Act & Assert
-        with pytest.raises(WrextValidationException) as exc:
+        with pytest.raises(RextValidationException) as exc:
             await service.publish_content(
                 content_id=content.id,
                 workspace_id=workspace.id,
@@ -355,7 +355,7 @@ class TestContentServiceStatusTransitions:
         """Test draft → published transition is NOT allowed"""
         service = ContentService(db_session)
 
-        with pytest.raises(WrextValidationException) as exc:
+        with pytest.raises(RextValidationException) as exc:
             await service._validate_status_transition("draft", "published")
 
         assert "transition" in str(exc.value).lower()

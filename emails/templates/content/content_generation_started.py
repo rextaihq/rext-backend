@@ -13,7 +13,7 @@ def render_content_generation_started_email(
     content_type: str,
     workspace_name: str,
     content_url: str,
-    frontend_url: str = "https://app.wrext.com"
+    frontend_url: str = "https://app.rext.com"
 ) -> str:
     """
     Render content generation started email template.

@@ -1,6 +1,6 @@
 import logging
 from typing import Dict, Any
-from src.flow.states.wrext import WREXT
+from src.flow.states.rext import REXT
 from src.flow.model.structure.topics import SEOTopics
 from src.flow.model.llm_manager import load_model
 from langgraph.types import interrupt
@@ -10,7 +10,7 @@ from src.flow.model.structure.intent_suggession import INTENT_TO_CONTENT_TYPES
 logger = logging.getLogger(__name__)
 
 
-def content_type(state: WREXT) -> WREXT:
+def content_type(state: REXT) -> REXT:
     """
     Generate SEO topics based on the user's query.
     
