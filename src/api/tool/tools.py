@@ -12,12 +12,18 @@ from src.api.tool.schema.schema import (
     IdeaGeneratorResponse, 
     IdeaGeneratorRequest,
     FAQRequest,
-    FAQResponse
+    FAQResponse,
+    HookGeneratorRequest,
+    HookGeneratorResponse,
+    SEOBlogTitleRequest,
+    SEOBlogTitleResponse
 )
 from src.api.tool.prompts.title_prompt import title_prompt, idea_prompt,faq_prompt
 from src.api.tool.prompts.meta_prompt import meta_prompt
 from src.api.tool.prompts.canonical_prompt import canonical_prompt
 from src.api.tool.prompts.hreflang_prompt import hreflang_system_prompt, hreflang_user_prompt
+from src.api.tool.prompts.hook_prompt import hook_prompt
+from src.api.tool.prompts.seo_blog_title_prompt import seo_blog_title_prompt
 
 def _get_model():
     """Internal helper to consistently load the model."""
@@ -403,7 +409,7 @@ def grammar_checker(text: str):
 #Ai Content Ideas Generater tool
 def generate_content_ideas(data: IdeaGeneratorRequest) -> IdeaGeneratorResponse:
     """Generate high-quality content ideas using structured LLM output."""
-    llm = load_model()
+    llm = _get_model()
     structured_llm = llm.with_structured_output(IdeaGeneratorResponse)
     prompt = idea_prompt.format(
         ideas_count=data.ideas_count,
@@ -435,3 +441,53 @@ def generate_faqs(data: FAQRequest) -> FAQResponse:
 
     # Invoke LLM with structured output
     return structured_llm.invoke(prompt_text)
+# Hook Generater Tool
+def generate_hooks(data: HookGeneratorRequest) -> HookGeneratorResponse:
+    """Generate catchy hooks using LLM."""
+    llm = _get_model()
+    
+    formatted_prompt = hook_prompt.format(
+        number_of_variations=data.number_of_variations,
+        topic_description=data.topic_description,
+        goal_of_content=data.goal_of_content
+    )
+    
+    response = llm.invoke(formatted_prompt)
+    
+    raw_content = response.content if hasattr(response, 'content') else str(response)
+    hooks = [
+        line.strip("- ").strip() 
+        for line in raw_content.split("\n") 
+        if line.strip()
+    ]
+    
+    return HookGeneratorResponse(
+        topic=data.topic_description,
+        hooks=hooks[:data.number_of_variations]
+    )
+
+# Blog Topic Generater Tool
+def generate_seo_blog_titles(data: SEOBlogTitleRequest) -> SEOBlogTitleResponse:
+    """Generate SEO-friendly blog titles using LLM."""
+    llm = _get_model()
+    
+    formatted_prompt = seo_blog_title_prompt.format(
+        number_of_topics=data.number_of_topics,
+        keyword=data.keyword,
+        min_words=data.min_words,
+        max_words=data.max_words
+    )
+    
+    response = llm.invoke(formatted_prompt)
+    
+    raw_content = response.content if hasattr(response, 'content') else str(response)
+    titles = [
+        line.strip("- ").strip() 
+        for line in raw_content.split("\n") 
+        if line.strip()
+    ]
+    
+    return SEOBlogTitleResponse(
+        keyword=data.keyword,
+        blog_titles=titles[:data.number_of_topics]
+    )
