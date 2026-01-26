@@ -25,7 +25,7 @@ from src.api.config import settings
 from src.utils.response_utils import success
 from src.api.database.base import Base
 from src.utils.logger import logger
-
+from src.api.tool.routes import router as tool_router
 # Structured logging
 from src.api.lib.logging_config import configure_logging, RequestIDMiddleware
 

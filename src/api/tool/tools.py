@@ -6,8 +6,14 @@ from langchain_core.messages import SystemMessage, HumanMessage
 from urllib.parse import urlparse, urlunparse
 
 from src.flow.model.llm_manager import load_model, tools_model
-from src.api.tool.schema import MetaDescriptionValidation
-from src.api.tool.prompts.title_prompt import title_prompt
+# from src.api.tool.schema import MetaDescriptionValidation
+
+try:
+    from src.api.tool.prompts.title_prompt import title_prompt
+except ImportError:
+    title_prompt = None
+
+
 
 # Word Counter Tool
 def count_text_metrics(text: str):
@@ -91,16 +97,16 @@ Generate only the meta description text, no additional explanations or quotes.
     return meta_description
 
 
-def validate_meta_description(meta_description: str) -> MetaDescriptionValidation:
+# def validate_meta_description(meta_description: str) -> MetaDescriptionValidation:
 
-    length = len(meta_description)
+#     length = len(meta_description)
 
-    return MetaDescriptionValidation(
-        length=length,
-        is_optimal_length=120 <= length <= 160,
-        character_count=f"{length}/160",
-        warnings=[] if 120 <= length <= 160 else ["Length not in optimal range (120-160 characters)"]
-    )
+#     return MetaDescriptionValidation(
+#         length=length,
+#         is_optimal_length=120 <= length <= 160,
+#         character_count=f"{length}/160",
+#         warnings=[] if 120 <= length <= 160 else ["Length not in optimal range (120-160 characters)"]
+#     )
 
 
 # Title Tag Generator Tool
@@ -353,3 +359,93 @@ Include x-default:
         "hreflang_tags": hreflang_tags,
         "warnings": warnings if warnings else None
     }
+
+
+
+
+# Question generator tools
+
+from src.api.tool.prompts.prompt import QUESTION_PROMPT
+
+# tools.py
+
+_nlp = None
+
+def get_spacy_nlp():
+    global _nlp
+    if _nlp is not None:
+        return _nlp
+
+    try:
+        import spacy
+    except ImportError as e:
+        raise RuntimeError(
+            "spaCy is required for question generation. "
+            "Install with: pip install spacy && python -m spacy download en_core_web_sm"
+        ) from e
+
+    _nlp = spacy.load("en_core_web_sm")
+    return _nlp
+
+def generate_questions(text: str) -> list[str]:
+
+    nlp = get_spacy_nlp()
+    doc = nlp(text)
+    questions = []
+
+    rules = QUESTION_PROMPT["rules"]
+
+    for sent in doc.sents:
+        
+        root = next((token for token in sent if token.dep_ == "ROOT"), None)
+        subj = next((c for c in root.children if c.dep_ in ("nsubj", "nsubjpass")), None)
+
+        if subj and root:
+            # Reconstruct the subject and the rest of the predicate
+            subject_phrase = "".join(t.text_with_ws for t in subj.subtree).strip()
+            
+            # Simple transformation: "Subject continues..." -> "What continues...?"
+            # You can customize the 'What' vs 'How' based on the root verb
+            questions.append(f"What {root.text} { ' '.join([t.text for t in root.rights]) }?")
+
+    return list(set(questions))
+
+
+# Tag Line Generator Tool
+
+import random 
+from src.api.tool.prompts.prompt import TAGLINE_RULES
+
+
+
+def generate_taglines(
+    brand: str,
+    topic: str,
+    tone: str = "professional",
+    count: int = 5
+) -> list[str]:
+    """
+    Rule-based tagline generator (LLM-ready)
+    """
+
+    base_templates = [
+        f"{topic}, redefined.",
+        f"Experience the power of {topic}.",
+        f"Where {topic} meets excellence.",
+        f"Built for better {topic}.",
+        f"Your future with {topic}.",
+        f"{topic} that moves you.",
+        f"Smarter way to {topic}.",
+        f"{topic}, done right."
+    ]
+
+    random.shuffle(base_templates)
+
+    taglines = []
+
+    for template in base_templates[:count]:
+        # Optional brand attachment
+        tagline = f"{template} — {brand}"
+        taglines.append(tagline)
+
+    return taglines
