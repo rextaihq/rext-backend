@@ -38,7 +38,7 @@ services:
         ports:
             - "5432:5432"
         healthcheck:
-            test: ["CMD-SHELL", "pg_isready -U exec"]
+            test: [ "CMD-SHELL", "pg_isready -U exec" ]
             interval: 5s
             retries: 5
         networks:
@@ -46,7 +46,7 @@ services:
 
     # Backend API Service
     langgraph-api:
-        image: revnix/rext:${IMAGE_TAG:-latest}
+        image: revnixhq/wrext:${IMAGE_TAG:-dev}
         ports:
             - "2024:2024"
         depends_on:
