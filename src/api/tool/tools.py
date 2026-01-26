@@ -3,6 +3,7 @@ import requests
 import textstat
 from typing import List, Dict, Any
 from langchain_core.prompts import PromptTemplate
+from src.api.tool.prompts.prompts import generate_conclusion_prompt_template
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.messages import SystemMessage, HumanMessage
 from urllib.parse import urlparse, urlunparse
@@ -377,3 +378,23 @@ def generate_content_ideas(data: IdeaGeneratorRequest) -> IdeaGeneratorResponse:
         content_type=data.content_type
     )
     return structured_llm.invoke(prompt)
+
+
+# =========================
+# Conclusion Generator Tool
+# =========================
+def generate_conclusion(content: str, tone: str = "professional", length: str = "medium") -> str:
+    """ Generate a concise conclusion for the given content. """
+    
+    llm = load_model()
+
+    chain = generate_conclusion_prompt_template | llm | StrOutputParser()
+
+    response = chain.invoke({
+        "content": content,
+        "tone": tone,
+        "length": length
+    })
+    conclusion = response.content if hasattr(response, 'content') else str(response)
+    return conclusion.strip()
+

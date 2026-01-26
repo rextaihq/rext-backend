@@ -15,7 +15,8 @@ from src.api.tool.tools import (
     generate_hreflang_tags,
     broken_link_checker,
     generate_sitemap,
-    build_sitemap_xml
+    build_sitemap_xml,
+    generate_conclusion
 )
 
 
@@ -27,14 +28,17 @@ from src.api.tool.schema.schema import (
     SchemaRequest,
     ReadabilityRequest,
     ReadabilityResponse,
-     IdeaGeneratorRequest,
+    IdeaGeneratorRequest,
     IdeaGeneratorResponse,
     MetaDescriptionRequest,
     MetaDescriptionResponse,
     CanonicalTagRequest,
     CanonicalTagResponse,
     HreflangRequest,
-    HreflangResponse
+    HreflangResponse,
+    ConclusionRequest,
+    ConclusionResponse,
+     
 )
 
 router = APIRouter(prefix='/tools', tags=['tools'])
@@ -206,4 +210,26 @@ async def sitemap_generator_route(request: SitemapRequest):
         raise HTTPException(
             status_code=500,
             detail=f"Failed to generate sitemap: {str(e)}"
+        )
+
+@router.post("/conclusion-generator", response_model=ConclusionResponse)
+async def conclusion_generator(request: ConclusionRequest):
+    """
+    AI-powered Conclusion Generator.
+    Generates a concise, human-like conclusion for articles, blogs, or reports.
+    """
+    try:
+        conclusion_text = generate_conclusion(
+            content=request.content,
+            tone=request.tone,
+            length=request.length
+        )
+
+        return ConclusionResponse(conclusion=conclusion_text)
+
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to generate conclusion: {str(e)}"
         )

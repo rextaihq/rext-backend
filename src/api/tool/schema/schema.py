@@ -141,3 +141,22 @@ class TitleRequest(BaseModel):
     
 class TitleResponse(BaseModel):
     titles: List[str]
+
+from pydantic import BaseModel, Field
+from typing import Literal
+
+
+class ConclusionRequest(BaseModel):
+    content: str = Field(..., min_length=20, description="Main article or text")
+    tone: Literal[
+        "professional",
+        "inspirational",
+        "friendly",
+        "persuasive",
+        "formal"
+    ] = "professional"
+    length: Literal["short", "medium", "long"] = "medium"
+
+
+class ConclusionResponse(BaseModel):
+    conclusion: str
