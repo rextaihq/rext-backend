@@ -1,5 +1,4 @@
 from fastapi import HTTPException, APIRouter
-from pydantic import BaseModel, Field
 from typing import List
 import traceback
 
@@ -15,15 +14,18 @@ from src.api.tool.tools import (
     generate_canonical_tag,
     generate_hreflang_tags,
     broken_link_checker,
-    generate_sitemap,
-    build_sitemap_xml
+    generate_robots_txt,
+    grammar_checker
 )
 
-
 from src.api.tool.schema.schema import (
-    TitleRequest, 
-    BrokenLinkRequest,
+    TextInput,
+    TextMetricsOutput,
+    MetaDescriptionRequest, 
+    MetaDescriptionResponse, 
+    BrokenLinkRequest, 
     BrokenLinkResponse,
+    TitleRequest,
     TitleResponse,
     SchemaRequest,
     ReadabilityRequest,
@@ -38,6 +40,12 @@ from src.api.tool.schema.schema import (
     HreflangResponse,
     FAQResponse,
     FAQRequest,
+    RobotsTxtRequest,
+    RobotsTxtResponse,
+    GrammarCheckerRequest,
+    GrammarCheckerResponse,
+    IdeaGeneratorRequest,
+    IdeaGeneratorResponse
 )
 
 router = APIRouter(prefix='/tools', tags=['tools'])
@@ -46,30 +54,17 @@ router = APIRouter(prefix='/tools', tags=['tools'])
 def get_tools():
     return {"message": "tools"}
 
-# Define Schemas for Word Counter
-class TextInput(BaseModel):
-    # Ensures text is not just an empty string at the schema level
-    text: str = Field(..., min_length=1)
-
-class TextMetricsOutput(BaseModel):
-    words: int
-    characters: int
-    sentences: int
-    paragraphs: int
-    min_read: int
-
 # Word Counter Endpoint
 @router.post("/count_metrics", response_model=TextMetricsOutput)
 async def get_metrics(input_data: TextInput):
     """
     API endpoint to receive text via POST request and return metrics.
-    URL will be: POST /tools/count_metrics
+    URL: POST /tools/count_metrics
     """
     try:
         metrics = count_text_metrics(input_data.text)
         return metrics
     except Exception as e:
-        # Generic error handling for the underlying logic
         raise HTTPException(status_code=500, detail=str(e))
 
 # Meta Description Generator Endpoint
@@ -77,23 +72,18 @@ async def get_metrics(input_data: TextInput):
 async def generate_meta_desc(request: MetaDescriptionRequest):
     """
     API endpoint to generate meta description.
-    URL will be: POST /tools/meta-description/generate
+    URL: POST /tools/meta-description/generate
     """
     try:
-        # Generate the meta description
         meta_description = generate_meta_description(
             page_title=request.page_title,
             target_keywords=request.target_keywords
         )
-
-        # Validate it
         validation = validate_meta_description(meta_description)
-
         return MetaDescriptionResponse(
             meta_description=meta_description,
             validation=validation
         )
-
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to generate meta description: {str(e)}")
 
@@ -102,7 +92,7 @@ async def generate_meta_desc(request: MetaDescriptionRequest):
 async def generate_titles(request: TitleRequest):
     """
     API endpoint to generate SEO-friendly title tags.
-    URL will be: POST /tools/title-tags/generate
+    URL: POST /tools/title-tags/generate
     """
     try:
         titles = generate_title_tags(
@@ -115,30 +105,39 @@ async def generate_titles(request: TitleRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to generate title tags: {str(e)}")
 
-#Schema Generator Endpoint
-@router.post("/schema-generator")
+# Schema Generator Endpoint
+@router.post("/schema-generator", response_model=dict)
 async def schema_generator(payload: SchemaRequest):
-    """Generate Schema.org JSON-LD"""
+    """
+    Generate Schema.org JSON-LD.
+    URL: POST /tools/schema-generator
+    """
     try:
         return build_schema(payload)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to generate schema: {str(e)}")
+        raise HTTPException(
+            status_code=500, 
+            detail=f"Internal error while generating schema: {str(e)}"
+        )
 
 # Readability Checker Endpoint
 @router.post("/readability-checker", response_model=ReadabilityResponse)
 async def readability_checker(payload: ReadabilityRequest):
-    """Analyze text readability"""
+    """
+    Analyze text readability.
+    URL: POST /tools/readability-checker
+    """
     try:
         return calculate_readability(payload.content)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to calculate readability: {str(e)}")
 
-#Canonical Tag Generator Endpoint
+# Canonical Tag Generator Endpoint
 @router.post("/canonical-tag-generator", response_model=CanonicalTagResponse)
 async def canonical_tag_generator(request: CanonicalTagRequest):
     """
     AI-powered Canonical Tag Generator.
-    Generates an SEO-friendly canonical tag to prevent duplicate content issues.
+    URL: POST /tools/canonical-tag-generator
     """
     try:
         return generate_canonical_tag(str(request.url))
@@ -153,6 +152,7 @@ async def canonical_tag_generator(request: CanonicalTagRequest):
 async def hreflang_tag_generator(request: HreflangRequest):
     """
     AI-powered Google-compliant Hreflang Tag Generator.
+    URL: POST /tools/hreflang-tag-generator
     """
     try:
         return generate_hreflang_tags(request)
@@ -164,9 +164,11 @@ async def hreflang_tag_generator(request: HreflangRequest):
             detail=f"Failed to generate hreflang tags: {str(e)}"
         )
 
+# Link Checker Endpoint
 @router.post("/link-checker", response_model=BrokenLinkResponse)
 async def broken_link_checker_route(request: BrokenLinkRequest):
     """
+    Check if a link is broken.
     URL: POST /tools/link-checker
     """
     try:
@@ -177,10 +179,14 @@ async def broken_link_checker_route(request: BrokenLinkRequest):
             status_code=500,
             detail=f"Failed to check link: {str(e)}"
         )
-#content idea genration tool endpoints
+
+# Content Idea Generator Endpoint
 @router.post("/content-idea-generator", response_model=IdeaGeneratorResponse)
 def content_idea_generator(payload: IdeaGeneratorRequest):
-    """Generate curated content ideas for various platforms."""
+    """
+    Generate curated content ideas for various platforms.
+    URL: POST /tools/content-idea-generator
+    """
     try:
         return generate_content_ideas(payload)
     except Exception:
@@ -190,31 +196,50 @@ def content_idea_generator(payload: IdeaGeneratorRequest):
             detail="Failed to generate content ideas"
         )
 
-
-@router.post("/sitemap-generator", response_model=SitemapResponse)
-async def sitemap_generator_route(request: SitemapRequest):
+# Robots.txt Generator Endpoint
+@router.post("/robots-txt/generate", response_model=RobotsTxtResponse, summary="Robots.txt Generator")
+async def generate_robots_txt_route(request: RobotsTxtRequest):
     """
-    URL: POST /tools/sitemap-generator
+    Robots.txt Generator: API endpoint to generate a robots.txt file.
+    URL: POST /tools/robots-txt/generate
     """
     try:
-        urls = generate_sitemap(str(request.url))
-        sitemap_xml = build_sitemap_xml(urls)
-
-        return SitemapResponse(
-            urls=urls,
-            sitemap_xml=sitemap_xml
+        robots_txt = generate_robots_txt(
+            user_agent=request.user_agent,
+            allow=request.allow,
+            disallow=request.disallow,
+            sitemap_url=str(request.sitemap_url) if request.sitemap_url else None
         )
-
+        return RobotsTxtResponse(robots_txt=robots_txt)
     except Exception as e:
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to generate sitemap: {str(e)}"
+            detail=f"Failed to generate robots.txt file: {str(e)}"
+        )
+
+# Grammar Checker Endpoint
+@router.post("/grammar-checker", response_model=GrammarCheckerResponse, summary="Grammar Checker")
+async def grammar_checker_route(request: GrammarCheckerRequest):
+    """
+    Grammar Checker: Detects grammar, spelling, and punctuation issues.
+    URL: POST /tools/grammar-checker
+    """
+    try:
+        return grammar_checker(request.text)
+    except ImportError as ie:
+        raise HTTPException(status_code=500, detail=str(ie))
+    except RuntimeError as re:
+        raise HTTPException(status_code=500, detail=str(re))
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Grammar calculation failed: {str(e)}"
         )
 # -----------------------------
 # FAQ Generator Endpoint
 
 @router.post("/faq/generate", response_model=FAQResponse)
-def generate_faq_endpoint(request: FAQRequest):
+def FAQGenerater(request: FAQRequest):
     """
     Generate high-quality FAQs for a given topic.
 
