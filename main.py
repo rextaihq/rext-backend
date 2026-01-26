@@ -1,7 +1,7 @@
 # import asyncio
 # import os
-from src.flow.engines.wrext import create_wrext_engine
-graph = create_wrext_engine()
+# from src.flow.engines.wrext import create_wrext_engine
+# graph = create_wrext_engine()
 
 # result = asyncio.run(graph.ainvoke(
 #     {
@@ -62,3 +62,14 @@ graph = create_wrext_engine()
 
 # if __name__ == "__main__":
 #     asyncio.run(main())
+
+
+
+from fastapi import FastAPI
+from src.api.tool.keyword_density.keyword_density_routes import router as keyword_density_router
+from src.api.tool.keyword_rank_checker.keyword_rank_routes import router as keyword_rank_router
+
+app = FastAPI()
+
+app.include_router(keyword_density_router)
+app.include_router(keyword_rank_router)

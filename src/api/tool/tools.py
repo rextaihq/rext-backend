@@ -7,7 +7,7 @@ from langchain_core.output_parsers import StrOutputParser
 from langchain_core.messages import SystemMessage, HumanMessage
 from urllib.parse import urlparse, urlunparse
 
-from src.flow.model.llm_manager import load_model, tools_model
+# from src.flow.model.llm_manager import load_model, tools_model
 from src.api.tool.schema.schema import  MetaDescriptionValidation, IdeaGeneratorResponse,IdeaGeneratorRequest
 from src.api.tool.prompts.title_prompt import idea_prompt,title_prompt
 
