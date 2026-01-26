@@ -7,6 +7,7 @@ E-E-A-T injection and humanization are handled in separate nodes.
 
 import logging
 import json
+import asyncio
 from src.flow.states.wrext import WREXT
 from src.flow.model.llm_manager import load_model
 from src.flow.model.structure.content import GeneratedContent
@@ -49,8 +50,8 @@ def generate_content(state: WREXT) -> dict:
         query = payload.get("query")
         user_id = payload.get("user_id")
         workspace_id = payload.get("workspace_id")
-
-        relevant_context = search_scraped_chunks(user_id, workspace_id, query , limit = 10)
+             
+        relevant_context = asyncio.run(search_scraped_chunks(user_id, workspace_id, query , limit = 20))
         page_content = relevant_context.get("text", "")
         logger.info(f"Page content length: {len(page_content.split())} words")
 

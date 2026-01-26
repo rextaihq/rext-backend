@@ -3,16 +3,17 @@ import asyncio
 from src.flow.engines.wrext import create_wrext_engine
 graph = create_wrext_engine()
 
-result = asyncio.run(graph.ainvoke(
-    {
-    "serp_payload": {
-        "query": "wordpress maintenance",
-        "country": "us",
-        "user_id": "test3-user3-123",
-        "workspace_id": "test3-workspace3-456"
-    }
-}
-))
+
+# result = asyncio.run(graph.ainvoke(
+#     {
+#     "serp_payload": {
+#         "query": "wordpress help and support",
+#         "country": "us",
+#         "user_id": "user1",
+#         "workspace_id": "workspace1"
+#     }
+# }
+# ))
 
 
 # print(

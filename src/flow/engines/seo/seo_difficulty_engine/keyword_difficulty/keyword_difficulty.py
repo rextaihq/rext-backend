@@ -98,7 +98,6 @@ def calculate_final_kd(keyword: str, keyword_intent: str, wrext_data: WREXT) -> 
         "breakdown": {
             "competitor_details": breakdown_details
         },
-        "clean_text":clean_text,
         "notes": notes,
     }
 

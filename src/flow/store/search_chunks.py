@@ -1,143 +1,87 @@
-# from typing import List, Dict
-# from langchain_core.documents import Document
-# from src.flow.store.postgress_store import create_long_term_store
-
-# def search_scraped_chunks(user_id: str, workspace_id: str, query: str, limit: int = 5) -> Dict:
-#     """
-#     Search stored scraped chunks for a user + workspace.
-
-#     Returns a dict:
-#         {
-#             "text": "concatenated text of all relevant chunks",
-#             "metadata": {
-#                 "main_urls": [...],
-#                 "internal_urls": [...],
-#                 "external_urls": [...]
-#             }
-#         }
-#     """
-#     namespace = ("scraped_chunks", user_id, workspace_id)
-
-#     with create_long_term_store() as store:
-#         # Perform semantic search
-#         results = store.search(namespace, query=query, limit=limit)
-
-#     # Initialize aggregation
-#     all_texts = []
-#     main_urls = set()
-#     other_urls = set()
-
-#     for r in results:
-#         value = r.value
-#         meta = value.get("metadata", {})
-
-#         all_texts.append(value.get("text", ""))
-
-#         url = meta.get("url")
-#         if url:
-#             main_urls.add(url)
-
-#     return {
-#         "text": " ".join(all_texts).strip(),
-#         "metadata": {
-#             "main_urls": list(main_urls),
-#             "other_urls": list(other_urls),
-#         }
-#     }
-
-
-# if __name__ == "__main__":
-#     user_id = "test-user-123"
-#     workspace_id = "test-workspace-456"
-#     query = "wordpress support and maintenance"
-#     limit = 5
-
-#     result = search_scraped_chunks(user_id, workspace_id, query, limit)
-#     print(result)
+# ----------------------------
+# Async search function
+# ----------------------------
+import asyncio
 from typing import Dict
 from urllib.parse import urlparse
-from src.flow.store.postgress_store import create_long_term_store
+from src.flow.store.postgress_store import create_long_term_store  # correct async store import
 
-
+# -------------------------
+# Helper function
+# -------------------------
 def extract_internal_links(meta: dict) -> set[str]:
     """
-    Extract internal hrefs from metadata.links_detail
+    Extract internal links from page metadata
     """
-    other_urls = set()
+    internal_links = set()
     domain = meta.get("domain")
-
     if not domain:
-        return other_urls
+        return internal_links
 
     for link in meta.get("links_detail", []):
         href = link.get("href")
         if not href:
             continue
-
         parsed = urlparse(href)
-
-        # Absolute internal links only
         if parsed.netloc == domain:
-            other_urls.add(href)
+            internal_links.add(href)
 
-    return other_urls
+    return internal_links
 
-
-def search_scraped_chunks(
+# -------------------------
+# Async search function
+# -------------------------
+async def search_scraped_chunks(
     user_id: str,
     workspace_id: str,
     query: str,
     limit: int = 5
 ) -> Dict:
     """
-    Search stored scraped chunks for a user + workspace.
-
-    Returns:
-        {
-            "text": "...",
-            "metadata": {
-                "main_urls": [...],
-                "internal_urls": [...]
-            }
-        }
+    Async search stored scraped chunks
     """
     namespace = ("scraped_chunks", user_id, workspace_id)
 
-    with create_long_term_store() as store:
-        results = store.search(namespace, query=query, limit=limit)
+    async with create_long_term_store() as store:
+        # Optional setup
+        await store.setup()
+
+        results = await store.asearch(
+            namespace,
+            query=query,
+            limit=limit
+        )
 
     all_texts = []
     main_urls = set()
-    other_urls = set()
+    internal_links = set()
 
     for r in results:
         value = r.value
         meta = value.get("metadata", {})
 
-        # Collect text
         all_texts.append(value.get("text", ""))
-
-        # Main page URL
         page_url = meta.get("url")
         if page_url:
             main_urls.add(page_url)
-
-        # 🔥 Internal hrefs
-        other_urls.update(extract_internal_links(meta))
+        internal_links.update(extract_internal_links(meta))
 
     return {
         "text": " ".join(all_texts).strip(),
         "metadata": {
             "main_urls": list(main_urls),
-            "other_urls": list(other_urls),
+            "internal_links": list(internal_links),
         },
     }
 
-
+# -------------------------
+# Run standalone
+# -------------------------
 if __name__ == "__main__":
-    user_id = "test-user-123"
-    workspace_id = "test-workspace-456"
-    query = "wordpress support and maintenance"
-
-    result = search_scraped_chunks(user_id, workspace_id, query, limit=5)
+    result = asyncio.run(search_scraped_chunks(
+        "user1",
+        "workspace1",
+        "wordpress help and support",
+        limit=5
+    ))
     print(result)

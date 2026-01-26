@@ -1,13 +1,12 @@
-# src/flow/store/store_scraped_chunks.py
 from typing import Dict, Any
 from langchain_core.documents import Document
 from src.flow.states.wrext import WREXT
-from src.flow.store.postgress_store import create_long_term_store  # fixed import path
+from src.flow.store.postgress_store import create_long_term_store
 
 
-def store_scraped_chunks(state: WREXT) -> Dict[str, Any]:
+async def store_scraped_chunks(state: WREXT) -> Dict[str, Any]:
     """
-    Store scraped document chunks into LangGraph Postgres memory
+    Async store scraped document chunks into LangGraph Postgres memory
     with user + workspace isolation.
 
     Each Document chunk is stored as a JSON-serializable dict:
@@ -16,7 +15,6 @@ def store_scraped_chunks(state: WREXT) -> Dict[str, Any]:
             "metadata": chunk.metadata
         }
     """
-
     scrape_context = state.get("scrape_context", {})
     documents = scrape_context.get("documents", [])
 
@@ -28,20 +26,18 @@ def store_scraped_chunks(state: WREXT) -> Dict[str, Any]:
 
     stored_chunks = 0
 
-    # OPEN STORE ONCE
-    with create_long_term_store() as store:
-        # Ensure the Postgres table exists
-        store.setup()
+    # Async store
+    async with create_long_term_store() as store:
+        # Optional setup (if LangGraph version requires it)
+        await store.setup()
 
         for item in documents:
             chunks: list[Document] = item.get("chunks", [])
-
             for chunk in chunks:
                 url = chunk.metadata.get("url", "unknown_url")
                 chunk_index = chunk.metadata.get("chunk_index", 0)
 
-                # Convert Document to JSON-serializable dict
-                store.put(
+                await store.aput(
                     namespace=("scraped_chunks", user_id, workspace_id),
                     key=f"{url}::chunk::{chunk_index}",
                     value={
@@ -49,7 +45,6 @@ def store_scraped_chunks(state: WREXT) -> Dict[str, Any]:
                         "metadata": chunk.metadata,
                     },
                 )
-
                 stored_chunks += 1
 
     return {
