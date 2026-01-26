@@ -3,7 +3,7 @@ import statistics
 from urllib.parse import urlparse
 from collections import Counter
 from typing import List, Dict, Any
-from src.flow.states.wrext import Competitor, NormalizedOrganicResult
+from src.flow.states.rext import Competitor, NormalizedOrganicResult
 from datetime import datetime
 from src.flow.engines.seo.seo_difficulty_engine.utils.utils import DOMAIN_AUTHORITY_MAP, normalize_freshness, classify_domain_type, clamp
 

@@ -68,10 +68,10 @@ def create_invitation_email(
         </div>
         """.format(inviter_name=inviter_name),
         standard_footer(
-            company_name="WREXT",
+            company_name="REXT",
             company_address="Built for modern teams"
         )
-    ], preview_text=f"You've been invited to join {workspace_name} on WREXT")
+    ], preview_text=f"You've been invited to join {workspace_name} on REXT")
 
     return email_html
 
@@ -83,7 +83,7 @@ def main():
         workspace_name="Acme Corporation",
         inviter_name="John Doe",
         inviter_email="john@acme.com",
-        invitation_url="https://app.wrext.com/invite/abc123xyz"
+        invitation_url="https://app.rext.com/invite/abc123xyz"
     )
 
     # Save to file

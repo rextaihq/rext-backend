@@ -14,7 +14,7 @@ from src.api.database.async_database import get_async_db
 from src.utils.response_utils import success, error
 from src.api.schema.response_schemas import ErrorCode, ErrorSeverity
 from src.services.user_service import UserService
-from src.api.middleware.exceptions import ResourceNotFoundException, WrextValidationException
+from src.api.middleware.exceptions import ResourceNotFoundException, RextValidationException
 from src.api.models.workspace_models.workspace_member import WorkspaceMembers
 from src.api.config import get_settings
 from sqlalchemy import select, delete
@@ -68,7 +68,7 @@ async def send_data_export_email_task(
             </ul>
 
             <p>Your data is included below as JSON.</p>
-            <p><a href="{frontend_url}">Return to WREXT</a></p>
+            <p><a href="{frontend_url}">Return to REXT</a></p>
 
             <hr>
             <pre style="background: #f4f4f4; padding: 15px; border-radius: 5px; overflow-x: auto;">
@@ -78,7 +78,7 @@ async def send_data_export_email_task(
 
             await email_service.send_email(
                 to=email,
-                subject="Your WREXT Data Export",
+                subject="Your REXT Data Export",
                 html=body_html,
                 user_id=UUID(user_id),
                 template_type="data_export",
@@ -189,7 +189,7 @@ async def delete_user(
             severity=ErrorSeverity.MEDIUM,
             request=request
         )
-    except WrextValidationException as e:
+    except RextValidationException as e:
         return error(
             message=str(e),
             code=ErrorCode.DEPENDENCY_ERROR,
@@ -257,7 +257,7 @@ async def update_user(
             severity=ErrorSeverity.MEDIUM,
             request=request
         )
-    except WrextValidationException as e:
+    except RextValidationException as e:
         return error(
             message=str(e),
             code=ErrorCode.DUPLICATE_RESOURCE,

@@ -313,7 +313,7 @@ BEGIN
     RAISE NOTICE 'Password (all users): TestPassword123!';
     RAISE NOTICE '';
     RAISE NOTICE 'Ready for RBAC testing!';
-    RAISE NOTICE '  1. cd wrext-admin';
+    RAISE NOTICE '  1. cd rext-admin';
     RAISE NOTICE '  2. npm run test:rbac';
     RAISE NOTICE '  3. npm run test:rbac:e2e';
     RAISE NOTICE '';

@@ -143,7 +143,7 @@
 #       - name: Deploy Docker to PRODUCTION
 #         run: |
 #           # Ensure correct working directory for PRODUCTION
-#           DEPLOY_DIR=~/WREXT/production/backend
+#           DEPLOY_DIR=~/REXT/production/backend
 #           mkdir -p $DEPLOY_DIR
 #           cp -r $GITHUB_WORKSPACE/* $DEPLOY_DIR/
 #           cd $DEPLOY_DIR

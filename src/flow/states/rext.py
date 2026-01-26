@@ -115,7 +115,7 @@ from langgraph.graph.message import add_messages
 # =========================
 # ROOT WORKFLOW STATE
 # =========================
-class WREXT(TypedDict, total=False):
+class REXT(TypedDict, total=False):
     # SERP
     serp_payload: Annotated[SERPPAYLOAD, merge_dicts]
     serp_result: Annotated[SERPEngineState, merge_dicts]

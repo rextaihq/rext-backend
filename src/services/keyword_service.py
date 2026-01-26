@@ -1,5 +1,5 @@
 from typing import Dict, Any, List, Tuple
-from src.flow.states.wrext import WREXT
+from src.flow.states.rext import REXT
 from nltk.corpus import stopwords
 from nltk.tokenize import word_tokenize
 from nltk.util import ngrams

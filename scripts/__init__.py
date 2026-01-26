@@ -1,1 +1,1 @@
-"""Database management scripts for wrext-backend."""
+"""Database management scripts for rext-backend."""

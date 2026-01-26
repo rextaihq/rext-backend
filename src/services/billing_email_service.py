@@ -110,7 +110,7 @@ class BillingEmailService:
 
         return await self._send_email(
             to_email=user.email,
-            subject="Payment Received - WREXT",
+            subject="Payment Received - REXT",
             html_content=html_content,
             background_tasks=background_tasks
         )
@@ -168,7 +168,7 @@ class BillingEmailService:
 
         return await self._send_email(
             to_email=user.email,
-            subject="Subscription Cancelled - WREXT",
+            subject="Subscription Cancelled - REXT",
             html_content=html_content,
             background_tasks=background_tasks
         )
@@ -228,7 +228,7 @@ class BillingEmailService:
 
         return await self._send_email(
             to_email=user.email,
-            subject="Your Trial Has Ended - WREXT",
+            subject="Your Trial Has Ended - REXT",
             html_content=html_content,
             background_tasks=background_tasks
         )
@@ -260,7 +260,7 @@ class BillingEmailService:
 
         return await self._send_email(
             to_email=user.email,
-            subject="Subscription Renewed - WREXT",
+            subject="Subscription Renewed - REXT",
             html_content=html_content,
             background_tasks=background_tasks
         )

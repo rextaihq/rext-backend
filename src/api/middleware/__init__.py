@@ -19,12 +19,12 @@ from .permissions import (
 )
 from .exceptions import (
     # Base exceptions
-    WrextAPIException,
-    WrextBusinessException,
-    WrextValidationException,
-    WrextAuthenticationException,
-    WrextAuthorizationException,
-    WrextExternalServiceException,
+    RextAPIException,
+    RextBusinessException,
+    RextValidationException,
+    RextAuthenticationException,
+    RextAuthorizationException,
+    RextExternalServiceException,
 
     # Specific exceptions
     ResourceNotFoundException,
@@ -54,12 +54,12 @@ __all__ = [
     "is_admin",
 
     # Exception classes
-    "WrextAPIException",
-    "WrextBusinessException",
-    "WrextValidationException",
-    "WrextAuthenticationException",
-    "WrextAuthorizationException",
-    "WrextExternalServiceException",
+    "RextAPIException",
+    "RextBusinessException",
+    "RextValidationException",
+    "RextAuthenticationException",
+    "RextAuthorizationException",
+    "RextExternalServiceException",
     "ResourceNotFoundException",
     "DuplicateResourceException",
     "QuotaExceededException",

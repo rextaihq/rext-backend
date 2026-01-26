@@ -14,7 +14,7 @@ def render_member_removed_email(
     removed_by_name: str,
     reason: Optional[str] = None,
     support_url: Optional[str] = None,
-    frontend_url: str = "https://app.wrext.com"
+    frontend_url: str = "https://app.rext.com"
 ) -> str:
     """
     Render member removed notification email template.
@@ -88,7 +88,7 @@ def render_member_removed_email(
         """,
         """
         <p style="color: #374151; font-size: 16px; line-height: 24px; margin: 0 0 24px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
-            Your other workspaces remain unaffected, and you can continue using WREXT normally.
+            Your other workspaces remain unaffected, and you can continue using REXT normally.
         </p>
         """,
         """
@@ -130,7 +130,7 @@ def create_member_removed_email(
     member_name: str,
     removed_by_name: str,
     reason: Optional[str] = None,
-    frontend_url: str = "https://app.wrext.com",
+    frontend_url: str = "https://app.rext.com",
     unsubscribe_token: Optional[str] = None
 ) -> str:
     """
@@ -207,7 +207,7 @@ def create_member_removed_email(
         """,
         """
         <p style="color: #374151; font-size: 16px; line-height: 24px; margin: 0 0 24px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
-            Your other workspaces remain unaffected, and you can continue using WREXT normally.
+            Your other workspaces remain unaffected, and you can continue using REXT normally.
         </p>
         """,
         """

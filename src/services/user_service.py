@@ -28,7 +28,7 @@ from src.api.models.user_models.users import Users
 from src.utils.logger import logger
 from src.api.middleware.exceptions import (
     ResourceNotFoundException,
-    WrextValidationException,
+    RextValidationException,
     DuplicateResourceException
 )
 from src.utils.account_cleanup import delete_deactivated_accounts, get_pending_deletions
@@ -112,7 +112,7 @@ class UserService:
 
         Raises:
             ResourceNotFoundException: If user not found
-            WrextValidationException: If validation fails
+            RextValidationException: If validation fails
         """
         user = await self.get_user_by_id(user_id)
 
@@ -130,7 +130,7 @@ class UserService:
             # Validate bio length at service layer
             bio = kwargs["bio"]
             if bio is not None and len(bio) > 500:
-                raise WrextValidationException("Bio must be 500 characters or less")
+                raise RextValidationException("Bio must be 500 characters or less")
             user.bio = bio
 
         if "avatar_url" in kwargs:
@@ -176,20 +176,20 @@ class UserService:
 
         Raises:
             ResourceNotFoundException: If user not found
-            WrextValidationException: If current password incorrect or passwords same
+            RextValidationException: If current password incorrect or passwords same
         """
         user = await self.get_user_by_id(user_id)
 
         # Verify current password
         if not bcrypt.checkpw(current_password.encode('utf-8'), user.password_hash.encode('utf-8')):
-            raise WrextValidationException(
+            raise RextValidationException(
                 message="Current password is incorrect",
                 field_errors={"current_password": ["Incorrect password"]}
             )
 
         # Ensure new password is different
         if bcrypt.checkpw(new_password.encode('utf-8'), user.password_hash.encode('utf-8')):
-            raise WrextValidationException(
+            raise RextValidationException(
                 message="New password must be different from current password",
                 field_errors={"new_password": ["Password must be different"]}
             )
@@ -356,14 +356,14 @@ class UserService:
 
         Raises:
             ResourceNotFoundException: If user not found
-            WrextValidationException: If user already deleted
+            RextValidationException: If user already deleted
         """
-        from src.api.middleware.exceptions import WrextValidationException
+        from src.api.middleware.exceptions import RextValidationException
 
         user = await self.get_user_by_id(user_id)
 
         if user.deleted_at:
-            raise WrextValidationException("User already deleted")
+            raise RextValidationException("User already deleted")
 
         user.deleted_at = datetime.utcnow()
 
@@ -435,9 +435,9 @@ class UserService:
 
         Raises:
             ResourceNotFoundException: If user not found
-            WrextValidationException: If email/username already exists
+            RextValidationException: If email/username already exists
         """
-        from src.api.middleware.exceptions import WrextValidationException
+        from src.api.middleware.exceptions import RextValidationException
 
         user = await self.get_user_by_id(user_id)
 
@@ -449,7 +449,7 @@ class UserService:
             )
             result = await self.db.execute(query)
             if result.scalar_one_or_none():
-                raise WrextValidationException("Email already exists")
+                raise RextValidationException("Email already exists")
             user.email = email
 
         # Check for duplicate username
@@ -460,7 +460,7 @@ class UserService:
             )
             result = await self.db.execute(query)
             if result.scalar_one_or_none():
-                raise WrextValidationException("Username already exists")
+                raise RextValidationException("Username already exists")
             user.username = username
 
         # Update profile fields

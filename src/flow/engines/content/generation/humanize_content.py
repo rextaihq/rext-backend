@@ -6,7 +6,7 @@ targeting 90% human-written detection score (10% AI detection).
 """
 
 import logging
-from src.flow.states.wrext import WREXT
+from src.flow.states.rext import REXT
 from src.flow.model.llm_manager import load_model
 from src.flow.model.structure.content import GeneratedContent
 from src.flow.prompts.human.humanize import get_humanize_prompt
@@ -14,7 +14,7 @@ from src.flow.prompts.human.humanize import get_humanize_prompt
 logger = logging.getLogger(__name__)
 
 
-def humanize_content(state: WREXT) -> dict:
+def humanize_content(state: REXT) -> dict:
     """
     Humanizes AI-generated content to make it appear naturally written by a human.
     
@@ -34,7 +34,7 @@ def humanize_content(state: WREXT) -> dict:
     - Add personality and unique voice
     
     Args:
-        state: WREXT state containing content to humanize
+        state: REXT state containing content to humanize
     
     Returns:
         dict: Updated state with humanized content (90% human-written)

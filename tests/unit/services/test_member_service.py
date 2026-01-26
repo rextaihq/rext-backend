@@ -20,7 +20,7 @@ from src.services.member_service import MemberService
 from src.api.middleware.exceptions import (
     ResourceNotFoundException,
     DuplicateResourceException,
-    WrextValidationException
+    RextValidationException
 )
 
 
@@ -318,7 +318,7 @@ class TestMemberServiceUpdateMemberStatus:
         assert result.status == "active"
 
     async def test_update_member_status_invalid(self, db_session, setup_factories):
-        """Should raise WrextValidationException for invalid status"""
+        """Should raise RextValidationException for invalid status"""
         # Arrange
         workspace = await setup_factories["workspace"].create()
         user = await setup_factories["user"].create()
@@ -329,7 +329,7 @@ class TestMemberServiceUpdateMemberStatus:
         service = MemberService(db_session)
 
         # Act & Assert
-        with pytest.raises(WrextValidationException) as exc_info:
+        with pytest.raises(RextValidationException) as exc_info:
             await service.update_member_status(
                 workspace_id=workspace.id,
                 user_id=user.id,

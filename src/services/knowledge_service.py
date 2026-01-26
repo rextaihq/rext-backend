@@ -52,9 +52,9 @@ from src.utils.helper import web_page_scraper
 from src.api.config import get_settings
 from src.api.middleware.exceptions import (
     ResourceNotFoundException,
-    WrextValidationException,
+    RextValidationException,
     DuplicateResourceException,
-    WrextExternalServiceException
+    RextExternalServiceException
 )
 from src.services.knowledge_base_service import KnowledgeBaseService
 
@@ -103,8 +103,8 @@ class KnowledgeService:
 
         Raises:
             DuplicateResourceException: If file already exists (by hash)
-            WrextValidationException: If file validation fails
-            WrextExternalServiceException: If vector store fails
+            RextValidationException: If file validation fails
+            RextExternalServiceException: If vector store fails
         """
         # Get or use default knowledge base
         if knowledge_base_id is None:
@@ -142,7 +142,7 @@ class KnowledgeService:
         chunks = load_split_file_data(file_metadata["secure_path"])
 
         if len(chunks) == 0:
-            raise WrextValidationException(
+            raise RextValidationException(
                 message="Failed to extract content from the file",
                 field_errors={"file": ["No content could be extracted from file"]}
             )
@@ -174,16 +174,16 @@ class KnowledgeService:
                 knowledge_type="file"
             )
             if not success_status:
-                raise WrextExternalServiceException(
+                raise RextExternalServiceException(
                     message="Failed to insert chunks into vector store",
                     service_name="vector_store",
                     service_error="Insertion returned False"
                 )
-        except WrextExternalServiceException:
+        except RextExternalServiceException:
             raise
         except Exception as e:
             logger.error(f"Error building vector store: {e}")
-            raise WrextExternalServiceException(
+            raise RextExternalServiceException(
                 message="Failed to build vector store from file content",
                 service_name="vector_store",
                 service_error=str(e)
@@ -512,7 +512,7 @@ class KnowledgeService:
         result_entry = results[0] if results else None
 
         if not result_entry or not getattr(result_entry, "success", False):
-            raise WrextValidationException(
+            raise RextValidationException(
                 message="Failed to scrape the provided URL",
                 field_errors={"url": ["URL could not be scraped or is inaccessible"]},
             )
@@ -544,16 +544,16 @@ class KnowledgeService:
                 knowledge_type="web"
             )
             if not success_status:
-                raise WrextExternalServiceException(
+                raise RextExternalServiceException(
                     message="Failed to insert chunks into vector store",
                     service_name="vector_store",
                     service_error="Insertion returned False",
                 )
-        except WrextExternalServiceException:
+        except RextExternalServiceException:
             raise
         except Exception as exc:  # noqa: BLE001
             logger.exception("Vector store insertion failed", exc_info=exc)
-            raise WrextExternalServiceException(
+            raise RextExternalServiceException(
                 message="Failed to process content in vector store",
                 service_name="vector_store",
                 service_error=str(exc),

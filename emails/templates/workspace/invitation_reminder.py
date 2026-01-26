@@ -15,7 +15,7 @@ def create_invitation_reminder_email(
     role_name: str = "Member",
     days_until_expiry: int = 2,
     workspace_description: Optional[str] = None,
-    frontend_url: str = "https://app.wrext.com"
+    frontend_url: str = "https://app.rext.com"
 ) -> str:
     """
     Create invitation reminder email template.

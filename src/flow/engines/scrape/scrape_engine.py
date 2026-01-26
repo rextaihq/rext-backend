@@ -1,10 +1,10 @@
-from src.flow.states.wrext import WREXT
+from src.flow.states.rext import REXT
 from langgraph.graph import StateGraph,START,END
 
 
 def create_scrape_engine()-> StateGraph:
     from src.flow.engines.scrape.scrape_content import scrape_serp_content
-    scrape_graph = StateGraph(WREXT)
+    scrape_graph = StateGraph(REXT)
 
     #  add node
     scrape_graph.add_node("scrape_content",scrape_serp_content)

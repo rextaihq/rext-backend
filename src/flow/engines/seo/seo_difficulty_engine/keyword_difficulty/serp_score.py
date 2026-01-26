@@ -1,4 +1,4 @@
-from src.flow.states.wrext import SERPNORMALIZED, Competitor
+from src.flow.states.rext import SERPNORMALIZED, Competitor
 from datetime import datetime
 import statistics
 from src.flow.engines.seo.seo_difficulty_engine.utils.utils import normalize_freshness, ugc_keywords, clamp

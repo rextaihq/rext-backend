@@ -278,7 +278,7 @@ async def seed_test_users():
         print("🧪 Ready for RBAC testing!")
         print("="*60)
         print("\nNext steps:")
-        print("  1. cd wrext-admin")
+        print("  1. cd rext-admin")
         print("  2. npm run test:rbac        # Run Jest tests")
         print("  3. npm run test:rbac:e2e    # Run E2E tests")
         print()

@@ -17,7 +17,7 @@ from src.utils.rbac_utils import (
     get_user_permissions,
     get_user_roles
 )
-from src.api.middleware.exceptions import WrextAuthorizationException
+from src.api.middleware.exceptions import RextAuthorizationException
 from src.api.models.user_models.permissions import Permission
 from src.api.models.user_models.roles import Role
 
@@ -236,7 +236,7 @@ class TestRequirePermission:
 
     @pytest.mark.asyncio
     async def test_require_permission_raises_exception(self):
-        """Test that require_permission raises WrextAuthorizationException when permission denied."""
+        """Test that require_permission raises RextAuthorizationException when permission denied."""
         # Arrange
         mock_db = AsyncMock(spec=AsyncSession)
         user_id = uuid4()
@@ -249,7 +249,7 @@ class TestRequirePermission:
         mock_db.execute = AsyncMock(return_value=mock_result)
 
         # Act & Assert
-        with pytest.raises(WrextAuthorizationException) as exc_info:
+        with pytest.raises(RextAuthorizationException) as exc_info:
             await require_permission(mock_db, user_id, permission_name, workspace_id, resource_name="content")
 
         assert "You do not have permission" in exc_info.value.message

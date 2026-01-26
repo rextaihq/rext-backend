@@ -4,13 +4,13 @@ On-Page SEO Scoring Node
 
 import logging
 from typing import Dict
-from src.flow.states.wrext import WREXT
+from src.flow.states.rext import REXT
 from src.flow.engines.content.utils.utils import calculate_seokar
 
 logger = logging.getLogger(__name__)
 
 
-def calculate_on_page_seo(state: WREXT) -> Dict:
+def calculate_on_page_seo(state: REXT) -> Dict:
     """
     LangGraph node to calculate on-page SEO metrics using Seokar
     and store them as SeokarSEOState.

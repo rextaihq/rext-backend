@@ -36,7 +36,7 @@ from src.utils.logger import logger
 from src.api.middleware.exceptions import (
     ResourceNotFoundException,
     DuplicateResourceException,
-    WrextValidationException,
+    RextValidationException,
     BusinessRuleViolationException
 )
 
@@ -102,11 +102,11 @@ class InvitationService:
             ResourceNotFoundException: If workspace/role/inviter not found
             DuplicateResourceException: If active invitation exists
             BusinessRuleViolationException: If user already a member
-            WrextValidationException: If expiry_days invalid
+            RextValidationException: If expiry_days invalid
         """
         # Validate expiry_days
         if not 1 <= expiry_days <= 30:
-            raise WrextValidationException(
+            raise RextValidationException(
                 message="Expiry days must be between 1 and 30",
                 field_errors={"expiry_days": ["Must be between 1 and 30 days"]}
             )

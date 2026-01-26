@@ -44,7 +44,7 @@ from src.api.models.knowledge_models.knowledge_model import (
 from src.utils.logger import logger
 from src.api.middleware.exceptions import (
     DuplicateResourceException,
-    WrextValidationException,
+    RextValidationException,
     ResourceNotFoundException
 )
 from src.providers.payment.provider_factory import get_payment_provider_singleton
@@ -193,7 +193,7 @@ class SubscriptionService:
         Raises:
             DuplicateResourceException: If user already has active subscription
             ResourceNotFoundException: If plan not found or inactive
-            WrextValidationException: If variant ID not configured for plan
+            RextValidationException: If variant ID not configured for plan
         """
         # Check if user already has an active subscription
         # Allow checkout if user is on free or trial plan (they can upgrade via checkout)
@@ -224,7 +224,7 @@ class SubscriptionService:
             variant_id = plan.lemonsqueezy_variant_id_yearly
 
         if not variant_id:
-            raise WrextValidationException(
+            raise RextValidationException(
                 message=f"Plan {plan.name} does not have a {billing_period.value} variant configured",
                 field_errors={"billing_period": [f"{billing_period.value} variant not available"]}
             )
@@ -341,7 +341,7 @@ class SubscriptionService:
 
         Raises:
             ResourceNotFoundException: If no active subscription or plan not found
-            WrextValidationException: If same plan or usage exceeds limits
+            RextValidationException: If same plan or usage exceeds limits
         """
         # Get current subscription
         current_subscription = await self.get_subscription_by_user(user_id)
@@ -372,7 +372,7 @@ class SubscriptionService:
 
                 return current_subscription
             else:
-                raise WrextValidationException(
+                raise RextValidationException(
                     message="Already subscribed to this plan",
                     field_errors={"new_plan_id": ["Same as current plan"]}
                 )
@@ -511,7 +511,7 @@ class SubscriptionService:
 
         Raises:
             ResourceNotFoundException: If no active subscription
-            WrextValidationException: If usage exceeds new plan limits
+            RextValidationException: If usage exceeds new plan limits
         """
         # Downgrade uses same logic as upgrade (with validation)
         return await self.upgrade(user_id, new_plan_id, billing_period)
@@ -784,7 +784,7 @@ class SubscriptionService:
 
         Raises:
             ResourceNotFoundException: If no active subscription
-            WrextValidationException: If exceeds limits
+            RextValidationException: If exceeds limits
         """
         subscription = await self.get_subscription_by_user(user_id)
         if not subscription:
@@ -804,7 +804,7 @@ class SubscriptionService:
         }
 
         if resource_type not in limit_map:
-            raise WrextValidationException(
+            raise RextValidationException(
                 message=f"Invalid resource type: {resource_type}",
                 field_errors={"resource_type": ["Must be workspace or knowledge"]}
             )
@@ -817,7 +817,7 @@ class SubscriptionService:
 
         new_count = current_count + increment
         if new_count > max_allowed:
-            raise WrextValidationException(
+            raise RextValidationException(
                 message=f"Plan limit exceeded: {resource_type}",
                 field_errors={
                     resource_type: [
@@ -1106,18 +1106,18 @@ class SubscriptionService:
             current_usage: Current usage dict
 
         Raises:
-            WrextValidationException: If usage exceeds new plan limits
+            RextValidationException: If usage exceeds new plan limits
         """
         # Check workspace limit
         if new_plan.max_workspaces != -1 and current_usage["workspaces"] > new_plan.max_workspaces:
-            raise WrextValidationException(
+            raise RextValidationException(
                 message=f"Cannot downgrade: You have {current_usage['workspaces']} workspaces, new plan allows {new_plan.max_workspaces}",
                 field_errors={"new_plan_id": ["Workspace limit exceeded"]}
             )
 
         # Check knowledge items limit
         if new_plan.max_knowledge_items != -1 and current_usage["knowledge_items"] > new_plan.max_knowledge_items:
-            raise WrextValidationException(
+            raise RextValidationException(
                 message=f"Cannot downgrade: You have {current_usage['knowledge_items']} knowledge items, new plan allows {new_plan.max_knowledge_items}",
                 field_errors={"new_plan_id": ["Knowledge items limit exceeded"]}
             )

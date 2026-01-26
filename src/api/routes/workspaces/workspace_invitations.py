@@ -12,7 +12,7 @@ from src.api.middleware.exceptions import (
     BusinessRuleViolationException,
     DuplicateResourceException,
     ResourceNotFoundException,
-    WrextValidationException,
+    RextValidationException,
 )
 from src.api.middleware.usage_limiter import check_member_limit
 from src.api.models.user_models.invitations import UserInvitations
@@ -614,7 +614,7 @@ async def revoke_workspace_invitation(
         )
 
     if invitation.status != "pending":
-        raise WrextValidationException(
+        raise RextValidationException(
             message="Only pending invitations can be revoked",
             field_errors={"status": ["Invitation is not pending"]},
         )

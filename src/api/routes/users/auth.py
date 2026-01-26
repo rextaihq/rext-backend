@@ -11,7 +11,7 @@ from src.utils.response_utils import success, error, created
 from src.api.schema.response_schemas import ErrorCode, ErrorSeverity
 from src.api.middleware.exceptions import (
     DuplicateResourceException,
-    WrextAuthenticationException,
+    RextAuthenticationException,
     ResourceNotFoundException,
     BusinessRuleViolationException
 )
@@ -551,7 +551,7 @@ async def login_user(
             message="User logged in successfully"
         )
 
-    except WrextAuthenticationException as auth_error:
+    except RextAuthenticationException as auth_error:
         # CRITICAL: Commit transaction to persist failed login attempts
         # Without this, account locking after multiple failed attempts won't work
         await db.commit()
@@ -616,7 +616,7 @@ async def refresh_access_token(
             message="Token refreshed successfully"
         )
 
-    except WrextAuthenticationException:
+    except RextAuthenticationException:
         # Re-raise to be handled by middleware
         raise
     except Exception as e:
@@ -664,7 +664,7 @@ async def logout_user(
             message="Logout successful"
         )
 
-    except WrextAuthenticationException:
+    except RextAuthenticationException:
         # Re-raise to be handled by middleware
         raise
     except Exception as e:
@@ -713,7 +713,7 @@ async def verify_email(
             message=message
         )
 
-    except (WrextAuthenticationException, ResourceNotFoundException):
+    except (RextAuthenticationException, ResourceNotFoundException):
         raise
     except Exception as e:
         return error(
@@ -778,7 +778,7 @@ async def resend_verification(
             message="Verification email sent successfully"
         )
 
-    except (WrextAuthenticationException, ResourceNotFoundException):
+    except (RextAuthenticationException, ResourceNotFoundException):
         raise
     except Exception as e:
         logger.error(f"Resend verification error: {str(e)}")
@@ -917,7 +917,7 @@ async def oauth_login(
             message="OAuth login successful"
         )
 
-    except WrextAuthenticationException:
+    except RextAuthenticationException:
         raise
     except DuplicateResourceException:
         raise

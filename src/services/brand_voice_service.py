@@ -24,7 +24,7 @@ from sqlalchemy import select
 from src.api.models.knowledge_models.knowledge_model import BrandVoice
 from src.api.models.workspace_models.workspace_member import WorkspaceMembers
 from src.utils.logger import logger
-from src.api.middleware.exceptions import WrextAuthenticationException
+from src.api.middleware.exceptions import RextAuthenticationException
 from src.api.schema.knowledge_schema import BrandSchema
 
 
@@ -56,7 +56,7 @@ class BrandVoiceService:
             BrandVoice object or None if not configured
 
         Raises:
-            WrextAuthenticationException: If user not workspace member
+            RextAuthenticationException: If user not workspace member
         """
         # Verify workspace membership
         await self._verify_workspace_membership(workspace_id, user_id)
@@ -93,7 +93,7 @@ class BrandVoiceService:
             BrandVoice object (created or updated)
 
         Raises:
-            WrextAuthenticationException: If user not workspace member
+            RextAuthenticationException: If user not workspace member
         """
         # Verify workspace membership
         await self._verify_workspace_membership(workspace_id, user_id)
@@ -151,7 +151,7 @@ class BrandVoiceService:
             WorkspaceMembers object
 
         Raises:
-            WrextAuthenticationException: If user not member
+            RextAuthenticationException: If user not member
         """
         result = await self.db.execute(
             select(WorkspaceMembers).where(
@@ -162,7 +162,7 @@ class BrandVoiceService:
         membership = result.scalar_one_or_none()
 
         if not membership:
-            raise WrextAuthenticationException(
+            raise RextAuthenticationException(
                 message="You are not a member of this workspace",
                 context={"workspace_id": str(workspace_id)}
             )

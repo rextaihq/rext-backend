@@ -1,4 +1,4 @@
-from src.flow.states.wrext import WREXT, Competitor, NormalizedOrganicResult, SERPNORMALIZED
+from src.flow.states.rext import REXT, Competitor, NormalizedOrganicResult, SERPNORMALIZED
 from typing import List, Dict, Any
 from src.flow.engines.seo.seo_difficulty_engine.keyword_difficulty.link_difficulty import competitor_link_kd
 from src.flow.engines.seo.seo_difficulty_engine.keyword_difficulty.serp_score import competitor_serp_kd
@@ -6,7 +6,7 @@ from src.flow.engines.seo.seo_difficulty_engine.keyword_difficulty.content_diffi
 from src.flow.engines.seo.seo_difficulty_engine.keyword_difficulty.context_modifier import context_modifier
 import statistics
 from src.flow.engines.seo.seo_difficulty_engine.utils.utils import INTENT_WEIGHTS
-def calculate_final_kd(keyword: str, keyword_intent: str, wrext_data: WREXT) -> dict:
+def calculate_final_kd(keyword: str, keyword_intent: str, rext_data: REXT) -> dict:
     """
     NEW APPROACH:
     For each competitor:
@@ -16,9 +16,9 @@ def calculate_final_kd(keyword: str, keyword_intent: str, wrext_data: WREXT) -> 
     """
     weights = INTENT_WEIGHTS.get(keyword_intent, INTENT_WEIGHTS["informational"])
 
-    serp_normalized = wrext_data.get("serp_normalized", {}).get("normalize_results", [])
-    competitors = wrext_data.get("competitors", [])
-    scrape_context = wrext_data.get("scrape_context", {})
+    serp_normalized = rext_data.get("serp_normalized", {}).get("normalize_results", [])
+    competitors = rext_data.get("competitors", [])
+    scrape_context = rext_data.get("scrape_context", {})
 
     competitor_total_kds = []
 
@@ -40,7 +40,7 @@ def calculate_final_kd(keyword: str, keyword_intent: str, wrext_data: WREXT) -> 
         link_kd = competitor_link_kd(keyword=keyword, comp=comp, serp_entry=nr or {}, normalized_results=serp_normalized, competitors=competitors)
 
         # 2️⃣ SERP KD per competitor
-        serp_kd = competitor_serp_kd(comp=comp, serp_normalized=wrext_data.get("serp_normalized", {}), competitors=competitors)
+        serp_kd = competitor_serp_kd(comp=comp, serp_normalized=rext_data.get("serp_normalized", {}), competitors=competitors)
 
         # 3️⃣ Content KD per competitor
 
@@ -78,7 +78,7 @@ def calculate_final_kd(keyword: str, keyword_intent: str, wrext_data: WREXT) -> 
     final_kd = statistics.median(competitor_total_kds) * 100 if competitor_total_kds else 0
 
     # Apply SERP-level context modifier (± KD points)
-    cont_modifier = context_modifier(competitors, wrext_data["serp_normalized"], keyword_intent)
+    cont_modifier = context_modifier(competitors, rext_data["serp_normalized"], keyword_intent)
 
     final_kd = final_kd + cont_modifier
 
@@ -88,7 +88,7 @@ def calculate_final_kd(keyword: str, keyword_intent: str, wrext_data: WREXT) -> 
     # Notes
     notes = []
     brands = {"brand", "publisher", "gov", "edu"}
-    brand_count = sum(1 for c in competitors if wrext_data["serp_normalized"]["domain_stats"].get(c["domain"], {}).get("type") in brands)
+    brand_count = sum(1 for c in competitors if rext_data["serp_normalized"]["domain_stats"].get(c["domain"], {}).get("type") in brands)
     if brand_count >= len(competitors) * 0.5:
         notes.append("High brand dominance")
 
@@ -101,13 +101,13 @@ def calculate_final_kd(keyword: str, keyword_intent: str, wrext_data: WREXT) -> 
     }
 
 
-def compute_keyword_difficulty(wrext_data: WREXT, keyword_intent: str = "informational") -> dict:
+def compute_keyword_difficulty(rext_data: REXT, keyword_intent: str = "informational") -> dict:
 
     store = 0
     intent_input = []
     dicts = { 'INFORMATIONAL' :0, 'COMMERCIAL' :0, 'TRANSACTIONAL' :0, 'NAVIGATIONAL' :0}
 
-    for competitor in wrext_data["competitors"]:
+    for competitor in rext_data["competitors"]:
         intent_input.append(competitor['intent_distribution'])
 
     for intent_distribution in intent_input:
@@ -121,11 +121,11 @@ def compute_keyword_difficulty(wrext_data: WREXT, keyword_intent: str = "informa
             store = value
             keyword_intent = max_key
 
-    keyword = wrext_data["serp_normalized"]["query"]
+    keyword = rext_data["serp_normalized"]["query"]
     # Default intent to informational if not found
-    keyword_intent = (wrext_data.get("seo_result") or {}).get("intent", {}).get("primary_intent", "informational")
+    keyword_intent = (rext_data.get("seo_result") or {}).get("intent", {}).get("primary_intent", "informational")
 
-    kd_result = calculate_final_kd(keyword=keyword, keyword_intent=keyword_intent, wrext_data=wrext_data)
+    kd_result = calculate_final_kd(keyword=keyword, keyword_intent=keyword_intent, rext_data=rext_data)
 
     return {
         "seo_result": {

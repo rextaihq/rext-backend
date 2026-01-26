@@ -6,7 +6,7 @@
 
 set -e
 
-echo "🚀 Starting Wrext Backend Development Server..."
+echo "🚀 Starting Rext Backend Development Server..."
 echo ""
 
 # Check if Docker is running

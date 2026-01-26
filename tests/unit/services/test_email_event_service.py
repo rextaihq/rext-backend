@@ -36,7 +36,7 @@ class TestEmailEventServiceProcessWebhook:
             subject="Test",
             status="sent",
             provider="resend",
-            from_email="noreply@wrext.com"
+            from_email="noreply@rext.com"
         )
 
         # Mock database queries
@@ -92,7 +92,7 @@ class TestEmailEventServiceProcessWebhook:
             subject="Test",
             status="sent",
             provider="resend",
-            from_email="noreply@wrext.com"
+            from_email="noreply@rext.com"
         )
 
         mock_log_result = Mock()
@@ -136,7 +136,7 @@ class TestEmailEventServiceProcessWebhook:
             subject="Test",
             status="delivered",
             provider="resend",
-            from_email="noreply@wrext.com"
+            from_email="noreply@rext.com"
         )
 
         mock_log_result = Mock()
@@ -178,7 +178,7 @@ class TestEmailEventServiceProcessWebhook:
             subject="Test",
             status="delivered",
             provider="resend",
-            from_email="noreply@wrext.com"
+            from_email="noreply@rext.com"
         )
 
         original_status = email_log.status
@@ -222,7 +222,7 @@ class TestEmailEventServiceProcessWebhook:
             subject="Test",
             status="delivered",
             provider="resend",
-            from_email="noreply@wrext.com"
+            from_email="noreply@rext.com"
         )
 
         original_status = email_log.status
@@ -243,7 +243,7 @@ class TestEmailEventServiceProcessWebhook:
             "data": {
                 "email_id": "msg_clicked",
                 "to": "clicker@example.com",
-                "link": "https://wrext.com/verify"
+                "link": "https://rext.com/verify"
             }
         }
 
@@ -374,7 +374,7 @@ class TestEmailEventServiceErrorHandling:
             subject="Test",
             status="sent",
             provider="resend",
-            from_email="noreply@wrext.com"
+            from_email="noreply@rext.com"
         )
 
         mock_log_result = Mock()

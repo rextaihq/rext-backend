@@ -45,8 +45,8 @@ class TestEmailSendingFlows:
         mock_get_fallback.return_value = None
 
         mock_config.email_enabled = True
-        mock_config.resend_from_email = "noreply@wrext.com"
-        mock_config.resend_from_name = "WREXT"
+        mock_config.resend_from_email = "noreply@rext.com"
+        mock_config.resend_from_name = "REXT"
 
         # Create email service
         service = EmailService(db_session)
@@ -104,8 +104,8 @@ class TestEmailSendingFlows:
         mock_get_fallback.return_value = None
 
         mock_config.email_enabled = True
-        mock_config.resend_from_email = "noreply@wrext.com"
-        mock_config.resend_from_name = "WREXT"
+        mock_config.resend_from_email = "noreply@rext.com"
+        mock_config.resend_from_name = "REXT"
 
         workspace_id = uuid4()
         user_id = uuid4()
@@ -161,8 +161,8 @@ class TestFallbackProviderFlows:
         mock_get_fallback.return_value = fallback_provider
 
         mock_config.email_enabled = True
-        mock_config.resend_from_email = "noreply@wrext.com"
-        mock_config.resend_from_name = "WREXT"
+        mock_config.resend_from_email = "noreply@rext.com"
+        mock_config.resend_from_name = "REXT"
 
         service = EmailService(db_session)
 
@@ -211,8 +211,8 @@ class TestFallbackProviderFlows:
         mock_get_fallback.return_value = fallback_provider
 
         mock_config.email_enabled = True
-        mock_config.resend_from_email = "noreply@wrext.com"
-        mock_config.resend_from_name = "WREXT"
+        mock_config.resend_from_email = "noreply@rext.com"
+        mock_config.resend_from_name = "REXT"
 
         service = EmailService(db_session)
 
@@ -260,8 +260,8 @@ class TestEmailQueryFlows:
         mock_get_fallback.return_value = None
 
         mock_config.email_enabled = True
-        mock_config.resend_from_email = "noreply@wrext.com"
-        mock_config.resend_from_name = "WREXT"
+        mock_config.resend_from_email = "noreply@rext.com"
+        mock_config.resend_from_name = "REXT"
 
         user_id = uuid4()
 
@@ -300,8 +300,8 @@ class TestEmailQueryFlows:
         mock_get_fallback.return_value = None
 
         mock_config.email_enabled = True
-        mock_config.resend_from_email = "noreply@wrext.com"
-        mock_config.resend_from_name = "WREXT"
+        mock_config.resend_from_email = "noreply@rext.com"
+        mock_config.resend_from_name = "REXT"
 
         workspace_id = uuid4()
 
@@ -345,8 +345,8 @@ class TestEmailRetryFlows:
         mock_get_fallback.return_value = None
 
         mock_config.email_enabled = True
-        mock_config.resend_from_email = "noreply@wrext.com"
-        mock_config.resend_from_name = "WREXT"
+        mock_config.resend_from_email = "noreply@rext.com"
+        mock_config.resend_from_name = "REXT"
 
         service = EmailService(db_session)
 

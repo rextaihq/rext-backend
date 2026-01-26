@@ -10,10 +10,10 @@ Usage:
         python3 scripts/cleanup_tokens.py
 
     Cron job (runs every 6 hours):
-        0 */6 * * * cd /path/to/wrext-backend && python3 scripts/cleanup_tokens.py >> logs/token_cleanup.log 2>&1
+        0 */6 * * * cd /path/to/rext-backend && python3 scripts/cleanup_tokens.py >> logs/token_cleanup.log 2>&1
 
     Daily at 2 AM:
-        0 2 * * * cd /path/to/wrext-backend && python3 scripts/cleanup_tokens.py >> logs/token_cleanup.log 2>&1
+        0 2 * * * cd /path/to/rext-backend && python3 scripts/cleanup_tokens.py >> logs/token_cleanup.log 2>&1
 """
 
 import sys

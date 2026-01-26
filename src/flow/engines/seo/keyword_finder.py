@@ -1,8 +1,8 @@
 from typing import Dict, Any
-from src.flow.states.wrext import WREXT
+from src.flow.states.rext import REXT
 from src.services.keyword_service import KeywordExtractor
 
-def relevance_keyword_finder(state: WREXT) -> Dict[str, Any]:
+def relevance_keyword_finder(state: REXT) -> Dict[str, Any]:
     """
     LangGraph node: Extract keywords from SERP data using N-grams + TF-IDF.
     

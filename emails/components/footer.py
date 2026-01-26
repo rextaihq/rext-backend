@@ -17,7 +17,7 @@ class FooterLink:
 @dataclass
 class FooterProps:
     """Props for email footer component"""
-    company_name: str = "WREXT"
+    company_name: str = "REXT"
     company_address: Optional[str] = None
     links: List[FooterLink] = field(default_factory=list)
     unsubscribe_url: Optional[str] = None
@@ -105,15 +105,15 @@ def simple_footer() -> str:
 
 
 def standard_footer(
-    company_name: str = "WREXT",
+    company_name: str = "REXT",
     company_address: Optional[str] = None,
     unsubscribe_url: Optional[str] = None
 ) -> str:
     """Render a standard footer with common links."""
     default_links = [
-        FooterLink(text="Help Center", url="https://help.wrext.com"),
-        FooterLink(text="Privacy Policy", url="https://wrext.com/privacy"),
-        FooterLink(text="Terms of Service", url="https://wrext.com/terms"),
+        FooterLink(text="Help Center", url="https://help.rext.com"),
+        FooterLink(text="Privacy Policy", url="https://rext.com/privacy"),
+        FooterLink(text="Terms of Service", url="https://rext.com/terms"),
     ]
 
     return footer(FooterProps(

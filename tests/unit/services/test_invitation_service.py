@@ -19,7 +19,7 @@ from src.api.models.user_models.roles import Role
 from src.api.middleware.exceptions import (
     ResourceNotFoundException,
     DuplicateResourceException,
-    WrextValidationException,
+    RextValidationException,
     BusinessRuleViolationException
 )
 
@@ -171,7 +171,7 @@ class TestCreateInvitation:
         self, invitation_service, sample_workspace, sample_role, sample_user
     ):
         """Test that expiry_days must be at least 1."""
-        with pytest.raises(WrextValidationException) as exc_info:
+        with pytest.raises(RextValidationException) as exc_info:
             await invitation_service.create_invitation(
             email="test@example.com",
                 workspace_id=sample_workspace.id,
@@ -187,7 +187,7 @@ class TestCreateInvitation:
         self, invitation_service, sample_workspace, sample_role, sample_user
     ):
         """Test that expiry_days must be at most 30."""
-        with pytest.raises(WrextValidationException) as exc_info:
+        with pytest.raises(RextValidationException) as exc_info:
             await invitation_service.create_invitation(
                 email="test@example.com",
                 workspace_id=sample_workspace.id,

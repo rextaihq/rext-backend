@@ -10,7 +10,7 @@ from src.api.models.user_models.users import Users
 from src.api.models.audit_models.audit_logs import AuditLog
 from src.api.middleware.exceptions import (
     ResourceNotFoundException,
-    WrextValidationException,
+    RextValidationException,
 )
 
 
@@ -138,7 +138,7 @@ async def test_unlock_account_raises_when_not_locked():
     service = SecurityService(mock_db)
 
     # Act & Assert
-    with pytest.raises(WrextValidationException):
+    with pytest.raises(RextValidationException):
         await service.unlock_account(unlocked_user.id)
 
 

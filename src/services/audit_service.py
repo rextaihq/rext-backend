@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.models.audit_models.audit_logs import AuditLog
 from src.api.schema.audit_schema import AuditLogExportFormat, AuditStatus
-from src.api.middleware.exceptions import WrextValidationException
+from src.api.middleware.exceptions import RextValidationException
 
 
 class AuditService:
@@ -43,7 +43,7 @@ class AuditService:
             try:
                 status_enum = AuditStatus(status_filter)
             except ValueError as exc:
-                raise WrextValidationException(
+                raise RextValidationException(
                     message=f"Invalid status: {status_filter}",
                     field_errors={"status_filter": ["Unsupported audit status"]},
                 ) from exc
@@ -95,7 +95,7 @@ class AuditService:
         from src.api.routes.audit.modules.helpers import format_audit_log
 
         if days < 1 or days > 365:
-            raise WrextValidationException(
+            raise RextValidationException(
                 message="Analysis period must be between 1 and 365 days",
                 field_errors={"days": ["Value out of allowed range"]},
             )

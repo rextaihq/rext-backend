@@ -5,7 +5,7 @@ from datetime import datetime
 
 from src.api.models.audit_models.audit_logs import AuditLog
 from src.api.schema.audit_schema import AuditStatus
-from src.api.middleware.exceptions import WrextValidationException
+from src.api.middleware.exceptions import RextValidationException
 
 
 async def build_audit_query(
@@ -65,7 +65,7 @@ async def build_audit_query(
             date_from_dt = datetime.fromisoformat(date_from.replace("Z", "+00:00"))
             query = query.where(AuditLog.created_at >= date_from_dt)
         except ValueError:
-            raise WrextValidationException(
+            raise RextValidationException(
                 field="date_from",
                 message="Invalid date format. Use ISO 8601 format (e.g., 2025-10-01T00:00:00Z)"
             )
@@ -75,7 +75,7 @@ async def build_audit_query(
             date_to_dt = datetime.fromisoformat(date_to.replace("Z", "+00:00"))
             query = query.where(AuditLog.created_at <= date_to_dt)
         except ValueError:
-            raise WrextValidationException(
+            raise RextValidationException(
                 field="date_to",
                 message="Invalid date format. Use ISO 8601 format (e.g., 2025-10-02T23:59:59Z)"
             )

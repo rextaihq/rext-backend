@@ -14,7 +14,7 @@ from src.utils.logger import logger
 from src.utils.route_decorators import db_transaction_handler, require_permissions
 from src.api.database.async_database import get_async_db
 from src.api.security.dependencies import get_current_user
-from src.api.middleware.exceptions import WrextValidationException
+from src.api.middleware.exceptions import RextValidationException
 from src.api.middleware.rate_limiter import ai_content_generation_rate_limit
 from src.utils.workspace_utils import resolve_and_verify_workspace
 
@@ -112,7 +112,7 @@ async def generate_content_with_ai(
 
     except Exception as e:
         logger.error(f"Content generation failed: {str(e)}")
-        raise WrextValidationException(
+        raise RextValidationException(
             message=f"Content generation failed: {str(e)}",
             context={"content_id": str(data.content_id)}
         )

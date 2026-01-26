@@ -7,7 +7,7 @@ E-E-A-T injection and humanization are handled in separate nodes.
 
 import logging
 import json
-from src.flow.states.wrext import WREXT
+from src.flow.states.rext import REXT
 from src.flow.model.llm_manager import load_model
 from src.flow.model.structure.content import GeneratedContent
 from src.flow.prompts.human.content import get_content_prompt
@@ -15,7 +15,7 @@ from src.flow.prompts.human.content import get_content_prompt
 logger = logging.getLogger(__name__)
 
 
-def generate_content(state: WREXT) -> dict:
+def generate_content(state: REXT) -> dict:
     """
     Generates SEO-optimized content using an LLM.
     
@@ -23,7 +23,7 @@ def generate_content(state: WREXT) -> dict:
     E-E-A-T signals and humanization are applied in subsequent nodes.
     
     Args:
-        state: WREXT state containing outline and context
+        state: REXT state containing outline and context
     
     Returns:
         dict: Updated state with generated content

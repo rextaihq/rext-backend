@@ -7,7 +7,7 @@ from crawl4ai import AsyncWebCrawler
 from langchain_core.documents import Document
 from src.flow.engines.scrape.config.clean_content import clean_content
 from src.flow.engines.scrape.config.crawler_config import CrawlerConfiguration
-from src.flow.states.wrext import WREXT
+from src.flow.states.rext import REXT
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +22,7 @@ def _extract_headings(markdown_text: str) -> List[str]:
     return [heading.strip() for _, heading in matches]
 
 
-async def scrape_serp_content(state: WREXT) -> Dict[str, Any]:
+async def scrape_serp_content(state: REXT) -> Dict[str, Any]:
     """
     Scrape full content from SERP URLs and attach domain + rank position
     to each scraped document.

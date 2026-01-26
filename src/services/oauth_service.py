@@ -41,7 +41,7 @@ from src.api.security.token_utils import (
 from src.utils.logger import logger
 from src.api.middleware.exceptions import (
     DuplicateResourceException,
-    WrextAuthenticationException,
+    RextAuthenticationException,
     ResourceNotFoundException
 )
 
@@ -93,7 +93,7 @@ class OAuthService:
             Tuple of (User object, tokens dict with access_token, refresh_token, token_type)
 
         Raises:
-            WrextAuthenticationException: If OAuth flow fails
+            RextAuthenticationException: If OAuth flow fails
         """
         # Check if this OAuth account already exists
         result = await self.db.execute(

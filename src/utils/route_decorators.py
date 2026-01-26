@@ -36,7 +36,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.api.lib.logger import auto_logger
 from src.utils.response_utils import success, error
 from src.api.schema.response_schemas import ErrorCode, ErrorSeverity
-from src.api.middleware.exceptions import WrextAPIException
+from src.api.middleware.exceptions import RextAPIException
 
 logger = auto_logger()
 
@@ -79,7 +79,7 @@ def db_transaction_handler(
         Decorated async function that handles transactions and errors
 
     Raises:
-        WrextAPIException: Business exceptions are re-raised after rollback for middleware handling
+        RextAPIException: Business exceptions are re-raised after rollback for middleware handling
 
     Usage Example:
         @router.post("/content")
@@ -108,7 +108,7 @@ def db_transaction_handler(
     Best Practices:
     - Route handlers should return raw dict data (not JSONResponse)
     - Decorator automatically formats raw data into standardized success responses
-    - WrextAPIException subclasses are re-raised (handled by exception middleware)
+    - RextAPIException subclasses are re-raised (handled by exception middleware)
     - Database session parameter must be named 'db' in function signature
     - Request parameter must be named 'request' for tracking
     - Always include meaningful operation names for debugging
@@ -119,7 +119,7 @@ def db_transaction_handler(
             # ... business logic ...
             await db.commit()
             return success(data={...}, request=request, message="...")
-        except WrextValidationException:
+        except RextValidationException:
             raise
         except Exception as e:
             await db.rollback()
@@ -166,7 +166,7 @@ def db_transaction_handler(
                     await db.rollback()
                 raise
 
-            except WrextAPIException as e:
+            except RextAPIException as e:
     # existing code...
 
                 # Business/validation exceptions - rollback and re-raise
@@ -262,7 +262,7 @@ def require_permissions(
         - db: AsyncSession parameter (from get_async_db dependency)
 
     Raises:
-        WrextAuthorizationException: If user lacks required permission(s)
+        RextAuthorizationException: If user lacks required permission(s)
         ValueError: If required parameters (user, db, workspace_id) are missing
 
     Usage Examples:
@@ -340,7 +340,7 @@ def require_permissions(
         async def wrapper(*args, **kwargs) -> Any:
             from src.utils.rbac_utils import check_all_permissions, check_any_permission
             from src.utils.workspace_utils import async_get_workspace_id_from_identifier
-            from src.api.middleware.exceptions import WrextAuthorizationException
+            from src.api.middleware.exceptions import RextAuthorizationException
             from uuid import UUID
 
             # Extract required dependencies from kwargs
@@ -407,7 +407,7 @@ def require_permissions(
                     f"workspace={workspace_uuid}, logic={'AND' if require_all else 'OR'}"
                 )
 
-                raise WrextAuthorizationException(
+                raise RextAuthorizationException(
                     message=f"Missing required permission: {perm_str}",
                     context={
                         "required_permissions": list(permissions),

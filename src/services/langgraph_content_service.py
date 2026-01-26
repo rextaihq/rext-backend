@@ -31,7 +31,7 @@ from src.flow.states.content_state import ContentState
 from src.utils.logger import logger
 from src.api.config import get_settings
 from src.api.middleware.exceptions import (
-    WrextValidationException,
+    RextValidationException,
     ResourceNotFoundException
 )
 from src.services.email_service import EmailService
@@ -76,7 +76,7 @@ class LangGraphContentService:
             Dict containing generated content and thread information
 
         Raises:
-            WrextValidationException: If validation fails
+            RextValidationException: If validation fails
             ResourceNotFoundException: If required resources not found
         """
         # Generate new thread ID if not provided
@@ -199,7 +199,7 @@ class LangGraphContentService:
                     }
                 }
             else:
-                raise WrextValidationException(
+                raise RextValidationException(
                     message="Workflow completed but no content was generated",
                     context={"thread_id": str(thread_id)}
                 )
@@ -218,7 +218,7 @@ class LangGraphContentService:
                 logger.error(f"Failed to send generation failed email: {str(email_error)}")
                 # Don't fail workflow if email fails
 
-            raise WrextValidationException(
+            raise RextValidationException(
                 message=f"Content generation failed: {str(e)}",
                 context={"thread_id": str(thread_id), "error": str(e)}
             )

@@ -15,9 +15,9 @@ from src.api.security.dependencies import get_current_user
 from src.api.config import get_settings
 from src.api.middleware.exceptions import (
     ResourceNotFoundException,
-    WrextAuthenticationException,
-    WrextValidationException,
-    WrextAPIException,
+    RextAuthenticationException,
+    RextValidationException,
+    RextAPIException,
     DuplicateResourceException
 )
 from src.api.schema.response_schemas import ErrorCode, ErrorSeverity
@@ -118,7 +118,7 @@ async def accept_invitation(
     # Validate email matches
     if invitation.email.lower() != user.email.lower():
         logger.warning(f"Invitation email mismatch: {invitation.email} vs {user.email}")
-        raise WrextAuthenticationException(
+        raise RextAuthenticationException(
             message="This invitation is for a different email address"
         )
 
@@ -219,7 +219,7 @@ async def revoke_invitation(
     is_admin = result.first() is not None
 
     if not is_creator and not is_admin:
-        raise WrextAuthenticationException(
+        raise RextAuthenticationException(
             message="Insufficient permissions to revoke this invitation"
         )
 

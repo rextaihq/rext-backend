@@ -371,7 +371,7 @@ async def main():
     print(f"\nTest completed at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print()
     print_info("Document your test results in:")
-    print_info("  wrext-backend/docs/testing/phase5-task-5.1.2-checkout-flow-testing.md")
+    print_info("  rext-backend/docs/testing/phase5-task-5.1.2-checkout-flow-testing.md")
     print()
 
 

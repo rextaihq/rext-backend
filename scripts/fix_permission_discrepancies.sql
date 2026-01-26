@@ -5,7 +5,7 @@
 -- verify_permission_matrix.py script.
 --
 -- Usage:
---   psql -d wrext_db -f scripts/fix_permission_discrepancies.sql
+--   psql -d rext_db -f scripts/fix_permission_discrepancies.sql
 --
 -- Author: Claude Code (RBAC Task 4.1 Discrepancy Fixes)
 -- Date: 2025-10-25

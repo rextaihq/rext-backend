@@ -12,8 +12,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.api.middleware.exceptions import (
     DuplicateResourceException,
     ResourceNotFoundException,
-    WrextAuthorizationException,
-    WrextValidationException,
+    RextAuthorizationException,
+    RextValidationException,
 )
 from src.api.models.subscription_models.plans import SubscriptionPlan
 from src.api.models.subscription_models.subscriptions import SubscriptionStatus, UserSubscription
@@ -39,7 +39,7 @@ class SubscriptionPlanService:
 
     async def require_admin(self, user_id: UUID) -> None:
         if not await self.is_admin(user_id):
-            raise WrextAuthorizationException(
+            raise RextAuthorizationException(
                 message="Admin role required for subscription plan administration",
                 required_permission="subscription.admin"
             )
@@ -130,7 +130,7 @@ class SubscriptionPlanService:
         update_data = payload.model_dump(exclude_unset=True)
 
         if not update_data:
-            raise WrextValidationException(
+            raise RextValidationException(
                 message="No fields provided for update",
                 field_errors={"update_data": ["At least one field must be provided"]},
             )
@@ -158,7 +158,7 @@ class SubscriptionPlanService:
         active_subscriptions = count_result.scalar() or 0
 
         if active_subscriptions > 0 and not force:
-            raise WrextValidationException(
+            raise RextValidationException(
                 message="Cannot delete plan with active subscriptions",
                 field_errors={
                     "plan_id": [

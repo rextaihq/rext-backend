@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from migrate import status
 from src.api.database.async_database import get_async_db
-from src.api.middleware.exceptions import WrextValidationException
+from src.api.middleware.exceptions import RextValidationException
 from src.api.middleware.permissions import is_admin
 from src.api.schema.impersonation_schema import (
     ImpersonateStartRequest,
@@ -102,7 +102,7 @@ async def start_impersonation(
         "session_id": session_id
     }
 
-from src.api.middleware.exceptions import WrextValidationException
+from src.api.middleware.exceptions import RextValidationException
 
 @router.post("/impersonate/stop")
 @require_permissions("user.update")
@@ -114,21 +114,21 @@ async def stop_impersonation(
 ) -> dict:
     """Stop impersonation and return tokens for the original user."""
     
-    # Use WrextValidationException without validation_errors
+    # Use RextValidationException without validation_errors
     if not current_user.get("is_impersonating", False):
-        raise WrextValidationException(
+        raise RextValidationException(
             message="Not currently impersonating"
         )
 
     original_user_id = current_user.get("original_user_id")
     if not original_user_id:
-        raise WrextValidationException(
+        raise RextValidationException(
             message="Original user ID not found in token"
         )
     
     session_id = current_user.get("session_id")
     if not session_id:
-        raise WrextValidationException(
+        raise RextValidationException(
             message="Session ID not found in token"
         )
 

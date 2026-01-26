@@ -54,7 +54,7 @@ from src.services.notification_helper import schedule_if_allowed
 from src.utils.logger import logger
 from src.api.middleware.exceptions import (
     DuplicateResourceException,
-    WrextAuthenticationException,
+    RextAuthenticationException,
     ResourceNotFoundException,
     BusinessRuleViolationException
 )
@@ -225,7 +225,7 @@ class AuthService:
             Tuple of (User object, tokens dict with access_token, refresh_token, token_type)
 
         Raises:
-            WrextAuthenticationException: If credentials invalid or account locked
+            RextAuthenticationException: If credentials invalid or account locked
         """
         # Find user (eagerly load relationships to avoid lazy loading in async context)
         from sqlalchemy.orm import selectinload
@@ -238,14 +238,14 @@ class AuthService:
         db_user = result.scalar_one_or_none()
 
         if not db_user:
-            raise WrextAuthenticationException(
+            raise RextAuthenticationException(
                 message="Invalid email or password",
                 context={"login_attempt": email}
             )
 
         # Check if account is locked
         if db_user.locked_until and db_user.locked_until > datetime.utcnow():
-            raise WrextAuthenticationException(
+            raise RextAuthenticationException(
                 message="Account is temporarily locked due to multiple failed login attempts. Please try again later.",
                 context={"locked_until": db_user.locked_until.isoformat()}
             )
@@ -268,7 +268,7 @@ class AuthService:
 
             await self.db.flush()
 
-            raise WrextAuthenticationException(
+            raise RextAuthenticationException(
                 message="Invalid email or password",
                 context={"login_attempt": email}
             )
@@ -399,13 +399,13 @@ class AuthService:
             User object
 
         Raises:
-            WrextAuthenticationException: If token invalid or user not found
+            RextAuthenticationException: If token invalid or user not found
         """
         payload = verify_token(token)
         user_id = payload.get("user_id")
 
         if not user_id:
-            raise WrextAuthenticationException(
+            raise RextAuthenticationException(
                 message="Invalid token payload",
                 context={"error": "Missing user_id"}
             )
@@ -450,7 +450,7 @@ class AuthService:
 
         Raises:
             ResourceNotFoundException: If user not found
-            WrextAuthenticationException: If email already verified
+            RextAuthenticationException: If email already verified
         """
         # Find user by email
         result = await self.db.execute(
@@ -466,7 +466,7 @@ class AuthService:
 
         # Check if already verified
         if user.email_verified:
-            raise WrextAuthenticationException(
+            raise RextAuthenticationException(
                 message="Email is already verified",
                 context={"email": email}
             )
@@ -500,7 +500,7 @@ class AuthService:
             Dict with new access_token, refresh_token, token_type
 
         Raises:
-            WrextAuthenticationException: If token invalid, blacklisted, or user not active
+            RextAuthenticationException: If token invalid, blacklisted, or user not active
         """
         # Verify refresh token
         payload = verify_refresh_token(refresh_token)
@@ -508,13 +508,13 @@ class AuthService:
         # Check if blacklisted
         jti = payload.get("jti")
         if not jti:
-            raise WrextAuthenticationException(
+            raise RextAuthenticationException(
                 message="Token missing JTI",
                 context={"note": "Old token format not supported"}
             )
 
         if await is_token_blacklisted(jti, self.db):
-            raise WrextAuthenticationException(
+            raise RextAuthenticationException(
                 message="Refresh token has been revoked",
                 context={"reason": "Token blacklisted"}
             )
@@ -527,13 +527,13 @@ class AuthService:
         db_user = result.scalar_one_or_none()
 
         if not db_user:
-            raise WrextAuthenticationException(
+            raise RextAuthenticationException(
                 message="User not found",
                 context={"user_id": user_id}
             )
 
         if db_user.status != "active":
-            raise WrextAuthenticationException(
+            raise RextAuthenticationException(
                 message="User account is not active",
                 context={"status": db_user.status}
             )
@@ -601,10 +601,10 @@ class AuthService:
             exp: Token expiration timestamp
 
         Raises:
-            WrextAuthenticationException: If token missing JTI
+            RextAuthenticationException: If token missing JTI
         """
         if not jti:
-            raise WrextAuthenticationException(
+            raise RextAuthenticationException(
                 message="Token missing JTI",
                 context={"note": "Old token format not supported"}
             )
@@ -689,14 +689,14 @@ class AuthService:
             User object
 
         Raises:
-            WrextAuthenticationException: If token invalid
+            RextAuthenticationException: If token invalid
             ResourceNotFoundException: If user not found
         """
         payload = verify_token(token)
         user_id = payload.get("user_id")
 
         if not user_id:
-            raise WrextAuthenticationException(
+            raise RextAuthenticationException(
                 message="Invalid token payload",
                 context={"error": "Missing user_id"}
             )

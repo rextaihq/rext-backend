@@ -61,8 +61,8 @@ class TestMockEmailProviderSendEmail:
             to=[EmailRecipient(email="test@example.com", name="Test User")],
             subject="Test Subject",
             html="<p>Test Body</p>",
-            from_email="noreply@wrext.com",
-            from_name="WREXT"
+            from_email="noreply@rext.com",
+            from_name="REXT"
         )
 
         result = await provider.send_email(message)
@@ -82,8 +82,8 @@ class TestMockEmailProviderSendEmail:
         assert last_email["to"] == ["test@example.com"]
         assert last_email["subject"] == "Test Subject"
         assert last_email["html"] == "<p>Test Body</p>"
-        assert last_email["from_email"] == "noreply@wrext.com"
-        assert last_email["from_name"] == "WREXT"
+        assert last_email["from_email"] == "noreply@rext.com"
+        assert last_email["from_name"] == "REXT"
 
     @pytest.mark.asyncio
     async def test_send_email_with_cc_bcc(self):
@@ -154,7 +154,7 @@ class TestMockEmailProviderSendEmail:
                 to=[EmailRecipient(email=f"user{i}@example.com")],
                 subject=f"Email {i}",
                 html=f"<p>Body {i}</p>",
-                from_email="noreply@wrext.com"
+                from_email="noreply@rext.com"
             )
             result = await provider.send_email(message)
             assert result.success is True

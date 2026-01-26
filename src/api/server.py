@@ -44,7 +44,7 @@ async def lifespan(app):
     Ensures database tables exist, Redis is connected,
     Sentry and tasks are initialized cleanly.
     """
-    logger.info("🚀 Starting Wrext API server...")
+    logger.info("🚀 Starting Rext API server...")
     logger.info(f"Environment: {settings.ENVIRONMENT}")
 
     # --- Initialize Sentry ---
@@ -106,7 +106,7 @@ async def lifespan(app):
     logger.info("👋 Application shutdown complete.")
 
 app = FastAPI(
-    title="Wrext Content Automation API",
+    title="Rext Content Automation API",
     version="1.0.0",
     description="API for managing content automation workflows with consistent response handling",
     lifespan=lifespan,
@@ -201,7 +201,7 @@ def read_root(request: Request):
     """Root endpoint with API information."""
     return success(
         data={
-            "service": "Wrext Content Automation API",
+            "service": "Rext Content Automation API",
             "version": "1.0.0",
             "status": "operational",
             "docs_url": "/docs",
@@ -209,7 +209,7 @@ def read_root(request: Request):
             "openapi_url": "/openapi.json"
         },
         request=request,
-        message="Welcome to Wrext Content Automation API"
+        message="Welcome to Rext Content Automation API"
     )
 
 
@@ -228,7 +228,7 @@ async def health_check(request: Request):
 
     status = {
         "status": "healthy",
-        "service": "wrext-api",
+        "service": "rext-api",
         "version": "1.0.0",
         "environment": settings.ENVIRONMENT,
         "timestamp": datetime.utcnow().isoformat(),
@@ -289,7 +289,7 @@ async def liveness_check(request: Request):
     from datetime import datetime
     return {
         "status": "alive",
-        "service": "wrext-api",
+        "service": "rext-api",
         "timestamp": datetime.utcnow().isoformat()
     }
 
@@ -309,7 +309,7 @@ async def readiness_check(request: Request):
 
     status = {
         "status": "ready",
-        "service": "wrext-api",
+        "service": "rext-api",
         "timestamp": datetime.utcnow().isoformat(),
         "checks": {}
     }

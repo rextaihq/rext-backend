@@ -15,9 +15,9 @@ def render_subscription_upgraded_email(
     new_price: str,
     billing_date: str,
     proration_amount: str = None,
-    dashboard_url: str = "https://app.wrext.com/settings/billing",
+    dashboard_url: str = "https://app.rext.com/settings/billing",
     customer_portal_url: str = None,
-    frontend_url: str = "https://app.wrext.com"
+    frontend_url: str = "https://app.rext.com"
 ) -> str:
     """
     Render subscription upgraded email template.
@@ -132,7 +132,7 @@ def render_subscription_upgraded_email(
             Questions about your upgrade? Our support team is here to help you make the most of your new plan.
         </p>
         <p style="color: #6b7280; font-size: 14px; line-height: 20px; margin: 16px 0 0 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
-            Thank you for choosing WREXT! We're excited to support your growth.
+            Thank you for choosing REXT! We're excited to support your growth.
         </p>
         """,
         simple_footer()

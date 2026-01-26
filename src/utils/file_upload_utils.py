@@ -30,7 +30,7 @@ from werkzeug.utils import secure_filename
 from PIL import Image
 
 from src.utils.logger import logger
-from src.api.middleware.exceptions import WrextValidationException
+from src.api.middleware.exceptions import RextValidationException
 from src.api.config import get_settings
 
 # Get settings instance
@@ -119,21 +119,21 @@ async def validate_and_store_file(
         }
 
     Raises:
-        WrextValidationException: If validation fails
+        RextValidationException: If validation fails
     """
     allowed_types = allowed_types or list(ALLOWED_MIME_TYPES.keys())
     max_size_bytes = (max_size_mb or MAX_FILE_SIZE_MB) * 1024 * 1024
 
     # Step 1: Validate filename
     if not file.filename:
-        raise WrextValidationException("Filename is required")
+        raise RextValidationException("Filename is required")
 
     safe_filename = _sanitize_filename(file.filename)
 
     # Step 2: Check file extension (preliminary check)
     file_ext = Path(safe_filename).suffix.lower()
     if file_ext in DANGEROUS_EXTENSIONS:
-        raise WrextValidationException(
+        raise RextValidationException(
             f"File type '{file_ext}' is not allowed for security reasons",
             field_errors={"file": [f"Extension {file_ext} is forbidden"]}
         )
@@ -164,7 +164,7 @@ async def validate_and_store_file(
                 if file_size > max_size_bytes:
                     f.close()
                     file_path.unlink()  # Delete partial file
-                    raise WrextValidationException(
+                    raise RextValidationException(
                         f"File size exceeds maximum allowed size of {max_size_mb or MAX_FILE_SIZE_MB}MB",
                         field_errors={"file": [f"Maximum size: {max_size_mb or MAX_FILE_SIZE_MB}MB"]}
                     )
@@ -192,7 +192,7 @@ async def validate_and_store_file(
                     detected_mime = "text/csv"
             except UnicodeDecodeError:
                 file_path.unlink()  # Delete invalid file
-                raise WrextValidationException(
+                raise RextValidationException(
                     "Unable to determine file type",
                     field_errors={"file": ["Invalid or unknown file type"]}
                 )
@@ -205,7 +205,7 @@ async def validate_and_store_file(
 
         if detected_mime not in allowed_types:
             file_path.unlink()  # Delete invalid file
-            raise WrextValidationException(
+            raise RextValidationException(
                 f"File type '{detected_mime}' is not allowed. Allowed types: {', '.join(allowed_types)}",
                 field_errors={"file": [f"Invalid file type: {detected_mime}"]}
             )
@@ -240,7 +240,7 @@ async def validate_and_store_file(
             **image_metadata  # Include image dimensions if it's an image
         }
 
-    except WrextValidationException:
+    except RextValidationException:
         # Re-raise validation exceptions
         raise
 
@@ -250,7 +250,7 @@ async def validate_and_store_file(
             file_path.unlink()
 
         logger.exception(f"Error storing file: {e}")
-        raise WrextValidationException(
+        raise RextValidationException(
             "Failed to process file upload",
             context={"error": str(e)}
         )
@@ -303,7 +303,7 @@ def _validate_image_dimensions(file_path: Path) -> Dict:
         Dict with image metadata (width, height, format)
 
     Raises:
-        WrextValidationException: If image dimensions are invalid
+        RextValidationException: If image dimensions are invalid
     """
     try:
         with Image.open(file_path) as img:
@@ -312,7 +312,7 @@ def _validate_image_dimensions(file_path: Path) -> Dict:
             # Check minimum dimensions
             if width < MIN_IMAGE_WIDTH or height < MIN_IMAGE_HEIGHT:
                 file_path.unlink()  # Delete invalid image
-                raise WrextValidationException(
+                raise RextValidationException(
                     f"Image dimensions too small. Minimum: {MIN_IMAGE_WIDTH}x{MIN_IMAGE_HEIGHT}px",
                     field_errors={"file": [f"Image must be at least {MIN_IMAGE_WIDTH}x{MIN_IMAGE_HEIGHT}px"]}
                 )
@@ -320,7 +320,7 @@ def _validate_image_dimensions(file_path: Path) -> Dict:
             # Check maximum dimensions
             if width > MAX_IMAGE_WIDTH or height > MAX_IMAGE_HEIGHT:
                 file_path.unlink()  # Delete oversized image
-                raise WrextValidationException(
+                raise RextValidationException(
                     f"Image dimensions too large. Maximum: {MAX_IMAGE_WIDTH}x{MAX_IMAGE_HEIGHT}px",
                     field_errors={"file": [f"Image must not exceed {MAX_IMAGE_WIDTH}x{MAX_IMAGE_HEIGHT}px"]}
                 )
@@ -334,12 +334,12 @@ def _validate_image_dimensions(file_path: Path) -> Dict:
                 "image_mode": img.mode
             }
 
-    except WrextValidationException:
+    except RextValidationException:
         raise
     except Exception as e:
         logger.error(f"Error validating image: {e}")
         file_path.unlink()  # Delete corrupted image
-        raise WrextValidationException(
+        raise RextValidationException(
             "Invalid or corrupted image file",
             field_errors={"file": ["Unable to process image"]}
         )

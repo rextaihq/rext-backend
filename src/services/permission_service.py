@@ -11,8 +11,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.api.middleware.exceptions import (
     DuplicateResourceException,
     ResourceNotFoundException,
-    WrextAuthorizationException,
-    WrextValidationException,
+    RextAuthorizationException,
+    RextValidationException,
 )
 from src.api.models.user_models.permissions import Permission
 from src.api.models.user_models.role_permissions import RolePermission
@@ -81,7 +81,7 @@ class PermissionService:
 
         expected_name = f"{payload.resource.lower()}.{payload.action.lower()}"
         if payload.name.lower() != expected_name:
-            raise WrextValidationException(
+            raise RextValidationException(
                 message=f"Permission name must match format: {expected_name}",
                 context={"provided": payload.name, "expected": expected_name},
             )
@@ -163,7 +163,7 @@ class PermissionService:
         )
         assignment_count = result.scalar() or 0
         if assignment_count > 0:
-            raise WrextValidationException(
+            raise RextValidationException(
                 message=f"Cannot delete permission assigned to {assignment_count} role(s)",
                 context={"permission_id": str(permission_id), "role_count": assignment_count},
             )
@@ -290,7 +290,7 @@ class PermissionService:
         )
 
         if not permission_check.scalar_one_or_none():
-            raise WrextAuthorizationException(
+            raise RextAuthorizationException(
                 message="You do not have permission to perform this action",
                 context={"required_permission": permission_name, "user_id": str(user_id)},
             )

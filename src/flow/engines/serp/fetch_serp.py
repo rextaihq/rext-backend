@@ -1,7 +1,7 @@
 import httpx
 import logging
 from typing import Dict, Any, List
-from src.flow.states.wrext import WREXT, SERPEngineState
+from src.flow.states.rext import REXT, SERPEngineState
 from src.flow.states.countries import VALID_COUNTRY_CODES
 from dotenv import load_dotenv
 import os
@@ -82,7 +82,7 @@ def _parse_serp_response(raw_data: Dict[str, Any]) -> SERPEngineState:
         "total_results": len(organic_results)
     }
 
-async def fetch_serp_results(state: WREXT) -> Dict[str, Any]:
+async def fetch_serp_results(state: REXT) -> Dict[str, Any]:
     """
     Fetch raw Google SERP results for a given keyword using the Serper.dev API.
     """

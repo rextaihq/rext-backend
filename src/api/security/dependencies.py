@@ -17,7 +17,7 @@ from src.utils.logger import logger
 # Lazy import to avoid circular dependency
 if TYPE_CHECKING:
     from src.api.middleware.exceptions import (
-        WrextAuthenticationException,
+        RextAuthenticationException,
         TokenExpiredException,
     )
 
@@ -29,25 +29,25 @@ async def get_current_user(
     """Check if the user's token is valid and not blacklisted."""
     # Import exceptions at runtime to avoid circular dependency
     from src.api.middleware.exceptions import (
-        WrextAuthenticationException,
+        RextAuthenticationException,
         TokenExpiredException,
     )
 
     if not authorization:
-        raise WrextAuthenticationException(
+        raise RextAuthenticationException(
             message="Authorization header missing",
             context={"expected_format": "Bearer <token>"}
         )
     try:
         scheme, token = authorization.split()
     except ValueError:
-        raise WrextAuthenticationException(
+        raise RextAuthenticationException(
             message="Invalid authorization header format",
             context={"expected_format": "Bearer <token>"}
         )
 
     if scheme.lower() != "bearer":
-        raise WrextAuthenticationException(
+        raise RextAuthenticationException(
             message="Invalid authentication scheme",
             context={"provided_scheme": scheme, "expected_scheme": "bearer"}
         )
@@ -59,7 +59,7 @@ async def get_current_user(
         # Check if token is blacklisted
         jti = payload.get("jti")
         if jti and await is_token_blacklisted(jti, db):
-            raise WrextAuthenticationException(
+            raise RextAuthenticationException(
                 message="Token has been revoked",
                 context={"reason": "Token blacklisted"}
             )
@@ -70,15 +70,15 @@ async def get_current_user(
                 message="Authentication token has expired"
             )
         else:
-            raise WrextAuthenticationException(
+            raise RextAuthenticationException(
                 message="Invalid authentication token",
                 context={"token_error": str(e.detail)}
             )
-    except WrextAuthenticationException:
+    except RextAuthenticationException:
         # Re-raise authentication exceptions (including blacklist check)
         raise
     except Exception as e:
-        raise WrextAuthenticationException(
+        raise RextAuthenticationException(
             message="Token validation failed",
             context={"error_details": str(e)}
         )
@@ -86,7 +86,7 @@ async def get_current_user(
     # Extract user info from JWT payload
     user_id = payload.get("id")  # usually `sub` holds user id
     if not user_id:
-        raise WrextAuthenticationException(
+        raise RextAuthenticationException(
             message="User ID missing in token payload",
             context={"payload_keys": list(payload.keys())}
         )
@@ -137,7 +137,7 @@ async def get_current_user_sse(
     """
     # Import exceptions at runtime to avoid circular dependency
     from src.api.middleware.exceptions import (
-        WrextAuthenticationException,
+        RextAuthenticationException,
         TokenExpiredException,
     )
 
@@ -154,7 +154,7 @@ async def get_current_user_sse(
         auth_token = token
 
     if not auth_token:
-        raise WrextAuthenticationException(
+        raise RextAuthenticationException(
             message="Authentication required",
             context={"expected_sources": ["Authorization header", "token query param"]}
         )
@@ -166,7 +166,7 @@ async def get_current_user_sse(
         # Check if token is blacklisted
         jti = payload.get("jti")
         if jti and await is_token_blacklisted(jti, db):
-            raise WrextAuthenticationException(
+            raise RextAuthenticationException(
                 message="Token has been revoked",
                 context={"reason": "Token blacklisted"}
             )
@@ -177,14 +177,14 @@ async def get_current_user_sse(
                 message="Authentication token has expired"
             )
         else:
-            raise WrextAuthenticationException(
+            raise RextAuthenticationException(
                 message="Invalid authentication token",
                 context={"token_error": str(e.detail)}
             )
-    except WrextAuthenticationException:
+    except RextAuthenticationException:
         raise
     except Exception as e:
-        raise WrextAuthenticationException(
+        raise RextAuthenticationException(
             message="Token validation failed",
             context={"error_details": str(e)}
         )
@@ -192,7 +192,7 @@ async def get_current_user_sse(
     # Extract user info from JWT payload
     user_id = payload.get("id")
     if not user_id:
-        raise WrextAuthenticationException(
+        raise RextAuthenticationException(
             message="User ID missing in token payload",
             context={"payload_keys": list(payload.keys())}
         )

@@ -75,8 +75,8 @@ class TestEmailServiceSendEmail:
         mock_get_fallback.return_value = None
 
         mock_config.email_enabled = True
-        mock_config.resend_from_email = "noreply@wrext.com"
-        mock_config.resend_from_name = "WREXT"
+        mock_config.resend_from_email = "noreply@rext.com"
+        mock_config.resend_from_name = "REXT"
 
         service = EmailService(mock_db)
 
@@ -116,8 +116,8 @@ class TestEmailServiceSendEmail:
         mock_get_fallback.return_value = None
 
         mock_config.email_enabled = True
-        mock_config.resend_from_email = "noreply@wrext.com"
-        mock_config.resend_from_name = "WREXT"
+        mock_config.resend_from_email = "noreply@rext.com"
+        mock_config.resend_from_name = "REXT"
 
         service = EmailService(mock_db)
 
@@ -178,8 +178,8 @@ class TestEmailServiceSendEmail:
         mock_get_fallback.return_value = mock_fallback
 
         mock_config.email_enabled = True
-        mock_config.resend_from_email = "noreply@wrext.com"
-        mock_config.resend_from_name = "WREXT"
+        mock_config.resend_from_email = "noreply@rext.com"
+        mock_config.resend_from_name = "REXT"
 
         service = EmailService(mock_db)
 
@@ -216,8 +216,8 @@ class TestEmailServiceSendEmail:
         mock_get_fallback.return_value = mock_fallback
 
         mock_config.email_enabled = True
-        mock_config.resend_from_email = "noreply@wrext.com"
-        mock_config.resend_from_name = "WREXT"
+        mock_config.resend_from_email = "noreply@rext.com"
+        mock_config.resend_from_name = "REXT"
 
         service = EmailService(mock_db)
 
@@ -253,8 +253,8 @@ class TestEmailServiceSendEmail:
         mock_get_fallback.return_value = mock_fallback
 
         mock_config.email_enabled = True
-        mock_config.resend_from_email = "noreply@wrext.com"
-        mock_config.resend_from_name = "WREXT"
+        mock_config.resend_from_email = "noreply@rext.com"
+        mock_config.resend_from_name = "REXT"
 
         service = EmailService(mock_db)
 
@@ -293,7 +293,7 @@ class TestEmailServiceQueryMethods:
             subject="Test",
             status="sent",
             provider="mock",
-            from_email="noreply@wrext.com"
+            from_email="noreply@rext.com"
         )
 
         mock_result = Mock()
@@ -337,8 +337,8 @@ class TestEmailServiceQueryMethods:
 
         user_id = uuid4()
         mock_emails = [
-            EmailLog(id=uuid4(), user_id=user_id, to_email="test1@example.com", subject="Email 1", status="sent", provider="mock", from_email="noreply@wrext.com"),
-            EmailLog(id=uuid4(), user_id=user_id, to_email="test2@example.com", subject="Email 2", status="sent", provider="mock", from_email="noreply@wrext.com"),
+            EmailLog(id=uuid4(), user_id=user_id, to_email="test1@example.com", subject="Email 1", status="sent", provider="mock", from_email="noreply@rext.com"),
+            EmailLog(id=uuid4(), user_id=user_id, to_email="test2@example.com", subject="Email 2", status="sent", provider="mock", from_email="noreply@rext.com"),
         ]
 
         mock_result = Mock()
@@ -363,8 +363,8 @@ class TestEmailServiceQueryMethods:
 
         workspace_id = uuid4()
         mock_emails = [
-            EmailLog(id=uuid4(), workspace_id=workspace_id, to_email="test1@example.com", subject="Email 1", status="sent", provider="mock", from_email="noreply@wrext.com"),
-            EmailLog(id=uuid4(), workspace_id=workspace_id, to_email="test2@example.com", subject="Email 2", status="sent", provider="mock", from_email="noreply@wrext.com"),
+            EmailLog(id=uuid4(), workspace_id=workspace_id, to_email="test1@example.com", subject="Email 1", status="sent", provider="mock", from_email="noreply@rext.com"),
+            EmailLog(id=uuid4(), workspace_id=workspace_id, to_email="test2@example.com", subject="Email 2", status="sent", provider="mock", from_email="noreply@rext.com"),
         ]
 
         mock_result = Mock()
@@ -388,8 +388,8 @@ class TestEmailServiceQueryMethods:
         mock_get_fallback.return_value = None
 
         mock_failed_emails = [
-            EmailLog(id=uuid4(), to_email="failed1@example.com", subject="Failed 1", status="failed", provider="mock", from_email="noreply@wrext.com", error_message="Error 1"),
-            EmailLog(id=uuid4(), to_email="failed2@example.com", subject="Failed 2", status="failed", provider="mock", from_email="noreply@wrext.com", error_message="Error 2"),
+            EmailLog(id=uuid4(), to_email="failed1@example.com", subject="Failed 1", status="failed", provider="mock", from_email="noreply@rext.com", error_message="Error 1"),
+            EmailLog(id=uuid4(), to_email="failed2@example.com", subject="Failed 2", status="failed", provider="mock", from_email="noreply@rext.com", error_message="Error 2"),
         ]
 
         mock_result = Mock()
@@ -418,8 +418,8 @@ class TestEmailServiceRetryFailedEmail:
         mock_get_fallback.return_value = None
 
         mock_config.email_enabled = True
-        mock_config.resend_from_email = "noreply@wrext.com"
-        mock_config.resend_from_name = "WREXT"
+        mock_config.resend_from_email = "noreply@rext.com"
+        mock_config.resend_from_name = "REXT"
 
         # Create a failed email log
         email_log_id = uuid4()
@@ -429,7 +429,7 @@ class TestEmailServiceRetryFailedEmail:
             subject="Test",
             status="failed",
             provider="mock",
-            from_email="noreply@wrext.com",
+            from_email="noreply@rext.com",
             error_message="Previous failure",
             failed_at=datetime.utcnow()
         )
@@ -485,7 +485,7 @@ class TestEmailServiceRetryFailedEmail:
             subject="Test",
             status="sent",  # Not failed
             provider="mock",
-            from_email="noreply@wrext.com"
+            from_email="noreply@rext.com"
         )
 
         service = EmailService(mock_db)

@@ -33,7 +33,7 @@ async def health_check():
     """
     return {
         "status": "healthy",
-        "service": "wrext-backend",
+        "service": "rext-backend",
         "timestamp": time.time()
     }
 

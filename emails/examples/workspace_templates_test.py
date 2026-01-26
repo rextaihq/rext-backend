@@ -28,7 +28,7 @@ def test_workspace_invitation():
         role_name="Editor",
         expiry_days=7,
         workspace_description="A collaborative workspace for the Acme team to create and share content.",
-        frontend_url="https://app.wrext.com"
+        frontend_url="https://app.rext.com"
     )
 
     # Verify key elements
@@ -59,7 +59,7 @@ def test_invitation_accepted():
         new_member_email="jane@example.com",
         role_name="Editor",
         workspace_id="workspace-uuid-123",
-        frontend_url="https://app.wrext.com"
+        frontend_url="https://app.rext.com"
     )
 
     # Verify key elements
@@ -91,7 +91,7 @@ def test_role_changed():
         new_role_name="Editor",
         changed_by_name="John Doe",
         workspace_id="workspace-uuid-123",
-        frontend_url="https://app.wrext.com"
+        frontend_url="https://app.rext.com"
     )
 
     # Verify key elements
@@ -122,7 +122,7 @@ def test_member_removed():
         member_name="Bob",
         removed_by_name="John Doe",
         reason="Project concluded and access is no longer needed.",
-        frontend_url="https://app.wrext.com"
+        frontend_url="https://app.rext.com"
     )
 
     # Verify key elements
