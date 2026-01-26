@@ -7,6 +7,7 @@ from src.api.tool.tools import (
     build_schema,
     calculate_readability,
     generate_content_ideas,
+    generate_faqs,
     count_text_metrics, 
     generate_meta_description, 
     validate_meta_description, 
@@ -27,14 +28,16 @@ from src.api.tool.schema.schema import (
     SchemaRequest,
     ReadabilityRequest,
     ReadabilityResponse,
-     IdeaGeneratorRequest,
+    IdeaGeneratorRequest,
     IdeaGeneratorResponse,
     MetaDescriptionRequest,
     MetaDescriptionResponse,
     CanonicalTagRequest,
     CanonicalTagResponse,
     HreflangRequest,
-    HreflangResponse
+    HreflangResponse,
+    FAQResponse,
+    FAQRequest,
 )
 
 router = APIRouter(prefix='/tools', tags=['tools'])
@@ -207,3 +210,22 @@ async def sitemap_generator_route(request: SitemapRequest):
             status_code=500,
             detail=f"Failed to generate sitemap: {str(e)}"
         )
+# -----------------------------
+# FAQ Generator Endpoint
+
+@router.post("/faq/generate", response_model=FAQResponse)
+def generate_faq_endpoint(request: FAQRequest):
+    """
+    Generate high-quality FAQs for a given topic.
+
+    - **topic**: Main topic for FAQ generation
+    - **faq_count**: Number of FAQs to generate (1-20)
+    - **tone**: Tone of the FAQs (simple, professional, friendly)
+    """
+    try:
+        # Call the tool logic
+        response = generate_faqs(request)
+        return response
+    except Exception as e:
+        # Return a proper error response in case of failure
+        raise HTTPException(status_code=500, detail=f"Failed to generate FAQs: {str(e)}")

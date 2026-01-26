@@ -141,3 +141,20 @@ class TitleRequest(BaseModel):
     
 class TitleResponse(BaseModel):
     titles: List[str]
+
+# -----------------------------
+# FAQ Generator Tool Models
+# -----------------------------
+
+class FAQRequest(BaseModel):
+    topic: str = Field(..., description="The main topic to generate FAQs for")
+    faq_count: int = Field(5,ge=1,  le=20, description="Number of FAQs to generate (1-20)")
+    tone: str = Field("simple", description="Tone of the FAQs (e.g., simple, professional, friendly)")
+
+class FAQItem(BaseModel):
+    question: str = Field(..., description="The question text")
+    answer: str = Field(..., description="The answer text for the question")
+
+class FAQResponse(BaseModel):
+    topic: str = Field(..., description="The topic for which FAQs were generated")
+    faqs: List[FAQItem] = Field(..., description="List of generated FAQ question-answer pairs")

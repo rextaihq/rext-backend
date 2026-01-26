@@ -7,9 +7,9 @@ from langchain_core.output_parsers import StrOutputParser
 from langchain_core.messages import SystemMessage, HumanMessage
 from urllib.parse import urlparse, urlunparse
 
-from src.flow.model.llm_manager import load_model, tools_model
-from src.api.tool.schema.schema import  MetaDescriptionValidation, IdeaGeneratorResponse,IdeaGeneratorRequest
-from src.api.tool.prompts.title_prompt import idea_prompt,title_prompt
+from src.flow.model.llm_manager import load_model,tools_model
+from src.api.tool.schema.schema import  MetaDescriptionValidation, IdeaGeneratorResponse,IdeaGeneratorRequest,FAQRequest,FAQResponse
+from src.api.tool.prompts.title_prompt import idea_prompt,title_prompt,faq_prompt
 
 #Word Counter Tool
 def count_text_metrics(text: str):
@@ -377,3 +377,30 @@ def generate_content_ideas(data: IdeaGeneratorRequest) -> IdeaGeneratorResponse:
         content_type=data.content_type
     )
     return structured_llm.invoke(prompt)
+
+# FAQ generater Tool
+def generate_faqs(data: FAQRequest) -> FAQResponse:
+    """
+    Generate high-quality FAQs for a given topic using structured LLM output.
+
+    Args:
+        data (FAQRequest): Pydantic model with topic, faq_count, and tone
+
+    Returns:
+        FAQResponse: Pydantic model containing list of FAQs
+    """
+    # Load the AI model
+    llm = load_model()
+
+    # Wrap LLM with structured output
+    structured_llm = llm.with_structured_output(FAQResponse)
+
+    # Format the prompt using the imported PromptTemplate
+    prompt_text = faq_prompt.format(
+        topic=data.topic,
+        faq_count=data.faq_count,
+        tone=data.tone
+    )
+
+    # Invoke LLM with structured output
+    return structured_llm.invoke(prompt_text)
