@@ -9,6 +9,7 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.11,<3.12"
 dependencies = [
+    "language-tool-python",
     "alembic>=1.13.0",
     "crawl4ai>=0.7.2",
     "faiss-cpu>=1.12.0",
@@ -58,6 +59,9 @@ dependencies = [
     "scikit-learn>=1.8.0",
     "textstat>=0.7.12",
     "seokar>=1.0.0",
+    "language-tool-python>=3.2.2",
+    "spacy>=3.8.11",
+    "pip>=25.3",
 ]
 
 [project.scripts]
