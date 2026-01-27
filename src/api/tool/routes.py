@@ -264,3 +264,25 @@ async def seo_blog_titles_route(request: SEOBlogTitleRequest):
             status_code=500,
             detail=f"Failed to generate SEO blog titles: {str(e)}"
         )
+
+@router.post("/conclusion-generator", response_model=ConclusionResponse)
+async def conclusion_generator(request: ConclusionRequest):
+    """
+    AI-powered Conclusion Generator.
+    Generates a concise, human-like conclusion for articles, blogs, or reports.
+    """
+    try:
+        conclusion_text = generate_conclusion(
+            content=request.content,
+            tone=request.tone,
+            length=request.length
+        )
+
+        return ConclusionResponse(conclusion=conclusion_text)
+
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to generate conclusion: {str(e)}"
+        )
