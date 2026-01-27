@@ -17,7 +17,8 @@ from src.api.tool.tools import (
     generate_robots_txt,
     grammar_checker,
     generate_hooks,
-    generate_seo_blog_titles
+    generate_seo_blog_titles,
+    generate_content_outline
 )
 
 from src.api.tool.schema.schema import (
@@ -47,7 +48,9 @@ from src.api.tool.schema.schema import (
     HookGeneratorRequest,
     HookGeneratorResponse,
     SEOBlogTitleRequest,
-    SEOBlogTitleResponse
+    SEOBlogTitleResponse,
+    ContentOutlineRequest,
+    ContentOutlineResponse
 )
 
 router = APIRouter(prefix='/tools', tags=['tools'])
@@ -310,3 +313,22 @@ def FAQGenerater(request: FAQRequest):
     except Exception as e:
         # Return a proper error response in case of failure
         raise HTTPException(status_code=500, detail=f"Failed to generate FAQs: {str(e)}")
+
+# Content Outline Generator Endpoint
+@router.post("/content-outline", response_model=ContentOutlineResponse, summary="Content Outline Generator")
+async def content_outline_generator(request: ContentOutlineRequest):
+    """
+    Content Outline Generator: Creates a structured content outline with headings and subpoints.
+    URL: POST /tools/content-outline
+    - **content_type**: Type of content (blog, article, landing_page, video)
+    - **topic**: Main topic for outline generation
+    - **outline_depth**: Depth of outline (basic, detailed)
+    - **tone**: Tone of the outline (formal, friendly, casual)
+    """
+    try:
+        return generate_content_outline(request)
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to generate content outline: {str(e)}"
+        )

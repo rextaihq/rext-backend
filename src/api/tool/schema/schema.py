@@ -1,5 +1,5 @@
 from pydantic import BaseModel, HttpUrl, Field, field_validator
-from typing import List, Optional, Union
+from typing import List, Optional, Union, Literal
 import re
 
 # Word Counter Schemas
@@ -193,3 +193,17 @@ class SEOBlogTitleRequest(BaseModel):
 class SEOBlogTitleResponse(BaseModel):
     keyword: str
     blog_titles: List[str]
+
+# Content Outline Generator Schemas
+class ContentOutlineRequest(BaseModel):
+    topic: str = Field(..., min_length=2, description="Topic for the outline")
+    content_type: Literal["blog", "article", "landing_page", "video"] = "blog"
+    outline_depth: Literal["basic", "detailed"] = "basic"
+    tone: Optional[Literal["formal", "casual", "friendly"]] = "friendly"
+
+class OutlineItem(BaseModel):
+    heading: str = Field(..., description="The heading text (H1/H2/H3)")
+    subpoints: List[str] = Field(default_factory=list, description="List of key points under this heading")
+
+class ContentOutlineResponse(BaseModel):
+    outline: List[OutlineItem] = Field(..., description="Structured outline with headings and subpoints")

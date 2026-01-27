@@ -18,7 +18,9 @@ from src.api.tool.schema.schema import (
     SEOBlogTitleRequest,
     SEOBlogTitleResponse,
     FAQRequest,
-    FAQResponse
+    FAQResponse,
+    ContentOutlineRequest,
+    ContentOutlineResponse
 )
 from src.api.tool.prompts.title_prompt import title_prompt, idea_prompt,faq_prompt
 from src.api.tool.prompts.meta_prompt import meta_prompt
@@ -26,6 +28,7 @@ from src.api.tool.prompts.canonical_prompt import canonical_prompt
 from src.api.tool.prompts.hreflang_prompt import hreflang_system_prompt, hreflang_user_prompt
 from src.api.tool.prompts.hook_prompt import hook_prompt
 from src.api.tool.prompts.seo_blog_title_prompt import seo_blog_title_prompt
+from src.api.tool.prompts.content_outline_prompt import content_outline_prompt
 
 def _get_model():
     """Internal helper to consistently load the model."""
@@ -493,3 +496,28 @@ def generate_seo_blog_titles(data: SEOBlogTitleRequest) -> SEOBlogTitleResponse:
         keyword=data.keyword,
         blog_titles=titles[:data.number_of_topics]
     )
+
+# Content Outline Generator Tool
+def generate_content_outline(data: ContentOutlineRequest) -> ContentOutlineResponse:
+    """
+    Generate structured content outline with headings and subpoints using AI.
+    Args:
+        data (ContentOutlineRequest): Pydantic model with topic, content_type, outline_depth, and tone
+     Returns:
+        ContentOutlineResponse: Pydantic model containing structured outline
+    """
+    llm = _get_model()
+    
+    # Use structured output for JSON parsing
+    structured_llm = llm.with_structured_output(ContentOutlineResponse)
+    
+    # Format the prompt with user inputs
+    prompt_text = content_outline_prompt.format(
+        topic=data.topic,
+        content_type=data.content_type,
+        outline_depth=data.outline_depth,
+        tone=data.tone
+    )
+    
+    # Invoke LLM with structured output
+    return structured_llm.invoke(prompt_text)
