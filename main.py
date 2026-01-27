@@ -67,9 +67,9 @@
 
 from fastapi import FastAPI
 from src.api.tool.keyword_density.keyword_density_routes import router as keyword_density_router
-from src.api.tool.keyword_rank_checker.keyword_rank_routes import router as keyword_rank_router
+# from src.api.tool.keyword_rank_checker.keyword_rank_routes import router as keyword_rank_router
 
 app = FastAPI()
 
 app.include_router(keyword_density_router)
-app.include_router(keyword_rank_router)
+# app.include_router(keyword_rank_router)
