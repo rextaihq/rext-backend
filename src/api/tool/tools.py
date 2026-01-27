@@ -84,16 +84,16 @@ def generate_meta_description(page_title: str, target_keywords: List[str]) -> st
     return meta_description
 
 
-# def validate_meta_description(meta_description: str) -> MetaDescriptionValidation:
+def validate_meta_description(meta_description: str) -> MetaDescriptionValidation:
 
-#     length = len(meta_description)
+    length = len(meta_description)
 
-#     return MetaDescriptionValidation(
-#         length=length,
-#         is_optimal_length=120 <= length <= 160,
-#         character_count=f"{length}/160",
-#         warnings=[] if 120 <= length <= 160 else ["Length not in optimal range (120-160 characters)"]
-#     )
+    return MetaDescriptionValidation(
+        length=length,
+        is_optimal_length=120 <= length <= 160,
+        character_count=f"{length}/160",
+        warnings=[] if 120 <= length <= 160 else ["Length not in optimal range (120-160 characters)"]
+    )
 
 
 # Title Tag Generator Tool
