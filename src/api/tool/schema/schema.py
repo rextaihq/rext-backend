@@ -1,4 +1,4 @@
-from pydantic import BaseModel, HttpUrl, Field, field_validator
+from pydantic import BaseModel, HttpUrl, Field, field_validator , validator
 from typing import List, Optional, Union , Literal
 import re
 

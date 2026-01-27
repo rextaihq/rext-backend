@@ -313,3 +313,45 @@ async def seo_blog_titles_route(request: SEOBlogTitleRequest):
             status_code=500,
             detail=f"Failed to generate SEO blog titles: {str(e)}"
         )
+
+@router.post("/conclusion-generator", response_model=ConclusionResponse)
+async def conclusion_generator(request: ConclusionRequest):
+    """
+    AI-powered Conclusion Generator.
+    Generates a concise, human-like conclusion for articles, blogs, or reports.
+    """
+    try:
+        conclusion_text = generate_conclusion(
+            content=request.content,
+            tone=request.tone,
+            length=request.length
+        )
+
+        return ConclusionResponse(conclusion=conclusion_text)
+
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to generate conclusion: {str(e)}"
+        )
+
+# -----------------------------
+# FAQ Generator Endpoint
+
+@router.post("/faq/generate", response_model=FAQResponse)
+def FAQGenerater(request: FAQRequest):
+    """
+    Generate high-quality FAQs for a given topic.
+
+    - **topic**: Main topic for FAQ generation
+    - **faq_count**: Number of FAQs to generate (1-20)
+    - **tone**: Tone of the FAQs (simple, professional, friendly)
+    """
+    try:
+        # Call the tool logic
+        response = generate_faqs(request)
+        return response
+    except Exception as e:
+        # Return a proper error response in case of failure
+        raise HTTPException(status_code=500, detail=f"Failed to generate FAQs: {str(e)}")
