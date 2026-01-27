@@ -113,7 +113,7 @@ class ReadabilityResponse(BaseModel):
 
 # Idea Generator Schemas
 class IdeaGeneratorRequest(BaseModel):
-    topic: str = Field(..., description="The main topic to generate ideas for")
+    topic: str = Field(...,description="The main topic to generate ideas for")
     content_type: str = Field(..., description="The type of content")
     ideas_count: int = Field(3, ge=1, le=20, description="Number of ideas to generate (1-20)")
 
@@ -144,7 +144,28 @@ class HreflangRequest(BaseModel):
 
 class HreflangResponse(BaseModel):
     hreflang_tags: str
-    warnings: Optional[List[str]] = None
+    warnings: list[str] | None = None
+
+# -----------------------------
+# FAQ Generator Tool Models
+# -----------------------------
+
+class FAQRequest(BaseModel):
+    topic: str = Field(..., description="The main topic to generate FAQs for")
+    faq_count: int = Field(5,ge=1,  le=20, description="Number of FAQs to generate (1-20)")
+    tone: str = Field("simple", description="Tone of the FAQs (e.g., simple, professional, friendly)")
+    @validator("topic")
+    def topic_must_not_be_empty(cls, v):
+        if not v.strip():  # prevents empty strings or spaces-only
+            raise ValueError("Topic must not be empty")
+        return v
+class FAQItem(BaseModel):
+    question: str = Field(..., description="The question text")
+    answer: str = Field(..., description="The answer text for the question")
+
+class FAQResponse(BaseModel):
+    topic: str = Field(..., description="The topic for which FAQs were generated")
+    faqs: List[FAQItem] = Field(..., description="List of generated FAQ question-answer pairs")
 
 # Robots.txt Schemas
 class RobotsTxtRequest(BaseModel):

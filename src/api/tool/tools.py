@@ -10,15 +10,17 @@ from urllib.parse import urlparse, urlunparse
 
 from src.flow.model.llm_manager import load_model
 from src.api.tool.schema.schema import (
-    MetaDescriptionValidation,
-    IdeaGeneratorResponse,
+    MetaDescriptionValidation, 
+    IdeaGeneratorResponse, 
     IdeaGeneratorRequest,
+    FAQRequest,
+    FAQResponse,
     HookGeneratorRequest,
     HookGeneratorResponse,
     SEOBlogTitleRequest,
     SEOBlogTitleResponse
 )
-from src.api.tool.prompts.title_prompt import title_prompt, idea_prompt
+from src.api.tool.prompts.title_prompt import title_prompt, idea_prompt,faq_prompt
 from src.api.tool.prompts.meta_prompt import meta_prompt
 from src.api.tool.prompts.canonical_prompt import canonical_prompt
 from src.api.tool.prompts.hreflang_prompt import hreflang_system_prompt, hreflang_user_prompt
@@ -406,7 +408,7 @@ def grammar_checker(text: str):
         # Close the connection
         tool.close()
 
-#Ai Content idea Generater tool
+#Ai Content Ideas Generater tool
 def generate_content_ideas(data: IdeaGeneratorRequest) -> IdeaGeneratorResponse:
     """Generate high-quality content ideas using structured LLM output."""
     llm = _get_model()
@@ -418,6 +420,29 @@ def generate_content_ideas(data: IdeaGeneratorRequest) -> IdeaGeneratorResponse:
     )
     return structured_llm.invoke(prompt)
 
+# FAQ generater Tool
+def generate_faqs(data: FAQRequest) -> FAQResponse:
+    """Generate high-quality FAQs for a given topic using structured LLM output.
+    Args:
+        data (FAQRequest): Pydantic model with topic, faq_count, and tone
+    Returns:
+        FAQResponse: Pydantic model containing list of FAQs
+    """
+    # Load the AI model
+    llm = load_model()
+
+    # Wrap LLM with structured output
+    structured_llm = llm.with_structured_output(FAQResponse)
+
+    # Format the prompt using the imported PromptTemplate
+    prompt_text = faq_prompt.format(
+        topic=data.topic,
+        faq_count=data.faq_count,
+        tone=data.tone
+    )
+
+    # Invoke LLM with structured output
+    return structured_llm.invoke(prompt_text)
 # Hook Generater Tool
 def generate_hooks(data: HookGeneratorRequest) -> HookGeneratorResponse:
     """Generate catchy hooks using LLM."""

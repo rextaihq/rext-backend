@@ -38,3 +38,20 @@ Guidelines:
 - Return a clear list of ideas matching the requested schema.
 """
 )
+
+faq_prompt = PromptTemplate(
+    input_variables=["topic", "faq_count", "tone"],
+    template="""
+You are an expert SEO Content Writer and User Intent Analyst. Your task is to generate {faq_count} high-quality, relevant, and user-focused Frequently Asked Questions (FAQs) for the topic: "{topic}".
+
+Guidelines:
+- Write FAQs in a "{tone}" tone (e.g., simple, professional, friendly).
+- Questions should reflect real user search intent and common doubts.
+- Answers must be clear, concise, and easy to understand.
+- Avoid technical jargon unless absolutely necessary.
+- Ensure answers are accurate, helpful, and actionable.
+- Each question-answer pair should be unique and non-repetitive.
+- Return the FAQs strictly in the requested structured format.
+"""
+)
+
