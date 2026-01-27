@@ -47,6 +47,28 @@ from src.api.tool.schema.schema import (
     SEOBlogTitleResponse
 )
 
+from src.api.tool.schema.schema import QuestionRequest, QuestionResponse,TagLineRequest,TagLineResponse,MetaDescriptionRequest,MetaDescriptionResponse
+from src.api.tool.tools import generate_taglines
+    
+# from src.api.tool.schema.schema import (
+#     QuestionRequest, 
+#     QuestionResponse,
+#     TagLineRequest,
+    # TagLineResponse,
+    # MetaDescriptionRequest,
+    # MetaDescriptionResponse,
+    # TitleRequest, 
+    # TitleResponse,
+    # SchemaRequest,
+    # ReadabilityRequest,
+    # ReadabilityResponse,
+    # CanonicalTagRequest,validate_meta_description,
+    # CanonicalTagResponse,
+    # HreflangRequest,
+    # HreflangResponse
+# )
+
+
 router = APIRouter(prefix='/tools', tags=['tools'])
 
 @router.get("/")
@@ -147,20 +169,44 @@ async def canonical_tag_generator(request: CanonicalTagRequest):
         )
 
 # Hreflang Tag Generator Endpoint
-@router.post("/hreflang-tag-generator", response_model=HreflangResponse)
-async def hreflang_tag_generator(request: HreflangRequest):
+# @router.post("/hreflang-tag-generator", response_model=HreflangResponse)
+# async def hreflang_tag_generator(request: HreflangRequest):
+#     """
+#     AI-powered Google-compliant Hreflang Tag Generator.
+#     """
+#     try:
+#         return generate_hreflang_tags(request)
+#     except ValueError as ve:
+#         raise HTTPException(status_code=400, detail=str(ve))
+#     except Exception as e:
+#         raise HTTPException(
+#             status_code=500,
+#             detail=f"Failed to generate hreflang tags: {str(e)}"
+#         )
+
+
+
+
+# Questions generator route.
+
+# Questions generator route.
+@router.post("/question-generator", response_model=QuestionResponse)
+async def generate_questions_route(request: QuestionRequest):
     """
     AI-powered Google-compliant Hreflang Tag Generator.
     URL: POST /tools/hreflang-tag-generator
     """
     try:
-        return generate_hreflang_tags(request)
-    except ValueError as ve:
-        raise HTTPException(status_code=400, detail=str(ve))
+        if not request.text.strip():
+            raise HTTPException(status_code=400, detail="Input text cannot be empty")
+            
+        result = generate_questions(request.text)
+        return {"questions": result}
+    
     except Exception as e:
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to generate hreflang tags: {str(e)}"
+            detail=f"Failed to generate questions: {str(e)}"
         )
 
 # Link Checker Endpoint
