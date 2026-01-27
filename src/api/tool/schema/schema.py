@@ -28,6 +28,23 @@ class MetaDescriptionResponse(BaseModel):
     meta_description: str
     validation: MetaDescriptionValidation
 
+class QuestionRequest(BaseModel):
+    text:str 
+    
+class QuestionResponse(BaseModel):
+    questions: List[str]
+    
+    
+class TagLineRequest(BaseModel):
+    brand: str = Field(..., description="Brand name")
+    topic: str = Field(..., description="Product or topic")
+    tone: Optional[str] = Field("professional", description="Tone of the tagline")
+    count: Optional[int] = Field(5, ge=1, le=10, description="Number of taglines")
+    
+    
+class TagLineResponse(BaseModel):
+    taglines: List[str]
+
 # Broken Link Schemas
 class BrokenLinkRequest(BaseModel):
     url: HttpUrl = Field(..., description="URL to check for broken link")
@@ -96,7 +113,7 @@ class ReadabilityResponse(BaseModel):
 
 # Idea Generator Schemas
 class IdeaGeneratorRequest(BaseModel):
-    topic: str = Field(..., description="The main topic to generate ideas for")
+    topic: str = Field(...,description="The main topic to generate ideas for")
     content_type: str = Field(..., description="The type of content")
     ideas_count: int = Field(3, ge=1, le=20, description="Number of ideas to generate (1-20)")
 
@@ -207,3 +224,17 @@ class OutlineItem(BaseModel):
 
 class ContentOutlineResponse(BaseModel):
     outline: List[OutlineItem] = Field(..., description="Structured outline with headings and subpoints")
+class ConclusionRequest(BaseModel):
+    content: str = Field(..., min_length=20, description="Main article or text")
+    tone: Literal[
+        "professional",
+        "inspirational",
+        "friendly",
+        "persuasive",
+        "formal"
+    ] = "professional"
+    length: Literal["short", "medium", "long"] = "medium"
+
+
+class ConclusionResponse(BaseModel):
+    conclusion: str

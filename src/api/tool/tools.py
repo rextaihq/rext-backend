@@ -10,9 +10,11 @@ from urllib.parse import urlparse, urlunparse
 
 from src.flow.model.llm_manager import load_model
 from src.api.tool.schema.schema import (
-    MetaDescriptionValidation,
-    IdeaGeneratorResponse,
+    MetaDescriptionValidation, 
+    IdeaGeneratorResponse, 
     IdeaGeneratorRequest,
+    FAQRequest,
+    FAQResponse,
     HookGeneratorRequest,
     HookGeneratorResponse,
     SEOBlogTitleRequest,

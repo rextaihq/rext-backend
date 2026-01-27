@@ -2,6 +2,9 @@ from fastapi import HTTPException, APIRouter
 from typing import List
 import traceback
 
+from src.api.tool.test_tool import generate_conclusion
+from src.api.tool.tool_test import generate_questions
+
 from src.api.tool.tools import (
     build_schema,
     calculate_readability,
@@ -50,8 +53,14 @@ from src.api.tool.schema.schema import (
     SEOBlogTitleRequest,
     SEOBlogTitleResponse,
     ContentOutlineRequest,
-    ContentOutlineResponse
+    ContentOutlineResponse,
+    ConclusionRequest,
+    ConclusionResponse
 )
+
+from src.api.tool.schema.schema import QuestionRequest, QuestionResponse,MetaDescriptionRequest,MetaDescriptionResponse
+# from src.api.tool.tools import generate_taglines
+    
 
 router = APIRouter(prefix='/tools', tags=['tools'])
 
@@ -157,7 +166,6 @@ async def canonical_tag_generator(request: CanonicalTagRequest):
 async def hreflang_tag_generator(request: HreflangRequest):
     """
     AI-powered Google-compliant Hreflang Tag Generator.
-    URL: POST /tools/hreflang-tag-generator
     """
     try:
         return generate_hreflang_tags(request)
@@ -167,6 +175,26 @@ async def hreflang_tag_generator(request: HreflangRequest):
         raise HTTPException(
             status_code=500,
             detail=f"Failed to generate hreflang tags: {str(e)}"
+        )
+
+# Questions generator route.
+@router.post("/question-generator", response_model=QuestionResponse)
+async def generate_questions_route(request: QuestionRequest):
+    """
+    AI-powered Google-compliant Hreflang Tag Generator.
+    URL: POST /tools/hreflang-tag-generator
+    """
+    try:
+        if not request.text.strip():
+            raise HTTPException(status_code=400, detail="Input text cannot be empty")
+            
+        result = generate_questions(request.text)
+        return {"questions": result}
+    
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to generate questions: {str(e)}"
         )
 
 # Link Checker Endpoint
@@ -271,27 +299,27 @@ async def seo_blog_titles_route(request: SEOBlogTitleRequest):
             detail=f"Failed to generate SEO blog titles: {str(e)}"
         )
 
-# @router.post("/conclusion-generator", response_model=ConclusionResponse)
-# async def conclusion_generator(request: ConclusionRequest):
-#     """
-#     AI-powered Conclusion Generator.
-#     Generates a concise, human-like conclusion for articles, blogs, or reports.
-#     """
-#     try:
-#         conclusion_text = generate_conclusion(
-#             content=request.content,
-#             tone=request.tone,
-#             length=request.length
-#         )
+@router.post("/conclusion-generator", response_model=ConclusionResponse)
+async def conclusion_generator(request: ConclusionRequest):
+    """
+    AI-powered Conclusion Generator.
+    Generates a concise, human-like conclusion for articles, blogs, or reports.
+    """
+    try:
+        conclusion_text = generate_conclusion(
+            content=request.content,
+            tone=request.tone,
+            length=request.length
+        )
 
-#         return ConclusionResponse(conclusion=conclusion_text)
+        return ConclusionResponse(conclusion=conclusion_text)
 
-#     except Exception as e:
-#         traceback.print_exc()
-#         raise HTTPException(
-#             status_code=500,
-#             detail=f"Failed to generate conclusion: {str(e)}"
-#         )
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to generate conclusion: {str(e)}"
+        )
 
 
 # -----------------------------
