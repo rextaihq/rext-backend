@@ -2,6 +2,9 @@ from fastapi import HTTPException, APIRouter
 from typing import List
 import traceback
 
+from src.api.tool.test_tool import generate_conclusion
+from src.api.tool.tool_test import generate_questions
+
 from src.api.tool.tools import (
     build_schema,
     calculate_readability,
@@ -47,8 +50,32 @@ from src.api.tool.schema.schema import (
     HookGeneratorRequest,
     HookGeneratorResponse,
     SEOBlogTitleRequest,
-    SEOBlogTitleResponse
+    SEOBlogTitleResponse,
+    ConclusionRequest,
+    ConclusionResponse
 )
+
+from src.api.tool.schema.schema import QuestionRequest, QuestionResponse,MetaDescriptionRequest,MetaDescriptionResponse
+# from src.api.tool.tools import generate_taglines
+    
+# from src.api.tool.schema.schema import (
+#     QuestionRequest, 
+#     QuestionResponse,
+#     TagLineRequest,
+    # TagLineResponse,
+    # MetaDescriptionRequest,
+    # MetaDescriptionResponse,
+    # TitleRequest, 
+    # TitleResponse,
+    # SchemaRequest,
+    # ReadabilityRequest,
+    # ReadabilityResponse,
+    # CanonicalTagRequest,validate_meta_description,
+    # CanonicalTagResponse,
+    # HreflangRequest,
+    # HreflangResponse
+# )
+
 
 router = APIRouter(prefix='/tools', tags=['tools'])
 
@@ -154,7 +181,6 @@ async def canonical_tag_generator(request: CanonicalTagRequest):
 async def hreflang_tag_generator(request: HreflangRequest):
     """
     AI-powered Google-compliant Hreflang Tag Generator.
-    URL: POST /tools/hreflang-tag-generator
     """
     try:
         return generate_hreflang_tags(request)
@@ -164,6 +190,26 @@ async def hreflang_tag_generator(request: HreflangRequest):
         raise HTTPException(
             status_code=500,
             detail=f"Failed to generate hreflang tags: {str(e)}"
+        )
+
+# Questions generator route.
+@router.post("/question-generator", response_model=QuestionResponse)
+async def generate_questions_route(request: QuestionRequest):
+    """
+    AI-powered Google-compliant Hreflang Tag Generator.
+    URL: POST /tools/hreflang-tag-generator
+    """
+    try:
+        if not request.text.strip():
+            raise HTTPException(status_code=400, detail="Input text cannot be empty")
+            
+        result = generate_questions(request.text)
+        return {"questions": result}
+    
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to generate questions: {str(e)}"
         )
 
 # Link Checker Endpoint

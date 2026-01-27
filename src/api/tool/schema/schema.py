@@ -1,5 +1,5 @@
-from pydantic import BaseModel, HttpUrl, Field, field_validator,validator
-from typing import List, Optional, Union
+from pydantic import BaseModel, HttpUrl, Field, field_validator
+from typing import List, Optional, Union , Literal
 import re
 
 # Word Counter Schemas
@@ -27,6 +27,23 @@ class MetaDescriptionValidation(BaseModel):
 class MetaDescriptionResponse(BaseModel):
     meta_description: str
     validation: MetaDescriptionValidation
+
+class QuestionRequest(BaseModel):
+    text:str 
+    
+class QuestionResponse(BaseModel):
+    questions: List[str]
+    
+    
+class TagLineRequest(BaseModel):
+    brand: str = Field(..., description="Brand name")
+    topic: str = Field(..., description="Product or topic")
+    tone: Optional[str] = Field("professional", description="Tone of the tagline")
+    count: Optional[int] = Field(5, ge=1, le=10, description="Number of taglines")
+    
+    
+class TagLineResponse(BaseModel):
+    taglines: List[str]
 
 # Broken Link Schemas
 class BrokenLinkRequest(BaseModel):
@@ -193,3 +210,18 @@ class SEOBlogTitleRequest(BaseModel):
 class SEOBlogTitleResponse(BaseModel):
     keyword: str
     blog_titles: List[str]
+
+class ConclusionRequest(BaseModel):
+    content: str = Field(..., min_length=20, description="Main article or text")
+    tone: Literal[
+        "professional",
+        "inspirational",
+        "friendly",
+        "persuasive",
+        "formal"
+    ] = "professional"
+    length: Literal["short", "medium", "long"] = "medium"
+
+
+class ConclusionResponse(BaseModel):
+    conclusion: str
