@@ -1,4 +1,4 @@
-from pydantic import BaseModel, HttpUrl, Field, field_validator,validator
+from pydantic import BaseModel, HttpUrl, Field, field_validator
 from typing import List, Optional, Union
 import re
 
@@ -96,7 +96,7 @@ class ReadabilityResponse(BaseModel):
 
 # Idea Generator Schemas
 class IdeaGeneratorRequest(BaseModel):
-    topic: str = Field(...,description="The main topic to generate ideas for")
+    topic: str = Field(..., description="The main topic to generate ideas for")
     content_type: str = Field(..., description="The type of content")
     ideas_count: int = Field(3, ge=1, le=20, description="Number of ideas to generate (1-20)")
 
@@ -137,7 +137,7 @@ class FAQRequest(BaseModel):
     topic: str = Field(..., description="The main topic to generate FAQs for")
     faq_count: int = Field(5,ge=1,  le=20, description="Number of FAQs to generate (1-20)")
     tone: str = Field("simple", description="Tone of the FAQs (e.g., simple, professional, friendly)")
-    @validator("topic")
+    @field_validator("topic")
     def topic_must_not_be_empty(cls, v):
         if not v.strip():  # prevents empty strings or spaces-only
             raise ValueError("Topic must not be empty")
@@ -172,3 +172,24 @@ class GrammarCheckerRequest(BaseModel):
 class GrammarCheckerResponse(BaseModel):
     corrected_text: str
     issues: List[GrammarIssue]
+
+# Hook Generator Schemas
+class HookGeneratorRequest(BaseModel):
+    topic_description: str = Field(..., description="The description of the topic for the content")
+    goal_of_content: str = Field(..., description="The goal or purpose of the content")
+    number_of_variations: int = Field(3, ge=1, le=10, description="The number of variations to generate")
+
+class HookGeneratorResponse(BaseModel):
+    topic: str
+    hooks: List[str]
+
+# SEO Blog Title Generator Schemas
+class SEOBlogTitleRequest(BaseModel):
+    keyword: str = Field(..., description="The main keyword to generate blog titles for")
+    number_of_topics: int = Field(5, ge=1, le=20, description="The number of topics to generate")
+    min_words: int = Field(5, ge=1, description="Minimum number of words per title")
+    max_words: int = Field(15, ge=1, description="Maximum number of words per title")
+
+class SEOBlogTitleResponse(BaseModel):
+    keyword: str
+    blog_titles: List[str]

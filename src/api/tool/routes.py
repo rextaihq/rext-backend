@@ -15,7 +15,9 @@ from src.api.tool.tools import (
     generate_hreflang_tags,
     broken_link_checker,
     generate_robots_txt,
-    grammar_checker
+    grammar_checker,
+    generate_hooks,
+    generate_seo_blog_titles
 )
 
 from src.api.tool.schema.schema import (
@@ -30,10 +32,6 @@ from src.api.tool.schema.schema import (
     SchemaRequest,
     ReadabilityRequest,
     ReadabilityResponse,
-    IdeaGeneratorRequest,
-    IdeaGeneratorResponse,
-    MetaDescriptionRequest,
-    MetaDescriptionResponse,
     CanonicalTagRequest,
     CanonicalTagResponse,
     HreflangRequest,
@@ -45,7 +43,11 @@ from src.api.tool.schema.schema import (
     GrammarCheckerRequest,
     GrammarCheckerResponse,
     IdeaGeneratorRequest,
-    IdeaGeneratorResponse
+    IdeaGeneratorResponse,
+    HookGeneratorRequest,
+    HookGeneratorResponse,
+    SEOBlogTitleRequest,
+    SEOBlogTitleResponse
 )
 
 router = APIRouter(prefix='/tools', tags=['tools'])
@@ -235,6 +237,60 @@ async def grammar_checker_route(request: GrammarCheckerRequest):
             status_code=500,
             detail=f"Grammar calculation failed: {str(e)}"
         )
+
+# Hook Generater Endpoint
+@router.post("/hook-generator", response_model=HookGeneratorResponse, summary="Hook Generater")
+async def hook_generator_route(request: HookGeneratorRequest):
+    """
+    Hook Generater: Brainstorms attention grabbing hooks based on inputs.
+    URL: POST /tools/hook-generator
+    """
+    try:
+        return generate_hooks(request)
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to generate hooks: {str(e)}"
+        )
+
+# Blog Topic Generater Endpoint
+@router.post("/seo-blog-titles", response_model=SEOBlogTitleResponse, summary="Blog Topic Generater")
+async def seo_blog_titles_route(request: SEOBlogTitleRequest):
+    """
+    Blog Topic Generater: Generates SEO-friendly blog titles based on a keyword.
+    URL: POST /tools/seo-blog-titles
+    """
+    try:
+        return generate_seo_blog_titles(request)
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to generate SEO blog titles: {str(e)}"
+        )
+
+# @router.post("/conclusion-generator", response_model=ConclusionResponse)
+# async def conclusion_generator(request: ConclusionRequest):
+#     """
+#     AI-powered Conclusion Generator.
+#     Generates a concise, human-like conclusion for articles, blogs, or reports.
+#     """
+#     try:
+#         conclusion_text = generate_conclusion(
+#             content=request.content,
+#             tone=request.tone,
+#             length=request.length
+#         )
+
+#         return ConclusionResponse(conclusion=conclusion_text)
+
+#     except Exception as e:
+#         traceback.print_exc()
+#         raise HTTPException(
+#             status_code=500,
+#             detail=f"Failed to generate conclusion: {str(e)}"
+#         )
+
+
 # -----------------------------
 # FAQ Generator Endpoint
 
