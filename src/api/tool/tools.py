@@ -2,6 +2,8 @@ import re
 import requests
 import textstat
 from typing import List, Dict, Any, Optional
+from langchain_core.prompts import PromptTemplate
+from src.api.tool.prompts.prompts import generate_conclusion_prompt_template
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.messages import SystemMessage, HumanMessage
 from urllib.parse import urlparse, urlunparse
