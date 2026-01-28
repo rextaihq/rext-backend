@@ -2,7 +2,7 @@ volumes:
     langgraph-data:
         driver: local
 services:
-    # Redis for application cache (separate from LangGraph)
+    # Redis for application cache
     redis:
         image: redis:7-alpine
         container_name: rext-redis
