@@ -78,11 +78,11 @@ class SubscriptionManagementService:
         response = subscription.to_dict()
         response["plan_name"] = plan.name
         response["plan_display_name"] = plan.display_name
-        response["user_username"] = user.username
+        response["user_full_name"] = user.full_name or user.display_name or user.email
         response["user_email"] = user.email
         return {
             "subscription": response,
-            "message": f"Successfully assigned {plan.display_name} to user {user.username}",
+            "message": f"Successfully assigned {plan.display_name} to user {user.full_name or user.email}",
         }
 
     async def extend_subscription(

@@ -79,7 +79,7 @@ async def suspend_user(
             old_values={"status": old_status},
             new_values={"status": "suspended", "reason": status_data.reason},
             request=request,
-            username=admin_user.username if admin_user else None,
+            full_name=admin_user.full_name if admin_user else None,
             user_email=admin_user.email if admin_user else None
         )
 
@@ -87,11 +87,11 @@ async def suspend_user(
 
         response_data = UserStatusResponse(
             user_id=str(target_user.id),
-            username=target_user.username,
+            full_name=target_user.full_name or target_user.display_name or target_user.email,
             email=target_user.email,
             old_status=old_status,
             new_status="suspended",
-            changed_by=admin_user.username if admin_user else "unknown",
+            changed_by=admin_user.full_name or admin_user.display_name or admin_user.email if admin_user else "unknown",
             reason=status_data.reason,
             changed_at=target_user.updated_at.isoformat()
         )
@@ -99,7 +99,7 @@ async def suspend_user(
         return success(
             data=response_data.model_dump(),
             request=request,
-            message=f"User {target_user.username} suspended successfully"
+            message=f"User {target_user.full_name or target_user.email} suspended successfully"
         )
 
     except ResourceNotFoundException:
@@ -174,7 +174,7 @@ async def activate_user(
             old_values={"status": old_status},
             new_values={"status": "active", "reason": status_data.reason},
             request=request,
-            username=admin_user.username if admin_user else None,
+            full_name=admin_user.full_name if admin_user else None,
             user_email=admin_user.email if admin_user else None
         )
 
@@ -182,11 +182,11 @@ async def activate_user(
 
         response_data = UserStatusResponse(
             user_id=str(target_user.id),
-            username=target_user.username,
+            full_name=target_user.full_name or target_user.display_name or target_user.email,
             email=target_user.email,
             old_status=old_status,
             new_status="active",
-            changed_by=admin_user.username if admin_user else "unknown",
+            changed_by=admin_user.full_name or admin_user.display_name or admin_user.email if admin_user else "unknown",
             reason=status_data.reason,
             changed_at=target_user.updated_at.isoformat()
         )
@@ -194,7 +194,7 @@ async def activate_user(
         return success(
             data=response_data.model_dump(),
             request=request,
-            message=f"User {target_user.username} activated successfully"
+            message=f"User {target_user.full_name or target_user.email} activated successfully"
         )
 
     except ResourceNotFoundException:
@@ -271,7 +271,7 @@ async def ban_user(
             old_values={"status": old_status},
             new_values={"status": "banned", "reason": status_data.reason},
             request=request,
-            username=admin_user.username if admin_user else None,
+            full_name=admin_user.full_name if admin_user else None,
             user_email=admin_user.email if admin_user else None
         )
 
@@ -279,11 +279,11 @@ async def ban_user(
 
         response_data = UserStatusResponse(
             user_id=str(target_user.id),
-            username=target_user.username,
+            full_name=target_user.full_name or target_user.display_name or target_user.email,
             email=target_user.email,
             old_status=old_status,
             new_status="banned",
-            changed_by=admin_user.username if admin_user else "unknown",
+            changed_by=admin_user.full_name or admin_user.display_name or admin_user.email if admin_user else "unknown",
             reason=status_data.reason,
             changed_at=target_user.updated_at.isoformat()
         )
@@ -291,7 +291,7 @@ async def ban_user(
         return success(
             data=response_data.model_dump(),
             request=request,
-            message=f"User {target_user.username} banned successfully"
+            message=f"User {target_user.full_name or target_user.email} banned successfully"
         )
 
     except ResourceNotFoundException:
@@ -429,7 +429,7 @@ async def deactivate_account(
                 "reason": deactivation_data.reason
             },
             request=request,
-            username=db_user.username,
+            full_name=db_user.full_name,
             user_email=db_user.email
         )
 

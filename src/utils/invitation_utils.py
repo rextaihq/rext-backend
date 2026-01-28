@@ -109,7 +109,7 @@ def get_invitation_with_details(db: Session, invitation_id: str) -> Optional[dic
         "role_id": str(invitation.role_id),
         "role_name": role.name if role else None,
         "invited_by_user_id": str(invitation.invited_by_user_id),
-        "invited_by_name": invited_by.username if invited_by else None,
+        "invited_by_name": invited_by.full_name if invited_by else None,
         "status": invitation.status,
         "created_at": invitation.created_at.isoformat() if invitation.created_at else None,
         "expires_at": invitation.expires_at.isoformat() if invitation.expires_at else None,

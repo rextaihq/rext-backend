@@ -136,7 +136,7 @@ async def create_user(
         background_tasks.add_task(
             send_verification_email_task,
             email=new_user.email,
-            first_name=new_user.first_name,
+            first_name=new_user.full_name or new_user.display_name,
             verification_token=verification_token,
             user_id=str(new_user.id),
             frontend_url=frontend_url
@@ -175,10 +175,8 @@ async def create_user(
         await db.refresh(notification_preference)
         user_data = {
             "id": str(new_user.id),
-            "username": new_user.username,
             "email": new_user.email,
-            "first_name": new_user.first_name,
-            "last_name": new_user.last_name,
+            "full_name": new_user.full_name,
             "display_name": new_user.display_name,
             "language": new_user.language,
             "timezone": new_user.timezone,
@@ -356,7 +354,7 @@ async def register_with_invitation(
             background_tasks.add_task(
                 send_welcome_email_task,
                 email=current_user.email,
-                first_name=current_user.first_name,
+                first_name=current_user.full_name or current_user.display_name,
                 user_id=str(current_user.id),
                 frontend_url=frontend_url
             )
@@ -408,10 +406,8 @@ async def register_with_invitation(
         # Step 8: Return comprehensive response with workspace context
         user_data_response = {
             "id": str(current_user.id),
-            "username": current_user.username,
             "email": current_user.email,
-            "first_name": current_user.first_name,
-            "last_name": current_user.last_name,
+            "full_name": current_user.full_name,
             "display_name": current_user.display_name,
             "language": current_user.language,
             "timezone": current_user.timezone,
@@ -532,10 +528,9 @@ async def login_user(
                 **tokens,
                 "user": {
                     "id": str(db_user.id),
-                    "username": db_user.username,
                     "email": db_user.email,
-                    "first_name": db_user.first_name,
-                    "last_name": db_user.last_name,
+                    "full_name": db_user.full_name,
+                    "display_name": db_user.display_name,
                     "avatar_url": db_user.avatar_url,
                     "last_login_at": db_user.last_login_at,
                     "login_count": db_user.login_count,
@@ -696,7 +691,7 @@ async def verify_email(
             background_tasks.add_task(
                 send_welcome_email_task,
                 email=user.email,
-                first_name=user.first_name or user.username,
+                first_name=user.full_name or user.display_name,
                 user_id=str(user.id),
                 frontend_url=frontend_url
             )
@@ -761,7 +756,7 @@ async def resend_verification(
         background_tasks.add_task(
             send_verification_email_task,
             email=user.email,
-            first_name=user.first_name or user.username,
+            first_name=user.full_name or user.display_name,
             verification_token=verification_token,
             user_id=str(user.id),
             frontend_url=frontend_url
@@ -898,10 +893,9 @@ async def oauth_login(
                 **tokens,
                 "user": {
                     "id": str(new_user.id),
-                    "username": new_user.username,
                     "email": new_user.email,
-                    "first_name": new_user.first_name,
-                    "last_name": new_user.last_name,
+                    "full_name": new_user.full_name,
+                    "display_name": new_user.display_name,
                     "avatar_url": new_user.avatar_url,
                     "last_login_at": new_user.last_login_at,
                     "login_count": new_user.login_count,

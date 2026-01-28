@@ -104,7 +104,7 @@ class UserService:
 
         Args:
             user_id: User UUID
-            **kwargs: Fields to update (first_name, last_name, display_name, bio,
+            **kwargs: Fields to update (full_name, display_name, bio,
                      avatar_url, language, timezone)
 
         Returns:
@@ -428,7 +428,7 @@ class UserService:
 
         Raises:
             ResourceNotFoundException: If user not found
-            RextValidationException: If email/username already exists
+            RextValidationException: If email already exists
         """
         from src.api.middleware.exceptions import RextValidationException
 

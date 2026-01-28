@@ -248,13 +248,13 @@ class SubscriptionService:
 
         if not customer_id:
             # Create customer in payment provider
-            customer_name = f"{user.first_name} {user.last_name}".strip() or user.username
+            customer_name = user.full_name or user.display_name or user.email
             customer_id = await self.payment_provider.create_customer(
                 email=user.email,
                 name=customer_name,
                 metadata={
                     "user_id": str(user_id),
-                    "username": user.username
+                    "full_name": user.full_name
                 }
             )
 

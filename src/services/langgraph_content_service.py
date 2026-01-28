@@ -488,7 +488,7 @@ class LangGraphContentService:
         content_url = f"{frontend_url}/w/{workspace.slug}/content/{content_id}"
 
         # Render professional email
-        user_name = user.first_name or user.username or user.email.split("@")[0]
+        user_name = user.full_name or user.display_name or user.email.split("@")[0]
         html_content = render_content_generation_started_email(
             user_name=user_name,
             content_title=content.title,
@@ -543,7 +543,7 @@ class LangGraphContentService:
         content_url = f"{frontend_url}/w/{workspace.slug}/content/{content_id}"
 
         # Render professional email
-        user_name = user.first_name or user.username or user.email.split("@")[0]
+        user_name = user.full_name or user.display_name or user.email.split("@")[0]
         html_content = render_content_generation_completed_email(
             user_name=user_name,
             content_title=content.title,
@@ -597,7 +597,7 @@ class LangGraphContentService:
         user_friendly_error = error_message[:200] if len(error_message) > 200 else error_message
 
         # Render professional email
-        user_name = user.first_name or user.username or user.email.split("@")[0]
+        user_name = user.full_name or user.display_name or user.email.split("@")[0]
         html_content = render_content_generation_failed_email(
             user_name=user_name,
             content_title=content.title,

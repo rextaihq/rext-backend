@@ -18,7 +18,7 @@ def create_audit_log(
     new_values: Optional[Dict[str, Any]] = None,
     request: Optional[Request] = None,
     workspace_id: Optional[uuid.UUID] = None,
-    username: Optional[str] = None,
+    full_name: Optional[str] = None,
     user_email: Optional[str] = None,
     metadata: Optional[Dict[str, Any]] = None,
     status: str = "success",
@@ -37,7 +37,7 @@ def create_audit_log(
         new_values: New state of the resource
         request: FastAPI request object (for IP and user agent)
         workspace_id: ID of the workspace context
-        username: Username (denormalized for historical record)
+        full_name: Full name (denormalized for historical record)
         user_email: User email (denormalized for historical record)
         metadata: Additional context information
         status: Status of the action (success, failed, partial)
@@ -65,7 +65,7 @@ def create_audit_log(
         # Create audit log entry
         audit_log = AuditLog(
             user_id=user_id,
-            username=username,
+            full_name=full_name,
             user_email=user_email,
             action=action,
             resource_type=resource_type,
@@ -104,7 +104,7 @@ async def create_audit_log_async(
     new_values: Optional[Dict[str, Any]] = None,
     request: Optional[Request] = None,
     workspace_id: Optional[uuid.UUID] = None,
-    username: Optional[str] = None,
+    full_name: Optional[str] = None,
     user_email: Optional[str] = None,
     metadata: Optional[Dict[str, Any]] = None,
     status: str = "success",
@@ -123,7 +123,7 @@ async def create_audit_log_async(
         new_values: New state of the resource
         request: FastAPI request object (for IP and user agent)
         workspace_id: ID of the workspace context
-        username: Username (denormalized for historical record)
+        full_name: Full name (denormalized for historical record)
         user_email: User email (denormalized for historical record)
         metadata: Additional context information
         status: Status of the action (success, failed, partial)
@@ -151,7 +151,7 @@ async def create_audit_log_async(
         # Create audit log entry
         audit_log = AuditLog(
             user_id=user_id,
-            username=username,
+            full_name=full_name,
             user_email=user_email,
             action=action,
             resource_type=resource_type,
