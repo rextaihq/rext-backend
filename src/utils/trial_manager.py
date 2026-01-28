@@ -171,7 +171,7 @@ def get_trials_expiring_soon(
             "subscription_id": str(subscription.id),
             "user_id": str(user.id),
             "email": user.email,
-            "username": user.username,
+            "full_name": user.full_name,
             "plan_name": plan.display_name,
             "trial_end_date": subscription.trial_end_date.isoformat(),
             "days_remaining": max(0, days_remaining),

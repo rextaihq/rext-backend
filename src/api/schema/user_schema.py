@@ -2,9 +2,7 @@ from pydantic import BaseModel, EmailStr, Field, field_validator
 from typing import Optional, Literal
 
 class RegisterUser(BaseModel):
-    first_name: str = Field(..., description="First name of the user")
-    last_name:  str = Field(..., description="Last name of the user")
-    username:  str = Field(..., description="Name of the user")
+    full_name: str = Field(..., description="Full name of the user")
     email: EmailStr = Field(..., description="Email address of the user")
     password: str = Field(..., min_length=8, description="Password for the user account")
 
@@ -12,19 +10,8 @@ class RegisterUser(BaseModel):
 class RegisterWithInvitation(BaseModel):
     """
     Schema for user registration via workspace invitation.
-
-    This endpoint handles the complete flow of:
-    1. Creating a new user account
-    2. Validating the invitation token
-    3. Auto-accepting the invitation
-    4. Creating workspace membership
-
-    The email is pre-filled and read-only on the frontend, but we validate
-    that it matches the invitation email for security.
     """
-    first_name: str = Field(..., description="First name of the user")
-    last_name: str = Field(..., description="Last name of the user")
-    username: str = Field(..., description="Username for the account")
+    full_name: str = Field(..., description="Full name of the user")
     email: EmailStr = Field(..., description="Email address (must match invitation email)")
     password: str = Field(..., min_length=8, description="Password for the user account")
     invitation_token: str = Field(..., description="Invitation token from email link")
@@ -53,9 +40,7 @@ class LoginWithInvitation(BaseModel):
 
 class UpdateUser(BaseModel):
     email: Optional[EmailStr] = Field(None, description="User email")
-    username: Optional[str] = Field(None, description="Username")
-    first_name: Optional[str] = Field(None, description="First name")
-    last_name: Optional[str] = Field(None, description="Last name")
+    full_name: Optional[str] = Field(None, description="Full name")
     display_name: Optional[str] = Field(None, description="Display name")
     password: Optional[str] = Field(None, description="Password (will be hashed)")
     avatar_url: Optional[str] = Field(None, description="Profile avatar URL")
@@ -83,8 +68,7 @@ class ChangePasswordRequest(BaseModel):
 
 class UpdateProfileRequest(BaseModel):
     """Schema for users to update their own profile (self-service)"""
-    first_name: Optional[str] = Field(None, min_length=1, max_length=100, description="First name")
-    last_name: Optional[str] = Field(None, min_length=1, max_length=100, description="Last name")
+    full_name: Optional[str] = Field(None, min_length=1, max_length=200, description="Full name")
     display_name: Optional[str] = Field(None, min_length=1, max_length=200, description="Display name")
     bio: Optional[str] = Field(None, max_length=500, description="User bio (max 500 characters)")
     language: Optional[str] = Field(None, min_length=2, max_length=10, description="Language preference (e.g., 'en', 'es')")
@@ -94,9 +78,7 @@ class ProfileResponse(BaseModel):
     """Schema for profile response"""
     id: str
     email: str
-    username: str
-    first_name: Optional[str]
-    last_name: Optional[str]
+    full_name: Optional[str]
     display_name: Optional[str]
     language: str
     timezone: str

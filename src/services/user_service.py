@@ -117,11 +117,8 @@ class UserService:
         user = await self.get_user_by_id(user_id)
 
         # Update only explicitly provided fields
-        if "first_name" in kwargs:
-            user.first_name = kwargs["first_name"]
-
-        if "last_name" in kwargs:
-            user.last_name = kwargs["last_name"]
+        if "full_name" in kwargs:
+            user.full_name = kwargs["full_name"]
 
         if "display_name" in kwargs:
             user.display_name = kwargs["display_name"]
@@ -410,22 +407,18 @@ class UserService:
         self,
         user_id: UUID,
         email: Optional[str] = None,
-        username: Optional[str] = None,
-        first_name: Optional[str] = None,
-        last_name: Optional[str] = None,
+        full_name: Optional[str] = None,
         display_name: Optional[str] = None,
         language: Optional[str] = None,
         timezone: Optional[str] = None
     ) -> Users:
         """
-        Update user with email/username validation and profile fields.
+        Update user with email validation and profile fields.
 
         Args:
             user_id: User UUID
             email: New email (will check for duplicates)
-            username: New username (will check for duplicates)
-            first_name: First name
-            last_name: Last name
+            full_name: Full name
             display_name: Display name
             language: Language preference
             timezone: Timezone preference
@@ -452,22 +445,9 @@ class UserService:
                 raise RextValidationException("Email already exists")
             user.email = email
 
-        # Check for duplicate username
-        if username and username != user.username:
-            query = select(Users).where(
-                Users.username == username,
-                Users.id != user_id
-            )
-            result = await self.db.execute(query)
-            if result.scalar_one_or_none():
-                raise RextValidationException("Username already exists")
-            user.username = username
-
         # Update profile fields
-        if first_name is not None:
-            user.first_name = first_name
-        if last_name is not None:
-            user.last_name = last_name
+        if full_name is not None:
+            user.full_name = full_name
         if display_name is not None:
             user.display_name = display_name
         if language is not None:

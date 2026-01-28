@@ -37,8 +37,8 @@ def upgrade() -> None:
         sa.Column('updated_at', sa.DateTime(timezone=True), nullable=True, server_default=sa.text('now()')),
         sa.Column('deleted_at', sa.DateTime(timezone=True), nullable=True),
         sa.ForeignKeyConstraint(['workspace_id'], ['workspace.id'], ondelete='CASCADE'),
-        sa.PrimaryKeyConstraint('id'),
-        sa.UniqueConstraint('id')
+        sa.PrimaryKeyConstraint('id')
+        # sa.UniqueConstraint('id')
     )
     op.create_index(op.f('ix_workspace_integrations_integration_type'), 'workspace_integrations', ['integration_type'], unique=False)
     op.create_index(op.f('ix_workspace_integrations_workspace_id'), 'workspace_integrations', ['workspace_id'], unique=False)

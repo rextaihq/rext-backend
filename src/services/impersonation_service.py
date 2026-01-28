@@ -133,7 +133,7 @@ class ImpersonationService:
         return {
             "target_user_id": target_context["user_id"],
             "target_email": target_context["email"],
-            "target_username": target_context["username"],
+            "target_full_name": target_context["full_name"],
             "target_display_name": target_context["display_name"],
             "impersonated_by": str(admin_user_id),
             "impersonated_by_email": admin_user.email,
@@ -320,7 +320,7 @@ class ImpersonationService:
         return {
             "user_id": str(user.id),
             "email": user.email,
-            "username": user.username,
+            "full_name": user.full_name,
             "display_name": user.display_name,
             "roles": auth_context["roles"],
             "permissions": auth_context["permissions"],

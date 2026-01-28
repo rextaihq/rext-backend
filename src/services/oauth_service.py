@@ -173,27 +173,12 @@ class OAuthService:
                     extra={"provider": provider, "email": provider_email}
                 )
 
-                # Parse name into first and last
-                name_parts = provider_name.split(" ", 1)
-                first_name = name_parts[0] if name_parts else "User"
-                last_name = name_parts[1] if len(name_parts) > 1 else ""
-
-                # Generate username from email
-                username = provider_email.split("@")[0]
-
-                # Check if username exists, append number if needed
-                base_username = username
-                counter = 1
-                result = await self.db.execute(select(Users).where(Users.username == username))
-                while result.scalar_one_or_none():
-                    username = f"{base_username}{counter}"
-                    counter += 1
+                # Use provider_name as full_name
+                full_name = provider_name or "User"
 
                 # Create user (no password needed for OAuth-only users)
                 user = Users(
-                    first_name=first_name,
-                    last_name=last_name,
-                    username=username,
+                    full_name=full_name,
                     email=provider_email,
                     password_hash="oauth_no_password",  # Placeholder - OAuth users don't need password
                     email_verified=True,  # OAuth email is pre-verified
@@ -282,7 +267,6 @@ class OAuthService:
 
         token_data = {
             "id": str(user.id),
-            "username": user.username,
             "email": user.email,
             "roles": role_names,
             "permissions": permissions

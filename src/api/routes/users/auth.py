@@ -121,10 +121,8 @@ async def create_user(
         auth_service = AuthService(db)
         new_user, verification_token = await auth_service.register_user(
             email=user.email,
-            username=user.username,
             password=user.password,
-            first_name=user.first_name,
-            last_name=user.last_name
+            full_name=user.full_name
         )
 
         # IMPORTANT: Commit transaction before background task
@@ -324,10 +322,8 @@ async def register_with_invitation(
             auth_service = AuthService(db)
             new_user, verification_token = await auth_service.register_user(
                 email=user_data.email,
-                username=user_data.username,
                 password=user_data.password,
-                first_name=user_data.first_name,
-                last_name=user_data.last_name
+                full_name=user_data.full_name
             )
 
             # Skip email verification for invited users

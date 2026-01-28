@@ -98,7 +98,7 @@ class SecurityService:
             users_data.append({
                 "id": str(user.id),
                 "email": user.email,
-                "username": user.username,
+                "full_name": user.full_name,
                 "failed_attempts": user.failed_login_attempts,
                 "locked_until": user.locked_until.isoformat() if user.locked_until else None,
                 "last_failed_at": user.updated_at.isoformat() if user.updated_at else None,
@@ -159,7 +159,7 @@ class SecurityService:
                 locked_accounts.append({
                     "id": str(user.id),
                     "email": user.email,
-                    "username": user.username,
+                    "full_name": user.full_name,
                     "locked_until": user.locked_until.isoformat(),
                     "failed_attempts": user.failed_login_attempts,
                     "remaining_lock_time_minutes": remaining_minutes
@@ -250,7 +250,7 @@ class SecurityService:
         return {
             "user_id": str(user.id),
             "email": user.email,
-            "username": user.username,
+            "full_name": user.full_name,
             "failed_attempts": 0,
             "previous_attempts": old_attempts
         }
@@ -379,7 +379,7 @@ class SecurityService:
 
         return {
             "user_id": str(user.id),
-            "username": user.username,
+            "full_name": user.full_name,
             "email": user.email,
             "login_history": login_history,
             "total_events": len(login_history)
