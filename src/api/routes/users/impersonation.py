@@ -51,7 +51,7 @@ async def start_impersonation(
     access_token = create_access_token(
         {
             "id": impersonation_context["target_user_id"],
-            "username": impersonation_context["target_username"],
+            "full_name": impersonation_context["target_full_name"],
             "email": impersonation_context["target_email"],
             "roles": impersonation_context["roles"],
             "permissions": impersonation_context["permissions"],
@@ -76,7 +76,7 @@ async def start_impersonation(
         metadata={
             "admin_user_email": impersonation_context["impersonated_by_email"],
             "target_user_email": impersonation_context["target_email"],
-            "target_user_name": impersonation_context["target_display_name"] or impersonation_context["target_username"],
+            "target_user_name": impersonation_context["target_display_name"] or impersonation_context["target_full_name"],
             "session_id": session_id
         },
     )
@@ -93,7 +93,7 @@ async def start_impersonation(
         "original_user_id": str(admin_user_id),
         "impersonated_user_id": impersonation_context["target_user_id"],
         "impersonated_user_email": impersonation_context["target_email"],
-        "impersonated_user_name": impersonation_context["target_display_name"] or impersonation_context["target_username"],
+        "impersonated_user_name": impersonation_context["target_display_name"] or impersonation_context["target_full_name"],
         "roles": impersonation_context["roles"],
         "permissions": impersonation_context["permissions"],
         "access_token": access_token,
@@ -149,7 +149,7 @@ async def stop_impersonation(
     access_token = create_access_token(
         {
             "id": original_context["user_id"],
-            "username": original_context["username"],
+            "full_name": original_context["full_name"],
             "email": original_context["email"],
             "roles": original_context["roles"],
             "permissions": original_context["permissions"],
@@ -226,7 +226,7 @@ async def get_impersonation_status(
         "original_user_id": current_user.get("original_user_id"),
         "impersonated_user_id": current_user.get("identity"),
         "impersonated_user_email": current_user.get("email"),
-        "impersonated_user_name": current_user.get("username"),
+        "impersonated_user_name": current_user.get("full_name"),
         "started_at": current_user.get("impersonation_started_at"),
         "session_id": session_id
     }

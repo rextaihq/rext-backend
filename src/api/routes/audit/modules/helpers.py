@@ -11,7 +11,7 @@ from src.api.middleware.exceptions import RextValidationException
 async def build_audit_query(
     db: AsyncSession,
     user_id: Optional[str] = None,
-    username: Optional[str] = None,
+    full_name: Optional[str] = None,
     user_email: Optional[str] = None,
     action: Optional[str] = None,
     resource_type: Optional[str] = None,
@@ -31,8 +31,8 @@ async def build_audit_query(
     # Filter by user
     if user_id:
         query = query.where(AuditLog.user_id == user_id)
-    if username:
-        query = query.where(AuditLog.username.ilike(f"%{username}%"))
+    if full_name:
+        query = query.where(AuditLog.full_name.ilike(f"%{full_name}%"))
     if user_email:
         query = query.where(AuditLog.user_email.ilike(f"%{user_email}%"))
 
@@ -97,7 +97,7 @@ def format_audit_log(log: AuditLog, include_details: bool = False) -> dict:
     base_data = {
         "id": str(log.id),
         "user_id": str(log.user_id) if log.user_id else None,
-        "username": log.username,
+        "full_name": log.full_name,
         "user_email": log.user_email,
         "action": log.action,
         "resource_type": log.resource_type,

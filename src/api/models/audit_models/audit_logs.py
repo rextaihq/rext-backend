@@ -15,7 +15,7 @@ class AuditLog(Base, SerializableMixin):
 
     # Who performed the action
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
-    username = Column(String(100))  # Denormalized for historical record
+    full_name = Column(String(200))  # Denormalized for historical record
     user_email = Column(String(255))  # Denormalized for historical record
 
     # What action was performed
