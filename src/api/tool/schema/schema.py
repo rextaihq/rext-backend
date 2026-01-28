@@ -1,5 +1,5 @@
 from pydantic import BaseModel, HttpUrl, Field, field_validator
-from typing import List, Optional, Union, Literal
+from typing import List, Optional, Union , Literal
 import re
 
 # Word Counter Schemas
