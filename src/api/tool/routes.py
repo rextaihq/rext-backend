@@ -22,6 +22,7 @@ from src.api.tool.tools import (
     generate_hooks,
     generate_seo_blog_titles,
     generate_content_outline
+    keyword_density_checker
 )
 
 from src.api.tool.schema.schema import (
@@ -55,7 +56,9 @@ from src.api.tool.schema.schema import (
     ContentOutlineRequest,
     ContentOutlineResponse,
     ConclusionRequest,
-    ConclusionResponse
+    ConclusionResponse,
+    KeywordDensityRequest,
+    KeywordDensityResponse
 )
 
 from src.api.tool.schema.schema import QuestionRequest, QuestionResponse,MetaDescriptionRequest,MetaDescriptionResponse
@@ -360,3 +363,12 @@ async def content_outline_generator(request: ContentOutlineRequest):
             status_code=500,
             detail=f"Failed to generate content outline: {str(e)}"
         )
+@router.post("/keyword_density_checker", response_model=KeywordDensityResponse)
+def check_keyword_density(request: KeywordDensityRequest):
+    try:
+        return keyword_density_checker(
+            content=request.content,
+            keywords=request.keywords
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
