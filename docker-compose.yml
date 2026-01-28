@@ -25,7 +25,7 @@ services:
         networks:
             - rext-network
 
-    # Postgres Databases
+    # Postgres Databases and also add some other secrets
     postgres:
         image: postgres:17-alpine
         environment:
