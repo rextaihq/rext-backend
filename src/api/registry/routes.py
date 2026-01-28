@@ -68,6 +68,7 @@ def register_routes(app: FastAPI) -> None:
     # ---- Misc & Tools ----
     from src.api.routes.media import router as media_router
     from src.api.tool.routes import router as tools_router
+    from src.api.tool.routes import router as keyword_density_router
 
     # ============================================================================
     # ROUTER REGISTRATION

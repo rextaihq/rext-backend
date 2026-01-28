@@ -20,7 +20,8 @@ from src.api.tool.tools import (
     generate_robots_txt,
     grammar_checker,
     generate_hooks,
-    generate_seo_blog_titles
+    generate_seo_blog_titles,
+    keyword_density_checker
 )
 
 from src.api.tool.schema.schema import (
@@ -52,7 +53,9 @@ from src.api.tool.schema.schema import (
     SEOBlogTitleRequest,
     SEOBlogTitleResponse,
     ConclusionRequest,
-    ConclusionResponse
+    ConclusionResponse,
+    KeywordDensityRequest,
+    KeywordDensityResponse
 )
 
 from src.api.tool.schema.schema import QuestionRequest, QuestionResponse,MetaDescriptionRequest,MetaDescriptionResponse
@@ -355,3 +358,13 @@ def FAQGenerater(request: FAQRequest):
     except Exception as e:
         # Return a proper error response in case of failure
         raise HTTPException(status_code=500, detail=f"Failed to generate FAQs: {str(e)}")
+
+@router.post("/keyword_density_checker", response_model=KeywordDensityResponse)
+def check_keyword_density(request: KeywordDensityRequest):
+    try:
+        return keyword_density_checker(
+            content=request.content,
+            keywords=request.keywords
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
