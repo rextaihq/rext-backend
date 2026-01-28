@@ -25,7 +25,7 @@ services:
             timeout: 1s
             retries: 5
 
-    # Postgres Database
+    # Postgres Databases
     postgres:
         image: postgres:17-alpine
         container_name: rext-postgres
