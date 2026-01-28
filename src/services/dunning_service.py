@@ -119,7 +119,7 @@ class DunningService:
                 return False
 
             # Prepare email data
-            user_name = user.first_name or user.display_name or user.email
+            user_name = user.full_name or user.display_name or user.email
             plan_name = plan.name
 
             # Calculate amount (from plan)
@@ -212,7 +212,7 @@ class DunningService:
                 days_until_suspension = 4  # Default
 
             # Prepare email data
-            user_name = user.first_name or user.display_name or user.email
+            user_name = user.full_name or user.display_name or user.email
             plan_name = plan.name
 
             if subscription.billing_period.value == "monthly":
@@ -299,7 +299,7 @@ class DunningService:
                 return False
 
             # Prepare email data
-            user_name = user.first_name or user.display_name or user.email
+            user_name = user.full_name or user.display_name or user.email
             plan_name = plan.name
 
             if subscription.billing_period.value == "monthly":

@@ -148,7 +148,7 @@ async def create_invitation(
         template_type="workspace_invitation",
         variables={
             "workspace_name": workspace.name,
-            "inviter_name": inviter.display_name or inviter.username,
+            "inviter_name": inviter.full_name or inviter.display_name or inviter.email,
             "recipient_email": invitation_data.email,
             "role_name": role.display_name or role.name,
             "invitation_url": invitation_link,
@@ -181,7 +181,7 @@ async def create_invitation(
         },
         request=request,
         workspace_id=invitation_data.workspace_id,
-        username=inviter.username if inviter else None,
+        full_name=inviter.full_name if inviter else None,
         user_email=inviter.email if inviter else None
     )
 

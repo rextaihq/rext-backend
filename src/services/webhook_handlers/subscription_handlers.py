@@ -1102,7 +1102,7 @@ async def handle_subscription_payment_recovered(
         next_billing_date = subscription.renews_at.strftime("%B %d, %Y") if subscription.renews_at else "N/A"
 
         # Render email
-        user_name = user.first_name or user.display_name or user.email
+        user_name = user.full_name or user.display_name or user.email
         plan_name = plan.name if plan else "Your Plan"
 
         html_content = render_payment_recovered_email(

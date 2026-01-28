@@ -99,6 +99,12 @@ services:
             # Email (Resend)
             EMAIL_PROVIDER: ${EMAIL_PROVIDER:-resend}
             EMAIL_ENABLED: ${EMAIL_ENABLED:-true}
+
+            # Resend
+            RESEND_API_KEY: ${RESEND_API_KEY}
+            RESEND_FROM_EMAIL: ${RESEND_FROM_EMAIL}
+            RESEND_FROM_NAME: ${RESEND_FROM_NAME}
+            RESEND_WEBHOOK_SECRET: ${RESEND_WEBHOOK_SECRET}
             SMTP_SERVER: ${SMTP_SERVER:-}
             SMTP_PORT: ${SMTP_PORT:-587}
             SMTP_USERNAME: ${SMTP_USERNAME:-}
@@ -121,12 +127,16 @@ services:
             # Admin
             SUPER_ADMIN_EMAIL: ${SUPER_ADMIN_EMAIL}
             SUPER_ADMIN_PASSWORD: ${SUPER_ADMIN_PASSWORD}
-            SUPER_ADMIN_FIRST_NAME: ${SUPER_ADMIN_FIRST_NAME:-Admin}
-            SUPER_ADMIN_LAST_NAME: ${SUPER_ADMIN_LAST_NAME:-User}
+            SUPER_ADMIN_FULL_NAME: ${SUPER_ADMIN_FULL_NAME:-Samiullah}
 
             # Monitoring
             SENTRY_DSN: ${SENTRY_DSN}
             SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-production}
+            CACHE_ENABLED: ${CACHE_ENABLED:-false}
+
+            # Feature Flags
+            FF_PROFILE_IMPORTS: ${FF_PROFILE_IMPORTS:-false}
+            BG_JOB_ISOLATED_LOOPS: ${BG_JOB_ISOLATED_LOOPS:-false}
 
             # Payment
             LEMONSQUEEZY_WEBHOOK_SECRET: ${LEMONSQUEEZY_WEBHOOK_SECRET}

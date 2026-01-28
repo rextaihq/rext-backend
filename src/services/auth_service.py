@@ -78,16 +78,14 @@ class AuthService:
     async def register_user(
         self,
         email: str,
-        username: str,
         password: str,
-        first_name: str,
-        last_name: str
+        full_name: str
     ) -> Tuple[Users, str]:
         """
         Register new user with role assignment and trial subscription.
 
         Business Rules:
-        - Email and username must be unique
+        - Email must be unique
         - Password is hashed before storage
         - Default 'user' role is assigned
         - Trial subscription is auto-assigned (14 days)
@@ -95,49 +93,35 @@ class AuthService:
 
         Args:
             email: User email
-            username: Username
             password: Plain text password
-            first_name: First name
-            last_name: Last name
+            full_name: Full name
 
         Returns:
             Tuple of (User object, verification_token)
 
         Raises:
-            DuplicateResourceException: If email or username exists
+            DuplicateResourceException: If email exists
         """
         # Check if user exists
         result = await self.db.execute(
-            select(Users).where(
-                or_(Users.email == email, Users.username == username)
-            )
+            select(Users).where(Users.email == email)
         )
         existing_user = result.scalar_one_or_none()
 
         if existing_user:
-            if existing_user.email == email:
-                raise DuplicateResourceException(
-                    message="A user with this email already exists",
-                    resource_type="user",
-                    conflicting_field="email",
-                    conflicting_value=email
-                )
-            else:
-                raise DuplicateResourceException(
-                    message="A user with this username already exists",
-                    resource_type="user",
-                    conflicting_field="username",
-                    conflicting_value=username
-                )
+            raise DuplicateResourceException(
+                message="A user with this email already exists",
+                resource_type="user",
+                conflicting_field="email",
+                conflicting_value=email
+            )
 
         # Hash password
         hashed_pwd = hash_password(password)
 
         # Create user
         new_user = Users(
-            first_name=first_name,
-            last_name=last_name,
-            username=username,
+            full_name=full_name,
             email=email,
             password_hash=hashed_pwd,
             created_at=datetime.utcnow()
@@ -193,7 +177,7 @@ class AuthService:
 
         logger.info(
             f"User registered: {new_user.id}",
-            extra={"email": email, "username": username, "has_trial": trial_plan is not None}
+            extra={"email": email, "has_trial": trial_plan is not None}
         )
 
         return new_user, verification_token
@@ -342,7 +326,6 @@ class AuthService:
         # Workspace permissions will be loaded separately via /workspaces/{id}/permissions endpoint
         token_data = {
             "id": str(db_user.id),
-            "username": db_user.username,
             "email": db_user.email,
             "roles": global_role_names,
             "permissions": global_permissions  # Only platform-level permissions
@@ -560,7 +543,6 @@ class AuthService:
         # Create new token pair with ONLY global permissions
         token_data = {
             "id": str(db_user.id),
-            "username": db_user.username,
             "email": db_user.email,
             "roles": global_role_names,
             "permissions": global_permissions

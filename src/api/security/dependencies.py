@@ -93,7 +93,6 @@ async def get_current_user(
 
     user_info = {
         "identity": user_id,
-        "username": payload.get("username"),
         "email": payload.get("email"),
         "roles": payload.get("roles", []),
         "is_impersonating": payload.get("is_impersonating", False),
@@ -199,7 +198,6 @@ async def get_current_user_sse(
 
     user_info = {
         "identity": user_id,
-        "username": payload.get("username"),
         "email": payload.get("email"),
         "roles": payload.get("roles", []),
         "is_impersonating": payload.get("is_impersonating", False),

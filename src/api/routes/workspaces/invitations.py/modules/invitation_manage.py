@@ -141,7 +141,7 @@ async def accept_invitation(
             notify_workspace_admins_of_acceptance,
             workspace_id=str(workspace.id),
             workspace_name=workspace.name,
-            new_member_name=user.first_name or user.username,
+            new_member_name=user.full_name or user.display_name or user.email,
             new_member_email=user.email,
             role_name=role.display_name if role else "Member"
         )
@@ -243,7 +243,7 @@ async def revoke_invitation(
         new_values={"status": "revoked", "reason": revoke_data.reason},
         request=request,
         workspace_id=invitation.workspace_id,
-        username=user.username if user else None,
+        full_name=user.full_name if user else None,
         user_email=user.email if user else None
     )
 
@@ -254,7 +254,7 @@ async def revoke_invitation(
         "data": {
             "invitation_id": str(invitation.id),
             "status": invitation.status,
-            "revoked_by": user.username if user else "unknown",
+            "revoked_by": user.full_name if user else "unknown",
             "reason": revoke_data.reason
         },
         "message": "Invitation revoked successfully"

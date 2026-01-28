@@ -141,7 +141,7 @@ class GracePeriodService:
                 suspension_date = now.strftime("%B %d, %Y")
 
                 # Render email
-                user_name = user.first_name or user.display_name or user.email
+                user_name = user.full_name or user.display_name or user.email
                 plan_name = plan.name if plan else "Your Plan"
 
                 html_content = render_subscription_suspended_email(

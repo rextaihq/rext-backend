@@ -697,7 +697,7 @@ class KnowledgeService:
             create_content_url = f"{frontend_url}/w/{workspace.slug}/content/new"
 
             # Render professional email
-            user_name = user.first_name or user.username or user.email.split("@")[0]
+            user_name = user.full_name or user.display_name or user.email.split("@")[0]
             html_content = render_kb_processing_completed_email(
                 user_name=user_name,
                 kb_name=kb.name,
