@@ -1,9 +1,9 @@
 # from typing import Dict
-# from src.flow.states.wrext import WREXT
+# from src.flow.states.rext import REXT
 # from src.flow.states.seo_state import SEORESULT
 
 
-# def keyword_difficulty_node(state: WREXT) -> Dict[str, SEORESULT]:
+# def keyword_difficulty_node(state: REXT) -> Dict[str, SEORESULT]:
 #     competitors = state.get("competitors", [])
 #     serp = state.get("serp_normalized", {})
 #     scrape_context = state.get("scrape_context", {}) or {}
@@ -198,11 +198,11 @@
 #     }
 
 from typing import Dict
-from src.flow.states.wrext import WREXT
+from src.flow.states.rext import REXT
 from src.flow.states.seo_state import SEORESULT
 
 
-def keyword_difficulty_node(state: WREXT) -> Dict[str, SEORESULT]:
+def keyword_difficulty_node(state: REXT) -> Dict[str, SEORESULT]:
     serp = state.get("serp_normalized", {})
     competitors = state.get("competitors", [])
     documents = (state.get("scrape_context") or {}).get("documents", [])

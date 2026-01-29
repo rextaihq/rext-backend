@@ -1,5 +1,5 @@
 from langchain_community.vectorstores import FAISS
-from  src.utils.embedding import get_hf_embedding
+from  src.utils.embedding import get_embedding
 from langchain_community.docstore.in_memory import InMemoryDocstore
 from langchain_core.documents import Document
 from src.utils.logger import logger
@@ -103,7 +103,7 @@ def add_to_vector_store(
     if workspace_id is None:
         raise ValueError("workspace_id should not be None")
     # Determine embedding dimension
-    test_embedding = get_hf_embedding().embed_query("hello world")
+    test_embedding = get_embedding().embed_query("hello world")
     dimension = len(test_embedding)
 
     config = load_yaml()
@@ -116,7 +116,7 @@ def add_to_vector_store(
         logger.info(">> Loading existing FAISS index <<")
         vector_store = FAISS.load_local(
             vector_store_path,
-            get_hf_embedding(),
+            get_embedding(),
             allow_dangerous_deserialization=True
         )
     else:
@@ -125,7 +125,7 @@ def add_to_vector_store(
         os.makedirs(vector_store_path, exist_ok=True)
         index = faiss.IndexFlatL2(dimension)
         vector_store = FAISS(
-            embedding_function=get_hf_embedding(),
+            embedding_function=get_embedding(),
             index=index,
             docstore=InMemoryDocstore(),
             index_to_docstore_id={},
@@ -160,7 +160,7 @@ def add_to_vector_store(
             batch_ids = uuids[i:i+batch_size]
             vector_store.add_documents(documents=batch_docs, ids=batch_ids)
         except Exception as e:
-            logger.info(f"⚠️ Error during batch insertion: {str(e)}")
+            logger.error(f"⚠️ Error during batch insertion: {str(e)}", exc_info=True)
             return False
 
     logger.info("✅ Documents successfully inserted into FAISS")
@@ -206,7 +206,7 @@ def load_vector_store(file_path: str = None) -> FAISS:
 
     vector_store = FAISS.load_local(
         file_path,
-        get_hf_embedding(),
+        get_embedding(),
         allow_dangerous_deserialization=True
     )
     return vector_store

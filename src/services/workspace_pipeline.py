@@ -111,6 +111,11 @@ class WorkspacePipeline:
 
     async def _scrape_website(self) -> _ScrapeResult:
         """Scrape the target URL and emit relevant SSE events."""
+        logger.info(
+            f"🌐 Starting to scrape URL: {self.url}",
+            extra={"workspace_id": str(self.workspace_id), "operation_id": self.operation_id},
+        )
+        
         await emit_step_start(
             operation_id=self.operation_id,
             scope=self.scope,
@@ -167,46 +172,57 @@ class WorkspacePipeline:
             )
             return
 
-        await emit_step_start(
-            operation_id=self.operation_id,
-            scope=self.scope,
-            step="vector_store",
-            message="Generating vector embeddings",
-            progress=40,
+        # ============================================================================
+        # VECTOR STORE DISABLED (COMMENTED OUT)
+        # To re-enable: uncomment the code block below
+        # ============================================================================
+        
+        logger.info(
+            f"⚠️ VECTOR STORE DISABLED - Skipping {len(chunks)} chunks",
+            extra={"workspace_id": str(self.workspace_id), "operation_id": self.operation_id},
         )
+        
+        # Original code commented out below:
+        # await emit_step_start(
+        #     operation_id=self.operation_id,
+        #     scope=self.scope,
+        #     step="vector_store",
+        #     message="Generating vector embeddings",
+        #     progress=40,
+        # )
 
-        try:
-            success = await self._vector_uploader(chunks, str(self.workspace_id))
-        except Exception as exc:  # noqa: BLE001 - propagate
-            await emit_step_failure(
-                operation_id=self.operation_id,
-                scope=self.scope,
-                step="vector_store",
-                message=f"Failed to create embeddings: {exc}",
-                error=str(exc),
-            )
-            raise
+        # try:
+        #     success = await self._vector_uploader(chunks, str(self.workspace_id))
+        # except Exception as exc:  # noqa: BLE001 - propagate
+        #     await emit_step_failure(
+        #         operation_id=self.operation_id,
+        #         scope=self.scope,
+        #         step="vector_store",
+        #         message=f"Failed to create embeddings: {exc}",
+        #         error=str(exc),
+        #     )
+        #     raise
 
-        if not success:
-            error_message = "Vector store reported failure"
-            await emit_step_failure(
-                operation_id=self.operation_id,
-                scope=self.scope,
-                step="vector_store",
-                message=error_message,
-                error=error_message,
-            )
-            raise RuntimeError(error_message)
+        # if not success:
+        #     error_message = "Vector store reported failure"
+        #     await emit_step_failure(
+        #         operation_id=self.operation_id,
+        #         scope=self.scope,
+        #         step="vector_store",
+        #         message=error_message,
+        #         error=error_message,
+        #     )
+        #     raise RuntimeError(error_message)
 
-        payload = {"chunks": len(chunks)}
-        await emit_step_success(
-            operation_id=self.operation_id,
-            scope=self.scope,
-            step="vector_store",
-            message="Vector embeddings created",
-            payload=payload,
-            progress=60,
-        )
+        # payload = {"chunks": len(chunks)}
+        # await emit_step_success(
+        #     operation_id=self.operation_id,
+        #     scope=self.scope,
+        #     step="vector_store",
+        #     message="Vector embeddings created",
+        #     payload=payload,
+        #     progress=60,
+        # )
 
     async def _extract_brand_voice(
         self,
@@ -233,6 +249,36 @@ class WorkspacePipeline:
             return None
 
         trimmed_content = content[: self._MAX_BRAND_VOICE_CHARS]
+        
+        # Log scraped content for debugging
+        logger.info(
+            "=" * 80,
+            extra={"workspace_id": str(self.workspace_id), "operation_id": self.operation_id}
+        )
+        logger.info(
+            "📄 SCRAPED CONTENT (for LLM analysis)",
+            extra={"workspace_id": str(self.workspace_id), "operation_id": self.operation_id}
+        )
+        logger.info(
+            "=" * 80,
+            extra={"workspace_id": str(self.workspace_id), "operation_id": self.operation_id}
+        )
+        logger.info(
+            f"Content length: {len(trimmed_content)} characters (trimmed from {len(content)})",
+            extra={"workspace_id": str(self.workspace_id), "operation_id": self.operation_id}
+        )
+        logger.info(
+            "-" * 80,
+            extra={"workspace_id": str(self.workspace_id), "operation_id": self.operation_id}
+        )
+        logger.info(
+            trimmed_content,
+            extra={"workspace_id": str(self.workspace_id), "operation_id": self.operation_id}
+        )
+        logger.info(
+            "=" * 80,
+            extra={"workspace_id": str(self.workspace_id), "operation_id": self.operation_id}
+        )
 
         try:
             brand_voice_schema = await self._brand_voice_generator(trimmed_content)
@@ -271,11 +317,15 @@ class WorkspacePipeline:
         self,
         brand_voice_schema: Optional[BrandSchema],
     ) -> Optional[BrandVoice]:
-        """Persist brand voice data if available."""
+        """Persist brand voice data and extract personas to separate table."""
         if brand_voice_schema is None:
             return None
 
         data = brand_voice_schema.model_dump()
+        
+        # Extract personas before processing brand voice
+        personas_data = data.pop("personas", [])
+        
         try:
             result = await self.db.execute(
                 select(BrandVoice).where(BrandVoice.workspace_id == self.workspace_id)
@@ -305,13 +355,17 @@ class WorkspacePipeline:
                 self.db.add(brand_voice_record)
 
             await self.db.flush()
+            
+            # Persist personas separately
+            await self._persist_personas(personas_data)
+            
             await self.db.commit()
             return brand_voice_record
 
         except Exception as exc:  # noqa: BLE001 - rollback and propagate
             await self.db.rollback()
             logger.error(
-                "Failed to persist brand voice",
+                "Failed to persist brand voice and personas",
                 extra={
                     "workspace_id": str(self.workspace_id),
                     "operation_id": self.operation_id,
@@ -319,6 +373,134 @@ class WorkspacePipeline:
                 },
             )
             raise
+
+    async def _persist_personas(self, personas_data: list[dict]) -> None:
+        """Save extracted personas to persona table."""
+        if not personas_data:
+            logger.info(
+                "No personas to persist",
+                extra={"workspace_id": str(self.workspace_id), "operation_id": self.operation_id}
+            )
+            return
+        
+        # Log extracted personas for review
+        logger.info(
+            "=" * 80,
+            extra={"workspace_id": str(self.workspace_id), "operation_id": self.operation_id}
+        )
+        logger.info(
+            f"📊 EXTRACTED PERSONAS ({len(personas_data)} total)",
+            extra={"workspace_id": str(self.workspace_id), "operation_id": self.operation_id}
+        )
+        logger.info(
+            "=" * 80,
+            extra={"workspace_id": str(self.workspace_id), "operation_id": self.operation_id}
+        )
+        
+        for idx, persona_data in enumerate(personas_data, 1):
+            logger.info(
+                f"\n👤 PERSONA #{idx}: {persona_data.get('name', 'Unnamed')}",
+                extra={"workspace_id": str(self.workspace_id), "operation_id": self.operation_id}
+            )
+            logger.info(
+                f"  📝 Description: {persona_data.get('description', 'N/A')}",
+                extra={"workspace_id": str(self.workspace_id), "operation_id": self.operation_id}
+            )
+            
+            # E-E-A-T Professional Fields
+            if persona_data.get('full_name'):
+                logger.info(
+                    f"  👔 Full Name: {persona_data.get('full_name')}",
+                    extra={"workspace_id": str(self.workspace_id), "operation_id": self.operation_id}
+                )
+            if persona_data.get('professional_title'):
+                logger.info(
+                    f"  💼 Title: {persona_data.get('professional_title')}",
+                    extra={"workspace_id": str(self.workspace_id), "operation_id": self.operation_id}
+                )
+            if persona_data.get('areas_of_expertise'):
+                logger.info(
+                    f"  🎓 Expertise: {persona_data.get('areas_of_expertise')}",
+                    extra={"workspace_id": str(self.workspace_id), "operation_id": self.operation_id}
+                )
+            if persona_data.get('tone_of_voice'):
+                logger.info(
+                    f"  🗣️  Tone: {persona_data.get('tone_of_voice')}",
+                    extra={"workspace_id": str(self.workspace_id), "operation_id": self.operation_id}
+                )
+            if persona_data.get('bio'):
+                logger.info(
+                    f"  📖 Bio: {persona_data.get('bio')[:100]}...",
+                    extra={"workspace_id": str(self.workspace_id), "operation_id": self.operation_id}
+                )
+            if persona_data.get('linkedin_url'):
+                logger.info(
+                    f"  🔗 LinkedIn: {persona_data.get('linkedin_url')}",
+                    extra={"workspace_id": str(self.workspace_id), "operation_id": self.operation_id}
+                )
+            
+            # User Persona Fields (if any)
+            if persona_data.get('demographics'):
+                logger.info(
+                    f"  👥 Demographics: {persona_data.get('demographics')}",
+                    extra={"workspace_id": str(self.workspace_id), "operation_id": self.operation_id}
+                )
+            if persona_data.get('pain_points'):
+                logger.info(
+                    f"  ⚠️  Pain Points: {persona_data.get('pain_points')}",
+                    extra={"workspace_id": str(self.workspace_id), "operation_id": self.operation_id}
+                )
+            if persona_data.get('goals'):
+                logger.info(
+                    f"  🎯 Goals: {persona_data.get('goals')}",
+                    extra={"workspace_id": str(self.workspace_id), "operation_id": self.operation_id}
+                )
+            if persona_data.get('behaviors'):
+                logger.info(
+                    f"  🔄 Behaviors: {persona_data.get('behaviors')}",
+                    extra={"workspace_id": str(self.workspace_id), "operation_id": self.operation_id}
+                )
+            
+            logger.info(
+                "-" * 80,
+                extra={"workspace_id": str(self.workspace_id), "operation_id": self.operation_id}
+            )
+        
+        from sqlalchemy import delete
+        from src.api.models.knowledge_models.persona_model import Persona
+        
+        # Delete existing personas for this workspace
+        await self.db.execute(
+            delete(Persona).where(Persona.workspace_id == self.workspace_id)
+        )
+        
+        # Insert new personas with ALL fields
+        for persona_data in personas_data:
+            persona = Persona(
+                workspace_id=self.workspace_id,
+                # Basic fields
+                name=persona_data.get("name"),
+                description=persona_data.get("description"),
+                # E-E-A-T Professional fields
+                full_name=persona_data.get("full_name"),
+                professional_title=persona_data.get("professional_title"),
+                areas_of_expertise=persona_data.get("areas_of_expertise"),
+                tone_of_voice=persona_data.get("tone_of_voice"),
+                bio=persona_data.get("bio"),
+                linkedin_url=persona_data.get("linkedin_url"),
+                # User persona fields
+                demographics=persona_data.get("demographics"),
+                pain_points=persona_data.get("pain_points"),
+                goals=persona_data.get("goals"),
+                behaviors=persona_data.get("behaviors"),
+            )
+            self.db.add(persona)
+        
+        await self.db.flush()
+        logger.info(
+            f"✅ Persisted {len(personas_data)} persona(s)",
+            extra={"workspace_id": str(self.workspace_id), "operation_id": self.operation_id}
+        )
 
     @staticmethod
     async def _default_scraper(url: str) -> Tuple[List[Any], List[Any]]:
@@ -341,9 +523,52 @@ class WorkspacePipeline:
             return None
 
         def _invoke_model() -> BrandSchema:
+            from langchain_core.messages import SystemMessage, HumanMessage
+            
             model = load_model()
             structured = model.with_structured_output(BrandSchema)
-            return structured.invoke(content)
+            
+            system_prompt = """You are an expert at analyzing website content and extracting brand information and personas.
+
+IMPORTANT INSTRUCTIONS FOR PERSONAS:
+- Extract AUTHOR/EXPERT personas (real people who create content, run the business, or are mentioned as experts)
+- DO NOT extract customer/user personas or target audience segments
+- Look for:
+  * Blog authors and their names
+  * Company founders or leadership team members
+  * Experts, consultants, or professionals mentioned on the site
+  * Team members with "About" or "Team" pages
+  * People with professional credentials or expertise
+  
+EXAMPLES OF CORRECT PERSONAS:
+✓ "Dr. Sarah Mitchell" - Board-Certified Dermatologist
+✓ "Mobheen Abdullah" - Founder & CEO
+✓ "John Smith" - Senior Software Engineer & Tech Blogger
+
+EXAMPLES OF INCORRECT PERSONAS (DO NOT EXTRACT):
+✗ "Eco-Conscious Shopper" - this is a customer, not an author
+✗ "Tech-Savvy Professional" - this is a target audience, not a real person
+✗ "Busy Executive" - this is a user persona, not an expert/author
+
+For personas, fill in:
+- name: The person's actual name (e.g., "Mobheen Abdullah")
+- full_name: Their complete professional name
+- professional_title: Their job title or credentials
+- areas_of_expertise: What they specialize in
+- tone_of_voice: How they communicate
+- bio: Their professional background
+- linkedin_url: If available on the website
+
+If no real people/authors are found on the website, return an empty personas list.
+
+Now analyze the following website content and extract brand information:"""
+            
+            messages = [
+                SystemMessage(content=system_prompt),
+                HumanMessage(content=content)
+            ]
+            
+            return structured.invoke(messages)
 
         return await asyncio.to_thread(_invoke_model)
 

@@ -1,10 +1,6 @@
 import logging
 from langgraph.graph import StateGraph, START, END
-from src.flow.states.wrext import WREXT
-from src.flow.engines.serp.fetch_serp import fetch_serp_results
-from src.flow.engines.serp.normalization import normalize_serp_results
-from src.flow.engines.serp.competitor import extract_competitors_from_serp
-from src.flow.engines.scrape.scrape_engine import create_scrape_engine
+from src.flow.states.rext import REXT
 
 logger = logging.getLogger(__name__)
 
@@ -20,18 +16,20 @@ def create_serp_engine() -> StateGraph:
     Returns:
         StateGraph: The configured LangGraph StateGraph for the SERP flow.
     """
-    logger.info("Initializing SERP flow graph")
-    serp_flow = StateGraph(WREXT)
+    from src.flow.engines.serp.fetch_serp import fetch_serp_results
+    from src.flow.engines.serp.normalization import normalize_serp_results
+    from src.flow.engines.serp.competitor import extract_competitors_from_serp
+    from src.flow.engines.scrape.scrape_engine import create_scrape_engine
+
+    serp_flow = StateGraph(REXT)
 
     # Add nodes
-    logger.debug("Adding nodes to SERP flow: fetch_serp, normalize_serp, extract_competitor")
     serp_flow.add_node("fetch_serp", fetch_serp_results)
     serp_flow.add_node("normalize_serp", normalize_serp_results)
     serp_flow.add_node("extract_competitor", extract_competitors_from_serp)
     serp_flow.add_node("scrape_flow", create_scrape_engine())
 
     # Add edges
-    logger.debug("Configuring edges for SERP flow")
     serp_flow.add_edge(START, "fetch_serp") 
     serp_flow.add_edge("fetch_serp", "normalize_serp")
     serp_flow.add_edge("fetch_serp", "extract_competitor")

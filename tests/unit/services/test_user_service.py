@@ -19,7 +19,7 @@ import bcrypt
 from src.services.user_service import UserService
 from src.api.middleware.exceptions import (
     ResourceNotFoundException,
-    WrextValidationException
+    RextValidationException
 )
 
 
@@ -279,7 +279,7 @@ class TestUserServiceChangePassword:
         assert result.updated_at is not None
 
     async def test_change_password_wrong_current_password(self, db_session, setup_factories):
-        """Should raise WrextValidationException when current password is incorrect"""
+        """Should raise RextValidationException when current password is incorrect"""
         # Arrange
         correct_password = "correctpassword"
         password_hash = bcrypt.hashpw(correct_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
@@ -290,7 +290,7 @@ class TestUserServiceChangePassword:
         service = UserService(db_session)
 
         # Act & Assert
-        with pytest.raises(WrextValidationException) as exc_info:
+        with pytest.raises(RextValidationException) as exc_info:
             await service.change_password(
                 user_id=user.id,
                 current_password="wrongpassword",
@@ -301,7 +301,7 @@ class TestUserServiceChangePassword:
         assert any(d.get("field") == "current_password" for d in exc_info.value.details)
 
     async def test_change_password_same_as_current(self, db_session, setup_factories):
-        """Should raise WrextValidationException when new password is same as current"""
+        """Should raise RextValidationException when new password is same as current"""
         # Arrange
         password = "samepassword123"
         password_hash = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
@@ -312,7 +312,7 @@ class TestUserServiceChangePassword:
         service = UserService(db_session)
 
         # Act & Assert
-        with pytest.raises(WrextValidationException) as exc_info:
+        with pytest.raises(RextValidationException) as exc_info:
             await service.change_password(
                 user_id=user.id,
                 current_password=password,

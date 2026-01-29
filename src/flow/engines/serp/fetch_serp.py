@@ -1,7 +1,7 @@
 import httpx
 import logging
 from typing import Dict, Any, List
-from src.flow.states.wrext import WREXT, SERPEngineState
+from src.flow.states.rext import REXT, SERPEngineState
 from src.flow.states.countries import VALID_COUNTRY_CODES
 from dotenv import load_dotenv
 import os
@@ -82,7 +82,7 @@ def _parse_serp_response(raw_data: Dict[str, Any]) -> SERPEngineState:
         "total_results": len(organic_results)
     }
 
-async def fetch_serp_results(state: WREXT) -> Dict[str, Any]:
+async def fetch_serp_results(state: REXT) -> Dict[str, Any]:
     """
     Fetch raw Google SERP results for a given keyword using the Serper.dev API.
     """
@@ -103,6 +103,14 @@ async def fetch_serp_results(state: WREXT) -> Dict[str, Any]:
         return {"serp_result": {}}
 
     logger.info(f"Fetching SERP results for query: '{query}' in country: '{country}'")
+
+    # get the user_id and workspace_id from the state
+    user_id = serp_payload.get("user_id")
+    workspace_id = serp_payload.get("workspace_id")
+    
+    if not user_id or not workspace_id:
+        logger.error("No user_id or workspace_id found in serp_payload")
+        return {"serp_result": {}}
 
     api_key = os.getenv("SERPER_API_KEY")
     if not api_key:

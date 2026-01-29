@@ -12,7 +12,7 @@ from src.api.middleware.exceptions import (
     BusinessRuleViolationException,
     DuplicateResourceException,
     ResourceNotFoundException,
-    WrextValidationException,
+    RextValidationException,
 )
 from src.api.middleware.usage_limiter import check_member_limit
 from src.api.models.user_models.invitations import UserInvitations
@@ -226,11 +226,11 @@ async def create_workspace_invitation(
     # Safely access inviter attributes
     if inviter:
         inviter_display_name = inviter.display_name
-        inviter_username = inviter.username
+        inviter_full_name = inviter.full_name
         inviter_email = inviter.email
     else:
         inviter_display_name = "A teammate"
-        inviter_username = None
+        inviter_full_name = None
         inviter_email = None
 
     invitation_link = f"{frontend_url}/invitations/accept?token={invitation_token}"
@@ -273,7 +273,7 @@ async def create_workspace_invitation(
         },
         request=request,
         workspace_id=workspace_id,
-        username=inviter_username,
+        full_name=inviter_full_name,
         user_email=inviter_email,
     )
 
@@ -347,7 +347,7 @@ async def create_bulk_workspace_invitations(
     role_id_value = role.id
     role_display_name = role.display_name or role.name
     inviter_display_name = inviter.display_name if inviter else "A teammate"
-    inviter_username = inviter.username if inviter else None
+    inviter_full_name = inviter.full_name if inviter else None
     inviter_email = inviter.email if inviter else None
 
     invitation_service = InvitationService(db)
@@ -436,7 +436,7 @@ async def create_bulk_workspace_invitations(
         },
         request=request,
         workspace_id=workspace_id_value,
-        username=inviter_username,
+        full_name=inviter_full_name,
         user_email=inviter_email,
     )
 
@@ -516,7 +516,7 @@ async def resend_workspace_invitation(
     invitation_email = invitation.email
     invitation_token = invitation.invitation_token
     inviter_display_name = inviter.display_name if inviter else "A teammate"
-    inviter_username = inviter.username if inviter else None
+    inviter_full_name = inviter.full_name if inviter else None
     inviter_email = inviter.email if inviter else None
 
     invitation_link = f"{frontend_url}/invitations/accept?token={invitation_token}"
@@ -559,7 +559,7 @@ async def resend_workspace_invitation(
         },
         request=request,
         workspace_id=workspace_id_value,
-        username=inviter_username,
+        full_name=inviter_full_name,
         user_email=inviter_email,
     )
 
@@ -614,7 +614,7 @@ async def revoke_workspace_invitation(
         )
 
     if invitation.status != "pending":
-        raise WrextValidationException(
+        raise RextValidationException(
             message="Only pending invitations can be revoked",
             field_errors={"status": ["Invitation is not pending"]},
         )

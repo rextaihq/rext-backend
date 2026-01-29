@@ -1,6 +1,8 @@
-from typing import List, Optional, Literal
-from typing_extensions import TypedDict,Annotated
+from typing import List, Optional, Literal, Any
+from typing_extensions import TypedDict,Annotated,List, Dict, Any, Literal
+import operator
 
+IssueLevel = Literal["CRITICAL", "ERROR", "WARNING", "INFO"]
 
 class ContentSection(TypedDict):
     heading: str
@@ -18,7 +20,7 @@ class ContentOutline(TypedDict):
     keywords_to_include: List[str]
 
     status: Literal["approved", "rejected"]
-    rejected_reason: Optional[str]
+    rejected_reason: Annotated[Optional[str],operator.add]
 
 
 class ContentDraft(TypedDict):
@@ -40,21 +42,78 @@ class ReadabilityMetrics(TypedDict):
     coleman_liau_index: float
     dale_chall_score: float
 
-class ContentReview(TypedDict):
-    seo_score: float
+
+# OnPagge SEO
+
+class SEOIssue(TypedDict):
+    type: str                # e.g. "Image Alt Text"
+    level: IssueLevel        # WARNING / ERROR / CRITICAL
+    message: str             # Short issue summary
+    details: str             # Full explanation
+    recommendation: str      # Fix suggestion
+
+
+class PageMetadata(TypedDict):
+    title: str
+    meta_description: str
+    canonical_url: str
+
+
+class ContentQuality(TypedDict):
+    top_keywords: Dict[str, str]   
+
+
+class IssueSummary(TypedDict):
+    critical: int
+    errors: int
+    warnings: int
+
+
+class SeokarSEOState(TypedDict):
+    """
+    Raw SEO analysis state produced by Seokar.
+    No UI logic, no scoring assumptions.
+    """
+
+    # Core Score
+    seo_health_score: float        
+    # Issue Summary
+    issue_summary: IssueSummary
+
+    # Page Metadata
+    page: PageMetadata
+
+    # Issues
+    issues: List[SEOIssue]
+
+    # Content Quality Signals
+    content_quality: ContentQuality
+
+# Trust Score (E-E-A-T & Credibility Metrics)
+class TrustScore(TypedDict):
+    score: float                # Overall trust score (0-100)
+    author_credibility: float    # Verified author identity, bio, and historical reputation
+    expertise: float            # Depth of knowledge and credentials shown in the content
+    authority: float            # Domain authority and external mentions of the topic
+    trustworthiness: float      # Transparency, safety, and reliability of the platform
+    citations_references: float # Quality and quantity of external links and expert citations
+    content_accuracy: float     # Fact-checking against known reliable sources
+    freshness: float            # How up-to-date the information and data points are
+    transparency: float         # Clear disclosures, affiliate links transparency, and contact info
+    spam_signals: float         # Absence of aggressive ads, manipulative links, or duplicate content
+    technical_trust: float      # HTTPS, mobile-friendliness, and site security signals
+    
+
+class ContentReview(TypedDict, total=False):
     readability_metrics: ReadabilityMetrics
-
-    eeat_score: Optional[float]
-    plagiarism_score: Optional[float]
-
-    passed: bool
-
-    missing_points: List[str]
-    improvement_suggestions: List[str]
+    # SEO metrics are hidden - on_page_metrics is optional
+    on_page_metrics: Optional[SeokarSEOState]
+    trust_score: Optional[TrustScore]
 
 
 class FinalContent(TypedDict):
     title: str
+    html_content: str
     body_markdown: str
 
     meta_title: str
@@ -64,8 +123,13 @@ class FinalContent(TypedDict):
     primary_keyword: Optional[str]
     secondary_keywords: Optional[List[str]]
     word_count: int
-    status: Literal["approved", "rejected"]
+    status: Literal["approved", "rejected", "draft"]
     rejected_reason: Optional[str]
+    
+    # WordPress publishing fields
+    wordpress_post_id: Optional[int]
+    wordpress_link: Optional[str]
+    publish_error: Optional[str]
 
 
 class CONTENT(TypedDict, total=False):
@@ -73,9 +137,10 @@ class CONTENT(TypedDict, total=False):
     Main LangGraph state for AI-powered SEO content engine
     """
 
-    # Core artifacts
+    # Core artifact
+    topics: List[str]
+    selected_topic: str
     outline: ContentOutline
-    draft: ContentDraft
     review: ContentReview
     final_content: FinalContent
 
@@ -84,16 +149,21 @@ class CONTENT(TypedDict, total=False):
         "planning",
         "drafting",
         "reviewing",
+        "editing",
         "optimizing",
         "completed",
         "failed",
     ]
-
-    # Retry management
-    outline_retries: int
-    draft_retries: int
-    review_retries: int
-    max_retries: int
+    content_type: Literal[
+        "article",
+        "blog",
+        "report",
+        "whitepaper",
+    ]
+    
+    # Post-review action tracking
+    action: Optional[Literal["publish", "edit", "save"]]
+    site_id: Optional[str]
 
     # Error handling
     error: Optional[str]

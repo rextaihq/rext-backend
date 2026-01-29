@@ -148,7 +148,7 @@ async def main():
     print(f"Timestamp: {datetime.utcnow().isoformat()}Z")
 
     # Create database connection
-    database_url = os.getenv("POSTGRES_URI_CUSTOM") or os.getenv("DATABASE_URL", "postgresql+asyncpg://postgres:postgres@localhost:5433/wrext_db")
+    database_url = os.getenv("POSTGRES_URI_CUSTOM") or os.getenv("DATABASE_URL", "postgresql+asyncpg://postgres:postgres@localhost:5433/rext_db")
     
     # Fix protocol for asyncpg if needed
     if "postgresql+psycopg://" in database_url:

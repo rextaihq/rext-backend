@@ -33,9 +33,9 @@ from src.api.models.workspace_models.workspace_member import WorkspaceMembers
 from src.utils.logger import logger
 from src.api.middleware.exceptions import (
     DuplicateResourceException,
-    WrextValidationException,
+    RextValidationException,
     ResourceNotFoundException,
-    WrextAPIException
+    RextAPIException
 )
 
 
@@ -196,14 +196,14 @@ class RoleService:
 
         Raises:
             ResourceNotFoundException: If role not found
-            WrextAPIException: If trying to update system role
+            RextAPIException: If trying to update system role
             DuplicateResourceException: If display_name already exists
         """
         role = await self.get_role_by_id(role_id)
 
         # Check if protected role (system roles or standard workspace roles)
         if self._is_protected_role(role):
-            raise WrextValidationException(
+            raise RextValidationException(
                 message=f"Cannot update protected role '{role.name}'",
                 field_errors={"role_id": ["Protected roles (platform roles and standard workspace roles) cannot be modified"]}
             )
@@ -233,7 +233,7 @@ class RoleService:
 
         if hierarchy_level is not None:
             if hierarchy_level < 0 or hierarchy_level > 100:
-                raise WrextValidationException(
+                raise RextValidationException(
                     message="Hierarchy level must be between 0 and 100",
                     field_errors={"hierarchy_level": ["Must be 0-100"]}
                 )
@@ -271,14 +271,14 @@ class RoleService:
 
         Raises:
             ResourceNotFoundException: If role not found
-            WrextAPIException: If system role
-            WrextValidationException: If role in use and no reassignment
+            RextAPIException: If system role
+            RextValidationException: If role in use and no reassignment
         """
         role = await self.get_role_by_id(role_id)
 
         # Check if protected role (system roles or standard workspace roles)
         if self._is_protected_role(role):
-            raise WrextValidationException(
+            raise RextValidationException(
                 message=f"Cannot delete protected role '{role.name}'",
                 field_errors={"role_id": ["Protected roles (platform roles and standard workspace roles) cannot be deleted"]}
             )
@@ -291,7 +291,7 @@ class RoleService:
 
         if user_roles:
             if not reassign_to:
-                raise WrextValidationException(
+                raise RextValidationException(
                     message=f"Cannot delete role assigned to {len(user_roles)} user(s). Provide reassign_to role.",
                     field_errors={"role_id": ["Role in use, reassignment required"]}
                 )
@@ -357,7 +357,7 @@ class RoleService:
 
         Raises:
             ResourceNotFoundException: If role or user not found
-            WrextValidationException: If user not workspace member
+            RextValidationException: If user not workspace member
         """
         # Validate role exists
         role = await self.get_role_by_id(role_id)
@@ -383,7 +383,7 @@ class RoleService:
                 )
             )
             if not member_result.scalar_one_or_none():
-                raise WrextValidationException(
+                raise RextValidationException(
                     message="User is not a member of this workspace",
                     field_errors={"workspace_id": ["User not a member"]}
                 )

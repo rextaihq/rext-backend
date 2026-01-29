@@ -5,7 +5,7 @@ Uses async-factory-boy for async SQLAlchemy support.
 """
 
 import factory
-from factory import Faker, LazyFunction, LazyAttribute, SubFactory
+from factory import Faker, LazyFunction, LazyAttribute
 from uuid import uuid4
 from datetime import datetime, timezone
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -15,10 +15,11 @@ from src.api.models.user_models.users import Users
 from src.api.models.workspace_models.workspace_model import WorkspaceModel
 from src.api.models.workspace_models.workspace_member import WorkspaceMembers
 from src.api.models.content_models.content import Content
-from src.api.models.topic_models.topic_models import TopicsModel
+
 from src.api.models.user_models.invitations import UserInvitations
 from src.api.models.user_models.roles import Role
 from src.api.models.knowledge_models.knowledge_model import KnowledgeBase, Website, KnowledgeFiles, TextKnowledge
+from src.api.models.knowledge_models.persona_model import Persona
 
 
 # Base async factory
@@ -59,13 +60,10 @@ class UserFactory(AsyncFactory):
     password_hash = "$2b$12$KIXqXqz5Y5rZK5Y5rZK5YO"  # bcrypt hash of "password123"
     status = "active"
     email_verified = True
-    created_at = LazyFunction(lambda: datetime.utcnow())
-    updated_at = LazyFunction(lambda: datetime.utcnow())
+    created_at = LazyFunction(lambda: datetime.now(timezone.utc))
+    updated_at = LazyFunction(lambda: datetime.now(timezone.utc))
     login_count = 0
     failed_login_attempts = 0
-    last_login_at = None
-    password_changed_at = None
-    deactivated_at = None
 
 
 class WorkspaceFactory(AsyncFactory):
@@ -80,8 +78,8 @@ class WorkspaceFactory(AsyncFactory):
     slug = LazyAttribute(lambda o: o.name.lower().replace(" ", "-").replace(",", "").replace(".", ""))
     url = Faker("url")
     timezone = "UTC"
-    created_at = LazyFunction(lambda: datetime.utcnow())
-    updated_at = LazyFunction(lambda: datetime.utcnow())
+    created_at = LazyFunction(lambda: datetime.now(timezone.utc))
+    updated_at = LazyFunction(lambda: datetime.now(timezone.utc))
 
     @classmethod
     async def create(cls, **kwargs):
@@ -102,11 +100,9 @@ class WorkspaceMemberFactory(AsyncFactory):
     id = LazyFunction(uuid4)
     workspace_id = LazyFunction(uuid4)
     user_id = LazyFunction(uuid4)
-    invitation_id = None
     status = "active"
     is_default = False
-    joined_at = LazyFunction(lambda: datetime.utcnow())
-    last_activity_at = LazyFunction(lambda: datetime.utcnow())
+    joined_at = LazyFunction(lambda: datetime.now(timezone.utc))
 
 
 class ContentFactory(AsyncFactory):
@@ -125,8 +121,8 @@ class ContentFactory(AsyncFactory):
     content_format = "Markdown"
     status = "draft"
     content_language = "English"
-    created_at = LazyFunction(lambda: datetime.utcnow())
-    updated_at = LazyFunction(lambda: datetime.utcnow())
+    created_at = LazyFunction(lambda: datetime.now(timezone.utc))
+    updated_at = LazyFunction(lambda: datetime.now(timezone.utc))
 
     @classmethod
     async def create(cls, **kwargs):
@@ -145,53 +141,6 @@ class ContentFactory(AsyncFactory):
         return await super().create(**kwargs)
 
 
-class TopicFactory(AsyncFactory):
-    """Factory for TopicsModel"""
-
-    class Meta:
-        model = TopicsModel
-
-    id = LazyFunction(uuid4)
-    workspace_id = LazyFunction(uuid4)  # Override this in tests with actual workspace.id
-    title = Faker("sentence", nb_words=5)
-    angle = Faker("sentence", nb_words=8)
-    description = Faker("text", max_nb_chars=200)
-    channel_fit = ["Website", "Social Media"]
-    audience_fit = ["Professionals", "Businesses"]
-    why_it_works = Faker("text", max_nb_chars=150)
-    scores = {
-        "relevance": 0.8,
-        "seo_potential": 0.85,
-        "trend_level": 0.75,
-        "uniqueness": 0.9,
-        "reader_interest": 0.8,
-        "actionable_potential": 0.85,
-        "brand_alignment": 0.9,
-        "controversy": 0.2
-    }
-    tags = ["business", "strategy", "growth"]
-    approved = False
-    approved_at = None
-    suggested_defaults = {}
-    goal_alignment = {}
-    content_guidance = {}
-    audience_insights = {}
-    internal_research_config = {}
-    user_settings = {}
-    created_at = LazyFunction(lambda: datetime.now(timezone.utc))
-    updated_at = LazyFunction(lambda: datetime.now(timezone.utc))
-
-    @classmethod
-    async def create(cls, **kwargs):
-        """Create topic, automatically creating workspace if workspace_id not provided"""
-        if 'workspace_id' not in kwargs:
-            # Create a workspace first to satisfy foreign key
-            workspace = await WorkspaceFactory.create()
-            kwargs['workspace_id'] = workspace.id
-        return await super().create(**kwargs)
-
-
-
 class RoleFactory(AsyncFactory):
     """Factory for Role model"""
 
@@ -204,8 +153,8 @@ class RoleFactory(AsyncFactory):
     description = Faker("sentence")
     hierarchy_level = 0
     is_system_role = False
-    created_at = LazyFunction(lambda: datetime.utcnow())
-    updated_at = LazyFunction(lambda: datetime.utcnow())
+    created_at = LazyFunction(lambda: datetime.now(timezone.utc))
+    updated_at = LazyFunction(lambda: datetime.now(timezone.utc))
 
 
 class InvitationFactory(AsyncFactory):
@@ -221,14 +170,12 @@ class InvitationFactory(AsyncFactory):
     invited_by_user_id = LazyFunction(uuid4)
     invitation_token = LazyFunction(lambda: f"token_{uuid4().hex[:16]}")
     status = "pending"
-    created_at = LazyFunction(lambda: datetime.utcnow())
-    expires_at = LazyFunction(lambda: datetime.utcnow() + __import__("datetime").timedelta(days=7))
+    created_at = LazyFunction(lambda: datetime.now(timezone.utc))
+    expires_at = LazyAttribute(lambda o: datetime.now(timezone.utc) + __import__("datetime").timedelta(days=7))
 
     @classmethod
     async def create(cls, **kwargs):
         """Create invitation with auto-dependencies"""
-        session: AsyncSession = cls._session
-        
         if "workspace_id" not in kwargs:
             workspace = await WorkspaceFactory.create()
             kwargs["workspace_id"] = workspace.id
@@ -256,7 +203,6 @@ class KnowledgeBaseFactory(AsyncFactory):
     description = Faker("text", max_nb_chars=200)
     type = "custom"
     created_at = LazyFunction(lambda: datetime.now(timezone.utc))
-    updated_at = None
 
     @classmethod
     async def create(cls, **kwargs):
@@ -339,10 +285,7 @@ class TextKnowledgeFactory(AsyncFactory):
     knowledge_base_id = LazyFunction(uuid4)
     title = Faker("sentence", nb_words=5)
     content = Faker("text", max_nb_chars=500)
-    tags = None
-    custom_metadata = None
     created_at = LazyFunction(lambda: datetime.now(timezone.utc))
-    updated_at = None
 
     @classmethod
     async def create(cls, **kwargs):
@@ -355,4 +298,26 @@ class TextKnowledgeFactory(AsyncFactory):
             kb = await KnowledgeBaseFactory.create(workspace_id=kwargs['workspace_id'])
             kwargs['knowledge_base_id'] = kb.id
 
+        return await super().create(**kwargs)
+
+
+class PersonaFactory(AsyncFactory):
+    """Factory for Persona model"""
+
+    class Meta:
+        model = Persona
+
+    id = LazyFunction(uuid4)
+    workspace_id = LazyFunction(uuid4)
+    name = Faker("name")
+    role = Faker("job")
+    tone_of_voice = "Professional"
+    created_at = LazyFunction(lambda: datetime.now(timezone.utc))
+
+    @classmethod
+    async def create(cls, **kwargs):
+        """Create persona with auto-dependencies"""
+        if 'workspace_id' not in kwargs:
+            workspace = await WorkspaceFactory.create()
+            kwargs['workspace_id'] = workspace.id
         return await super().create(**kwargs)

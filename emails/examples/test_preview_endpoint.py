@@ -267,7 +267,7 @@ def main():
     except requests.exceptions.ConnectionError:
         print("\n❌ Error: Could not connect to API")
         print("   Make sure the backend server is running:")
-        print("   cd wrext-backend && python src/api/server.py")
+        print("   cd rext-backend && python src/api/server.py")
     except Exception as e:
         print(f"\n❌ Error: {e}")
         import traceback

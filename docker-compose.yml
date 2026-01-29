@@ -5,7 +5,7 @@ services:
     # Redis for application cache (separate from LangGraph)
     redis:
         image: redis:7-alpine
-        container_name: wrext-redis
+        container_name: rext-redis
         ports:
             - "6379:6379"
         healthcheck:
@@ -25,12 +25,33 @@ services:
             timeout: 1s
             retries: 5
 
+    # Postgres Databases and also add some other secrets
+    postgres:
+        image: postgres:17-alpine
+        container_name: rext-postgres
+        environment:
+            POSTGRES_USER: exec
+            POSTGRES_PASSWORD: rextserver
+            POSTGRES_DB: rext
+        volumes:
+            - langgraph-data:/var/lib/postgresql/data
+        ports:
+            - "5432:5432"
+        healthcheck:
+            test: [ "CMD-SHELL", "pg_isready -U exec" ]
+            interval: 5s
+            retries: 5
+        networks:
+            - rext-network
+
     # Backend API Service
     langgraph-api:
-        image: revnix/wrext:${IMAGE_TAG:-latest}
+        image: revnixhq/wrext:${IMAGE_TAG:-dev}
         ports:
             - "2024:2024"
         depends_on:
+            postgres:
+                condition: service_healthy
             langgraph-redis:
                 condition: service_healthy
         env_file:
@@ -39,12 +60,12 @@ services:
             # Core API + Database
             OPENAI_API_KEY: ${OPENAI_API_KEY}
             LANGSMITH_API_KEY: ${LANGSMITH_API_KEY}
-            LANGSMITH_PROJECT: ${LANGSMITH_PROJECT:-WREXT}
+            LANGSMITH_PROJECT: ${LANGSMITH_PROJECT:-REXT}
             LANGSMITH_TRACING: ${LANGSMITH_TRACING:-true}
 
             # Database (Connect to host PostgreSQL)
-            POSTGRES_URI_CUSTOM: ${POSTGRES_URI_CUSTOM}
-            DATABASE_URI: ${DATABASE_URI}
+            POSTGRES_URI_CUSTOM: postgresql://exec:rextserver@postgres:5432/rext
+            DATABASE_URI: postgresql://exec:rextserver@postgres:5432/rext
             REDIS_URI: ${REDIS_URI:-redis://langgraph-redis:6379}
             REDIS_URL: ${REDIS_URL:-redis://langgraph-redis:6379}
             CACHE_URL: ${CACHE_URL:-redis://langgraph-redis:6379}
@@ -78,6 +99,12 @@ services:
             # Email (Resend)
             EMAIL_PROVIDER: ${EMAIL_PROVIDER:-resend}
             EMAIL_ENABLED: ${EMAIL_ENABLED:-true}
+
+            # Resend
+            RESEND_API_KEY: ${RESEND_API_KEY}
+            RESEND_FROM_EMAIL: ${RESEND_FROM_EMAIL}
+            RESEND_FROM_NAME: ${RESEND_FROM_NAME}
+            RESEND_WEBHOOK_SECRET: ${RESEND_WEBHOOK_SECRET}
             SMTP_SERVER: ${SMTP_SERVER:-}
             SMTP_PORT: ${SMTP_PORT:-587}
             SMTP_USERNAME: ${SMTP_USERNAME:-}
@@ -100,13 +127,23 @@ services:
             # Admin
             SUPER_ADMIN_EMAIL: ${SUPER_ADMIN_EMAIL}
             SUPER_ADMIN_PASSWORD: ${SUPER_ADMIN_PASSWORD}
-            SUPER_ADMIN_FIRST_NAME: ${SUPER_ADMIN_FIRST_NAME:-Admin}
-            SUPER_ADMIN_LAST_NAME: ${SUPER_ADMIN_LAST_NAME:-User}
+            SUPER_ADMIN_FULL_NAME: ${SUPER_ADMIN_FULL_NAME:-Samiullah}
 
             # Monitoring
             SENTRY_DSN: ${SENTRY_DSN}
             SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-production}
+            CACHE_ENABLED: ${CACHE_ENABLED:-false}
+
+            # Feature Flags
+            FF_PROFILE_IMPORTS: ${FF_PROFILE_IMPORTS:-false}
+            BG_JOB_ISOLATED_LOOPS: ${BG_JOB_ISOLATED_LOOPS:-false}
+
+            # Payment
+            LEMONSQUEEZY_WEBHOOK_SECRET: ${LEMONSQUEEZY_WEBHOOK_SECRET}
+            LEMONSQUEEZY_API_KEY: ${LEMONSQUEEZY_API_KEY}
+            LEMONSQUEEZY_SANDBOX_MODE: ${LEMONSQUEEZY_SANDBOX_MODE}
+            LEMONSQUEEZY_STORE_ID: ${LEMONSQUEEZY_STORE_ID}
 
 networks:
-    wrext-network:
+    rext-network:
         driver: bridge

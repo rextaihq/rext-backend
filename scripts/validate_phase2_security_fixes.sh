@@ -14,7 +14,7 @@ NC='\033[0m' # No Color
 
 # Configuration
 API_BASE_URL="${API_BASE_URL:-http://localhost:2024/api/v1}"
-DB_NAME="${DB_NAME:-wrext}"
+DB_NAME="${DB_NAME:-rext}"
 DB_USER="${DB_USER:-postgres}"
 DB_HOST="${DB_HOST:-localhost}"
 DB_PORT="${DB_PORT:-5432}"

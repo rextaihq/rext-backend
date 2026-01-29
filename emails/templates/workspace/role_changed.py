@@ -15,7 +15,7 @@ def render_role_changed_email(
     new_role_name: str,
     changed_by_name: str,
     workspace_url: Optional[str] = None,
-    frontend_url: str = "https://app.wrext.com"
+    frontend_url: str = "https://app.rext.com"
 ) -> str:
     """
     Render role changed notification email template.
@@ -149,7 +149,7 @@ def create_role_changed_email(
     new_role_name: str,
     changed_by_name: str,
     workspace_id: Optional[str] = None,
-    frontend_url: str = "https://app.wrext.com",
+    frontend_url: str = "https://app.rext.com",
     unsubscribe_token: Optional[str] = None
 ) -> str:
     """

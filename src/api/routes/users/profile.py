@@ -47,9 +47,7 @@ async def get_profile(
         profile_data = {
             "id": str(user.id),
             "email": user.email,
-            "username": user.username,
-            "first_name": user.first_name,
-            "last_name": user.last_name,
+            "full_name": user.full_name,
             "display_name": user.display_name,
             "bio": user.bio,
             "language": user.language or "en",
@@ -101,12 +99,9 @@ async def update_profile(
         updated_fields = []
         update_kwargs = {}
 
-        if profile_data.first_name is not None:
-            update_kwargs["first_name"] = profile_data.first_name
-            updated_fields.append("first_name")
-        if profile_data.last_name is not None:
-            update_kwargs["last_name"] = profile_data.last_name
-            updated_fields.append("last_name")
+        if profile_data.full_name is not None:
+            update_kwargs["full_name"] = profile_data.full_name
+            updated_fields.append("full_name")
         if profile_data.display_name is not None:
             update_kwargs["display_name"] = profile_data.display_name
             updated_fields.append("display_name")
@@ -130,9 +125,7 @@ async def update_profile(
         profile_response = {
             "id": str(user.id),
             "email": user.email,
-            "username": user.username,
-            "first_name": user.first_name,
-            "last_name": user.last_name,
+            "full_name": user.full_name,
             "display_name": user.display_name,
             "bio": user.bio,
             "language": user.language,

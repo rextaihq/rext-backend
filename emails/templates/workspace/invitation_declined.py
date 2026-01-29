@@ -13,7 +13,7 @@ def render_invitation_declined_email(
     declined_by_email: str,
     decline_reason: Optional[str] = None,
     workspace_url: str = None,
-    frontend_url: str = "https://app.wrext.com"
+    frontend_url: str = "https://app.rext.com"
 ) -> str:
     """
     Render invitation declined notification email template.
@@ -97,7 +97,7 @@ def create_invitation_declined_email(
     declined_by_email: str,
     decline_reason: Optional[str] = None,
     workspace_id: Optional[str] = None,
-    frontend_url: str = "https://app.wrext.com",
+    frontend_url: str = "https://app.rext.com",
     unsubscribe_token: Optional[str] = None
 ) -> str:
     """

@@ -181,7 +181,7 @@ def compose_email(components: list, **layout_kwargs) -> str:
         >>> html = compose_email([
         ...     simple_header(),
         ...     "<p>Welcome!</p>",
-        ...     primary_button("Get Started", "https://app.wrext.com")
+        ...     primary_button("Get Started", "https://app.rext.com")
         ... ])
     """
     layout_props = None

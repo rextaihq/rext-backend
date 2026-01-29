@@ -25,7 +25,7 @@ from src.api.models.subscription_models.subscriptions import (
 )
 from src.api.middleware.exceptions import (
     DuplicateResourceException,
-    WrextValidationException,
+    RextValidationException,
     ResourceNotFoundException
 )
 
@@ -278,7 +278,7 @@ class TestSubscriptionServiceUpgrade:
         assert updated_subscription.billing_period == BillingPeriod.YEARLY
 
     async def test_upgrade_same_plan_same_billing_period(self, db_session, setup_factories):
-        """Should raise WrextValidationException when upgrading to same plan with same billing period"""
+        """Should raise RextValidationException when upgrading to same plan with same billing period"""
         # Arrange
         user = await setup_factories["user"].create()
 
@@ -299,7 +299,7 @@ class TestSubscriptionServiceUpgrade:
         await service.subscribe(user.id, plan.id, BillingPeriod.MONTHLY)
 
         # Act & Assert
-        with pytest.raises(WrextValidationException) as exc_info:
+        with pytest.raises(RextValidationException) as exc_info:
             await service.upgrade(user.id, plan.id)
 
         assert "already subscribed" in exc_info.value.message.lower()
@@ -376,7 +376,7 @@ class TestSubscriptionServiceDowngrade:
         assert downgraded.plan_id == basic_plan.id
 
     async def test_downgrade_exceeds_workspace_limit(self, db_session, setup_factories):
-        """Should raise WrextValidationException when workspace count exceeds new plan limit"""
+        """Should raise RextValidationException when workspace count exceeds new plan limit"""
         # Arrange
         user = await setup_factories["user"].create()
 
@@ -413,7 +413,7 @@ class TestSubscriptionServiceDowngrade:
         await service.subscribe(user.id, pro_plan.id, BillingPeriod.MONTHLY)
 
         # Act & Assert
-        with pytest.raises(WrextValidationException) as exc_info:
+        with pytest.raises(RextValidationException) as exc_info:
             await service.downgrade(user.id, basic_plan.id)
 
         assert "cannot downgrade" in exc_info.value.message.lower()
@@ -655,7 +655,7 @@ class TestSubscriptionServiceValidatePlanLimits:
         assert result is True
 
     async def test_validate_plan_limits_exceeds_workspace_limit(self, db_session, setup_factories):
-        """Should raise WrextValidationException when exceeding workspace limit"""
+        """Should raise RextValidationException when exceeding workspace limit"""
         # Arrange
         user = await setup_factories["user"].create()
 
@@ -680,7 +680,7 @@ class TestSubscriptionServiceValidatePlanLimits:
         await service.subscribe(user.id, plan.id, BillingPeriod.MONTHLY)
 
         # Act & Assert
-        with pytest.raises(WrextValidationException) as exc_info:
+        with pytest.raises(RextValidationException) as exc_info:
             await service.validate_plan_limits(user.id, "workspace", increment=1)
 
         assert "plan limit exceeded" in exc_info.value.message.lower()
@@ -717,7 +717,7 @@ class TestSubscriptionServiceValidatePlanLimits:
         assert result is True
 
     async def test_validate_plan_limits_invalid_resource_type(self, db_session, setup_factories):
-        """Should raise WrextValidationException for invalid resource type"""
+        """Should raise RextValidationException for invalid resource type"""
         # Arrange
         user = await setup_factories["user"].create()
 
@@ -738,7 +738,7 @@ class TestSubscriptionServiceValidatePlanLimits:
         await service.subscribe(user.id, plan.id, BillingPeriod.MONTHLY)
 
         # Act & Assert
-        with pytest.raises(WrextValidationException) as exc_info:
+        with pytest.raises(RextValidationException) as exc_info:
             await service.validate_plan_limits(user.id, "invalid_resource", increment=1)
 
         assert "invalid resource type" in exc_info.value.message.lower()

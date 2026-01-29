@@ -147,7 +147,7 @@ async def resolve_error_log(
 @require_permissions("audit.read", workspace_scoped=False)
 async def get_usage_stats(
     request: Request,
-    period: str = Query("24_hours", regex="^(24_hours|7_days|30_days)$", description="Time period"),
+    period: str = Query("24_hours", pattern="^(24_hours|7_days|30_days)$", description="Time period"),
     db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user)
 ):

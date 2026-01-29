@@ -4,16 +4,16 @@ from urllib.parse import urlparse
 from collections import Counter
 from datetime import datetime
 from typing import List, Dict, Any
-from src.flow.states.wrext import WREXT, NormalizedOrganicResult, SERPNORMALIZED
+from src.flow.states.rext import REXT, NormalizedOrganicResult, SERPNORMALIZED
 
 logger = logging.getLogger(__name__)
 
-def normalize_serp_results(state: WREXT) -> Dict[str, Any]:
+def normalize_serp_results(state: REXT) -> Dict[str, Any]:
     """
     Normalize raw SERP results into a structured format for further analysis.
 
     Args:
-        state (WREXT): The current state containing the raw serp_result.
+        state (REXT): The current state containing the raw serp_result.
 
     Returns:
         Dict[str, Any]: A dictionary containing the normalized SERP data.

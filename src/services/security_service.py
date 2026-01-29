@@ -30,7 +30,7 @@ from src.api.models.audit_models.audit_logs import AuditLog
 from src.utils.logger import logger
 from src.api.middleware.exceptions import (
     ResourceNotFoundException,
-    WrextValidationException
+    RextValidationException
 )
 
 
@@ -98,7 +98,7 @@ class SecurityService:
             users_data.append({
                 "id": str(user.id),
                 "email": user.email,
-                "username": user.username,
+                "full_name": user.full_name,
                 "failed_attempts": user.failed_login_attempts,
                 "locked_until": user.locked_until.isoformat() if user.locked_until else None,
                 "last_failed_at": user.updated_at.isoformat() if user.updated_at else None,
@@ -159,7 +159,7 @@ class SecurityService:
                 locked_accounts.append({
                     "id": str(user.id),
                     "email": user.email,
-                    "username": user.username,
+                    "full_name": user.full_name,
                     "locked_until": user.locked_until.isoformat(),
                     "failed_attempts": user.failed_login_attempts,
                     "remaining_lock_time_minutes": remaining_minutes
@@ -190,14 +190,14 @@ class SecurityService:
 
         Raises:
             ResourceNotFoundException: If user not found
-            WrextValidationException: If account not locked
+            RextValidationException: If account not locked
         """
         # Get user
         user = await self._get_user_or_404(user_id)
 
         # Check if account is actually locked
         if not user.locked_until or user.locked_until <= datetime.utcnow():
-            raise WrextValidationException(
+            raise RextValidationException(
                 message="Account is not currently locked",
                 field_errors={"user_id": ["Account not locked"]}
             )
@@ -250,7 +250,7 @@ class SecurityService:
         return {
             "user_id": str(user.id),
             "email": user.email,
-            "username": user.username,
+            "full_name": user.full_name,
             "failed_attempts": 0,
             "previous_attempts": old_attempts
         }
@@ -379,7 +379,7 @@ class SecurityService:
 
         return {
             "user_id": str(user.id),
-            "username": user.username,
+            "full_name": user.full_name,
             "email": user.email,
             "login_history": login_history,
             "total_events": len(login_history)

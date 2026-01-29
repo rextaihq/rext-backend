@@ -18,7 +18,7 @@ from unittest.mock import Mock, patch, MagicMock
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.services.topic_service import TopicService
-from src.api.models.topic_models.topic_models import TopicsModel as Topics
+ as Topics
 from src.api.schema.topic_schema import UpdateTopicRequest
 from src.states.schemas import (
     SaveTopicRequest,
@@ -36,7 +36,7 @@ from src.states.schemas import (
 )
 from src.api.middleware.exceptions import (
     ResourceNotFoundException,
-    WrextValidationException
+    RextValidationException
 )
 
 
@@ -205,7 +205,7 @@ class TestTopicServiceCreateTopics:
         with patch.object(service.enrichment_service, 'enrich_topic') as mock_enrich:
             mock_enrich.side_effect = Exception("Enrichment failed")
 
-            with pytest.raises(WrextValidationException) as exc_info:
+            with pytest.raises(RextValidationException) as exc_info:
                 await service.create_topics(
                     workspace_id=workspace.id,
                     user_id=user.id,

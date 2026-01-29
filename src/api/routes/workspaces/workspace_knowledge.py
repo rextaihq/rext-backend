@@ -5,7 +5,7 @@ from fastapi import APIRouter, BackgroundTasks, Body, Depends, File, Request, Up
 from pydantic import BaseModel, HttpUrl, constr
 from sqlalchemy.ext.asyncio import AsyncSession
 from src.api.database.async_database import get_async_db
-from src.api.middleware.exceptions import WrextValidationException
+from src.api.middleware.exceptions import RextValidationException
 from src.api.middleware.usage_limiter import check_knowledge_item_limit
 from src.api.security.dependencies import get_current_user
 from src.services.knowledge_service import KnowledgeService
@@ -619,7 +619,7 @@ async def update_text_knowledge(
 ):
     """Update title/content for a text knowledge entry."""
     if not any([payload.title, payload.content, payload.tags]):
-        raise WrextValidationException(
+        raise RextValidationException(
             message="At least one field (title, content, tags) must be provided",
             field_errors={"payload": ["No fields supplied for update"]},
         )

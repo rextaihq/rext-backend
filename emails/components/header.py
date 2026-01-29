@@ -11,7 +11,7 @@ from dataclasses import dataclass
 class HeaderProps:
     """Props for email header component"""
     logo_url: Optional[str] = None
-    logo_alt: str = "WREXT"
+    logo_alt: str = "REXT"
     workspace_name: Optional[str] = None
     background_color: str = "#ffffff"
     text_color: str = "#111827"

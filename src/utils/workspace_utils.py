@@ -184,7 +184,7 @@ async def resolve_and_verify_workspace(
 
     Raises:
         ResourceNotFoundException: If workspace not found
-        WrextAuthorizationException: If user not a member
+        RextAuthorizationException: If user not a member
 
     Example:
         >>> workspace, membership = await resolve_and_verify_workspace(

@@ -9,7 +9,7 @@ from src.api.middleware.permissions import is_admin
 from src.api.models.audit_models.audit_logs import AuditLog
 from src.api.schema.audit_schema import AuditStatus
 from src.utils.response_utils import success
-from src.api.middleware.exceptions import ResourceNotFoundException, WrextValidationException
+from src.api.middleware.exceptions import ResourceNotFoundException, RextValidationException
 from src.utils.logger import logger
 from src.utils.route_decorators import db_transaction_handler
 from .helpers import build_audit_query, format_audit_log

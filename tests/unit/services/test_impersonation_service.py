@@ -9,8 +9,8 @@ from src.services.impersonation_service import ImpersonationService
 from src.api.models.user_models.users import Users
 from src.api.models.user_models.permissions import Permission
 from src.api.middleware.exceptions import (
-    WrextValidationException,
-    WrextAuthenticationException,
+    RextValidationException,
+    RextAuthenticationException,
     ResourceNotFoundException,
 )
 
@@ -111,7 +111,7 @@ async def test_start_impersonation_prevents_self_impersonation():
 
     service._get_user_or_404 = AsyncMock(side_effect=[admin_user, admin_user])
 
-    with pytest.raises(WrextValidationException):
+    with pytest.raises(RextValidationException):
         await service.start_impersonation(admin_id, admin_id)
 
 
@@ -143,7 +143,7 @@ async def test_start_impersonation_requires_permission():
     service._get_user_or_404 = AsyncMock(side_effect=[admin_user, target_user])
     service._has_impersonation_permission = AsyncMock(return_value=False)
 
-    with pytest.raises(WrextAuthenticationException):
+    with pytest.raises(RextAuthenticationException):
         await service.start_impersonation(admin_id, target_id)
 
 

@@ -60,7 +60,7 @@ Click the link below to accept your invitation:
 This invitation will expire in 7 days.
 
 Best regards,
-The Wrext Team''',
+The Rext Team''',
         },
         {
             'template_type': 'invitation_accepted',
@@ -72,7 +72,7 @@ Good news! {invitee_name} ({invitee_email}) has accepted your invitation to join
 They now have {role_name} access to your workspace.
 
 Best regards,
-The Wrext Team''',
+The Rext Team''',
         },
         {
             'template_type': 'role_changed',
@@ -86,7 +86,7 @@ This change affects your permissions and access levels within the workspace.
 If you have any questions about your new role, please contact your workspace administrator.
 
 Best regards,
-The Wrext Team''',
+The Rext Team''',
         },
         {
             'template_type': 'member_removed',
@@ -100,7 +100,7 @@ You no longer have access to this workspace and its content.
 If you believe this was done in error, please contact the workspace administrator.
 
 Best regards,
-The Wrext Team''',
+The Rext Team''',
         },
         {
             'template_type': 'welcome',
@@ -119,7 +119,7 @@ You've been granted {role_name} access. Here's what you can do to get started:
 If you have any questions, don't hesitate to reach out to your workspace administrator.
 
 Best regards,
-The Wrext Team''',
+The Rext Team''',
         },
     ]
 

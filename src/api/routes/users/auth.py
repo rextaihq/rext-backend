@@ -11,7 +11,7 @@ from src.utils.response_utils import success, error, created
 from src.api.schema.response_schemas import ErrorCode, ErrorSeverity
 from src.api.middleware.exceptions import (
     DuplicateResourceException,
-    WrextAuthenticationException,
+    RextAuthenticationException,
     ResourceNotFoundException,
     BusinessRuleViolationException
 )
@@ -121,10 +121,8 @@ async def create_user(
         auth_service = AuthService(db)
         new_user, verification_token = await auth_service.register_user(
             email=user.email,
-            username=user.username,
             password=user.password,
-            first_name=user.first_name,
-            last_name=user.last_name
+            full_name=user.full_name
         )
 
         # IMPORTANT: Commit transaction before background task
@@ -138,7 +136,7 @@ async def create_user(
         background_tasks.add_task(
             send_verification_email_task,
             email=new_user.email,
-            first_name=new_user.first_name,
+            first_name=new_user.full_name or new_user.display_name,
             verification_token=verification_token,
             user_id=str(new_user.id),
             frontend_url=frontend_url
@@ -177,10 +175,8 @@ async def create_user(
         await db.refresh(notification_preference)
         user_data = {
             "id": str(new_user.id),
-            "username": new_user.username,
             "email": new_user.email,
-            "first_name": new_user.first_name,
-            "last_name": new_user.last_name,
+            "full_name": new_user.full_name,
             "display_name": new_user.display_name,
             "language": new_user.language,
             "timezone": new_user.timezone,
@@ -324,10 +320,8 @@ async def register_with_invitation(
             auth_service = AuthService(db)
             new_user, verification_token = await auth_service.register_user(
                 email=user_data.email,
-                username=user_data.username,
                 password=user_data.password,
-                first_name=user_data.first_name,
-                last_name=user_data.last_name
+                full_name=user_data.full_name
             )
 
             # Skip email verification for invited users
@@ -360,7 +354,7 @@ async def register_with_invitation(
             background_tasks.add_task(
                 send_welcome_email_task,
                 email=current_user.email,
-                first_name=current_user.first_name,
+                first_name=current_user.full_name or current_user.display_name,
                 user_id=str(current_user.id),
                 frontend_url=frontend_url
             )
@@ -412,10 +406,8 @@ async def register_with_invitation(
         # Step 8: Return comprehensive response with workspace context
         user_data_response = {
             "id": str(current_user.id),
-            "username": current_user.username,
             "email": current_user.email,
-            "first_name": current_user.first_name,
-            "last_name": current_user.last_name,
+            "full_name": current_user.full_name,
             "display_name": current_user.display_name,
             "language": current_user.language,
             "timezone": current_user.timezone,
@@ -536,10 +528,9 @@ async def login_user(
                 **tokens,
                 "user": {
                     "id": str(db_user.id),
-                    "username": db_user.username,
                     "email": db_user.email,
-                    "first_name": db_user.first_name,
-                    "last_name": db_user.last_name,
+                    "full_name": db_user.full_name,
+                    "display_name": db_user.display_name,
                     "avatar_url": db_user.avatar_url,
                     "last_login_at": db_user.last_login_at,
                     "login_count": db_user.login_count,
@@ -551,7 +542,7 @@ async def login_user(
             message="User logged in successfully"
         )
 
-    except WrextAuthenticationException as auth_error:
+    except RextAuthenticationException as auth_error:
         # CRITICAL: Commit transaction to persist failed login attempts
         # Without this, account locking after multiple failed attempts won't work
         await db.commit()
@@ -616,7 +607,7 @@ async def refresh_access_token(
             message="Token refreshed successfully"
         )
 
-    except WrextAuthenticationException:
+    except RextAuthenticationException:
         # Re-raise to be handled by middleware
         raise
     except Exception as e:
@@ -664,7 +655,7 @@ async def logout_user(
             message="Logout successful"
         )
 
-    except WrextAuthenticationException:
+    except RextAuthenticationException:
         # Re-raise to be handled by middleware
         raise
     except Exception as e:
@@ -700,7 +691,7 @@ async def verify_email(
             background_tasks.add_task(
                 send_welcome_email_task,
                 email=user.email,
-                first_name=user.first_name or user.username,
+                first_name=user.full_name or user.display_name,
                 user_id=str(user.id),
                 frontend_url=frontend_url
             )
@@ -713,7 +704,7 @@ async def verify_email(
             message=message
         )
 
-    except (WrextAuthenticationException, ResourceNotFoundException):
+    except (RextAuthenticationException, ResourceNotFoundException):
         raise
     except Exception as e:
         return error(
@@ -765,7 +756,7 @@ async def resend_verification(
         background_tasks.add_task(
             send_verification_email_task,
             email=user.email,
-            first_name=user.first_name or user.username,
+            first_name=user.full_name or user.display_name,
             verification_token=verification_token,
             user_id=str(user.id),
             frontend_url=frontend_url
@@ -778,7 +769,7 @@ async def resend_verification(
             message="Verification email sent successfully"
         )
 
-    except (WrextAuthenticationException, ResourceNotFoundException):
+    except (RextAuthenticationException, ResourceNotFoundException):
         raise
     except Exception as e:
         logger.error(f"Resend verification error: {str(e)}")
@@ -902,10 +893,9 @@ async def oauth_login(
                 **tokens,
                 "user": {
                     "id": str(new_user.id),
-                    "username": new_user.username,
                     "email": new_user.email,
-                    "first_name": new_user.first_name,
-                    "last_name": new_user.last_name,
+                    "full_name": new_user.full_name,
+                    "display_name": new_user.display_name,
                     "avatar_url": new_user.avatar_url,
                     "last_login_at": new_user.last_login_at,
                     "login_count": new_user.login_count,
@@ -917,7 +907,7 @@ async def oauth_login(
             message="OAuth login successful"
         )
 
-    except WrextAuthenticationException:
+    except RextAuthenticationException:
         raise
     except DuplicateResourceException:
         raise

@@ -20,9 +20,9 @@ from src.services.knowledge_service import KnowledgeService
 from src.api.models.knowledge_models.knowledge_model import KnowledgeFiles, TextKnowledge
 from src.api.middleware.exceptions import (
     ResourceNotFoundException,
-    WrextValidationException,
+    RextValidationException,
     DuplicateResourceException,
-    WrextExternalServiceException
+    RextExternalServiceException
 )
 
 
@@ -146,7 +146,7 @@ class TestKnowledgeServiceAddFileKnowledge:
             mock_load.return_value = []  # No chunks extracted
 
             # Act & Assert
-            with pytest.raises(WrextValidationException) as exc_info:
+            with pytest.raises(RextValidationException) as exc_info:
                 await service.add_file_knowledge(
                     workspace_id=workspace.id,
                     file=file,
@@ -178,7 +178,7 @@ class TestKnowledgeServiceAddFileKnowledge:
             mock_vector.return_value = False  # Vector store returns False
 
             # Act & Assert
-            with pytest.raises(WrextExternalServiceException) as exc_info:
+            with pytest.raises(RextExternalServiceException) as exc_info:
                 await service.add_file_knowledge(
                     workspace_id=workspace.id,
                     file=file,

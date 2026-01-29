@@ -5,7 +5,7 @@ services:
     # Redis for application cache (separate from LangGraph)
     redis:
         image: redis:7-alpine
-        container_name: wrext-redis
+        container_name: rext-redis
         ports:
             - "6379:6379"
         healthcheck:
@@ -55,7 +55,7 @@ services:
           # Core API + Database
           OPENAI_API_KEY: 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
           LANGSMITH_API_KEY: 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
-          LANGSMITH_PROJECT: WREXT
+          LANGSMITH_PROJECT: REXT
           LANGSMITH_TRACING: "true"
           POSTGRES_URI_CUSTOM: postgresql://postgres:postgres@langgraph-postgres:5432/postgres
           DATABASE_URI: postgresql://postgres:postgres@langgraph-postgres:5432/postgres
@@ -85,7 +85,7 @@ services:
           RATE_LIMIT_PER_DAY: 100000
 
           # File Uploads
-          UPLOAD_DIR: /Users/mobeen/Work/Products/wrext/wrext-backend/secure_uploads
+          UPLOAD_DIR: /Users/mobeen/Work/Products/rext/rext-backend/secure_uploads
           MAX_UPLOAD_SIZE_MB: 10
           ENABLE_VIRUS_SCAN: "false"
 
@@ -93,8 +93,8 @@ services:
           EMAIL_PROVIDER: resend
           EMAIL_ENABLED: "true"
           RESEND_API_KEY: re_YAu4DGiL_3xyU6qmnQ6bYakx1GLaXrdXS
-          RESEND_FROM_EMAIL: noreply@notifications.wrext.com
-          RESEND_FROM_NAME: WREXT
+          RESEND_FROM_EMAIL: noreply@notifications.rext.com
+          RESEND_FROM_NAME: REXT
           RESEND_WEBHOOK_SECRET: ""
           SMTP_SERVER: ""
           SMTP_PORT: 587

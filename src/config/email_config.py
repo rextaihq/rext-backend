@@ -19,8 +19,8 @@ class EmailConfig(BaseSettings):
     
     # Resend configuration
     resend_api_key: Optional[str] = None
-    resend_from_email: str = "noreply@wrext.com"
-    resend_from_name: str = "WREXT"
+    resend_from_email: str = "noreply@rext.com"
+    resend_from_name: str = "REXT"
     resend_webhook_secret: Optional[str] = None  # For webhook signature verification
     
     # SMTP configuration (fallback)

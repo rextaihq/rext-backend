@@ -76,15 +76,20 @@ A Python-based blog post automation system that processes and generates content 
 
 1. Install dependencies:
 ```bash
-pip install -r requirements.txt
+pip install uv
 ```
 
-- Run this command to enable the crawl4ai
+2. Install the required packages
+```bash
+uv sync
+```
+
+3. Run this command to enable the crawl4ai
 ```python
 crawl4ai-setup
 ```
 
-- Complete the test for crawl4ai
+4. Complete the test for crawl4ai
 ```python
 crawl4ai-doctor
 ```

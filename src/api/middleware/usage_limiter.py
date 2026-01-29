@@ -33,7 +33,6 @@ from src.api.models.subscription_models.subscriptions import (
 from src.api.models.subscription_models.plans import SubscriptionPlan
 from src.api.models.workspace_models.workspace_model import WorkspaceModel as Workspace
 from src.api.models.workspace_models.workspace_member import WorkspaceMembers
-from src.api.models.topic_models.topic_models import TopicsModel as Topic
 from src.api.models.knowledge_models.knowledge_model import (
     Website,
     KnowledgeFiles,
@@ -118,10 +117,10 @@ class WorkspaceLimitChecker:
             )
             current_count = result.scalar() or 0
 
-            if current_count >= 1:
+            if current_count >= 100:
                 raise HTTPException(
                     status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                    detail="Workspace limit reached. Please subscribe to a plan to create more workspaces."
+                    detail="Workspace limit reached (100/100). Please subscribe to a plan to create more workspaces."
                 )
             return
 
@@ -135,10 +134,10 @@ class WorkspaceLimitChecker:
         )
         current_count = result.scalar() or 0
 
-        if current_count >= plan.max_workspaces:
+        if current_count >= 100:
             raise HTTPException(
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                detail=f"Workspace limit reached ({current_count}/{plan.max_workspaces}). Upgrade your plan to create more workspaces."
+                detail="Workspace limit reached (100/100). Please subscribe to a plan to create more workspaces."
             )
 
 
@@ -216,58 +215,6 @@ class MemberLimitChecker:
                 detail=f"Member limit reached ({current_member_count}/{plan.max_members_per_workspace}). Upgrade your plan to add more members."
             )
 
-
-class TopicLimitChecker:
-    """
-    Dependency for checking topic creation limit.
-
-    Verifies that the user hasn't exceeded their plan's max_topics limit.
-    """
-
-    async def __call__(
-        self,
-        request: Request,
-        current_user: dict = Depends(get_current_user),
-        db: AsyncSession = Depends(get_db)
-    ):
-        """Check if user can create another topic."""
-        user_id = current_user.get("identity")
-
-        subscription, plan = await _get_user_subscription_and_plan_async(db, user_id)
-
-        if not subscription or not plan:
-            # Default free tier (allow 50 topics)
-            result = await db.execute(
-                select(func.count(Topic.id))
-                .join(Workspace)
-                .where(Workspace.user_id == user_id)
-            )
-            current_count = result.scalar() or 0
-
-            if current_count >= 50:
-                raise HTTPException(
-                    status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                    detail="Topic limit reached (50/50). Please subscribe to a plan to create more topics."
-                )
-            return
-
-        # Check plan limit
-        if plan.max_topics == -1:
-            # Unlimited
-            return
-
-        result = await db.execute(
-            select(func.count(Topic.id))
-            .join(Workspace)
-            .where(Workspace.user_id == user_id)
-        )
-        current_count = result.scalar() or 0
-
-        if current_count >= plan.max_topics:
-            raise HTTPException(
-                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                detail=f"Topic limit reached ({current_count}/{plan.max_topics}). Upgrade your plan to create more topics."
-            )
 
 
 class KnowledgeItemLimitChecker:
@@ -433,11 +380,6 @@ def check_workspace_limit():
 def check_member_limit(workspace_id_param: str = "workspace_id"):
     """Factory function to create member limit checker dependency."""
     return MemberLimitChecker(workspace_id_param)
-
-
-def check_topic_limit():
-    """Factory function to create topic limit checker dependency."""
-    return TopicLimitChecker()
 
 
 def check_knowledge_item_limit():

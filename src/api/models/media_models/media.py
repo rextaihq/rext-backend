@@ -1,7 +1,7 @@
 """
 Media Model
 
-Handles file uploads, storage, and management for the WREXT platform.
+Handles file uploads, storage, and management for the REXT platform.
 Supports images, documents, videos with metadata, tagging, and organization.
 """
 

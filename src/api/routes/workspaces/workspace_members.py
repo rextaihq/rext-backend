@@ -11,7 +11,7 @@ from src.api.database.async_database import get_async_db
 from src.api.config import get_settings
 from src.api.middleware.exceptions import (
     ResourceNotFoundException,
-    WrextValidationException,
+    RextValidationException,
 )
 from src.api.models.user_models.roles import Role
 from src.api.models.user_models.user_roles import UserRole
@@ -114,9 +114,7 @@ async def send_member_removed_notification(
 def _serialize_member(member: WorkspaceMembers, user: Users, role: Role = None) -> Dict[str, Any]:
     """Transform member + user join row into API response structure."""
     # Construct full name from first_name and last_name, fallback to display_name or email
-    full_name = None
-    if user.first_name or user.last_name:
-        full_name = f"{user.first_name or ''} {user.last_name or ''}".strip()
+    full_name = user.full_name
     if not full_name:
         full_name = user.display_name or user.email
 
@@ -256,7 +254,7 @@ async def remove_workspace_member(
 
     # Validate member can be removed
     if member.is_default:
-        raise WrextValidationException(
+        raise RextValidationException(
             message="Cannot remove workspace owner",
             field_errors={
                 "member_id": ["This member is the workspace owner and cannot be removed"]
@@ -293,8 +291,8 @@ async def remove_workspace_member(
             workspace_name=workspace.name,
             member_email=member_user.email,
             member_user_id=str(member_user.id),
-            member_name=member_user.first_name or member_user.username,
-            removed_by_name=current_user_obj.first_name if current_user_obj else "Admin"
+            member_name=member_user.full_name or member_user.display_name or member_user.email,
+            removed_by_name=current_user_obj.full_name if current_user_obj else "Admin"
         )
     logger.info("Removing Member")
     payload = {
@@ -374,10 +372,10 @@ async def update_workspace_member_role(
             workspace_name=workspace.name,
             member_email=member_user.email,
             member_user_id=str(member_user.id),
-            member_name=member_user.first_name or member_user.username,
+            member_name=member_user.full_name or member_user.display_name or member_user.email,
             old_role_name=old_role.display_name if old_role else "Member",
             new_role_name=new_role.display_name,
-            changed_by_name=current_user_obj.first_name if current_user_obj else "Admin"
+            changed_by_name=current_user_obj.full_name if current_user_obj else "Admin"
         )
     
     payload = {

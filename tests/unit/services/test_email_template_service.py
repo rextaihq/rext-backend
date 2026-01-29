@@ -9,8 +9,8 @@ from src.services.email_template_service import EmailTemplateService
 from src.api.models.workspace_models.email_template import EmailTemplate, TemplateType
 from src.api.middleware.exceptions import (
     DuplicateResourceException,
-    WrextValidationException,
-    WrextAuthenticationException,
+    RextValidationException,
+    RextAuthenticationException,
     ResourceNotFoundException,
 )
 
@@ -65,7 +65,7 @@ async def test_get_template_variables_invalid_type_raises():
     """Unknown template types should raise validation exception."""
     service = EmailTemplateService(db=AsyncMock())
 
-    with pytest.raises(WrextValidationException):
+    with pytest.raises(RextValidationException):
         await service.get_template_variables("unknown_type")
 
 
@@ -126,9 +126,9 @@ async def test_list_templates_returns_serialized_templates():
 async def test_list_templates_requires_membership():
     """List templates should surface membership failures."""
     service = EmailTemplateService(db=AsyncMock())
-    service._verify_workspace_membership = AsyncMock(side_effect=WrextAuthenticationException("not member"))
+    service._verify_workspace_membership = AsyncMock(side_effect=RextAuthenticationException("not member"))
 
-    with pytest.raises(WrextAuthenticationException):
+    with pytest.raises(RextAuthenticationException):
         await service.list_templates(uuid4(), uuid4())
 
 
@@ -236,7 +236,7 @@ async def test_delete_template_prevents_default_templates():
     service._get_template_or_404 = AsyncMock(return_value=template)
     service._verify_workspace_membership = AsyncMock()
 
-    with pytest.raises(WrextValidationException):
+    with pytest.raises(RextValidationException):
         await service.delete_template(uuid4(), uuid4())
 
 

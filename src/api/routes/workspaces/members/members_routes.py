@@ -21,10 +21,10 @@ from src.api.schema.response_schemas import ErrorCode, ErrorSeverity
 from src.api.middleware.exceptions import (
     DuplicateResourceException,
     ResourceNotFoundException,
-    WrextExternalServiceException,
-    WrextValidationException,
-    WrextAuthenticationException,
-    WrextAPIException
+    RextExternalServiceException,
+    RextValidationException,
+    RextAuthenticationException,
+    RextAPIException
 )
 from datetime import datetime, timezone
 from src.api.security.dependencies import get_current_user

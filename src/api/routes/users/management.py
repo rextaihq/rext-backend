@@ -14,7 +14,7 @@ from src.api.database.async_database import get_async_db
 from src.utils.response_utils import success, error
 from src.api.schema.response_schemas import ErrorCode, ErrorSeverity
 from src.services.user_service import UserService
-from src.api.middleware.exceptions import ResourceNotFoundException, WrextValidationException
+from src.api.middleware.exceptions import ResourceNotFoundException, RextValidationException
 from src.api.models.workspace_models.workspace_member import WorkspaceMembers
 from src.api.config import get_settings
 from sqlalchemy import select, delete
@@ -68,7 +68,7 @@ async def send_data_export_email_task(
             </ul>
 
             <p>Your data is included below as JSON.</p>
-            <p><a href="{frontend_url}">Return to WREXT</a></p>
+            <p><a href="{frontend_url}">Return to REXT</a></p>
 
             <hr>
             <pre style="background: #f4f4f4; padding: 15px; border-radius: 5px; overflow-x: auto;">
@@ -78,7 +78,7 @@ async def send_data_export_email_task(
 
             await email_service.send_email(
                 to=email,
-                subject="Your WREXT Data Export",
+                subject="Your REXT Data Export",
                 html=body_html,
                 user_id=UUID(user_id),
                 template_type="data_export",
@@ -189,7 +189,7 @@ async def delete_user(
             severity=ErrorSeverity.MEDIUM,
             request=request
         )
-    except WrextValidationException as e:
+    except RextValidationException as e:
         return error(
             message=str(e),
             code=ErrorCode.DEPENDENCY_ERROR,
@@ -221,9 +221,7 @@ async def update_user(
         db_user = await service.update_user(
             user_id=UUID(user_id),
             email=user.email,
-            username=user.username,
-            first_name=user.first_name,
-            last_name=user.last_name,
+            full_name=user.full_name,
             display_name=user.display_name,
             language=user.language,
             timezone=user.timezone
@@ -232,10 +230,8 @@ async def update_user(
         # Return updated user data (excluding password)
         user_data = {
             "id": str(db_user.id),
-            "username": db_user.username,
             "email": db_user.email,
-            "first_name": db_user.first_name,
-            "last_name": db_user.last_name,
+            "full_name": db_user.full_name,
             "display_name": db_user.display_name,
             "language": db_user.language,
             "timezone": db_user.timezone,
@@ -257,7 +253,7 @@ async def update_user(
             severity=ErrorSeverity.MEDIUM,
             request=request
         )
-    except WrextValidationException as e:
+    except RextValidationException as e:
         return error(
             message=str(e),
             code=ErrorCode.DUPLICATE_RESOURCE,
@@ -312,9 +308,7 @@ async def export_user_data(
             export_data["profile"] = {
                 "id": str(db_user.id),
                 "email": db_user.email,
-                "username": db_user.username,
-                "first_name": db_user.first_name,
-                "last_name": db_user.last_name,
+                "full_name": db_user.full_name,
                 "display_name": db_user.display_name,
                 "language": db_user.language,
                 "timezone": db_user.timezone,
@@ -414,7 +408,7 @@ async def export_user_data(
         background_tasks.add_task(
             send_data_export_email_task,
             email=db_user.email,
-            name=db_user.first_name or db_user.username,
+            name=db_user.full_name or "User",
             export_id=export_id,
             export_json=export_json,
             export_request=export_request,

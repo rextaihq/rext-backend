@@ -414,7 +414,7 @@ def main():
     auditor.scan_all_routes()
 
     # Generate reports
-    output_dir = project_root.parent  # Output to project root (wrext/)
+    output_dir = project_root.parent  # Output to project root (rext/)
     json_output = output_dir / "route-inventory.json"
     md_output = output_dir / "backend-route-audit-report.md"
 

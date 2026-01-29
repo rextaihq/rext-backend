@@ -19,7 +19,7 @@ from src.utils.response_utils import success, error
 from src.api.schema.response_schemas import ErrorCode, ErrorSeverity
 from src.api.middleware.exceptions import (
     ResourceNotFoundException,
-    WrextValidationException
+    RextValidationException
 )
 from src.services.user_service import UserService
 from src.api.middleware.rate_limiter import password_reset_rate_limit
@@ -111,7 +111,7 @@ async def forgot_password(
         background_tasks.add_task(
             send_password_reset_email_task,
             email=user.email,
-            user_name=user.first_name or user.username,
+            user_name=user.full_name or user.display_name or user.email,
             reset_token=reset_token,
             user_id=str(user.id),
             frontend_url=frontend_url
@@ -231,7 +231,7 @@ async def change_password(
                 db=db,
                 email_type="password_changed",
                 recipient_email=user.email,
-                user_name=user.first_name or user.email.split('@')[0],
+                user_name=user.full_name or user.display_name or user.email.split('@')[0],
                 user_id=user_id,
                 frontend_url=settings.FRONTEND_URL,
                 changed_at=user.password_changed_at.strftime("%b %d, %Y %I:%M %p UTC"),
@@ -262,7 +262,7 @@ async def change_password(
             severity=ErrorSeverity.MEDIUM,
             request=request
         )
-    except WrextValidationException as e:
+    except RextValidationException as e:
         # Service returns validation errors for incorrect password
         logger.warning(f"Password change validation error for user {current_user.get('identity')}: {e.message}")
         return error(

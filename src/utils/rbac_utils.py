@@ -43,7 +43,7 @@ from src.api.models.user_models.roles import Role
 from src.api.models.user_models.permissions import Permission
 from src.api.models.user_models.role_permissions import RolePermission
 from src.api.models.user_models.user_roles import UserRole
-from src.api.middleware.exceptions import WrextAuthorizationException
+from src.api.middleware.exceptions import RextAuthorizationException
 from src.api.lib.logger import auto_logger
 
 logger = auto_logger()
@@ -198,7 +198,7 @@ async def require_permission(
     Require user to have a permission, raise exception if not.
 
     This is a convenience function that checks permission and raises
-    WrextAuthorizationException if the user lacks the required permission.
+    RextAuthorizationException if the user lacks the required permission.
 
     Args:
         db: AsyncSession database session
@@ -208,7 +208,7 @@ async def require_permission(
         resource_name: Optional resource name for better error messages (e.g., "content", "workspace")
 
     Raises:
-        WrextAuthorizationException: If user lacks the required permission
+        RextAuthorizationException: If user lacks the required permission
 
     Example:
         >>> await require_permission(db, user_id, "content.delete", workspace_id, "content")
@@ -223,7 +223,7 @@ async def require_permission(
             f"workspace={workspace_id}, resource={resource_name}"
         )
 
-        raise WrextAuthorizationException(
+        raise RextAuthorizationException(
             message=f"You do not have permission to perform this action",
             context={
                 "required_permission": permission_name,

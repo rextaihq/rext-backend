@@ -18,7 +18,8 @@ from pydantic import HttpUrl
 from src.flow.model.llm_manager import load_model
 from src.utils.splitter import split_data
 from src.utils.vector_store import load_vector_store
-
+from crawl4ai.content_scraping_strategy import LXMLWebScrapingStrategy
+from crawl4ai import CacheMode
 from src.api.lib.logger import auto_logger
 
 logger = auto_logger()
@@ -70,14 +71,72 @@ def GetCrawlerRunConfig():
     """
     try:
         config = CrawlerRunConfig(
-        cache_mode=CacheMode.ENABLED,
-        word_count_threshold=100,        # Minimum words per content block
-        exclude_external_links=True,    # Remove external links
-        remove_overlay_elements=True,   # Remove popups/modals
-        process_iframes=False,
-        exclude_external_images=True,
-        exclude_social_media_domains=[],
-        only_text=True,
+         word_count_threshold=200,
+            remove_forms=True, # Optimization: remove forms
+            prettiify=True,
+            parser_type="lxml",
+            excluded_tags=[ # Scripts & styles
+            "script",
+            "style",
+            "noscript",
+
+            # Embedded / non-text media
+            "iframe",
+            "object",
+            "embed",
+            "canvas",
+            "svg",
+            "math",
+
+            # Audio / video
+            "video",
+            "audio",
+            "source",
+            "track",
+
+            # Form elements (no SEO value)
+            "form",
+            "input",
+            "textarea",
+            "button",
+            "select",
+            "option",
+            "label",
+            "fieldset",
+            "legend",
+
+            # UI / interactive only
+            "dialog",
+            "details",
+            "summary",
+            "menu",
+            "menuitem",
+
+            # Ruby / annotation (rare SEO use)
+            "ruby",
+            "rt",
+            "rp",
+
+            # Misc non-content
+            "param",
+            "map",
+            "area",
+            "base"
+            ],
+            scraping_strategy=LXMLWebScrapingStrategy(),
+            # # --- Navigation & Timing ---
+            # wait_until="domcontentloaded",
+            exclude_external_links=True,
+            # Block entire domains
+            exclude_social_media_domains=["facebook.com", "twitter.com","youtube.com","instagram.com","tiktok.com","linkedin.com","pinterest.com","reddit.com","telegram.org","whatsapp.com","signal.org","viber.com","snapchat.com"],
+
+            # Media filtering
+            exclude_external_images=True,
+            exclude_social_media_links=True,
+            simulate_user =True,
+            magic=True,
+            adjust_viewport_to_content=True,
+            only_text=True,
         )
         return config
     except Exception as e:

@@ -15,9 +15,9 @@ from src.api.security.dependencies import get_current_user
 from src.api.config import get_settings
 from src.api.middleware.exceptions import (
     ResourceNotFoundException,
-    WrextAuthenticationException,
-    WrextValidationException,
-    WrextAPIException,
+    RextAuthenticationException,
+    RextValidationException,
+    RextAPIException,
     DuplicateResourceException
 )
 from src.api.schema.response_schemas import ErrorCode, ErrorSeverity
@@ -118,7 +118,7 @@ async def accept_invitation(
     # Validate email matches
     if invitation.email.lower() != user.email.lower():
         logger.warning(f"Invitation email mismatch: {invitation.email} vs {user.email}")
-        raise WrextAuthenticationException(
+        raise RextAuthenticationException(
             message="This invitation is for a different email address"
         )
 
@@ -141,7 +141,7 @@ async def accept_invitation(
             notify_workspace_admins_of_acceptance,
             workspace_id=str(workspace.id),
             workspace_name=workspace.name,
-            new_member_name=user.first_name or user.username,
+            new_member_name=user.full_name or user.display_name or user.email,
             new_member_email=user.email,
             role_name=role.display_name if role else "Member"
         )
@@ -219,7 +219,7 @@ async def revoke_invitation(
     is_admin = result.first() is not None
 
     if not is_creator and not is_admin:
-        raise WrextAuthenticationException(
+        raise RextAuthenticationException(
             message="Insufficient permissions to revoke this invitation"
         )
 
@@ -243,7 +243,7 @@ async def revoke_invitation(
         new_values={"status": "revoked", "reason": revoke_data.reason},
         request=request,
         workspace_id=invitation.workspace_id,
-        username=user.username if user else None,
+        full_name=user.full_name if user else None,
         user_email=user.email if user else None
     )
 
@@ -254,7 +254,7 @@ async def revoke_invitation(
         "data": {
             "invitation_id": str(invitation.id),
             "status": invitation.status,
-            "revoked_by": user.username if user else "unknown",
+            "revoked_by": user.full_name if user else "unknown",
             "reason": revoke_data.reason
         },
         "message": "Invitation revoked successfully"

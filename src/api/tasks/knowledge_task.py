@@ -71,9 +71,44 @@ async def scrape_web_content(url: HttpUrl, website_id: str):
             db.commit()
             db.refresh(brand_voice)
             logger.info(f"Brand voice information saved with id: {brand_voice.id}")
+            
+            # Save personas separately
+            from src.api.models.knowledge_models.persona_model import Persona
+            if brand_data.personas:
+                logger.info(f"Saving {len(brand_data.personas)} persona(s)")
+                for persona_data in brand_data.personas:
+                    persona = Persona(
+                        workspace_id=website.workspace_id,
+                        name=persona_data.name,
+                        description=persona_data.description,
+                        # E-E-A-T professional fields
+                        full_name=persona_data.full_name,
+                        professional_title=persona_data.professional_title,
+                        areas_of_expertise=persona_data.areas_of_expertise,
+                        tone_of_voice=persona_data.tone_of_voice,
+                        bio=persona_data.bio,
+                        linkedin_url=persona_data.linkedin_url,
+                        # User persona fields
+                        demographics=persona_data.demographics,
+                        pain_points=persona_data.pain_points,
+                        goals=persona_data.goals,
+                        behaviors=persona_data.behaviors,
+                    )
+                    db.add(persona)
+                db.commit()
+                logger.info(f"Personas saved successfully")
+            
+            # Fetch all personas for response
+            result_personas = db.execute(
+                select(Persona).where(Persona.workspace_id == website.workspace_id)
+            )
+            all_personas = result_personas.scalars().all()
+
             return {
                 "status": 200,
                 "message": f"Scraping completed successfully for {result.url}.",
+                "brand_voice": brand_voice.to_dict() if brand_voice else None,
+                "personas": [p.to_dict() for p in all_personas] if all_personas else []
             }
         else:
             logger.error(f"Scraping failed for {result.url}: {result.error_message}")

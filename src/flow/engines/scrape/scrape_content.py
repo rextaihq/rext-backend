@@ -5,10 +5,9 @@ from typing import Dict, Any, List
 
 from crawl4ai import AsyncWebCrawler
 from langchain_core.documents import Document
-
+from src.flow.engines.scrape.config.clean_content import clean_content
 from src.flow.engines.scrape.config.crawler_config import CrawlerConfiguration
-from src.flow.states.wrext import WREXT
-from src.services.seo_service import KeywordExtractor
+from src.flow.states.rext import REXT
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +22,7 @@ def _extract_headings(markdown_text: str) -> List[str]:
     return [heading.strip() for _, heading in matches]
 
 
-async def scrape_serp_content(state: WREXT) -> Dict[str, Any]:
+async def scrape_serp_content(state: REXT) -> Dict[str, Any]:
     """
     Scrape full content from SERP URLs and attach domain + rank position
     to each scraped document.
@@ -48,7 +47,6 @@ async def scrape_serp_content(state: WREXT) -> Dict[str, Any]:
     browser_config = crawler_config.get_browser_config()
     run_config = crawler_config.get_run_config()
 
-    keyword_extractor = KeywordExtractor()
     scrape_data_list = []
 
     # Domain → best rank position map
@@ -92,14 +90,12 @@ async def scrape_serp_content(state: WREXT) -> Dict[str, Any]:
                 })
                 continue
 
-            text = result.markdown or result.text or ""
+            text = clean_content(result.markdown or result.text or "")
             content_length = len(text.strip())
 
             headings = _extract_headings(text)
-            keyword_results = keyword_extractor.extract_keywords(
-                text=text, top_n=15
-            )
-            keywords = [kw["keyword"] for kw in keyword_results]
+            # Note: Keyword extraction removed - should be done in SEO engine with SERP data
+            keywords = []
 
             internal_links = result.links.get("internal", []) if result.links else []
 

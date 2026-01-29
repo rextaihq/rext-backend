@@ -5,6 +5,7 @@ from uuid import UUID
 
 from .workspace_core import router as core_router, get_workspaces, get_workspace_by_slug, get_workspace_by_id_path
 from .workspace_brand_voice import router as brand_voice_router
+from .workspace_personas import router as personas_router
 from .workspace_members import router as members_router
 from .workspace_invitations import router as invitations_router
 from .workspace_permissions import router as permissions_router
@@ -15,8 +16,9 @@ from src.api.schema.workspace_schema import WorkspaceSchema
 from src.api.security.dependencies import get_current_user
 from src.services.workspace_service import WorkspaceService
 from src.utils.response_utils import created, success
-from src.utils.route_decorators import db_transaction_handler
-from src.api.middleware.exceptions import WrextValidationException
+from src.utils.route_decorators import db_transaction_handler, require_permissions
+from src.api.middleware.exceptions import RextValidationException
+from src.api.middleware.usage_limiter import check_workspace_limit
 
 router = APIRouter(prefix="/workspace", tags=["workspace"])
 
@@ -25,6 +27,7 @@ router.include_router(core_router)
 # This allows the frontend to call either endpoint with RESTful conventions
 workspaces_router = APIRouter(prefix="/workspaces", tags=["workspace"])
 workspaces_router.include_router(brand_voice_router)
+workspaces_router.include_router(personas_router)
 workspaces_router.include_router(members_router)
 workspaces_router.include_router(invitations_router)
 workspaces_router.include_router(permissions_router)
@@ -38,12 +41,14 @@ workspaces_router.add_api_route("/slug/{workspace_slug}", get_workspace_by_slug,
 
 # POST/PUT/DELETE endpoints - RESTful wrappers
 @workspaces_router.post("")
+@require_permissions("workspace.create")
 @db_transaction_handler("create workspace", auto_commit=True)
 async def create_workspace_restful(
     data: WorkspaceSchema,
     request: Request,
     db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user),
+    _: None = Depends(check_workspace_limit()),
 ):
     """
     Create a new workspace for the current user (RESTful endpoint).
@@ -52,13 +57,13 @@ async def create_workspace_restful(
     tracking background processing via SSE.
     """
     if not data.name:
-        raise WrextValidationException(
+        raise RextValidationException(
             message="Workspace name is required",
             field_errors={"name": ["Name must be provided"]},
         )
 
     if not data.url:
-        raise WrextValidationException(
+        raise RextValidationException(
             message="Workspace URL is required",
             field_errors={"url": ["URL must be provided and valid"]},
         )

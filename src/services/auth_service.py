@@ -54,7 +54,7 @@ from src.services.notification_helper import schedule_if_allowed
 from src.utils.logger import logger
 from src.api.middleware.exceptions import (
     DuplicateResourceException,
-    WrextAuthenticationException,
+    RextAuthenticationException,
     ResourceNotFoundException,
     BusinessRuleViolationException
 )
@@ -78,16 +78,14 @@ class AuthService:
     async def register_user(
         self,
         email: str,
-        username: str,
         password: str,
-        first_name: str,
-        last_name: str
+        full_name: str
     ) -> Tuple[Users, str]:
         """
         Register new user with role assignment and trial subscription.
 
         Business Rules:
-        - Email and username must be unique
+        - Email must be unique
         - Password is hashed before storage
         - Default 'user' role is assigned
         - Trial subscription is auto-assigned (14 days)
@@ -95,49 +93,35 @@ class AuthService:
 
         Args:
             email: User email
-            username: Username
             password: Plain text password
-            first_name: First name
-            last_name: Last name
+            full_name: Full name
 
         Returns:
             Tuple of (User object, verification_token)
 
         Raises:
-            DuplicateResourceException: If email or username exists
+            DuplicateResourceException: If email exists
         """
         # Check if user exists
         result = await self.db.execute(
-            select(Users).where(
-                or_(Users.email == email, Users.username == username)
-            )
+            select(Users).where(Users.email == email)
         )
         existing_user = result.scalar_one_or_none()
 
         if existing_user:
-            if existing_user.email == email:
-                raise DuplicateResourceException(
-                    message="A user with this email already exists",
-                    resource_type="user",
-                    conflicting_field="email",
-                    conflicting_value=email
-                )
-            else:
-                raise DuplicateResourceException(
-                    message="A user with this username already exists",
-                    resource_type="user",
-                    conflicting_field="username",
-                    conflicting_value=username
-                )
+            raise DuplicateResourceException(
+                message="A user with this email already exists",
+                resource_type="user",
+                conflicting_field="email",
+                conflicting_value=email
+            )
 
         # Hash password
         hashed_pwd = hash_password(password)
 
         # Create user
         new_user = Users(
-            first_name=first_name,
-            last_name=last_name,
-            username=username,
+            full_name=full_name,
             email=email,
             password_hash=hashed_pwd,
             created_at=datetime.utcnow()
@@ -193,7 +177,7 @@ class AuthService:
 
         logger.info(
             f"User registered: {new_user.id}",
-            extra={"email": email, "username": username, "has_trial": trial_plan is not None}
+            extra={"email": email, "has_trial": trial_plan is not None}
         )
 
         return new_user, verification_token
@@ -225,7 +209,7 @@ class AuthService:
             Tuple of (User object, tokens dict with access_token, refresh_token, token_type)
 
         Raises:
-            WrextAuthenticationException: If credentials invalid or account locked
+            RextAuthenticationException: If credentials invalid or account locked
         """
         # Find user (eagerly load relationships to avoid lazy loading in async context)
         from sqlalchemy.orm import selectinload
@@ -238,14 +222,14 @@ class AuthService:
         db_user = result.scalar_one_or_none()
 
         if not db_user:
-            raise WrextAuthenticationException(
+            raise RextAuthenticationException(
                 message="Invalid email or password",
                 context={"login_attempt": email}
             )
 
         # Check if account is locked
         if db_user.locked_until and db_user.locked_until > datetime.utcnow():
-            raise WrextAuthenticationException(
+            raise RextAuthenticationException(
                 message="Account is temporarily locked due to multiple failed login attempts. Please try again later.",
                 context={"locked_until": db_user.locked_until.isoformat()}
             )
@@ -268,7 +252,7 @@ class AuthService:
 
             await self.db.flush()
 
-            raise WrextAuthenticationException(
+            raise RextAuthenticationException(
                 message="Invalid email or password",
                 context={"login_attempt": email}
             )
@@ -342,7 +326,6 @@ class AuthService:
         # Workspace permissions will be loaded separately via /workspaces/{id}/permissions endpoint
         token_data = {
             "id": str(db_user.id),
-            "username": db_user.username,
             "email": db_user.email,
             "roles": global_role_names,
             "permissions": global_permissions  # Only platform-level permissions
@@ -399,13 +382,13 @@ class AuthService:
             User object
 
         Raises:
-            WrextAuthenticationException: If token invalid or user not found
+            RextAuthenticationException: If token invalid or user not found
         """
         payload = verify_token(token)
         user_id = payload.get("user_id")
 
         if not user_id:
-            raise WrextAuthenticationException(
+            raise RextAuthenticationException(
                 message="Invalid token payload",
                 context={"error": "Missing user_id"}
             )
@@ -450,7 +433,7 @@ class AuthService:
 
         Raises:
             ResourceNotFoundException: If user not found
-            WrextAuthenticationException: If email already verified
+            RextAuthenticationException: If email already verified
         """
         # Find user by email
         result = await self.db.execute(
@@ -466,7 +449,7 @@ class AuthService:
 
         # Check if already verified
         if user.email_verified:
-            raise WrextAuthenticationException(
+            raise RextAuthenticationException(
                 message="Email is already verified",
                 context={"email": email}
             )
@@ -500,7 +483,7 @@ class AuthService:
             Dict with new access_token, refresh_token, token_type
 
         Raises:
-            WrextAuthenticationException: If token invalid, blacklisted, or user not active
+            RextAuthenticationException: If token invalid, blacklisted, or user not active
         """
         # Verify refresh token
         payload = verify_refresh_token(refresh_token)
@@ -508,13 +491,13 @@ class AuthService:
         # Check if blacklisted
         jti = payload.get("jti")
         if not jti:
-            raise WrextAuthenticationException(
+            raise RextAuthenticationException(
                 message="Token missing JTI",
                 context={"note": "Old token format not supported"}
             )
 
         if await is_token_blacklisted(jti, self.db):
-            raise WrextAuthenticationException(
+            raise RextAuthenticationException(
                 message="Refresh token has been revoked",
                 context={"reason": "Token blacklisted"}
             )
@@ -527,13 +510,13 @@ class AuthService:
         db_user = result.scalar_one_or_none()
 
         if not db_user:
-            raise WrextAuthenticationException(
+            raise RextAuthenticationException(
                 message="User not found",
                 context={"user_id": user_id}
             )
 
         if db_user.status != "active":
-            raise WrextAuthenticationException(
+            raise RextAuthenticationException(
                 message="User account is not active",
                 context={"status": db_user.status}
             )
@@ -560,7 +543,6 @@ class AuthService:
         # Create new token pair with ONLY global permissions
         token_data = {
             "id": str(db_user.id),
-            "username": db_user.username,
             "email": db_user.email,
             "roles": global_role_names,
             "permissions": global_permissions
@@ -601,10 +583,10 @@ class AuthService:
             exp: Token expiration timestamp
 
         Raises:
-            WrextAuthenticationException: If token missing JTI
+            RextAuthenticationException: If token missing JTI
         """
         if not jti:
-            raise WrextAuthenticationException(
+            raise RextAuthenticationException(
                 message="Token missing JTI",
                 context={"note": "Old token format not supported"}
             )
@@ -689,14 +671,14 @@ class AuthService:
             User object
 
         Raises:
-            WrextAuthenticationException: If token invalid
+            RextAuthenticationException: If token invalid
             ResourceNotFoundException: If user not found
         """
         payload = verify_token(token)
         user_id = payload.get("user_id")
 
         if not user_id:
-            raise WrextAuthenticationException(
+            raise RextAuthenticationException(
                 message="Invalid token payload",
                 context={"error": "Missing user_id"}
             )
