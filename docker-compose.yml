@@ -11,7 +11,7 @@ volumes:
 services:
     # PgBouncer connection pooler for handling many DB connections
     pgbouncer:
-        image: edoburu/pgbouncer:1.21.0
+        image: edoburu/pgbouncer:1.21.0-p2
         restart: unless-stopped
         deploy:
             resources:
