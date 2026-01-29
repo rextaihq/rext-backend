@@ -42,15 +42,19 @@ services:
             - rext-network
 
     # Backend API Service
-    # Domain routing (api.rext.ai) is managed by Coolify's UI Domains setting.
-    # The coolify network is required so Traefik can reach this container.
-    # expose + label tell Traefik the container listens on port 2024 (not default 80).
+    # Full Traefik labels required — Coolify UI Domains does NOT auto-generate
+    # labels for docker-compose services.
     langgraph-api:
         image: revnixhq/wrext:${IMAGE_TAG:-dev}
         expose:
             - "2024"
         labels:
-            - "traefik.http.services.langgraph-api.loadbalancer.server.port=2024"
+            - "traefik.enable=true"
+            - "traefik.http.routers.rext-api.rule=Host(`api.rext.ai`)"
+            - "traefik.http.routers.rext-api.entrypoints=https"
+            - "traefik.http.routers.rext-api.tls=true"
+            - "traefik.http.routers.rext-api.tls.certresolver=letsencrypt"
+            - "traefik.http.services.rext-api.loadbalancer.server.port=2024"
         networks:
             - rext-network
             - coolify
