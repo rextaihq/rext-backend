@@ -44,8 +44,7 @@ class SaveTopicRequest(BaseModel):
     input_params: Optional[dict] = None
     # User tracking fields (set by backend when saving)
     generated_by_user_id: Optional[str] = None
-    generated_by_first_name: Optional[str] = None
-    generated_by_last_name: Optional[str] = None
+    generated_by_full_name: Optional[str] = None
 
 class SaveTopicRequestList(BaseModel):
     topics: List[SaveTopicRequest]

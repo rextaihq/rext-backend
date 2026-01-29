@@ -2,41 +2,38 @@ volumes:
     langgraph-data:
         driver: local
 services:
-    # Redis for application cache (separate from LangGraph)
+    # Redis for application cache
     redis:
         image: redis:7-alpine
-        container_name: rext-redis
-        ports:
-            - "6379:6379"
         healthcheck:
             test: [ "CMD", "redis-cli", "ping" ]
             interval: 5s
             timeout: 1s
             retries: 5
         restart: unless-stopped
+        networks:
+            - rext-network
 
     # Redis for LangGraph
     langgraph-redis:
         image: redis:6
-        container_name: langgraph-redis
         healthcheck:
             test: redis-cli ping
             interval: 5s
             timeout: 1s
             retries: 5
+        networks:
+            - rext-network
 
     # Postgres Database
     postgres:
         image: postgres:17-alpine
-        container_name: rext-postgres
         environment:
             POSTGRES_USER: exec
             POSTGRES_PASSWORD: rextserver
             POSTGRES_DB: rext
         volumes:
             - langgraph-data:/var/lib/postgresql/data
-        ports:
-            - "5432:5432"
         healthcheck:
             test: [ "CMD-SHELL", "pg_isready -U exec" ]
             interval: 5s
@@ -45,10 +42,22 @@ services:
             - rext-network
 
     # Backend API Service
+    # Full Traefik labels required — Coolify UI Domains does NOT auto-generate
+    # labels for docker-compose services.
     langgraph-api:
         image: revnixhq/wrext:${IMAGE_TAG:-dev}
-        ports:
-            - "2024:2024"
+        expose:
+            - "2024"
+        labels:
+            - "traefik.enable=true"
+            - "traefik.http.routers.rext-api.rule=Host(`api.rext.ai`)"
+            - "traefik.http.routers.rext-api.entrypoints=https"
+            - "traefik.http.routers.rext-api.tls=true"
+            - "traefik.http.routers.rext-api.tls.certresolver=letsencrypt"
+            - "traefik.http.services.rext-api.loadbalancer.server.port=2024"
+        networks:
+            - rext-network
+            - coolify
         depends_on:
             postgres:
                 condition: service_healthy
@@ -99,6 +108,12 @@ services:
             # Email (Resend)
             EMAIL_PROVIDER: ${EMAIL_PROVIDER:-resend}
             EMAIL_ENABLED: ${EMAIL_ENABLED:-true}
+
+            # Resend
+            RESEND_API_KEY: ${RESEND_API_KEY}
+            RESEND_FROM_EMAIL: ${RESEND_FROM_EMAIL}
+            RESEND_FROM_NAME: ${RESEND_FROM_NAME}
+            RESEND_WEBHOOK_SECRET: ${RESEND_WEBHOOK_SECRET}
             SMTP_SERVER: ${SMTP_SERVER:-}
             SMTP_PORT: ${SMTP_PORT:-587}
             SMTP_USERNAME: ${SMTP_USERNAME:-}
@@ -121,12 +136,16 @@ services:
             # Admin
             SUPER_ADMIN_EMAIL: ${SUPER_ADMIN_EMAIL}
             SUPER_ADMIN_PASSWORD: ${SUPER_ADMIN_PASSWORD}
-            SUPER_ADMIN_FIRST_NAME: ${SUPER_ADMIN_FIRST_NAME:-Admin}
-            SUPER_ADMIN_LAST_NAME: ${SUPER_ADMIN_LAST_NAME:-User}
+            SUPER_ADMIN_FULL_NAME: ${SUPER_ADMIN_FULL_NAME:-Samiullah}
 
             # Monitoring
             SENTRY_DSN: ${SENTRY_DSN}
             SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-production}
+            CACHE_ENABLED: ${CACHE_ENABLED:-false}
+
+            # Feature Flags
+            FF_PROFILE_IMPORTS: ${FF_PROFILE_IMPORTS:-false}
+            BG_JOB_ISOLATED_LOOPS: ${BG_JOB_ISOLATED_LOOPS:-false}
 
             # Payment
             LEMONSQUEEZY_WEBHOOK_SECRET: ${LEMONSQUEEZY_WEBHOOK_SECRET}
@@ -137,3 +156,5 @@ services:
 networks:
     rext-network:
         driver: bridge
+    coolify:
+        external: true

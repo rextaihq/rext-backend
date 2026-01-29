@@ -65,7 +65,7 @@ class SubscriptionRetrievalService:
             data.update(
                 {
                     "user_email": user.email,
-                    "user_username": user.username,
+                    "user_full_name": user.full_name or user.display_name or user.email,
                     "plan_name": plan.name,
                     "plan_display_name": plan.display_name,
                 }
@@ -100,7 +100,7 @@ class SubscriptionRetrievalService:
         data["user"] = {
             "id": str(user.id),
             "email": user.email,
-            "username": user.username,
+            "full_name": user.full_name or user.display_name or user.email,
             "status": user.status,
         }
         data["plan"] = plan.to_dict()

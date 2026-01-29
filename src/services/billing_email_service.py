@@ -67,7 +67,7 @@ class BillingEmailService:
             return False
 
         html_content = render_subscription_created_email(
-            user_name=user.first_name or user.display_name or user.email,
+            user_name=user.full_name or user.display_name or user.email,
             plan_name=plan_name,
             plan_price=plan_price,
             billing_period=billing_period,
@@ -100,7 +100,7 @@ class BillingEmailService:
             return False
 
         html_content = render_payment_succeeded_email(
-            user_name=user.first_name or user.display_name or user.email,
+            user_name=user.full_name or user.display_name or user.email,
             plan_name=plan_name,
             amount=amount,
             payment_date=payment_date,
@@ -132,7 +132,7 @@ class BillingEmailService:
             return False
 
         html_content = render_payment_failed_email(
-            user_name=user.first_name or user.display_name or user.email,
+            user_name=user.full_name or user.display_name or user.email,
             plan_name=plan_name,
             amount=amount,
             retry_date=retry_date
@@ -161,7 +161,7 @@ class BillingEmailService:
             return False
 
         html_content = render_subscription_cancelled_email(
-            user_name=user.first_name or user.display_name or user.email,
+            user_name=user.full_name or user.display_name or user.email,
             plan_name=plan_name,
             end_date=end_date
         )
@@ -190,7 +190,7 @@ class BillingEmailService:
             return False
 
         html_content = render_trial_ending_email(
-            user_name=user.first_name or user.display_name or user.email,
+            user_name=user.full_name or user.display_name or user.email,
             plan_name=plan_name,
             trial_end_date=trial_end_date,
             days_remaining=days_remaining
@@ -220,7 +220,7 @@ class BillingEmailService:
         from emails.templates.billing.subscription_expiring_soon import render_subscription_expiring_soon_email
 
         html_content = render_subscription_expiring_soon_email(
-            user_name=user.first_name or user.display_name or user.email,
+            user_name=user.full_name or user.display_name or user.email,
             plan_name=plan_name,
             expiry_date=datetime.utcnow().strftime("%B %d, %Y"),
             days_remaining=0
@@ -251,7 +251,7 @@ class BillingEmailService:
             return False
 
         html_content = render_subscription_renewed_email(
-            user_name=user.first_name or user.display_name or user.email,
+            user_name=user.full_name or user.display_name or user.email,
             plan_name=plan_name,
             amount=amount,
             renewal_date=renewal_date,

@@ -94,7 +94,7 @@ class UserStatusRequest(BaseModel):
 class UserStatusResponse(BaseModel):
     """Schema for user status response"""
     user_id: str
-    username: str
+    full_name: str
     email: str
     old_status: str
     new_status: str
