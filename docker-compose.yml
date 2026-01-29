@@ -48,14 +48,14 @@ services:
     langgraph-api:
         image: revnixhq/wrext:${IMAGE_TAG:-dev}
         ports:
-            - "8000:8000"
+            - "2024:2024"
         labels:
             - "traefik.enable=true"
             - "traefik.http.routers.rext-api.rule=Host(`api.rext.ai`)"
             - "traefik.http.routers.rext-api.entrypoints=websecure"
             - "traefik.http.routers.rext-api.tls=true"
             - "traefik.http.routers.rext-api.tls.certresolver=letsencrypt"
-            - "traefik.http.services.rext-api.loadbalancer.server.port=8000"
+            - "traefik.http.services.rext-api.loadbalancer.server.port=2024"
         networks:
             - coolify
         depends_on:
