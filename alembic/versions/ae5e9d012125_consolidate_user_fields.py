@@ -21,36 +21,64 @@ depends_on: Union[str, Sequence[str], None] = None
 def upgrade() -> None:
     """Upgrade schema."""
     # 1. Add full_name columns
-    op.add_column('users', sa.Column('full_name', sa.String(length=200), nullable=True))
-    op.add_column('audit_logs', sa.Column('full_name', sa.String(length=200), nullable=True))
+    from sqlalchemy import inspect
+    bind = op.get_bind()
+    inspector = inspect(bind)
+    
+    user_columns = [c['name'] for c in inspector.get_columns('users')]
+    audit_columns = [c['name'] for c in inspector.get_columns('audit_logs')]
+    integration_columns = [c['name'] for c in inspector.get_columns('integrations')]
+
+    # 1. Add full_name columns
+    if 'full_name' not in user_columns:
+        op.add_column('users', sa.Column('full_name', sa.String(length=200), nullable=True))
+    if 'full_name' not in audit_columns:
+        op.add_column('audit_logs', sa.Column('full_name', sa.String(length=200), nullable=True))
 
     # 2. Data Migration: Populate full_name from first_name and last_name in users table
-    op.execute("UPDATE users SET full_name = TRIM(BOTH ' ' FROM COALESCE(first_name, '') || ' ' || COALESCE(last_name, '')) WHERE full_name IS NULL")
+    if 'first_name' in user_columns or 'last_name' in user_columns:
+        op.execute("UPDATE users SET full_name = TRIM(BOTH ' ' FROM COALESCE(first_name, '') || ' ' || COALESCE(last_name, '')) WHERE full_name IS NULL")
     
     # 3. Data Migration: Populate full_name from username in audit_logs
-    op.execute("UPDATE audit_logs SET full_name = username WHERE full_name IS NULL")
+    if 'username' in audit_columns:
+        op.execute("UPDATE audit_logs SET full_name = username WHERE full_name IS NULL")
 
     # 4. Drop old columns
-    op.drop_constraint('users_username_key', 'users', type_='unique')
-    op.drop_column('users', 'username')
-    op.drop_column('users', 'last_name')
-    op.drop_column('users', 'first_name')
-    op.drop_column('audit_logs', 'username')
+    user_constraints = [c['name'] for c in inspector.get_unique_constraints('users')]
+    if 'users_username_key' in user_constraints:
+        op.drop_constraint('users_username_key', 'users', type_='unique')
+    
+    if 'username' in user_columns:
+        op.drop_column('users', 'username')
+    if 'last_name' in user_columns:
+        op.drop_column('users', 'last_name')
+    if 'first_name' in user_columns:
+        op.drop_column('users', 'first_name')
+    if 'username' in audit_columns:
+        op.drop_column('audit_logs', 'username')
 
     # Optional: Keep the unrelated drift if they seem like missing structural changes
-    op.create_table('impersonation_sessions',
-        sa.Column('id', sa.UUID(), nullable=False),
-        sa.Column('session_id', sa.String(length=255), nullable=False),
-        sa.Column('is_valid', sa.Boolean(), nullable=False),
-        sa.Column('invalidated_at', sa.DateTime(), nullable=False),
-        sa.Column('created_at', sa.DateTime(), nullable=False),
-        sa.PrimaryKeyConstraint('id')
-    )
-    op.create_index(op.f('ix_impersonation_sessions_session_id'), 'impersonation_sessions', ['session_id'], unique=True)
-    op.create_unique_constraint(None, 'content', ['title'])
-    op.create_unique_constraint(None, 'integrations', ['id'])
-    op.drop_column('integrations', 'access_token')
-    op.drop_column('integrations', 'shop_domain')
+    if 'impersonation_sessions' not in inspector.get_table_names():
+        op.create_table('impersonation_sessions',
+            sa.Column('id', sa.UUID(), nullable=False),
+            sa.Column('session_id', sa.String(length=255), nullable=False),
+            sa.Column('is_valid', sa.Boolean(), nullable=False),
+            sa.Column('invalidated_at', sa.DateTime(), nullable=False),
+            sa.Column('created_at', sa.DateTime(), nullable=False),
+            sa.PrimaryKeyConstraint('id')
+        )
+        op.create_index(op.f('ix_impersonation_sessions_session_id'), 'impersonation_sessions', ['session_id'], unique=True)
+    
+    if not any(set(c['column_names']) == {'title'} for c in inspector.get_unique_constraints('content')):
+        op.create_unique_constraint(None, 'content', ['title'])
+    
+    if not any(set(c['column_names']) == {'id'} for c in inspector.get_unique_constraints('integrations')):
+        op.create_unique_constraint(None, 'integrations', ['id'])
+    
+    if 'access_token' in integration_columns:
+        op.drop_column('integrations', 'access_token')
+    if 'shop_domain' in integration_columns:
+        op.drop_column('integrations', 'shop_domain')
 
 
 def downgrade() -> None:

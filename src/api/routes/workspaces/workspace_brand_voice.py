@@ -80,7 +80,7 @@ async def update_brand_voice_restful(
 
 @router.get("/{workspace_id}/brand-voice")
 @db_transaction_handler("get brand voice", "Brand voice retrieved successfully")
-@require_permissions("workspace.view", workspace_scoped=True)
+@require_permissions("workspace.read", workspace_scoped=True)
 async def get_brand_voice(
     workspace_id: str,
     request: Request,
