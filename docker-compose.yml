@@ -145,7 +145,7 @@ services:
 
             # Feature Flags
             FF_PROFILE_IMPORTS: ${FF_PROFILE_IMPORTS:-false}
-            BG_JOB_ISOLATED_LOOPS: ${BG_JOB_ISOLATED_LOOPS:-true}
+            BG_JOB_ISOLATED_LOOPS: ${BG_JOB_ISOLATED_LOOPS:-false}
 
             # Payment
             LEMONSQUEEZY_WEBHOOK_SECRET: ${LEMONSQUEEZY_WEBHOOK_SECRET}
