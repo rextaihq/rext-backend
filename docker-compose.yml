@@ -5,8 +5,6 @@ volumes:
         driver: local
     redis-data:
         driver: local
-    pgbouncer-config:
-        driver: local
 
 services:
     # PgBouncer connection pooler for handling many DB connections
@@ -30,12 +28,10 @@ services:
             ADMIN_DATABASE: postgres
             ADMIN_USER: postgres
             LOG_LEVEL: notice
-        volumes:
-            - pgbouncer-config:/etc/pgbouncer
         networks:
             - rext-network
         healthcheck:
-            test: [ "CMD", "pg_isready", "-h", "localhost", "-p", "6432", "-U", "postgres" ]
+            test: [ "CMD-SHELL", "pg_isready -h localhost -p 6432 -U postgres || exit 1" ]
             interval: 10s
             timeout: 5s
             retries: 5
@@ -61,7 +57,7 @@ services:
         volumes:
             - langgraph-data:/var/lib/postgresql/data
         command: >
-            postgres -c config_file=/etc/postgresql/postgresql.conf -c max_connections=1000 -c shared_preload_libraries=pg_stat_statements,pg_prewarm -c checkpoint_completion_target=0.9 -c wal_buffers=-1 -c effective_cache_size=6GB -c maintenance_work_mem=1GB -c log_min_duration_statement=250
+            postgres -c max_connections=1000 -c shared_preload_libraries=pg_stat_statements,pg_prewarm -c checkpoint_completion_target=0.9 -c wal_buffers=-1 -c effective_cache_size=6GB -c maintenance_work_mem=1GB -c log_min_duration_statement=250
         networks:
             - rext-network
         healthcheck:
@@ -84,16 +80,17 @@ services:
                     cpus: '1.0'
                     memory: 2G
         command: >
-            redis-server /usr/local/etc/redis/redis.conf --appendonly yes --appendfsync everysec --maxmemory 3gb --maxmemory-policy allkeys-lru --save 60 1 --save 300 100 --save 3600 10000 --loglevel warning --cluster-enabled no
+            redis-server --appendonly yes --appendfsync everysec --maxmemory 3gb --maxmemory-policy allkeys-lru --save 60 1 --save 300 100 --save 3600 10000 --loglevel warning --cluster-enabled no
         volumes:
             - redis-data:/data
         networks:
             - rext-network
         healthcheck:
             test: [ "CMD", "redis-cli", "ping" ]
-            interval: 5s
-            timeout: 3s
+            interval: 10s
+            timeout: 5s
             retries: 5
+            start_period: 10s
 
     # LangGraph API service
     langgraph-api:
