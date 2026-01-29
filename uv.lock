@@ -606,7 +606,7 @@ requires-dist = [
     { name = "langgraph-checkpoint-postgres", specifier = ">=2.0.23" },
     { name = "langgraph-cli", extras = ["inmem"], specifier = ">=0.3.6" },
     { name = "langgraph-sdk", specifier = ">=0.1.74" },
-    { name = "language-tool-python" },
+    { name = "language-tool-python", specifier = ">=3.2.2" },
     { name = "markdown", specifier = ">=3.8.2" },
     { name = "numpy", specifier = ">=2.3.2" },
     { name = "passlib", extras = ["bcrypt"], specifier = ">=1.7.4" },
