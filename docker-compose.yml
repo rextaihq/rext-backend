@@ -1,219 +1,201 @@
 version: '3.8'
 
 volumes:
-  langgraph-data:
-    driver: local
-  redis-data:
-    driver: local
-  pgbouncer-config:
-    driver: local
+    langgraph-data:
+        driver: local
+    redis-data:
+        driver: local
+    pgbouncer-config:
+        driver: local
 
 services:
-  # PgBouncer connection pooler for handling many DB connections
-  pgbouncer:
-    image: edoburu/pgbouncer:1.21.0
-    restart: unless-stopped
-    deploy:
-      resources:
-        limits:
-          cpus: '0.5'
-          memory: 512Mi
-        reservations:
-          cpus: '0.25'
-          memory: 256Mi
-    environment:
-      DATABASES: 'rext=host=postgres port=5432 dbname=rext user=exec password=rextserver'
-      POOL_MODE: transaction
-      MAX_CLIENT_CONN: '2000'
-      DEFAULT_POOL_SIZE: '100'
-      RESERVED_POOL_SIZE: '20'
-      ADMIN_DATABASE: postgres
-      ADMIN_USER: postgres
-      LOG_LEVEL: notice
-    volumes:
-      - pgbouncer-config:/etc/pgbouncer
-    networks:
-      - rext-network
-    healthcheck:
-      test: ["CMD", "pg_isready", "-h", "localhost", "-p", "6432", "-U", "postgres"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 30s
+    # PgBouncer connection pooler for handling many DB connections
+    pgbouncer:
+        image: edoburu/pgbouncer:1.21.0
+        restart: unless-stopped
+        deploy:
+            resources:
+                limits:
+                    cpus: '0.5'
+                    memory: 512M
+                reservations:
+                    cpus: '0.25'
+                    memory: 256M
+        environment:
+            DATABASES: 'rext=host=postgres port=5432 dbname=rext user=exec password=rextserver'
+            POOL_MODE: transaction
+            MAX_CLIENT_CONN: '2000'
+            DEFAULT_POOL_SIZE: '100'
+            RESERVED_POOL_SIZE: '20'
+            ADMIN_DATABASE: postgres
+            ADMIN_USER: postgres
+            LOG_LEVEL: notice
+        volumes:
+            - pgbouncer-config:/etc/pgbouncer
+        networks:
+            - rext-network
+        healthcheck:
+            test: [ "CMD", "pg_isready", "-h", "localhost", "-p", "6432", "-U", "postgres" ]
+            interval: 10s
+            timeout: 5s
+            retries: 5
+            start_period: 30s
 
-  # Postgres for LangGraph persistence
-  postgres:
-    image: postgres:17-alpine
-    restart: unless-stopped
-    deploy:
-      resources:
-        limits:
-          cpus: '4.0'
-          memory: 8Gi
-        reservations:
-          cpus: '2.0'
-          memory: 4Gi
-    environment:
-      POSTGRES_USER: exec
-      POSTGRES_PASSWORD: rextserver
-      POSTGRES_DB: rext
-      POSTGRES_INITDB_ARGS: "--encoding=UTF-8 --lc-collate=C --lc-ctype=C"
-    volumes:
-      - langgraph-data:/var/lib/postgresql/data
-    command: >
-      postgres
-      -c config_file=/etc/postgresql/postgresql.conf
-      -c max_connections=1000
-      -c shared_preload_libraries=pg_stat_statements,pg_prewarm
-      -c checkpoint_completion_target=0.9
-      -c wal_buffers=-1
-      -c effective_cache_size=6GB
-      -c maintenance_work_mem=1GB
-      -c log_min_duration_statement=250
-    networks:
-      - rext-network
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U exec -d rext"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 60s
+    # Postgres for LangGraph persistence
+    postgres:
+        image: postgres:17-alpine
+        restart: unless-stopped
+        deploy:
+            resources:
+                limits:
+                    cpus: '4.0'
+                    memory: 8G
+                reservations:
+                    cpus: '2.0'
+                    memory: 4G
+        environment:
+            POSTGRES_USER: exec
+            POSTGRES_PASSWORD: rextserver
+            POSTGRES_DB: rext
+            POSTGRES_INITDB_ARGS: "--encoding=UTF-8 --lc-collate=C --lc-ctype=C"
+        volumes:
+            - langgraph-data:/var/lib/postgresql/data
+        command: >
+            postgres -c config_file=/etc/postgresql/postgresql.conf -c max_connections=1000 -c shared_preload_libraries=pg_stat_statements,pg_prewarm -c checkpoint_completion_target=0.9 -c wal_buffers=-1 -c effective_cache_size=6GB -c maintenance_work_mem=1GB -c log_min_duration_statement=250
+        networks:
+            - rext-network
+        healthcheck:
+            test: [ "CMD-SHELL", "pg_isready -U exec -d rext" ]
+            interval: 10s
+            timeout: 5s
+            retries: 5
+            start_period: 60s
 
-  # Redis for caching and pub/sub
-  langgraph-redis:
-    image: redis:7-alpine
-    restart: unless-stopped
-    deploy:
-      resources:
-        limits:
-          cpus: '2.0'
-          memory: 4Gi
-        reservations:
-          cpus: '1.0'
-          memory: 2Gi
-    command: >
-      redis-server
-      /usr/local/etc/redis/redis.conf
-      --appendonly yes
-      --appendfsync everysec
-      --maxmemory 3gb
-      --maxmemory-policy allkeys-lru
-      --save 60 1
-      --save 300 100
-      --save 3600 10000
-      --loglevel warning
-      --cluster-enabled no
-    volumes:
-      - redis-data:/data
-    networks:
-      - rext-network
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 3s
-      retries: 5
+    # Redis for caching and pub/sub
+    langgraph-redis:
+        image: redis:7-alpine
+        restart: unless-stopped
+        deploy:
+            resources:
+                limits:
+                    cpus: '2.0'
+                    memory: 4G
+                reservations:
+                    cpus: '1.0'
+                    memory: 2G
+        command: >
+            redis-server /usr/local/etc/redis/redis.conf --appendonly yes --appendfsync everysec --maxmemory 3gb --maxmemory-policy allkeys-lru --save 60 1 --save 300 100 --save 3600 10000 --loglevel warning --cluster-enabled no
+        volumes:
+            - redis-data:/data
+        networks:
+            - rext-network
+        healthcheck:
+            test: [ "CMD", "redis-cli", "ping" ]
+            interval: 5s
+            timeout: 3s
+            retries: 5
 
-  # LangGraph API service
-  langgraph-api:
-    image: revnixhq/wrext:${IMAGE_TAG:-dev}
-    restart: unless-stopped
-    deploy:
-      resources:
-        limits:
-          cpus: '1.5'
-          memory: 2Gi
-        reservations:
-          cpus: '0.75'
-          memory: 1Gi
-    expose:
-      - "2024"
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.rext-api.rule=Host(`api.rext.ai`)"
-      - "traefik.http.routers.rext-api.entrypoints=https"
-      - "traefik.http.routers.rext-api.tls=true"
-      - "traefik.http.routers.rext-api.tls.certresolver=letsencrypt"
-      - "traefik.http.services.rext-api.loadbalancer.server.port=2024"
-      - "traefik.http.services.rext-api.loadbalancer.healthcheck.path=/health"
-      - "traefik.http.services.rext-api.loadbalancer.healthcheck.interval=30s"
-    networks:
-      - rext-network
-      - coolify
-    depends_on:
-      pgbouncer:
-        condition: service_healthy
-      postgres:
-        condition: service_healthy
-      langgraph-redis:
-        condition: service_healthy
-    env_file:
-      - .env
-    environment:
-        POSTGRES_URI_CUSTOM: postgresql://exec:rextserver@pgbouncer:6432/rext?pool_pre_ping=true
-        DATABASE_URI: postgresql://exec:rextserver@pgbouncer:6432/rext?pool_pre_ping=true
-        REDIS_URI: redis://langgraph-redis:6379/0
-        REDIS_URL: redis://langgraph-redis:6379/0
-        CACHE_URL: redis://langgraph-redis:6379/1
-        ENVIRONMENT: production
-        DEBUG: 'false'
-        WORKERS_PER_CORE: '1'
-        HOST: '0.0.0.0'
-        PORT: '2024'
-        OPENAI_API_KEY: ${OPENAI_API_KEY}
-        LANGSMITH_API_KEY: ${LANGSMITH_API_KEY}
-        LANGSMITH_PROJECT: ${LANGSMITH_PROJECT:-REXT}
-        LANGSMITH_TRACING: ${LANGSMITH_TRACING:-true}
-        SECRET_KEY: ${SECRET_KEY}
-        REFRESH_SECRET_KEY: ${REFRESH_SECRET_KEY}
-        ALGORITHM: ${ALGORITHM:-HS256}
-        RATE_LIMITING_ENABLED: ${RATE_LIMITING_ENABLED:-true}
-        RATE_LIMIT_PER_MINUTE: ${RATE_LIMIT_PER_MINUTE:-1000}
-        RATE_LIMIT_PER_HOUR: ${RATE_LIMIT_PER_HOUR:-10000}
-        RATE_LIMIT_PER_DAY: ${RATE_LIMIT_PER_DAY:-100000}
-        UPLOAD_DIR: ${UPLOAD_DIR:-/app/secure_uploads}
-        MAX_UPLOAD_SIZE_MB: ${MAX_UPLOAD_SIZE_MB:-10}
-        ENABLE_VIRUS_SCAN: ${ENABLE_VIRUS_SCAN:-false}
-        EMAIL_PROVIDER: ${EMAIL_PROVIDER:-resend}
-        EMAIL_ENABLED: ${EMAIL_ENABLED:-true}
-        RESEND_API_KEY: ${RESEND_API_KEY}
-        RESEND_FROM_EMAIL: ${RESEND_FROM_EMAIL}
-        RESEND_FROM_NAME: ${RESEND_FROM_NAME}
-        RESEND_WEBHOOK_SECRET: ${RESEND_WEBHOOK_SECRET}
-        SMTP_SERVER: ${SMTP_SERVER:-}
-        SMTP_PORT: ${SMTP_PORT:-587}
-        SMTP_USERNAME: ${SMTP_USERNAME:-}
-        SMTP_PASSWORD: ${SMTP_PASSWORD:-}
-        SMTP_USE_TLS: ${SMTP_USE_TLS:-true}
-        EMAIL_RETRY_ENABLED: ${EMAIL_RETRY_ENABLED:-true}
-        EMAIL_RETRY_MAX_ATTEMPTS: ${EMAIL_RETRY_MAX_ATTEMPTS:-3}
-        EMAIL_RETRY_DELAY_SECONDS: ${EMAIL_RETRY_DELAY_SECONDS:-5}
-        PAYMENT_PROVIDER: ${PAYMENT_PROVIDER:-lemonsqueezy}
-        PAYMENT_CURRENCY: ${PAYMENT_CURRENCY:-USD}
-        PAYMENT_SUCCESS_URL: ${PAYMENT_SUCCESS_URL}
-        PAYMENT_CANCEL_URL: ${PAYMENT_CANCEL_URL}
-        PERPLEXITY_API_KEY: ${PERPLEXITY_API_KEY}
-        SERPER_API_KEY: ${SERPER_API_KEY}
-        SUPER_ADMIN_EMAIL: ${SUPER_ADMIN_EMAIL}
-        SUPER_ADMIN_PASSWORD: ${SUPER_ADMIN_PASSWORD}
-        SUPER_ADMIN_FULL_NAME: ${SUPER_ADMIN_FULL_NAME:-Samiullah}
-        SENTRY_DSN: ${SENTRY_DSN}
-        SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-production}
-        CACHE_ENABLED: ${CACHE_ENABLED:-false}
-        FF_PROFILE_IMPORTS: ${FF_PROFILE_IMPORTS:-false}
-        BG_JOB_ISOLATED_LOOPS: ${BG_JOB_ISOLATED_LOOPS:-false}
-        LEMONSQUEEZY_WEBHOOK_SECRET: ${LEMONSQUEEZY_WEBHOOK_SECRET}
-        LEMONSQUEEZY_API_KEY: ${LEMONSQUEEZY_API_KEY}
-        LEMONSQUEEZY_SANDBOX_MODE: ${LEMONSQUEEZY_SANDBOX_MODE}
-        LEMONSQUEEZY_STORE_ID: ${LEMONSQUEEZY_STORE_ID}
-    healthcheck:
-      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:2024/health || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
+    # LangGraph API service
+    langgraph-api:
+        image: revnixhq/wrext:${IMAGE_TAG:-dev}
+        restart: unless-stopped
+        deploy:
+            resources:
+                limits:
+                    cpus: '1.5'
+                    memory: 2G
+                reservations:
+                    cpus: '0.75'
+                    memory: 1G
+        expose:
+            - "2024"
+        labels:
+            - "traefik.enable=true"
+            - "traefik.http.routers.rext-api.rule=Host(`api.rext.ai`)"
+            - "traefik.http.routers.rext-api.entrypoints=https"
+            - "traefik.http.routers.rext-api.tls=true"
+            - "traefik.http.routers.rext-api.tls.certresolver=letsencrypt"
+            - "traefik.http.services.rext-api.loadbalancer.server.port=2024"
+            - "traefik.http.services.rext-api.loadbalancer.healthcheck.path=/health"
+            - "traefik.http.services.rext-api.loadbalancer.healthcheck.interval=30s"
+        networks:
+            - rext-network
+            - coolify
+        depends_on:
+            pgbouncer:
+                condition: service_healthy
+            postgres:
+                condition: service_healthy
+            langgraph-redis:
+                condition: service_healthy
+        env_file:
+            - .env
+        environment:
+            POSTGRES_URI_CUSTOM: postgresql://exec:rextserver@pgbouncer:6432/rext?pool_pre_ping=true
+            DATABASE_URI: postgresql://exec:rextserver@pgbouncer:6432/rext?pool_pre_ping=true
+            REDIS_URI: redis://langgraph-redis:6379/0
+            REDIS_URL: redis://langgraph-redis:6379/0
+            CACHE_URL: redis://langgraph-redis:6379/1
+            ENVIRONMENT: production
+            DEBUG: 'false'
+            WORKERS_PER_CORE: '1'
+            HOST: '0.0.0.0'
+            PORT: '2024'
+            OPENAI_API_KEY: ${OPENAI_API_KEY}
+            LANGSMITH_API_KEY: ${LANGSMITH_API_KEY}
+            LANGSMITH_PROJECT: ${LANGSMITH_PROJECT:-REXT}
+            LANGSMITH_TRACING: ${LANGSMITH_TRACING:-true}
+            SECRET_KEY: ${SECRET_KEY}
+            REFRESH_SECRET_KEY: ${REFRESH_SECRET_KEY}
+            ALGORITHM: ${ALGORITHM:-HS256}
+            RATE_LIMITING_ENABLED: ${RATE_LIMITING_ENABLED:-true}
+            RATE_LIMIT_PER_MINUTE: ${RATE_LIMIT_PER_MINUTE:-1000}
+            RATE_LIMIT_PER_HOUR: ${RATE_LIMIT_PER_HOUR:-10000}
+            RATE_LIMIT_PER_DAY: ${RATE_LIMIT_PER_DAY:-100000}
+            UPLOAD_DIR: ${UPLOAD_DIR:-/app/secure_uploads}
+            MAX_UPLOAD_SIZE_MB: ${MAX_UPLOAD_SIZE_MB:-10}
+            ENABLE_VIRUS_SCAN: ${ENABLE_VIRUS_SCAN:-false}
+            EMAIL_PROVIDER: ${EMAIL_PROVIDER:-resend}
+            EMAIL_ENABLED: ${EMAIL_ENABLED:-true}
+            RESEND_API_KEY: ${RESEND_API_KEY}
+            RESEND_FROM_EMAIL: ${RESEND_FROM_EMAIL}
+            RESEND_FROM_NAME: ${RESEND_FROM_NAME}
+            RESEND_WEBHOOK_SECRET: ${RESEND_WEBHOOK_SECRET}
+            SMTP_SERVER: ${SMTP_SERVER:-}
+            SMTP_PORT: ${SMTP_PORT:-587}
+            SMTP_USERNAME: ${SMTP_USERNAME:-}
+            SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+            SMTP_USE_TLS: ${SMTP_USE_TLS:-true}
+            EMAIL_RETRY_ENABLED: ${EMAIL_RETRY_ENABLED:-true}
+            EMAIL_RETRY_MAX_ATTEMPTS: ${EMAIL_RETRY_MAX_ATTEMPTS:-3}
+            EMAIL_RETRY_DELAY_SECONDS: ${EMAIL_RETRY_DELAY_SECONDS:-5}
+            PAYMENT_PROVIDER: ${PAYMENT_PROVIDER:-lemonsqueezy}
+            PAYMENT_CURRENCY: ${PAYMENT_CURRENCY:-USD}
+            PAYMENT_SUCCESS_URL: ${PAYMENT_SUCCESS_URL}
+            PAYMENT_CANCEL_URL: ${PAYMENT_CANCEL_URL}
+            PERPLEXITY_API_KEY: ${PERPLEXITY_API_KEY}
+            SERPER_API_KEY: ${SERPER_API_KEY}
+            SUPER_ADMIN_EMAIL: ${SUPER_ADMIN_EMAIL}
+            SUPER_ADMIN_PASSWORD: ${SUPER_ADMIN_PASSWORD}
+            SUPER_ADMIN_FULL_NAME: ${SUPER_ADMIN_FULL_NAME:-Samiullah}
+            SENTRY_DSN: ${SENTRY_DSN}
+            SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-production}
+            CACHE_ENABLED: ${CACHE_ENABLED:-false}
+            FF_PROFILE_IMPORTS: ${FF_PROFILE_IMPORTS:-false}
+            BG_JOB_ISOLATED_LOOPS: ${BG_JOB_ISOLATED_LOOPS:-false}
+            LEMONSQUEEZY_WEBHOOK_SECRET: ${LEMONSQUEEZY_WEBHOOK_SECRET}
+            LEMONSQUEEZY_API_KEY: ${LEMONSQUEEZY_API_KEY}
+            LEMONSQUEEZY_SANDBOX_MODE: ${LEMONSQUEEZY_SANDBOX_MODE}
+            LEMONSQUEEZY_STORE_ID: ${LEMONSQUEEZY_STORE_ID}
+        healthcheck:
+            test: [ "CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:2024/health || exit 1" ]
+            interval: 30s
+            timeout: 10s
+            retries: 3
+            start_period: 40s
 
 networks:
-  rext-network:
-    driver: bridge
-  coolify:
-    external: true
+    rext-network:
+        driver: bridge
+    coolify:
+        external: true
