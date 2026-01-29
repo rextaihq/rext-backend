@@ -44,8 +44,12 @@ services:
     # Backend API Service
     langgraph-api:
         image: revnixhq/wrext:${IMAGE_TAG:-dev}
-        expose:
-            - "2024"
+        ports:
+            - "2024:2024"
+
+        #==========These Line Can throw error for db connection if not used in production
+        # expose:
+        #     - "2024"
         # labels:
         #     - "traefik.enable=true"
         #     - "traefik.http.routers.rext-api.rule=Host(`api.rext.ai`)"
@@ -56,6 +60,8 @@ services:
         # networks:
         #     - rext-network
         #     - coolify
+
+        #==========These Line Can throw error for db connection if not used in production
         depends_on:
             postgres:
                 condition: service_healthy
