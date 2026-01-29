@@ -17,32 +17,31 @@ except ImportError:
 
 # Word Counter Tool
 def count_text_metrics(text: str):
-    # Count characters including spaces
+    """Core logic to handle numbers and paragraph breaks."""
+    # Count characters
     char_count = len(text)
 
-    # Count words: split the text by whitespace and count resulting elements
-    words = re.split(r'\s+', text.strip())
-    word_count = len([word for word in words if word])
+    # Count words: split() treats numbers like '500' or '12.5' as words
+    words = text.split()
+    word_count = len(words)
     
-    # Count sentences: a rough estimate by counting common end punctuation
-    sentence_count = text.count('.') + text.count('!') + text.count('?')
+    # Count sentences: handles . ! ? followed by space or end of string
+    sentence_list = re.split(r'[.!?]+(?:\s+|$)', text)
+    sentence_count = len([s for s in sentence_list if s.strip()])
 
-    # Count paragraphs: split by double newline characters using a loop
-    paragraph_list = text.strip().split('\n\n')
-    paragraph_count = 0
-    for p in paragraph_list:
-        if p.strip(): # Check if the paragraph content is not empty
-            paragraph_count += 1
+    # Count paragraphs: handles multiple newlines (\n\n) or blank lines
+    paragraph_list = re.split(r'\n\s*\n', text.strip())
+    paragraph_count = len([p for p in paragraph_list if p.strip()])
 
-    # Estimate reading time (e.g., 200 words per minute average)
+    # Estimate reading time (200 words/min)
     min_read = round(word_count / 200) if word_count > 0 else 0
 
     return {
-        'words': word_count,
-        'characters': char_count,
-        'sentences': sentence_count,
-        'paragraphs': paragraph_count,
-        'min_read': min_read
+        "words": word_count,
+        "characters": char_count,
+        "sentences": sentence_count,
+        "paragraphs": paragraph_count,
+        "min_read": min_read
     }
 
 # Meta Description Generator Tool
