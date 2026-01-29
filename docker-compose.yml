@@ -44,8 +44,6 @@ services:
     # Backend API Service
     langgraph-api:
         image: revnixhq/wrext:${IMAGE_TAG:-dev}
-        ports:
-            - "2024:2024"
         labels:
             - "traefik.enable=true"
             - "traefik.http.routers.rext-api.rule=Host(`api.rext.ai`)"
