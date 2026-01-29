@@ -42,18 +42,12 @@ services:
             - rext-network
 
     # Backend API Service
+    # NOTE: Domain routing (api.rext.ai) is managed by Coolify's UI Domains setting.
+    # Do NOT add Traefik labels here — they conflict with Coolify's own configuration.
     langgraph-api:
         image: revnixhq/wrext:${IMAGE_TAG:-dev}
-        labels:
-            - "traefik.enable=true"
-            - "traefik.http.routers.rext-api.rule=Host(`api.rext.ai`)"
-            - "traefik.http.routers.rext-api.entrypoints=websecure"
-            - "traefik.http.routers.rext-api.tls=true"
-            - "traefik.http.routers.rext-api.tls.certresolver=letsencrypt"
-            - "traefik.http.services.rext-api.loadbalancer.server.port=2024"
         networks:
             - rext-network
-            - coolify
         depends_on:
             postgres:
                 condition: service_healthy
@@ -152,5 +146,3 @@ services:
 networks:
     rext-network:
         driver: bridge
-    coolify:
-        external: true
