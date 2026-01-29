@@ -158,5 +158,3 @@ networks:
         driver: bridge
     coolify:
         external: true
-
-    external: true
