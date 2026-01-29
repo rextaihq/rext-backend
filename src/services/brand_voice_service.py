@@ -19,7 +19,7 @@ from typing import Optional, Dict, Any, Union
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, delete
 
 from src.api.models.knowledge_models.knowledge_model import BrandVoice
 from src.api.models.workspace_models.workspace_member import WorkspaceMembers
@@ -130,6 +130,35 @@ class BrandVoiceService:
         )
 
         return brand_voice
+
+    async def delete_brand_voice(
+        self,
+        workspace_id: UUID,
+        user_id: UUID
+    ) -> bool:
+        """
+        Delete brand voice for a workspace.
+
+        Args:
+            workspace_id: Workspace UUID
+            user_id: User UUID (for membership check)
+
+        Returns:
+            True if deleted, False if not found
+
+        Raises:
+            RextAuthenticationException: If user not workspace member
+        """
+        # Verify workspace membership
+        await self._verify_workspace_membership(workspace_id, user_id)
+
+        # Delete brand voice
+        result = await self.db.execute(
+            delete(BrandVoice).where(BrandVoice.workspace_id == workspace_id)
+        )
+
+        deleted_count = result.rowcount
+        return deleted_count > 0
 
     # ========================================================================
     # Private Helper Methods
