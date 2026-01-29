@@ -49,6 +49,15 @@ services:
         image: revnixhq/wrext:${IMAGE_TAG:-dev}
         ports:
             - "8000:8000"
+        labels:
+            - "traefik.enable=true"
+            - "traefik.http.routers.rext-api.rule=Host(`api.rext.ai`)"
+            - "traefik.http.routers.rext-api.entrypoints=websecure"
+            - "traefik.http.routers.rext-api.tls=true"
+            - "traefik.http.routers.rext-api.tls.certresolver=letsencrypt"
+            - "traefik.http.services.rext-api.loadbalancer.server.port=8000"
+        networks:
+            - coolify
         depends_on:
             postgres:
                 condition: service_healthy
@@ -147,3 +156,5 @@ services:
 networks:
     rext-network:
         driver: bridge
+    coolify:
+        external: true

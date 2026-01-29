@@ -118,8 +118,11 @@ app = FastAPI(
 # ============================================================================
 # MIDDLEWARE CONFIGURATION
 # ============================================================================
+# NOTE: In Starlette/FastAPI, middleware added LAST is the OUTERMOST (processes
+# requests first). CORS must be outermost so preflight OPTIONS requests get
+# proper headers even if inner middleware returns early.
 
-# Request tracking middleware (first in chain)
+# Request tracking middleware
 app.add_middleware(
     RequestTrackerMiddleware,
     header_name="X-Request-ID",
@@ -144,17 +147,6 @@ app.add_middleware(
     max_error_details=10
 )
 
-# CORS middleware
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=settings.allowed_origins_list,
-    allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
-    allow_headers=["*"],
-    expose_headers=["X-Request-ID", "Content-Type"],
-    max_age=3600,
-)
-
 # Security headers middleware
 app.add_middleware(SecurityHeadersMiddleware)
 
@@ -165,6 +157,18 @@ app.add_middleware(
     requests_per_hour=settings.RATE_LIMIT_PER_HOUR,
     requests_per_day=settings.RATE_LIMIT_PER_DAY,
     enable=settings.RATE_LIMITING_ENABLED
+)
+
+# CORS middleware (MUST be added last = outermost, so it handles preflight
+# OPTIONS requests before any other middleware can intercept them)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.allowed_origins_list,
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+    allow_headers=["*"],
+    expose_headers=["X-Request-ID", "Content-Type"],
+    max_age=3600,
 )
 
 # Setup global exception handlers
