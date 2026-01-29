@@ -5,38 +5,35 @@ services:
     # Redis for application cache
     redis:
         image: redis:7-alpine
-        container_name: rext-redis
-        ports:
-            - "6379:6379"
         healthcheck:
             test: [ "CMD", "redis-cli", "ping" ]
             interval: 5s
             timeout: 1s
             retries: 5
         restart: unless-stopped
+        networks:
+            - rext-network
 
     # Redis for LangGraph
     langgraph-redis:
         image: redis:6
-        container_name: langgraph-redis
         healthcheck:
             test: redis-cli ping
             interval: 5s
             timeout: 1s
             retries: 5
+        networks:
+            - rext-network
 
     # Postgres Database
     postgres:
         image: postgres:17-alpine
-        container_name: rext-postgres
         environment:
             POSTGRES_USER: exec
             POSTGRES_PASSWORD: rextserver
             POSTGRES_DB: rext
         volumes:
             - langgraph-data:/var/lib/postgresql/data
-        ports:
-            - "5432:5432"
         healthcheck:
             test: [ "CMD-SHELL", "pg_isready -U exec" ]
             interval: 5s
@@ -57,6 +54,7 @@ services:
             - "traefik.http.routers.rext-api.tls.certresolver=letsencrypt"
             - "traefik.http.services.rext-api.loadbalancer.server.port=2024"
         networks:
+            - rext-network
             - coolify
         depends_on:
             postgres:
