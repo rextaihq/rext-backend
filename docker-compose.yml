@@ -42,12 +42,13 @@ services:
             - rext-network
 
     # Backend API Service
-    # NOTE: Domain routing (api.rext.ai) is managed by Coolify's UI Domains setting.
-    # Do NOT add Traefik labels here — they conflict with Coolify's own configuration.
+    # Domain routing (api.rext.ai) is managed by Coolify's UI Domains setting.
+    # The coolify network is required so Traefik can reach this container.
     langgraph-api:
         image: revnixhq/wrext:${IMAGE_TAG:-dev}
         networks:
             - rext-network
+            - coolify
         depends_on:
             postgres:
                 condition: service_healthy
@@ -146,3 +147,5 @@ services:
 networks:
     rext-network:
         driver: bridge
+    coolify:
+        external: true
