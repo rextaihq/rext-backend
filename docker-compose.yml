@@ -42,8 +42,6 @@ services:
             - rext-network
 
     # Backend API Service
-    # Full Traefik labels required — Coolify UI Domains does NOT auto-generate
-    # labels for docker-compose services.
     langgraph-api:
         image: revnixhq/wrext:${IMAGE_TAG:-dev}
         expose:
