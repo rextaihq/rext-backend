@@ -42,7 +42,7 @@ class AuditService:
         if status_filter:
             try:
                 status_enum = AuditStatus(status_filter)
-            except ValueError as exc:
+            except ValueError as exc:   
                 raise RextValidationException(
                     message=f"Invalid status: {status_filter}",
                     field_errors={"status_filter": ["Unsupported audit status"]},
