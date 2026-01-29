@@ -59,9 +59,12 @@ def run_migrations():
     else:  # macOS/Linux
         venv_alembic = project_root / ".venv" / "bin" / "alembic"
 
+    # Fallback to system alembic if venv one doesn't exist
+    alembic_cmd = str(venv_alembic) if venv_alembic.exists() else "alembic"
+
     try:
         result = subprocess.run(
-            [str(venv_alembic), "upgrade", "head"],
+            [alembic_cmd, "upgrade", "head"],
             cwd=project_root,
             capture_output=True,
             text=True,
@@ -87,9 +90,12 @@ def check_status():
     else:  # macOS/Linux
         venv_alembic = project_root / ".venv" / "bin" / "alembic"
 
+    # Fallback to system alembic if venv one doesn't exist
+    alembic_cmd = str(venv_alembic) if venv_alembic.exists() else "alembic"
+
     try:
         result = subprocess.run(
-            [str(venv_alembic), "current"],
+            [alembic_cmd, "current"],
             cwd=project_root,
             capture_output=True,
             text=True,

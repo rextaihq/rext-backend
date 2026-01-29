@@ -48,7 +48,7 @@ services:
     langgraph-api:
         image: revnixhq/wrext:${IMAGE_TAG:-dev}
         ports:
-            - "2024:2024"
+            - "8000:8000"
         depends_on:
             postgres:
                 condition: service_healthy

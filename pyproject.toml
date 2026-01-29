@@ -18,7 +18,6 @@ dependencies = [
     "flashrank>=0.2.10",
     "langchain-community>=0.3.27",
     "langchain-huggingface>=0.3.1",
-    "langchain-tavily>=0.2.11",
     "langchain[groq,openai]>=0.3.27",
     "langgraph[cli]>=0.5.4",
     "langgraph-api>=0.2.102",
