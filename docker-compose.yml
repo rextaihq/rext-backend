@@ -54,7 +54,7 @@ services:
     rext-api:
         image: revnixhq/wrext:${IMAGE_TAG:-dev}
         deploy:
-            replicas: 2 # Max for 8GB (1.5GB each + overhead)
+            replicas: 1 # Set to 1 because Coolify injects a fixed container name which prevents scaling in Docker Compose YAML mode
             resources:
                 limits:
                     cpus: '0.75'
@@ -75,9 +75,9 @@ services:
         #     - "traefik.http.routers.rext-api.tls=true"
         #     - "traefik.http.routers.rext-api.tls.certresolver=letsencrypt"
         #     - "traefik.http.services.rext-api.loadbalancer.server.port=2024"
-        # networks:
-        #     - rext-network
-        #     - coolify
+        networks:
+            - rext-network
+            - coolify
 
         #==========These Line Can throw error for db connection if not used in production
         depends_on:
