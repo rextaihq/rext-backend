@@ -19,8 +19,8 @@ from src.api.tool.schema.schema import (
 )
 from src.api.tool.prompts.title_prompt import title_prompt, idea_prompt
 from src.api.tool.prompts.meta_prompt import meta_prompt
-from src.api.tool.prompts.canonical_prompt import canonical_prompt
-from src.api.tool.prompts.hreflang_prompt import hreflang_system_prompt, hreflang_user_prompt
+
+
 from src.api.tool.prompts.hook_prompt import hook_prompt
 from src.api.tool.prompts.seo_blog_title_prompt import seo_blog_title_prompt
 
@@ -197,26 +197,15 @@ def normalize_url(url: str) -> str:
 
 def generate_canonical_tag(url: str):
     """
-    AI-powered Canonical Tag Generator logic.
+    Logic-based Canonical Tag Generator.
+    - Normalizes the URL
+    - Returns a standard HTML canonical tag
+    - No AI/LLM usage
     """
     normalized_url = normalize_url(url)
     
-    model = _get_model()
-
-    # Format the prompt
-    formatted_prompt = canonical_prompt.format(url=url)
-
-    response = model.invoke([
-        SystemMessage(content="You generate SEO ONLY valid HTML canonical tags."),
-        HumanMessage(content=formatted_prompt)
-    ])
-
-    canonical_tag = response.content if hasattr(response, 'content') else str(response)
-    canonical_tag = canonical_tag.strip().strip('`').replace('html\n', '').strip()
-
-    # Safety fallback
-    if not canonical_tag.startswith("<link") or 'rel="canonical"' not in canonical_tag:
-        canonical_tag = f'<link rel="canonical" href="{normalized_url}" />'
+    # Construct the tag directly
+    canonical_tag = f'<link rel="canonical" href="{normalized_url}" />'
 
     return {
         "canonical_tag": canonical_tag,
@@ -231,71 +220,45 @@ def generate_canonical_tag(url: str):
 
 def generate_hreflang_tags(request):
     """
-    AI-powered Google-compliant Hreflang Tag Generator logic.
-    Expects a HreflangRequest object (duck-typed).
+    Logic-based Hreflang Tag Generator.
+    - Iterates through the provided URL/Language/Region entries.
+    - Constructs standard HTML <link rel="alternate" hreflang="..." href="..." /> tags.
+    - Handles x-default if requested.
     """
-    model = _get_model()
-
-    if len(request.language_region_urls) > 50:
-        raise ValueError("Maximum of 50 URLs allowed for hreflang generation.")
-
-    # Identical URL check for SEO warnings
-    warnings = []
-    urls_seen = {}
-    for entry in request.language_region_urls:
-        url_str = str(entry.url)
-        if url_str in urls_seen:
-            warnings.append(f"Identical URL used for both '{urls_seen[url_str]}' and '{entry.language or 'unknown'}'. Google recommends unique URLs for different language versions.")
-        urls_seen[url_str] = entry.language or "unknown"
-
-    # Determine format rules
-    if request.output_format == "sitemap":
-        format_rule = "- Output ONLY valid XML <xhtml:link> tags"
-        format_instruction = 'Return ONLY valid XML <xhtml:link rel="alternate" hreflang="..." href="..." /> tags.'
-        context_note = "Your output must be ready to paste directly inside a <url> block of an XML sitemap."
-    else:
-        format_rule = "- Output ONLY valid HTML <link> tags"
-        format_instruction = 'Return ONLY valid HTML <link rel="alternate" hreflang="..." href="..." /> tags.'
-        context_note = "Your output must be ready to paste directly inside the <head> section of an HTML document."
-
-    # Prepare input for LLM
-    lang_region_urls_str = "\n".join([
-        f"- url: {entry.url}, language: {entry.language or 'unknown'}, region: {entry.region or 'unknown'}"
-        for entry in request.language_region_urls
-    ])
-
-    # Format prompts
-    system_content = hreflang_system_prompt.format(
-        format_rule=format_rule,
-        context_note=context_note
-    )
+    tags = []
     
-    user_content = hreflang_user_prompt.format(
-        default_url=request.default_url,
-        lang_region_urls_str=lang_region_urls_str,
-        include_x_default=str(request.include_x_default).lower(),
-        format_instruction=format_instruction
-    )
+    # helper for constructing code
+    def get_lang_code(lang, region):
+        if region:
+            return f"{lang}-{region}"
+        return lang
 
-    response = model.invoke([
-        SystemMessage(content=system_content.strip()),
-        HumanMessage(content=user_content.strip())
-    ])
-
-    hreflang_tags = response.content if hasattr(response, 'content') else str(response)
-    hreflang_tags = hreflang_tags.strip()
-
-    # Final cleanup: Remove markdown code blocks if any
-    if hreflang_tags.startswith("```"):
-        lines = hreflang_tags.split("\n")
-        if lines[0].startswith("```") and lines[-1].startswith("```"):
-            hreflang_tags = "\n".join(lines[1:-1]).strip()
+    # 1. Generate tags for each entry
+    for entry in request.language_region_urls:
+        # Construct hreflang code (e.g., "en-us" or just "en")
+        code = get_lang_code(entry.language, entry.region)
+        
+        if request.output_format == "sitemap":
+            # Sitemap format: <xhtml:link rel="alternate" hreflang="xx" href="url" />
+            # Note: usually this is nested inside <url>, we just return the link line
+            tag = f'<xhtml:link rel="alternate" hreflang="{code}" href="{entry.url}" />'
         else:
-            hreflang_tags = hreflang_tags.replace("```html", "").replace("```xml", "").replace("```", "").strip()
-
+            # HTML Header format
+            tag = f'<link rel="alternate" hreflang="{code}" href="{entry.url}" />'
+        
+        tags.append(tag)
+        
+    # 2. Add x-default if requested
+    if request.include_x_default:
+        if request.output_format == "sitemap":
+            tag = f'<xhtml:link rel="alternate" hreflang="x-default" href="{request.default_url}" />'
+        else:
+            tag = f'<link rel="alternate" hreflang="x-default" href="{request.default_url}" />'
+        tags.append(tag)
+        
     return {
-        "hreflang_tags": hreflang_tags,
-        "warnings": warnings if warnings else None
+        "hreflang_tags": "\n".join(tags),
+        "warnings": None
     }
 
 
