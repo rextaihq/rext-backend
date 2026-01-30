@@ -54,7 +54,7 @@ services:
     rext-api:
         image: revnixhq/wrext:${IMAGE_TAG:-dev}
         deploy:
-            replicas: 1 # Set to 1 because Coolify injects a fixed container name which prevents scaling in Docker Compose YAML mode
+            replicas: 1 # Set to 1 to avoid 'container name must be unique' error in Coolify
             resources:
                 limits:
                     cpus: '0.75'
@@ -75,9 +75,9 @@ services:
         #     - "traefik.http.routers.rext-api.tls=true"
         #     - "traefik.http.routers.rext-api.tls.certresolver=letsencrypt"
         #     - "traefik.http.services.rext-api.loadbalancer.server.port=2024"
-        networks:
-            - rext-network
-            - coolify
+        # networks:
+        #     - rext-network
+        #     - coolify
 
         #==========These Line Can throw error for db connection if not used in production
         depends_on:
@@ -168,8 +168,10 @@ services:
             # Feature Flags
             FF_PROFILE_IMPORTS: ${FF_PROFILE_IMPORTS:-false}
             BG_JOB_ISOLATED_LOOPS: "true"
+            N_JOBS_PER_WORKER: "50"
 
             # Connection pooling (FIXED)
+            LANGGRAPH_POSTGRES_POOL_MAX_SIZE: "20"
             REDIS_MAX_CONNECTIONS: "50"
 
             # TTL - CRITICAL for 8GB (auto-delete old threads)
@@ -178,10 +180,6 @@ services:
 
             # Efficiency
             WORKER_CONCURRENCY: 2
-            N_JOBS_PER_WORKER: "20" # Reduced from 50
-
-            # Connection pooling (you have these - good!)
-            LANGGRAPH_POSTGRES_POOL_MAX_SIZE: "10" # Reduced for 8GB
 
             # Payment
             LEMONSQUEEZY_WEBHOOK_SECRET: ${LEMONSQUEEZY_WEBHOOK_SECRET}
