@@ -42,7 +42,7 @@ def extract_regex_signals(html_content: str) -> Dict[str, Any]:
     
     return signals
 
-def calculate_eeat_trust_score(html_content: str, metadata: Dict[str, Any] = None) -> Dict[str, Any]:
+async def calculate_eeat_trust_score(html_content: str, metadata: Dict[str, Any] = None) -> Dict[str, Any]:
     """
     Calculate E-E-A-T score using a hybrid approach of Regex and LLM.
     """
@@ -82,7 +82,7 @@ def calculate_eeat_trust_score(html_content: str, metadata: Dict[str, Any] = Non
     """
     
     try:
-        result = llm.invoke(prompt)
+        result = await llm.ainvoke(prompt)
         trust_data = result.model_dump()
         
         # Log results

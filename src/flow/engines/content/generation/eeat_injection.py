@@ -124,7 +124,7 @@ async def inject_eeat(state: REXT) -> dict:
         
         # 8️⃣ Invoke LLM for E-E-A-T injection
         logger.info("Invoking LLM for E-E-A-T signal injection...")
-        eeat_enhanced_content = model.invoke(messages)
+        eeat_enhanced_content = await model.ainvoke(messages)
         eeat_dict = eeat_enhanced_content.model_dump()
         
         logger.info(f"E-E-A-T injection completed. Word count: {eeat_dict.get('word_count', 0)}")

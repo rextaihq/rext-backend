@@ -9,7 +9,7 @@ from langchain_core.messages import SystemMessage, HumanMessage
 logger = logging.getLogger(__name__)
 
 
-def topic_generation(state: REXT) -> Dict[str, Any]:
+async def topic_generation(state: REXT) -> Dict[str, Any]:
     """
     Generate SEO topics based on the user's query.
     
@@ -39,7 +39,7 @@ def topic_generation(state: REXT) -> Dict[str, Any]:
         HumanMessage(content=f"Generate 5 SEO topics for: {query}")
     ]
     
-    results: SEOTopics = model.invoke(messages)
+    results: SEOTopics = await model.ainvoke(messages)
     topics = results.topics
     
     logger.info(f"Generated {len(topics)} topics")   

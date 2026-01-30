@@ -1052,7 +1052,7 @@ class WorkspaceService:
         try:
             model = load_model()
             structure_model = model.with_structured_output(BrandSchema)
-            brand_data = structure_model.invoke(content)
+            brand_data = await structure_model.ainvoke(content)
 
             brand_voice = BrandVoice(
                 workspace_id=workspace_id,

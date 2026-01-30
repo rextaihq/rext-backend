@@ -568,7 +568,7 @@ Now analyze the following website content and extract brand information:"""
                 HumanMessage(content=content)
             ]
             
-            return structured.invoke(messages)
+            return await structured.ainvoke(messages)
 
         return await asyncio.to_thread(_invoke_model)
 

@@ -69,7 +69,7 @@ def humanize_content(state: REXT) -> dict:
         
         # 4️⃣ Invoke LLM for humanization
         logger.info("Invoking LLM for content humanization (target: 90% human-written)...")
-        humanized_content = model.invoke(messages)
+        humanized_content = await model.ainvoke(messages)
         humanized_dict = humanized_content.model_dump()
         
         logger.info(f"Humanization completed (90% human target). Keys: {humanized_dict.keys()}")
