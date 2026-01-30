@@ -23,6 +23,10 @@ services:
             interval: 5s
             timeout: 1s
             retries: 5
+        deploy:
+            resources:
+                limits:
+                    memory: 2G
         networks:
             - rext-network
 
@@ -35,6 +39,10 @@ services:
             POSTGRES_DB: rext
         volumes:
             - langgraph-data:/var/lib/postgresql/data
+        deploy:
+            resources:
+                limits:
+                    memory: 2G
         healthcheck:
             test: [ "CMD-SHELL", "pg_isready -U exec" ]
             interval: 5s
@@ -45,6 +53,15 @@ services:
     # Backend API Service
     rext-api:
         image: revnixhq/wrext:${IMAGE_TAG:-dev}
+        deploy:
+            replicas: 2  # Max for 8GB (1.5GB each + overhead)
+            resources:
+                limits:
+                    cpus: '0.75'
+                    memory: 1.5G
+                reservations:
+                    cpus: '0.25'
+                memory: 1G
         ports:
             - "2024:2024"
 
@@ -151,11 +168,20 @@ services:
             # Feature Flags
             FF_PROFILE_IMPORTS: ${FF_PROFILE_IMPORTS:-false}
             BG_JOB_ISOLATED_LOOPS: "true"
-            N_JOBS_PER_WORKER: "50"
 
             # Connection pooling (FIXED)
-            LANGGRAPH_POSTGRES_POOL_MAX_SIZE: "20"
             REDIS_MAX_CONNECTIONS: "50"
+
+            # TTL - CRITICAL for 8GB (auto-delete old threads)
+            CHECKPOINTER_TTL_DEFAULT: 86400      # 24hr
+            STORE_TTL_DEFAULT: 604800           # 7 days
+            
+            # Efficiency
+            WORKER_CONCURRENCY: 2
+            N_JOBS_PER_WORKER: "20"             # Reduced from 50
+            
+            # Connection pooling (you have these - good!)
+            LANGGRAPH_POSTGRES_POOL_MAX_SIZE: "10"  # Reduced for 8GB
 
             # Payment
             LEMONSQUEEZY_WEBHOOK_SECRET: ${LEMONSQUEEZY_WEBHOOK_SECRET}
