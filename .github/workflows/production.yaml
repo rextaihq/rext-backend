@@ -1,207 +1,96 @@
-# name: PRODUCTION_CI_CD
+name: PRODUCTION_CI_CD
 
-# on:
-#   pull_request:
-#     types:
-#       - closed
-#     branches:
-#       - main
+on:
+  pull_request:
+    types:
+      - closed
+    branches:
+      - main
 
-# jobs:
-#   build:
-#     if: github.event.pull_request.merged == true
-#     runs-on: ubuntu-latest
+jobs:
+  build:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
 
-#     steps:
-#       - name: Checkout code
-#         uses: actions/checkout@v3
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
         
-#       - name: Set up Python
-#         uses: actions/setup-python@v4
-#         with:
-#           python-version: '3.11'
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
       
-#       - name: Install uv
-#         run: pip install uv
+      - name: Install uv
+        run: pip install uv
       
-#       - name: Cache uv dependencies
-#         uses: actions/cache@v3
-#         with:
-#           path: ~/.cache/uv
-#           key: ${{ runner.os }}-uv-${{ hashFiles('**/uv.lock') }}
-#           restore-keys: |
-#             ${{ runner.os }}-uv-
+      - name: Cache uv dependencies
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/uv
+          key: ${{ runner.os }}-uv-${{ hashFiles('**/uv.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-uv-
 
-#       - name: Install dependencies
-#         run: uv sync
+      - name: Install dependencies
+        run: uv sync
 
-#       - name: Cache pip packages
-#         uses: actions/cache@v3
-#         with:
-#           path: ~/.cache/pip
-#           key: ${{ runner.os }}-pip-${{ hashFiles('**/uv.lock') }}
-#           restore-keys: |
-#             ${{ runner.os }}-pip-
+      - name: Cache pip packages
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/uv.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
      
-#       - name: Install system dependencies
-#         run: |
-#           sudo apt-get update
-#           sudo apt-get install -y \
-#             chromium-browser \
-#             libnss3 \
-#             libfreetype6 \
-#             libharfbuzz0b \
-#             ca-certificates \
-#             bash \
-#             libstdc++6 \
-#             && sudo apt-get clean
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            chromium-browser \
+            libnss3 \
+            libfreetype6 \
+            libharfbuzz0b \
+            ca-certificates \
+            bash \
+            libstdc++6 \
+            && sudo apt-get clean
 
-#       - name: Install uv and Python dependencies
-#         run: pip install uv && uv pip install --system --no-cache-dir playwright crawl4ai
+      - name: Install uv and Python dependencies
+        run: pip install uv && uv pip install --system --no-cache-dir playwright crawl4ai
 
-#       - name: Install Playwright browser
-#         run: playwright install chromium
+      - name: Install Playwright browser
+        run: playwright install chromium
 
-#       - name: Setup Crawl4AI
-#         run: |
-#           crawl4ai-setup
-#           crawl4ai-doctor
+      - name: Setup Crawl4AI
+        run: |
+          crawl4ai-setup
+          crawl4ai-doctor
 
-#   docker_job:
-#     needs: build
-#     runs-on: ubuntu-latest
+  docker_job:
+    needs: build
+    runs-on: ubuntu-latest
 
-#     steps:
-#       - name: Checkout code
-#         uses: actions/checkout@v3
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
 
-#       - name: Set up Docker Buildx
-#         uses: docker/setup-buildx-action@v3
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
-#       - name: Log into Docker Hub
-#         uses: docker/login-action@v2
-#         with:
-#           username: ${{ secrets.DOCKER_USERNAME }}
-#           password: ${{ secrets.DOCKER_PASSWORD }}
+      - name: Log into Docker Hub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
 
-#       - name: Install LangGraph CLI
-#         run: pip install langgraph-cli
+      - name: Install LangGraph CLI
+        run: pip install langgraph-cli
           
-#       - name: Build Docker image with LangGraph
-#         run: langgraph build -t ${{ secrets.DOCKER_USERNAME }}/wrext:latest
-
-#       - name: Push Docker image
-#         run: docker push ${{ secrets.DOCKER_USERNAME }}/wrext:latest
-  
-#   deploy:
-#     needs: docker_job
-#     runs-on: self-hosted
-
-#     env:
-#       # Image tag for docker-compose
-#       IMAGE_TAG: latest
-      
-#       # Environment settings
-#       ENVIRONMENT: production
-#       DEBUG: "false"
-      
-#       # Core API Keys
-#       OPENAI_API_KEY: ${{ secrets.PROD_OPENAI_API_KEY }}
-#       LANGSMITH_API_KEY: ${{ secrets.PROD_LANGSMITH_API_KEY }}
-#       PERPLEXITY_API_KEY: ${{ secrets.PROD_PERPLEXITY_API_KEY }}
-#       SERPER_API_KEY: ${{ secrets.PROD_SERPER_API_KEY }}
-
-#       # Database
-#       POSTGRES_URI_CUSTOM: ${{ secrets.PROD_POSTGRES_URI_CUSTOM }}
-#       DATABASE_URI: ${{ secrets.PROD_DATABASE_URI }}
-#       REDIS_URI: ${{ secrets.PROD_REDIS_URI }}
-#       REDIS_URL: ${{ secrets.PROD_REDIS_URL }}
-      
-#       # Security
-#       SECRET_KEY: ${{ secrets.PROD_SECRET_KEY }}
-#       REFRESH_SECRET_KEY: ${{ secrets.PROD_REFRESH_SECRET_KEY }}
-#       ALGORITHM: ${{ secrets.PROD_ALGORITHM }}
-      
-#       # Frontend + CORS
-#       FRONTEND_URL: ${{ secrets.PROD_FRONTEND_URL }}
-#       ALLOWED_ORIGINS: ${{ secrets.PROD_ALLOWED_ORIGINS }}
-      
-      
-#       # Payment (LemonSqueezy)
-#       PAYMENT_SUCCESS_URL: ${{ secrets.PROD_PAYMENT_SUCCESS_URL }}
-#       PAYMENT_CANCEL_URL: ${{ secrets.PROD_PAYMENT_CANCEL_URL }}
-      
-#       # Admin
-#       SUPER_ADMIN_EMAIL: ${{ secrets.PROD_SUPER_ADMIN_EMAIL }}
-#       SUPER_ADMIN_PASSWORD: ${{ secrets.PROD_SUPER_ADMIN_PASSWORD }}
-      
-
-#     steps:
-#       - name: Checkout code
-#         uses: actions/checkout@v3
-
-#       - name: Deploy Docker to PRODUCTION
-#         run: |
-#           # Ensure correct working directory for PRODUCTION
-#           DEPLOY_DIR=~/REXT/production/backend
-#           mkdir -p $DEPLOY_DIR
-#           cp -r $GITHUB_WORKSPACE/* $DEPLOY_DIR/
-#           cd $DEPLOY_DIR
-
-#           echo "🚀 Starting PRODUCTION deployment..."
-#           # Create .env file dynamically from GitHub secrets
-#           cat > .env <<EOF
-#           IMAGE_TAG=latest
-#           ENVIRONMENT=Production
-#           DEBUG=true
-
-#           # Core API Keys
-#           OPENAI_API_KEY=${{ secrets.PROD_OPENAI_API_KEY }}
-#           LANGSMITH_API_KEY=${{ secrets.PROD_LANGSMITH_API_KEY }}
-#           PERPLEXITY_API_KEY: ${{ secrets.PROD_PERPLEXITY_API_KEY }}
-#           SERPER_API_KEY: ${{ secrets.PROD_SERPER_API_KEY }}
-#           # Database
-#           POSTGRES_URI_CUSTOM=${{ secrets.PROD_POSTGRES_URI_CUSTOM }}
-#           DATABASE_URI=${{ secrets.PROD_DATABASE_URI }}
-#           REDIS_URI=${{ secrets.PROD_REDIS_URI }}
-#           REDIS_URL=${{ secrets.PROD_REDIS_URL }}
-
-#           # Security
-#           SECRET_KEY=${{ secrets.PROD_SECRET_KEY }}
-#           REFRESH_SECRET_KEY=${{ secrets.PROD_REFRESH_SECRET_KEY }}
-#           ALGORITHM=${{ secrets.PROD_ALGORITHM }}
-
-#           # Frontend + CORS
-#           FRONTEND_URL=${{ secrets.PROD_FRONTEND_URL }}
-#           ALLOWED_ORIGINS=${{ secrets.PROD_ALLOWED_ORIGINS }}
-#           # Payment (LemonSqueezy)
-#           PAYMENT_SUCCESS_URL=${{ secrets.PROD_PAYMENT_SUCCESS_URL }}
-#           PAYMENT_CANCEL_URL=${{ secrets.PROD_PAYMENT_CANCEL_URL }}
+      - name: Build Docker image with LangGraph
+        # run: langgraph build -t  ${{ secrets.DOCKER_USERNAME }}/wrext:latest
+        run: langgraph build -t  ${{ secrets.DOCKER_USERNAME }}/wrext:dev
 
 
-#           # Admin
-#           SUPER_ADMIN_EMAIL=${{ secrets.PROD_SUPER_ADMIN_EMAIL }}
-#           SUPER_ADMIN_PASSWORD=${{ secrets.PROD_SUPER_ADMIN_PASSWORD }}
-#           EOF
-
-#           echo ".env file created ✅"
-
-
-#           # Log in to Docker
-#           echo "${{ secrets.DOCKER_PASSWORD }}" | docker login -u "${{ secrets.DOCKER_USERNAME }}" --password-stdin
-
-#           # Pull latest PRODUCTION image
-#           docker pull ${{ secrets.DOCKER_USERNAME }}/wrext:latest
-#           # Stop and remove old containers
-#           docker compose down || true
-
-#           # Start containers (Docker Compose will automatically load .env)
-#           docker compose up -d
-
-#           # Clean up old images
-#           docker image prune -f
-
-#           # Show running containers
-#           docker ps
-
-#           echo "✅ PRODUCTION Deployment completed successfully."
+      - name: Push Docker image
+        run: docker push ${{ secrets.DOCKER_USERNAME }}/wrext:dev

@@ -14,7 +14,7 @@ from src.flow.prompts.human.humanize import get_humanize_prompt
 logger = logging.getLogger(__name__)
 
 
-def humanize_content(state: REXT) -> dict:
+async def humanize_content(state: REXT) -> dict:
     """
     Humanizes AI-generated content to make it appear naturally written by a human.
     
