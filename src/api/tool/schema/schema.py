@@ -123,7 +123,27 @@ class IdeaGeneratorResponse(BaseModel):
 
 # Canonical Tag Schemas
 class CanonicalTagRequest(BaseModel):
-    url: Union[HttpUrl, str]
+    url: str = Field(..., min_length=1, description="The URL to generate a canonical tag for")
+
+    @field_validator('url')
+    @classmethod
+    def validate_url(cls, v):
+        if not v or not v.strip():
+            raise ValueError('URL cannot be empty')
+        
+        # Simple regex for URL validation (http/https mandatory)
+        url_pattern = re.compile(
+            r'^https?://'  # http:// or https://
+            r'(?:(?:[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?\.)+[A-Z]{2,6}\.?|'  # domain...
+            r'localhost|'  # localhost...
+            r'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})'  # ...or ip
+            r'(?::\d+)?'  # optional port
+            r'(?:/?|[/?]\S+)$', re.IGNORECASE)
+            
+        if not url_pattern.match(v):
+            raise ValueError('Invalid URL format. Must start with http:// or https://')
+            
+        return v
 
 class CanonicalTagResponse(BaseModel):
     canonical_tag: str
@@ -134,11 +154,47 @@ class CanonicalTagResponse(BaseModel):
 class HreflangEntry(BaseModel):
     language: Optional[str] = None
     region: Optional[str] = None
-    url: Union[HttpUrl, str]
+    url: str = Field(..., min_length=1, description="The URL for this language/region")
+
+    @field_validator('url')
+    @classmethod
+    def validate_url(cls, v):
+        if not v or not v.strip():
+            raise ValueError('URL cannot be empty')
+        
+        url_pattern = re.compile(
+            r'^https?://'
+            r'(?:(?:[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?\.)+[A-Z]{2,6}\.?|'
+            r'localhost|'
+            r'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})'
+            r'(?::\d+)?'
+            r'(?:/?|[/?]\S+)$', re.IGNORECASE)
+            
+        if not url_pattern.match(v):
+            raise ValueError('Invalid URL format. Must start with http:// or https://')
+        return v
 
 class HreflangRequest(BaseModel):
     language_region_urls: List[HreflangEntry]
-    default_url: Union[HttpUrl, str]
+    default_url: str = Field(..., min_length=1)
+
+    @field_validator('default_url')
+    @classmethod
+    def validate_default_url(cls, v):
+        if not v or not v.strip():
+            raise ValueError('Default URL cannot be empty')
+            
+        url_pattern = re.compile(
+            r'^https?://'
+            r'(?:(?:[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?\.)+[A-Z]{2,6}\.?|'
+            r'localhost|'
+            r'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})'
+            r'(?::\d+)?'
+            r'(?:/?|[/?]\S+)$', re.IGNORECASE)
+            
+        if not url_pattern.match(v):
+            raise ValueError('Invalid Default URL format. Must start with http:// or https://')
+        return v
     include_x_default: bool = True
     output_format: str = "html"
 
