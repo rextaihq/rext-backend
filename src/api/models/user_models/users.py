@@ -58,6 +58,7 @@ class Users(Base, SerializableMixin):
     discount_usages = relationship("DiscountUsage", back_populates="user", cascade="all, delete-orphan")
     refunds = relationship("Refund", back_populates="user", cascade="all, delete-orphan")
     notifications = relationship("Notification", back_populates="user", cascade="all, delete-orphan")
+    library_items = relationship("Library",back_populates="user",cascade="all, delete-orphan")
 
     # Admin invitation relationships
     sent_admin_invitations = relationship(

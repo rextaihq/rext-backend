@@ -41,5 +41,5 @@ class WorkspaceModel(Base, SerializableMixin):
     media = relationship("Media", back_populates="workspace", cascade="all, delete-orphan")
     notifications = relationship("Notification", back_populates="workspace", cascade="all, delete-orphan")
     integrations = relationship("WorkspaceIntegration", back_populates="workspace", cascade="all, delete-orphan")
-
+    library_items = relationship("Library",back_populates="workspace",cascade="all, delete-orphan")
     
