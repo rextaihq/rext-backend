@@ -20,6 +20,7 @@ def load_model():
     model = init_chat_model("gpt-4o-mini", model_provider="openai", api_key=settings.OPENAI_API_KEY)
     return model
 
+
 def topic_generation_model():
     """
     Initializes a chat model and enhances it to return structured output
@@ -68,4 +69,5 @@ def title_refine_model():
 def query_decomposer_model():
     llm  = load_model()
     return llm.with_structured_output(QueryDecomposer)
+
 
