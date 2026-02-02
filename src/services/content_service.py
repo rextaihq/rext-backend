@@ -90,6 +90,7 @@ class ContentService:
                 search_intent=data.seo_data.search_intent,
                 seo_score=data.seo_data.seo_score,
                 readability_score=data.seo_data.readability_score,
+                trust_score=data.seo_data.trust_score,
                 seo_details=data.seo_data.seo_details
             )
             self.db.add(seo_record)
@@ -151,7 +152,7 @@ class ContentService:
                 seo = ContentSEOData(content_id=content.id)
                 self.db.add(seo)
             
-            for field in ["meta_title", "meta_description", "focus_keyphrase", "keyphrase_density", "secondary_keywords", "search_intent", "seo_score", "readability_score", "seo_details"]:
+            for field in ["meta_title", "meta_description", "focus_keyphrase", "keyphrase_density", "secondary_keywords", "search_intent", "seo_score", "readability_score", "trust_score", "seo_details"]:
                 val = getattr(data.seo_data, field, None)
                 if val is not None:
                     setattr(seo, field, val)
