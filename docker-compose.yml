@@ -17,16 +17,18 @@ services:
 
     # Redis for LangGraph
     langgraph-redis:
-        image: redis:6
+        image: redis:7-alpine
+        command: redis-server --maxmemory 256mb --maxmemory-policy noeviction
         healthcheck:
-            test: redis-cli ping
+            test: [ "CMD", "redis-cli", "ping" ]
             interval: 5s
             timeout: 1s
             retries: 5
+        restart: unless-stopped
         deploy:
             resources:
                 limits:
-                    memory: 2G
+                    memory: 512M
         networks:
             - rext-network
 
@@ -39,6 +41,8 @@ services:
             POSTGRES_DB: rext
         volumes:
             - langgraph-data:/var/lib/postgresql/data
+            - ./postgresql.conf:/etc/postgresql/postgresql.conf:ro
+        command: postgres -c config_file=/etc/postgresql/postgresql.conf
         deploy:
             resources:
                 limits:
@@ -87,8 +91,8 @@ services:
             POSTGRES_URI_CUSTOM: postgresql://exec:${POSTGRES_PASSWORD:-rextserver}@postgres:5432/rext
             DATABASE_URI: postgresql://exec:${POSTGRES_PASSWORD:-rextserver}@postgres:5432/rext
             REDIS_URI: ${REDIS_URI:-redis://langgraph-redis:6379}
-            REDIS_URL: ${REDIS_URL:-redis://langgraph-redis:6379}
-            CACHE_URL: ${CACHE_URL:-redis://langgraph-redis:6379}
+            REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+            CACHE_URL: ${CACHE_URL:-redis://redis:6379}
 
             # Security
             SECRET_KEY: ${SECRET_KEY}
@@ -152,7 +156,7 @@ services:
             # Monitoring
             SENTRY_DSN: ${SENTRY_DSN}
             SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-production}
-            CACHE_ENABLED: ${CACHE_ENABLED:-false}
+            CACHE_ENABLED: ${CACHE_ENABLED:-true}
 
             # Feature Flags
             FF_PROFILE_IMPORTS: ${FF_PROFILE_IMPORTS:-false}
