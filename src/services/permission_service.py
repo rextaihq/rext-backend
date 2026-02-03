@@ -33,14 +33,27 @@ class PermissionService:
         user_id: UUID,
         resource: Optional[str] = None,
         include_roles: bool = False,
+        page: int = 1,
+        per_page: int = 50,
     ) -> Dict[str, Any]:
         await self._ensure_user_can(user_id, "permission.read")
 
-        query = select(Permission)
+        base_query = select(Permission)
         if resource:
-            query = query.where(Permission.resource == resource)
+            base_query = base_query.where(Permission.resource == resource)
 
-        result = await self.db.execute(query.order_by(Permission.resource, Permission.action))
+        # Get total count
+        count_query = select(func.count()).select_from(base_query.subquery())
+        count_result = await self.db.execute(count_query)
+        total = count_result.scalar() or 0
+
+        # Apply pagination
+        offset = (page - 1) * per_page
+        result = await self.db.execute(
+            base_query.order_by(Permission.resource, Permission.action)
+            .offset(offset)
+            .limit(per_page)
+        )
         permissions = result.scalars().all()
 
         if include_roles:
@@ -48,8 +61,21 @@ class PermissionService:
         else:
             permissions_data = [permission.to_dict() for permission in permissions]
 
+        total_pages = (total + per_page - 1) // per_page if total > 0 else 0
+
         return {
-            "data": {"permissions": permissions_data, "count": len(permissions_data)},
+            "data": {
+                "permissions": permissions_data,
+                "count": len(permissions_data),
+                "pagination": {
+                    "page": page,
+                    "per_page": per_page,
+                    "total": total,
+                    "total_pages": total_pages,
+                    "has_next": page < total_pages,
+                    "has_prev": page > 1,
+                },
+            },
             "message": f"Retrieved {len(permissions_data)} permissions",
         }
 

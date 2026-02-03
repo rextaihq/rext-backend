@@ -550,23 +550,47 @@ class RoleService:
 
     async def get_role_hierarchy(
         self,
-        workspace_id: Optional[UUID] = None
-    ) -> List[Role]:
+        workspace_id: Optional[UUID] = None,
+        page: int = 1,
+        per_page: int = 50,
+    ) -> Dict[str, Any]:
         """
-        Get roles ordered by hierarchy level (descending).
+        Get roles ordered by hierarchy level (descending) with pagination.
 
         Args:
             workspace_id: Optional workspace filter (future use)
+            page: Page number (1-indexed)
+            per_page: Items per page
 
         Returns:
-            List of Role objects
+            Dict with roles list and pagination metadata
         """
-        result = await self.db.execute(
-            select(Role).order_by(Role.hierarchy_level.desc())
-        )
-        roles = result.scalars().all()
+        base_query = select(Role).order_by(Role.hierarchy_level.desc())
 
-        return list(roles)
+        # Get total count
+        count_result = await self.db.execute(
+            select(func.count()).select_from(Role)
+        )
+        total = count_result.scalar() or 0
+
+        # Apply pagination
+        offset = (page - 1) * per_page
+        result = await self.db.execute(base_query.offset(offset).limit(per_page))
+        roles = list(result.scalars().all())
+
+        total_pages = (total + per_page - 1) // per_page if total > 0 else 0
+
+        return {
+            "roles": roles,
+            "pagination": {
+                "page": page,
+                "per_page": per_page,
+                "total": total,
+                "total_pages": total_pages,
+                "has_next": page < total_pages,
+                "has_prev": page > 1,
+            },
+        }
 
     async def get_user_roles(
         self,
