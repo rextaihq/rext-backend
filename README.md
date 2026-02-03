@@ -2,6 +2,9 @@
 
 Welcome to the **Full Blog Automation System**, a powerful notebook that automates the creation of high-quality blog posts on trending **WordPress** topics — with a human-in-the-loop for quality control.
 
+#10 Essential Email Marketing Best Practices for 2023
+#blog
+
 > 🧠 AI-Powered | 🤖 Fully Automated | 👤 Human Feedback | 📈 SEO-Ready
 
 ---
