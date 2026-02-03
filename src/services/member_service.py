@@ -322,18 +322,18 @@ class MemberService(InvitationService):
         Raises:
             ResourceNotFoundException: If member not found
         """
-        # Clear any existing default
-        result = await self.db.execute(
-            select(WorkspaceMembers).where(
+        # Bulk-clear any existing default
+        from sqlalchemy import update
+        await self.db.execute(
+            update(WorkspaceMembers)
+            .where(
                 and_(
                     WorkspaceMembers.user_id == user_id,
                     WorkspaceMembers.is_default == True
                 )
             )
+            .values(is_default=False)
         )
-        existing_defaults = result.scalars().all()
-        for default_member in existing_defaults:
-            default_member.is_default = False
 
         # Set new default
         result = await self.db.execute(

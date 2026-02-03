@@ -1,12 +1,9 @@
 import httpx
 import logging
+import os
 from typing import Dict, Any, List
 from src.flow.states.rext import REXT, SERPEngineState
 from src.flow.states.countries import VALID_COUNTRY_CODES
-from dotenv import load_dotenv
-import os
-
-load_dotenv()
 
 logger = logging.getLogger(__name__)
 

@@ -1,12 +1,9 @@
 import logging
+import os
 from typing import Optional, Union
 from crawl4ai.markdown_generation_strategy import DefaultMarkdownGenerator
 from crawl4ai import LinkPreviewConfig
 from crawl4ai.content_filter_strategy import BM25ContentFilter
-from dotenv import load_dotenv
-import os
-
-load_dotenv()
 
 logger = logging.getLogger(__name__)
 

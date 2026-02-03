@@ -20,19 +20,11 @@ def create_seo_engine():
 
     graph = StateGraph(REXT)
 
-    def debug_node(func, node_name):
-        def wrapped(state):
-            result = func(state)
-            print(f"\n{'='*20} NODE: {node_name} {'='*20}")
-            print('='*50 + "\n")
-            return result
-        return wrapped
-
-    graph.add_node("seo_entry", debug_node(lambda state: state, "seo_entry"))
+    graph.add_node("seo_entry", lambda state: state)
 
     graph.add_node(
     "compute_keyword_difficulty",
-    debug_node(compute_keyword_difficulty, "compute_keyword_difficulty")
+    compute_keyword_difficulty
     )
 
     # Add Nodes

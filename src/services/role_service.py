@@ -311,13 +311,11 @@ class RoleService:
                 extra={"role_id": str(role_id), "reassign_to": str(reassign_to)}
             )
 
-        # Delete role permissions
-        role_permissions_result = await self.db.execute(
-            select(RolePermission).where(RolePermission.role_id == role_id)
+        # Bulk-delete role permissions
+        from sqlalchemy import delete
+        await self.db.execute(
+            delete(RolePermission).where(RolePermission.role_id == role_id)
         )
-        role_permissions = role_permissions_result.scalars().all()
-        for rp in role_permissions:
-            await self.db.delete(rp)
 
         # Delete the role
         role_name = role.display_name
@@ -514,24 +512,24 @@ class RoleService:
         """
         role = await self.get_role_by_id(role_id)
 
-        # Validate all permissions exist
-        for perm_id in permission_ids:
+        # Batch-validate all permissions exist in a single query
+        if permission_ids:
             perm_result = await self.db.execute(
-                select(Permission).where(Permission.id == perm_id)
+                select(Permission.id).where(Permission.id.in_(permission_ids))
             )
-            if not perm_result.scalar_one_or_none():
+            found_ids = {row[0] for row in perm_result.all()}
+            missing_ids = set(permission_ids) - found_ids
+            if missing_ids:
                 raise ResourceNotFoundException(
                     resource_type="Permission",
-                    resource_id=str(perm_id)
+                    resource_id=str(next(iter(missing_ids)))
                 )
 
-        # Remove existing permissions
-        existing_result = await self.db.execute(
-            select(RolePermission).where(RolePermission.role_id == role_id)
+        # Bulk-delete existing permissions
+        from sqlalchemy import delete
+        await self.db.execute(
+            delete(RolePermission).where(RolePermission.role_id == role_id)
         )
-        existing_perms = existing_result.scalars().all()
-        for rp in existing_perms:
-            await self.db.delete(rp)
 
         # Add new permissions
         for perm_id in permission_ids:
