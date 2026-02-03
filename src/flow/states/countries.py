@@ -19,7 +19,7 @@ SUPPORTED_COUNTRIES = Literal[
     "sa", "sn", "rs", "sc", "sl", "sg", "sx", "sk", "si", "sb", "so", "za", "kr",
     "ss", "es", "lk", "sd", "sr", "se", "ch", "sy", "tw", "tj", "tz", "th", "tl",
     "tg", "tk", "to", "tt", "tn", "tr", "tm", "tc", "tv", "ug", "ua", "ae", "uk",
-    "us", "uy", "uz", "vu", "ve", "vn", "wf", "ye", "zm", "zw"
+    "us", "uy", "uz", "vu", "ve", "vn", "wf", "ye", "zm", "zw", "global"
 ]
 
 # Set for runtime validation
