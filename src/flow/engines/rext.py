@@ -3,7 +3,7 @@ from langgraph.graph import StateGraph, START, END
 from src.flow.states.rext import REXT
 logger = logging.getLogger(__name__)
 
-def create_rext_engine(checkpointer=None):
+def create_rext_engine():
     from src.flow.engines.serp.serp_engine import create_serp_engine
     from src.flow.engines.seo.seo_engine import create_seo_engine
     from src.flow.engines.content.content_engine import create_content_engine
@@ -19,5 +19,5 @@ def create_rext_engine(checkpointer=None):
     flow.add_edge("seo_engine", "content_engine")
     flow.add_edge("content_engine", END)
 
-    app = flow.compile(checkpointer=checkpointer)
+    app = flow.compile()
     return app

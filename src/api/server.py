@@ -20,7 +20,6 @@ from src.api.middleware.security import SecurityHeadersMiddleware
 from src.api.middleware.rate_limiter import RateLimiterMiddleware
 from src.config.payment_config import payment_settings
 from src.tasks.scheduled_tasks import start_scheduled_tasks, shutdown_scheduled_tasks
-from src.flow.flow import initialize_workflow, shutdown_workflow
 from src.api.cache.redis_client import cache
 from src.api.config import settings
 from src.utils.response_utils import success
@@ -78,13 +77,6 @@ async def lifespan(app):
             logger.critical(f"🚨 Invalid production config: {e}")
             raise
 
-    # --- Initialize LangGraph workflow ---
-    try:
-        await initialize_workflow(settings.POSTGRES_URI_CUSTOM)
-        logger.info("✅ LangGraph workflow initialized")
-    except Exception as e:
-        logger.warning(f"⚠️ Failed to initialize LangGraph workflow: {e}")
-
     # --- Start background scheduled tasks ---
     try:
         start_scheduled_tasks()
@@ -104,12 +96,6 @@ async def lifespan(app):
         logger.info("✅ Scheduled tasks stopped")
     except Exception as e:
         logger.warning(f"⚠️ Failed to stop scheduled tasks: {e}")
-
-    try:
-        await shutdown_workflow()
-        logger.info("✅ LangGraph workflow shut down")
-    except Exception as e:
-        logger.warning(f"⚠️ Failed to shut down LangGraph workflow: {e}")
 
     try:
         await cache.disconnect()
