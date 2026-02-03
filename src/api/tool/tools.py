@@ -1,5 +1,5 @@
 import re
-import requests
+import httpx
 import textstat
 from typing import List, Dict, Any, Optional
 from langchain_core.prompts import PromptTemplate
@@ -68,7 +68,7 @@ def count_text_metrics(text: str):
 
 
 # Meta Description Generator Tool
-def generate_meta_description(page_title: str, target_keywords: List[str]) -> str:
+async def generate_meta_description(page_title: str, target_keywords: List[str]) -> str:
 
     # Join keywords for the prompt
     keywords_str = ", ".join(target_keywords)
@@ -80,7 +80,7 @@ def generate_meta_description(page_title: str, target_keywords: List[str]) -> st
     chain = meta_prompt | llm | StrOutputParser()
 
     # Generate the meta description
-    result = chain.invoke({
+    result = await chain.ainvoke({
         "page_title": page_title,
         "keywords": keywords_str
     })
@@ -108,7 +108,7 @@ def validate_meta_description(meta_description: str) -> MetaDescriptionValidatio
 
 
 # Title Tag Generator Tool
-def generate_title_tags(keyword: str, topic: str, brand: str, tone: str) -> List[str]:
+async def generate_title_tags(keyword: str, topic: str, brand: str, tone: str) -> List[str]:
     """
     Generate 5 SEO-friendly title tags and return them as a clean list.
     """
@@ -122,8 +122,8 @@ def generate_title_tags(keyword: str, topic: str, brand: str, tone: str) -> List
     )
     
     # Get the response from the LLM
-    response = llm.invoke(prompt)
-    
+    response = await llm.ainvoke(prompt)
+
     raw_content = response.content if hasattr(response, 'content') else str(response)
     titles_list = [
         line.strip("- ").strip() 
@@ -207,7 +207,7 @@ def normalize_url(url: str) -> str:
     return urlunparse((scheme, netloc, path, "", query, ""))
 
 
-def generate_canonical_tag(url: str):
+async def generate_canonical_tag(url: str):
     """
     AI-powered Canonical Tag Generator logic.
     """
@@ -218,7 +218,7 @@ def generate_canonical_tag(url: str):
     # Format the prompt
     formatted_prompt = canonical_prompt.format(url=url)
 
-    response = model.invoke([
+    response = await model.ainvoke([
         SystemMessage(content="You generate SEO ONLY valid HTML canonical tags."),
         HumanMessage(content=formatted_prompt)
     ])
@@ -241,7 +241,7 @@ def generate_canonical_tag(url: str):
 # Hreflang Tag Tool
 # =========================
 
-def generate_hreflang_tags(request):
+async def generate_hreflang_tags(request):
     """
     AI-powered Google-compliant Hreflang Tag Generator logic.
     Expects a HreflangRequest object (duck-typed).
@@ -289,7 +289,7 @@ def generate_hreflang_tags(request):
         format_instruction=format_instruction
     )
 
-    response = model.invoke([
+    response = await model.ainvoke([
         SystemMessage(content=system_content.strip()),
         HumanMessage(content=user_content.strip())
     ])
@@ -315,14 +315,12 @@ def generate_hreflang_tags(request):
 # Broken Link Checker Tool
 # =========================
 
-def broken_link_checker(url):
+async def broken_link_checker(url):
     try:
-        response = requests.get(url, timeout=2)
-        if response.status_code == 200:
-            return True
-        else:
-            return False
-    except requests.exceptions.RequestException:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(url, timeout=5, follow_redirects=True)
+            return response.status_code == 200
+    except httpx.HTTPError:
         return False
 
 
@@ -418,7 +416,7 @@ def grammar_checker(text: str):
         tool.close()
 
 #Ai Content idea Generater tool
-def generate_content_ideas(data: IdeaGeneratorRequest) -> IdeaGeneratorResponse:
+async def generate_content_ideas(data: IdeaGeneratorRequest) -> IdeaGeneratorResponse:
     """Generate high-quality content ideas using structured LLM output."""
     llm = _get_model()
     structured_llm = llm.with_structured_output(IdeaGeneratorResponse)
@@ -427,20 +425,20 @@ def generate_content_ideas(data: IdeaGeneratorRequest) -> IdeaGeneratorResponse:
         topic=data.topic,
         content_type=data.content_type
     )
-    return structured_llm.invoke(prompt)
+    return await structured_llm.ainvoke(prompt)
 
 # Hook Generater Tool
-def generate_hooks(data: HookGeneratorRequest) -> HookGeneratorResponse:
+async def generate_hooks(data: HookGeneratorRequest) -> HookGeneratorResponse:
     """Generate catchy hooks using LLM."""
     llm = _get_model()
-    
+
     formatted_prompt = hook_prompt.format(
         number_of_variations=data.number_of_variations,
         topic_description=data.topic_description,
         goal_of_content=data.goal_of_content
     )
-    
-    response = llm.invoke(formatted_prompt)
+
+    response = await llm.ainvoke(formatted_prompt)
     
     raw_content = response.content if hasattr(response, 'content') else str(response)
     hooks = [
@@ -455,18 +453,18 @@ def generate_hooks(data: HookGeneratorRequest) -> HookGeneratorResponse:
     )
 
 # Blog Topic Generater Tool
-def generate_seo_blog_titles(data: SEOBlogTitleRequest) -> SEOBlogTitleResponse:
+async def generate_seo_blog_titles(data: SEOBlogTitleRequest) -> SEOBlogTitleResponse:
     """Generate SEO-friendly blog titles using LLM."""
     llm = _get_model()
-    
+
     formatted_prompt = seo_blog_title_prompt.format(
         number_of_topics=data.number_of_topics,
         keyword=data.keyword,
         min_words=data.min_words,
         max_words=data.max_words
     )
-    
-    response = llm.invoke(formatted_prompt)
+
+    response = await llm.ainvoke(formatted_prompt)
     
     raw_content = response.content if hasattr(response, 'content') else str(response)
     titles = [
@@ -480,13 +478,13 @@ def generate_seo_blog_titles(data: SEOBlogTitleRequest) -> SEOBlogTitleResponse:
         blog_titles=titles[:data.number_of_topics]
     )
 
-def generate_questions(text: str) -> List[str]:
+async def generate_questions(text: str) -> List[str]:
     """Generate engaging questions from text using LLM."""
     llm = _get_model()
-    
+
     formatted_prompt = question_prompt.format(text=text)
-    
-    response = llm.invoke(formatted_prompt)
+
+    response = await llm.ainvoke(formatted_prompt)
     
     raw_content = response.content if hasattr(response, 'content') else str(response)
     questions = [
