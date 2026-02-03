@@ -19,6 +19,8 @@ from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_excep
     reraise=True
 )
 async def _do_fetch_serp(client: httpx.AsyncClient, query: str, country: str, api_key: str) -> Dict[str, Any]:
+    if country == "global":
+        country = ""
     payload = {"q": query, "gl": country}
     headers = {
         "X-API-KEY": api_key,
