@@ -84,11 +84,11 @@ services:
             replicas: 1 # Set to 1 to avoid 'container name must be unique' error in Coolify
             resources:
                 limits:
-                    cpus: '0.75'
-                    memory: 1.5G
+                    cpus: '2.0'
+                    memory: 2.5G
                 reservations:
-                    cpus: '0.25'
-                    memory: 1G
+                    cpus: '0.5'
+                    memory: 1.5G
         expose:
             - "2024"
 
