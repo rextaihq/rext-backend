@@ -172,3 +172,17 @@ class SEOBlogTitleRequest(BaseModel):
 class SEOBlogTitleResponse(BaseModel):
     keyword: str
     blog_titles: List[str]
+
+# Question Generator Schemas
+class QuestionRequest(BaseModel):
+    text: str = Field(..., min_length=1)
+
+class QuestionResponse(BaseModel):
+    questions: List[str]
+
+# Tagline Generator Schemas
+class TagLineRequest(BaseModel):
+    text: str = Field(..., min_length=1)
+
+class TagLineResponse(BaseModel):
+    taglines: List[str]

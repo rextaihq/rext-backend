@@ -23,6 +23,7 @@ from src.api.tool.prompts.canonical_prompt import canonical_prompt
 from src.api.tool.prompts.hreflang_prompt import hreflang_system_prompt, hreflang_user_prompt
 from src.api.tool.prompts.hook_prompt import hook_prompt
 from src.api.tool.prompts.seo_blog_title_prompt import seo_blog_title_prompt
+from src.api.tool.prompts.question_prompt import question_prompt
 
 def _get_model():
     """Internal helper to consistently load the model."""
@@ -94,16 +95,16 @@ def generate_meta_description(page_title: str, target_keywords: List[str]) -> st
     return meta_description
 
 
-# def validate_meta_description(meta_description: str) -> MetaDescriptionValidation:
+def validate_meta_description(meta_description: str) -> MetaDescriptionValidation:
 
-#     length = len(meta_description)
+    length = len(meta_description)
 
-#     return MetaDescriptionValidation(
-#         length=length,
-#         is_optimal_length=120 <= length <= 160,
-#         character_count=f"{length}/160",
-#         warnings=[] if 120 <= length <= 160 else ["Length not in optimal range (120-160 characters)"]
-#     )
+    return MetaDescriptionValidation(
+        length=length,
+        is_optimal_length=120 <= length <= 160,
+        character_count=f"{length}/160",
+        warnings=[] if 120 <= length <= 160 else ["Length not in optimal range (120-160 characters)"]
+    )
 
 
 # Title Tag Generator Tool
@@ -478,3 +479,20 @@ def generate_seo_blog_titles(data: SEOBlogTitleRequest) -> SEOBlogTitleResponse:
         keyword=data.keyword,
         blog_titles=titles[:data.number_of_topics]
     )
+
+def generate_questions(text: str) -> List[str]:
+    """Generate engaging questions from text using LLM."""
+    llm = _get_model()
+    
+    formatted_prompt = question_prompt.format(text=text)
+    
+    response = llm.invoke(formatted_prompt)
+    
+    raw_content = response.content if hasattr(response, 'content') else str(response)
+    questions = [
+        line.strip("- ").strip() 
+        for line in raw_content.split("\n") 
+        if line.strip()
+    ]
+    
+    return questions

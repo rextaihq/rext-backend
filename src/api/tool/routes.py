@@ -16,7 +16,8 @@ from src.api.tool.tools import (
     generate_robots_txt,
     grammar_checker,
     generate_hooks,
-    generate_seo_blog_titles
+    generate_seo_blog_titles,
+    generate_questions
 )
 
 from src.api.tool.schema.schema import (
@@ -44,11 +45,14 @@ from src.api.tool.schema.schema import (
     HookGeneratorRequest,
     HookGeneratorResponse,
     SEOBlogTitleRequest,
-    SEOBlogTitleResponse
+    SEOBlogTitleResponse,
+    QuestionRequest,
+    QuestionResponse,
+    TagLineRequest,
+    TagLineResponse
 )
 
-from src.api.tool.schema.schema import QuestionRequest, QuestionResponse,TagLineRequest,TagLineResponse,MetaDescriptionRequest,MetaDescriptionResponse
-from src.api.tool.tools import generate_taglines
+# from src.api.tool.tools import generate_taglines
     
 # from src.api.tool.schema.schema import (
 #     QuestionRequest, 
@@ -193,8 +197,8 @@ async def canonical_tag_generator(request: CanonicalTagRequest):
 @router.post("/question-generator", response_model=QuestionResponse)
 async def generate_questions_route(request: QuestionRequest):
     """
-    AI-powered Google-compliant Hreflang Tag Generator.
-    URL: POST /tools/hreflang-tag-generator
+    AI-powered Question Generator.
+    URL: POST /tools/question-generator
     """
     try:
         if not request.text.strip():
