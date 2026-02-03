@@ -41,8 +41,29 @@ services:
             POSTGRES_DB: rext
         volumes:
             - langgraph-data:/var/lib/postgresql/data
-            - ./postgresql.conf:/etc/postgresql/postgresql.conf:ro
-        command: postgres -c config_file=/etc/postgresql/postgresql.conf
+        command: >
+            postgres
+            -c shared_buffers=2GB
+            -c effective_cache_size=6GB
+            -c maintenance_work_mem=512MB
+            -c work_mem=10MB
+            -c wal_buffers=64MB
+            -c min_wal_size=1GB
+            -c max_wal_size=4GB
+            -c checkpoint_completion_target=0.9
+            -c random_page_cost=1.1
+            -c effective_io_concurrency=200
+            -c default_statistics_target=100
+            -c max_worker_processes=4
+            -c max_parallel_workers_per_gather=2
+            -c max_parallel_workers=4
+            -c max_parallel_maintenance_workers=2
+            -c huge_pages=off
+            -c jit=off
+            -c statement_timeout=60000
+            -c idle_in_transaction_session_timeout=300000
+            -c log_min_duration_statement=1000
+            -c shared_preload_libraries=pg_stat_statements
         deploy:
             resources:
                 limits:
