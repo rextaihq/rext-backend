@@ -18,7 +18,7 @@ Does NOT:
 
 from typing import List, Dict, Any, Union
 from uuid import UUID
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -120,7 +120,7 @@ class SessionService:
                 jti=session.jti,
                 token_type="access",
                 user_id=user_id,
-                revoked_at=datetime.utcnow(),
+                revoked_at=datetime.now(timezone.utc),
                 expires_at=self._normalize_expiry(session.expires_at),
                 reason="session_revoked"
             )
@@ -128,7 +128,7 @@ class SessionService:
 
         # Deactivate session
         session.is_active = False
-        session.revoked_at = datetime.utcnow()
+        session.revoked_at = datetime.now(timezone.utc)
 
         await self.db.flush()
 
@@ -179,7 +179,7 @@ class SessionService:
         sessions = result.scalars().all()
 
         revoked_count = 0
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
 
         for session in sessions:
             # Blacklist token
@@ -215,4 +215,4 @@ class SessionService:
             return expires_at
         if isinstance(expires_at, (int, float)):
             return datetime.utcfromtimestamp(expires_at)
-        return datetime.utcnow()
+        return datetime.now(timezone.utc)
