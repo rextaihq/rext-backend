@@ -20,7 +20,7 @@ Does NOT:
 
 from typing import List, Dict, Any, Optional
 from uuid import UUID
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta,timezone
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_
@@ -90,7 +90,7 @@ class SecurityService:
 
         # Format response
         users_data = []
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
 
         for user in users:
             is_locked = bool(user.locked_until and user.locked_until > now)
@@ -134,7 +134,7 @@ class SecurityService:
         query = select(Users).where(Users.locked_until.isnot(None))
 
         if not include_expired:
-            query = query.where(Users.locked_until > datetime.utcnow())
+            query = query.where(Users.locked_until > datetime.now(timezone.utc))
 
         query = query.order_by(Users.locked_until.desc())
 
@@ -150,7 +150,7 @@ class SecurityService:
 
         # Format response
         locked_accounts = []
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
 
         for user in users:
             if user.locked_until:
@@ -196,7 +196,7 @@ class SecurityService:
         user = await self._get_user_or_404(user_id)
 
         # Check if account is actually locked
-        if not user.locked_until or user.locked_until <= datetime.utcnow():
+        if not user.locked_until or user.locked_until <= datetime.now(timezone.utc):
             raise RextValidationException(
                 message="Account is not currently locked",
                 field_errors={"user_id": ["Account not locked"]}
@@ -205,7 +205,7 @@ class SecurityService:
         # Unlock account
         user.locked_until = None
         user.failed_login_attempts = 0
-        user.updated_at = datetime.utcnow()
+        user.updated_at = datetime.now(timezone.utc)
 
         await self.db.flush()
         await self.db.refresh(user)
@@ -237,7 +237,7 @@ class SecurityService:
 
         # Reset counter
         user.failed_login_attempts = 0
-        user.updated_at = datetime.utcnow()
+        user.updated_at = datetime.now(timezone.utc)
 
         await self.db.flush()
         await self.db.refresh(user)
@@ -537,7 +537,7 @@ class SecurityService:
         """
         from src.api.models.user_models.user_sessions import UserSession
 
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         query = select(func.count(UserSession.id)).where(
             and_(
                 UserSession.user_id == user_id,
@@ -563,7 +563,7 @@ class SecurityService:
         Returns:
             Count of locked accounts
         """
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         result = await self.db.execute(
             select(func.count(Users.id)).where(
                 Users.locked_until.isnot(None),

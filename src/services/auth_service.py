@@ -259,7 +259,7 @@ class AuthService:
 
         # Successful login - reset failed attempts
         db_user.failed_login_attempts = 0
-        db_user.last_login_at = datetime.utcnow()
+        db_user.last_login_at = datetime.now(timezone.utc)
         db_user.login_count = (db_user.login_count or 0) + 1
         await self.db.flush()
 

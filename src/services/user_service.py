@@ -140,7 +140,7 @@ class UserService:
         if "timezone" in kwargs:
             user.timezone = kwargs["timezone"]
 
-        user.updated_at = datetime.utcnow()
+        user.updated_at = datetime.now(timezone.utc)
 
         logger.info(
             f"User profile updated: {user_id}",
@@ -194,8 +194,8 @@ class UserService:
         # Hash new password
         new_hash = bcrypt.hashpw(new_password.encode('utf-8'), bcrypt.gensalt())
         user.password_hash = new_hash.decode('utf-8')
-        user.password_changed_at = datetime.utcnow()
-        user.updated_at = datetime.utcnow()
+        user.password_changed_at = datetime.now(timezone.utc)
+        user.updated_at = datetime.now(timezone.utc)
 
         logger.info(
             f"User password changed: {user_id}",
@@ -225,8 +225,8 @@ class UserService:
         user = await self.get_user_by_id(user_id)
 
         user.status = "inactive"
-        user.deactivated_at = datetime.utcnow()
-        user.updated_at = datetime.utcnow()
+        user.deactivated_at = datetime.now(timezone.utc)
+        user.updated_at = datetime.now(timezone.utc)
 
         logger.info(
             f"User account deactivated: {user_id}",
@@ -257,7 +257,7 @@ class UserService:
 
         user.status = "active"
         user.deactivated_at = None
-        user.updated_at = datetime.utcnow()
+        user.updated_at = datetime.now(timezone.utc)
 
         logger.info(
             f"User account reactivated: {user_id}",
@@ -293,7 +293,7 @@ class UserService:
         """
         user = await self.get_user_by_id(user_id)
 
-        user.last_login_at = datetime.utcnow()
+        user.last_login_at = datetime.now(timezone.utc)
         user.login_count = (user.login_count or 0) + 1
         user.failed_login_attempts = 0  # Reset failed attempts on successful login
 
@@ -362,7 +362,7 @@ class UserService:
         if user.deleted_at:
             raise RextValidationException("User already deleted")
 
-        user.deleted_at = datetime.utcnow()
+        user.deleted_at = datetime.now(timezone.utc)
 
         logger.info(f"User {user_id} soft deleted")
         return user
@@ -455,7 +455,7 @@ class UserService:
         if timezone is not None:
             user.timezone = timezone
 
-        user.updated_at = datetime.utcnow()
+        user.updated_at = datetime.now(timezone.utc)
 
         logger.info(f"User {user_id} updated successfully")
         return user
@@ -515,7 +515,7 @@ class UserService:
         # Update password
         user.password_hash = hash_password(new_password)
         user.reset_token = None
-        user.password_changed_at = datetime.utcnow()
+        user.password_changed_at = datetime.now(timezone.utc)
 
         logger.info(f"Password reset successfully for user {user.id}")
         return user

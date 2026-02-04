@@ -21,7 +21,7 @@ Each handler:
 """
 
 from typing import Dict, Any
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta,timezone
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -216,7 +216,7 @@ async def handle_subscription_created(
         existing_sub.lemonsqueezy_customer_id = lemonsqueezy_customer_id
         existing_sub.lemonsqueezy_variant_id = lemonsqueezy_variant_id
         existing_sub.trial_end_date = datetime.fromisoformat(trial_ends_at).replace(tzinfo=None) if trial_ends_at else None
-        existing_sub.updated_at = datetime.utcnow()
+        existing_sub.updated_at = datetime.now(timezone.utc)
         await db.flush()
         subscription = existing_sub
     else:
@@ -241,9 +241,9 @@ async def handle_subscription_created(
                 }
             )
             old_sub.status = SubscriptionStatus.CANCELLED
-            old_sub.cancelled_at = datetime.utcnow()
-            old_sub.end_date = datetime.utcnow()
-            old_sub.updated_at = datetime.utcnow()
+            old_sub.cancelled_at = datetime.now(timezone.utc)
+            old_sub.end_date = datetime.now(timezone.utc)
+            old_sub.updated_at = datetime.now(timezone.utc)
         
         if existing_active_subs:
             await db.flush()
@@ -253,7 +253,7 @@ async def handle_subscription_created(
             )
         
         # Create new subscription
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         trial_end_date = datetime.fromisoformat(trial_ends_at).replace(tzinfo=None) if trial_ends_at else None
 
         subscription = UserSubscription(
@@ -312,7 +312,7 @@ async def handle_subscription_created(
             discount_amount_type="fixed",  # Will be updated based on actual data
             lemonsqueezy_discount_id=first_subscription_item.get("discount_id"),
             order_id=attributes.get("first_order_id"),
-            applied_at=datetime.utcnow(),
+            applied_at=datetime.now(timezone.utc),
             usage_metadata={
                 "subscription_id": lemonsqueezy_subscription_id,
                 "variant_id": lemonsqueezy_variant_id,
@@ -479,15 +479,15 @@ async def handle_subscription_updated(
                 }
             )
             old_sub.status = SubscriptionStatus.CANCELLED
-            old_sub.cancelled_at = datetime.utcnow()
-            old_sub.end_date = datetime.utcnow()
-            old_sub.updated_at = datetime.utcnow()
+            old_sub.cancelled_at = datetime.now(timezone.utc)
+            old_sub.end_date = datetime.now(timezone.utc)
+            old_sub.updated_at = datetime.now(timezone.utc)
         
         if existing_active_subs:
             await db.flush()
 
         # Create subscription
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         trial_end_date = datetime.fromisoformat(trial_ends_at).replace(tzinfo=None) if trial_ends_at else None
 
         subscription = UserSubscription(
@@ -616,8 +616,8 @@ async def handle_subscription_updated(
     subscription.renews_at = datetime.fromisoformat(renews_at).replace(tzinfo=None) if renews_at else None
     subscription.end_date = datetime.fromisoformat(ends_at).replace(tzinfo=None) if ends_at else None
     subscription.trial_end_date = datetime.fromisoformat(trial_ends_at).replace(tzinfo=None) if trial_ends_at else None
-    subscription.cancelled_at = datetime.utcnow() if cancelled and not subscription.cancelled_at else subscription.cancelled_at
-    subscription.updated_at = datetime.utcnow()
+    subscription.cancelled_at = datetime.now(timezone.utc) if cancelled and not subscription.cancelled_at else subscription.cancelled_at
+    subscription.updated_at = datetime.now(timezone.utc)
 
     await db.flush()
 
@@ -676,9 +676,9 @@ async def handle_subscription_cancelled(
 
     # Update subscription
     subscription.status = SubscriptionStatus.CANCELLED
-    subscription.cancelled_at = datetime.utcnow()
+    subscription.cancelled_at = datetime.now(timezone.utc)
     subscription.end_date = datetime.fromisoformat(ends_at).replace(tzinfo=None) if ends_at else None
-    subscription.updated_at = datetime.utcnow()
+    subscription.updated_at = datetime.now(timezone.utc)
 
     await db.flush()
 
@@ -731,9 +731,8 @@ async def handle_subscription_expired(
 
     # Update subscription
     subscription.status = SubscriptionStatus.EXPIRED
-    subscription.end_date = datetime.utcnow()
-    subscription.updated_at = datetime.utcnow()
-
+    subscription.end_date = datetime.now(timezone.utc)
+    subscription.updated_at = datetime.now(timezone.utc)
     await db.flush()
 
     # TODO: Send expiration email
@@ -800,8 +799,8 @@ async def handle_subscription_payment_success(
 
     # Reset usage counters for new billing cycle
     subscription.current_api_calls = 0
-    subscription.usage_reset_date = datetime.utcnow() + timedelta(days=30)
-    subscription.updated_at = datetime.utcnow()
+    subscription.usage_reset_date = datetime.now(timezone.utc) + timedelta(days=30)
+    subscription.updated_at = datetime.now(timezone.utc)
 
     await db.flush()
 
@@ -1057,7 +1056,7 @@ async def handle_subscription_payment_recovered(
     previous_status = subscription.status
 
     # Update subscription - restore to ACTIVE
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     subscription.status = SubscriptionStatus.ACTIVE
     subscription.renews_at = datetime.fromisoformat(renews_at).replace(tzinfo=None) if renews_at else None
     subscription.updated_at = now
@@ -1186,7 +1185,7 @@ async def handle_subscription_paused(
 
     # Update subscription to PAUSED
     subscription.status = SubscriptionStatus.PAUSED
-    subscription.updated_at = datetime.utcnow()
+    subscription.updated_at = datetime.now(timezone.utc)
 
     await db.flush()
 
@@ -1246,7 +1245,7 @@ async def handle_subscription_resumed(
     # Update subscription - resume to ACTIVE
     subscription.status = SubscriptionStatus.ACTIVE
     subscription.renews_at = datetime.fromisoformat(renews_at).replace(tzinfo=None) if renews_at else None
-    subscription.updated_at = datetime.utcnow()
+    subscription.updated_at = datetime.now(timezone.utc)
 
     await db.flush()
 
