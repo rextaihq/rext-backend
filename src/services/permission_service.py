@@ -33,23 +33,49 @@ class PermissionService:
         user_id: UUID,
         resource: Optional[str] = None,
         include_roles: bool = False,
+        page: int = 1,
+        per_page: int = 50,
     ) -> Dict[str, Any]:
         await self._ensure_user_can(user_id, "permission.read")
 
-        query = select(Permission)
+        base_query = select(Permission)
         if resource:
-            query = query.where(Permission.resource == resource)
+            base_query = base_query.where(Permission.resource == resource)
 
-        result = await self.db.execute(query.order_by(Permission.resource, Permission.action))
+        # Get total count
+        count_query = select(func.count()).select_from(base_query.subquery())
+        count_result = await self.db.execute(count_query)
+        total = count_result.scalar() or 0
+
+        # Apply pagination
+        offset = (page - 1) * per_page
+        result = await self.db.execute(
+            base_query.order_by(Permission.resource, Permission.action)
+            .offset(offset)
+            .limit(per_page)
+        )
         permissions = result.scalars().all()
 
         if include_roles:
-            permissions_data = [await self._serialize_permission_with_roles(permission) for permission in permissions]
+            permissions_data = await self._serialize_permissions_with_roles_batch(permissions)
         else:
             permissions_data = [permission.to_dict() for permission in permissions]
 
+        total_pages = (total + per_page - 1) // per_page if total > 0 else 0
+
         return {
-            "data": {"permissions": permissions_data, "count": len(permissions_data)},
+            "data": {
+                "permissions": permissions_data,
+                "count": len(permissions_data),
+                "pagination": {
+                    "page": page,
+                    "per_page": per_page,
+                    "total": total,
+                    "total_pages": total_pages,
+                    "has_next": page < total_pages,
+                    "has_prev": page > 1,
+                },
+            },
             "message": f"Retrieved {len(permissions_data)} permissions",
         }
 
@@ -318,25 +344,49 @@ class PermissionService:
             raise ResourceNotFoundException(resource_type="role", resource_id=str(role_id))
         return role
 
-    async def _serialize_permission_with_roles(self, permission: Permission) -> Dict[str, Any]:
-        result = await self.db.execute(
-            select(Role)
-            .join(RolePermission, RolePermission.role_id == Role.id)
-            .where(RolePermission.permission_id == permission.id)
-        )
-        roles = result.scalars().all()
+    async def _serialize_permissions_with_roles_batch(
+        self, permissions: list[Permission]
+    ) -> list[Dict[str, Any]]:
+        """Batch-load roles for all permissions in a single query to avoid N+1."""
+        if not permissions:
+            return []
 
-        permission_dict = permission.to_dict()
-        permission_dict["roles"] = [
-            {
-                "id": str(role.id),
-                "name": role.name,
-                "display_name": role.display_name,
-                "hierarchy_level": role.hierarchy_level,
-            }
-            for role in roles
-        ]
-        return permission_dict
+        permission_ids = [p.id for p in permissions]
+
+        # Single query to fetch all role-permission mappings
+        result = await self.db.execute(
+            select(RolePermission.permission_id, Role)
+            .join(Role, RolePermission.role_id == Role.id)
+            .where(RolePermission.permission_id.in_(permission_ids))
+        )
+        rows = result.all()
+
+        # Group roles by permission_id
+        roles_by_permission: Dict[Any, list] = {}
+        for perm_id, role in rows:
+            roles_by_permission.setdefault(perm_id, []).append(role)
+
+        # Build serialized list
+        permissions_data = []
+        for permission in permissions:
+            permission_dict = permission.to_dict()
+            permission_dict["roles"] = [
+                {
+                    "id": str(role.id),
+                    "name": role.name,
+                    "display_name": role.display_name,
+                    "hierarchy_level": role.hierarchy_level,
+                }
+                for role in roles_by_permission.get(permission.id, [])
+            ]
+            permissions_data.append(permission_dict)
+
+        return permissions_data
+
+    async def _serialize_permission_with_roles(self, permission: Permission) -> Dict[str, Any]:
+        """Serialize a single permission with its roles. Uses batch method internally."""
+        results = await self._serialize_permissions_with_roles_batch([permission])
+        return results[0] if results else permission.to_dict()
 
     async def _ensure_unique_name(self, name: str, exclude_id: Optional[UUID] = None) -> None:
         query = select(Permission).where(func.lower(Permission.name) == name.lower())

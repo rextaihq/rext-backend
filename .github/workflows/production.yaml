@@ -7,23 +7,22 @@ on:
 
 jobs:
   build:
-    # if: github.event.pull_request.merged == true
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
-        
+        uses: actions/checkout@v4
+
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      
+
       - name: Install uv
         run: pip install uv
-      
+
       - name: Cache uv dependencies
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: ~/.cache/uv
           key: ${{ runner.os }}-uv-${{ hashFiles('**/uv.lock') }}
@@ -34,13 +33,13 @@ jobs:
         run: uv sync
 
       - name: Cache pip packages
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: ~/.cache/pip
           key: ${{ runner.os }}-pip-${{ hashFiles('**/uv.lock') }}
           restore-keys: |
             ${{ runner.os }}-pip-
-     
+
       - name: Install system dependencies
         run: |
           sudo apt-get update
@@ -65,30 +64,36 @@ jobs:
           crawl4ai-setup
           crawl4ai-doctor
 
+      - name: Install dev dependencies
+        run: uv sync --group dev
+
+      - name: Run tests
+        run: uv run pytest tests/ -x --tb=short
+        env:
+          ENVIRONMENT: test
+
   docker_job:
     needs: build
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
       - name: Log into Docker Hub
-        uses: docker/login-action@v2
+        uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
 
       - name: Install LangGraph CLI
         run: pip install langgraph-cli
-          
-      - name: Build Docker image with LangGraph
-        # run: langgraph build -t  ${{ secrets.DOCKER_USERNAME }}/wrext:latest
-        run: langgraph build -t  ${{ secrets.DOCKER_USERNAME }}/wrext:dev
 
+      - name: Build Docker image with LangGraph
+        run: langgraph build -t ${{ secrets.DOCKER_USERNAME }}/wrext:latest
 
       - name: Push Docker image
-        run: docker push ${{ secrets.DOCKER_USERNAME }}/wrext:dev
+        run: docker push ${{ secrets.DOCKER_USERNAME }}/wrext:latest

@@ -304,27 +304,28 @@ class UserService:
 
     async def get_users(
         self,
-        workspace_id: Optional[UUID] = None
-    ) -> list[Users]:
+        workspace_id: Optional[UUID] = None,
+        page: int = 1,
+        per_page: int = 50,
+    ) -> Dict[str, Any]:
         """
-        Get list of users, optionally filtered by workspace membership.
+        Get paginated list of users, optionally filtered by workspace membership.
 
         Args:
             workspace_id: Optional workspace ID to filter by
+            page: Page number (1-indexed)
+            per_page: Items per page
 
         Returns:
-            List of Users objects
-
-        Raises:
-            Exception: If query fails
+            Dict with users list and pagination metadata
         """
         from src.api.models.workspace_models.workspace_member import WorkspaceMembers
+        from sqlalchemy import func
 
-        query = select(Users)
+        base_query = select(Users)
 
         if workspace_id:
-            # Filter by workspace membership
-            query = query.join(WorkspaceMembers).where(
+            base_query = base_query.join(WorkspaceMembers).where(
                 WorkspaceMembers.workspace_id == workspace_id,
                 WorkspaceMembers.status == "active"
             )
@@ -332,11 +333,31 @@ class UserService:
         else:
             logger.info("Fetching all users")
 
-        result = await self.db.execute(query)
-        users = result.scalars().all()
+        # Get total count
+        count_query = select(func.count()).select_from(base_query.subquery())
+        count_result = await self.db.execute(count_query)
+        total = count_result.scalar() or 0
 
-        logger.info(f"Retrieved {len(users)} users")
-        return list(users)
+        # Apply pagination
+        offset = (page - 1) * per_page
+        paginated_query = base_query.offset(offset).limit(per_page)
+        result = await self.db.execute(paginated_query)
+        users = list(result.scalars().all())
+
+        total_pages = (total + per_page - 1) // per_page if total > 0 else 0
+
+        logger.info(f"Retrieved {len(users)} users (page {page}/{total_pages})")
+        return {
+            "users": users,
+            "pagination": {
+                "page": page,
+                "per_page": per_page,
+                "total": total,
+                "total_pages": total_pages,
+                "has_next": page < total_pages,
+                "has_prev": page > 1,
+            },
+        }
 
     async def delete_user(
         self,

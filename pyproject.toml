@@ -60,6 +60,7 @@ dependencies = [
     "textstat>=0.7.12",
     "seokar>=1.0.0",
     "language-tool-python>=3.2.2",
+    "aiosmtplib>=3.0.0",
 ]
 
 [project.scripts]

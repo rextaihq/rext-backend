@@ -49,6 +49,7 @@ from src.api.schema.knowledge_schema import BrandSchema
 from src.flow.model.llm_manager import load_model
 from src.utils.helper import web_page_scraper
 from src.utils.vector_store import add_to_vector_store, delete_vectors
+from src.api.cache.decorators import cached
 from src.utils.logger import logger
 from src.api.database.async_database import get_async_db
 from src.services.workspace_pipeline import run_workspace_pipeline
@@ -482,6 +483,11 @@ class WorkspaceService:
 
         return analytics
 
+    @cached(
+        key_prefix="workspace:brand_voice",
+        ttl=600,
+        key_builder=lambda self, workspace_id: str(workspace_id),
+    )
     async def get_workspace_with_brand_voice(
         self, workspace_id: UUID
     ) -> Dict[str, Any]:
@@ -984,14 +990,21 @@ class WorkspaceService:
         )
         permissions = result.scalars().all()
 
-        for permission in permissions:
-            existing = await self.db.execute(
-                select(RolePermission).where(
-                    RolePermission.role_id == role_id,
-                    RolePermission.permission_id == permission.id,
-                )
+        if not permissions:
+            return
+
+        # Batch-query existing role-permission assignments to avoid N+1
+        permission_ids = [p.id for p in permissions]
+        existing_result = await self.db.execute(
+            select(RolePermission.permission_id).where(
+                RolePermission.role_id == role_id,
+                RolePermission.permission_id.in_(permission_ids),
             )
-            if existing.scalar_one_or_none():
+        )
+        existing_ids = {row[0] for row in existing_result.all()}
+
+        for permission in permissions:
+            if permission.id in existing_ids:
                 continue
             self.db.add(RolePermission(role_id=role_id, permission_id=permission.id))
 
