@@ -50,8 +50,28 @@ class UpdateNotificationPreferencesRequest(BaseModel):
     When a category is set, it applies to both email and in-app channels.
     """
     # GLOBAL
-    email_notifications: Optional[bool] = None
-    in_app_notifications: Optional[bool] = None
+    email_enabled: Optional[bool] = Field(None, alias="email_notifications")
+    in_app_enabled: Optional[bool] = Field(None, alias="in_app_notifications")
+
+    # CATEGORIES (Simplified UI-facing updates)
+    categories: Optional[NotificationCategories] = None
+
+    # GRANULAR FIELDS (Backward compatibility/Detail control)
+    # ACTIVITY & ALERTS
+    email_team_activity: Optional[bool] = None
+    in_app_team_activity: Optional[bool] = None
+    email_security_alerts: Optional[bool] = None
+    in_app_security_alerts: Optional[bool] = None
+    email_billing_updates: Optional[bool] = None
+    in_app_billing_updates: Optional[bool] = None
+    email_product_updates: Optional[bool] = None
+    in_app_product_updates: Optional[bool] = None
+    email_content_updates: Optional[bool] = None
+    in_app_content_updates: Optional[bool] = None
+    email_mentions: Optional[bool] = None
+    in_app_mentions: Optional[bool] = None
+    email_comments: Optional[bool] = None
+    in_app_comments: Optional[bool] = None
 
     # WORKSPACE
     ws_invite_received: Optional[bool] = None
@@ -87,3 +107,4 @@ class UpdateNotificationPreferencesRequest(BaseModel):
 
     class Config:
         from_attributes = True
+        populate_by_name = True
