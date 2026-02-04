@@ -267,7 +267,7 @@ class SecurityService:
             - Account activity (registrations, verifications)
             - Top offenders by IP and user
         """
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         last_24h = now - timedelta(hours=24)
         last_7d = now - timedelta(days=7)
         last_30d = now - timedelta(days=30)
@@ -464,7 +464,7 @@ class SecurityService:
         # Get user
         user = await self._get_user_or_404(user_id)
 
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         is_locked = bool(user.locked_until and user.locked_until > now)
 
         # Get last successful login from audit logs
