@@ -163,7 +163,7 @@ class InvitationService:
             if existing_invitation.status in ("revoked", "expired"):
                 # Generate token and create invitation
                 token = self._generate_invitation_token(email, workspace_id)
-                expires_at = datetime.utcnow() + timedelta(days=expiry_days)
+                expires_at = datetime.now(timezone.utc) + timedelta(days=expiry_days)
                 
                 # update the existing invitation
                 existing_invitation.invitation_token = token
@@ -204,7 +204,7 @@ class InvitationService:
 
         # Generate token and create invitation
         token = self._generate_invitation_token(email, workspace_id)
-        expires_at = datetime.utcnow() + timedelta(days=expiry_days)
+        expires_at = datetime.now(timezone.utc) + timedelta(days=expiry_days)
 
         invitation = UserInvitations(
             email=email,

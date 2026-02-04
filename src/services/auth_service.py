@@ -124,7 +124,7 @@ class AuthService:
             full_name=full_name,
             email=email,
             password_hash=hashed_pwd,
-            created_at=datetime.utcnow()
+            created_at=datetime.now(timezone.utc)
         )
         self.db.add(new_user)
         await self.db.flush()
@@ -556,7 +556,7 @@ class AuthService:
             token_type="refresh",
             user_id=db_user.id,
             revoked_at=datetime.now(timezone.utc),
-            expires_at=datetime.utcfromtimestamp(payload.get("exp")),
+            expires_at=datetime.fromtimestamp(payload.get("exp"), tz=timezone.utc),
             reason="refresh"
         )
         self.db.add(blacklist_entry)
@@ -602,7 +602,7 @@ class AuthService:
             token_type="access",
             user_id=user_id,
             revoked_at=datetime.now(timezone.utc),
-            expires_at=datetime.utcfromtimestamp(exp),
+            expires_at=datetime.fromtimestamp(exp, tz=timezone.utc),
             reason="logout"
         )
         self.db.add(blacklist_entry)

@@ -214,5 +214,5 @@ class SessionService:
         if isinstance(expires_at, datetime):
             return expires_at
         if isinstance(expires_at, (int, float)):
-            return datetime.utcfromtimestamp(expires_at)
+            return datetime.fromtimestamp(expires_at, tz=timezone.utc)
         return datetime.now(timezone.utc)
