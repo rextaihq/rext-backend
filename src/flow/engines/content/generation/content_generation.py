@@ -73,7 +73,9 @@ async def generate_content(state: REXT) -> dict:
             ])
 
         logger.info(f"Target word count: {target_word_count}")
-
+        # get tone from outline
+        tone = outline.get("tone", "Professional")
+        logger.info(f"Tone: {tone}")
         # 5️⃣ Prepare prompt data
         prompt_data = {
             "content_type": content_type,
@@ -83,6 +85,7 @@ async def generate_content(state: REXT) -> dict:
             "primary_keyword": primary_keyword,
             "competitor_insights": competitor_insights,
             "target_word_count": target_word_count,
+            "tone": tone,
         }
 
         # 6️⃣ Load model and prepare messages
