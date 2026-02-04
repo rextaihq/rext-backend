@@ -885,7 +885,7 @@ async def handle_subscription_payment_failed(
     plan = result.scalar_one_or_none()
 
     # Calculate grace period (7 days from now)
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     grace_period_days = 7
     grace_period_end = now + timedelta(days=grace_period_days)
 
