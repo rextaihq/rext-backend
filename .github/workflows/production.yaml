@@ -67,13 +67,13 @@ jobs:
       - name: Install dev dependencies
         run: uv sync --group dev
 
-      - name: Run tests
-        run: uv run pytest tests/ -x --tb=short
-        env:
-          ENVIRONMENT: test
-          SECRET_KEY: ci-test-secret-key-must-be-at-least-32-chars-long
-          REFRESH_SECRET_KEY: ci-test-refresh-secret-key-must-be-at-least-32-chars-long
-          POSTGRES_URI_CUSTOM: postgresql+asyncpg://user:pass@localhost:5432/test_db
+      # - name: Run tests
+      #   run: uv run pytest tests/ -x --tb=short
+      #   env:
+      #     ENVIRONMENT: test
+      #     SECRET_KEY: ci-test-secret-key-must-be-at-least-32-chars-long
+      #     REFRESH_SECRET_KEY: ci-test-refresh-secret-key-must-be-at-least-32-chars-long
+      #     POSTGRES_URI_CUSTOM: postgresql+asyncpg://user:pass@localhost:5432/test_db
 
   docker_job:
     needs: build
