@@ -7,7 +7,6 @@ from src.api.schema.workspace_schema import WorkspaceSchema
 from src.api.models.workspace_models.workspace_model import WorkspaceModel
 from src.api.models.workspace_models.workspace_member import WorkspaceMembers
 from src.api.models.user_models.users import Users
-from src.utils.vector_store import add_to_vector_store,delete_vectors
 from src.api.models.knowledge_models.knowledge_model import BrandVoice
 from src.api.schema.knowledge_schema import BrandSchema
 from src.flow.model.llm_manager import load_model

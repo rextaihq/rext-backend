@@ -1,3 +1,5 @@
+import os
+
 from langchain_openai import OpenAIEmbeddings
 
 from src.utils.logger import logger
@@ -45,4 +47,4 @@ if __name__ == "__main__":
     doc_vectors = embedding.embed_documents(docs)
     print(f"   Success! Created {len(doc_vectors)} vectors.")
     
-    print("\n✅ Ollama embedding model is working correctly!")
+    print("\n✅ OpenAI embedding model is working correctly!")

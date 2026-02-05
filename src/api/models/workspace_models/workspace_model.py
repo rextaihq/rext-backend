@@ -37,6 +37,7 @@ class WorkspaceModel(Base, SerializableMixin):
     websites = relationship("Website", back_populates="workspace", cascade="all, delete-orphan")
     knowledge_files = relationship("KnowledgeFiles", back_populates="workspace", cascade="all, delete-orphan")
     text_knowledge = relationship("TextKnowledge", back_populates="workspace", cascade="all, delete-orphan")
+    knowledge_embeddings = relationship("KnowledgeEmbedding", back_populates="workspace", cascade="all, delete-orphan")
     content_items = relationship("Content", back_populates="workspace", cascade="all, delete-orphan")
     media = relationship("Media", back_populates="workspace", cascade="all, delete-orphan")
     notifications = relationship("Notification", back_populates="workspace", cascade="all, delete-orphan")

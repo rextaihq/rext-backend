@@ -20,6 +20,7 @@ from typing import List, Optional, Dict, Any
 from uuid import UUID
 
 from sqlalchemy import select, func
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -318,36 +319,37 @@ class KnowledgeBaseService:
         """
         Get or create the default knowledge base for a workspace.
 
+        Uses INSERT ON CONFLICT to prevent race conditions when multiple
+        requests try to create the default KB simultaneously.
+
         Args:
             workspace_id: Workspace UUID
 
         Returns:
             Default KnowledgeBase object
         """
-        # Try to get existing default knowledge base
+        # Use INSERT ON CONFLICT to atomically create if not exists
+        # This prevents race conditions (TOCTOU vulnerability)
+        stmt = insert(KnowledgeBase).values(
+            workspace_id=workspace_id,
+            name="Default Knowledge Base",
+            description="Automatically created default knowledge base",
+            type="default"
+        ).on_conflict_do_nothing(
+            index_elements=['workspace_id'],
+            index_where=KnowledgeBase.type == "default"
+        )
+
+        await self.db.execute(stmt)
+        await self.db.flush()
+
+        # Now fetch the existing (or just-created) default KB
         result = await self.db.execute(
             select(KnowledgeBase).where(
                 KnowledgeBase.workspace_id == workspace_id,
                 KnowledgeBase.type == "default"
             )
         )
-        knowledge_base = result.scalar_one_or_none()
-
-        # Create if doesn't exist
-        if not knowledge_base:
-            knowledge_base = KnowledgeBase(
-                workspace_id=workspace_id,
-                name="Default Knowledge Base",
-                description="Automatically created default knowledge base",
-                type="default"
-            )
-            self.db.add(knowledge_base)
-            await self.db.flush()
-            await self.db.refresh(knowledge_base)
-
-            logger.info(
-                f"Default knowledge base created: {knowledge_base.id}",
-                extra={"workspace_id": str(workspace_id)}
-            )
+        knowledge_base = result.scalar_one()
 
         return knowledge_base

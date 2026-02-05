@@ -48,7 +48,6 @@ from src.api.middleware.exceptions import (
 from src.api.schema.knowledge_schema import BrandSchema
 from src.flow.model.llm_manager import load_model
 from src.utils.helper import web_page_scraper
-from src.utils.vector_store import add_to_vector_store, delete_vectors
 from src.api.cache.decorators import cached
 from src.utils.logger import logger
 from src.api.database.async_database import get_async_db
@@ -269,7 +268,7 @@ class WorkspaceService:
         """Delete workspace after verifying membership and cleanup."""
         await self._ensure_active_user(user_id)
         workspace = await self._ensure_membership(workspace_id, user_id)
-        self._delete_vectors_safe(workspace.id) 
+        # Note: Embeddings are deleted via CASCADE when workspace is deleted
         await self.delete_workspace(workspace_id, user_id)
 
     async def update_workspace_for_user(
@@ -1035,12 +1034,10 @@ class WorkspaceService:
         if not url:
             return
 
-        chunks = []
         content = ""
 
         try:
-            scraped_chunks, results = await web_page_scraper(urls=[url])
-            chunks = scraped_chunks or []
+            _, results = await web_page_scraper(urls=[url])
             if results:
                 first = results[0]
                 content = first.markdown if getattr(first, "success", False) else ""
@@ -1048,15 +1045,6 @@ class WorkspaceService:
             logger.warning(
                 "Workspace scraping failed",
                 extra={"workspace_id": str(workspace_id), "error": str(scrape_err)},
-            )
-
-        try:
-            if chunks:
-                add_to_vector_store(blog_context=chunks, workspace_id=str(workspace_id))
-        except Exception as vector_err:  # noqa: BLE001
-            logger.warning(
-                "Vector store update failed",
-                extra={"workspace_id": str(workspace_id), "error": str(vector_err)},
             )
 
         if not content:
@@ -1083,15 +1071,6 @@ class WorkspaceService:
             logger.warning(
                 "Brand voice generation failed",
                 extra={"workspace_id": str(workspace_id), "error": str(llm_err)},
-            )
-
-    def _delete_vectors_safe(self, workspace_id: UUID) -> None:
-        try:
-            delete_vectors(vector_id=str(workspace_id))
-        except Exception as err:  # noqa: BLE001
-            logger.warning(
-                "Vector cleanup failed",
-                extra={"workspace_id": str(workspace_id), "error": str(err)},
             )
 
     async def _ensure_unique_workspace_name(self, name: str, user_id: UUID) -> None:

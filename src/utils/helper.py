@@ -5,41 +5,19 @@ import uuid
 from typing import Any, Dict, List, Tuple
 
 # === Third-party imports ===
-import yaml
 from bs4 import BeautifulSoup
-from crawl4ai import AsyncWebCrawler
-from crawl4ai.async_configs import BrowserConfig, CrawlerRunConfig, CacheMode
+from crawl4ai import AsyncWebCrawler, CacheMode
+from crawl4ai.async_configs import BrowserConfig, CrawlerRunConfig
+from crawl4ai.content_scraping_strategy import LXMLWebScrapingStrategy
 from langchain_core.documents import Document
-from langchain_classic.retrievers.multi_query import MultiQueryRetriever
 from langchain_cohere.rerank import CohereRerank
 from pydantic import HttpUrl
 
 # === Project-specific imports ===
-from src.flow.model.llm_manager import load_model
 from src.utils.splitter import split_data
-from src.utils.vector_store import load_vector_store
-from crawl4ai.content_scraping_strategy import LXMLWebScrapingStrategy
-from crawl4ai import CacheMode
 from src.api.lib.logger import auto_logger
 
 logger = auto_logger()
-
-
-
-def loadYamlConfig(file_path="config/config.yaml"):
-    """
-    Load a YAML configuration file and return its contents.
-
-    :param file_path: Path to the YAML file.
-    :return: Dictionary containing the YAML file contents.
-    """
-    try:
-        with open(file_path, 'r') as file:
-            config = yaml.safe_load(file)
-
-        return config
-    except Exception as e:
-        return  str(e)
 
 
 def GetBrowserConfig():
@@ -282,28 +260,9 @@ def clean_blog_content_with_urls(raw_html: str) -> Tuple[str, List[str]]:
     return clean_text, unique_urls
 
 
-def get_multi_query():
-    """
-    Create a MultiQueryRetriever using an LLM and a FAISS vector store.
-
-    This retriever expands the input query into multiple queries using the LLM,
-    retrieves relevant documents for each expanded query, and combines them
-    for better recall and retrieval quality.
-
-    Returns:
-        MultiQueryRetriever: A retriever that performs query expansion
-                             and document retrieval using FAISS and an LLM.
-    """
-    return MultiQueryRetriever.from_llm(
-        retriever=load_vector_store().as_retriever(), llm=load_model()
-    )
-
-
-from langchain_community.document_compressors import FlashrankRerank
-
 def get_compressor():
     """
-    Returns a FlashrankRerank document compressor for reranking retrieved documents.
+    Returns a CohereRerank document compressor for reranking retrieved documents.
     """
     compressor = CohereRerank(model="rerank-english-v3.0", api_key=os.getenv("COHERE_API_KEY"))
     return compressor

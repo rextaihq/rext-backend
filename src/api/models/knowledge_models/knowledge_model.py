@@ -28,6 +28,7 @@ class KnowledgeBase(Base, SerializableMixin):
     websites = relationship("Website", back_populates="knowledge_base", cascade="all, delete-orphan")
     knowledge_files = relationship("KnowledgeFiles", back_populates="knowledge_base", cascade="all, delete-orphan")
     text_knowledge = relationship("TextKnowledge", back_populates="knowledge_base", cascade="all, delete-orphan")
+    knowledge_embeddings = relationship("KnowledgeEmbedding", back_populates="knowledge_base", cascade="all, delete-orphan")
 
     def to_dict(self, **kwargs) -> dict:
         """

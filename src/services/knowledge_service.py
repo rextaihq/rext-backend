@@ -4,34 +4,31 @@ Knowledge Service - Business Logic for Knowledge Operations
 This service encapsulates all business logic related to knowledge management,
 including file uploads, text knowledge, and web scraping with vector embeddings.
 
-Following LangChain v1.0 and LangGraph v1.0 Best Practices (Released Oct 2025):
-- Uses RecursiveCharacterTextSplitter for semantic text chunking (LCEL pattern)
-- BAAI/bge-small-en embeddings (384-dim, optimized for retrieval)
-- FAISS IndexFlatL2 for exact similarity search
-- Document objects with metadata for multi-tenant isolation
-- Batch processing with async operations for efficiency
-- Robust error handling with try/except blocks
+Vector Store Integration (pgvector - PostgreSQL Native):
+- Uses OpenAI text-embedding-3-small (1536 dimensions)
+- Embeddings stored in PostgreSQL via pgvector extension
+- HNSW index for fast similarity search
+- ACID transactions with knowledge items
+- CASCADE delete for automatic cleanup
 
-Vector Store Integration (Supports Multiple KBs per Workspace):
+Chunking Strategy:
 - Text is split into 1000-char chunks with 200-char overlap
-- Each chunk becomes a Document with workspace_id + knowledge_id metadata
-- Documents are embedded and stored in FAISS index
+- Uses RecursiveCharacterTextSplitter from LangChain
 - Multi-level isolation: workspace → knowledge_base → knowledge_item
-- UUID-based document IDs prevent collisions
+- Embeddings refresh automatically on content updates
 
 Responsibilities:
 - File knowledge operations (upload, delete, update)
 - Text knowledge operations (create, update, delete)
 - Web knowledge operations (scrape, process, index)
-- Vector store integration (add, delete, query)
+- Vector embedding integration via EmbeddingService
 - Duplicate detection (file hash, URL uniqueness)
-- Text chunking and embedding generation
 
 Does NOT:
 - Handle HTTP requests/responses (that's routes)
 - Commit transactions (that's decorators/routes)
 - Authentication/authorization (that's decorators)
-- Direct vector search (that's RAG/content generation services)
+- Direct vector search (that's EmbeddingService.similarity_search)
 """
 
 from typing import List, Optional, Dict, Any
@@ -46,10 +43,9 @@ from src.api.models.knowledge_models.knowledge_model import KnowledgeFiles, Text
 from src.utils.logger import logger
 from src.utils.file_upload_utils import validate_and_store_file, delete_file
 from src.utils.utils import load_split_file_data
-from src.utils.splitter import split_data
-from src.utils.vector_store import add_to_vector_store, delete_vectors
 from src.utils.helper import web_page_scraper
 from src.api.config import get_settings
+from src.services.embedding_service import EmbeddingService
 from src.api.middleware.exceptions import (
     ResourceNotFoundException,
     RextValidationException,
@@ -163,29 +159,24 @@ class KnowledgeService:
         await self.db.flush()
         await self.db.refresh(new_knowledge)
 
-        # Add to vector store with knowledge item metadata
+        # Add embeddings to pgvector
         try:
-            logger.info(f"Inserting {len(chunks)} chunks into vector store")
-            success_status = add_to_vector_store(
-                blog_context=chunks,
-                workspace_id=str(workspace_id),
-                knowledge_base_id=str(knowledge_base_id) if knowledge_base_id else None,
-                knowledge_id=str(new_knowledge.id),
-                knowledge_type="file"
+            logger.info(f"Inserting {len(chunks)} chunks into pgvector")
+            embedding_service = EmbeddingService(self.db)
+            chunk_count = await embedding_service.add_embeddings_from_documents(
+                documents=chunks,
+                workspace_id=workspace_id,
+                knowledge_id=new_knowledge.id,
+                knowledge_type="file",
+                knowledge_base_id=knowledge_base_id,
             )
-            if not success_status:
-                raise RextExternalServiceException(
-                    message="Failed to insert chunks into vector store",
-                    service_name="vector_store",
-                    service_error="Insertion returned False"
-                )
-        except RextExternalServiceException:
-            raise
+            # Update chunk count on the knowledge item
+            new_knowledge.chunk_count = chunk_count
         except Exception as e:
-            logger.error(f"Error building vector store: {e}")
+            logger.error(f"Error adding embeddings: {e}")
             raise RextExternalServiceException(
-                message="Failed to build vector store from file content",
-                service_name="vector_store",
+                message="Failed to generate embeddings for file content",
+                service_name="embedding_service",
                 service_error=str(e)
             )
 
@@ -225,13 +216,12 @@ class KnowledgeService:
         """
         knowledge = await self._get_file_knowledge_or_404(file_id, workspace_id)
 
-        # Delete from vector store using granular knowledge_id filter
-        success_status = delete_vectors(
-            workspace_id=str(workspace_id),
-            knowledge_id=str(file_id)
+        # Delete embeddings from pgvector (CASCADE delete also handles this, but explicit is cleaner)
+        embedding_service = EmbeddingService(self.db)
+        await embedding_service.delete_embeddings(
+            knowledge_id=file_id,
+            workspace_id=workspace_id
         )
-        if not success_status:
-            logger.warning(f"Failed to delete vectors for file {file_id}")
 
         # Delete the physical file from storage
         if knowledge.file_path:
@@ -296,7 +286,8 @@ class KnowledgeService:
         workspace_id: UUID,
         title: str,
         content: str,
-        knowledge_base_id: Optional[UUID] = None
+        knowledge_base_id: Optional[UUID] = None,
+        tags: Optional[List[str]] = None
     ) -> TextKnowledge:
         """
         Add text knowledge to workspace.
@@ -306,6 +297,7 @@ class KnowledgeService:
             title: Knowledge title
             content: Knowledge content
             knowledge_base_id: Optional knowledge base UUID (uses default if None)
+            tags: Optional list of tags for categorization
 
         Returns:
             Created TextKnowledge object
@@ -316,32 +308,26 @@ class KnowledgeService:
             kb = await kb_service.get_default_knowledge_base(workspace_id)
             knowledge_base_id = kb.id
 
-        # Split content into chunks using proper text splitter
-        # This creates Document objects with page_content and metadata
-        chunks = split_data(
-            documents=content,
-            chunk_size=1000,
-            overlap=200
-        )
-
         # Save to database
         new_knowledge = TextKnowledge(
             workspace_id=workspace_id,
             knowledge_base_id=knowledge_base_id,
             title=title,
-            content=content
+            content=content,
+            tags=tags
         )
         self.db.add(new_knowledge)
         await self.db.flush()
         await self.db.refresh(new_knowledge)
 
-        # Add to vector store with knowledge item metadata
-        add_to_vector_store(
-            blog_context=chunks,
-            workspace_id=str(workspace_id),
-            knowledge_base_id=str(knowledge_base_id) if knowledge_base_id else None,
-            knowledge_id=str(new_knowledge.id),
-            knowledge_type="text"
+        # Add embeddings to pgvector (handles chunking internally)
+        embedding_service = EmbeddingService(self.db)
+        await embedding_service.add_embeddings(
+            content=content,
+            workspace_id=workspace_id,
+            knowledge_id=new_knowledge.id,
+            knowledge_type="text",
+            knowledge_base_id=knowledge_base_id,
         )
 
         logger.info(
@@ -387,6 +373,9 @@ class KnowledgeService:
         """
         Update metadata for a text knowledge entry.
 
+        When content is updated, vector embeddings are refreshed to keep
+        search results in sync with the latest content.
+
         Args:
             knowledge_id: Text knowledge UUID
             workspace_id: Workspace UUID
@@ -412,6 +401,15 @@ class KnowledgeService:
 
         if content:
             knowledge.content = content
+            # Refresh vector embeddings when content changes
+            embedding_service = EmbeddingService(self.db)
+            await embedding_service.refresh_embeddings(
+                content=content,
+                workspace_id=workspace_id,
+                knowledge_id=knowledge_id,
+                knowledge_type="text",
+                knowledge_base_id=knowledge.knowledge_base_id,
+            )
 
         await self.db.flush()
         await self.db.refresh(knowledge)
@@ -421,6 +419,7 @@ class KnowledgeService:
             extra={
                 "workspace_id": str(workspace_id),
                 "knowledge_id": str(knowledge_id),
+                "content_updated": content is not None,
             },
         )
 
@@ -455,10 +454,11 @@ class KnowledgeService:
                 resource_id=str(knowledge_id)
             )
 
-        # Delete from vector store using granular knowledge_id filter
-        delete_vectors(
-            workspace_id=str(workspace_id),
-            knowledge_id=str(knowledge_id)
+        # Delete embeddings from pgvector (CASCADE delete also handles this, but explicit is cleaner)
+        embedding_service = EmbeddingService(self.db)
+        await embedding_service.delete_embeddings(
+            knowledge_id=knowledge_id,
+            workspace_id=workspace_id
         )
 
         # Delete from database
@@ -531,31 +531,25 @@ class KnowledgeService:
         await self.db.flush()
         await self.db.refresh(knowledge)
 
+        # Add embeddings to pgvector
         try:
             logger.info(
-                "Adding web knowledge chunks to vector store",
+                "Adding web knowledge chunks to pgvector",
                 extra={"workspace_id": str(workspace_id), "url": result_entry.url, "chunks": len(chunks)},
             )
-            success_status = add_to_vector_store(
-                blog_context=chunks,
-                workspace_id=str(workspace_id),
-                knowledge_base_id=str(knowledge_base_id) if knowledge_base_id else None,
-                knowledge_id=str(knowledge.id),
-                knowledge_type="web"
+            embedding_service = EmbeddingService(self.db)
+            await embedding_service.add_embeddings_from_documents(
+                documents=chunks,
+                workspace_id=workspace_id,
+                knowledge_id=knowledge.id,
+                knowledge_type="web",
+                knowledge_base_id=knowledge_base_id,
             )
-            if not success_status:
-                raise RextExternalServiceException(
-                    message="Failed to insert chunks into vector store",
-                    service_name="vector_store",
-                    service_error="Insertion returned False",
-                )
-        except RextExternalServiceException:
-            raise
-        except Exception as exc:  # noqa: BLE001
-            logger.exception("Vector store insertion failed", exc_info=exc)
+        except Exception as exc:
+            logger.exception("Embedding generation failed", exc_info=exc)
             raise RextExternalServiceException(
-                message="Failed to process content in vector store",
-                service_name="vector_store",
+                message="Failed to generate embeddings for web content",
+                service_name="embedding_service",
                 service_error=str(exc),
             )
 
@@ -575,19 +569,15 @@ class KnowledgeService:
         return knowledge.to_dict()
 
     async def delete_web_knowledge(self, workspace_id: UUID, web_id: UUID) -> None:
-        """Delete web knowledge entry and cleanup vector store."""
+        """Delete web knowledge entry and cleanup embeddings."""
         knowledge = await self._get_website_or_404(web_id, workspace_id)
 
-        # Delete from vector store using granular knowledge_id filter
-        success_status = delete_vectors(
-            workspace_id=str(workspace_id),
-            knowledge_id=str(web_id)
+        # Delete embeddings from pgvector (CASCADE delete also handles this, but explicit is cleaner)
+        embedding_service = EmbeddingService(self.db)
+        await embedding_service.delete_embeddings(
+            knowledge_id=web_id,
+            workspace_id=workspace_id
         )
-        if not success_status:
-            logger.warning(
-                "Failed to delete vectors for web knowledge",
-                extra={"workspace_id": str(workspace_id), "knowledge_id": str(web_id)},
-            )
 
         await self.db.delete(knowledge)
 

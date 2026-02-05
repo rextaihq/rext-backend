@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable, Dict, List, Optional, Sequence, Tuple
 from uuid import UUID
@@ -19,10 +18,8 @@ from src.services.sse_service import (
 )
 from src.utils.helper import web_page_scraper
 from src.utils.logger import logger
-from src.utils.vector_store import add_to_vector_store
 
 ScrapeCallable = Callable[[str], Awaitable[Tuple[List[Any], List[Any]]]]
-VectorUploaderCallable = Callable[[Sequence[Any], str], Awaitable[bool]]
 BrandVoiceGeneratorCallable = Callable[[str], Awaitable[Optional[BrandSchema]]]
 
 
@@ -48,7 +45,6 @@ class WorkspacePipeline:
         workspace_id: UUID,
         url: str,
         scraper: Optional[ScrapeCallable] = None,
-        vector_uploader: Optional[VectorUploaderCallable] = None,
         brand_voice_generator: Optional[BrandVoiceGeneratorCallable] = None,
     ) -> None:
         self.db = db
@@ -56,7 +52,6 @@ class WorkspacePipeline:
         self.workspace_id = workspace_id
         self.url = url
         self._scraper = scraper or self._default_scraper
-        self._vector_uploader = vector_uploader or self._default_vector_uploader
         self._brand_voice_generator = (
             brand_voice_generator or self._default_brand_voice_generator
         )
@@ -164,65 +159,15 @@ class WorkspacePipeline:
         )
 
     async def _create_vector_embeddings(self, chunks: Sequence[Any]) -> None:
-        """Create vector embeddings for scraped chunks."""
-        if not chunks:
-            logger.info(
-                "Skipping vector store insertion - no chunks available",
-                extra={"workspace_id": str(self.workspace_id), "operation_id": self.operation_id},
-            )
-            return
+        """Create vector embeddings for scraped chunks.
 
-        # ============================================================================
-        # VECTOR STORE DISABLED (COMMENTED OUT)
-        # To re-enable: uncomment the code block below
-        # ============================================================================
-        
-        logger.info(
-            f"⚠️ VECTOR STORE DISABLED - Skipping {len(chunks)} chunks",
-            extra={"workspace_id": str(self.workspace_id), "operation_id": self.operation_id},
-        )
-        
-        # Original code commented out below:
-        # await emit_step_start(
-        #     operation_id=self.operation_id,
-        #     scope=self.scope,
-        #     step="vector_store",
-        #     message="Generating vector embeddings",
-        #     progress=40,
-        # )
-
-        # try:
-        #     success = await self._vector_uploader(chunks, str(self.workspace_id))
-        # except Exception as exc:  # noqa: BLE001 - propagate
-        #     await emit_step_failure(
-        #         operation_id=self.operation_id,
-        #         scope=self.scope,
-        #         step="vector_store",
-        #         message=f"Failed to create embeddings: {exc}",
-        #         error=str(exc),
-        #     )
-        #     raise
-
-        # if not success:
-        #     error_message = "Vector store reported failure"
-        #     await emit_step_failure(
-        #         operation_id=self.operation_id,
-        #         scope=self.scope,
-        #         step="vector_store",
-        #         message=error_message,
-        #         error=error_message,
-        #     )
-        #     raise RuntimeError(error_message)
-
-        # payload = {"chunks": len(chunks)}
-        # await emit_step_success(
-        #     operation_id=self.operation_id,
-        #     scope=self.scope,
-        #     step="vector_store",
-        #     message="Vector embeddings created",
-        #     payload=payload,
-        #     progress=60,
-        # )
+        Note: Vector embeddings for workspace onboarding are not stored.
+        Knowledge items added via the Knowledge Base API use pgvector
+        for vector storage through the EmbeddingService.
+        """
+        # Workspace onboarding doesn't require vector storage - brand voice
+        # extraction uses direct LLM analysis on the scraped content.
+        pass
 
     async def _extract_brand_voice(
         self,
@@ -505,17 +450,6 @@ class WorkspacePipeline:
     @staticmethod
     async def _default_scraper(url: str) -> Tuple[List[Any], List[Any]]:
         return await web_page_scraper(urls=[url])
-
-    @staticmethod
-    async def _default_vector_uploader(
-        chunks: Sequence[Any],
-        workspace_id: str,
-    ) -> bool:
-        return await asyncio.to_thread(
-            add_to_vector_store,
-            blog_context=list(chunks),
-            workspace_id=workspace_id,
-        )
 
     @staticmethod
     async def _default_brand_voice_generator(content: str) -> Optional[BrandSchema]:

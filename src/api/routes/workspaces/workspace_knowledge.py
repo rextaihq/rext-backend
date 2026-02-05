@@ -538,10 +538,8 @@ async def create_text_knowledge(
         payload.title,
         payload.content,
         knowledge_base_id=payload.knowledge_base_id,
+        tags=payload.tags,
     )
-
-    if payload.tags:
-        logger.warning("Tags provided for text knowledge are currently ignored", extra={"tags": payload.tags})
 
     try:
         # Schedule success notification

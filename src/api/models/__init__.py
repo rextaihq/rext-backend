@@ -17,6 +17,7 @@ from src.api.models.knowledge_models.knowledge_model import (
     KnowledgeFiles,
     TextKnowledge,
 )
+from src.api.models.knowledge_models.embedding_model import KnowledgeEmbedding
 from src.api.models.content_models.content import Content
 from src.api.models.content_models.content_seo_data import ContentSEOData
 from src.api.models.knowledge_models.persona_model import Persona
@@ -46,6 +47,7 @@ __all__ = [
     "Website",
     "KnowledgeFiles",
     "TextKnowledge",
+    "KnowledgeEmbedding",
     "Persona",
     "Content",
     "ContentSEOData",
