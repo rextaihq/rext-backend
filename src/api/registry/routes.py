@@ -70,6 +70,7 @@ def register_routes(app: FastAPI) -> None:
     # ---- Misc & Tools ----
     from src.api.routes.media import router as media_router
     from src.api.tools.tools import router as tools_router
+    from src.api.routes.test_api_key_auth import router as test_api_key_router
 
     # ============================================================================
     # ROUTER REGISTRATION
@@ -125,4 +126,5 @@ def register_routes(app: FastAPI) -> None:
     prefix="/api/v1",
     tags=["Dashboard"]
 )
+    app.include_router(test_api_key_router, prefix="/api/v1", tags=["Testing"])
 
