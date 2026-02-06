@@ -13,7 +13,7 @@ Usage:
     db.close()
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlalchemy.orm import Session
 from src.api.models.user_models.token_blacklist import TokenBlacklist
 from src.utils.logger import logger
@@ -45,7 +45,7 @@ def cleanup_expired_tokens(db: Session) -> int:
     """
     try:
         # Delete tokens that expired before current time
-        cutoff_time = datetime.utcnow()
+        cutoff_time = datetime.now(timezone.utc)
 
         deleted_count = db.query(TokenBlacklist).filter(
             TokenBlacklist.expires_at < cutoff_time

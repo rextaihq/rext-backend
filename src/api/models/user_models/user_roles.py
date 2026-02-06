@@ -2,7 +2,7 @@ import uuid
 from sqlalchemy import Column, String, Boolean, Integer, Text, TIMESTAMP, ForeignKey
 from sqlalchemy.dialects.postgresql import UUID, JSONB, INET
 from sqlalchemy.orm import relationship
-from datetime import datetime
+from datetime import datetime,timezone
 from src.api.database.base import Base
 from src.api.models.base import SerializableMixin
 
@@ -20,8 +20,8 @@ class UserRole(Base, SerializableMixin):
     assigned_by_user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
 
     is_primary = Column(Boolean, default=True)
-    assigned_at = Column(TIMESTAMP, default=datetime.utcnow, nullable=False)
-
+    assigned_at = Column(TIMESTAMP, default=lambda: datetime.now(timezone.utc), nullable=False)
+    
     # Relationships
     user = relationship("Users", foreign_keys=[user_id], back_populates="user_roles")
     role = relationship("Role", foreign_keys=[role_id], back_populates="user_roles")
