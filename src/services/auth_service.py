@@ -22,6 +22,7 @@ Does NOT:
 from typing import Tuple, Dict, Any, Optional
 from uuid import UUID
 from datetime import datetime, timedelta, timezone
+from src.utils.password_utils import validate_password_strength
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, or_
@@ -112,9 +113,11 @@ class AuthService:
             raise DuplicateResourceException(
                 message="A user with this email already exists",
                 resource_type="user",
-                conflicting_field="email",
-                conflicting_value=email
+                conflicting_field="email"
             )
+        
+        # Validate password strength
+        validate_password_strength(password)
 
         # Hash password
         hashed_pwd = hash_password(password)
@@ -693,6 +696,9 @@ class AuthService:
                 resource_type="User",
                 resource_id=user_id
             )
+
+        # Validate password strength
+        validate_password_strength(new_password)
 
         # Hash and update password
         hashed_pwd = hash_password(new_password)

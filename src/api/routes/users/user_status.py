@@ -104,7 +104,7 @@ async def suspend_user(
 
     except ResourceNotFoundException:
         return error(
-            message="User not found",
+            message="User not found or access denied",
             code=ErrorCode.RESOURCE_NOT_FOUND,
             status_code=404,
             severity=ErrorSeverity.MEDIUM,
@@ -199,7 +199,7 @@ async def activate_user(
 
     except ResourceNotFoundException:
         return error(
-            message="User not found",
+            message="User not found or access denied",
             code=ErrorCode.RESOURCE_NOT_FOUND,
             status_code=404,
             severity=ErrorSeverity.MEDIUM,
@@ -296,7 +296,7 @@ async def ban_user(
 
     except ResourceNotFoundException:
         return error(
-            message="User not found",
+            message="User not found or access denied",
             code=ErrorCode.RESOURCE_NOT_FOUND,
             status_code=404,
             severity=ErrorSeverity.MEDIUM,
