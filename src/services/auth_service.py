@@ -21,7 +21,8 @@ Does NOT:
 
 from typing import Tuple, Dict, Any, Optional
 from uuid import UUID
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+from src.utils.password_utils import validate_password_strength
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, or_
@@ -112,9 +113,11 @@ class AuthService:
             raise DuplicateResourceException(
                 message="A user with this email already exists",
                 resource_type="user",
-                conflicting_field="email",
-                conflicting_value=email
+                conflicting_field="email"
             )
+        
+        # Validate password strength
+        validate_password_strength(password)
 
         # Hash password
         hashed_pwd = hash_password(password)
@@ -124,7 +127,7 @@ class AuthService:
             full_name=full_name,
             email=email,
             password_hash=hashed_pwd,
-            created_at=datetime.utcnow()
+            created_at=datetime.now(timezone.utc)
         )
         self.db.add(new_user)
         await self.db.flush()
@@ -137,7 +140,7 @@ class AuthService:
             role_id=default_role.id,
             workspace_id=None,
             is_primary=True,
-            assigned_at=datetime.utcnow(),
+            assigned_at=datetime.now(timezone.utc),
             assigned_by_user_id=new_user.id
         )
         self.db.add(user_role)
@@ -150,7 +153,7 @@ class AuthService:
         # Create trial subscription (auto-assigned on signup)
         trial_plan = await self._get_trial_plan()
         if trial_plan:
-            trial_start = datetime.utcnow()
+            trial_start = datetime.now(timezone.utc)
             trial_end = trial_start + timedelta(days=14)
 
             trial_subscription = UserSubscription(
@@ -228,7 +231,7 @@ class AuthService:
             )
 
         # Check if account is locked
-        if db_user.locked_until and db_user.locked_until > datetime.utcnow():
+        if db_user.locked_until and db_user.locked_until > datetime.now(timezone.utc):
             raise RextAuthenticationException(
                 message="Account is temporarily locked due to multiple failed login attempts. Please try again later.",
                 context={"locked_until": db_user.locked_until.isoformat()}
@@ -248,7 +251,7 @@ class AuthService:
             lockout_hours = settings.AUTH_LOCKOUT_DURATION_HOURS
 
             if db_user.failed_login_attempts >= max_attempts:
-                db_user.locked_until = datetime.utcnow() + timedelta(hours=lockout_hours)
+                db_user.locked_until = datetime.now(timezone.utc) + timedelta(hours=lockout_hours)
 
             await self.db.flush()
 
@@ -259,7 +262,7 @@ class AuthService:
 
         # Successful login - reset failed attempts
         db_user.failed_login_attempts = 0
-        db_user.last_login_at = datetime.utcnow()
+        db_user.last_login_at = datetime.now(timezone.utc)
         db_user.login_count = (db_user.login_count or 0) + 1
         await self.db.flush()
 
@@ -279,7 +282,7 @@ class AuthService:
             subscription = sub_result.scalar_one_or_none()
             
             if subscription and subscription.trial_end_date:
-                if subscription.trial_end_date < datetime.utcnow():
+                if subscription.trial_end_date < datetime.now(timezone.utc):
                      await schedule_if_allowed(
                         db=self.db,
                         user_id=str(db_user.id),
@@ -339,7 +342,7 @@ class AuthService:
         access_payload = verify_token(access_token)
         jti = access_payload.get("jti")
         exp_timestamp = access_payload.get("exp")
-        expires_at = datetime.utcfromtimestamp(exp_timestamp) if exp_timestamp else datetime.utcnow() + timedelta(hours=24)
+        expires_at = datetime.fromtimestamp(exp_timestamp, tz=timezone.utc) if exp_timestamp else datetime.now(timezone.utc) + timedelta(hours=24)
 
         new_session = UserSession(
             user_id=db_user.id,
@@ -349,8 +352,8 @@ class AuthService:
             user_agent=device_info.get("user_agent", "Unknown"),
             ip_address=device_info.get("ip_address", "Unknown"),
             is_active=True,
-            created_at=datetime.utcnow(),
-            last_activity_at=datetime.utcnow(),
+            created_at=datetime.now(timezone.utc),
+            last_activity_at=datetime.now(timezone.utc),
             expires_at=expires_at
         )
         self.db.add(new_session)
@@ -406,7 +409,7 @@ class AuthService:
 
         if not user.email_verified:
             user.email_verified = True
-            user.email_verified_at = datetime.utcnow()
+            user.email_verified_at = datetime.now(timezone.utc)
             await self.db.flush()
 
         logger.info(
@@ -555,8 +558,8 @@ class AuthService:
             jti=jti,
             token_type="refresh",
             user_id=db_user.id,
-            revoked_at=datetime.utcnow(),
-            expires_at=datetime.utcfromtimestamp(payload.get("exp")),
+            revoked_at=datetime.now(timezone.utc),
+            expires_at=datetime.fromtimestamp(payload.get("exp"), tz=timezone.utc),
             reason="refresh"
         )
         self.db.add(blacklist_entry)
@@ -601,8 +604,8 @@ class AuthService:
             jti=jti,
             token_type="access",
             user_id=user_id,
-            revoked_at=datetime.utcnow(),
-            expires_at=datetime.utcfromtimestamp(exp),
+            revoked_at=datetime.now(timezone.utc),
+            expires_at=datetime.fromtimestamp(exp, tz=timezone.utc),
             reason="logout"
         )
         self.db.add(blacklist_entry)
@@ -618,7 +621,7 @@ class AuthService:
 
         if session:
             session.is_active = False
-            session.revoked_at = datetime.utcnow()
+            session.revoked_at = datetime.now(timezone.utc)
 
         await self.db.flush()
 
@@ -694,6 +697,9 @@ class AuthService:
                 resource_id=user_id
             )
 
+        # Validate password strength
+        validate_password_strength(new_password)
+
         # Hash and update password
         hashed_pwd = hash_password(new_password)
         user.password_hash = hashed_pwd
@@ -730,7 +736,7 @@ class AuthService:
                 hierarchy_level=1,
                 is_system_role=True,
                 is_workspace_role=False,  # Platform role, not workspace role
-                created_at=datetime.utcnow()
+                created_at=datetime.now(timezone.utc)
             )
             self.db.add(default_role)
             await self.db.flush()
@@ -892,7 +898,7 @@ class AuthService:
                         payload = {
                             "user_id": str(user.id),
                             "invitation_id": str(invitation.id),
-                            "user_existed": user_exists
+                            "user_existed": True
                         },
                         workspace_id=str(invitation.workspace_id),
                     )

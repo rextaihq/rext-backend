@@ -15,7 +15,7 @@ from src.flow.prompts.human.content import get_content_prompt
 logger = logging.getLogger(__name__)
 
 
-def generate_content(state: REXT) -> dict:
+async def generate_content(state: REXT) -> dict:
     """
     Generates SEO-optimized content using an LLM.
     
@@ -95,7 +95,7 @@ def generate_content(state: REXT) -> dict:
 
         # 7️⃣ Invoke LLM
         logger.info("Invoking LLM for content generation...")
-        generated_content = content_model.invoke(messages)
+        generated_content = await content_model.ainvoke(messages)
         content_dict = generated_content.model_dump()
         logger.info(f"Content generated successfully. Word count: {content_dict.get('word_count', 0)}")
 

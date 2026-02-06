@@ -22,7 +22,7 @@ for simplicity. For higher security requirements, consider using RS256 (RSA)
 or ES256 (Elliptic Curve) with asymmetric key pairs.
 """
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from fastapi.security import OAuth2PasswordBearer
 from fastapi import Depends, HTTPException, status
 import bcrypt
@@ -53,17 +53,19 @@ def hash_password(password: str) -> str:
     return bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
 
 # verify password
-def verify_password(password: str, hashed_password: str) -> bool:
+def verify_password(password: str, hashed_password: str | None) -> bool:
     """
     Verifies that a plain text password matches the hashed password.
 
     Args:
         password (str): The plain text password.
-        hashed_password (str): The hashed password from the database.
+        hashed_password (str | None): The hashed password from the database.
 
     Returns:
         bool: True if the password matches, False otherwise.
     """
+    if hashed_password is None or hashed_password == "oauth_no_password":
+        return False
     return bcrypt.checkpw(password.encode('utf-8'), hashed_password.encode('utf-8'))
 
 # Create Access Token
@@ -81,7 +83,7 @@ def create_access_token(data: dict, expires_delta: timedelta = None) -> str:
     to_encode = data.copy()
     if expires_delta is None:
         expires_delta = timedelta(minutes=_settings.ACCESS_TOKEN_EXPIRE_MINUTES)
-    expire = datetime.utcnow() + expires_delta
+    expire = datetime.now(timezone.utc) + expires_delta
     jti = str(uuid.uuid4())  # Unique token ID for blacklisting
     to_encode.update({
         "exp": expire,
@@ -106,7 +108,7 @@ def create_refresh_token(data: dict, expires_delta: timedelta = None) -> str:
     to_encode = data.copy()
     if expires_delta is None:
         expires_delta = timedelta(days=_settings.REFRESH_TOKEN_EXPIRE_DAYS)
-    expire = datetime.utcnow() + expires_delta
+    expire = datetime.now(timezone.utc) + expires_delta
     jti = str(uuid.uuid4())  # Unique token ID for blacklisting
     to_encode.update({
         "exp": expire,
@@ -129,7 +131,7 @@ def create_reset_token(data: dict, expires_delta: timedelta = timedelta(minutes=
         str: The JWT token.
     """
     to_encode = data.copy()
-    expire = datetime.utcnow() + expires_delta
+    expire = datetime.now(timezone.utc) + expires_delta
     to_encode.update({"exp": expire})
     token = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return token
@@ -147,7 +149,7 @@ def create_verification_token(data: dict, expires_delta: timedelta = timedelta(h
         str: The JWT token.
     """
     to_encode = data.copy()
-    expire = datetime.utcnow() + expires_delta
+    expire = datetime.now(timezone.utc) + expires_delta
     to_encode.update({"exp": expire})
     token = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return token
@@ -189,7 +191,7 @@ def verify_token(token: str = Depends(oauth2_scheme)) -> dict:
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         exp = payload.get("exp")
-        if exp and datetime.utcfromtimestamp(exp) < datetime.utcnow():
+        if exp and datetime.fromtimestamp(exp, tz=timezone.utc) < datetime.now(timezone.utc):
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Token has expired",
@@ -223,7 +225,7 @@ def verify_refresh_token(token: str) -> dict:
 
         # Check expiration
         exp = payload.get("exp")
-        if exp and datetime.utcfromtimestamp(exp) < datetime.utcnow():
+        if exp and datetime.fromtimestamp(exp, tz=timezone.utc) < datetime.now(timezone.utc):
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Refresh token has expired",

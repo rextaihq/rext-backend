@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime
+from datetime import datetime,timezone
 from sqlalchemy import (
     Column, String, Boolean, Integer, Text, TIMESTAMP, DateTime,
     ForeignKey, UniqueConstraint
@@ -19,7 +19,7 @@ class Users(Base, SerializableMixin):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, unique=True, nullable=False)
     email = Column(String(255), unique=True, nullable=False)
     full_name = Column(String(200))
-    password_hash = Column(String(255), nullable=False)
+    password_hash = Column(String(255), nullable=True)
     display_name = Column(String(200))
     bio = Column(String(500))
     password_changed_at = Column(TIMESTAMP)
@@ -35,8 +35,8 @@ class Users(Base, SerializableMixin):
     timezone = Column(String(50), default="UTC")
     avatar_url = Column(String(500))
     provider_customer_id = Column(String(255), unique=True, index=True)  # Payment provider customer ID
-    created_at = Column(TIMESTAMP, nullable=False, default=datetime.utcnow)
-    updated_at = Column(TIMESTAMP, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(TIMESTAMP, nullable=False, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(TIMESTAMP, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
     deactivated_at = Column(TIMESTAMP)
     deleted_at = Column(TIMESTAMP)
 

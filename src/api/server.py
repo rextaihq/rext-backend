@@ -11,7 +11,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from dotenv import load_dotenv
-
+from src.api.tool.routes import router as tool_router
 # Local application imports
 from src.api.database.async_database import async_engine
 from src.api.middleware.request_tracker import RequestTrackerMiddleware
@@ -25,7 +25,7 @@ from src.api.config import settings
 from src.utils.response_utils import success
 from src.api.database.base import Base
 from src.utils.logger import logger
-
+from src.api.tool.routes import router as tool_router
 # Structured logging
 from src.api.lib.logging_config import configure_logging, RequestIDMiddleware
 

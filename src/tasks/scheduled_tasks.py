@@ -22,6 +22,10 @@ except ImportError:
 from src.api.database.async_database import AsyncSessionLocal
 from src.services.data_cleanup_service import DataCleanupService
 from src.config.cleanup_config import cleanup_config
+from src.api.tasks.trial_expiration_task import run_trial_expiration_task
+from src.api.tasks.payment_dunning_task import run_payment_dunning_task
+from src.api.tasks.grace_period_expiration_task import run_grace_period_expiration_task
+from src.api.tasks.subscription_tasks import run_daily_subscription_tasks
 from src.utils.logger import logger
 
 
@@ -64,7 +68,47 @@ class ScheduledTaskManager:
             id="data_cleanup",
             name="Daily data cleanup",
             replace_existing=True,
-            max_instances=1,  # Prevent overlapping executions
+            max_instances=1,
+        )
+
+        # Trial expiration check — daily at midnight
+        self.scheduler.add_job(
+            run_trial_expiration_task,
+            trigger=CronTrigger(hour=0, minute=0),
+            id="trial_expiration",
+            name="Daily trial expiration check",
+            replace_existing=True,
+            max_instances=1,
+        )
+
+        # Payment dunning reminders — daily at 1 AM
+        self.scheduler.add_job(
+            run_payment_dunning_task,
+            trigger=CronTrigger(hour=1, minute=0),
+            id="payment_dunning",
+            name="Daily payment dunning",
+            replace_existing=True,
+            max_instances=1,
+        )
+
+        # Grace period expiration — daily at 1:30 AM
+        self.scheduler.add_job(
+            run_grace_period_expiration_task,
+            trigger=CronTrigger(hour=1, minute=30),
+            id="grace_period_expiration",
+            name="Daily grace period expiration",
+            replace_existing=True,
+            max_instances=1,
+        )
+
+        # Subscription maintenance — daily at 3 AM
+        self.scheduler.add_job(
+            run_daily_subscription_tasks,
+            trigger=CronTrigger(hour=3, minute=0),
+            id="subscription_maintenance",
+            name="Daily subscription maintenance",
+            replace_existing=True,
+            max_instances=1,
         )
 
         self.scheduler.start()

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Request, BackgroundTasks
+from fastapi import APIRouter, Depends, Request, BackgroundTasks, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from uuid import UUID
 import uuid
@@ -94,12 +94,13 @@ async def send_data_export_email_task(
 async def get_users(
     request: Request,
     workspace_id: str = None,
+    page: int = Query(1, ge=1, description="Page number"),
+    per_page: int = Query(50, ge=1, le=100, description="Items per page"),
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_async_db)
 ):
     """
-    Retrieve users, optionally filtered by workspace.
-    Thin controller - business logic could be extracted to service.
+    Retrieve users, optionally filtered by workspace. Supports pagination.
 
     Requires authentication.
     """
@@ -107,17 +108,20 @@ async def get_users(
         service = UserService(db)
         workspace_uuid = UUID(workspace_id) if workspace_id else None
 
-        # Get users via service
-        users = await service.get_users(workspace_id=workspace_uuid)
+        result = await service.get_users(
+            workspace_id=workspace_uuid,
+            page=page,
+            per_page=per_page,
+        )
 
-        # Convert users to dict format (excluding passwords)
-        user_data = [user.to_dict() for user in users]
+        user_data = [user.to_dict() for user in result["users"]]
 
         return success(
             data={
                 "users": user_data,
-                "total_count": len(user_data),
-                "workspace_id": workspace_id
+                "total_count": result["pagination"]["total"],
+                "workspace_id": workspace_id,
+                "pagination": result["pagination"],
             },
             request=request,
             message=f"Retrieved {len(user_data)} users successfully"

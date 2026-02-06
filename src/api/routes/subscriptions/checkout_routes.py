@@ -30,11 +30,6 @@ router = APIRouter(
     tags=["subscriptions", "checkout"]
 )
 
-# DEBUG: Verify this file is being loaded
-print("🔍 DEBUG: checkout_routes.py loaded at", __file__)
-print("🔍 DEBUG: create_checkout_session will use 'user' parameter")
-
-
 # ============================================================================
 # Request/Response Models
 # ============================================================================

@@ -19,7 +19,7 @@ Does NOT:
 
 from typing import Dict, Any, Optional, List
 from uuid import UUID
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta,timezone
 
 from fastapi import BackgroundTasks
 from src.services.notification_helper import schedule_if_allowed
@@ -120,12 +120,12 @@ class SubscriptionService:
             plan_id=plan_id,
             status=SubscriptionStatus.TRIAL if is_trial else SubscriptionStatus.ACTIVE,
             billing_period=billing_period,
-            start_date=datetime.utcnow(),
-            trial_end_date=datetime.utcnow() + timedelta(days=trial_days) if is_trial else None,
+            start_date=datetime.now(timezone.utc),
+            trial_end_date=datetime.now(timezone.utc) + timedelta(days=trial_days) if is_trial else None,
             current_api_calls=0,
-            usage_reset_date=datetime.utcnow() + timedelta(days=30),
-            created_at=datetime.utcnow(),
-            updated_at=datetime.utcnow()
+            usage_reset_date=datetime.now(timezone.utc) + timedelta(days=30),
+            created_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(timezone.utc)
         )
 
         self.db.add(new_subscription)
@@ -361,7 +361,7 @@ class SubscriptionService:
             # Only billing period change
             if billing_period and billing_period != current_subscription.billing_period:
                 current_subscription.billing_period = billing_period
-                current_subscription.updated_at = datetime.utcnow()
+                current_subscription.updated_at = datetime.now(timezone.utc)
                 await self.db.flush()
                 await self.db.refresh(current_subscription)
 
@@ -454,7 +454,7 @@ class SubscriptionService:
         if new_variant_id:
             current_subscription.lemonsqueezy_variant_id = new_variant_id
 
-        current_subscription.updated_at = datetime.utcnow()
+        current_subscription.updated_at = datetime.now(timezone.utc)
 
         await self.db.flush()
         await self.db.refresh(current_subscription)
@@ -594,13 +594,12 @@ class SubscriptionService:
                 # This ensures we don't leave the user stuck
 
         # Update local subscription
-        subscription.cancelled_at = datetime.utcnow()
+        subscription.cancelled_at = datetime.now(timezone.utc)
         subscription.cancel_at_period_end = not cancel_immediately
 
         if cancel_immediately:
             subscription.status = SubscriptionStatus.CANCELLED
-            subscription.end_date = datetime.utcnow()
-        else:
+            subscription.end_date = datetime.now(timezone.utc)
             # Calculate end of billing period
             if subscription.billing_period == BillingPeriod.MONTHLY:
                 subscription.end_date = subscription.usage_reset_date
@@ -609,8 +608,7 @@ class SubscriptionService:
             else:  # LIFETIME
                 subscription.end_date = None  # No end date for lifetime
 
-        subscription.updated_at = datetime.utcnow()
-
+        subscription.updated_at = datetime.now(timezone.utc)
         await self.db.flush()
         await self.db.refresh(subscription)
 
@@ -755,7 +753,7 @@ class SubscriptionService:
         trial_expired = False
 
         if is_trial and trial_end_date:
-            days_remaining = (trial_end_date - datetime.utcnow()).days
+            days_remaining = (trial_end_date - datetime.now(timezone.utc)).days
             trial_expired = days_remaining < 0
 
         return {
