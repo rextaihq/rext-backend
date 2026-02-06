@@ -23,6 +23,7 @@ import bcrypt
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from src.utils.password_utils import validate_password_strength
 
 from src.api.models.user_models.users import Users
 from src.utils.logger import logger
@@ -175,21 +176,33 @@ class UserService:
             ResourceNotFoundException: If user not found
             RextValidationException: If current password incorrect or passwords same
         """
+        from src.api.security.token_utils import verify_password, hash_password
+        
         user = await self.get_user_by_id(user_id)
 
+        # Handle OAuth users who don't have a password set
+        if user.password_hash is None:
+            raise RextValidationException(
+                message="Your account does not have a password set (OAuth-only). Please use the password reset flow to set a password for the first time.",
+                field_errors={"current_password": ["No password set for this account"]}
+            )
+
         # Verify current password
-        if not bcrypt.checkpw(current_password.encode('utf-8'), user.password_hash.encode('utf-8')):
+        if not verify_password(current_password, user.password_hash):
             raise RextValidationException(
                 message="Current password is incorrect",
                 field_errors={"current_password": ["Incorrect password"]}
             )
 
         # Ensure new password is different
-        if bcrypt.checkpw(new_password.encode('utf-8'), user.password_hash.encode('utf-8')):
+        if verify_password(new_password, user.password_hash):
             raise RextValidationException(
                 message="New password must be different from current password",
                 field_errors={"new_password": ["Password must be different"]}
             )
+
+        # Validate new password strength
+        validate_password_strength(new_password)
 
         # Hash new password
         new_hash = bcrypt.hashpw(new_password.encode('utf-8'), bcrypt.gensalt())
@@ -533,6 +546,9 @@ class UserService:
         if not user:
             raise ResourceNotFoundException("Invalid or expired reset token")
 
+        # Validate new password strength
+        validate_password_strength(new_password)
+
         # Update password
         user.password_hash = hash_password(new_password)
         user.reset_token = None
@@ -562,6 +578,9 @@ class UserService:
         from src.api.security.token_utils import verify_password
 
         user = await self.get_user_by_id(user_id)
+
+        if user.password_hash is None:
+            return False
 
         is_valid = verify_password(password, user.password_hash)
         logger.debug(f"Password verification for user {user_id}: {is_valid}")

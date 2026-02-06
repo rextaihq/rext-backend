@@ -180,7 +180,7 @@ class OAuthService:
                 user = Users(
                     full_name=full_name,
                     email=provider_email,
-                    password_hash="oauth_no_password",  # Placeholder - OAuth users don't need password
+                    password_hash=None,  # Placeholder - OAuth users don't need password
                     email_verified=True,  # OAuth email is pre-verified
                     email_verified_at=datetime.now(timezone.utc),
                     avatar_url=provider_avatar_url,
