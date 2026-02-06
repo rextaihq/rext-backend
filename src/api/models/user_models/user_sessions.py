@@ -36,7 +36,7 @@ class UserSession(Base, SerializableMixin):
     is_active = Column(Boolean, default=True, nullable=False, index=True)
 
     # Timestamps
-    created_at = Column(TIMESTAMP, default=lambda: datetime.now(timezone.utc, nullable=False))
+    created_at = Column(TIMESTAMP, default=lambda: datetime.now(timezone.utc), nullable=False)
     last_activity_at = Column(TIMESTAMP, default=lambda: datetime.now(timezone.utc), nullable=False, index=True)
     
     
