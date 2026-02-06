@@ -19,7 +19,7 @@ class Users(Base, SerializableMixin):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, unique=True, nullable=False)
     email = Column(String(255), unique=True, nullable=False)
     full_name = Column(String(200))
-    password_hash = Column(String(255), nullable=False)
+    password_hash = Column(String(255), nullable=True)
     display_name = Column(String(200))
     bio = Column(String(500))
     password_changed_at = Column(TIMESTAMP)

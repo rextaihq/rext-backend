@@ -1,7 +1,5 @@
 from langsmith import Client
 from langchain_core.prompts import ChatPromptTemplate
-from dotenv import load_dotenv
-load_dotenv()
 
 
 def get_client():

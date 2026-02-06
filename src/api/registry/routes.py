@@ -69,7 +69,7 @@ def register_routes(app: FastAPI) -> None:
 
     # ---- Misc & Tools ----
     from src.api.routes.media import router as media_router
-    from src.api.tools.tools import router as tools_router
+    from src.api.tool.routes import router as tools_router
 
     # ============================================================================
     # ROUTER REGISTRATION

@@ -176,17 +176,26 @@ class UserService:
             ResourceNotFoundException: If user not found
             RextValidationException: If current password incorrect or passwords same
         """
+        from src.api.security.token_utils import verify_password, hash_password
+        
         user = await self.get_user_by_id(user_id)
 
+        # Handle OAuth users who don't have a password set
+        if user.password_hash is None:
+            raise RextValidationException(
+                message="Your account does not have a password set (OAuth-only). Please use the password reset flow to set a password for the first time.",
+                field_errors={"current_password": ["No password set for this account"]}
+            )
+
         # Verify current password
-        if not bcrypt.checkpw(current_password.encode('utf-8'), user.password_hash.encode('utf-8')):
+        if not verify_password(current_password, user.password_hash):
             raise RextValidationException(
                 message="Current password is incorrect",
                 field_errors={"current_password": ["Incorrect password"]}
             )
 
         # Ensure new password is different
-        if bcrypt.checkpw(new_password.encode('utf-8'), user.password_hash.encode('utf-8')):
+        if verify_password(new_password, user.password_hash):
             raise RextValidationException(
                 message="New password must be different from current password",
                 field_errors={"new_password": ["Password must be different"]}
@@ -308,27 +317,28 @@ class UserService:
 
     async def get_users(
         self,
-        workspace_id: Optional[UUID] = None
-    ) -> list[Users]:
+        workspace_id: Optional[UUID] = None,
+        page: int = 1,
+        per_page: int = 50,
+    ) -> Dict[str, Any]:
         """
-        Get list of users, optionally filtered by workspace membership.
+        Get paginated list of users, optionally filtered by workspace membership.
 
         Args:
             workspace_id: Optional workspace ID to filter by
+            page: Page number (1-indexed)
+            per_page: Items per page
 
         Returns:
-            List of Users objects
-
-        Raises:
-            Exception: If query fails
+            Dict with users list and pagination metadata
         """
         from src.api.models.workspace_models.workspace_member import WorkspaceMembers
+        from sqlalchemy import func
 
-        query = select(Users)
+        base_query = select(Users)
 
         if workspace_id:
-            # Filter by workspace membership
-            query = query.join(WorkspaceMembers).where(
+            base_query = base_query.join(WorkspaceMembers).where(
                 WorkspaceMembers.workspace_id == workspace_id,
                 WorkspaceMembers.status == "active"
             )
@@ -336,11 +346,31 @@ class UserService:
         else:
             logger.info("Fetching all users")
 
-        result = await self.db.execute(query)
-        users = result.scalars().all()
+        # Get total count
+        count_query = select(func.count()).select_from(base_query.subquery())
+        count_result = await self.db.execute(count_query)
+        total = count_result.scalar() or 0
 
-        logger.info(f"Retrieved {len(users)} users")
-        return list(users)
+        # Apply pagination
+        offset = (page - 1) * per_page
+        paginated_query = base_query.offset(offset).limit(per_page)
+        result = await self.db.execute(paginated_query)
+        users = list(result.scalars().all())
+
+        total_pages = (total + per_page - 1) // per_page if total > 0 else 0
+
+        logger.info(f"Retrieved {len(users)} users (page {page}/{total_pages})")
+        return {
+            "users": users,
+            "pagination": {
+                "page": page,
+                "per_page": per_page,
+                "total": total,
+                "total_pages": total_pages,
+                "has_next": page < total_pages,
+                "has_prev": page > 1,
+            },
+        }
 
     async def delete_user(
         self,
@@ -545,6 +575,9 @@ class UserService:
         from src.api.security.token_utils import verify_password
 
         user = await self.get_user_by_id(user_id)
+
+        if user.password_hash is None:
+            return False
 
         is_valid = verify_password(password, user.password_hash)
         logger.debug(f"Password verification for user {user_id}: {is_valid}")

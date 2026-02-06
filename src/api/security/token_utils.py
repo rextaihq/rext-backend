@@ -53,17 +53,19 @@ def hash_password(password: str) -> str:
     return bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
 
 # verify password
-def verify_password(password: str, hashed_password: str) -> bool:
+def verify_password(password: str, hashed_password: str | None) -> bool:
     """
     Verifies that a plain text password matches the hashed password.
 
     Args:
         password (str): The plain text password.
-        hashed_password (str): The hashed password from the database.
+        hashed_password (str | None): The hashed password from the database.
 
     Returns:
         bool: True if the password matches, False otherwise.
     """
+    if hashed_password is None or hashed_password == "oauth_no_password":
+        return False
     return bcrypt.checkpw(password.encode('utf-8'), hashed_password.encode('utf-8'))
 
 # Create Access Token
