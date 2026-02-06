@@ -892,7 +892,7 @@ class AuthService:
                         payload = {
                             "user_id": str(user.id),
                             "invitation_id": str(invitation.id),
-                            "user_existed": user_exists
+                            "user_existed": True
                         },
                         workspace_id=str(invitation.workspace_id),
                     )
