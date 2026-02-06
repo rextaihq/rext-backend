@@ -113,8 +113,7 @@ class AuthService:
             raise DuplicateResourceException(
                 message="A user with this email already exists",
                 resource_type="user",
-                conflicting_field="email",
-                conflicting_value=email
+                conflicting_field="email"
             )
         
         # Validate password strength

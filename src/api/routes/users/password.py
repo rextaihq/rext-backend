@@ -77,56 +77,58 @@ async def forgot_password(
     """
     Initiate forgot password process.
     Sends password reset email with token.
+
+    SECURITY: Always returns the same response regardless of whether the email
+    exists to prevent user enumeration attacks (OWASP A07:2025).
     """
     try:
-        logger.info(f"Forgot password request for: {forgot_request.email}")
+        # Use a generic message for all responses
+        generic_message = "If an account with this email exists, a password reset link has been sent."
+
+        # Log at debug level only — do not log the email at info level
+        logger.debug(f"Forgot password request received")
+
         service = UserService(db)
-
-        # Get user by email
         user = await service.get_user_by_email(forgot_request.email)
-        if not user:
-            return error(
-                message="User with this email does not exist",
-                code=ErrorCode.RESOURCE_NOT_FOUND,
-                status_code=404,
-                severity=ErrorSeverity.MEDIUM,
-                request=request
+
+        if user:
+            # Generate reset token
+            reset_data = {
+                "user_id": str(user.id),
+                "email": user.email,
+                "jti": str(uuid.uuid4())
+            }
+            reset_token = create_reset_token(data=reset_data)
+
+            # Set reset token via service
+            await service.set_reset_token(user.id, reset_token)
+
+            # Get frontend URL
+            frontend_url = settings.FRONTEND_URL
+
+            # Send email in background
+            background_tasks.add_task(
+                send_password_reset_email_task,
+                email=user.email,
+                user_name=user.full_name or user.display_name or user.email,
+                reset_token=reset_token,
+                user_id=str(user.id),
+                frontend_url=frontend_url
             )
+            logger.info(f"Password reset initiated for user: {user.id}")
 
-        # Generate reset token
-        reset_data = {
-            "user_id": str(user.id),
-            "email": user.email,
-            "jti": str(uuid.uuid4())
-        }
-        reset_token = create_reset_token(data=reset_data)
-
-        # Set reset token via service
-        await service.set_reset_token(user.id, reset_token)
-
-        # Get frontend URL
-        frontend_url = settings.FRONTEND_URL
-
-        # Send email in background using professional template
-        background_tasks.add_task(
-            send_password_reset_email_task,
-            email=user.email,
-            user_name=user.full_name or user.display_name or user.email,
-            reset_token=reset_token,
-            user_id=str(user.id),
-            frontend_url=frontend_url
-        )
-
-        logger.info(f"Password reset email sent to: {user.email}")
+        # Always return 200 with the same generic message
         return success(
-            data={"message": "Password reset link has been sent to your email."},
+            data={"message": generic_message},
             request=request,
-            message="Forgot password initiated successfully"
+            message=generic_message
         )
 
     except Exception as e:
         logger.error(f"Forgot password error: {str(e)}")
         raise
+
+    
 
 
 @router.post("/reset-password")
