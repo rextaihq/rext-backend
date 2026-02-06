@@ -20,7 +20,7 @@ Does NOT:
 
 from typing import Optional, List, Dict, Any
 from uuid import UUID
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta,timezone
 import secrets
 import hashlib
 
@@ -65,7 +65,7 @@ class InvitationService:
             Secure token string
         """
         random_part = secrets.token_urlsafe(32)
-        combined = f"{email}:{workspace_id}:{random_part}:{datetime.utcnow().timestamp()}"
+        combined = f"{email}:{workspace_id}:{random_part}:{datetime.now(timezone.utc).timestamp()}"
         token_hash = hashlib.sha256(combined.encode()).hexdigest()
         return token_hash
 
@@ -163,7 +163,7 @@ class InvitationService:
             if existing_invitation.status in ("revoked", "expired"):
                 # Generate token and create invitation
                 token = self._generate_invitation_token(email, workspace_id)
-                expires_at = datetime.utcnow() + timedelta(days=expiry_days)
+                expires_at = datetime.now(timezone.utc) + timedelta(days=expiry_days)
                 
                 # update the existing invitation
                 existing_invitation.invitation_token = token
@@ -204,7 +204,7 @@ class InvitationService:
 
         # Generate token and create invitation
         token = self._generate_invitation_token(email, workspace_id)
-        expires_at = datetime.utcnow() + timedelta(days=expiry_days)
+        expires_at = datetime.now(timezone.utc) + timedelta(days=expiry_days)
 
         invitation = UserInvitations(
             email=email,
@@ -376,7 +376,7 @@ class InvitationService:
             )
 
         # Check expiry
-        if invitation.expires_at < datetime.utcnow():
+        if invitation.expires_at < datetime.now(timezone.utc):
             invitation.status = "expired"
             await self.db.flush()
             raise BusinessRuleViolationException(
@@ -426,8 +426,8 @@ class InvitationService:
             user_id=user_id,
             invitation_id=invitation.id,
             status="active",
-            joined_at=datetime.utcnow(),
-            last_activity_at=datetime.utcnow()
+            joined_at=datetime.now(timezone.utc),
+            last_activity_at=datetime.now(timezone.utc)
         )
         self.db.add(member)
 
@@ -520,7 +520,7 @@ class InvitationService:
             select(UserInvitations).where(
                 and_(
                     UserInvitations.status == "pending",
-                    UserInvitations.expires_at < datetime.utcnow()
+                    UserInvitations.expires_at < datetime.now(timezone.utc)
                 )
             ).limit(batch_size)
         )
@@ -569,7 +569,7 @@ class InvitationService:
             invitation.email,
             invitation.workspace_id
         )
-        invitation.expires_at = datetime.utcnow() + timedelta(days=extend_days)
+        invitation.expires_at = datetime.now(timezone.utc) + timedelta(days=extend_days)
 
         logger.info(
             f"Invitation resent: {invitation.email}",
