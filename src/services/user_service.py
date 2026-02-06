@@ -546,6 +546,9 @@ class UserService:
         if not user:
             raise ResourceNotFoundException("Invalid or expired reset token")
 
+        # Validate new password strength
+        validate_password_strength(new_password)
+
         # Update password
         user.password_hash = hash_password(new_password)
         user.reset_token = None
