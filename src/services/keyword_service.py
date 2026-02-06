@@ -210,7 +210,8 @@ class KeywordExtractor:
             return keyword_scores
             
         except Exception as e:
-            print(f"TF-IDF calculation error: {e}")
+            import logging
+            logging.getLogger(__name__).warning(f"TF-IDF calculation error: {e}")
             return {}
     
     def _boost_keyword_scores(

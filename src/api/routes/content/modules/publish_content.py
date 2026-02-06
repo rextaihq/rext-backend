@@ -249,7 +249,8 @@ async def publish_existing_content(
         seo_data = ContentSEODataSchema(
             meta_title=content.seo_data.meta_title,
             meta_description=content.seo_data.meta_description,
-            focus_keyphrase=content.seo_data.focus_keyphrase
+            focus_keyphrase=content.seo_data.focus_keyphrase,
+            trust_score=content.seo_data.trust_score
         )
     
     content_data = ContentCreate(

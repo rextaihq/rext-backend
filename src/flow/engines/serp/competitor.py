@@ -12,7 +12,7 @@ from langchain.messages import SystemMessage,HumanMessage
 
 logger = logging.getLogger(__name__)
 
-def extract_competitors_from_serp(state: REXT) -> Dict[str, Any]:
+async def extract_competitors_from_serp(state: REXT) -> Dict[str, Any]:
     """
     Extract competitor information from SERP results by grouping data by domain.
 
@@ -106,7 +106,7 @@ def extract_competitors_from_serp(state: REXT) -> Dict[str, Any]:
             for i, comp in enumerate(competitor_data_list):
                 human_content += f"--- Competitor {i+1} ---\nDomain: {comp['domain']}\nTitle: {comp['title']}\nSnippet: {comp['snippet']}\n\n"
 
-            classification_results = batch_model.invoke([
+            classification_results = await batch_model.ainvoke([
                 SystemMessage(content=SEO_INTENT_SYSTEM_PROMPT + "\nClassify each competitor in the list provided."),
                 HumanMessage(content=human_content)
             ])

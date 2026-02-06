@@ -54,7 +54,7 @@ async def scrape_web_content(url: HttpUrl, website_id: str):
             logger.info("Bound the model with structure output")
             structure_model = model.with_structured_output(BrandSchema)
 
-            brand_data = structure_model.invoke(content)
+            brand_data = await structure_model.ainvoke(content)
             
             logger.info(f"Extracted Brand Voice: {brand_data}")
             brand_voice = BrandVoice(

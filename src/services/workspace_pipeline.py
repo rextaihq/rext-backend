@@ -522,7 +522,7 @@ class WorkspacePipeline:
         if not content.strip():
             return None
 
-        def _invoke_model() -> BrandSchema:
+        async def _invoke_model() -> BrandSchema:
             from langchain_core.messages import SystemMessage, HumanMessage
             
             model = load_model()
@@ -568,9 +568,9 @@ Now analyze the following website content and extract brand information:"""
                 HumanMessage(content=content)
             ]
             
-            return structured.invoke(messages)
+            return await structured.ainvoke(messages)
 
-        return await asyncio.to_thread(_invoke_model)
+        return await _invoke_model()
 
 
 async def run_workspace_pipeline(

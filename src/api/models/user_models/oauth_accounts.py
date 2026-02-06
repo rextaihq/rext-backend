@@ -6,7 +6,7 @@ Enables users to sign in with multiple OAuth providers.
 """
 
 import uuid
-from datetime import datetime
+from datetime import datetime,timezone
 from sqlalchemy import Column, String, Text, TIMESTAMP, ForeignKey, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
@@ -44,8 +44,8 @@ class OAuthAccount(Base, SerializableMixin):
     provider_avatar_url = Column(String(500))  # Avatar URL from provider
 
     # Timestamps
-    created_at = Column(TIMESTAMP, nullable=False, default=datetime.utcnow)
-    updated_at = Column(TIMESTAMP, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(TIMESTAMP, nullable=False, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(TIMESTAMP, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
     last_used_at = Column(TIMESTAMP)  # Last time this account was used to sign in
 
     # Relationships

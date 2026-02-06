@@ -1,13 +1,10 @@
 import logging
+import os
 from typing import Optional, List, Union
 from crawl4ai.async_configs import BrowserConfig, CrawlerRunConfig
 from crawl4ai import CacheMode
 from crawl4ai.content_scraping_strategy import LXMLWebScrapingStrategy
 from src.flow.engines.scrape.config.markdown_generator import MarkdownGeneratorFactory
-from dotenv import load_dotenv
-import os
-
-load_dotenv()
 
 logger = logging.getLogger(__name__)
 

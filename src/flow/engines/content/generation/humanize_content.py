@@ -14,7 +14,7 @@ from src.flow.prompts.human.humanize import get_humanize_prompt
 logger = logging.getLogger(__name__)
 
 
-def humanize_content(state: REXT) -> dict:
+async def humanize_content(state: REXT) -> dict:
     """
     Humanizes AI-generated content to make it appear naturally written by a human.
     
@@ -69,7 +69,7 @@ def humanize_content(state: REXT) -> dict:
         
         # 4️⃣ Invoke LLM for humanization
         logger.info("Invoking LLM for content humanization (target: 90% human-written)...")
-        humanized_content = model.invoke(messages)
+        humanized_content = await model.ainvoke(messages)
         humanized_dict = humanized_content.model_dump()
         
         logger.info(f"Humanization completed (90% human target). Keys: {humanized_dict.keys()}")
