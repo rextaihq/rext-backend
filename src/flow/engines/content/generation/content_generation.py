@@ -43,11 +43,56 @@ async def generate_content(state: REXT) -> dict:
 
         logger.info(f"Outline extracted: {outline_str[:20]}...")
 
-        # 2️⃣ Get relevant context
-        relevant_context = state.get("relevant_context", [])
-        page_content = "\n\n".join(
-            chunk.get("chunk", "") for chunk in relevant_context
-        )
+        # 2️⃣ Get relevant context from RextStore
+        serp_payload = state.get("serp_payload", {})
+        user_id = str(serp_payload.get("user_id", ""))
+        workspace_id = str(serp_payload.get("workspace_id", ""))
+        
+        page_content = ""
+        context_items = []
+        
+        if user_id and workspace_id:
+            try:
+                from src.flow.store.rext_store import RextStore
+                store = RextStore()
+                # Use the topic as the search query
+                search_query = topic
+                
+                logger.info(f"Searching RextStore for context on: '{search_query}' (User: {user_id}, Workspace: {workspace_id})")
+                
+                results = await store.search_knowledge(
+                    user_id=user_id, 
+                    workspace_id=workspace_id, 
+                    query=search_query,
+                    limit=10 
+                )
+                
+                if results:
+                    # RextStore returns a list of SearchItem objects, accessing .value['text']
+                    for res in results:
+                        text = res.value.get('text', '')
+                        if text:
+                            context_items.append(text)
+                    
+                    page_content = "\n\n".join(context_items)
+                    logger.info(f"Retrieved {len(results)} context items from store.")
+                else:
+                    logger.warning("No relevant context found in RextStore.")
+                    
+            except Exception as e:
+                logger.error(f"Failed to retrieve context from RextStore: {e}")
+                # Fallback to existing relevant_context if available (legacy support)
+                relevant_context = state.get("relevant_context", [])
+                page_content = "\n\n".join(
+                    chunk.get("chunk", "") for chunk in relevant_context
+                )
+        else:
+             logger.warning("Missing user_id or workspace_id. Skipping RextStore context retrieval.")
+             # Fallback
+             relevant_context = state.get("relevant_context", [])
+             page_content = "\n\n".join(
+                 chunk.get("chunk", "") for chunk in relevant_context
+             )
         logger.info(f"Page content length: {len(page_content.split())} words")
 
         # 3️⃣ Get primary keyword from outline
