@@ -26,10 +26,22 @@ class SERPEngineState(TypedDict, total=False):
     people_ask: List[Dict[str, Any]]
 
     # SERP metadata
-    search_information: Dict[str, Any]
+    # search_information: Dict[str, Any]
 
     # SERP analysis
     total_results: int
+
+class SERPBacklinks(TypedDict):
+    keyword: str
+    search_volume: int
+    keyword_difficulty: int
+    backlinks: int
+    referring_domains: int
+    dofollow_links: int
+    images: bool
+    videos: bool
+    main_intent: str
+    foreign_intent: str
 
 
 # =========================
@@ -120,6 +132,7 @@ class REXT(TypedDict, total=False):
     serp_payload: Annotated[SERPPAYLOAD, merge_dicts]
     serp_result: Annotated[SERPEngineState, merge_dicts]
     serp_normalized: Annotated[SERPNORMALIZED, merge_dicts]
+    serp_backlinks: Annotated[SERPBacklinks, merge_dicts]
 
     # Competition
     competitors: List[Competitor]

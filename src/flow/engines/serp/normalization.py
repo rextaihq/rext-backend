@@ -30,7 +30,7 @@ def normalize_serp_results(state: REXT) -> Dict[str, Any]:
     people_ask = serp_result.get("people_ask", [])
     search_params = serp_result.get("search_params", {})
 
-    engine = search_params.get("engine", "google")
+    engine = search_params.get("se", "google")
     logger.debug(f"Normalizing results for engine: {engine}, query: '{query}'")
 
     normalized_results: List[NormalizedOrganicResult] = []
