@@ -372,7 +372,7 @@ class ErrorHandlerMiddleware(BaseHTTPMiddleware):
         filtered_details = []
         sensitive_fields = {
             'password', 'token', 'secret', 'key', 'authorization',
-            'cookie', 'session', 'credential', 'private'
+            'cookie', 'session', 'credential', 'private', 'conflicting_value'
         }
 
         for detail in details:
@@ -411,7 +411,7 @@ class ErrorHandlerMiddleware(BaseHTTPMiddleware):
         filtered_context = {}
         sensitive_keys = {
             'password', 'token', 'secret', 'key', 'authorization',
-            'cookie', 'session', 'credential', 'private', 'api_key'
+            'cookie', 'session', 'credential', 'private', 'api_key', 'conflicting_value'
         }
 
         for key, value in context.items():

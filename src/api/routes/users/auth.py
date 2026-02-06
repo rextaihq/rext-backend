@@ -431,8 +431,7 @@ async def register_with_invitation(
             extra={
                 "user_id": str(current_user.id),
                 "workspace_id": str(workspace.id),
-                "invitation_id": str(invitation.id),
-                "user_existed": user_exists
+                "invitation_id": str(invitation.id)
             }
         )
         #  send the notification to user
@@ -445,8 +444,7 @@ async def register_with_invitation(
             payload = {
                 "user_id": str(current_user.id),
                 "workspace_id": str(workspace.id),
-                "invitation_id": str(invitation.id),
-                "user_existed": user_exists
+                "invitation_id": str(invitation.id)
             }
         )
 
@@ -455,7 +453,6 @@ async def register_with_invitation(
                 "user": user_data_response,
                 "workspace": workspace_data,
                 "invitation_accepted": True,
-                "user_existed": user_exists,
                 "message": f"Welcome! You've joined {workspace.name}"
             },
             request=request,
