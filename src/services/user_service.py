@@ -23,6 +23,7 @@ import bcrypt
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from src.utils.password_utils import validate_password_strength
 
 from src.api.models.user_models.users import Users
 from src.utils.logger import logger
@@ -200,10 +201,14 @@ class UserService:
                 field_errors={"new_password": ["Password must be different"]}
             )
 
-        # Hash and update password using utility
-        user.password_hash = hash_password(new_password)
-        user.password_changed_at = datetime.utcnow()
-        user.updated_at = datetime.utcnow()
+        # Validate new password strength
+        validate_password_strength(new_password)
+
+        # Hash new password
+        new_hash = bcrypt.hashpw(new_password.encode('utf-8'), bcrypt.gensalt())
+        user.password_hash = new_hash.decode('utf-8')
+        user.password_changed_at = datetime.now(timezone.utc)
+        user.updated_at = datetime.now(timezone.utc)
 
         logger.info(
             f"User password changed: {user_id}",
