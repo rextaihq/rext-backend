@@ -252,7 +252,7 @@ async def validate_and_store_file(
         logger.exception(f"Error storing file: {e}")
         raise RextValidationException(
             "Failed to process file upload",
-            context={"error": str(e)}
+            context={"error": "An internal error occured"}
         )
 
 

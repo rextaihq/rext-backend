@@ -197,7 +197,9 @@ async def change_password(
     request: Request,
     password_data: ChangePasswordRequest,
     current_user: dict = Depends(get_current_user),
-    db: AsyncSession = Depends(get_async_db)
+    db: AsyncSession = Depends(get_async_db),
+    _rate_limit: None = Depends(password_reset_rate_limit())
+
 ):
     """
     Change user password (requires authentication).
@@ -288,7 +290,9 @@ async def change_password(
 async def verify_password(
     request: Request,
     db: AsyncSession = Depends(get_async_db),
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
+    _rate_limit: None = Depends(password_reset_rate_limit())
+
 ):
     """
     Verify user's current password.

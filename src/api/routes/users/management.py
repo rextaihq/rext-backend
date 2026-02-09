@@ -17,6 +17,7 @@ from src.services.user_service import UserService
 from src.api.middleware.exceptions import ResourceNotFoundException, RextValidationException
 from src.api.models.workspace_models.workspace_member import WorkspaceMembers
 from src.api.config import get_settings
+from src.api.config.settings import settings
 from sqlalchemy import select, delete
 
 router = APIRouter()
@@ -353,6 +354,8 @@ async def export_user_data(
             export_data["activity"] = {
                 "note": "Activity logs export will be available once audit log system is queried"
             }
+        # Get frontend URL
+        frontend_url = settings.FRONTEND_URL
 
         # NEW: Export billing/subscription data
         if export_request.include_billing:
@@ -405,8 +408,7 @@ async def export_user_data(
         import json
         export_json = json.dumps(export_data, indent=2)
 
-        # Get frontend URL
-        frontend_url = settings.FRONTEND_URL
+        
 
         # Send email with data export in background using EmailService
         background_tasks.add_task(

@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, Request, UploadFile, File, HTTPException, status, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
 
+
 from src.utils.logger import logger
 from src.api.security.dependencies import get_current_user
 from src.utils.route_decorators import require_permissions
@@ -13,7 +14,8 @@ from src.api.schema.response_schemas import ErrorCode, ErrorSeverity
 from src.api.middleware.exceptions import ResourceNotFoundException
 from src.services.user_service import UserService
 from src.services.notification_helper import schedule_if_allowed
-from datetime import datetime
+from datetime import datetime,timezone 
+
 from pathlib import Path
 from sqlalchemy import select
 import time
@@ -175,7 +177,7 @@ async def update_profile(
             background_tasks=background_tasks,
             pref_flag="in_app_notifications",
             message=f"Failed to update profile: {str(e)}",
-            payload={"user_id": str(user_id), "error": str(e)},
+            payload={"user_id": str(user_id), "error": "An internal error occurred"}
             workspace_id=None,
             title="Profile Update Failed",
             status="error"
@@ -323,7 +325,7 @@ async def upload_avatar(
             message="Avatar uploaded successfully"
         )
 
-    except ResourceNotFoundException:
+    except ResourceNotFoundException as e:
         # Schedule notification
         await schedule_if_allowed(
             db=db,
@@ -331,7 +333,7 @@ async def upload_avatar(
             background_tasks=background_tasks,
             pref_flag="in_app_notifications",
             message="failed to upload avatar",
-            payload={"user_id": str(user_id), "error": str(e)},
+            payload={"user_id": str(user_id), "error": "User not found"},
             workspace_id=None
         )
         return error(
@@ -350,7 +352,7 @@ async def upload_avatar(
             background_tasks=background_tasks,
             pref_flag="in_app_notifications",
             message="failed to upload avatar",
-            payload={"user_id": str(user_id), "error": str(e)},
+            payload={"user_id": str(user_id), "error": "An internal error occurred"}
             workspace_id=None
         )
         raise HTTPException(
@@ -446,7 +448,7 @@ async def delete_avatar(
             background_tasks=background_tasks,
             pref_flag="in_app_notifications",
             message="failed to delete avatar",
-            payload={"user_id": str(user_id), "error": str(e)},
+            payload={"user_id": str(user_id), "error": "User not found"},
             workspace_id=None
         )
         return error(
@@ -464,13 +466,16 @@ async def delete_avatar(
             user_id=str(user_id),
             background_tasks=background_tasks,
             pref_flag="in_app_notifications",
+            payload={"user_id": str(user_id), "error": "An internal error occurred"}
             message="failed to delete avatar",
-            payload={"user_id": str(user_id), "error": str(e)},
             workspace_id=None
         )
-        return HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to delete avatar"
+        return error(
+            message="Failed to delete avatar",
+            code=ErrorCode.INTERNAL_SERVER_ERROR,
+            status_code=500,
+            severity=ErrorSeverity.HIGH,
+            request=request
         )
 
 
@@ -610,7 +615,7 @@ async def update_notification_preferences(
             background_tasks=background_tasks,
             pref_flag="in_app_notifications",
             message="failed to update notification preferences",
-            payload={"user_id": str(user_id), "error": str(e)},
+            payload={"user_id": str(user_id), "error": "An internal error occurred"}
             workspace_id=None
         )
         raise
@@ -693,7 +698,7 @@ async def deactivate_account(
                 logger.info(f"Canceled subscription {subscription.id} for user {user_id}")
 
         # Deactivate user account
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         scheduled_deletion = now + timedelta(days=14)
 
         user.status = "inactive"

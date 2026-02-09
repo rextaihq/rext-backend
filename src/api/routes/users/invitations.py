@@ -180,7 +180,8 @@ async def get_pending_invitations(
             } if role else None,
             "invited_by": {
                 "id": str(inviter.id),
-                "name": f"{inviter.first_name} {inviter.last_name}".strip() or inviter.username,
+                "name": inviter.full_name or inviter.display_name or inviter.email,
+                
                 "email": inviter.email
             } if inviter else None,
             "token": invitation.invitation_token,

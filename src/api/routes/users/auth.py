@@ -22,7 +22,8 @@ from src.api.models.user_models.notification_preferences import NotificationPref
 import os
 from src.api.middleware.rate_limiter import (
     login_rate_limit,
-    registration_rate_limit
+    registration_rate_limit,
+    oauth_rate_limit
 )
 from src.services.auth_service import AuthService
 from src.services.invitation_service import InvitationService
@@ -547,7 +548,7 @@ async def login_user(
         await db.rollback()
         logger.error(f"Login failed: {str(e)}", exc_info=True)
         return error(
-            message="Login failed due to server error",
+            message="<existing message>",
             code=ErrorCode.INTERNAL_SERVER_ERROR,
             status_code=500,
             severity=ErrorSeverity.HIGH,
@@ -606,7 +607,7 @@ async def refresh_access_token(
     except Exception as e:
         logger.error(f"Token refresh failed: {str(e)}")
         return error(
-            message="Failed to refresh token",
+            message="<existing message>",
             code=ErrorCode.INTERNAL_SERVER_ERROR,
             status_code=500,
             severity=ErrorSeverity.HIGH,
@@ -653,7 +654,7 @@ async def logout_user(
     except Exception as e:
         logger.error(f"Logout failed: {str(e)}")
         return error(
-            message="Logout failed",
+            message="<existing message>",
             code=ErrorCode.INTERNAL_SERVER_ERROR,
             status_code=500,
             severity=ErrorSeverity.HIGH,
@@ -699,7 +700,7 @@ async def verify_email(
         raise
     except Exception as e:
         return error(
-            message="Failed to verify email",
+            message="<existing message>",
             code=ErrorCode.INTERNAL_SERVER_ERROR,
             status_code=500,
             severity=ErrorSeverity.HIGH,
@@ -764,7 +765,7 @@ async def resend_verification(
     except Exception as e:
         logger.error(f"Resend verification error: {str(e)}")
         return error(
-            message="Failed to resend verification email",
+            message="<existing message>",
             code=ErrorCode.INTERNAL_SERVER_ERROR,
             status_code=500,
             severity=ErrorSeverity.HIGH,
@@ -775,7 +776,8 @@ async def resend_verification(
 @router.post("/oauth/login")
 async def oauth_login(
     request: Request,
-    db: AsyncSession = Depends(get_async_db)
+    db: AsyncSession = Depends(get_async_db),
+    _rate_limit: None = Depends(oauth_rate_limit())
 ):
     """
     Login or register user via OAuth provider.
@@ -903,7 +905,7 @@ async def oauth_login(
     except Exception as e:
         logger.error(f"OAuth login failed: {str(e)}", exc_info=True)
         return error(
-            message="OAuth login failed",
+            message="<existing message>",
             code=ErrorCode.INTERNAL_SERVER_ERROR,
             status_code=500,
             severity=ErrorSeverity.HIGH,
@@ -915,7 +917,9 @@ async def oauth_login(
 async def link_oauth(
     request: Request,
     current_user: dict = Depends(get_current_user),
-    db: AsyncSession = Depends(get_async_db)
+    db: AsyncSession = Depends(get_async_db),
+    _rate_limit: None = Depends(oauth_rate_limit())
+
 ):
     """
     Link an OAuth account to the current user.
@@ -983,7 +987,7 @@ async def link_oauth(
     except Exception as e:
         logger.error(f"OAuth link failed: {str(e)}", exc_info=True)
         return error(
-            message="Failed to link OAuth account",
+            message="<existing message>",
             code=ErrorCode.INTERNAL_SERVER_ERROR,
             status_code=500,
             severity=ErrorSeverity.HIGH,
@@ -996,7 +1000,9 @@ async def unlink_oauth(
     provider: str,
     request: Request,
     current_user: dict = Depends(get_current_user),
-    db: AsyncSession = Depends(get_async_db)
+    db: AsyncSession = Depends(get_async_db),
+    _rate_limit: None = Depends(oauth_rate_limit())
+
 ):
     """
     Unlink an OAuth account from the current user.
@@ -1022,10 +1028,10 @@ async def unlink_oauth(
         raise
     except Exception as e:
         logger.error(f"OAuth unlink failed: {str(e)}", exc_info=True)
-        return error(
-            message="Failed to unlink OAuth account",
+    return error(
+            message="<existing message>",
             code=ErrorCode.INTERNAL_SERVER_ERROR,
             status_code=500,
             severity=ErrorSeverity.HIGH,
             request=request
-        )
+        )  

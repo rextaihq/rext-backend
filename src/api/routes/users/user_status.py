@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from uuid import UUID
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from src.utils.logger import logger
 from src.api.security.dependencies import get_current_user
@@ -62,7 +62,7 @@ async def suspend_user(
 
         # Update status directly (could be extracted to service method)
         target_user.status = "suspended"
-        target_user.updated_at = datetime.utcnow()
+        target_user.updated_at = datetime.now(timezone.utc)
         await db.flush()
 
         # Get admin user for audit log
@@ -252,7 +252,7 @@ async def ban_user(
 
         # Update status directly (could be extracted to service method)
         target_user.status = "banned"
-        target_user.updated_at = datetime.utcnow()
+        target_user.updated_at = datetime.now(timezone.utc)
         await db.flush()
 
         # Get admin user for audit log
@@ -353,7 +353,7 @@ async def deactivate_account(
         # Store old status for audit
         old_status = db_user.status
 
-        # NEW: Check for active subscriptions
+        # Check for active subscriptions
         from src.api.models.subscription_models.subscriptions import UserSubscription
         from src.services.subscription_service import SubscriptionService
 
@@ -383,11 +383,10 @@ async def deactivate_account(
                 code=ErrorCode.VALIDATION_ERROR,
                 status_code=400,
                 severity=ErrorSeverity.MEDIUM,
-                context={"active_subscriptions": subscription_details},
                 request=request
             )
 
-        # NEW: Auto-cancel subscriptions if requested
+        # Auto-cancel subscriptions if requested
         if active_subs and deactivation_data.cancel_subscriptions:
             subscription_service = SubscriptionService(db)
             canceled_count = 0
