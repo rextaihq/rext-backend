@@ -35,10 +35,6 @@ class UserPreferences(Base):
     # Relationships
     user = relationship("Users", back_populates="preferences")
 
-    # Indexes
-    __table_args__ = (
-        Index("ix_user_preferences_user_id", "user_id"),
-    )
 
     def to_dict(self):
         """Convert to dictionary"""
