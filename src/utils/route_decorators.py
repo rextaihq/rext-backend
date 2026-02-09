@@ -359,10 +359,16 @@ def require_permissions(
             # Resolve workspace if scoped
             if workspace_scoped:
                 workspace_id_param = kwargs.get('workspace_id')
-                # if not workspace_id_param:
-                    # raise ValueError(
-                    #     "require_permissions with workspace_scoped=True requires 'workspace_id' parameter in route signature"
-                    # )
+                if not workspace_id_param:
+                    logger.error(
+                        f"require_permissions with workspace_scoped=True requires 'workspace_id' parameter "
+                        f"in route signature for {func.__name__}",
+                        extra={"operation": func.__name__, "permissions": list(permissions)}
+                    )
+                    raise ValueError(
+                        f"require_permissions with workspace_scoped=True requires 'workspace_id' parameter "
+                        f"in route signature. Route: {func.__name__}"
+                    )
 
                 # Resolve workspace ID (handles both UUID and slug)
                 try:
@@ -372,31 +378,19 @@ def require_permissions(
 
             # Check permissions using appropriate logic (AND or OR)
             check_func = check_all_permissions if require_all else check_any_permission
-            if hasattr(db, "_executed"):
-                logger.debug(
-                    "Skipping permission check for stubbed database session",
+            try:
+                has_permission = await check_func(db, user_id, list(permissions), workspace_uuid)
+            except Exception as e:
+                logger.error(
+                    f"Error checking permissions for {func.__name__}: {str(e)}",
                     extra={
                         "operation": func.__name__,
                         "user_id": str(user_id),
                         "workspace_id": str(workspace_uuid) if workspace_uuid else None,
                         "permissions": list(permissions),
-                    },
+                    }
                 )
-                has_permission = True
-            else:
-                try:
-                    has_permission = await check_func(db, user_id, list(permissions), workspace_uuid)
-                except AssertionError:
-                    logger.debug(
-                        "Permission check skipped due to test stub assertion",
-                        extra={
-                            "operation": func.__name__,
-                            "user_id": str(user_id),
-                            "workspace_id": str(workspace_uuid) if workspace_uuid else None,
-                            "permissions": list(permissions),
-                        },
-                    )
-                    has_permission = True
+                has_permission = False
 
             if not has_permission:
                 # Build permission requirement string for error message
