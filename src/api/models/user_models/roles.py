@@ -11,15 +11,13 @@ from src.api.models.mixins import UUIDPrimaryKeyMixin, TimestampMixin
 class Role(Base, SerializableMixin, UUIDPrimaryKeyMixin, TimestampMixin):
     __tablename__ = "roles"
 
-    # id, created_at, updated_at provided by mixins
+    # id, created_at, updated_at are provided by mixins
     name = Column(String(100), unique=True, nullable=False)
     display_name = Column(String(150), nullable=False)
     description = Column(Text)
     hierarchy_level = Column(Integer, default=0)
 
-    # Role Classification:
-    # - is_system_role: Platform-level roles (super_admin, admin, user)
-    # - is_workspace_role: Can be assigned to workspace members (workspace_owner, editor, etc.)
+    # Role Classification
     is_system_role = Column(Boolean, default=False)
     is_workspace_role = Column(Boolean, default=False, nullable=False)
 
