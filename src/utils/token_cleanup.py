@@ -1,3 +1,4 @@
+
 """
 Token Cleanup Utility
 
@@ -13,7 +14,8 @@ Usage:
     db.close()
 """
 
-from datetime import datetime, timezone
+from datetime import datetime
+from sqlalchemy import delete
 from sqlalchemy.orm import Session
 from src.api.models.user_models.token_blacklist import TokenBlacklist
 from src.utils.logger import logger
@@ -45,11 +47,14 @@ def cleanup_expired_tokens(db: Session) -> int:
     """
     try:
         # Delete tokens that expired before current time
-        cutoff_time = datetime.now(timezone.utc)
+        cutoff_time = datetime.utcnow()
 
-        deleted_count = db.query(TokenBlacklist).filter(
-            TokenBlacklist.expires_at < cutoff_time
-        ).delete(synchronize_session=False)
+        result = db.execute(
+            delete(TokenBlacklist).where(
+                TokenBlacklist.expires_at < cutoff_time
+            )
+        )
+        deleted_count = result.rowcount
 
         db.commit()
 

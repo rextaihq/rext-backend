@@ -111,7 +111,7 @@ def get_sync_db():
         db = next(get_sync_db())
         try:
             # Use db session
-            db.query(...)
+            db.execute(select(...).where(...))
         finally:
             db.close()
     """

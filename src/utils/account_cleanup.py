@@ -1,3 +1,4 @@
+
 """
 Account cleanup utilities for handling deactivated account deletion.
 
@@ -6,6 +7,7 @@ deactivated for 14 days or more.
 """
 
 from datetime import datetime, timedelta
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 from src.api.models.user_models.users import Users
 from src.utils.logger import logger
@@ -39,12 +41,15 @@ def delete_deactivated_accounts(db: Session) -> int:
         logger.info(f"Starting deactivated account cleanup. Cutoff date: {cutoff_date.isoformat()}")
 
         # Find all inactive users deactivated 14+ days ago
-        deactivated_users = db.query(Users).filter(
-            Users.status == "inactive",
-            Users.deactivated_at.isnot(None),
-            Users.deactivated_at <= cutoff_date,
-            Users.deleted_at.is_(None)  # Not already deleted
-        ).all()
+        result = db.execute(
+            select(Users).where(
+                Users.status == "inactive",
+                Users.deactivated_at.isnot(None),
+                Users.deactivated_at <= cutoff_date,
+                Users.deleted_at.is_(None)
+            )
+        )
+        deactivated_users = result.scalars().all()
 
         deleted_count = 0
 
@@ -96,11 +101,14 @@ def get_pending_deletions(db: Session) -> list:
         ...     logger.info(f"{account['email']} - deletes on {account['scheduled_deletion']}")
     """
     try:
-        deactivated_users = db.query(Users).filter(
-            Users.status == "inactive",
-            Users.deactivated_at.isnot(None),
-            Users.deleted_at.is_(None)
-        ).all()
+        result = db.execute(
+            select(Users).where(
+                Users.status == "inactive",
+                Users.deactivated_at.isnot(None),
+                Users.deleted_at.is_(None)
+            )
+        )
+        deactivated_users = result.scalars().all()
 
         pending_deletions = []
         for user in deactivated_users:
@@ -142,7 +150,10 @@ def cancel_account_deactivation(user_id: str, db: Session) -> bool:
         ...     logger.info("Account reactivated successfully")
     """
     try:
-        user = db.query(Users).filter(Users.id == user_id).first()
+        result = db.execute(
+            select(Users).where(Users.id == user_id)
+        )
+        user = result.scalars().first()
 
         if not user:
             logger.warning(f"User not found: {user_id}")
