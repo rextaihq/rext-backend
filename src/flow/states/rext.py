@@ -54,7 +54,7 @@ class NormalizedOrganicResult(TypedDict):
     snippet: str
     domain: str
     date: Optional[str]
-    has_sitelinks: bool
+    # has_sitelinks: bool
 
 
 class SERPNORMALIZED(TypedDict):

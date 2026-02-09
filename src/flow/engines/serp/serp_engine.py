@@ -37,11 +37,11 @@ def create_serp_engine() -> StateGraph:
     serp_flow.add_edge("fetch_serp", "normalize_serp")
     serp_flow.add_edge("fetch_serp", "extract_competitor")
 
-    scraping flow
+    # scraping flow
     serp_flow.add_edge("normalize_serp", "scrape_flow")
     serp_flow.add_edge("extract_competitor", "scrape_flow")
 
-    END FLOW
+    # END FLOW
     serp_flow.add_edge("serp_backlinks", END)
     serp_flow.add_edge("scrape_flow", END)
     # serp_flow.add_edge("fetch_serp", END)
