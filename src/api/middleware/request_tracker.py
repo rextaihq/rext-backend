@@ -58,6 +58,7 @@ class RequestTrackerMiddleware(BaseHTTPMiddleware):
         self.generate_if_missing = generate_if_missing
         self.log_requests = log_requests
         self.include_processing_time = include_processing_time
+        self.sensitive_params = {"token", "secret", "password", "api_key", "key", "signature"}
 
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
         """
@@ -195,12 +196,28 @@ class RequestTrackerMiddleware(BaseHTTPMiddleware):
                 "request_id": request_id,
                 "method": request.method,
                 "path": request.url.path,
-                "query_params": dict(request.query_params),
+                "query_params": self._get_redacted_query_params(request.query_params),
                 "client_ip": self._get_client_ip(request),
                 "user_agent": request.headers.get("User-Agent", "unknown"),
                 "event_type": "request_start"
             }
         )
+
+    def _get_redacted_query_params(self, params) -> dict:
+        """
+        Get query parameters with sensitive values redacted.
+
+        Args:
+            params: Query parameters from request
+
+        Returns:
+            dict: Redacted parameters
+        """
+        redacted = dict(params)
+        for key in redacted:
+            if key.lower() in self.sensitive_params:
+                redacted[key] = "[REDACTED]"
+        return redacted
 
     def _log_request_success(
         self,

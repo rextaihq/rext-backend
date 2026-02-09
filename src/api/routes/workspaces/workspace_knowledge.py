@@ -201,7 +201,7 @@ async def create_web_knowledge(
             user_id=str(user["identity"]),
             background_tasks=background_tasks,
             pref_flag="kb_processing_failed",
-            message=f"Failed to create web knowledge for URL '{raw_url}': {str(e)}",
+            message=f"Failed to create web knowledge for URL '{raw_url}'",
             payload={"url": raw_url, "type": "web"},
             workspace_id=str(workspace.id),
         )
@@ -390,7 +390,7 @@ async def create_file_knowledge(
             user_id=str(user["identity"]),
             background_tasks=background_tasks,
             pref_flag="kb_processing_failed",
-            message=f"Failed to upload file knowledge: {str(e)}",
+            message=f"Failed to upload file knowledge",
             payload={"file_name": knowledge.file_name if 'knowledge' in locals() else None, "type": "file"},
             workspace_id=str(workspace.id),
         )
@@ -572,7 +572,7 @@ async def create_text_knowledge(
             user_id=str(user["identity"]),
             background_tasks=background_tasks,
             pref_flag="kb_processing_failed",
-            message=f"Failed to create text knowledge: {str(e)}",
+            message=f"Failed to create text knowledge",
             payload={"title": payload.title if payload else None, "type": "text"},
             workspace_id=str(workspace.id),
         )

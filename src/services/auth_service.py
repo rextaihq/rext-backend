@@ -46,6 +46,7 @@ from src.api.security.token_utils import (
     create_access_token,
     create_refresh_token,
     create_verification_token,
+    create_reset_token,
     verify_token,
     verify_refresh_token,
     is_token_blacklisted
@@ -339,7 +340,7 @@ class AuthService:
         refresh_token = create_refresh_token(data=token_data)
 
         # Create session
-        access_payload = verify_token(access_token)
+        access_payload = verify_token(access_token, expected_type="access")
         jti = access_payload.get("jti")
         exp_timestamp = access_payload.get("exp")
         expires_at = datetime.fromtimestamp(exp_timestamp, tz=timezone.utc) if exp_timestamp else datetime.now(timezone.utc) + timedelta(hours=24)
@@ -387,7 +388,7 @@ class AuthService:
         Raises:
             RextAuthenticationException: If token invalid or user not found
         """
-        payload = verify_token(token)
+        payload = verify_token(token, expected_type="email_verification")
         user_id = payload.get("user_id")
 
         if not user_id:
@@ -652,8 +653,8 @@ class AuthService:
                 resource_id=email
             )
 
-        # Generate reset token (valid 1 hour)
-        reset_token = create_verification_token({"user_id": str(user.id)})
+        # Generate reset token (valid 30 minutes)
+        reset_token = create_reset_token({"user_id": str(user.id), "email": user.email})
 
         logger.info(
             f"Password reset initiated for user: {user.id}",
@@ -677,7 +678,7 @@ class AuthService:
             RextAuthenticationException: If token invalid
             ResourceNotFoundException: If user not found
         """
-        payload = verify_token(token)
+        payload = verify_token(token, expected_type="password_reset")
         user_id = payload.get("user_id")
 
         if not user_id:

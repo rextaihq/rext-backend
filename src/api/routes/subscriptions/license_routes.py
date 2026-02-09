@@ -137,7 +137,7 @@ async def validate_license(
         )
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"License validation failed: {str(e)}"
+            detail="License validation failed"
         )
 
 

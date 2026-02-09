@@ -28,8 +28,17 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         # Prevent clickjacking
         response.headers["X-Frame-Options"] = "DENY"
 
-        # Enable XSS filter
-        response.headers["X-XSS-Protection"] = "1; mode=block"
+        # Content Security Policy
+        # Restricts where resources can be loaded from and blocks embedding
+        response.headers["Content-Security-Policy"] = "default-src 'self'; frame-ancestors 'none';"
+
+        # Referrer Policy
+        # Controls how much referrer information is included with requests
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+
+        # Permissions Policy
+        # Disables unused browser features for enhanced privacy
+        response.headers["Permissions-Policy"] = "geolocation=(), camera=(), microphone=()"
 
         # HSTS (only for HTTPS)
         if request.url.scheme == "https":

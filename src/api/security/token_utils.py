@@ -121,7 +121,7 @@ def create_refresh_token(data: dict, expires_delta: timedelta = None) -> str:
 # Reset Token
 def create_reset_token(data: dict, expires_delta: timedelta = timedelta(minutes=30)) -> str:
     """
-    Creates a JWT token for password reset.
+    Creates a JWT token for password reset with JTI and type.
 
     Args:
         data (dict): The payload to include in the token.
@@ -132,14 +132,19 @@ def create_reset_token(data: dict, expires_delta: timedelta = timedelta(minutes=
     """
     to_encode = data.copy()
     expire = datetime.now(timezone.utc) + expires_delta
-    to_encode.update({"exp": expire})
+    jti = str(uuid.uuid4())
+    to_encode.update({
+        "exp": expire,
+        "jti": jti,
+        "type": "password_reset"
+    })
     token = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return token
 
 # Verification Token
 def create_verification_token(data: dict, expires_delta: timedelta = timedelta(hours=24)) -> str:
     """
-    Creates a JWT token for email verification.
+    Creates a JWT token for email verification with JTI and type.
 
     Args:
         data (dict): The payload to include in the token.
@@ -150,7 +155,12 @@ def create_verification_token(data: dict, expires_delta: timedelta = timedelta(h
     """
     to_encode = data.copy()
     expire = datetime.now(timezone.utc) + expires_delta
-    to_encode.update({"exp": expire})
+    jti = str(uuid.uuid4())
+    to_encode.update({
+        "exp": expire,
+        "jti": jti,
+        "type": "email_verification"
+    })
     token = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return token
 
@@ -175,21 +185,24 @@ def create_verification_token(data: dict, expires_delta: timedelta = timedelta(h
 #         )
 
 # verify password
-def verify_token(token: str = Depends(oauth2_scheme)) -> dict:
+def verify_token(token: str = Depends(oauth2_scheme), expected_type: str = None) -> dict:
     """
     Verifies the JWT token and decodes the payload.
 
     Args:
         token (str): JWT token passed via the Authorization header.
+        expected_type (str, optional): Expected token type (e.g., 'access', 'password_reset').
 
     Raises:
-        HTTPException: If token is invalid or expired.
+        HTTPException: If token is invalid, expired, or has wrong type.
 
     Returns:
         dict: The decoded payload.
     """
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        
+        # Check expiration
         exp = payload.get("exp")
         if exp and datetime.fromtimestamp(exp, tz=timezone.utc) < datetime.now(timezone.utc):
             raise HTTPException(
@@ -197,8 +210,19 @@ def verify_token(token: str = Depends(oauth2_scheme)) -> dict:
                 detail="Token has expired",
                 headers={"WWW-Authenticate": "Bearer"},
             )
+            
+        # Check token type if expected
+        if expected_type and payload.get("type") != expected_type:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail=f"Invalid token type - expected {expected_type}",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+            
         return payload
-    except Exception:
+    except Exception as e:
+        if isinstance(e, HTTPException):
+            raise e
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid token",
