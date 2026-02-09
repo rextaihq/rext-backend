@@ -11,8 +11,8 @@ from src.api.models.mixins import UUIDPrimaryKeyMixin, TimestampMixin
 class Role(Base, SerializableMixin, UUIDPrimaryKeyMixin, TimestampMixin):
     __tablename__ = "roles"
 
-    # id, created_at, updated_at now provided by mixins
-    name = Column(String(100), nullable=False)
+    # id, created_at, updated_at provided by mixins
+    name = Column(String(100), unique=True, nullable=False)
     display_name = Column(String(150), nullable=False)
     description = Column(Text)
     hierarchy_level = Column(Integer, default=0)
@@ -27,5 +27,3 @@ class Role(Base, SerializableMixin, UUIDPrimaryKeyMixin, TimestampMixin):
     permissions = relationship("RolePermission", back_populates="role")
     user_roles = relationship("UserRole", back_populates="role")
     invited_roles = relationship("UserInvitations", back_populates="role")
-
-    # to_dict() inherited from SerializableMixin
