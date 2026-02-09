@@ -48,7 +48,7 @@ async def suspend_user(
         if not is_admin(current_user):
             return error(
                 message="Insufficient permissions. Admin role required.",
-                code=ErrorCode.PERMISSION_DENIED,
+                code=ErrorCode.INSUFFICIENT_PERMISSIONS,
                 status_code=403,
                 severity=ErrorSeverity.HIGH,
                 request=request
@@ -144,7 +144,7 @@ async def activate_user(
         if not is_admin(current_user):
             return error(
                 message="Insufficient permissions. Admin role required.",
-                code=ErrorCode.PERMISSION_DENIED,
+                code=ErrorCode.INSUFFICIENT_PERMISSIONS,
                 status_code=403,
                 severity=ErrorSeverity.HIGH,
                 request=request
@@ -238,7 +238,7 @@ async def ban_user(
         if not is_admin(current_user):
             return error(
                 message="Insufficient permissions. Admin role required.",
-                code=ErrorCode.PERMISSION_DENIED,
+                code=ErrorCode.INSUFFICIENT_PERMISSIONS,
                 status_code=403,
                 severity=ErrorSeverity.HIGH,
                 request=request
@@ -344,7 +344,7 @@ async def deactivate_account(
         if db_user.status == "inactive":
             return error(
                 message="Account is already deactivated",
-                code=ErrorCode.INVALID_INPUT,
+                code=ErrorCode.INVALID_VALUE,
                 status_code=400,
                 severity=ErrorSeverity.LOW,
                 request=request
@@ -380,7 +380,7 @@ async def deactivate_account(
 
             return error(
                 message="You have active subscriptions. Please cancel them first or enable automatic cancellation.",
-                code=ErrorCode.VALIDATION_ERROR,
+                code=ErrorCode.VALIDATION_FAILED,
                 status_code=400,
                 severity=ErrorSeverity.MEDIUM,
                 context={"active_subscriptions": subscription_details},

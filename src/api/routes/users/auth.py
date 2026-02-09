@@ -584,7 +584,7 @@ async def refresh_access_token(
         if not refresh_token:
             return error(
                 message="Refresh token is required",
-                code=ErrorCode.INVALID_INPUT,
+                code=ErrorCode.INVALID_VALUE,
                 status_code=400,
                 severity=ErrorSeverity.LOW,
                 request=request
@@ -729,7 +729,7 @@ async def resend_verification(
         if not email:
             return error(
                 message="Email is required",
-                code=ErrorCode.INVALID_INPUT,
+                code=ErrorCode.INVALID_VALUE,
                 status_code=400,
                 severity=ErrorSeverity.LOW,
                 request=request
