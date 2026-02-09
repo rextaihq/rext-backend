@@ -117,7 +117,6 @@ async def suspend_user(
             code=ErrorCode.INTERNAL_SERVER_ERROR,
             status_code=500,
             severity=ErrorSeverity.HIGH,
-            context={"error_details": str(e)},
             request=request
         )
 
@@ -212,7 +211,6 @@ async def activate_user(
             code=ErrorCode.INTERNAL_SERVER_ERROR,
             status_code=500,
             severity=ErrorSeverity.HIGH,
-            context={"error_details": str(e)},
             request=request
         )
 
@@ -309,7 +307,6 @@ async def ban_user(
             code=ErrorCode.INTERNAL_SERVER_ERROR,
             status_code=500,
             severity=ErrorSeverity.HIGH,
-            context={"error_details": str(e)},
             request=request
         )
 
@@ -465,6 +462,5 @@ async def deactivate_account(
             code=ErrorCode.INTERNAL_SERVER_ERROR,
             status_code=500,
             severity=ErrorSeverity.HIGH,
-            context={"error_details": str(e)},
             request=request
         )

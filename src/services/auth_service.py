@@ -652,8 +652,8 @@ class AuthService:
                 resource_id=email
             )
 
-        # Generate reset token (valid 1 hour)
-        reset_token = create_verification_token({"user_id": str(user.id)})
+        # Generate reset token (valid 30 minutes)
+        reset_token = create_reset_token({"user_id": str(user.id), "email": user.email})
 
         logger.info(
             f"Password reset initiated for user: {user.id}",

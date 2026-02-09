@@ -12,7 +12,7 @@ wheels/
 # Virtual environments
 uploads/
 secrets/
-tasks/*
+tasks/
 .venv
 vector_store/
 .langgraph_api

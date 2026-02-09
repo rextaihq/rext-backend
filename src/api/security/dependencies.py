@@ -133,6 +133,9 @@ async def get_current_user_sse(
     """
     Authentication dependency for SSE that supports both Header and Query param.
     EventSource API does not support custom headers, so we allow passing token via query param.
+
+    DEPRECATED: Passing token via query parameter is deprecated for security reasons (token leakage in logs).
+    Please use the 'Authorization' header where possible (e.g., using a custom polyfill or library that supports headers).
     """
     # Import exceptions at runtime to avoid circular dependency
     from src.api.middleware.exceptions import (
@@ -150,6 +153,10 @@ async def get_current_user_sse(
             pass
     
     if not auth_token and token:
+        logger.warning(
+            "Authentication via 'token' query parameter is deprecated and will be removed in a future version. "
+            "Please use the 'Authorization' header instead."
+        )
         auth_token = token
 
     if not auth_token:
