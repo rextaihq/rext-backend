@@ -331,7 +331,7 @@ async def upload_avatar(
             background_tasks=background_tasks,
             pref_flag="in_app_notifications",
             message="failed to upload avatar",
-            payload={"user_id": str(user_id), "error": str(e)},
+            payload={"user_id": str(user_id), "error": "User not found"},
             workspace_id=None
         )
         return error(
@@ -446,7 +446,7 @@ async def delete_avatar(
             background_tasks=background_tasks,
             pref_flag="in_app_notifications",
             message="failed to delete avatar",
-            payload={"user_id": str(user_id), "error": str(e)},
+            payload={"user_id": str(user_id), "error": "User not found"},
             workspace_id=None
         )
         return error(
