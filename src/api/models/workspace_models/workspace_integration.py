@@ -38,20 +38,10 @@ class WorkspaceIntegration(Base, SerializableMixin):
     # Relationships
     workspace = relationship("WorkspaceModel", back_populates="integrations")
 
-    # to_dict() inherited from SerializableMixin
-    def to_dict(self):
-        return {
-            "id": self.id,
-            "workspace_id": self.workspace_id,
-            "integration_type": self.integration_type,
-            "is_active": self.is_active,
-            "site_url": self.site_url,
-            "api_endpoint": self.api_endpoint,
-            "username": self.username,
-            "app_password": self.app_password,
-            "api_key": self.api_key,
-            "config_json": self.config_json,
-            "created_at": self.created_at,
-            "updated_at": self.updated_at,
-            "deleted_at": self.deleted_at,
-        }
+    def to_dict(self, **kwargs):
+        """
+        Serialize integration, excluding sensitive credentials by default.
+        """
+        if 'exclude' not in kwargs:
+            kwargs['exclude'] = ['app_password', 'api_key']
+        return super().to_dict(**kwargs)
