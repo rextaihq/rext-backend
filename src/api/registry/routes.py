@@ -125,5 +125,5 @@ def register_routes(app: FastAPI) -> None:
     prefix="/api/v1",
     tags=["Dashboard"]
 )
-    app.include_router(test_api_key_router, prefix="/api/v1", tags=["Testing"])
+    # app.include_router(test_api_key_router, prefix="/api/v1", tags=["Testing"])
 
