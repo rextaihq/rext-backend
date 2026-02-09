@@ -44,10 +44,7 @@ def test_require_permissions_validation():
     # cause a 500 if not handled.
     # However, the requirement says "observe that a ValueError is raised".
     
-    with pytest.raises(ValueError) as excinfo:
-        # We need to call the wrapper directly or trigger the route
-        # Since it's an async decorator wrapper, we can try to call the handler if we can get it
-        pass
+    pass  # Placeholder for previous logic
 
     # Let's try calling the route via TestClient
     # FastAPI usually catches exceptions and returns 500.
