@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, Request, BackgroundTasks, Header
 from src.utils.logger import logger
 from src.api.security.dependencies import get_current_user
 from src.api.schema.user_schema import LoginUser, RegisterUser, RegisterWithInvitation, LoginWithInvitation
-from src.api.security.token_utils import verify_token
+from src.api.security.token_utils import decode_and_verify_token
 from src.api.config import get_settings
 from sqlalchemy.ext.asyncio import AsyncSession
 from src.services.email_service import EmailService
@@ -632,7 +632,7 @@ async def logout_user(
         scheme, token = authorization.split()
 
         # Decode token to get JTI and expiration
-        payload = verify_token(token, expected_type="access")
+        payload = decode_and_verify_token(token, expected_type="access")
         jti = payload.get("jti")
         exp = payload.get("exp")
         user_id = current_user.get("identity")

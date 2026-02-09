@@ -56,7 +56,7 @@ async def check_permission(
     workspace_id: Optional[UUID] = None
 ) -> bool:
     """
-    Check if user has a specific permission.
+    Check if user has a specific permission (cached).
 
     Delegates to get_user_permissions() which is Redis-cached (5-minute TTL).
     This means all permission checks for the same user/workspace combo hit
@@ -68,8 +68,6 @@ async def check_permission(
         user_id: User UUID
         permission_name: Permission name (e.g., "content.delete", "workspace.update")
         workspace_id: Optional workspace UUID for workspace-scoped permissions.
-                     If provided, checks both workspace-scoped roles and global roles.
-                     If None, checks only global roles.
 
     Returns:
         True if user has the permission, False otherwise
@@ -85,7 +83,7 @@ async def check_permission(
 
     logger.debug(
         f"Permission check: user={user_id}, permission={permission_name}, "
-        f"workspace={workspace_id}, result={has_permission}"
+        f"workspace={workspace_id}, result={has_permission} (cached)"
     )
 
     return has_permission
