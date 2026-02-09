@@ -7,6 +7,7 @@ E-E-A-T injection and humanization are handled in separate nodes.
 
 import logging
 import json
+import asyncio
 from src.flow.states.rext import REXT
 from src.flow.model.llm_manager import load_model
 from src.flow.model.structure.content import GeneratedContent
@@ -53,12 +54,12 @@ def generate_content(state: REXT) -> dict:
         # page_content = "\n\n".join(
         #     chunk.get("chunk", "") for chunk in relevant_context
         # )
-        relevant_context = await search_scraped_chunks(
+        relevant_context = asyncio.run( search_scraped_chunks(
             user_id,
             workspace_id,
             query,
-            limit=5
-        )
+            limit=20
+        ))
         page_content = relevant_context.get("text", "")
         logger.info(f"Page content length: {len(page_content.split())} words")
 
