@@ -178,9 +178,9 @@ async def reset_password(
             message="Password updated successfully. Please login with your new password."
         )
 
-    except ResourceNotFoundException as e:
+    except ResourceNotFoundException:
         return error(
-            message=str(e),
+            message="Invalid or expired reset token",
             code=ErrorCode.INVALID_INPUT,
             status_code=400,
             severity=ErrorSeverity.MEDIUM,

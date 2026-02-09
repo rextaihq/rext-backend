@@ -125,26 +125,7 @@ async def create_user(
             full_name=user.full_name
         )
 
-        # IMPORTANT: Commit transaction before background task
-        # Background tasks run immediately and need the user to exist in the database
-        await db.commit()
-
-        # Get frontend URL from environment
-        frontend_url = settings.FRONTEND_URL
-
-        # Send verification email in background using professional template
-        background_tasks.add_task(
-            send_verification_email_task,
-            email=new_user.email,
-            first_name=new_user.full_name or new_user.display_name,
-            verification_token=verification_token,
-            user_id=str(new_user.id),
-            frontend_url=frontend_url
-        )
-
-        # Return user data (excluding password)
-        # Note: Transaction will be committed by transaction decorator (Task 2.2)
-        # set the notification preferences
+        # notification preference for the user
         notification_preference = NotificationPreferences(
             user_id=new_user.id,
             email_notifications=True,
@@ -171,8 +152,23 @@ async def create_user(
             marketing_updates=False
         )
         db.add(notification_preference)
+        
+        # IMPORTANT: Commit all database changes (user + preferences) before adding background tasks
         await db.commit()
-        await db.refresh(notification_preference)
+        await db.refresh(new_user)
+
+        # Get frontend URL from environment
+        frontend_url = settings.FRONTEND_URL
+
+        # Send verification email in background using professional template
+        background_tasks.add_task(
+            send_verification_email_task,
+            email=new_user.email,
+            first_name=new_user.full_name or new_user.display_name,
+            verification_token=verification_token,
+            user_id=str(new_user.id),
+            frontend_url=frontend_url
+        )
         user_data = {
             "id": str(new_user.id),
             "email": new_user.email,
@@ -345,21 +341,8 @@ async def register_with_invitation(
             user_id=current_user.id
         )
 
-        # Commit transaction before background tasks
-        await db.commit()
-
-        # Step 6: Send welcome email for new users only
+        # Handle notification preferences for new users
         if not user_exists:
-            frontend_url = settings.FRONTEND_URL
-            background_tasks.add_task(
-                send_welcome_email_task,
-                email=current_user.email,
-                first_name=current_user.full_name or current_user.display_name,
-                user_id=str(current_user.id),
-                frontend_url=frontend_url
-            )
-
-            #  add a notification preference for the user
             logger.info("Adding notification preference for user")
             notification_preference = NotificationPreferences(
                 user_id=current_user.id,
@@ -387,8 +370,22 @@ async def register_with_invitation(
                 marketing_updates=False
             )
             db.add(notification_preference)
-            await db.commit()
-            await db.refresh(notification_preference)
+
+        # Commit all changes (user creation if new, membership, preferences, invitation status)
+        # before starting background tasks
+        await db.commit()
+        await db.refresh(current_user)
+
+        # Step 6: Send welcome email for new users only
+        if not user_exists:
+            frontend_url = settings.FRONTEND_URL
+            background_tasks.add_task(
+                send_welcome_email_task,
+                email=current_user.email,
+                first_name=current_user.full_name or current_user.display_name,
+                user_id=str(current_user.id),
+                frontend_url=frontend_url
+            )
 
         # Step 7: Get workspace details for response
         from src.services.workspace_service import WorkspaceService
@@ -554,7 +551,6 @@ async def login_user(
             code=ErrorCode.INTERNAL_SERVER_ERROR,
             status_code=500,
             severity=ErrorSeverity.HIGH,
-            context={"error_details": str(e)},
             request=request
         )
 
@@ -614,7 +610,6 @@ async def refresh_access_token(
             code=ErrorCode.INTERNAL_SERVER_ERROR,
             status_code=500,
             severity=ErrorSeverity.HIGH,
-            context={"error_details": str(e)},
             request=request
         )
 
@@ -637,7 +632,7 @@ async def logout_user(
         scheme, token = authorization.split()
 
         # Decode token to get JTI and expiration
-        payload = verify_token(token)
+        payload = verify_token(token, expected_type="access")
         jti = payload.get("jti")
         exp = payload.get("exp")
         user_id = current_user.get("identity")
@@ -662,7 +657,6 @@ async def logout_user(
             code=ErrorCode.INTERNAL_SERVER_ERROR,
             status_code=500,
             severity=ErrorSeverity.HIGH,
-            context={"error_details": str(e)},
             request=request
         )
 
@@ -709,7 +703,6 @@ async def verify_email(
             code=ErrorCode.INTERNAL_SERVER_ERROR,
             status_code=500,
             severity=ErrorSeverity.HIGH,
-            context={"error_details": str(e)},
             request=request
         )
 
@@ -775,7 +768,6 @@ async def resend_verification(
             code=ErrorCode.INTERNAL_SERVER_ERROR,
             status_code=500,
             severity=ErrorSeverity.HIGH,
-            context={"error_details": str(e)},
             request=request
         )
 
@@ -915,7 +907,6 @@ async def oauth_login(
             code=ErrorCode.INTERNAL_SERVER_ERROR,
             status_code=500,
             severity=ErrorSeverity.HIGH,
-            context={"error_details": str(e)},
             request=request
         )
 
@@ -996,7 +987,6 @@ async def link_oauth(
             code=ErrorCode.INTERNAL_SERVER_ERROR,
             status_code=500,
             severity=ErrorSeverity.HIGH,
-            context={"error_details": str(e)},
             request=request
         )
 
@@ -1037,6 +1027,5 @@ async def unlink_oauth(
             code=ErrorCode.INTERNAL_SERVER_ERROR,
             status_code=500,
             severity=ErrorSeverity.HIGH,
-            context={"error_details": str(e)},
             request=request
         )
