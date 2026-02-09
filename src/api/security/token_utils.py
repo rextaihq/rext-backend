@@ -186,14 +186,8 @@ def create_verification_token(data: dict, expires_delta: timedelta = timedelta(h
 #             headers={"WWW-Authenticate": "Bearer"},
 #         )
 
-from typing import Annotated
-import warnings
 
-# ... (existing imports)
-
-# ... (existing code)
-
-def decode_and_verify_token(token: str) -> dict:
+def decode_and_verify_token(token: str, expected_type: str | None = None) -> dict:
     """
     Decode and verify a JWT token.
 
@@ -284,14 +278,6 @@ def verify_token(token: str = Depends(oauth2_scheme)) -> dict:
     )
     # If called as a dependency, token might be provided by Depends(oauth2_scheme)
     # If called directly, token is passed as argument.
-    # The default value Depends(oauth2_scheme) is only used by FastAPI dependency injection system.
-    # When called directly without arguments, token would be Depends object which is invalid.
-    if isinstance(token, Depends): 
-         # This case technically shouldn't happen in direct calls unless someone does verify_token()
-         # But in that case they'd get a type error usually. 
-         # However, for safety in this refactor, we just pass it through if it's a string.
-         pass
-         
     return decode_and_verify_token(token)
 
 
