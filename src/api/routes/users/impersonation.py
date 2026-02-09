@@ -98,8 +98,6 @@ async def start_impersonation(
         "started_at": impersonation_context["impersonation_started_at"],
         "session_id": session_id
     }
-
-
 @router.post("/impersonate/stop")
 @require_permissions("user.update")
 @db_transaction_handler("stop impersonation", auto_commit=True) 

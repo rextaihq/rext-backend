@@ -43,8 +43,11 @@ class TestCheckPermission:
             resource="content",
             action="create"
         )
+        # Mock permissions found in get_user_permissions
+        mock_scalars = MagicMock()
+        mock_scalars.all.return_value = [permission_name]
         mock_result = MagicMock()
-        mock_result.scalar_one_or_none.return_value = mock_permission
+        mock_result.scalars.return_value = mock_scalars
         mock_db.execute = AsyncMock(return_value=mock_result)
 
         # Act
@@ -64,8 +67,11 @@ class TestCheckPermission:
         workspace_id = uuid4()
 
         # Mock permission not found
+        # Mock no permissions found in get_user_permissions
+        mock_scalars = MagicMock()
+        mock_scalars.all.return_value = []
         mock_result = MagicMock()
-        mock_result.scalar_one_or_none.return_value = None
+        mock_result.scalars.return_value = mock_scalars
         mock_db.execute = AsyncMock(return_value=mock_result)
 
         # Act
@@ -92,8 +98,11 @@ class TestCheckPermission:
             resource="user",
             action="manage_roles"
         )
+        # Mock permissions found in get_user_permissions
+        mock_scalars = MagicMock()
+        mock_scalars.all.return_value = [permission_name]
         mock_result = MagicMock()
-        mock_result.scalar_one_or_none.return_value = mock_permission
+        mock_result.scalars.return_value = mock_scalars
         mock_db.execute = AsyncMock(return_value=mock_result)
 
         # Act
@@ -115,17 +124,13 @@ class TestCheckAnyPermission:
         permission_names = ["content.update", "content.publish"]
         workspace_id = uuid4()
 
-        # Mock: First permission fails, second succeeds
-        mock_result_1 = MagicMock()
-        mock_result_1.scalar_one_or_none.return_value = None  # No content.update
-
-        mock_result_2 = MagicMock()
-        mock_result_2.scalar_one_or_none.return_value = Permission(
-            id=uuid4(), name="content.publish", display_name="Publish Content",
-            description="Publish content", resource="content", action="publish"
-        )  # Has content.publish
-
-        mock_db.execute = AsyncMock(side_effect=[mock_result_1, mock_result_2])
+        # Mock get_user_permissions results
+        mock_scalars = MagicMock()
+        mock_scalars.all.return_value = ["content.publish"] # Only has second one
+        
+        mock_result = MagicMock()
+        mock_result.scalars.return_value = mock_scalars
+        mock_db.execute = AsyncMock(return_value=mock_result)
 
         # Act
         has_any = await check_any_permission(mock_db, user_id, permission_names, workspace_id)
@@ -143,8 +148,10 @@ class TestCheckAnyPermission:
         workspace_id = uuid4()
 
         # Mock: Both permissions fail
+        mock_scalars = MagicMock()
+        mock_scalars.all.return_value = []
         mock_result = MagicMock()
-        mock_result.scalar_one_or_none.return_value = None
+        mock_result.scalars.return_value = mock_scalars
         mock_db.execute = AsyncMock(return_value=mock_result)
 
         # Act
@@ -167,11 +174,10 @@ class TestCheckAllPermissions:
         workspace_id = uuid4()
 
         # Mock: Both permissions succeed
+        mock_scalars = MagicMock()
+        mock_scalars.all.return_value = permission_names
         mock_result = MagicMock()
-        mock_result.scalar_one_or_none.return_value = Permission(
-            id=uuid4(), name="mock", display_name="Mock", description="Mock",
-            resource="content", action="mock"
-        )
+        mock_result.scalars.return_value = mock_scalars
         mock_db.execute = AsyncMock(return_value=mock_result)
 
         # Act
@@ -189,17 +195,12 @@ class TestCheckAllPermissions:
         permission_names = ["content.read", "content.delete"]
         workspace_id = uuid4()
 
-        # Mock: First succeeds, second fails
-        mock_result_1 = MagicMock()
-        mock_result_1.scalar_one_or_none.return_value = Permission(
-            id=uuid4(), name="content.read", display_name="Read", description="Read",
-            resource="content", action="read"
-        )
-
-        mock_result_2 = MagicMock()
-        mock_result_2.scalar_one_or_none.return_value = None  # Missing content.delete
-
-        mock_db.execute = AsyncMock(side_effect=[mock_result_1, mock_result_2])
+        # Mock: First succeeds, second fails (delegated via get_user_permissions)
+        mock_scalars = MagicMock()
+        mock_scalars.all.return_value = ["content.read"]
+        mock_result = MagicMock()
+        mock_result.scalars.return_value = mock_scalars
+        mock_db.execute = AsyncMock(return_value=mock_result)
 
         # Act
         has_all = await check_all_permissions(mock_db, user_id, permission_names, workspace_id)
@@ -225,8 +226,11 @@ class TestRequirePermission:
             id=uuid4(), name=permission_name, display_name="Create", description="Create",
             resource="content", action="create"
         )
+        # Mock permission found (delegated via get_user_permissions)
+        mock_scalars = MagicMock()
+        mock_scalars.all.return_value = [permission_name]
         mock_result = MagicMock()
-        mock_result.scalar_one_or_none.return_value = mock_permission
+        mock_result.scalars.return_value = mock_scalars
         mock_db.execute = AsyncMock(return_value=mock_result)
 
         # Act - should not raise exception
@@ -243,9 +247,11 @@ class TestRequirePermission:
         permission_name = "content.delete"
         workspace_id = uuid4()
 
-        # Mock permission not found
+        # Mock permission not found (delegated via get_user_permissions)
+        mock_scalars = MagicMock()
+        mock_scalars.all.return_value = []
         mock_result = MagicMock()
-        mock_result.scalar_one_or_none.return_value = None
+        mock_result.scalars.return_value = mock_scalars
         mock_db.execute = AsyncMock(return_value=mock_result)
 
         # Act & Assert
