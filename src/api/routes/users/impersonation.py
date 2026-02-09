@@ -201,7 +201,7 @@ async def get_impersonation_status(
     """
     Get the current impersonation status.
 
-    Returns impersonation details if the current user is impersonating someone,
+    Return impersonation details if the current user is impersonating someone,
     or a simple status response if not impersonating.
 
     Requires user.read permission for consistency with other user-related endpoints.
