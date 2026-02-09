@@ -123,7 +123,7 @@ def create_refresh_token(data: dict, expires_delta: timedelta = None) -> str:
 # Reset Token
 def create_reset_token(data: dict, expires_delta: timedelta = timedelta(minutes=30)) -> str:
     """
-    Creates a JWT token for password reset.
+    Creates a JWT token for password reset with JTI and type.
 
     Args:
         data (dict): The payload to include in the token.
@@ -134,14 +134,19 @@ def create_reset_token(data: dict, expires_delta: timedelta = timedelta(minutes=
     """
     to_encode = data.copy()
     expire = datetime.now(timezone.utc) + expires_delta
-    to_encode.update({"exp": expire})
+    jti = str(uuid.uuid4())
+    to_encode.update({
+        "exp": expire,
+        "jti": jti,
+        "type": "password_reset"
+    })
     token = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return token
 
 # Verification Token
 def create_verification_token(data: dict, expires_delta: timedelta = timedelta(hours=24)) -> str:
     """
-    Creates a JWT token for email verification.
+    Creates a JWT token for email verification with JTI and type.
 
     Args:
         data (dict): The payload to include in the token.
@@ -152,7 +157,12 @@ def create_verification_token(data: dict, expires_delta: timedelta = timedelta(h
     """
     to_encode = data.copy()
     expire = datetime.now(timezone.utc) + expires_delta
-    to_encode.update({"exp": expire})
+    jti = str(uuid.uuid4())
+    to_encode.update({
+        "exp": expire,
+        "jti": jti,
+        "type": "email_verification"
+    })
     token = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return token
 
@@ -176,14 +186,8 @@ def create_verification_token(data: dict, expires_delta: timedelta = timedelta(h
 #             headers={"WWW-Authenticate": "Bearer"},
 #         )
 
-from typing import Annotated
-import warnings
 
-# ... (existing imports)
-
-# ... (existing code)
-
-def decode_and_verify_token(token: str) -> dict:
+def decode_and_verify_token(token: str, expected_type: str | None = None) -> dict:
     """
     Decode and verify a JWT token.
 
@@ -201,6 +205,8 @@ def decode_and_verify_token(token: str) -> dict:
     """
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        
+        # Check expiration
         exp = payload.get("exp")
         if exp and datetime.fromtimestamp(exp, tz=timezone.utc) < datetime.now(timezone.utc):
             raise HTTPException(
@@ -208,6 +214,15 @@ def decode_and_verify_token(token: str) -> dict:
                 detail="Token has expired",
                 headers={"WWW-Authenticate": "Bearer"},
             )
+            
+        # Check token type if expected
+        if expected_type and payload.get("type") != expected_type:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail=f"Invalid token type - expected {expected_type}",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+            
         return payload
     except jwt.ExpiredSignatureError:
         raise HTTPException(
@@ -263,14 +278,6 @@ def verify_token(token: str = Depends(oauth2_scheme)) -> dict:
     )
     # If called as a dependency, token might be provided by Depends(oauth2_scheme)
     # If called directly, token is passed as argument.
-    # The default value Depends(oauth2_scheme) is only used by FastAPI dependency injection system.
-    # When called directly without arguments, token would be Depends object which is invalid.
-    if isinstance(token, Depends): 
-         # This case technically shouldn't happen in direct calls unless someone does verify_token()
-         # But in that case they'd get a type error usually. 
-         # However, for safety in this refactor, we just pass it through if it's a string.
-         pass
-         
     return decode_and_verify_token(token)
 
 

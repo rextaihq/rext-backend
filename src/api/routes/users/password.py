@@ -13,7 +13,7 @@ from src.api.schema.user_schema import (
     ForgotPasswordRequest,
     ChangePasswordRequest
 )
-from src.api.security.token_utils import create_reset_token, verify_token
+from src.api.security.token_utils import create_reset_token, decode_and_verify_token
 from src.api.database.async_database import get_async_db
 from src.utils.response_utils import success, error
 from src.api.schema.response_schemas import ErrorCode, ErrorSeverity
@@ -144,7 +144,7 @@ async def reset_password(
     try:
         # Verify token validity first
         try:
-            verify_token(payload.token)
+            decode_and_verify_token(payload.token)
         except Exception as e:
             logger.warning(f"Invalid reset token: {str(e)}")
             return error(
@@ -178,9 +178,9 @@ async def reset_password(
             message="Password updated successfully. Please login with your new password."
         )
 
-    except ResourceNotFoundException as e:
+    except ResourceNotFoundException:
         return error(
-            message=str(e),
+            message="Invalid or expired reset token",
             code=ErrorCode.INVALID_INPUT,
             status_code=400,
             severity=ErrorSeverity.MEDIUM,

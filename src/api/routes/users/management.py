@@ -193,9 +193,9 @@ async def delete_user(
             severity=ErrorSeverity.MEDIUM,
             request=request
         )
-    except RextValidationException as e:
+    except RextValidationException:
         return error(
-            message=str(e),
+            message="Validation failed",
             code=ErrorCode.DEPENDENCY_ERROR,
             status_code=400,
             severity=ErrorSeverity.MEDIUM,
@@ -257,9 +257,9 @@ async def update_user(
             severity=ErrorSeverity.MEDIUM,
             request=request
         )
-    except RextValidationException as e:
+    except RextValidationException:
         return error(
-            message=str(e),
+            message="Validation failed",
             code=ErrorCode.DUPLICATE_RESOURCE,
             status_code=400,
             severity=ErrorSeverity.MEDIUM,
@@ -451,6 +451,5 @@ async def export_user_data(
             code=ErrorCode.INTERNAL_SERVER_ERROR,
             status_code=500,
             severity=ErrorSeverity.HIGH,
-            context={"error_details": str(e)},
             request=request
         )
