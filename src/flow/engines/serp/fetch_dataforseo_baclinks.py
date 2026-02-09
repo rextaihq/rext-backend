@@ -27,7 +27,7 @@ headers = {
 # =========================
 # 🚀 MAIN FUNCTION (SINGLE KEYWORD)
 # =========================
-def get_dataforseo_data(
+async def get_dataforseo_data(
     keyword: str,
     location_name: str = "United States",
     language_code: str = "en",
@@ -41,46 +41,47 @@ def get_dataforseo_data(
         "include_serp_info": include_serp_info
     }]
 
-    response = requests.post(DATAFORSEO_BACKLINKS_URL, headers=headers, json=payload)
-    response.raise_for_status()
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        response = await client.post(DATAFORSEO_BACKLINKS_URL, headers=headers, json=payload)
+        response.raise_for_status()
+        data = response.json()
 
-    data = response.json()
+        items = data.get("tasks", [])[0].get("result", [])[0].get("items", [])
 
-    items = data.get("tasks", [])[0].get("result", [])[0].get("items", [])
+        item = items[0]  # ✅ single keyword → first item
 
-    if not items:
-        return {}
+        if not item:
+            return {}
 
-    item = items[0]  # ✅ single keyword → first item
+        backlinks_info = item.get("avg_backlinks_info", {}) or {}
+        keyword_info = item.get("keyword_info", {}) or {}
+        keyword_props = item.get("keyword_properties", {}) or {}
+        intent_info = item.get("search_intent_info", {}) or {}
+        serp_info = item.get("serp_info", {}) or {}
 
-    backlinks_info = item.get("avg_backlinks_info", {})
-    keyword_info = item.get("keyword_info", {})
-    keyword_props = item.get("keyword_properties", {})
-    intent_info = item.get("search_intent_info", {})
-    serp_info = item.get("serp_info", {})
+        serp_item_types = serp_info.get("serp_item_types", []) or []
 
-    serp_item_types = serp_info.get("serp_item_types", [])
+        return {
+            "keyword": item.get("keyword"),
 
-    return {
-        "keyword": item.get("keyword"),
+            # Core metrics
+            "search_volume": keyword_info.get("search_volume"),
+            "keyword_difficulty": keyword_props.get("keyword_difficulty"),
 
-        # Core metrics
-        "search_volume": keyword_info.get("search_volume"),
-        "keyword_difficulty": keyword_props.get("keyword_difficulty"),
+            # Link metrics
+            "backlinks": backlinks_info.get("backlinks", 0),
+            "referring_domains": backlinks_info.get("referring_domains", 0),
+            "dofollow_links": backlinks_info.get("dofollow", 0),
 
-        # Link metrics
-        "backlinks": backlinks_info.get("backlinks", 0),
-        "referring_domains": backlinks_info.get("referring_domains", 0),
-        "dofollow_links": backlinks_info.get("dofollow", 0),
+            # SERP features (bool)
+            "images":True if "images" in serp_item_types else False,
+            "videos":True if "videos" in serp_item_types else False,
+            "discussions_and_forums": True if "discussions_and_forums" in serp_item_types else False,
 
-        # SERP features (bool)
-        "images": "images" in serp_item_types,
-        "videos": "videos" in serp_item_types,
-
-        # Intent
-        "main_intent": intent_info.get("main_intent"),
-        "foreign_intent": intent_info.get("foreign_intent"),
-    }
+            # Intent
+            "main_intent": intent_info.get("main_intent"),
+            "foreign_intent": intent_info.get("foreign_intent"),
+        }
 
 async def fetch_dataforseo_backlinks(state: REXT) -> SERPBacklinks:
     serp_payload = state.get("serp_payload")
@@ -117,7 +118,6 @@ async def fetch_dataforseo_backlinks(state: REXT) -> SERPBacklinks:
 
             # Log counts for each SERP type
             logger.info(f"Fetched SERP for query '{query}': {backlinks_data}")
-
             return {"serp_backlinks": backlinks_data}
 
     except Exception as e:

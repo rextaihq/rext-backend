@@ -1,7 +1,7 @@
 from typing import Dict
 from src.flow.states.rext import REXT
 from src.flow.states.seo_state import SEORESULT
-from src.flow.engines.seo.dataforseo_response import get_dataforseo_data
+# from src.flow.engines.seo.dataforseo_response import get_dataforseo_data
 
 
 def keyword_difficulty_node(state: REXT) -> Dict[str, SEORESULT]:

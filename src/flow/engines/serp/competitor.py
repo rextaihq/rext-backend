@@ -41,7 +41,7 @@ def extract_competitors_from_serp(state: REXT) -> Dict[str, Any]:
             domain_groups[domain] = {
                 "top_positions": [],
                 "total_occurrences": 0,
-                "has_sitelinks": False,
+                # "has_sitelinks": False,
                 "intent_distribution": {
                     "INFORMATIONAL": 0, 
                     "COMMERCIAL": 0,
@@ -63,8 +63,8 @@ def extract_competitors_from_serp(state: REXT) -> Dict[str, Any]:
         if item.get("position", 999) < group["top_result"].get("position", 999):
             group["top_result"] = item
 
-        if item.get("sitelinks"):
-            group["has_sitelinks"] = True
+        # if item.get("sitelinks"):
+        #     group["has_sitelinks"] = True
 
         # Snippet length
         snippet = item.get("snippet", "")
@@ -135,7 +135,7 @@ def extract_competitors_from_serp(state: REXT) -> Dict[str, Any]:
                 domain=domain,
                 top_positions=data["top_positions"],
                 total_occurrences=data["total_occurrences"],
-                has_sitelinks=data["has_sitelinks"],
+                # has_sitelinks=data["has_sitelinks"],
                 intent_distribution=data["intent_distribution"],
                 freshness=data["freshness"],
                 avg_snippet_length=data["avg_snippet_length"],

@@ -113,14 +113,15 @@ def _parse_serp_response(raw_data: Dict[str, Any]) -> SERPEngineState:
         elif item_type == "people_also_ask":
             data = item.get("items", [])
             for d in data:
-                expanded_element = d.get("expanded_element", {})
-                serp_state["people_ask"].append({
-                    "question": d.get("title", ""),
-                    "snippet": expanded_element.get("description", ""),
-                    "link": expanded_element.get("url", ""),
-                    "domain": expanded_element.get("domain", ""),
-                    "title": expanded_element.get("title", ""),
-                })
+                expanded_element = d.get("expanded_element", [])
+                for exp_elm in expanded_element:
+                    serp_state["people_ask"].append({
+                        "question": d.get("title", ""),
+                        "snippet": exp_elm.get("description", ""),
+                        "link": exp_elm.get("url", ""),
+                        "domain": exp_elm.get("domain", ""),
+                        "title": exp_elm.get("title", ""),
+                    })
 
     serp_state["total_results"] = len(serp_state["organic_results"])
     return serp_state

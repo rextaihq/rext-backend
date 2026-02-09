@@ -40,6 +40,7 @@ class SERPBacklinks(TypedDict):
     dofollow_links: int
     images: bool
     videos: bool
+    discussions_and_forums:bool
     main_intent: str
     foreign_intent: str
 
@@ -89,7 +90,7 @@ class Competitor(TypedDict):
     domain: str
     top_positions: List[int]
     total_occurrences: int
-    has_sitelinks: bool
+    # has_sitelinks: bool
     intent_distribution: Dict[str, int]
     freshness: Dict[str, int]
     avg_snippet_length: float
