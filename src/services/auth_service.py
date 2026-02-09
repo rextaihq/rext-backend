@@ -46,7 +46,7 @@ from src.api.security.token_utils import (
     create_access_token,
     create_refresh_token,
     create_verification_token,
-    verify_token,
+    decode_and_verify_token,
     verify_refresh_token,
     is_token_blacklisted
 )
@@ -339,7 +339,7 @@ class AuthService:
         refresh_token = create_refresh_token(data=token_data)
 
         # Create session
-        access_payload = verify_token(access_token)
+        access_payload = decode_and_verify_token(access_token)
         jti = access_payload.get("jti")
         exp_timestamp = access_payload.get("exp")
         expires_at = datetime.fromtimestamp(exp_timestamp, tz=timezone.utc) if exp_timestamp else datetime.now(timezone.utc) + timedelta(hours=24)
@@ -387,7 +387,7 @@ class AuthService:
         Raises:
             RextAuthenticationException: If token invalid or user not found
         """
-        payload = verify_token(token)
+        payload = decode_and_verify_token(token)
         user_id = payload.get("user_id")
 
         if not user_id:
@@ -677,7 +677,7 @@ class AuthService:
             RextAuthenticationException: If token invalid
             ResourceNotFoundException: If user not found
         """
-        payload = verify_token(token)
+        payload = decode_and_verify_token(token)
         user_id = payload.get("user_id")
 
         if not user_id:

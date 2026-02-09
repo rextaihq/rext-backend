@@ -11,7 +11,7 @@ from langgraph_sdk import Auth
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.database.async_database import get_async_db
-from src.api.security.token_utils import verify_token, is_token_blacklisted
+from src.api.security.token_utils import decode_and_verify_token, is_token_blacklisted
 from src.utils.logger import logger
 
 # Lazy import to avoid circular dependency
@@ -54,7 +54,7 @@ async def get_current_user(
 
     try:
         # Verify the token
-        payload = verify_token(token)
+        payload = decode_and_verify_token(token)
 
         # Check if token is blacklisted
         jti = payload.get("jti")
@@ -160,7 +160,7 @@ async def get_current_user_sse(
 
     try:
         # Verify the token
-        payload = verify_token(auth_token)
+        payload = decode_and_verify_token(auth_token)
 
         # Check if token is blacklisted
         jti = payload.get("jti")

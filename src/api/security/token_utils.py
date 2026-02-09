@@ -22,6 +22,8 @@ for simplicity. For higher security requirements, consider using RS256 (RSA)
 or ES256 (Elliptic Curve) with asymmetric key pairs.
 """
 
+from typing import Annotated
+import warnings
 from datetime import datetime, timedelta, timezone
 from fastapi.security import OAuth2PasswordBearer
 from fastapi import Depends, HTTPException, status
@@ -174,19 +176,28 @@ def create_verification_token(data: dict, expires_delta: timedelta = timedelta(h
 #             headers={"WWW-Authenticate": "Bearer"},
 #         )
 
-# verify password
-def verify_token(token: str = Depends(oauth2_scheme)) -> dict:
+from typing import Annotated
+import warnings
+
+# ... (existing imports)
+
+# ... (existing code)
+
+def decode_and_verify_token(token: str) -> dict:
     """
-    Verifies the JWT token and decodes the payload.
+    Decode and verify a JWT token.
+
+    This is a pure utility function for direct calls. For FastAPI route
+    dependencies, use the VerifiedToken annotated type instead.
 
     Args:
-        token (str): JWT token passed via the Authorization header.
-
-    Raises:
-        HTTPException: If token is invalid or expired.
+        token: The JWT token string to verify.
 
     Returns:
-        dict: The decoded payload.
+        dict: The decoded token payload.
+
+    Raises:
+        HTTPException: If token is invalid, expired, or malformed.
     """
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
@@ -198,12 +209,69 @@ def verify_token(token: str = Depends(oauth2_scheme)) -> dict:
                 headers={"WWW-Authenticate": "Bearer"},
             )
         return payload
-    except Exception:
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token has expired",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    except jwt.InvalidTokenError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid token",
             headers={"WWW-Authenticate": "Bearer"}
         )
+
+
+def _get_verified_token(token: str = Depends(oauth2_scheme)) -> dict:
+    """
+    FastAPI dependency that extracts and verifies the JWT token from the
+    Authorization header.
+
+    This is an internal function. Use VerifiedToken type annotation in routes.
+    """
+    return decode_and_verify_token(token)
+
+
+# Type alias for use in route function signatures
+VerifiedToken = Annotated[dict, Depends(_get_verified_token)]
+
+
+def verify_token(token: str = Depends(oauth2_scheme)) -> dict:
+    """
+    Verifies the JWT token and decodes the payload.
+
+    .. deprecated::
+        This function has a confusing dual-purpose signature.
+        - For direct calls, use decode_and_verify_token(token) instead.
+        - For FastAPI dependencies, use VerifiedToken type annotation.
+
+    Args:
+        token (str): JWT token passed via the Authorization header.
+
+    Raises:
+        HTTPException: If token is invalid or expired.
+
+    Returns:
+        dict: The decoded payload.
+    """
+    warnings.warn(
+        "verify_token() is deprecated. Use decode_and_verify_token() for direct calls "
+        "or VerifiedToken for FastAPI dependencies.",
+        DeprecationWarning,
+        stacklevel=2
+    )
+    # If called as a dependency, token might be provided by Depends(oauth2_scheme)
+    # If called directly, token is passed as argument.
+    # The default value Depends(oauth2_scheme) is only used by FastAPI dependency injection system.
+    # When called directly without arguments, token would be Depends object which is invalid.
+    if isinstance(token, Depends): 
+         # This case technically shouldn't happen in direct calls unless someone does verify_token()
+         # But in that case they'd get a type error usually. 
+         # However, for safety in this refactor, we just pass it through if it's a string.
+         pass
+         
+    return decode_and_verify_token(token)
 
 
 # Verify Refresh Token

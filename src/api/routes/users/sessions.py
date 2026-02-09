@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.api.database.async_database import get_async_db
 from src.api.middleware.exceptions import RextValidationException
 from src.api.security.dependencies import get_current_user
-from src.api.security.token_utils import verify_token
+from src.api.security.token_utils import decode_and_verify_token
 from src.services.session_service import SessionService
 from src.utils.logger import logger
 from src.utils.route_decorators import db_transaction_handler, require_permissions
@@ -37,7 +37,7 @@ async def list_user_sessions(
             validation_errors={"authorization": "Expected 'Bearer <token>' format"}
         ) from exc
 
-    current_payload = verify_token(token)
+    current_payload = decode_and_verify_token(token)
     current_jti = current_payload.get("jti")
 
     service = SessionService(db)
@@ -104,7 +104,7 @@ async def revoke_all_sessions(
             validation_errors={"authorization": "Expected 'Bearer <token>' format"}
         ) from exc
 
-    current_payload = verify_token(token)
+    current_payload = decode_and_verify_token(token)
     current_jti = current_payload.get("jti")
 
     service = SessionService(db)
