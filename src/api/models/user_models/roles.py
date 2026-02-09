@@ -11,7 +11,7 @@ from src.api.models.mixins import UUIDPrimaryKeyMixin, TimestampMixin
 class Role(Base, SerializableMixin, UUIDPrimaryKeyMixin, TimestampMixin):
     __tablename__ = "roles"
 
-    # id, created_at, updated_at provided by mixins
+
     name = Column(String(100), unique=True, nullable=False)
     display_name = Column(String(150), nullable=False)
     description = Column(Text)
