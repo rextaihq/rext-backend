@@ -1,11 +1,10 @@
 """User impersonation API routes."""
 
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from migrate import status
 from src.api.database.async_database import get_async_db
 from src.api.middleware.exceptions import RextValidationException
 from src.api.middleware.permissions import is_admin
@@ -19,9 +18,6 @@ from src.services.impersonation_service import ImpersonationService
 from src.utils.audit_helper import create_audit_log_async
 from src.utils.logger import logger
 from src.utils.route_decorators import db_transaction_handler, require_permissions
-from uuid import uuid4
-from fastapi import HTTPException
-from fastapi import status
 
 router = APIRouter()
 
@@ -101,9 +97,6 @@ async def start_impersonation(
         "started_at": impersonation_context["impersonation_started_at"],
         "session_id": session_id
     }
-
-from src.api.middleware.exceptions import RextValidationException
-
 @router.post("/impersonate/stop")
 @require_permissions("user.update")
 @db_transaction_handler("stop impersonation", auto_commit=True) 
