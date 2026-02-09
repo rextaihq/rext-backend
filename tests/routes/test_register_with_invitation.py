@@ -78,7 +78,7 @@ async def test_register_with_valid_invitation(async_client, async_db):
         invited_by_user_id=inviter.id,
         invitation_token=invitation_token,
         status="pending",
-        expires_at=datetime.utcnow() + timedelta(days=7)
+        expires_at=datetime.now(timezone.utc) + timedelta(days=7)
     )
     async_db.add(invitation)
     await async_db.commit()
@@ -183,7 +183,7 @@ async def test_register_with_expired_invitation(async_client, async_db):
         invited_by_user_id=inviter.id,
         invitation_token=invitation_token,
         status="pending",
-        expires_at=datetime.utcnow() - timedelta(days=1)  # Expired yesterday
+        expires_at=datetime.now(timezone.utc) - timedelta(days=1)  # Expired yesterday
     )
     async_db.add(invitation)
     await async_db.commit()
@@ -270,7 +270,7 @@ async def test_register_with_email_mismatch(async_client, async_db):
         invited_by_user_id=inviter.id,
         invitation_token=invitation_token,
         status="pending",
-        expires_at=datetime.utcnow() + timedelta(days=7)
+        expires_at=datetime.now(timezone.utc) + timedelta(days=7)
     )
     async_db.add(invitation)
     await async_db.commit()
@@ -368,7 +368,7 @@ async def test_register_with_duplicate_email(async_client, async_db):
         invited_by_user_id=inviter.id,
         invitation_token=invitation_token,
         status="pending",
-        expires_at=datetime.utcnow() + timedelta(days=7)
+        expires_at=datetime.now(timezone.utc) + timedelta(days=7)
     )
     async_db.add(invitation)
     await async_db.commit()
@@ -476,7 +476,7 @@ async def test_register_with_already_accepted_invitation(async_client, async_db)
         invited_by_user_id=inviter.id,
         invitation_token=invitation_token,
         status="accepted",  # Already accepted!
-        expires_at=datetime.utcnow() + timedelta(days=7)
+        expires_at=datetime.now(timezone.utc) + timedelta(days=7)
     )
     async_db.add(invitation)
     await async_db.commit()
@@ -552,7 +552,7 @@ async def test_register_with_invitation_creates_active_membership(async_client, 
         invited_by_user_id=inviter.id,
         invitation_token=invitation_token,
         status="pending",
-        expires_at=datetime.utcnow() + timedelta(days=7)
+        expires_at=datetime.now(timezone.utc) + timedelta(days=7)
     )
     async_db.add(invitation)
     await async_db.commit()

@@ -62,7 +62,7 @@ async def suspend_user(
 
         # Update status directly (could be extracted to service method)
         target_user.status = "suspended"
-        target_user.updated_at = datetime.utcnow()
+        target_user.updated_at = datetime.now(timezone.utc)
         await db.flush()
 
         # Get admin user for audit log
@@ -252,7 +252,7 @@ async def ban_user(
 
         # Update status directly (could be extracted to service method)
         target_user.status = "banned"
-        target_user.updated_at = datetime.utcnow()
+        target_user.updated_at = datetime.now(timezone.utc)
         await db.flush()
 
         # Get admin user for audit log

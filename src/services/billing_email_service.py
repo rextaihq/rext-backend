@@ -222,7 +222,7 @@ class BillingEmailService:
         html_content = render_subscription_expiring_soon_email(
             user_name=user.full_name or user.display_name or user.email,
             plan_name=plan_name,
-            expiry_date=datetime.utcnow().strftime("%B %d, %Y"),
+            expiry_date=datetime.now(timezone.utc).strftime("%B %d, %Y"),
             days_remaining=0
         )
 

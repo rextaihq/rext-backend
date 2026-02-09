@@ -1,7 +1,7 @@
 """Subscription plan model."""
 import uuid
-from datetime import datetime
-from sqlalchemy import Column, String, Integer, Numeric, Boolean, Text, TIMESTAMP
+from datetime import datetime, timezone
+from sqlalchemy import Column, String, Integer, Numeric, Boolean, Text, DateTime
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import relationship
 from src.api.database.base import Base
@@ -43,8 +43,8 @@ class SubscriptionPlan(Base, SerializableMixin):
     lemonsqueezy_variant_id_yearly = Column(String(255), nullable=True, index=True)  # LemonSqueezy variant ID (yearly)
     lemonsqueezy_store_id = Column(String(255), nullable=True)  # LemonSqueezy store ID
 
-    created_at = Column(TIMESTAMP, default=datetime.utcnow, nullable=False)
-    updated_at = Column(TIMESTAMP, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
+    updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
     # Relationships
     subscriptions = relationship("UserSubscription", back_populates="plan")

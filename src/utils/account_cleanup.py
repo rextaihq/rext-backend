@@ -34,7 +34,7 @@ def delete_deactivated_accounts(db: Session) -> int:
     """
     try:
         # Calculate cutoff date (14 days ago)
-        cutoff_date = datetime.utcnow() - timedelta(days=14)
+        cutoff_date = datetime.now(timezone.utc) - timedelta(days=14)
 
         logger.info(f"Starting deactivated account cleanup. Cutoff date: {cutoff_date.isoformat()}")
 
@@ -51,7 +51,7 @@ def delete_deactivated_accounts(db: Session) -> int:
         for user in deactivated_users:
             try:
                 # Soft delete the user
-                user.deleted_at = datetime.utcnow()
+                user.deleted_at = datetime.now(timezone.utc)
                 logger.info(
                     f"Deleting deactivated account: {user.email} (ID: {user.id}), "
                     f"deactivated on {user.deactivated_at.isoformat()}"
@@ -105,7 +105,7 @@ def get_pending_deletions(db: Session) -> list:
         pending_deletions = []
         for user in deactivated_users:
             scheduled_deletion = user.deactivated_at + timedelta(days=14)
-            days_remaining = (scheduled_deletion - datetime.utcnow()).days
+            days_remaining = (scheduled_deletion - datetime.now(timezone.utc)).days
 
             pending_deletions.append({
                 "user_id": str(user.id),
@@ -155,7 +155,7 @@ def cancel_account_deactivation(user_id: str, db: Session) -> bool:
         # Reactivate account
         user.status = "active"
         user.deactivated_at = None
-        user.updated_at = datetime.utcnow()
+        user.updated_at = datetime.now(timezone.utc)
 
         db.commit()
         logger.info(f"Account reactivated: {user.email} (ID: {user_id})")

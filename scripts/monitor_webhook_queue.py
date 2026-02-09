@@ -44,7 +44,7 @@ async def check_webhook_queue():
             unprocessed_stmt = select(func.count(WebhookEvent.id)).where(
                 and_(
                     WebhookEvent.processed == False,
-                    WebhookEvent.created_at > datetime.utcnow() - timedelta(hours=TIME_WINDOW_HOURS)
+                    WebhookEvent.created_at > datetime.now(timezone.utc) - timedelta(hours=TIME_WINDOW_HOURS)
                 )
             )
             unprocessed_result = await session.execute(unprocessed_stmt)
@@ -52,7 +52,7 @@ async def check_webhook_queue():
 
             # Count total webhooks from last hour
             total_stmt = select(func.count(WebhookEvent.id)).where(
-                WebhookEvent.created_at > datetime.utcnow() - timedelta(hours=TIME_WINDOW_HOURS)
+                WebhookEvent.created_at > datetime.now(timezone.utc) - timedelta(hours=TIME_WINDOW_HOURS)
             )
             total_result = await session.execute(total_stmt)
             total_count = total_result.scalar() or 0
@@ -61,7 +61,7 @@ async def check_webhook_queue():
             failed_stmt = select(func.count(WebhookEvent.id)).where(
                 and_(
                     WebhookEvent.error_message.isnot(None),
-                    WebhookEvent.created_at > datetime.utcnow() - timedelta(hours=TIME_WINDOW_HOURS)
+                    WebhookEvent.created_at > datetime.now(timezone.utc) - timedelta(hours=TIME_WINDOW_HOURS)
                 )
             )
             failed_result = await session.execute(failed_stmt)
@@ -79,7 +79,7 @@ async def check_webhook_queue():
 
             oldest_age_minutes = 0
             if oldest_webhook:
-                oldest_age_minutes = int((datetime.utcnow() - oldest_webhook).total_seconds() / 60)
+                oldest_age_minutes = int((datetime.now(timezone.utc) - oldest_webhook).total_seconds() / 60)
 
             # Log current status
             logger.info(
@@ -192,7 +192,7 @@ async def get_queue_statistics():
                     func.count(WebhookEvent.id).filter(WebhookEvent.processed == False).label('pending'),
                     func.count(WebhookEvent.id).filter(WebhookEvent.error_message.isnot(None)).label('failed')
                 )
-                .where(WebhookEvent.created_at > datetime.utcnow() - timedelta(hours=TIME_WINDOW_HOURS))
+                .where(WebhookEvent.created_at > datetime.now(timezone.utc) - timedelta(hours=TIME_WINDOW_HOURS))
                 .group_by(WebhookEvent.event_name)
             )
             event_result = await session.execute(event_breakdown_stmt)

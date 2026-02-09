@@ -33,11 +33,11 @@ class CustomerNote(Base):
     )
     note = Column(Text, nullable=False)
     category = Column(String(50))  # billing, support, technical, other
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False, index=True)
     updated_at = Column(
         DateTime,
-        default=datetime.utcnow,
-        onupdate=datetime.utcnow
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc)
     )
 
     def to_dict(self) -> dict:

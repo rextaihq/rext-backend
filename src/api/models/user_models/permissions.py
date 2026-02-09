@@ -1,7 +1,7 @@
-from sqlalchemy import Column, String, Boolean, Integer, Text, TIMESTAMP, ForeignKey, UniqueConstraint
+from sqlalchemy import Column, String, Boolean, Integer, Text, DateTime, ForeignKey, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import relationship
-from datetime import datetime
+from datetime import datetime, timezone
 import uuid
 from src.api.database.base import Base
 from src.api.models.base import SerializableMixin
@@ -19,7 +19,7 @@ class Permission(Base, SerializableMixin):
     description = Column(Text)
     resource = Column(String(50))
     action = Column(String(50))
-    created_at = Column(TIMESTAMP, default=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
     # Relationships
     roles = relationship("RolePermission", back_populates="permission")

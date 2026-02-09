@@ -7,7 +7,7 @@ Stores user-specific preferences for UI customization and behavior.
 from sqlalchemy import Column, String, Integer, Boolean, DateTime, ForeignKey, Index
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
-from datetime import datetime
+from datetime import datetime, timezone
 import uuid
 
 from src.api.database.base import Base
@@ -29,8 +29,8 @@ class UserPreferences(Base):
     sidebar_collapsed = Column(Boolean, nullable=True, default=False)
 
     # Timestamps
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
-    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
     # Relationships
     user = relationship("Users", back_populates="preferences")

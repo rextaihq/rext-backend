@@ -1,8 +1,8 @@
 import uuid
-from sqlalchemy import Column, String, Text, Boolean, TIMESTAMP, ForeignKey, Enum as SQLEnum
+from sqlalchemy import Column, String, Text, Boolean, DateTime, ForeignKey, Enum as SQLEnum
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
-from datetime import datetime
+from datetime import datetime, timezone
 from src.api.database.base import Base
 from src.api.models.base import SerializableMixin
 import enum
@@ -38,8 +38,8 @@ class EmailTemplate(Base, SerializableMixin):
     is_active = Column(Boolean, default=True)
     is_default = Column(Boolean, default=False)  # System default templates
     created_by_user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
-    created_at = Column(TIMESTAMP, default=datetime.utcnow, nullable=False)
-    updated_at = Column(TIMESTAMP, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
+    updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
     # Relationships
     workspace = relationship("WorkspaceModel", foreign_keys=[workspace_id], back_populates="email_templates")

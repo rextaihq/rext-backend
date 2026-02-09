@@ -1,7 +1,7 @@
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlalchemy import (
-    Column, String, Boolean, TIMESTAMP, ForeignKey, Text, Index
+    Column, String, Boolean, DateTime, ForeignKey, Text, Index
 )
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import relationship
@@ -101,13 +101,13 @@ class Notification(Base, SerializableMixin):
     # NOTIFICATION STATE
     # ==============================
     is_read = Column(Boolean, default=False, nullable=False, index=True)
-    read_at = Column(TIMESTAMP, nullable=True)
+    read_at = Column(DateTime(timezone=True), nullable=True)
     
     is_archived = Column(Boolean, default=False, nullable=False, index=True)
-    archived_at = Column(TIMESTAMP, nullable=True)
+    archived_at = Column(DateTime(timezone=True), nullable=True)
     
     is_deleted = Column(Boolean, default=False, nullable=False, index=True)
-    deleted_at = Column(TIMESTAMP, nullable=True)
+    deleted_at = Column(DateTime(timezone=True), nullable=True)
 
     # ==============================
     # ADDITIONAL DATA
@@ -135,14 +135,14 @@ class Notification(Base, SerializableMixin):
     # ==============================
     sent_via_email = Column(Boolean, default=False, nullable=False)
     sent_via_sse = Column(Boolean, default=False, nullable=False)
-    email_sent_at = Column(TIMESTAMP, nullable=True)
-    sse_sent_at = Column(TIMESTAMP, nullable=True)
+    email_sent_at = Column(DateTime(timezone=True), nullable=True)
+    sse_sent_at = Column(DateTime(timezone=True), nullable=True)
 
     # ==============================
     # EXPIRATION
     # ==============================
     expires_at = Column(
-        TIMESTAMP, 
+        DateTime(timezone=True), 
         nullable=True,
         comment="When this notification should expire and be auto-archived"
     )
@@ -150,11 +150,11 @@ class Notification(Base, SerializableMixin):
     # ==============================
     # TIMESTAMPS
     # ==============================
-    created_at = Column(TIMESTAMP, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
     updated_at = Column(
-        TIMESTAMP,
-        default=datetime.utcnow,
-        onupdate=datetime.utcnow,
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
         nullable=False
     )
 
@@ -196,7 +196,7 @@ class Notification(Base, SerializableMixin):
     def mark_as_read(self):
         """Mark notification as read."""
         self.is_read = True
-        self.read_at = datetime.utcnow()
+        self.read_at = datetime.now(timezone.utc)
 
     def mark_as_unread(self):
         """Mark notification as unread."""
@@ -206,7 +206,7 @@ class Notification(Base, SerializableMixin):
     def archive(self):
         """Archive notification."""
         self.is_archived = True
-        self.archived_at = datetime.utcnow()
+        self.archived_at = datetime.now(timezone.utc)
 
     def unarchive(self):
         """Unarchive notification."""
@@ -216,7 +216,7 @@ class Notification(Base, SerializableMixin):
     def soft_delete(self):
         """Soft delete notification."""
         self.is_deleted = True
-        self.deleted_at = datetime.utcnow()
+        self.deleted_at = datetime.now(timezone.utc)
 
     def restore(self):
         """Restore soft-deleted notification."""

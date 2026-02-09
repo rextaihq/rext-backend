@@ -6,8 +6,8 @@ Stores session metadata like device info, IP address, and activity timestamps.
 """
 
 import uuid
-from datetime import datetime,timezone
-from sqlalchemy import Column, String, Boolean, TIMESTAMP, Text, Index, ForeignKey
+from datetime import datetime, timezone
+from sqlalchemy import Column, String, Boolean, DateTime, Text, Index, ForeignKey
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import relationship
 from src.api.database.base import Base
@@ -36,13 +36,13 @@ class UserSession(Base, SerializableMixin):
     is_active = Column(Boolean, default=True, nullable=False, index=True)
 
     # Timestamps
-    created_at = Column(TIMESTAMP, default=lambda: datetime.now(timezone.utc), nullable=False)
-    last_activity_at = Column(TIMESTAMP, default=lambda: datetime.now(timezone.utc), nullable=False, index=True)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
+    last_activity_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False, index=True)
     
     
     
-    expires_at = Column(TIMESTAMP, nullable=False)  # When access token expires
-    revoked_at = Column(TIMESTAMP)     # When session was manually revoked
+    expires_at = Column(DateTime(timezone=True), nullable=False)  # When access token expires
+    revoked_at = Column(DateTime(timezone=True))     # When session was manually revoked
 
     # Additional metadata (flexible JSONB field)
     session_metadata = Column(JSONB, default=dict)  # For future extensibility

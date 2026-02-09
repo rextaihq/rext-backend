@@ -308,7 +308,7 @@ async def decline_invitation(
             "workspace_id": str(invitation.workspace_id),
             "invitation_email": invitation.email,
             "decline_reason": decline_reason,
-            "declined_at": datetime.utcnow().isoformat()
+            "declined_at": datetime.now(timezone.utc).isoformat()
         }
     )
 
@@ -381,7 +381,7 @@ async def decline_invitation(
         data={
             "invitation_id": str(invitation_id),
             "status": "declined",
-            "declined_at": datetime.utcnow().isoformat()
+            "declined_at": datetime.now(timezone.utc).isoformat()
         },
         request=request,
         message="Invitation declined successfully"

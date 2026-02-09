@@ -1,6 +1,6 @@
 """Error Log model for system monitoring."""
 
-from datetime import datetime
+from datetime import datetime, timezone
 from uuid import UUID, uuid4
 
 from sqlalchemy import Boolean, Column, DateTime, ForeignKey, String, Text
@@ -19,7 +19,7 @@ class ErrorLog(Base):
     __tablename__ = "error_logs"
 
     id = Column(PostgresUUID(as_uuid=True), primary_key=True, default=uuid4)
-    timestamp = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    timestamp = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False, index=True)
     severity = Column(String(20), nullable=False, index=True)  # error, warning, critical
     message = Column(Text, nullable=False)
     source = Column(String(255))  # file:line
@@ -32,7 +32,7 @@ class ErrorLog(Base):
     stack_trace = Column(Text)
     error_metadata = Column("metadata", JSONB, default=dict)
     resolved = Column(Boolean, default=False, index=True)
-    resolved_at = Column(DateTime, nullable=True)
+    resolved_at = Column(DateTime(timezone=True), nullable=True)
     resolved_by = Column(
         PostgresUUID(as_uuid=True),
         ForeignKey("users.id"),

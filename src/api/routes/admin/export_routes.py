@@ -68,7 +68,7 @@ async def export_subscriptions(
     output = io.StringIO(csv_content)
 
     # Generate filename with timestamp
-    timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     filename = f"subscriptions_export_{timestamp}.csv"
 
     return StreamingResponse(
@@ -116,7 +116,7 @@ async def export_invoices(
     )
 
     # Create streaming response
-    timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     filename = f"invoices_export_{timestamp}.csv"
 
     return StreamingResponse(
@@ -161,7 +161,7 @@ async def export_usage_data(
     )
 
     # Create streaming response
-    timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     filename = f"usage_export_{timestamp}.csv"
 
     return StreamingResponse(
@@ -202,7 +202,7 @@ async def export_revenue_summary(
     csv_content = await service.export_revenue_summary_csv(months=months)
 
     # Create streaming response
-    timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     filename = f"revenue_summary_{months}m_{timestamp}.csv"
 
     return StreamingResponse(

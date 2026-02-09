@@ -51,7 +51,7 @@ def check_trial_expiration(
             "action_required": True
         }
 
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     days_remaining = (subscription.trial_end_date - now).days
 
     return {
@@ -75,7 +75,7 @@ def expire_trial_subscriptions(db: Session) -> Dict[str, int]:
     Returns:
         Dict with counts of expired, converted, and downgraded subscriptions
     """
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
 
     # Find all expired trials
     expired_trials = db.query(UserSubscription).filter(
@@ -152,7 +152,7 @@ def get_trials_expiring_soon(
     Returns:
         List of dicts with subscription and user information
     """
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     threshold_date = now + timedelta(days=days_threshold)
 
     expiring_trials = db.query(UserSubscription, Users, SubscriptionPlan).join(
@@ -219,7 +219,7 @@ def extend_trial(
     # Extend the trial
     old_end_date = subscription.trial_end_date
     subscription.trial_end_date = subscription.trial_end_date + timedelta(days=extend_days)
-    subscription.updated_at = datetime.utcnow()
+    subscription.updated_at = datetime.now(timezone.utc)
 
     db.commit()
     db.refresh(subscription)
@@ -268,7 +268,7 @@ def convert_trial_to_active(
     subscription.trial_end_date = None  # Clear trial end date
     if lemonsqueezy_subscription_id:
         subscription.lemonsqueezy_subscription_id = lemonsqueezy_subscription_id
-    subscription.updated_at = datetime.utcnow()
+    subscription.updated_at = datetime.now(timezone.utc)
 
     db.commit()
     db.refresh(subscription)
@@ -289,7 +289,7 @@ def get_trial_statistics(db: Session) -> Dict:
     Returns:
         Dict with trial statistics
     """
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
 
     # Active trials
     active_trials_count = db.query(UserSubscription).filter(

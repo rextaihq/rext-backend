@@ -11,8 +11,8 @@ When a token is blacklisted:
 """
 
 import uuid
-from datetime import datetime,timezone
-from sqlalchemy import Column, String, TIMESTAMP, Index
+from datetime import datetime, timezone
+from sqlalchemy import Column, String, DateTime, Index
 from sqlalchemy.dialects.postgresql import UUID
 from src.api.database.base import Base
 from src.api.models.base import SerializableMixin
@@ -26,8 +26,8 @@ class TokenBlacklist(Base, SerializableMixin):
     jti = Column(String(255), unique=True, nullable=False, index=True)  # JWT ID (unique token identifier)
     token_type = Column(String(20), nullable=False)  # "access" or "refresh"
     user_id = Column(UUID(as_uuid=True), nullable=False, index=True)  # User who owned the token
-    revoked_at = Column(TIMESTAMP, default=lambda: datetime.now(timezone.utc), nullable=False)  # When token was blacklisted
-    expires_at = Column(TIMESTAMP, nullable=False, index=True)  # When token would naturally expire
+    revoked_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)  # When token was blacklisted
+    expires_at = Column(DateTime(timezone=True), nullable=False, index=True)  # When token would naturally expire
     reason = Column(String(100))  # "logout", "refresh", "forced_logout", "password_change", etc.
 
     __table_args__ = (

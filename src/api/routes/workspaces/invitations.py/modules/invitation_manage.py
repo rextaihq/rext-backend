@@ -172,7 +172,7 @@ async def accept_invitation(
             "workspace_name": workspace.name if workspace else None,
             "role_id": str(invitation.role_id),
             "membership_id": result["membership_id"],
-            "joined_at": datetime.utcnow().isoformat()
+            "joined_at": datetime.now(timezone.utc).isoformat()
         },
         "message": "Successfully joined workspace"
     }

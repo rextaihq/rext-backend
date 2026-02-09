@@ -689,11 +689,11 @@ async def deactivate_account(
 
             for subscription in active_subscriptions:
                 subscription.status = "canceled"
-                subscription.canceled_at = datetime.utcnow()
+                subscription.canceled_at = datetime.now(timezone.utc)
                 logger.info(f"Canceled subscription {subscription.id} for user {user_id}")
 
         # Deactivate user account
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         scheduled_deletion = now + timedelta(days=14)
 
         user.status = "inactive"
