@@ -267,17 +267,32 @@ class UserService:
         return user
 
     async def cleanup_deactivated_accounts(self) -> int:
-        """Permanently delete accounts deactivated for 14 or more days."""
-        return delete_deactivated_accounts(self.db.sync_session)
+        """
+        Permanently delete accounts deactivated for 14 or more days.
+        
+        Returns:
+            Number of accounts deleted
+        """
+        return await delete_deactivated_accounts(self.db)
 
     async def get_pending_deletions(self) -> list:
-        """Return accounts scheduled for deletion."""
-        return get_pending_deletions(self.db.sync_session)
+        """
+        Return accounts scheduled for deletion.
+        
+        Returns:
+            List of user dictionaries with deletion information
+        """
+        return await get_pending_deletions(self.db)
 
     async def cleanup_expired_tokens(self) -> int:
-        """Remove expired tokens from the blacklist."""
-        return cleanup_expired_tokens(self.db.sync_session)
-
+        """
+        Remove expired tokens from the blacklist.
+        
+        Returns:
+            Number of tokens cleaned up
+        """
+        return await cleanup_expired_tokens(self.db)
+    
     async def update_last_login(
         self,
         user_id: UUID
