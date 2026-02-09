@@ -1,4 +1,3 @@
-import uuid
 from datetime import datetime
 from typing import Optional
 
@@ -9,19 +8,13 @@ from sqlalchemy.sql import func
 
 from src.api.database.base import Base
 from src.api.models.base import SerializableMixin
+from src.api.models.mixins import UUIDPrimaryKeyMixin
 
 
-class LicenseActivation(Base, SerializableMixin):
+class LicenseActivation(Base, SerializableMixin, UUIDPrimaryKeyMixin):
     __tablename__ = "license_activations"
 
-    id = Column(
-        UUID(as_uuid=True),
-        primary_key=True,
-        default=uuid.uuid4,
-        unique=True,
-        nullable=False
-    )
-
+    # id provided by mixin
     license_id = Column(
         UUID(as_uuid=True),
         ForeignKey("licenses.id", ondelete="CASCADE"),

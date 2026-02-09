@@ -1,18 +1,16 @@
-from sqlalchemy import Column, String, Text, Integer, Float, DateTime, Boolean, ForeignKey
+from sqlalchemy import Column, String, Text, Integer, DateTime, ForeignKey
 from sqlalchemy.dialects.postgresql import UUID, ARRAY, JSONB
 from sqlalchemy.orm import relationship
 from src.api.database.base import Base
 from src.api.models.base import SerializableMixin
-from datetime import datetime
-import uuid
+from src.api.models.mixins import UUIDPrimaryKeyMixin, TimestampMixin, WorkspaceScopedMixin, SoftDeleteMixin
 
 
-class Content(Base, SerializableMixin):
+class Content(Base, SerializableMixin, UUIDPrimaryKeyMixin, TimestampMixin, WorkspaceScopedMixin, SoftDeleteMixin):
     """Main content table - stores core content and metadata"""
     __tablename__ = "content"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, unique=True, nullable=False)
-    workspace_id = Column(UUID(as_uuid=True), ForeignKey("workspace.id", ondelete="CASCADE"), nullable=False, index=True)
+    # id, workspace_id, created_at, updated_at, deleted_at provided by mixins
     created_by_user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=False, index=True)
 
     # Core content fields
@@ -39,10 +37,6 @@ class Content(Base, SerializableMixin):
     wordpress_post_id = Column(Integer, nullable=True)
     wordpress_url = Column(Text, nullable=True)
     wordpress_published_at = Column(DateTime(timezone=True), nullable=True)
-
-    created_at = Column(DateTime(timezone=True), nullable=False, default=datetime.utcnow)
-    updated_at = Column(DateTime(timezone=True), nullable=True, default=datetime.utcnow, onupdate=datetime.utcnow)
-    deleted_at = Column(DateTime(timezone=True), nullable=True)
 
     # Relationships
     workspace = relationship("WorkspaceModel", back_populates="content_items")

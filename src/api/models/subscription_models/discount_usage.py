@@ -1,6 +1,6 @@
 from datetime import datetime
 from typing import Optional
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from sqlalchemy import Column, String, Numeric, TIMESTAMP, ForeignKey, Index
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID, JSONB
@@ -9,16 +9,13 @@ from sqlalchemy.sql import func
 
 from src.api.database.base import Base
 from src.api.models.base import SerializableMixin
+from src.api.models.mixins import UUIDPrimaryKeyMixin
 
 
-class DiscountUsage(Base, SerializableMixin):
+class DiscountUsage(Base, SerializableMixin, UUIDPrimaryKeyMixin):
     __tablename__ = "discount_usage"
 
-    id = Column(
-        PG_UUID(as_uuid=True),
-        primary_key=True,
-        server_default=func.gen_random_uuid()
-    )
+    # id provided by mixin (uses uuid4 default instead of server_default)
 
     user_id = Column(
         PG_UUID(as_uuid=True),

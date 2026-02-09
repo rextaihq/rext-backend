@@ -1,5 +1,4 @@
 """Trial conversion tracking model."""
-import uuid
 from datetime import datetime
 from decimal import Decimal
 from typing import Optional
@@ -10,19 +9,13 @@ from sqlalchemy.orm import relationship
 
 from src.api.database.base import Base
 from src.api.models.base import SerializableMixin
+from src.api.models.mixins import UUIDPrimaryKeyMixin, TimestampMixin
 
 
-class TrialConversion(Base, SerializableMixin):
+class TrialConversion(Base, SerializableMixin, UUIDPrimaryKeyMixin, TimestampMixin):
     __tablename__ = "trial_conversions"
 
-    id = Column(
-        UUID(as_uuid=True),
-        primary_key=True,
-        default=uuid.uuid4,
-        unique=True,
-        nullable=False
-    )
-
+    # id, created_at provided by mixins
     user_id = Column(
         UUID(as_uuid=True),
         ForeignKey("users.id", ondelete="CASCADE"),
@@ -90,11 +83,7 @@ class TrialConversion(Base, SerializableMixin):
         comment="Additional conversion data (discount code, source, etc.)"
     )
 
-    created_at = Column(
-        TIMESTAMP(timezone=True),
-        default=datetime.utcnow,
-        nullable=False
-    )
+    # created_at provided by TimestampMixin
 
     # SAME relationships – NOT changed
     user = relationship("Users", backref="trial_conversions")

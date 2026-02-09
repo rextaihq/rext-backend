@@ -1,19 +1,17 @@
-from sqlalchemy import Column, String, Boolean, Integer, Text, TIMESTAMP, ForeignKey, UniqueConstraint
-from sqlalchemy.dialects.postgresql import UUID, JSONB
+from sqlalchemy import Column, String, Boolean, Integer, Text
 from sqlalchemy.orm import relationship
-from datetime import datetime,timezone
-import uuid
 from src.api.database.base import Base
 from src.api.models.base import SerializableMixin
+from src.api.models.mixins import UUIDPrimaryKeyMixin, TimestampMixin
 
 
 # -------------------------
 # Roles
 # -------------------------
-class Role(Base, SerializableMixin):
+class Role(Base, SerializableMixin, UUIDPrimaryKeyMixin, TimestampMixin):
     __tablename__ = "roles"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, unique=True, nullable=False)
+    # id, created_at, updated_at now provided by mixins
     name = Column(String(100), nullable=False)
     display_name = Column(String(150), nullable=False)
     description = Column(Text)
@@ -24,9 +22,6 @@ class Role(Base, SerializableMixin):
     # - is_workspace_role: Can be assigned to workspace members (workspace_owner, editor, etc.)
     is_system_role = Column(Boolean, default=False)
     is_workspace_role = Column(Boolean, default=False, nullable=False)
-
-    created_at = Column(TIMESTAMP, nullable=False, default=lambda: datetime.now(timezone.utc))
-    updated_at = Column(TIMESTAMP, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
     # Relationships
     permissions = relationship("RolePermission", back_populates="role")
