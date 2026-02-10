@@ -188,11 +188,12 @@ async def get_current_user_sse(
                 context={"token_error": "get_current_user_optional"}
             )
     except RextAuthenticationException:
+        # Re-raise authentication exceptions (including blacklist check)
         raise
     except Exception as e:
         raise RextAuthenticationException(
             message="Token validation failed",
-            context={"error_details": str(e)}
+            context={"error_details": "Token validation failed"}
         )
 
     # Extract user info from JWT payload

@@ -176,8 +176,8 @@ async def update_profile(
             user_id=str(user_id),
             background_tasks=background_tasks,
             pref_flag="in_app_notifications",
-            message=f"Failed to update profile: {str(e)}",
-            payload={"user_id": str(user_id), "error": "An internal error occurred"}
+            message="Failed to update profile",
+            payload={"user_id": str(user_id), "error": "An internal error occurred"},
             workspace_id=None,
             title="Profile Update Failed",
             status="error"
@@ -352,7 +352,7 @@ async def upload_avatar(
             background_tasks=background_tasks,
             pref_flag="in_app_notifications",
             message="failed to upload avatar",
-            payload={"user_id": str(user_id), "error": "An internal error occurred"}
+            payload={"user_id": str(user_id), "error": "An internal error occurred"},
             workspace_id=None
         )
         raise HTTPException(
@@ -466,7 +466,7 @@ async def delete_avatar(
             user_id=str(user_id),
             background_tasks=background_tasks,
             pref_flag="in_app_notifications",
-            payload={"user_id": str(user_id), "error": "An internal error occurred"}
+            payload={"user_id": str(user_id), "error": "An internal error occurred"},
             message="failed to delete avatar",
             workspace_id=None
         )
@@ -615,7 +615,7 @@ async def update_notification_preferences(
             background_tasks=background_tasks,
             pref_flag="in_app_notifications",
             message="failed to update notification preferences",
-            payload={"user_id": str(user_id), "error": "An internal error occurred"}
+            payload={"user_id": str(user_id), "error": "An internal error occurred"},
             workspace_id=None
         )
         raise

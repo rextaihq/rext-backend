@@ -18,6 +18,7 @@ from datetime import datetime
 from src.api.database.async_database import get_async_db
 from src.api.security.dependencies import get_current_user
 from src.api.models.user_models.invitations import UserInvitations
+from src.api.config import get_settings
 from src.api.models.workspace_models.workspace_model import WorkspaceModel
 from src.api.models.user_models.roles import Role
 from src.api.models.user_models.users import Users
@@ -338,7 +339,7 @@ async def decline_invitation(
                 declined_by_email=user_email,
                 decline_reason=decline_reason,
                 workspace_id=str(workspace.id),
-                frontend_url="http://localhost:3000"  # TODO: Get from config
+                frontend_url=get_settings().FRONTEND_URL
             )
 
             # Send email to inviter

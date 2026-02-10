@@ -548,7 +548,7 @@ async def login_user(
         await db.rollback()
         logger.error(f"Login failed: {str(e)}", exc_info=True)
         return error(
-            message="<existing message>",
+            message="Login failed due to server error",
             code=ErrorCode.INTERNAL_SERVER_ERROR,
             status_code=500,
             severity=ErrorSeverity.HIGH,
@@ -607,7 +607,7 @@ async def refresh_access_token(
     except Exception as e:
         logger.error(f"Token refresh failed: {str(e)}")
         return error(
-            message="<existing message>",
+            message="Failed to refresh token",
             code=ErrorCode.INTERNAL_SERVER_ERROR,
             status_code=500,
             severity=ErrorSeverity.HIGH,
@@ -654,7 +654,7 @@ async def logout_user(
     except Exception as e:
         logger.error(f"Logout failed: {str(e)}")
         return error(
-            message="<existing message>",
+            message="Logout failed",
             code=ErrorCode.INTERNAL_SERVER_ERROR,
             status_code=500,
             severity=ErrorSeverity.HIGH,
@@ -700,7 +700,7 @@ async def verify_email(
         raise
     except Exception as e:
         return error(
-            message="<existing message>",
+            message="Failed to verify email",
             code=ErrorCode.INTERNAL_SERVER_ERROR,
             status_code=500,
             severity=ErrorSeverity.HIGH,
@@ -765,7 +765,7 @@ async def resend_verification(
     except Exception as e:
         logger.error(f"Resend verification error: {str(e)}")
         return error(
-            message="<existing message>",
+            message="Failed to resend verification email",
             code=ErrorCode.INTERNAL_SERVER_ERROR,
             status_code=500,
             severity=ErrorSeverity.HIGH,
@@ -905,7 +905,7 @@ async def oauth_login(
     except Exception as e:
         logger.error(f"OAuth login failed: {str(e)}", exc_info=True)
         return error(
-            message="<existing message>",
+            message="OAuth login failed",
             code=ErrorCode.INTERNAL_SERVER_ERROR,
             status_code=500,
             severity=ErrorSeverity.HIGH,
@@ -987,7 +987,7 @@ async def link_oauth(
     except Exception as e:
         logger.error(f"OAuth link failed: {str(e)}", exc_info=True)
         return error(
-            message="<existing message>",
+            message="Failed to link OAuth account",
             code=ErrorCode.INTERNAL_SERVER_ERROR,
             status_code=500,
             severity=ErrorSeverity.HIGH,
@@ -1029,7 +1029,7 @@ async def unlink_oauth(
     except Exception as e:
         logger.error(f"OAuth unlink failed: {str(e)}", exc_info=True)
     return error(
-            message="<existing message>",
+            message="Failed to unlink OAuth account",
             code=ErrorCode.INTERNAL_SERVER_ERROR,
             status_code=500,
             severity=ErrorSeverity.HIGH,

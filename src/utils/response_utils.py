@@ -610,8 +610,10 @@ def response_handler(
                 # Re-raise HTTP exceptions to be handled by middleware
                 raise
             except Exception as e:
-                # Convert unexpected exceptions to standardized error
-                message = f"{error_message}: {str(e)}" if error_message else str(e)
+                # Log unexpected exception for internal tracking
+                logger.exception(f"Unexpected error: {str(e)}", extra={"error_type": type(e).__name__})
+                # Convert unexpected exceptions to standardized error without leaking details
+                message = error_message or "An internal server error occurred"
                 return error(
                     message=message,
                     code=ErrorCode.INTERNAL_SERVER_ERROR,
@@ -693,8 +695,10 @@ def paginated_response(
             except HTTPException:
                 raise
             except Exception as e:
+                # Log unexpected exception for internal tracking
+                logger.exception(f"Pagination error: {str(e)}", extra={"error_type": type(e).__name__})
                 return error(
-                    message=f"Pagination error: {str(e)}",
+                    message="An error occurred during pagination",
                     code=ErrorCode.INTERNAL_SERVER_ERROR,
                     status_code=500,
                     severity=ErrorSeverity.HIGH,

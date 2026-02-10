@@ -16,8 +16,7 @@ from src.api.schema.response_schemas import ErrorCode, ErrorSeverity
 from src.services.user_service import UserService
 from src.api.middleware.exceptions import ResourceNotFoundException, RextValidationException
 from src.api.models.workspace_models.workspace_member import WorkspaceMembers
-from src.api.config import get_settings
-from src.api.config.settings import settings
+from src.api.config import get_settings, settings
 from sqlalchemy import select, delete
 
 router = APIRouter()
