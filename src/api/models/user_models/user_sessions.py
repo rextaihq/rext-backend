@@ -20,7 +20,7 @@ class UserSession(Base, SerializableMixin):
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
-    jti = Column(String(255), unique=True, nullable=False, index=True)  # JWT ID from access token
+    jti = Column(String(255), unique=True, nullable=False)  # JWT ID from access token
 
     # Device/Client Information
     device_name = Column(String(255))  # e.g., "Chrome on Windows"
@@ -37,7 +37,7 @@ class UserSession(Base, SerializableMixin):
 
     # Timestamps
     created_at = Column(TIMESTAMP, default=lambda: datetime.now(timezone.utc), nullable=False)
-    last_activity_at = Column(TIMESTAMP, default=lambda: datetime.now(timezone.utc), nullable=False, index=True)
+    last_activity_at = Column(TIMESTAMP, default=lambda: datetime.now(timezone.utc), nullable=False)
     
     
     

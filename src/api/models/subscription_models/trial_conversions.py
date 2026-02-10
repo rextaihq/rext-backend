@@ -69,7 +69,7 @@ class TrialConversion(Base, SerializableMixin):
     conversion_plan_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("subscription_plans.id", ondelete="SET NULL"),
-        nullable=False,
+        nullable=True,
         index=True,
         comment="Plan user converted to"
     )
