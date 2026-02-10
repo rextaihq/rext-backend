@@ -1,6 +1,6 @@
 """Customer Note model for admin internal notes."""
 
-from datetime import datetime
+from datetime import datetime, timezone
 from uuid import UUID, uuid4
 
 from sqlalchemy import Column, DateTime, ForeignKey, String, Text
@@ -33,9 +33,9 @@ class CustomerNote(Base):
     )
     note = Column(Text, nullable=False)
     category = Column(String(50))  # billing, support, technical, other
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False, index=True)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False, index=True)
     updated_at = Column(
-        DateTime,
+        DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
         onupdate=lambda: datetime.now(timezone.utc)
     )

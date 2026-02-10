@@ -3,7 +3,7 @@ import uuid
 from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Optional
-from sqlalchemy import Column, DateTime, String, Integer, ForeignKey, Numeric, TIMESTAMP
+from sqlalchemy import Column, DateTime, String, Integer, ForeignKey, Numeric
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import relationship, Mapped, mapped_column
 from src.api.database.base import Base
@@ -94,7 +94,7 @@ class TrialConversion(Base, SerializableMixin):
 
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(
-        TIMESTAMP(timezone=True),
+        DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
         nullable=False
     )
