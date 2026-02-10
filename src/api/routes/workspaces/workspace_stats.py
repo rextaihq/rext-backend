@@ -18,6 +18,7 @@ from src.services.subscription_service import SubscriptionService
 from src.utils.response_utils import success
 from src.utils.route_decorators import db_transaction_handler, require_permissions
 from src.utils.auth_utils import verify_current_user
+from src.services.workspace_service import WorkspaceService
 
 router = APIRouter()
 
@@ -51,47 +52,15 @@ async def get_workspace_stats(
 
     workspace_uuid = UUID(workspace_id)
 
+    # Delegate to service layer instead of inline queries
+    from src.services.workspace_service import WorkspaceService
+    workspace_service = WorkspaceService(db)
+    analytics = await workspace_service.get_workspace_analytics(workspace_uuid)
 
-    # Count content items (non-deleted)
-    result = await db.execute(
-        select(func.count(Content.id)).where(
-            Content.workspace_id == workspace_uuid,
-            Content.deleted_at == None
-        )
-    )
-    content_count = result.scalar() or 0
+    content_count = analytics["content_count"]
+    knowledge_items_count = analytics["knowledge_stats"]["total"]
+    members_count = analytics["members_count"]
 
-    # Count knowledge items (all types combined)
-    result = await db.execute(
-        select(func.count(Website.id)).where(
-            Website.workspace_id == workspace_uuid
-        )
-    )
-    web_knowledge_count = result.scalar() or 0
-
-    result = await db.execute(
-        select(func.count(KnowledgeFiles.id)).where(
-            KnowledgeFiles.workspace_id == workspace_uuid
-        )
-    )
-    files_count = result.scalar() or 0
-
-    result = await db.execute(
-        select(func.count(TextKnowledge.id)).where(
-            TextKnowledge.workspace_id == workspace_uuid
-        )
-    )
-    text_knowledge_count = result.scalar() or 0
-
-    knowledge_items_count = web_knowledge_count + files_count + text_knowledge_count
-
-    # Count workspace members
-    result = await db.execute(
-        select(func.count(WorkspaceMembers.id)).where(
-            WorkspaceMembers.workspace_id == workspace_uuid
-        )
-    )
-    members_count = result.scalar() or 0
 
     # Check feature availability from user's subscription
     subscription_service = SubscriptionService(db)

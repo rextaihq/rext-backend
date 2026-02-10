@@ -22,9 +22,9 @@ from datetime import datetime, timezone
 import re
 from asyncio import create_task
 
-from sqlalchemy import select, func, distinct
+from sqlalchemy import select, func, distinct, case
 from sqlalchemy.ext.asyncio import AsyncSession
-
+from sqlalchemy.sql import expression
 from src.api.models.workspace_models.workspace_model import WorkspaceModel
 from src.api.models.workspace_models.workspace_member import WorkspaceMembers
 from src.api.models.knowledge_models.knowledge_model import (
@@ -54,7 +54,10 @@ from src.utils.logger import logger
 from src.api.database.async_database import get_async_db
 from src.services.workspace_pipeline import run_workspace_pipeline
 from langsmith import traceable, trace
+import weakref
 
+# Track background pipeline tasks to prevent garbage collection
+_background_tasks: set = set()
 
 class WorkspaceService:
     """Service for workspace business logic"""
@@ -160,11 +163,21 @@ class WorkspaceService:
                     break
 
         task = create_task(run_pipeline())
+        _background_tasks.add(task)
 
         def handle_completion(pipeline_task) -> None:
-            with trace(name="Worksapce Completion"):
+
+            _background_tasks.discard(pipeline_task)
+            with trace(name="Workspace Completion"):
                 try:
                     pipeline_task.result()
+                    logger.info(
+                        "Workspace pipeline completed successfully",
+                        extra={
+                            "operation_id": operation_id,
+                            "workspace_id": str(workspace.id),
+                        },
+                    )
                 except Exception as exc:
                     logger.error(
                         "Workspace pipeline task raised exception",
@@ -176,7 +189,8 @@ class WorkspaceService:
                         exc_info=True,
                     )
 
-            task.add_done_callback(handle_completion)
+        task.add_done_callback(handle_completion)
+
 
         logger.info(
             "Workspace created and background pipeline scheduled",
@@ -394,38 +408,56 @@ class WorkspaceService:
             Dict with analytics data
         """
         # Get counts in separate queries (simplified version)
-        result = await self.db.execute(
-            select(func.count(Website.id)).where(Website.workspace_id == workspace_id)
+        # Combine all counts into a single query using scalar subqueries
+        web_count_subq = (
+            select(func.count(Website.id))
+            .where(Website.workspace_id == workspace_id)
+            .correlate(None)
+            .scalar_subquery()
         )
-        web_count = result.scalar() or 0
+        files_count_subq = (
+            select(func.count(KnowledgeFiles.id))
+            .where(KnowledgeFiles.workspace_id == workspace_id)
+            .correlate(None)
+            .scalar_subquery()
+        )
+        text_count_subq = (
+            select(func.count(TextKnowledge.id))
+            .where(TextKnowledge.workspace_id == workspace_id)
+            .correlate(None)
+            .scalar_subquery()
+        )
+        members_count_subq = (
+            select(func.count(WorkspaceMembers.id))
+            .where(WorkspaceMembers.workspace_id == workspace_id)
+            .correlate(None)
+            .scalar_subquery()
+        )
+        content_count_subq = (
+            select(func.count(Content.id))
+            .where(
+                Content.workspace_id == workspace_id,
+                Content.deleted_at.is_(None),
+            )
+            .correlate(None)
+            .scalar_subquery()
+        )
 
         result = await self.db.execute(
-            select(func.count(KnowledgeFiles.id)).where(
-                KnowledgeFiles.workspace_id == workspace_id
+            select(
+                web_count_subq.label("web_count"),
+                files_count_subq.label("files_count"),
+                text_count_subq.label("text_count"),
+                members_count_subq.label("members_count"),
+                content_count_subq.label("content_count"),
             )
         )
-        files_count = result.scalar() or 0
-
-        result = await self.db.execute(
-            select(func.count(TextKnowledge.id)).where(
-                TextKnowledge.workspace_id == workspace_id
-            )
-        )
-        text_count = result.scalar() or 0
-
-        result = await self.db.execute(
-            select(func.count(WorkspaceMembers.id)).where(
-                WorkspaceMembers.workspace_id == workspace_id
-            )
-        )
-        members_count = result.scalar() or 0
-
-        result = await self.db.execute(
-            select(func.count(Content.id)).where(
-                Content.workspace_id == workspace_id, Content.deleted_at == None
-            )
-        )
-        content_count = result.scalar() or 0
+        row = result.one()
+        web_count = row.web_count or 0
+        files_count = row.files_count or 0
+        text_count = row.text_count or 0
+        members_count = row.members_count or 0
+        content_count = row.content_count or 0
 
         analytics = {
             "knowledge_stats": {
@@ -440,21 +472,55 @@ class WorkspaceService:
 
         # Add word count analytics if requested
         if include_word_counts:
-            # Web content word stats
-            web_word_query = select(
-                func.sum(Website.word_count).label("total_words"),
-                func.avg(Website.word_count).label("avg_words"),
-            ).where(Website.workspace_id == workspace_id)
-            result = await self.db.execute(web_word_query)
-            web_word_stats = result.first()
+            word_stats_query = select(
+                func.coalesce(
+                    select(func.sum(Website.word_count))
+                    .where(Website.workspace_id == workspace_id)
+                    .correlate(None)
+                    .scalar_subquery(),
+                    0,
+                ).label("total_web_words"),
+                func.coalesce(
+                    select(func.avg(Website.word_count))
+                    .where(Website.workspace_id == workspace_id)
+                    .correlate(None)
+                    .scalar_subquery(),
+                    0,
+                ).label("avg_web_words"),
+                func.coalesce(
+                    select(func.sum(KnowledgeFiles.word_count))
+                    .where(KnowledgeFiles.workspace_id == workspace_id)
+                    .correlate(None)
+                    .scalar_subquery(),
+                    0,
+                ).label("total_file_words"),
+                func.coalesce(
+                    select(func.avg(KnowledgeFiles.word_count))
+                    .where(KnowledgeFiles.workspace_id == workspace_id)
+                    .correlate(None)
+                    .scalar_subquery(),
+                    0,
+                ).label("avg_file_words"),
+            )
+            result = await self.db.execute(word_stats_query)
+            word_row = result.one()
 
-            # File content word stats
-            file_word_query = select(
-                func.sum(KnowledgeFiles.word_count).label("total_words"),
-                func.avg(KnowledgeFiles.word_count).label("avg_words"),
-            ).where(KnowledgeFiles.workspace_id == workspace_id)
-            result = await self.db.execute(file_word_query)
-            file_word_stats = result.first()
+            total_web_words = int(word_row.total_web_words)
+            avg_web_words = int(word_row.avg_web_words)
+            total_file_words = int(word_row.total_file_words)
+            avg_file_words = int(word_row.avg_file_words)
+
+            total_words = total_web_words + total_file_words
+            estimated_reading_time = total_words // 200
+
+            analytics["content_metrics"] = {
+                "total_words": total_words,
+                "web_content_words": total_web_words,
+                "file_content_words": total_file_words,
+                "avg_web_article_words": avg_web_words,
+                "avg_file_words": avg_file_words,
+                "estimated_reading_time_minutes": estimated_reading_time,
+            }
 
             total_web_words = int(web_word_stats.total_words or 0)
             avg_web_words = int(web_word_stats.avg_words or 0)

@@ -197,6 +197,9 @@ async def get_workspace_by_id_path(
     return {"workspace": workspace_data}
 
 
+# File: src/api/routes/workspaces/workspace_core.py
+# Replace lines 200-254 with:
+
 # -------------------------
 # Update workspace
 # -------------------------
@@ -210,49 +213,51 @@ async def update_workspace(
     user: dict = Depends(get_current_user)
 ):
     """
-    Update workspace details (name, slug, description, url).
+    Update workspace details (name, timezone, url).
 
     Args:
         workspace_id: Workspace UUID or slug
 
     Body:
         {
-          "title": "New Name",
-          "slug": "new-slug",
-          "description": "New description",
+          "name": "New Workspace Name",
+          "timezone": "America/New_York",
           "url": "https://example.com"
         }
     """
+    from src.api.schema.workspace_schema import WorkspaceUpdateSchema
+
     user_id = user.get("identity")
     db_user = await verify_current_user(db, user_id)
 
-    # Parse request body
+    # Parse and validate request body using Pydantic
     body = await request.json()
+    update_data = WorkspaceUpdateSchema(**body)
 
-    # Use workspace service
+    # Use workspace service — call the user-facing method with correct parameter names
     workspace_service = WorkspaceService(db)
 
     # Get workspace first to verify access
     from src.utils.workspace_utils import resolve_and_verify_workspace
     workspace, _ = await resolve_and_verify_workspace(db, workspace_id, UUID(user_id))
 
-    # Update workspace
-    updated_workspace = await workspace_service.update_workspace(
-        workspace.id,
-        title=body.get("title"),
-        slug=body.get("slug"),
-        description=body.get("description"),
-        url=body.get("url")
+    # Map frontend field names: frontend sends "title", backend uses "name"
+    name = update_data.name or body.get("title")
+
+    updated_workspace = await workspace_service.update_workspace_for_user(
+        workspace_id=workspace.id,
+        user_id=UUID(user_id),
+        name=name,
+        timezone=update_data.timezone,
+        url=update_data.url,
     )
 
     logger.info(
-        f"Workspace updated: {workspace.id}",
+        "Workspace updated",
         extra={"workspace_id": str(workspace.id), "user_id": user_id}
     )
 
-    # Return raw data - decorator handles success response
     return {"workspace": updated_workspace}
-
 
 # -------------------------
 # Delete workspace

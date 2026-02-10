@@ -39,3 +39,11 @@ class WorkspaceSchema(BaseModel):
     brand_voice: Optional[str] = Field(None, description="Tone and voice of the brand")
     competitors: Optional[str] = Field(None, description="Competitors information")
     content_strategy: Optional[str] = Field(None, description="Content strategy pillars")
+
+
+class WorkspaceUpdateSchema(BaseModel):
+    """Schema for updating workspace metadata."""
+    name: Optional[str] = Field(None, min_length=1, max_length=255, description="New workspace name")
+    timezone: Optional[str] = Field(None, max_length=50, description="IANA timezone identifier (e.g., America/New_York)")
+    url: Optional[str] = Field(None, max_length=2048, description="Workspace website URL")
+    
