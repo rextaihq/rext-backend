@@ -33,6 +33,7 @@ from src.utils.route_decorators import db_transaction_handler, require_permissio
 from src.utils.audit_helper import create_audit_log_async
 from src.utils.invitation_utils import is_invitation_expired
 from src.utils.logger import logger
+from src.api.schema.user_schema import DeclineInvitationRequest  # Added import
 
 router = APIRouter(prefix="/invitations", tags=["User Invitations"])
 
@@ -214,7 +215,8 @@ async def get_pending_invitations(
 @db_transaction_handler("decline invitation", auto_commit=True)
 async def decline_invitation(
     invitation_id: UUID,
-    request: Request,
+    decline_data: DeclineInvitationRequest,  # CHANGED: Added Pydantic schema parameter
+    request: Request,  # CHANGED: Moved to third position
     db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user)
 ):
@@ -231,6 +233,7 @@ async def decline_invitation(
 
     Args:
         invitation_id: UUID of the invitation to decline
+        decline_data: Optional decline reason
         request: FastAPI request object
         db: Database session
         current_user: Current authenticated user from JWT
@@ -284,9 +287,8 @@ async def decline_invitation(
             rule_name="invitation_must_be_pending_to_decline"
         )
 
-    # Parse request body for optional decline reason
-    body = await request.json() if request.headers.get("content-type") == "application/json" else {}
-    decline_reason = body.get("reason")
+    # CHANGED: Access decline reason from Pydantic model
+    decline_reason = decline_data.reason
 
     # Update invitation status
     invitation.status = "declined"

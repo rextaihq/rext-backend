@@ -7,6 +7,7 @@ from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import delete, select
 
 from src.api.models.knowledge_models.knowledge_model import BrandVoice
 from src.api.schema.knowledge_schema import BrandSchema
@@ -17,6 +18,8 @@ from src.services.sse_service import (
     emit_step_start,
     emit_step_success,
 )
+from src.api.models.knowledge_models.persona_model import Persona
+
 from src.utils.helper import web_page_scraper
 from src.utils.logger import logger
 from src.utils.vector_store import add_to_vector_store
@@ -339,7 +342,7 @@ class WorkspacePipeline:
                 existing.target_audience = data.get("target_audience") or []
                 existing.brand_voice = data.get("brand_voice") or []
                 existing.competitors = data.get("competitors") or []
-                existing.content_strategy = data.get("content_pillar") or []
+                existing.content_strategy = data.get("content_strategy") or []
                 brand_voice_record = existing
             else:
                 brand_voice_record = BrandVoice(
@@ -466,39 +469,43 @@ class WorkspacePipeline:
                 extra={"workspace_id": str(self.workspace_id), "operation_id": self.operation_id}
             )
         
-        from sqlalchemy import delete
-        from src.api.models.knowledge_models.persona_model import Persona
-        
-        # Delete existing personas for this workspace
-        await self.db.execute(
-            delete(Persona).where(Persona.workspace_id == self.workspace_id)
-        )
-        
-        # Insert new personas with ALL fields
-        for persona_data in personas_data:
-            persona = Persona(
-                workspace_id=self.workspace_id,
-                # Basic fields
-                name=persona_data.get("name"),
-                description=persona_data.get("description"),
-                # E-E-A-T Professional fields
-                full_name=persona_data.get("full_name"),
-                professional_title=persona_data.get("professional_title"),
-                areas_of_expertise=persona_data.get("areas_of_expertise"),
-                tone_of_voice=persona_data.get("tone_of_voice"),
-                bio=persona_data.get("bio"),
-                linkedin_url=persona_data.get("linkedin_url"),
-                # User persona fields
-                demographics=persona_data.get("demographics"),
-                pain_points=persona_data.get("pain_points"),
-                goals=persona_data.get("goals"),
-                behaviors=persona_data.get("behaviors"),
+
+        # Use a savepoint to make the delete-then-insert atomic.
+        # If insertion fails, the savepoint rollback also undoes the deletion,
+        # preserving the original personas.
+        async with self.db.begin_nested():
+            # Delete existing personas for this workspace
+            await self.db.execute(
+                delete(Persona).where(Persona.workspace_id == self.workspace_id)
             )
-            self.db.add(persona)
-        
-        await self.db.flush()
+
+            # Insert new personas with ALL fields
+            for persona_data in personas_data:
+                persona = Persona(
+                    workspace_id=self.workspace_id,
+                    # Basic fields
+                    name=persona_data.get("name"),
+                    description=persona_data.get("description"),
+                    # E-E-A-T Professional fields
+                    full_name=persona_data.get("full_name"),
+                    professional_title=persona_data.get("professional_title"),
+                    areas_of_expertise=persona_data.get("areas_of_expertise"),
+                    tone_of_voice=persona_data.get("tone_of_voice"),
+                    bio=persona_data.get("bio"),
+                    linkedin_url=persona_data.get("linkedin_url"),
+                    # User persona fields
+                    demographics=persona_data.get("demographics"),
+                    pain_points=persona_data.get("pain_points"),
+                    goals=persona_data.get("goals"),
+                    behaviors=persona_data.get("behaviors"),
+                )
+                self.db.add(persona)
+
+            # Flush within the savepoint to detect constraint violations
+            await self.db.flush()
+
         logger.info(
-            f"✅ Persisted {len(personas_data)} persona(s)",
+            f"Persisted {len(personas_data)} persona(s)",
             extra={"workspace_id": str(self.workspace_id), "operation_id": self.operation_id}
         )
 

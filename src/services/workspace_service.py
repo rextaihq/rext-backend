@@ -176,7 +176,7 @@ class WorkspaceService:
                         exc_info=True,
                     )
 
-            task.add_done_callback(handle_completion)
+        task.add_done_callback(handle_completion)
 
         logger.info(
             "Workspace created and background pipeline scheduled",
@@ -269,7 +269,7 @@ class WorkspaceService:
         """Delete workspace after verifying membership and cleanup."""
         await self._ensure_active_user(user_id)
         workspace = await self._ensure_membership(workspace_id, user_id)
-        self._delete_vectors_safe(workspace.id) 
+        self._delete_vectors_safe(workspace.id)
         await self.delete_workspace(workspace_id, user_id)
 
     async def update_workspace_for_user(
@@ -386,14 +386,27 @@ class WorkspaceService:
         Uses optimized queries to fetch knowledge counts, content counts,
         member counts, and optionally word counts.
 
+        This is the canonical analytics method - all routes should delegate
+        to this method rather than duplicating query logic.
+
         Args:
             workspace_id: Workspace UUID
             include_word_counts: Whether to include detailed word count analytics
 
         Returns:
-            Dict with analytics data
+            Dict with analytics data containing:
+            - knowledge_stats: Counts of web/file/text knowledge items
+            - members_count: Number of workspace members
+            - content_count: Number of non-deleted content items
+            - content_metrics: (optional) Word count statistics if include_word_counts=True
+
+        Raises:
+            ResourceNotFoundException: If workspace not found or soft-deleted
         """
-        # Get counts in separate queries (simplified version)
+        # Verify workspace exists and isn't soft-deleted
+        await self.get_workspace(workspace_id)
+
+        # Get knowledge base counts
         result = await self.db.execute(
             select(func.count(Website.id)).where(Website.workspace_id == workspace_id)
         )
@@ -413,6 +426,7 @@ class WorkspaceService:
         )
         text_count = result.scalar() or 0
 
+        # Get team metrics
         result = await self.db.execute(
             select(func.count(WorkspaceMembers.id)).where(
                 WorkspaceMembers.workspace_id == workspace_id
@@ -420,13 +434,17 @@ class WorkspaceService:
         )
         members_count = result.scalar() or 0
 
+        # Get content count (excluding soft-deleted content)
+        # FIXED: Use .is_(None) instead of == None for SQLAlchemy NULL comparison
         result = await self.db.execute(
             select(func.count(Content.id)).where(
-                Content.workspace_id == workspace_id, Content.deleted_at == None
+                Content.workspace_id == workspace_id,
+                Content.deleted_at.is_(None)
             )
         )
         content_count = result.scalar() or 0
 
+        # Build base analytics response
         analytics = {
             "knowledge_stats": {
                 "web_knowledge": web_count,
@@ -694,7 +712,7 @@ class WorkspaceService:
                 Role.name == "workspace_owner",
             )
         )
-        
+
         result = await self.db.execute(query)
         user_role = result.scalar_one_or_none()
 
@@ -797,7 +815,7 @@ class WorkspaceService:
         member = WorkspaceMembers(
             workspace_id=workspace_id,
             user_id=user_id,
-            joined_at=datetime.utcnow(),
+            joined_at=datetime.now(timezone.utc),
             is_default=is_default,
             status=status,
             invitation_id=None,
@@ -876,15 +894,13 @@ class WorkspaceService:
         Raises:
             ResourceNotFoundException: If workspace not found
         """
-        from datetime import datetime
-
         # Verify ownership first
-        await self.verify_user_is_workspace_owner(workspace_id, user_id )
-         
+        await self.verify_user_is_workspace_owner(workspace_id, user_id)
+
         workspace = await self.get_workspace(workspace_id)
 
-        # Soft delete: set deleted_at and deleted_by
-        workspace.deleted_at = datetime.utcnow()
+        # FIXED: Use timezone-aware datetime for consistency
+        workspace.deleted_at = datetime.now(timezone.utc)
         workspace.deleted_by = user_id
 
         logger.info(
@@ -1075,7 +1091,7 @@ class WorkspaceService:
                 target_audience=brand_data.target_audience,
                 brand_voice=brand_data.brand_voice,
                 competitors=brand_data.competitors,
-                content_strategy=brand_data.content_pillar,
+                content_strategy=brand_data.content_strategy,
             )
             self.db.add(brand_voice)
             await self.db.flush()

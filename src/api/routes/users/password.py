@@ -11,7 +11,8 @@ from src.api.config import get_settings
 from src.api.schema.user_schema import (
     ResetPassword,
     ForgotPasswordRequest,
-    ChangePasswordRequest
+    ChangePasswordRequest,
+    VerifyPasswordRequest  # Added new import
 )
 from src.api.security.token_utils import create_reset_token, decode_and_verify_token
 from src.api.database.async_database import get_async_db
@@ -286,7 +287,8 @@ async def change_password(
 @router.post("/verify-password")
 @require_permissions("user.read")
 async def verify_password(
-    request: Request,
+    password_data: VerifyPasswordRequest,  # CHANGED: Added Pydantic schema parameter
+    request: Request,  # CHANGED: Moved to second position
     db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user)
 ):
@@ -306,9 +308,11 @@ async def verify_password(
     """
     try:
         user_id = UUID(current_user.get("identity"))
-        body = await request.json()
-        password = body.get("password")
+        
+        # CHANGED: Access password from Pydantic model instead of request.json()
+        password = password_data.password
 
+        # Validation is now handled by Pydantic, but we can add extra check
         if not password:
             return error(
                 message="Password is required",
