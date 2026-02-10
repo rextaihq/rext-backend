@@ -18,8 +18,8 @@ class WorkspaceMembers(Base, SerializableMixin):
     invitation_id = Column(UUID(as_uuid=True), ForeignKey("user_invitations.id"), nullable=True)
     status = Column(String(50), default="pending")  # active, inactive, pending
     is_default = Column(Boolean, default=False)
-    joined_at = Column(TIMESTAMP, default=datetime.utcnow, nullable=False)
-    last_activity_at = Column(TIMESTAMP, default=datetime.utcnow, onupdate=datetime.utcnow)
+    joined_at = Column(TIMESTAMP, default=lambda: datetime.now(timezone.utc), nullable=False)
+    last_activity_at = Column(TIMESTAMP, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
     # Relationships
     user = relationship("Users", foreign_keys=[user_id], back_populates="workspace_memberships")

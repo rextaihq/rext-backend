@@ -302,11 +302,10 @@ async def delete_workspace_endpoint(
 
     # Send confirmation email
     try:
-        from src.services.email_service import EmailService
-        from datetime import datetime, timedelta
+        from datetime import datetime, timedelta, timezone
 
         email_service = EmailService(db)
-        recovery_date = (datetime.utcnow() + timedelta(days=30)).strftime("%B %d, %Y")
+        recovery_date = (datetime.now(timezone.utc) + timedelta(days=30)).strftime("%B %d, %Y")
 
         await email_service.send_email(
             to_email=db_user.email,

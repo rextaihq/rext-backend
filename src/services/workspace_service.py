@@ -797,7 +797,7 @@ class WorkspaceService:
         member = WorkspaceMembers(
             workspace_id=workspace_id,
             user_id=user_id,
-            joined_at=datetime.utcnow(),
+            joined_at=datetime.now(timezone.utc),
             is_default=is_default,
             status=status,
             invitation_id=None,
@@ -876,7 +876,6 @@ class WorkspaceService:
         Raises:
             ResourceNotFoundException: If workspace not found
         """
-        from datetime import datetime
 
         # Verify ownership first
         await self.verify_user_is_workspace_owner(workspace_id, user_id )
@@ -884,7 +883,7 @@ class WorkspaceService:
         workspace = await self.get_workspace(workspace_id)
 
         # Soft delete: set deleted_at and deleted_by
-        workspace.deleted_at = datetime.utcnow()
+        workspace.deleted_at = datetime.now(timezone.utc)
         workspace.deleted_by = user_id
 
         logger.info(
