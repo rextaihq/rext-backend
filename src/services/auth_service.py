@@ -226,13 +226,13 @@ class AuthService:
                 message="Invalid email or password",
                 context={"login_attempt": email}
             )
-
-        # Check if account is locked
-        if db_user.locked_until and db_user.locked_until > datetime.utcnow():
-            raise RextAuthenticationException(
-                message="Account is temporarily locked due to multiple failed login attempts. Please try again later.",
-                context={"locked_until": db_user.locked_until.isoformat()}
-            )
+    
+        # # Check if account is locked
+        # if db_user.locked_until and db_user.locked_until > datetime.utcnow():
+        #     raise RextAuthenticationException(
+        #         message="Account is temporarily locked due to multiple failed login attempts. Please try again later.",
+        #         context={"locked_until": db_user.locked_until.isoformat()}
+        #     )
 
         # Verify password
         is_match = verify_password(password=password, hashed_password=db_user.password_hash)
