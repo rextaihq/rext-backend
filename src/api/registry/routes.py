@@ -65,7 +65,7 @@ def register_routes(app: FastAPI) -> None:
     from src.api.routes.users.onboarding import router as onboarding_router
     from src.api.routes.invitations import router as invitations_router
     from src.api.routes.notifications.notification_routes import router as notification_router
-    
+    from src.api.routes.test_api_key_auth import router as test_api_key_router
     from src.api.routes.combine_user.combine_data import router as dashboard_router
 
     # ---- Misc & Tools ----

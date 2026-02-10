@@ -57,7 +57,7 @@ async def test_get_impersonation_status_while_impersonating():
     # Arrange - Admin user impersonating another user
     original_user_id = str(uuid4())
     impersonated_user_id = str(uuid4())
-    started_at = datetime.utcnow()
+    started_at = datetime.now(timezone.utc)
     
     current_user = {
         "identity": impersonated_user_id,
@@ -162,7 +162,7 @@ async def test_get_impersonation_status_response_structure():
         "email": "target@example.com",
         "is_impersonating": True,
         "original_user_id": str(uuid4()),
-        "impersonation_started_at": datetime.utcnow(),
+        "impersonation_started_at": datetime.now(timezone.utc),
     }
     
     # Act

@@ -1,7 +1,7 @@
 """Refund model for tracking refund operations."""
 
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 
 from sqlalchemy import (
@@ -11,7 +11,6 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
-    TIMESTAMP,
 )
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import relationship

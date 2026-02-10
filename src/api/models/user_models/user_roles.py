@@ -20,7 +20,7 @@ class UserRole(Base, SerializableMixin, UUIDPrimaryKeyMixin):
     assigned_by_user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
 
     is_primary = Column(Boolean, default=True)
-    assigned_at = Column(TIMESTAMP, default=lambda: datetime.now(timezone.utc), nullable=False)
+    assigned_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
     
     __table_args__ = (
         UniqueConstraint('user_id', 'role_id', 'workspace_id', name='uq_user_role_workspace'),

@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import Column, String, ForeignKey, TIMESTAMP, Boolean, Index
+from sqlalchemy import Column, String, ForeignKey, DateTime, Boolean, Index
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -70,7 +70,7 @@ class LicenseActivation(Base, SerializableMixin, UUIDPrimaryKeyMixin):
 
     def deactivate(self):
         self.is_active = False
-        self.deactivated_at = datetime.utcnow()
+        self.deactivated_at = datetime.now(timezone.utc)
 
 
 __table_args__ = (

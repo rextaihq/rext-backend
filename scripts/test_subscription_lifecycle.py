@@ -48,8 +48,8 @@ if env_file.exists():
 
 BASE_URL = os.getenv('API_BASE_URL', 'http://localhost:2024')
 API_VERSION = '/api/v1'
-TEST_EMAIL = f"lifecycle_test_{int(datetime.utcnow().timestamp())}@example.com"
-TEST_USERNAME = f"lifecycle_test_{int(datetime.utcnow().timestamp())}"
+TEST_EMAIL = f"lifecycle_test_{int(datetime.now(timezone.utc).timestamp())}@example.com"
+TEST_USERNAME = f"lifecycle_test_{int(datetime.now(timezone.utc).timestamp())}"
 TEST_PASSWORD = "TestPassword123!"
 
 
@@ -899,7 +899,7 @@ async def test_reactivation(token: str, plans: List[Dict[str, Any]]) -> bool:
 async def run_all_tests(skip_cleanup: bool = False):
     """Run all lifecycle tests"""
     print_header("LemonSqueezy Subscription Lifecycle Testing")
-    print_info(f"Test Date: {datetime.utcnow().isoformat()}")
+    print_info(f"Test Date: {datetime.now(timezone.utc).isoformat()}")
     print_info(f"Base URL: {BASE_URL}")
     print_info(f"Test Email: {TEST_EMAIL}")
 
@@ -967,7 +967,7 @@ async def run_all_tests(skip_cleanup: bool = False):
     report_path.parent.mkdir(parents=True, exist_ok=True)
 
     report = {
-        "test_date": datetime.utcnow().isoformat(),
+        "test_date": datetime.now(timezone.utc).isoformat(),
         "base_url": BASE_URL,
         "test_email": TEST_EMAIL,
         "total": stats.total,

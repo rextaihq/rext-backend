@@ -78,8 +78,8 @@ def sample_invitation(sample_workspace, sample_role, sample_user):
     invitation.invited_by_user_id = sample_user.id
     invitation.invitation_token = "test_token_123"
     invitation.status = "pending"
-    invitation.expires_at = datetime.utcnow() + timedelta(days=7)
-    invitation.created_at = datetime.utcnow()
+    invitation.expires_at = datetime.now(timezone.utc) + timedelta(days=7)
+    invitation.created_at = datetime.now(timezone.utc)
     return invitation
 
 
@@ -285,7 +285,7 @@ class TestCreateInvitation:
         # Existing invitation that hasn't expired
         existing_invitation = MagicMock()
         existing_invitation.status = "pending"
-        existing_invitation.expires_at = datetime.utcnow() + timedelta(days=5)
+        existing_invitation.expires_at = datetime.now(timezone.utc) + timedelta(days=5)
         
         invitation_check_result = MagicMock()
         invitation_check_result.scalar_one_or_none.return_value = existing_invitation
@@ -321,7 +321,7 @@ class TestCreateInvitation:
         # Existing expired invitation
         expired_invitation = MagicMock()
         expired_invitation.status = "pending"
-        expired_invitation.expires_at = datetime.utcnow() - timedelta(days=1)
+        expired_invitation.expires_at = datetime.now(timezone.utc) - timedelta(days=1)
         
         invitation_check_result = MagicMock()
         invitation_check_result.scalar_one_or_none.return_value = expired_invitation
@@ -573,7 +573,7 @@ class TestAcceptInvitation:
         self, invitation_service, mock_db, sample_invitation, sample_user
     ):
         """Test that expired invitation cannot be accepted."""
-        sample_invitation.expires_at = datetime.utcnow() - timedelta(days=1)
+        sample_invitation.expires_at = datetime.now(timezone.utc) - timedelta(days=1)
         
         invitation_result = MagicMock()
         invitation_result.scalar_one_or_none.return_value = sample_invitation
@@ -827,6 +827,6 @@ class TestResendInvitation:
         )
 
         # Verify expiry is approximately 14 days in the future
-        expected_expiry = datetime.utcnow() + timedelta(days=14)
+        expected_expiry = datetime.now(timezone.utc) + timedelta(days=14)
         time_diff = abs((result.expires_at - expected_expiry).total_seconds())
         assert time_diff < 5  # Allow 5 seconds difference for test execution time

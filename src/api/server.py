@@ -235,7 +235,7 @@ async def health_check(request: Request):
         "service": "rext-api",
         "version": "1.0.0",
         "environment": settings.ENVIRONMENT,
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
         "checks": {}
     }
 
@@ -294,7 +294,7 @@ async def liveness_check(request: Request):
     return {
         "status": "alive",
         "service": "rext-api",
-        "timestamp": datetime.utcnow().isoformat()
+        "timestamp": datetime.now(timezone.utc).isoformat()
     }
 
 
@@ -314,7 +314,7 @@ async def readiness_check(request: Request):
     status = {
         "status": "ready",
         "service": "rext-api",
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
         "checks": {}
     }
 
