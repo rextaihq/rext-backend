@@ -115,20 +115,12 @@ class DiscountUsage(Base, SerializableMixin):
             f"code={self.discount_code}, amount={self.discount_amount})>"
         )
 
-    def to_dict(self) -> dict:
-        """Convert model to dictionary."""
-        return {
-            "id": str(self.id),
-            "user_id": str(self.user_id),
-            "subscription_id": str(self.subscription_id) if self.subscription_id else None,
-            "discount_code": self.discount_code,
-            "discount_amount": float(self.discount_amount) if self.discount_amount else None,
-            "discount_amount_type": self.discount_amount_type,
-            "order_id": self.order_id,
-            "lemonsqueezy_discount_id": self.lemonsqueezy_discount_id,
-            "applied_at": self.applied_at.isoformat() if self.applied_at else None,
-            "metadata": self.usage_metadata
-        }
+    def to_dict(self, **kwargs):
+        """Serialize with 'metadata' key for backward compatibility."""
+        data = super().to_dict(**kwargs)
+        if 'usage_metadata' in data:
+            data['metadata'] = data.pop('usage_metadata')
+        return data
 
 
 # Indexes are created in the migration file

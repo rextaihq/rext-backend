@@ -173,22 +173,8 @@ class Notification(Base, SerializableMixin, SoftDeleteMixin):
     )
 
     def to_dict(self, **kwargs):
-        """
-        Return only selected fields required by the frontend/UI.
-        """
-        return {
-            "id": self.id,
-            "user_id": self.user_id,
-            "workspace_id": self.workspace_id,
-            "title": self.title,
-            "message": self.message,
-            "type": self.type,
-            "category": self.category,
-            "status": self.status,
-            "is_read": self.is_read,
-            "created_at": self.created_at,
-            "updated_at": self.updated_at,
-        }
+        """Serialize notification using mixin."""
+        return super().to_dict(**kwargs)
 
     def mark_as_read(self):
         """Mark notification as read."""

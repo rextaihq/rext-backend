@@ -3,12 +3,12 @@ from sqlalchemy import Column, String, Text, Integer, Float, DateTime, Boolean, 
 from sqlalchemy.dialects.postgresql import UUID, ARRAY, JSONB
 from sqlalchemy.orm import relationship
 from src.api.database.base import Base
-from src.api.models.base import SerializableMixin
+from src.api.models.base import SerializableMixin, SoftDeleteMixin
 from datetime import datetime, timezone
 import uuid
 
 
-class Content(Base, SerializableMixin):
+class Content(Base, SerializableMixin, SoftDeleteMixin):
     """Main content table - stores core content and metadata"""
     __tablename__ = "content"
 
