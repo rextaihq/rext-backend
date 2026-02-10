@@ -59,7 +59,7 @@ class TrialConversion(Base, SerializableMixin, UUIDPrimaryKeyMixin, TimestampMix
     conversion_plan_id = Column(
         UUID(as_uuid=True),
         ForeignKey("subscription_plans.id", ondelete="SET NULL"),
-        nullable=False,
+        nullable=True,
         index=True,
         comment="Plan user converted to"
     )

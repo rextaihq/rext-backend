@@ -22,7 +22,8 @@ from src.api.models.user_models.notification_preferences import NotificationPref
 import os
 from src.api.middleware.rate_limiter import (
     login_rate_limit,
-    registration_rate_limit
+    registration_rate_limit,
+    oauth_rate_limit
 )
 from src.services.auth_service import AuthService
 from src.services.invitation_service import InvitationService
@@ -584,7 +585,7 @@ async def refresh_access_token(
         if not refresh_token:
             return error(
                 message="Refresh token is required",
-                code=ErrorCode.INVALID_INPUT,
+                code=ErrorCode.INVALID_VALUE,
                 status_code=400,
                 severity=ErrorSeverity.LOW,
                 request=request
@@ -729,7 +730,7 @@ async def resend_verification(
         if not email:
             return error(
                 message="Email is required",
-                code=ErrorCode.INVALID_INPUT,
+                code=ErrorCode.INVALID_VALUE,
                 status_code=400,
                 severity=ErrorSeverity.LOW,
                 request=request
@@ -775,7 +776,8 @@ async def resend_verification(
 @router.post("/oauth/login")
 async def oauth_login(
     request: Request,
-    db: AsyncSession = Depends(get_async_db)
+    db: AsyncSession = Depends(get_async_db),
+    _rate_limit: None = Depends(oauth_rate_limit())
 ):
     """
     Login or register user via OAuth provider.
@@ -915,7 +917,9 @@ async def oauth_login(
 async def link_oauth(
     request: Request,
     current_user: dict = Depends(get_current_user),
-    db: AsyncSession = Depends(get_async_db)
+    db: AsyncSession = Depends(get_async_db),
+    _rate_limit: None = Depends(oauth_rate_limit())
+
 ):
     """
     Link an OAuth account to the current user.
@@ -996,7 +1000,9 @@ async def unlink_oauth(
     provider: str,
     request: Request,
     current_user: dict = Depends(get_current_user),
-    db: AsyncSession = Depends(get_async_db)
+    db: AsyncSession = Depends(get_async_db),
+    _rate_limit: None = Depends(oauth_rate_limit())
+
 ):
     """
     Unlink an OAuth account from the current user.
@@ -1022,10 +1028,10 @@ async def unlink_oauth(
         raise
     except Exception as e:
         logger.error(f"OAuth unlink failed: {str(e)}", exc_info=True)
-        return error(
+    return error(
             message="Failed to unlink OAuth account",
             code=ErrorCode.INTERNAL_SERVER_ERROR,
             status_code=500,
             severity=ErrorSeverity.HIGH,
             request=request
-        )
+        )  

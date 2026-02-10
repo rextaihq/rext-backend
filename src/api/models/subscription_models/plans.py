@@ -48,5 +48,5 @@ class SubscriptionPlan(Base, SerializableMixin):
 
     # Relationships
     subscriptions = relationship("UserSubscription", back_populates="plan")
-
+    trial_conversions = relationship("TrialConversion", back_populates="plan")
     # to_dict() inherited from SerializableMixin

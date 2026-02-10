@@ -18,6 +18,7 @@ from datetime import datetime
 from src.api.database.async_database import get_async_db
 from src.api.security.dependencies import get_current_user
 from src.api.models.user_models.invitations import UserInvitations
+from src.api.config import get_settings
 from src.api.models.workspace_models.workspace_model import WorkspaceModel
 from src.api.models.user_models.roles import Role
 from src.api.models.user_models.users import Users
@@ -180,7 +181,8 @@ async def get_pending_invitations(
             } if role else None,
             "invited_by": {
                 "id": str(inviter.id),
-                "name": f"{inviter.first_name} {inviter.last_name}".strip() or inviter.username,
+                "name": inviter.full_name or inviter.display_name or inviter.email,
+                
                 "email": inviter.email
             } if inviter else None,
             "token": invitation.invitation_token,
@@ -337,7 +339,7 @@ async def decline_invitation(
                 declined_by_email=user_email,
                 decline_reason=decline_reason,
                 workspace_id=str(workspace.id),
-                frontend_url="http://localhost:3000"  # TODO: Get from config
+                frontend_url=get_settings().FRONTEND_URL
             )
 
             # Send email to inviter

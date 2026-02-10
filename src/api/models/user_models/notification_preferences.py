@@ -5,6 +5,7 @@ from sqlalchemy.orm import relationship
 from datetime import datetime
 from src.api.database.base import Base
 from src.api.models.base import SerializableMixin
+import secrets
 
 
 class NotificationPreferences(Base, SerializableMixin):
@@ -89,7 +90,12 @@ class NotificationPreferences(Base, SerializableMixin):
     # MARKETING COMMUNICATIONS
     # ==============================
     marketing_updates = Column(Boolean, default=False, nullable=False)
-
+    unsubscribe_token = Column(
+        String,
+        unique=True,
+        nullable=False,
+        default=lambda: secrets.token_urlsafe(32)
+    )
     # ==============================
     # TIMESTAMPS
     # ==============================

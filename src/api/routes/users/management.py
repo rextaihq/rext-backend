@@ -16,7 +16,7 @@ from src.api.schema.response_schemas import ErrorCode, ErrorSeverity
 from src.services.user_service import UserService
 from src.api.middleware.exceptions import ResourceNotFoundException, RextValidationException
 from src.api.models.workspace_models.workspace_member import WorkspaceMembers
-from src.api.config import get_settings
+from src.api.config import get_settings, settings
 from sqlalchemy import select, delete
 
 router = APIRouter()
@@ -158,7 +158,7 @@ async def delete_user(
         if not has_permission:
             return error(
                 message="Missing required permission: user.delete",
-                code=ErrorCode.AUTHORIZATION_ERROR,
+                code=ErrorCode.FORBIDDEN,
                 status_code=403,
                 severity=ErrorSeverity.HIGH,
                 context={"required_permission": "user.delete"},
@@ -188,7 +188,7 @@ async def delete_user(
     except ResourceNotFoundException:
         return error(
             message="User not found",
-            code=ErrorCode.NOT_FOUND,
+            code=ErrorCode.RESOURCE_NOT_FOUND,
             status_code=404,
             severity=ErrorSeverity.MEDIUM,
             request=request
@@ -353,6 +353,8 @@ async def export_user_data(
             export_data["activity"] = {
                 "note": "Activity logs export will be available once audit log system is queried"
             }
+        # Get frontend URL
+        frontend_url = settings.FRONTEND_URL
 
         # NEW: Export billing/subscription data
         if export_request.include_billing:
@@ -405,8 +407,7 @@ async def export_user_data(
         import json
         export_json = json.dumps(export_data, indent=2)
 
-        # Get frontend URL
-        frontend_url = settings.FRONTEND_URL
+        
 
         # Send email with data export in background using EmailService
         background_tasks.add_task(

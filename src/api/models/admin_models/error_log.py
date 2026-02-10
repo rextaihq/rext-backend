@@ -7,9 +7,10 @@ from sqlalchemy import Boolean, Column, DateTime, ForeignKey, String, Text
 from sqlalchemy.dialects.postgresql import JSONB, UUID as PostgresUUID
 
 from src.api.database.base import Base
+from src.api.models.base import SerializableMixin
 
 
-class ErrorLog(Base):
+class ErrorLog(Base, SerializableMixin):
     """
     Model for application error logs.
 
@@ -25,7 +26,7 @@ class ErrorLog(Base):
     source = Column(String(255))  # file:line
     user_id = Column(
         PostgresUUID(as_uuid=True),
-        ForeignKey("users.id"),
+        ForeignKey("users.id", ondelete="SET NULL"),
         nullable=True
     )
     request_id = Column(String(100))
@@ -35,23 +36,14 @@ class ErrorLog(Base):
     resolved_at = Column(DateTime, nullable=True)
     resolved_by = Column(
         PostgresUUID(as_uuid=True),
-        ForeignKey("users.id"),
+        ForeignKey("users.id", ondelete="SET NULL"),
         nullable=True
     )
 
-    def to_dict(self) -> dict:
-        """Convert error log to dictionary."""
-        return {
-            "id": str(self.id),
-            "timestamp": self.timestamp.isoformat() if self.timestamp else None,
-            "severity": self.severity,
-            "message": self.message,
-            "source": self.source,
-            "user_id": str(self.user_id) if self.user_id else None,
-            "request_id": self.request_id,
-            "stack_trace": self.stack_trace,
-            "metadata": self.error_metadata,
-            "resolved": self.resolved,
-            "resolved_at": self.resolved_at.isoformat() if self.resolved_at else None,
-            "resolved_by": str(self.resolved_by) if self.resolved_by else None
-        }
+    def to_dict(self, **kwargs):
+        """Serialize with 'metadata' key for backward compatibility."""
+        data = super().to_dict(**kwargs)
+        # Rename error_metadata to metadata for API compatibility
+        if 'error_metadata' in data:
+            data['metadata'] = data.pop('error_metadata')
+        return data

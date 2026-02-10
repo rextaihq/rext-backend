@@ -1,6 +1,7 @@
 
+
 import uuid
-from sqlalchemy import Column, String, Boolean, TIMESTAMP, ForeignKey
+from sqlalchemy import Column, String, Boolean, TIMESTAMP, ForeignKey, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 from datetime import datetime
@@ -15,6 +16,10 @@ class RolePermission(Base, SerializableMixin):
     role_id = Column(UUID(as_uuid=True), ForeignKey("roles.id", ondelete="CASCADE"), nullable=False)
     permission_id = Column(UUID(as_uuid=True), ForeignKey("permissions.id", ondelete="CASCADE"), nullable=False)
     created_at = Column(TIMESTAMP, default=datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint('role_id', 'permission_id', name='uq_role_permission'),
+    )
 
     # # Relationships
     role = relationship("Role", back_populates="permissions")
