@@ -21,10 +21,11 @@ depends_on: Union[str, Sequence[str], None] = None
 def upgrade() -> None:
     # First, check for and remove any duplicate role names
     # This query keeps the oldest role for each name and deletes duplicates
+    # Note: MIN() requires casting UUID to text in PostgreSQL
     op.execute("""
         DELETE FROM roles
         WHERE id NOT IN (
-            SELECT MIN(id)
+            SELECT MIN(id::text)::uuid
             FROM roles
             GROUP BY name
         )
