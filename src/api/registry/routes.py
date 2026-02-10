@@ -66,6 +66,7 @@ def register_routes(app: FastAPI) -> None:
     from src.api.routes.notifications.notification_routes import router as notification_router
     
     from src.api.routes.combine_user.combine_data import router as dashboard_router
+    from src.api.routes.combine_user.recent_activities import router as recent_activities
 
     # ---- Misc & Tools ----
     from src.api.routes.media import router as media_router
@@ -124,7 +125,15 @@ def register_routes(app: FastAPI) -> None:
     app.include_router(
     dashboard_router,
     prefix="/api/v1",
-    tags=["Dashboard"]
-)
+    tags=["Dashboard"])
+
+    app.include_router(
+    recent_activities,
+    prefix="/api/v1",
+    tags=["Recent Activities"])
+    
+
+    
+    
     # app.include_router(test_api_key_router, prefix="/api/v1", tags=["Testing"])
 

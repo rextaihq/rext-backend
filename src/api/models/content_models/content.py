@@ -21,6 +21,7 @@ class Content(Base, SerializableMixin):
     introduction = Column(Text, nullable=True)
     body_markdown = Column(Text, nullable=True)
     body_html = Column(Text, nullable=True)
+    content_type = Column(Text, nullable=True, default=None)
     
     # Metadata and Status
     status = Column(Text, nullable=True, default="draft")
