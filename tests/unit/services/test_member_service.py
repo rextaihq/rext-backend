@@ -480,7 +480,7 @@ class TestMemberServiceUpdateLastActivity:
         # Arrange
         workspace = await setup_factories["workspace"].create()
         user = await setup_factories["user"].create()
-        old_time = datetime.utcnow() - timedelta(hours=1)
+        old_time = datetime.now(timezone.utc) - timedelta(hours=1)
         member = await setup_factories["workspace_member"].create(
             workspace_id=workspace.id,
             user_id=user.id,

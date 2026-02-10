@@ -72,7 +72,7 @@ class RateLimiter:
             timestamps: Deque of request timestamps
             window_seconds: Time window in seconds
         """
-        cutoff = datetime.utcnow() - timedelta(seconds=window_seconds)
+        cutoff = datetime.now(timezone.utc) - timedelta(seconds=window_seconds)
 
         while timestamps and timestamps[0] < cutoff:
             timestamps.popleft()
@@ -98,7 +98,7 @@ class RateLimiter:
             return redis_result
 
         # Fallback: in-memory sliding window
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         timestamps = self.requests[client_key]
 
         # Check minute limit
@@ -214,7 +214,7 @@ class RateLimiter:
         Returns:
             Number of entries removed
         """
-        cutoff = datetime.utcnow() - timedelta(hours=24)
+        cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
         keys_to_remove = []
 
         for key, timestamps in self.requests.items():
@@ -440,7 +440,7 @@ class EndpointRateLimiter:
             return
 
         # Fallback: in-memory
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         timestamps = self.storage[client_key]
 
         cutoff = now - timedelta(seconds=self.window_seconds)
@@ -701,7 +701,7 @@ class AIEndpointRateLimiter:
             return
 
         # Fallback: in-memory
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         timestamps = self.storage[client_key]
 
         cutoff = now - timedelta(seconds=self.window_seconds)

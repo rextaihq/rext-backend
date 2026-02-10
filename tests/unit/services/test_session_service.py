@@ -50,7 +50,7 @@ async def test_list_user_sessions_returns_active_sessions():
     mock_db = AsyncMock()
     service = SessionService(mock_db)
     user_id = uuid4()
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
 
     session = UserSession(
         user_id=user_id,
@@ -82,7 +82,7 @@ async def test_revoke_session_deactivates_and_blacklists():
     service = SessionService(mock_db)
     user_id = uuid4()
     session_id = uuid4()
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
 
     session = UserSession(
         id=session_id,
@@ -130,7 +130,7 @@ async def test_revoke_all_sessions_revokes_and_blacklists():
     mock_db = AsyncMock()
     service = SessionService(mock_db)
     user_id = uuid4()
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
 
     session_one = UserSession(
         id=uuid4(),

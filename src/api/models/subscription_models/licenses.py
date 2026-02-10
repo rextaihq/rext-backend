@@ -1,8 +1,9 @@
 """License model for LemonSqueezy one-time purchases."""
 import uuid
 import enum
-from datetime import datetime
-from sqlalchemy import Column, String, Integer, ForeignKey, TIMESTAMP, Enum as SQLEnum
+from datetime import datetime, timezone
+from sqlalchemy import DateTime
+from sqlalchemy import Column, String, Integer, ForeignKey, Enum as SQLEnum
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import relationship
 from src.api.database.base import Base
@@ -41,10 +42,10 @@ class License(Base, SerializableMixin):
     activation_count = Column(Integer, default=0, nullable=False)
 
     # Timestamps
-    activated_at = Column(TIMESTAMP, nullable=True)
-    expires_at = Column(TIMESTAMP, nullable=True)  # Null = lifetime license
-    created_at = Column(TIMESTAMP, default=datetime.utcnow, nullable=False)
-    updated_at = Column(TIMESTAMP, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    activated_at = Column(DateTime(timezone=True), nullable=True)
+    expires_at = Column(DateTime(timezone=True), nullable=True)  # Null = lifetime license
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
+    updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc), nullable=False)
 
     # License metadata for extensibility (using license_metadata to avoid reserved word)
     license_metadata = Column(JSONB, default=dict, nullable=False)
@@ -69,7 +70,7 @@ class License(Base, SerializableMixin):
         """Check if license is currently valid."""
         if self.status != LicenseStatus.ACTIVE:
             return False
-        if self.expires_at and self.expires_at < datetime.utcnow():
+        if self.expires_at and self.expires_at < datetime.now(timezone.utc):
             return False
         if self.activation_limit and self.activation_count >= self.activation_limit:
             return False
@@ -78,7 +79,7 @@ class License(Base, SerializableMixin):
     @property
     def is_expired(self) -> bool:
         """Check if license has expired."""
-        if self.expires_at and self.expires_at < datetime.utcnow():
+        if self.expires_at and self.expires_at < datetime.now(timezone.utc):
             return True
         return False
 

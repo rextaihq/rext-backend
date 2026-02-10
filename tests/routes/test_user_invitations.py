@@ -98,8 +98,8 @@ async def test_get_pending_invitations_success(client, db_session):
         invited_by_user_id=inviter.id,
         invitation_token=f"token_{uuid4().hex}",
         status="pending",
-        expires_at=datetime.utcnow() + timedelta(days=7),
-        created_at=datetime.utcnow()
+        expires_at=datetime.now(timezone.utc) + timedelta(days=7),
+        created_at=datetime.now(timezone.utc)
     )
     invitation2 = UserInvitations(
         id=uuid4(),
@@ -109,8 +109,8 @@ async def test_get_pending_invitations_success(client, db_session):
         invited_by_user_id=inviter.id,
         invitation_token=f"token_{uuid4().hex}",
         status="pending",
-        expires_at=datetime.utcnow() + timedelta(days=7),
-        created_at=datetime.utcnow()
+        expires_at=datetime.now(timezone.utc) + timedelta(days=7),
+        created_at=datetime.now(timezone.utc)
     )
     db_session.add(invitation1)
     db_session.add(invitation2)
@@ -229,8 +229,8 @@ async def test_decline_invitation_success(client, db_session):
         invited_by_user_id=inviter.id,
         invitation_token=f"token_{uuid4().hex}",
         status="pending",
-        expires_at=datetime.utcnow() + timedelta(days=7),
-        created_at=datetime.utcnow()
+        expires_at=datetime.now(timezone.utc) + timedelta(days=7),
+        created_at=datetime.now(timezone.utc)
     )
     db_session.add(invitation)
     await db_session.commit()
@@ -297,8 +297,8 @@ async def test_decline_invitation_wrong_user(client, db_session):
         invited_by_user_id=inviter.id,
         invitation_token=f"token_{uuid4().hex}",
         status="pending",
-        expires_at=datetime.utcnow() + timedelta(days=7),
-        created_at=datetime.utcnow()
+        expires_at=datetime.now(timezone.utc) + timedelta(days=7),
+        created_at=datetime.now(timezone.utc)
     )
     db_session.add(invitation)
 

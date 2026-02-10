@@ -65,8 +65,8 @@ async def test_extend_subscription_updates_dates():
         billing_period="monthly",
     )
     subscription.id = uuid4()
-    subscription.end_date = datetime.utcnow()
-    subscription.trial_end_date = datetime.utcnow()
+    subscription.end_date = datetime.now(timezone.utc)
+    subscription.trial_end_date = datetime.now(timezone.utc)
 
     service._get_subscription_or_404 = AsyncMock(return_value=subscription)
 
