@@ -50,7 +50,7 @@ def generate_content(state: REXT) -> dict:
         logger.info(f"Outline extracted: {outline_str[:20]}...")
 
         # 2️⃣ Get relevant context
-        relevant_context = state.get("relevant_context", [])
+        # relevant_context = state.get("relevant_context", [])
         # page_content = "\n\n".join(
         #     chunk.get("chunk", "") for chunk in relevant_context
         # )
@@ -63,7 +63,7 @@ def generate_content(state: REXT) -> dict:
         page_content = relevant_context.get("text", "")
         logger.info(f"Page content length: {len(page_content.split())} words")
 
-        meta_data = relevant_context.get("metadata", {})
+        meta_data = relevant_context.get("metadata", {}) 
         logger.info(f"Metadata: {meta_data}")
 
 

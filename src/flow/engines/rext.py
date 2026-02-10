@@ -17,8 +17,8 @@ def create_rext_engine():
 
     # add edges
     flow.add_edge(START, "serp_engine")
-    # flow.add_edge("serp_engine", END)
     flow.add_edge("serp_engine", "seo_engine")
+    # flow.add_edge("seo_engine", END)
     flow.add_edge("seo_engine", "content_engine")
     flow.add_edge("content_engine", END)
 

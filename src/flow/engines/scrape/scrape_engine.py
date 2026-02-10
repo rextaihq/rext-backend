@@ -16,7 +16,7 @@ def create_scrape_engine()-> StateGraph:
     # add edges
     scrape_graph.add_edge(START,"scrape_content")
     scrape_graph.add_edge("scrape_content", "store_content")
-    # scrape_graph.add_edge("filter_relevant_content",END)
+    # scrape_graph.add_edge("scrape_content",END)
     scrape_graph.add_edge("store_content",END)
 
 
