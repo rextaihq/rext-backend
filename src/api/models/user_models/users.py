@@ -48,6 +48,7 @@ class Users(Base, SerializableMixin):
     assigned_roles = relationship("UserRole", back_populates="assigned_by", foreign_keys="UserRole.assigned_by_user_id", passive_deletes=True)
     notification_preferences = relationship("NotificationPreferences", back_populates="user", uselist=False)
     sessions = relationship("UserSession", back_populates="user", cascade="all, delete-orphan", passive_deletes=True)
+    blacklisted_tokens = relationship("TokenBlacklist", back_populates="user", cascade="all, delete-orphan", passive_deletes=True)
     email_preferences = relationship("EmailPreferences", back_populates="user", uselist=False, passive_deletes=True)
     preferences = relationship("UserPreferences", back_populates="user", uselist=False, cascade="all, delete-orphan", passive_deletes=True)
     media = relationship("Media", back_populates="user", cascade="all, delete-orphan", passive_deletes=True)

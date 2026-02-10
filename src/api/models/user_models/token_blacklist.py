@@ -12,8 +12,9 @@ When a token is blacklisted:
 
 import uuid
 from datetime import datetime,timezone
-from sqlalchemy import Column, String, TIMESTAMP, Index
+from sqlalchemy import Column, String, TIMESTAMP, Index, ForeignKey
 from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import relationship
 from src.api.database.base import Base
 from src.api.models.base import SerializableMixin
 
@@ -25,10 +26,17 @@ class TokenBlacklist(Base, SerializableMixin):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     jti = Column(String(255), unique=True, nullable=False)  # JWT ID (unique token identifier)
     token_type = Column(String(20), nullable=False)  # "access" or "refresh"
-    user_id = Column(UUID(as_uuid=True), nullable=False)  # User who owned the token
+    user_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False
+    )  # User who owned the token - cascade delete when user is removed
     revoked_at = Column(TIMESTAMP, default=lambda: datetime.now(timezone.utc), nullable=False)  # When token was blacklisted
     expires_at = Column(TIMESTAMP, nullable=False)  # When token would naturally expire
     reason = Column(String(100))  # "logout", "refresh", "forced_logout", "password_change", etc.
+
+    # Relationships
+    user = relationship("Users", back_populates="blacklisted_tokens")
 
     __table_args__ = (
         # Indexes for fast lookups
