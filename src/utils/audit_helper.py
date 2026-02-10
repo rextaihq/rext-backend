@@ -18,10 +18,10 @@ async def create_audit_log(
     request: Optional[Request] = None,
     workspace_id: Optional[uuid.UUID] = None,
     full_name: Optional[str] = None,
-    user_email: Optional[str] = None,
     metadata: Optional[Dict[str, Any]] = None,
     status: str = "success",
-    error_message: Optional[str] = None
+    error_message: Optional[str] = None,
+    **kwargs
 ) -> Optional[AuditLog]:
     """
     Create an audit log entry.
@@ -38,13 +38,22 @@ async def create_audit_log(
         workspace_id: ID of the workspace context
         full_name: Full name (denormalized for historical record)
         user_email: User email (denormalized for historical record)
-        metadata: Additional context information
+        metadata: Additional context information (aliased as 'details' in some calls)
         status: Status of the action (success, failed, partial)
         error_message: Error message if status is failed
+        **kwargs: Additional parameters for backward compatibility (e.g., 'details')
 
     Returns:
         AuditLog: Created audit log entry, or None if creation failed
     """
+    # Support 'details' as an alias for 'metadata'
+    if not metadata and 'details' in kwargs:
+        metadata = kwargs.get('details')
+
+    # Support 'username' as an alias for 'full_name' for backward compatibility
+    if not full_name and 'username' in kwargs:
+        full_name = kwargs.get('username')
+
     try:
         # Extract request details if provided
         ip_address = None
@@ -91,3 +100,6 @@ async def create_audit_log(
         # DO NOT rollback here - let the decorator handle transaction rollback
         # Rolling back here would cause the entire request transaction to fail
         return None
+
+# Alias for backward compatibility and explicit async naming
+create_audit_log_async = create_audit_log

@@ -164,3 +164,7 @@ async def resolve_and_verify_workspace(
 
     # Verify membership and return workspace + membership objects
     return await verify_workspace_membership(db, workspace_uuid, user_id, check_active)
+
+
+# Alias for backward compatibility with older route implementations
+async_get_workspace_id_from_identifier = get_workspace_id_from_identifier
