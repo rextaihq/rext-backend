@@ -82,15 +82,15 @@ def create_audit_log(
         )
 
         db.add(audit_log)
-        db.commit()
-        db.refresh(audit_log)
+        db.flush()
 
         logger.info(f"Audit log created: {action} on {resource_type}:{resource_id} by user:{user_id}")
         return audit_log
 
     except Exception as e:
         logger.error(f"Failed to create audit log: {str(e)}")
-        db.rollback()
+        # DO NOT rollback here - let the decorator handle transaction rollback
+        # Rolling back here would cause the entire request transaction to fail
         return None
 
 
