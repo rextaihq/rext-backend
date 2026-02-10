@@ -1,5 +1,5 @@
 import uuid
-from sqlalchemy import Column, String, Boolean, TIMESTAMP, ForeignKey
+from sqlalchemy import Column, String, Boolean, TIMESTAMP, ForeignKey, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 from datetime import datetime, timezone
@@ -20,6 +20,10 @@ class WorkspaceMembers(Base, SerializableMixin):
     is_default = Column(Boolean, default=False)
     joined_at = Column(TIMESTAMP, default=datetime.utcnow, nullable=False)
     last_activity_at = Column(TIMESTAMP, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    __table_args__ = (
+        UniqueConstraint('user_id', 'workspace_id', name='uq_user_workspace'),
+    )
 
     # Relationships
     user = relationship("Users", foreign_keys=[user_id], back_populates="workspace_memberships")

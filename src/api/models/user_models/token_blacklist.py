@@ -23,11 +23,11 @@ class TokenBlacklist(Base, SerializableMixin):
     __tablename__ = "token_blacklist"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    jti = Column(String(255), unique=True, nullable=False, index=True)  # JWT ID (unique token identifier)
+    jti = Column(String(255), unique=True, nullable=False)  # JWT ID (unique token identifier)
     token_type = Column(String(20), nullable=False)  # "access" or "refresh"
-    user_id = Column(UUID(as_uuid=True), nullable=False, index=True)  # User who owned the token
+    user_id = Column(UUID(as_uuid=True), nullable=False)  # User who owned the token
     revoked_at = Column(TIMESTAMP, default=lambda: datetime.now(timezone.utc), nullable=False)  # When token was blacklisted
-    expires_at = Column(TIMESTAMP, nullable=False, index=True)  # When token would naturally expire
+    expires_at = Column(TIMESTAMP, nullable=False)  # When token would naturally expire
     reason = Column(String(100))  # "logout", "refresh", "forced_logout", "password_change", etc.
 
     __table_args__ = (

@@ -1,5 +1,5 @@
 import uuid
-from sqlalchemy import Column, String, Boolean, Integer, Text, TIMESTAMP, ForeignKey
+from sqlalchemy import Column, String, Boolean, Integer, Text, TIMESTAMP, ForeignKey, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID, JSONB, INET
 from sqlalchemy.orm import relationship
 from datetime import datetime,timezone
@@ -22,6 +22,10 @@ class UserRole(Base, SerializableMixin):
     is_primary = Column(Boolean, default=True)
     assigned_at = Column(TIMESTAMP, default=lambda: datetime.now(timezone.utc), nullable=False)
     
+    __table_args__ = (
+        UniqueConstraint('user_id', 'role_id', 'workspace_id', name='uq_user_role_workspace'),
+    )
+
     # Relationships
     user = relationship("Users", foreign_keys=[user_id], back_populates="user_roles")
     role = relationship("Role", foreign_keys=[role_id], back_populates="user_roles")
