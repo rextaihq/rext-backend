@@ -9,7 +9,6 @@ Usage:
     python migrate.py create "message"- Create a new migration
     python migrate.py history         - Show migration history
 """
-
 import sys
 import os
 from alembic.config import Config

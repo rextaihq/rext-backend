@@ -74,7 +74,6 @@ async def connect_site(
             logger.error(f"Site connection validation failed: {str(e)}")
             raise RextValidationException(
                 message=f"Failed to connect to the Rext-AI plugin. Please check your Site URL and API Key.",
-                context={"error": str(e)}
             )
 
     new_site = WorkspaceIntegration(

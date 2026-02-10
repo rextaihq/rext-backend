@@ -5,7 +5,7 @@ Junction table for tracking media used in content.
 Enables finding which content uses specific media files and vice versa.
 """
 
-from sqlalchemy import Column, String, Integer, ForeignKey, TIMESTAMP
+from sqlalchemy import Column, String, Integer, ForeignKey, TIMESTAMP, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 from src.api.database.base import Base
@@ -59,6 +59,10 @@ class ContentMedia(Base, SerializableMixin):
         TIMESTAMP(timezone=True),
         default=datetime.utcnow,
         nullable=False
+    )
+
+    __table_args__ = (
+        UniqueConstraint('content_id', 'media_id', name='uq_content_media'),
     )
 
     # Relationships

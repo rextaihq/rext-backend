@@ -26,7 +26,7 @@ class ErrorLog(Base, SerializableMixin):
     source = Column(String(255))  # file:line
     user_id = Column(
         PostgresUUID(as_uuid=True),
-        ForeignKey("users.id"),
+        ForeignKey("users.id", ondelete="SET NULL"),
         nullable=True
     )
     request_id = Column(String(100))
@@ -36,7 +36,7 @@ class ErrorLog(Base, SerializableMixin):
     resolved_at = Column(DateTime, nullable=True)
     resolved_by = Column(
         PostgresUUID(as_uuid=True),
-        ForeignKey("users.id"),
+        ForeignKey("users.id", ondelete="SET NULL"),
         nullable=True
     )
 

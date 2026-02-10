@@ -28,8 +28,8 @@ class CustomerNote(Base, SerializableMixin):
     )
     admin_id = Column(
         PostgresUUID(as_uuid=True),
-        ForeignKey("users.id"),
-        nullable=False,
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
         index=True
     )
     note = Column(Text, nullable=False)

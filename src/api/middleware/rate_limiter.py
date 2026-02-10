@@ -508,6 +508,20 @@ def registration_rate_limit():
     )
 
 
+def oauth_rate_limit():
+    """
+    Rate limiter for OAuth login/link endpoints.
+
+    Limit: 10 attempts per 5 minutes per IP.
+    Slightly more generous than login (5/min) because OAuth flows
+    may involve legitimate retries from frontend callback handling.
+    """
+    return EndpointRateLimiter(
+        requests=10,
+        window_minutes=5,
+        description="OAuth"
+    )
+
 def email_verification_rate_limit():
     """
     Rate limiter for email verification resend.

@@ -40,11 +40,11 @@ class Users(Base, SerializableMixin, SoftDeleteMixin):
     deactivated_at = Column(TIMESTAMP)
 
     # Relationships
-    user_roles = relationship("UserRole", back_populates="user", foreign_keys="UserRole.user_id")
-    workspace_memberships = relationship("WorkspaceMembers", back_populates="user")
-    workspaces = relationship("WorkspaceModel", foreign_keys="WorkspaceModel.user_id", back_populates="owner")
-    sent_invitations = relationship("UserInvitations", back_populates="invited_by")
-    assigned_roles = relationship("UserRole", back_populates="assigned_by", foreign_keys="UserRole.assigned_by_user_id")
+    user_roles = relationship("UserRole", back_populates="user", foreign_keys="UserRole.user_id", passive_deletes=True)
+    workspace_memberships = relationship("WorkspaceMembers", back_populates="user", passive_deletes=True)
+    workspaces = relationship("WorkspaceModel", foreign_keys="WorkspaceModel.user_id", back_populates="owner", passive_deletes=True)
+    sent_invitations = relationship("UserInvitations", back_populates="invited_by", passive_deletes=True)
+    assigned_roles = relationship("UserRole", back_populates="assigned_by", foreign_keys="UserRole.assigned_by_user_id", passive_deletes=True)
     notification_preferences = relationship("NotificationPreferences", back_populates="user", uselist=False)
     sessions = relationship("UserSession", back_populates="user", cascade="all, delete-orphan")
     email_preferences = relationship("EmailPreferences", back_populates="user", uselist=False)
@@ -64,17 +64,20 @@ class Users(Base, SerializableMixin, SoftDeleteMixin):
     sent_admin_invitations = relationship(
         "PlatformAdminInvitations",
         back_populates="invited_by",
-        foreign_keys="PlatformAdminInvitations.invited_by_admin_id"
+        foreign_keys="PlatformAdminInvitations.invited_by_admin_id",
+        passive_deletes=True
     )
     accepted_admin_invitations = relationship(
         "PlatformAdminInvitations",
         back_populates="accepted_by",
-        foreign_keys="PlatformAdminInvitations.accepted_by_user_id"
+        foreign_keys="PlatformAdminInvitations.accepted_by_user_id",
+        passive_deletes=True
     )
     revoked_admin_invitations = relationship(
         "PlatformAdminInvitations",
         back_populates="revoked_by",
-        foreign_keys="PlatformAdminInvitations.revoked_by_admin_id"
+        foreign_keys="PlatformAdminInvitations.revoked_by_admin_id",
+        passive_deletes=True
     )
 
     def to_dict(self, **kwargs):
