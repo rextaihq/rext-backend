@@ -324,7 +324,7 @@ async def register_with_invitation(
             # Skip email verification for invited users
             # Rationale: Email was already validated by invitation system
             new_user.email_verified = True
-            new_user.email_verified_at = datetime.utcnow()
+            new_user.email_verified_at = datetime.now(timezone.utc)
             await db.flush()
 
             current_user = new_user

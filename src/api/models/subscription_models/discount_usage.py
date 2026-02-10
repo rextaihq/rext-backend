@@ -5,11 +5,11 @@ This model records when users apply discount codes during checkout,
 enabling analytics and fraud prevention.
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 from uuid import UUID
 
-from sqlalchemy import String, Numeric, TIMESTAMP, ForeignKey, Index
+from sqlalchemy import String, Numeric, DateTime, ForeignKey, Index
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID, JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
@@ -84,7 +84,7 @@ class DiscountUsage(Base, SerializableMixin):
 
     # Metadata
     applied_at: Mapped[datetime] = mapped_column(
-        TIMESTAMP(timezone=True),
+        DateTime(timezone=True),
         nullable=False,
         server_default=func.current_timestamp(),
         index=True

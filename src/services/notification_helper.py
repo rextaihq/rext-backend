@@ -143,7 +143,7 @@ async def schedule_if_allowed(
         payload=payload,
         is_read=False,
         sent_via_sse=True,
-        sse_sent_at=datetime.utcnow(),
+        sse_sent_at=datetime.now(timezone.utc),
     )
     
     db.add(notification)

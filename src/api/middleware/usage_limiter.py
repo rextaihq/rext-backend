@@ -316,9 +316,9 @@ class APICallLimiter:
             return
 
         # Check if usage period needs reset
-        if subscription.usage_reset_date and subscription.usage_reset_date < datetime.utcnow():
+        if subscription.usage_reset_date and subscription.usage_reset_date < datetime.now(timezone.utc):
             subscription.current_api_calls = 0
-            subscription.usage_reset_date = datetime.utcnow() + timedelta(days=30)
+            subscription.usage_reset_date = datetime.now(timezone.utc) + timedelta(days=30)
             await db.commit()
 
         # Check limit (before incrementing)

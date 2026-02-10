@@ -62,7 +62,7 @@ async def get_invitation_analytics(
     await verify_current_user(db, str(user_uuid))
 
     # Calculate date range
-    end_date = datetime.utcnow()
+    end_date = datetime.now(timezone.utc)
     start_date = end_date - timedelta(days=days)
 
     # Build base query

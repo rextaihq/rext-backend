@@ -118,7 +118,7 @@ class UserPreferencesService:
             updates.append(f"sidebar_collapsed={sidebar_collapsed}")
 
         if updates:
-            preferences.updated_at = datetime.utcnow()
+            preferences.updated_at = datetime.now(timezone.utc)
             await self.db.commit() 
             logger.info(f"Updated preferences for user {user_id}: {', '.join(updates)}")
         else:

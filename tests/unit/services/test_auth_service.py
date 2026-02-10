@@ -280,7 +280,7 @@ class TestAuthServiceLoginUser:
 
         assert db_user.failed_login_attempts == 3
         assert db_user.locked_until is not None
-        assert db_user.locked_until > datetime.utcnow()
+        assert db_user.locked_until > datetime.now(timezone.utc)
 
     @pytest.mark.asyncio
     async def test_login_user_account_already_locked(self):
@@ -292,7 +292,7 @@ class TestAuthServiceLoginUser:
             email="test@example.com",
             password_hash="hashed_password",
             failed_login_attempts=5,
-            locked_until=datetime.utcnow() + timedelta(hours=1)
+            locked_until=datetime.now(timezone.utc) + timedelta(hours=1)
         )
 
         mock_db = Mock()

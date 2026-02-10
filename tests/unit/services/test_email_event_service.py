@@ -273,7 +273,7 @@ class TestEmailEventServiceIdempotency:
             provider_message_id="msg_123",
             event_type="email.delivered",
             event_data={},
-            created_at=datetime.utcnow()
+            created_at=datetime.now(timezone.utc)
         )
 
         mock_event_result = Mock()
@@ -437,8 +437,8 @@ class TestEmailEventServiceQueryMethods:
 
         email_log_id = uuid4()
         mock_events = [
-            EmailEvent(id=uuid4(), email_log_id=email_log_id, event_type="email.delivered", provider="resend", provider_message_id="msg_1", event_data={}, created_at=datetime.utcnow()),
-            EmailEvent(id=uuid4(), email_log_id=email_log_id, event_type="email.opened", provider="resend", provider_message_id="msg_1", event_data={}, created_at=datetime.utcnow()),
+            EmailEvent(id=uuid4(), email_log_id=email_log_id, event_type="email.delivered", provider="resend", provider_message_id="msg_1", event_data={}, created_at=datetime.now(timezone.utc)),
+            EmailEvent(id=uuid4(), email_log_id=email_log_id, event_type="email.opened", provider="resend", provider_message_id="msg_1", event_data={}, created_at=datetime.now(timezone.utc)),
         ]
 
         mock_result = Mock()
@@ -457,8 +457,8 @@ class TestEmailEventServiceQueryMethods:
         mock_db = AsyncMock()
 
         mock_events = [
-            EmailEvent(id=uuid4(), email_log_id=uuid4(), event_type="email.delivered", provider="resend", provider_message_id="msg_1", event_data={}, created_at=datetime.utcnow()),
-            EmailEvent(id=uuid4(), email_log_id=uuid4(), event_type="email.bounced", provider="resend", provider_message_id="msg_2", event_data={}, created_at=datetime.utcnow()),
+            EmailEvent(id=uuid4(), email_log_id=uuid4(), event_type="email.delivered", provider="resend", provider_message_id="msg_1", event_data={}, created_at=datetime.now(timezone.utc)),
+            EmailEvent(id=uuid4(), email_log_id=uuid4(), event_type="email.bounced", provider="resend", provider_message_id="msg_2", event_data={}, created_at=datetime.now(timezone.utc)),
         ]
 
         mock_result = Mock()

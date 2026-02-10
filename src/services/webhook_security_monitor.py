@@ -83,7 +83,7 @@ class WebhookSecurityMonitor:
             payload_size: Size of payload in bytes
         """
         record = WebhookFailureRecord(
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             ip_address=ip_address,
             event_type=event_type,
             signature_prefix=signature_prefix,
@@ -121,7 +121,7 @@ class WebhookSecurityMonitor:
         Args:
             ip_address: IP address to clean up failures for
         """
-        cutoff = datetime.utcnow() - timedelta(minutes=self.TIME_WINDOW_MINUTES)
+        cutoff = datetime.now(timezone.utc) - timedelta(minutes=self.TIME_WINDOW_MINUTES)
         failures = self._failures[ip_address]
 
         while failures and failures[0].timestamp < cutoff:
@@ -150,7 +150,7 @@ class WebhookSecurityMonitor:
         last_alert = self._last_alert.get(ip_address)
         if last_alert:
             cooldown_end = last_alert + timedelta(minutes=self.ALERT_COOLDOWN_MINUTES)
-            if datetime.utcnow() < cooldown_end:
+            if datetime.now(timezone.utc) < cooldown_end:
                 return False  # Still in cooldown
 
         return True
@@ -215,7 +215,7 @@ class WebhookSecurityMonitor:
             )
 
         # Update last alert time
-        self._last_alert[ip_address] = datetime.utcnow()
+        self._last_alert[ip_address] = datetime.now(timezone.utc)
 
         logger.info(
             f"Security alert sent for IP {ip_address}. Alert cooldown: {self.ALERT_COOLDOWN_MINUTES} minutes",

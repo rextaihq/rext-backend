@@ -180,7 +180,7 @@ class UsageTrackingService:
 
         if subscription:
             subscription.current_api_calls = 0
-            subscription.usage_reset_date = datetime.utcnow() + timedelta(days=30)
+            subscription.usage_reset_date = datetime.now(timezone.utc) + timedelta(days=30)
             await self.db.commit()
             logger.info(f"Reset monthly usage for user {user_id}")
 
