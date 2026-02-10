@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Text, Integer, Float, DateTime, Boolean, ForeignKey
+from sqlalchemy import Column, String, Text, Integer, Float, DateTime, Boolean, ForeignKey, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID, ARRAY, JSONB
 from sqlalchemy.orm import relationship
 from src.api.database.base import Base
@@ -16,11 +16,17 @@ class Content(Base, SerializableMixin):
     created_by_user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=False, index=True)
 
     # Core content fields
-    title = Column(Text, nullable=False,unique=True)
-    slug = Column(Text, unique=True, nullable=False, index=True)
+    title = Column(Text, nullable=False)
+    slug = Column(Text, nullable=False, index=True)
     introduction = Column(Text, nullable=True)
     body_markdown = Column(Text, nullable=True)
     body_html = Column(Text, nullable=True)
+
+    # Per-workspace uniqueness constraints
+    __table_args__ = (
+        UniqueConstraint('workspace_id', 'title', name='uq_content_workspace_title'),
+        UniqueConstraint('workspace_id', 'slug', name='uq_content_workspace_slug'),
+    )
     
     # Metadata and Status
     status = Column(Text, nullable=True, default="draft")
