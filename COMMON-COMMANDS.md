@@ -69,8 +69,11 @@ python scripts/db.py seed
 # Apply migrations
 .venv/bin/alembic upgrade head
 
-# Create new migration
+# Create new migration (ID must follow Alembic conventions)
 .venv/bin/alembic revision -m "description"
+
+# Validate migration IDs
+python scripts/validate_migration_ids.py
 
 # Check current version
 .venv/bin/alembic current

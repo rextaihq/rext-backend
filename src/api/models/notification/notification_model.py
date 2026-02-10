@@ -1,15 +1,15 @@
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlalchemy import (
-    Column, String, Boolean, TIMESTAMP, ForeignKey, Text, Index
+    Column, String, Boolean, DateTime, ForeignKey, Text, Index
 )
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import relationship
 from src.api.database.base import Base
-from src.api.models.base import SerializableMixin
+from src.api.models.base import SerializableMixin, SoftDeleteMixin
 
 
-class Notification(Base, SerializableMixin):
+class Notification(Base, SerializableMixin, SoftDeleteMixin):
     """
     Notification model for storing user notifications.
     """
@@ -103,8 +103,8 @@ class Notification(Base, SerializableMixin):
     # ==============================
     sent_via_email = Column(Boolean, default=False, nullable=False)
     sent_via_sse = Column(Boolean, default=False, nullable=False)
-    email_sent_at = Column(TIMESTAMP, nullable=True)
-    sse_sent_at = Column(TIMESTAMP, nullable=True)
+    email_sent_at = Column(DateTime(timezone=True), nullable=True)
+    sse_sent_at = Column(DateTime(timezone=True), nullable=True)
 
     # ==============================
     # EXPIRATION
@@ -114,11 +114,11 @@ class Notification(Base, SerializableMixin):
     # ==============================
     # TIMESTAMPS
     # ==============================
-    created_at = Column(TIMESTAMP, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
     updated_at = Column(
-        TIMESTAMP,
-        default=datetime.utcnow,
-        onupdate=datetime.utcnow,
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
         nullable=False
     )
 
@@ -157,7 +157,7 @@ class Notification(Base, SerializableMixin):
     # ==============================
     def mark_as_read(self):
         self.is_read = True
-        self.read_at = datetime.utcnow()
+        self.read_at = datetime.now(timezone.utc)
 
     def mark_as_unread(self):
         self.is_read = False
@@ -165,7 +165,7 @@ class Notification(Base, SerializableMixin):
 
     def archive(self):
         self.is_archived = True
-        self.archived_at = datetime.utcnow()
+        self.archived_at = datetime.now(timezone.utc)
 
     def unarchive(self):
         self.is_archived = False

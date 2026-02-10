@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, Request, UploadFile, File, HTTPException, status, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
 
+
 from src.utils.logger import logger
 from src.api.security.dependencies import get_current_user
 from src.utils.route_decorators import require_permissions
@@ -13,7 +14,8 @@ from src.api.schema.response_schemas import ErrorCode, ErrorSeverity
 from src.api.middleware.exceptions import ResourceNotFoundException
 from src.services.user_service import UserService
 from src.services.notification_helper import schedule_if_allowed
-from datetime import datetime
+from datetime import datetime,timezone 
+
 from pathlib import Path
 from sqlalchemy import select
 import time
@@ -174,8 +176,8 @@ async def update_profile(
             user_id=str(user_id),
             background_tasks=background_tasks,
             pref_flag="in_app_notifications",
-            message=f"Failed to update profile: {str(e)}",
-            payload={"user_id": str(user_id), "error": str(e)},
+            message="Failed to update profile due to an internal error",
+            payload={"user_id": str(user_id), "error": "An internal error occurred"},
             workspace_id=None,
             title="Profile Update Failed",
             status="error"
@@ -208,7 +210,7 @@ async def upload_avatar(
         if file.content_type not in allowed_types:
             return error(
                 message=f"Invalid file type. Allowed: {', '.join(allowed_types)}",
-                code=ErrorCode.INVALID_INPUT,
+                code=ErrorCode.INVALID_VALUE,
                 status_code=400,
                 severity=ErrorSeverity.LOW,
                 request=request
@@ -222,7 +224,7 @@ async def upload_avatar(
         if file_size > max_size:
             return error(
                 message=f"File too large. Max: 5MB, Yours: {file_size / (1024 * 1024):.2f}MB",
-                code=ErrorCode.INVALID_INPUT,
+                code=ErrorCode.INVALID_VALUE,
                 status_code=400,
                 severity=ErrorSeverity.LOW,
                 request=request
@@ -240,7 +242,7 @@ async def upload_avatar(
             )
             return error(
                 message="Invalid image file. File content does not match an allowed image format (JPEG, PNG, GIF, WebP).",
-                code=ErrorCode.INVALID_INPUT,
+                code=ErrorCode.INVALID_VALUE,
                 status_code=400,
                 severity=ErrorSeverity.MEDIUM,
                 request=request
@@ -251,7 +253,7 @@ async def upload_avatar(
             logger.warning(f"SVG upload attempt blocked for user {user_id}")
             return error(
                 message="SVG files are not supported for security reasons.",
-                code=ErrorCode.INVALID_INPUT,
+                code=ErrorCode.INVALID_VALUE,
                 status_code=400,
                 severity=ErrorSeverity.MEDIUM,
                 request=request
@@ -323,7 +325,7 @@ async def upload_avatar(
             message="Avatar uploaded successfully"
         )
 
-    except ResourceNotFoundException:
+    except ResourceNotFoundException as e:
         # Schedule notification
         await schedule_if_allowed(
             db=db,
@@ -331,7 +333,7 @@ async def upload_avatar(
             background_tasks=background_tasks,
             pref_flag="in_app_notifications",
             message="failed to upload avatar",
-            payload={"user_id": str(user_id), "error": str(e)},
+            payload={"user_id": str(user_id), "error": "User not found"},
             workspace_id=None
         )
         return error(
@@ -350,7 +352,7 @@ async def upload_avatar(
             background_tasks=background_tasks,
             pref_flag="in_app_notifications",
             message="failed to upload avatar",
-            payload={"user_id": str(user_id), "error": str(e)},
+            payload={"user_id": str(user_id), "error": "An internal error occurred"},
             workspace_id=None
         )
         raise HTTPException(
@@ -446,7 +448,7 @@ async def delete_avatar(
             background_tasks=background_tasks,
             pref_flag="in_app_notifications",
             message="failed to delete avatar",
-            payload={"user_id": str(user_id), "error": str(e)},
+            payload={"user_id": str(user_id), "error": "User not found"},
             workspace_id=None
         )
         return error(
@@ -465,12 +467,15 @@ async def delete_avatar(
             background_tasks=background_tasks,
             pref_flag="in_app_notifications",
             message="failed to delete avatar",
-            payload={"user_id": str(user_id), "error": str(e)},
+            payload={"user_id": str(user_id), "error": "An internal error occurred"},
             workspace_id=None
         )
-        return HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to delete avatar"
+        return error(
+            message="Failed to delete avatar",
+            code=ErrorCode.INTERNAL_SERVER_ERROR,
+            status_code=500,
+            severity=ErrorSeverity.HIGH,
+            request=request
         )
 
 
@@ -610,7 +615,7 @@ async def update_notification_preferences(
             background_tasks=background_tasks,
             pref_flag="in_app_notifications",
             message="failed to update notification preferences",
-            payload={"user_id": str(user_id), "error": str(e)},
+            payload={"user_id": str(user_id), "error": "An internal error occurred"},
             workspace_id=None
         )
         raise
@@ -647,7 +652,7 @@ async def deactivate_account(
         if not deactivate_request.confirm:
             return error(
                 message="You must confirm account deactivation",
-                code=ErrorCode.INVALID_INPUT,
+                code=ErrorCode.INVALID_VALUE,
                 status_code=400,
                 severity=ErrorSeverity.LOW,
                 request=request
@@ -658,7 +663,7 @@ async def deactivate_account(
             logger.warning(f"Failed deactivation attempt for user {user_id}: invalid password")
             return error(
                 message="Invalid password. Please enter your current password to deactivate your account.",
-                code=ErrorCode.AUTHENTICATION_ERROR,
+                code=ErrorCode.UNAUTHORIZED,
                 status_code=401,
                 severity=ErrorSeverity.HIGH,
                 request=request
@@ -671,7 +676,7 @@ async def deactivate_account(
         if user.status == "inactive":
             return error(
                 message="Account is already deactivated",
-                code=ErrorCode.INVALID_INPUT,
+                code=ErrorCode.INVALID_VALUE,
                 status_code=400,
                 severity=ErrorSeverity.LOW,
                 request=request
@@ -693,7 +698,7 @@ async def deactivate_account(
                 logger.info(f"Canceled subscription {subscription.id} for user {user_id}")
 
         # Deactivate user account
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         scheduled_deletion = now + timedelta(days=14)
 
         user.status = "inactive"

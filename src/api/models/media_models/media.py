@@ -6,16 +6,16 @@ Supports images, documents, videos with metadata, tagging, and organization.
 """
 
 import uuid
-from datetime import datetime
-from sqlalchemy import Column, String, Integer, BigInteger, Boolean, TIMESTAMP, ForeignKey, ARRAY, Text
+from datetime import datetime, timezone
+from sqlalchemy import Column, String, Integer, BigInteger, Boolean, DateTime, ForeignKey, ARRAY, Text
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import relationship
 
 from src.api.database.base import Base
-from src.api.models.base import SerializableMixin
+from src.api.models.base import SerializableMixin, SoftDeleteMixin
 
 
-class Media(Base, SerializableMixin):
+class Media(Base, SerializableMixin, SoftDeleteMixin):
     """
     Media file model for managing uploaded files.
 
@@ -97,14 +97,13 @@ class Media(Base, SerializableMixin):
     processing_error = Column(Text, comment="Error message if processing failed")
 
     # Timestamps
-    created_at = Column(TIMESTAMP, default=datetime.utcnow, nullable=False)
-    updated_at = Column(TIMESTAMP, default=datetime.utcnow, onupdate=datetime.utcnow)
-    deleted_at = Column(TIMESTAMP, comment="Soft delete timestamp")
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
+    updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
     # Relationships
     workspace = relationship("WorkspaceModel", back_populates="media")
     user = relationship("Users", back_populates="media")
-
+    used_in_content = relationship("ContentMedia", back_populates="media")
     def __repr__(self) -> str:
         return f"<Media(id={self.id}, filename={self.filename}, type={self.file_type})>"
 

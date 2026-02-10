@@ -22,7 +22,6 @@ def upgrade() -> None:
     """Add indexes for performance optimization."""
     # Users table indexes
     op.create_index('idx_users_email', 'users', ['email'])
-    op.create_index('idx_users_username', 'users', ['username'])
     op.create_index('idx_users_status', 'users', ['status'])
     op.create_index('idx_users_email_verified', 'users', ['email_verified'])
     op.create_index('idx_users_deleted_at', 'users', ['deleted_at'])
@@ -86,5 +85,4 @@ def downgrade() -> None:
     op.drop_index('idx_users_deleted_at', 'users')
     op.drop_index('idx_users_email_verified', 'users')
     op.drop_index('idx_users_status', 'users')
-    op.drop_index('idx_users_username', 'users')
     op.drop_index('idx_users_email', 'users')

@@ -40,7 +40,7 @@ class PaymentMethod(Base, SerializableMixin):
     updated_at = Column(TIMESTAMP, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     # Relationships
-    user = relationship("Users", backref="payment_methods")
+    user = relationship("Users", back_populates="payment_methods")
 
     # to_dict() inherited from SerializableMixin
 
