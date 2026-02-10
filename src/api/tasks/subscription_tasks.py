@@ -38,7 +38,7 @@ async def check_and_notify_expiring_trials():
     async with get_async_db_context() as db:
         try:
             # Get trials expiring in exactly 3 days
-            three_days_from_now = datetime.utcnow() + timedelta(days=3)
+            three_days_from_now = datetime.now(timezone.utc) + timedelta(days=3)
             start_of_day = three_days_from_now.replace(hour=0, minute=0, second=0, microsecond=0)
             end_of_day = three_days_from_now.replace(hour=23, minute=59, second=59, microsecond=999999)
 
@@ -99,7 +99,7 @@ async def check_and_notify_expiring_trials():
             return {
                 "total_expiring": len(expiring_trials),
                 "emails_sent": success_count,
-                "timestamp": datetime.utcnow().isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat()
             }
 
         except Exception as e:
@@ -118,7 +118,7 @@ async def expire_ended_trials():
     """
     async with get_async_db_context() as db:
         try:
-            now = datetime.utcnow()
+            now = datetime.now(timezone.utc)
 
             # Find trials that have ended
             query = select(UserSubscription).where(
@@ -173,7 +173,7 @@ async def expire_ended_trials():
 
             return {
                 "trials_expired": expired_count,
-                "timestamp": datetime.utcnow().isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat()
             }
 
         except Exception as e:
@@ -193,7 +193,7 @@ async def reset_monthly_usage():
     """
     async with get_async_db_context() as db:
         try:
-            now = datetime.utcnow()
+            now = datetime.now(timezone.utc)
             today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
             today_end = now.replace(hour=23, minute=59, second=59, microsecond=999999)
 
@@ -231,7 +231,7 @@ async def reset_monthly_usage():
 
             return {
                 "subscriptions_reset": reset_count,
-                "timestamp": datetime.utcnow().isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat()
             }
 
         except Exception as e:

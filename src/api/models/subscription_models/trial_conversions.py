@@ -1,9 +1,9 @@
 """Trial conversion tracking model."""
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Optional
-from sqlalchemy import Column, String, Integer, ForeignKey, TIMESTAMP, Numeric
+from sqlalchemy import Column, DateTime, String, Integer, ForeignKey, Numeric
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import relationship, Mapped, mapped_column
 from src.api.database.base import Base
@@ -43,18 +43,18 @@ class TrialConversion(Base, SerializableMixin):
 
     # Trial timeline
     trial_started_at: Mapped[datetime] = mapped_column(
-        TIMESTAMP(timezone=True),
+        DateTime(timezone=True),
         nullable=False,
         comment="When the trial started"
-    )
+    )   
     trial_ended_at: Mapped[datetime] = mapped_column(
-        TIMESTAMP(timezone=True),
+        DateTime(timezone=True),
         nullable=False,
         comment="When the trial ended"
     )
     converted_at: Mapped[datetime] = mapped_column(
-        TIMESTAMP(timezone=True),
-        default=datetime.utcnow,
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
         nullable=False,
         index=True,
         comment="When trial converted to paid"
@@ -69,7 +69,7 @@ class TrialConversion(Base, SerializableMixin):
     conversion_plan_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("subscription_plans.id", ondelete="SET NULL"),
-        nullable=False,
+        nullable=True,
         index=True,
         comment="Plan user converted to"
     )
@@ -94,15 +94,15 @@ class TrialConversion(Base, SerializableMixin):
 
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(
-        TIMESTAMP(timezone=True),
-        default=datetime.utcnow,
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
         nullable=False
     )
 
     # Relationships
-    user = relationship("Users", backref="trial_conversions")
-    subscription = relationship("UserSubscription", backref="trial_conversions")
-    plan = relationship("SubscriptionPlan", backref="trial_conversions")
+    user = relationship("Users", back_populates="trial_conversions")
+    subscription = relationship("UserSubscription", back_populates="trial_conversions")
+    plan = relationship("SubscriptionPlan", back_populates="trial_conversions")
 
     def __repr__(self):
         return f"<TrialConversion(id={self.id}, user_id={self.user_id}, converted_at={self.converted_at})>"

@@ -5,7 +5,7 @@ Configuration for file storage backends (Cloudflare R2, Local).
 """
 
 from typing import Literal
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 StorageBackendType = Literal["r2", "local"]
@@ -62,10 +62,12 @@ class StorageSettings(BaseSettings):
     max_image_height: int = 2000  # Max height for optimized images
     image_quality: int = 85  # JPEG quality (1-100)
 
-    class Config:
-        env_file = ".env"
-        case_sensitive = False
-        extra = "ignore"
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=True,
+        extra="ignore",
+    )
 
 
 # Global settings instance

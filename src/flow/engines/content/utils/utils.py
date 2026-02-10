@@ -101,7 +101,7 @@ def calculate_seokar(
             "top_keywords": keywords
         },
 
-        "analyzed_at": datetime.utcnow().isoformat()
+        "analyzed_at": datetime.now(timezone.utc).isoformat()
     }
 
     return seokar_state

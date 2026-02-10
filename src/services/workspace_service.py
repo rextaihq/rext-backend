@@ -899,7 +899,7 @@ class WorkspaceService:
 
         workspace = await self.get_workspace(workspace_id)
 
-        # FIXED: Use timezone-aware datetime for consistency
+        # Soft delete: set deleted_at and deleted_by
         workspace.deleted_at = datetime.now(timezone.utc)
         workspace.deleted_by = user_id
 

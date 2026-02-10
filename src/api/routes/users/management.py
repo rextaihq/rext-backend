@@ -16,7 +16,7 @@ from src.api.schema.response_schemas import ErrorCode, ErrorSeverity
 from src.services.user_service import UserService
 from src.api.middleware.exceptions import ResourceNotFoundException, RextValidationException
 from src.api.models.workspace_models.workspace_member import WorkspaceMembers
-from src.api.config import get_settings
+from src.api.config import get_settings, settings
 from sqlalchemy import select, delete
 
 router = APIRouter()
@@ -57,7 +57,7 @@ async def send_data_export_email_task(
             <p>Hello {name},</p>
             <p>Your requested data export has been generated.</p>
             <p><strong>Export ID:</strong> {export_id}</p>
-            <p><strong>Generated at:</strong> {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}</p>
+            <p><strong>Generated at:</strong> {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}</p>
 
             <h3>Export Contents:</h3>
             <ul>
@@ -158,7 +158,7 @@ async def delete_user(
         if not has_permission:
             return error(
                 message="Missing required permission: user.delete",
-                code=ErrorCode.AUTHORIZATION_ERROR,
+                code=ErrorCode.FORBIDDEN,
                 status_code=403,
                 severity=ErrorSeverity.HIGH,
                 context={"required_permission": "user.delete"},
@@ -188,7 +188,7 @@ async def delete_user(
     except ResourceNotFoundException:
         return error(
             message="User not found",
-            code=ErrorCode.NOT_FOUND,
+            code=ErrorCode.RESOURCE_NOT_FOUND,
             status_code=404,
             severity=ErrorSeverity.MEDIUM,
             request=request
@@ -353,6 +353,8 @@ async def export_user_data(
             export_data["activity"] = {
                 "note": "Activity logs export will be available once audit log system is queried"
             }
+        # Get frontend URL
+        frontend_url = settings.FRONTEND_URL
 
         # NEW: Export billing/subscription data
         if export_request.include_billing:
@@ -397,7 +399,7 @@ async def export_user_data(
                 "roles_count": len(db_user.user_roles) if hasattr(db_user, 'user_roles') else 0,
                 "login_count": db_user.login_count if hasattr(db_user, 'login_count') else 0,
                 "last_login": db_user.last_login_at.isoformat() if hasattr(db_user, 'last_login_at') and db_user.last_login_at else None,
-                "account_age_days": (datetime.utcnow() - db_user.created_at).days if db_user.created_at else 0,
+                "account_age_days": (datetime.now(timezone.utc) - db_user.created_at).days if db_user.created_at else 0,
                 "note": "Detailed usage metrics available upon request"
             }
 
@@ -405,8 +407,7 @@ async def export_user_data(
         import json
         export_json = json.dumps(export_data, indent=2)
 
-        # Get frontend URL
-        frontend_url = settings.FRONTEND_URL
+        
 
         # Send email with data export in background using EmailService
         background_tasks.add_task(
@@ -426,7 +427,7 @@ async def export_user_data(
             export_id=export_id,
             user_id=str(user_id),
             status="completed",
-            requested_at=datetime.utcnow().isoformat(),
+            requested_at=datetime.now(timezone.utc).isoformat(),
             message="Data export has been sent to your email address"
         )
 

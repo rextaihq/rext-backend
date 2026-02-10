@@ -6,8 +6,8 @@ Enables users to sign in with multiple OAuth providers.
 """
 
 import uuid
-from datetime import datetime,timezone
-from sqlalchemy import Column, String, Text, TIMESTAMP, ForeignKey, UniqueConstraint
+from datetime import datetime, timezone
+from sqlalchemy import Column, String, Text, DateTime, ForeignKey, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 from src.api.database.base import Base
@@ -36,7 +36,7 @@ class OAuthAccount(Base, SerializableMixin):
     # OAuth tokens (encrypted in production)
     access_token = Column(Text)  # OAuth access token
     refresh_token = Column(Text)  # OAuth refresh token (if provider supports it)
-    token_expires_at = Column(TIMESTAMP)  # When the access token expires
+    token_expires_at = Column(DateTime(timezone=True))  # When the access token expires
 
     # Account metadata
     provider_username = Column(String(255))  # Username from provider
@@ -44,9 +44,9 @@ class OAuthAccount(Base, SerializableMixin):
     provider_avatar_url = Column(String(500))  # Avatar URL from provider
 
     # Timestamps
-    created_at = Column(TIMESTAMP, nullable=False, default=lambda: datetime.now(timezone.utc))
-    updated_at = Column(TIMESTAMP, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
-    last_used_at = Column(TIMESTAMP)  # Last time this account was used to sign in
+    created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    last_used_at = Column(DateTime(timezone=True))  # Last time this account was used to sign in
 
     # Relationships
     user = relationship("Users", back_populates="oauth_accounts")

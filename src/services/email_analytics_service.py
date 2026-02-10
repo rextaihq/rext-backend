@@ -26,7 +26,7 @@ class EmailAnalyticsService:
 
     def _parse_date_range(self, date_range: str) -> datetime:
         """Parse date range string to start date"""
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
 
         if date_range.endswith('d'):
             days = int(date_range[:-1])

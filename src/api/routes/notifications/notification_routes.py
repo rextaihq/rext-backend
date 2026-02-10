@@ -76,7 +76,7 @@ async def get_notifications(
             except ValueError:
                 return error(
                     message="Invalid workspace_id format",
-                    code=ErrorCode.INVALID_INPUT,
+                    code=ErrorCode.INVALID_VALUE,
                     status_code=400,
                     severity=ErrorSeverity.LOW,
                     request=request
@@ -173,7 +173,7 @@ async def mark_notifications_as_read(
         if not notification_ids and not mark_all:
             return error(
                 message="You must provide either notification_ids or set mark_all=true",
-                code=ErrorCode.INVALID_INPUT,
+                code=ErrorCode.INVALID_VALUE,
                 status_code=400,
                 severity=ErrorSeverity.LOW,
                 request=request
@@ -216,7 +216,7 @@ async def mark_notifications_as_read(
                 except ValueError:
                     return error(
                         message=f"Invalid notification ID format: {nid}",
-                        code=ErrorCode.INVALID_INPUT,
+                        code=ErrorCode.INVALID_VALUE,
                         status_code=400,
                         severity=ErrorSeverity.LOW,
                         request=request
@@ -296,7 +296,7 @@ async def clear_notifications(
         if not notification_ids and not clear_all_read:
             return error(
                 message="You must provide either notification_ids or set clear_all_read=true",
-                code=ErrorCode.INVALID_INPUT,
+                code=ErrorCode.INVALID_VALUE,
                 status_code=400,
                 severity=ErrorSeverity.LOW,
                 request=request
@@ -339,7 +339,7 @@ async def clear_notifications(
                 except ValueError:
                     return error(
                         message=f"Invalid notification ID format: {nid}",
-                        code=ErrorCode.INVALID_INPUT,
+                        code=ErrorCode.INVALID_VALUE,
                         status_code=400,
                         severity=ErrorSeverity.LOW,
                         request=request
@@ -449,7 +449,7 @@ async def get_notification_by_id(
         except ValueError:
             return error(
                 message="Invalid notification ID format",
-                code=ErrorCode.INVALID_INPUT,
+                code=ErrorCode.INVALID_VALUE,
                 status_code=400,
                 severity=ErrorSeverity.LOW,
                 request=request

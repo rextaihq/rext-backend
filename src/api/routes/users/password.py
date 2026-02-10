@@ -150,7 +150,7 @@ async def reset_password(
             logger.warning(f"Invalid reset token: {str(e)}")
             return error(
                 message="Invalid or expired reset token",
-                code=ErrorCode.INVALID_INPUT,
+                code=ErrorCode.INVALID_VALUE,
                 status_code=400,
                 severity=ErrorSeverity.MEDIUM,
                 request=request
@@ -182,7 +182,7 @@ async def reset_password(
     except ResourceNotFoundException:
         return error(
             message="Invalid or expired reset token",
-            code=ErrorCode.INVALID_INPUT,
+            code=ErrorCode.INVALID_VALUE,
             status_code=400,
             severity=ErrorSeverity.MEDIUM,
             request=request
@@ -198,7 +198,9 @@ async def change_password(
     request: Request,
     password_data: ChangePasswordRequest,
     current_user: dict = Depends(get_current_user),
-    db: AsyncSession = Depends(get_async_db)
+    db: AsyncSession = Depends(get_async_db),
+    _rate_limit: None = Depends(password_reset_rate_limit())
+
 ):
     """
     Change user password (requires authentication).
@@ -270,7 +272,7 @@ async def change_password(
         logger.warning(f"Password change validation error for user {current_user.get('identity')}: {e.message}")
         return error(
             message=e.message,
-            code=ErrorCode.INVALID_INPUT,
+            code=ErrorCode.INVALID_VALUE,
             status_code=400,
             severity=ErrorSeverity.LOW,
             context={"details": e.details} if e.details else None,
@@ -290,7 +292,9 @@ async def verify_password(
     password_data: VerifyPasswordRequest,  # CHANGED: Added Pydantic schema parameter
     request: Request,  # CHANGED: Moved to second position
     db: AsyncSession = Depends(get_async_db),
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
+    _rate_limit: None = Depends(password_reset_rate_limit())
+
 ):
     """
     Verify user's current password.
@@ -317,7 +321,7 @@ async def verify_password(
             return error(
                 message="Password is required",
                 request=request,
-                code=ErrorCode.VALIDATION_ERROR,
+                code=ErrorCode.VALIDATION_FAILED,
                 status_code=400,
                 severity=ErrorSeverity.MEDIUM
             )
@@ -330,7 +334,7 @@ async def verify_password(
             return error(
                 message="Invalid password",
                 request=request,
-                code=ErrorCode.AUTHENTICATION_FAILED,
+                code=ErrorCode.UNAUTHORIZED,
                 status_code=401,
                 severity=ErrorSeverity.MEDIUM
             )
@@ -345,7 +349,7 @@ async def verify_password(
         return error(
             message="User not found",
             request=request,
-            code=ErrorCode.NOT_FOUND,
+            code=ErrorCode.RESOURCE_NOT_FOUND,
             status_code=404,
             severity=ErrorSeverity.HIGH
         )

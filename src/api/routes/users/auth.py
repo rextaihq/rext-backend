@@ -31,7 +31,8 @@ from src.api.models.user_models.notification_preferences import NotificationPref
 import os
 from src.api.middleware.rate_limiter import (
     login_rate_limit,
-    registration_rate_limit
+    registration_rate_limit,
+    oauth_rate_limit
 )
 from src.services.auth_service import AuthService
 from src.services.invitation_service import InvitationService
@@ -332,7 +333,7 @@ async def register_with_invitation(
             # Skip email verification for invited users
             # Rationale: Email was already validated by invitation system
             new_user.email_verified = True
-            new_user.email_verified_at = datetime.utcnow()
+            new_user.email_verified_at = datetime.now(timezone.utc)
             await db.flush()
 
             current_user = new_user
@@ -593,7 +594,7 @@ async def refresh_access_token(
         if not refresh_token:
             return error(
                 message="Refresh token is required",
-                code=ErrorCode.INVALID_INPUT,
+                code=ErrorCode.INVALID_VALUE,
                 status_code=400,
                 severity=ErrorSeverity.LOW,
                 request=request
@@ -739,7 +740,7 @@ async def resend_verification(
         if not email:
             return error(
                 message="Email is required",
-                code=ErrorCode.INVALID_INPUT,
+                code=ErrorCode.INVALID_VALUE,
                 status_code=400,
                 severity=ErrorSeverity.LOW,
                 request=request
@@ -784,9 +785,9 @@ async def resend_verification(
 
 @router.post("/oauth/login")
 async def oauth_login(
-    oauth_data: OAuthLoginRequest,  # CHANGED: Added Pydantic schema
-    request: Request,  # CHANGED: Moved to second position
-    db: AsyncSession = Depends(get_async_db)
+    request: Request,
+    db: AsyncSession = Depends(get_async_db),
+    _rate_limit: None = Depends(oauth_rate_limit())
 ):
     """
     Login or register user via OAuth provider.
@@ -926,7 +927,9 @@ async def link_oauth(
     oauth_data: OAuthLinkRequest,  # CHANGED: Added Pydantic schema
     request: Request,  # CHANGED: Moved to second position
     current_user: dict = Depends(get_current_user),
-    db: AsyncSession = Depends(get_async_db)
+    db: AsyncSession = Depends(get_async_db),
+    _rate_limit: None = Depends(oauth_rate_limit())
+
 ):
     """
     Link an OAuth account to the current user.
@@ -1007,7 +1010,9 @@ async def unlink_oauth(
     provider: str,
     request: Request,
     current_user: dict = Depends(get_current_user),
-    db: AsyncSession = Depends(get_async_db)
+    db: AsyncSession = Depends(get_async_db),
+    _rate_limit: None = Depends(oauth_rate_limit())
+
 ):
     """
     Unlink an OAuth account from the current user.
@@ -1033,10 +1038,10 @@ async def unlink_oauth(
         raise
     except Exception as e:
         logger.error(f"OAuth unlink failed: {str(e)}", exc_info=True)
-        return error(
+    return error(
             message="Failed to unlink OAuth account",
             code=ErrorCode.INTERNAL_SERVER_ERROR,
             status_code=500,
             severity=ErrorSeverity.HIGH,
             request=request
-        )
+        )  
