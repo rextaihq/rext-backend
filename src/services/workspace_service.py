@@ -1086,12 +1086,26 @@ class WorkspaceService:
             )
 
     def _delete_vectors_safe(self, workspace_id: UUID) -> None:
+        """
+        Attempt to delete vectors for a workspace. Logs errors but does not
+        propagate exceptions, allowing workspace deletion to proceed.
+        """
         try:
             delete_vectors(vector_id=str(workspace_id))
+            logger.info(
+                "Vector cleanup completed",
+                extra={"workspace_id": str(workspace_id)},
+            )
         except Exception as err:  # noqa: BLE001
-            logger.warning(
-                "Vector cleanup failed",
-                extra={"workspace_id": str(workspace_id), "error": str(err)},
+            logger.error(
+                "Vector cleanup failed — orphaned vectors may remain",
+                extra={
+                    "workspace_id": str(workspace_id),
+                    "error": str(err),
+                    "error_type": type(err).__name__,
+                    "action_required": "manual_vector_cleanup",
+                },
+                exc_info=True,
             )
 
     async def _ensure_unique_workspace_name(self, name: str, user_id: UUID) -> None:
