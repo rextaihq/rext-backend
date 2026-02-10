@@ -5,9 +5,11 @@ This module provides functions for managing subscription trial periods,
 including checking expirations, converting trials, and notifying users.
 """
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta,timezone
 from typing import List, Dict, Optional
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, delete, func
+
 from sqlalchemy import and_
 
 from src.api.models.subscription_models.subscriptions import (
@@ -51,7 +53,7 @@ def check_trial_expiration(
             "action_required": True
         }
 
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     days_remaining = (subscription.trial_end_date - now).days
 
     return {
@@ -63,7 +65,7 @@ def check_trial_expiration(
     }
 
 
-def expire_trial_subscriptions(db: Session) -> Dict[str, int]:
+async def expire_trial_subscriptions(db: AsyncSession) -> Dict[str, int]:
     """
     Find and expire all trial subscriptions that have passed their trial_end_date.
 
@@ -75,13 +77,16 @@ def expire_trial_subscriptions(db: Session) -> Dict[str, int]:
     Returns:
         Dict with counts of expired, converted, and downgraded subscriptions
     """
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
+
 
     # Find all expired trials
-    expired_trials = db.query(UserSubscription).filter(
+    stmt = select(UserSubscription).where(
         UserSubscription.status == SubscriptionStatus.TRIAL,
         UserSubscription.trial_end_date < now
-    ).all()
+    )
+    result = await db.execute(stmt)
+    expired_trials = result.scalars().all()
 
     expired_count = 0
     converted_count = 0
@@ -99,10 +104,12 @@ def expire_trial_subscriptions(db: Session) -> Dict[str, int]:
                 logger.info(f"Converted trial subscription {subscription.id} to active")
             else:
                 # No payment method - expire trial and downgrade to free plan
-                free_plan = db.query(SubscriptionPlan).filter(
+                stmt_plan = select(SubscriptionPlan).where(
                     SubscriptionPlan.name == "free",
                     SubscriptionPlan.is_active == True
-                ).first()
+                )
+                result_plan = await db.execute(stmt_plan)
+                free_plan = result_plan.scalar_one_or_none()
 
                 if free_plan:
                     subscription.plan_id = free_plan.id
@@ -118,11 +125,11 @@ def expire_trial_subscriptions(db: Session) -> Dict[str, int]:
                     logger.warning(f"Expired trial subscription {subscription.id} (no free plan found)")
 
             subscription.updated_at = now
-            db.commit()
+            await db.commit()
 
         except Exception as e:
             logger.error(f"Error processing expired trial {subscription.id}: {e}")
-            db.rollback()
+            await db.rollback()
             continue
 
     total_processed = converted_count + downgraded_count + expired_count
@@ -136,33 +143,25 @@ def expire_trial_subscriptions(db: Session) -> Dict[str, int]:
     }
 
 
-def get_trials_expiring_soon(
-    db: Session,
+async def get_trials_expiring_soon(
+    db: AsyncSession,
     days_threshold: int = 3
 ) -> List[Dict]:
-    """
-    Get all trial subscriptions that will expire within the specified days.
 
-    Useful for sending reminder emails to users.
-
-    Args:
-        db: Database session
-        days_threshold: Number of days to look ahead (default: 3)
-
-    Returns:
-        List of dicts with subscription and user information
-    """
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     threshold_date = now + timedelta(days=days_threshold)
 
-    expiring_trials = db.query(UserSubscription, Users, SubscriptionPlan).join(
-        Users, UserSubscription.user_id == Users.id
-    ).join(
-        SubscriptionPlan, UserSubscription.plan_id == SubscriptionPlan.id
-    ).filter(
-        UserSubscription.status == SubscriptionStatus.TRIAL,
-        UserSubscription.trial_end_date.between(now, threshold_date)
-    ).all()
+    result = await db.execute(
+        select(UserSubscription, Users, SubscriptionPlan)
+        .join(Users, UserSubscription.user_id == Users.id)
+        .join(SubscriptionPlan, UserSubscription.plan_id == SubscriptionPlan.id)
+        .where(
+            UserSubscription.status == SubscriptionStatus.TRIAL,
+            UserSubscription.trial_end_date.between(now, threshold_date)
+        )
+    )
+
+    expiring_trials = result.all()
 
     results = []
     for subscription, user, plan in expiring_trials:
@@ -178,64 +177,37 @@ def get_trials_expiring_soon(
             "has_payment_method": subscription.lemonsqueezy_subscription_id is not None
         })
 
-    logger.info(f"Found {len(results)} trial(s) expiring within {days_threshold} days")
     return results
 
-
-def extend_trial(
-    db: Session,
+async def extend_trial(
+    db: AsyncSession,
     subscription_id: str,
     extend_days: int,
     reason: Optional[str] = None
 ) -> UserSubscription:
-    """
-    Extend a trial period by specified number of days (admin function).
 
-    Args:
-        db: Database session
-        subscription_id: UUID of the subscription
-        extend_days: Number of days to extend trial
-        reason: Optional reason for extension (for audit log)
-
-    Returns:
-        Updated UserSubscription
-
-    Raises:
-        ValueError: If subscription not found or not in trial status
-    """
-    subscription = db.query(UserSubscription).filter(
-        UserSubscription.id == subscription_id
-    ).first()
+    result = await db.execute(
+        select(UserSubscription).where(UserSubscription.id == subscription_id)
+    )
+    subscription = result.scalar_one_or_none()
 
     if not subscription:
-        raise ValueError(f"Subscription {subscription_id} not found")
+        raise ValueError("Subscription not found")
 
     if subscription.status != SubscriptionStatus.TRIAL:
-        raise ValueError(f"Subscription {subscription_id} is not in trial status")
+        raise ValueError("Subscription not in trial")
 
-    if not subscription.trial_end_date:
-        raise ValueError(f"Subscription {subscription_id} has no trial end date")
-
-    # Extend the trial
     old_end_date = subscription.trial_end_date
-    subscription.trial_end_date = subscription.trial_end_date + timedelta(days=extend_days)
-    subscription.updated_at = datetime.utcnow()
+    subscription.trial_end_date += timedelta(days=extend_days)
+    subscription.updated_at = datetime.now(timezone.utc)
 
-    db.commit()
-    db.refresh(subscription)
-
-    logger.info(
-        f"Extended trial for subscription {subscription_id} by {extend_days} days "
-        f"(from {old_end_date.date()} to {subscription.trial_end_date.date()})"
-    )
-    if reason:
-        logger.info(f"Extension reason: {reason}")
+    await db.commit()
+    await db.refresh(subscription)
 
     return subscription
 
-
-def convert_trial_to_active(
-    db: Session,
+async def convert_trial_to_active(
+    db: AsyncSession,
     subscription_id: str,
     lemonsqueezy_subscription_id: Optional[str] = None
 ) -> UserSubscription:
@@ -243,7 +215,7 @@ def convert_trial_to_active(
     Manually convert a trial subscription to active (typically after payment confirmation).
 
     Args:
-        db: Database session
+        db: Database async session
         subscription_id: UUID of the subscription
         lemonsqueezy_subscription_id: Optional LemonSqueezy subscription ID to associate
 
@@ -253,91 +225,60 @@ def convert_trial_to_active(
     Raises:
         ValueError: If subscription not found or not in trial status
     """
-    subscription = db.query(UserSubscription).filter(
-        UserSubscription.id == subscription_id
-    ).first()
+    result = await db.execute(
+        select(UserSubscription).where(UserSubscription.id == subscription_id)
+    )
+    subscription = result.scalar_one_or_none()
 
     if not subscription:
-        raise ValueError(f"Subscription {subscription_id} not found")
+        raise ValueError("Subscription not found")
 
-    if subscription.status != SubscriptionStatus.TRIAL:
-        raise ValueError(f"Subscription {subscription_id} is not in trial status (current: {subscription.status})")
-
-    # Convert to active
     subscription.status = SubscriptionStatus.ACTIVE
-    subscription.trial_end_date = None  # Clear trial end date
+    subscription.trial_end_date = None
+
     if lemonsqueezy_subscription_id:
         subscription.lemonsqueezy_subscription_id = lemonsqueezy_subscription_id
-    subscription.updated_at = datetime.utcnow()
 
-    db.commit()
-    db.refresh(subscription)
+    subscription.updated_at = datetime.now(timezone.utc)
 
-    logger.info(f"Converted trial subscription {subscription_id} to active")
+    await db.commit()
+    await db.refresh(subscription)
+
     return subscription
 
+async def get_trial_statistics(db: AsyncSession) -> Dict:
+    now = datetime.now(timezone.utc)
 
-def get_trial_statistics(db: Session) -> Dict:
-    """
-    Get statistics about trial subscriptions.
+    active_trials = await db.scalar(
+        select(func.count()).where(UserSubscription.status == SubscriptionStatus.TRIAL)
+    )
 
-    Useful for admin dashboard and analytics.
-
-    Args:
-        db: Database session
-
-    Returns:
-        Dict with trial statistics
-    """
-    now = datetime.utcnow()
-
-    # Active trials
-    active_trials_count = db.query(UserSubscription).filter(
-        UserSubscription.status == SubscriptionStatus.TRIAL
-    ).count()
-
-    # Trials expiring in next 7 days
-    expiring_soon_count = db.query(UserSubscription).filter(
-        UserSubscription.status == SubscriptionStatus.TRIAL,
-        UserSubscription.trial_end_date.between(now, now + timedelta(days=7))
-    ).count()
-
-    # Trials with payment method
-    trials_with_payment = db.query(UserSubscription).filter(
-        UserSubscription.status == SubscriptionStatus.TRIAL,
-        UserSubscription.lemonsqueezy_subscription_id.isnot(None)
-    ).count()
-
-    # Trials without payment method
-    trials_without_payment = db.query(UserSubscription).filter(
-        UserSubscription.status == SubscriptionStatus.TRIAL,
-        UserSubscription.lemonsqueezy_subscription_id.is_(None)
-    ).count()
-
-    # Average trial length (from start_date to trial_end_date)
-    trials_with_dates = db.query(UserSubscription).filter(
-        UserSubscription.status == SubscriptionStatus.TRIAL,
-        UserSubscription.trial_end_date.isnot(None)
-    ).all()
-
-    avg_trial_days = 0
-    if trials_with_dates:
-        total_days = sum(
-            (sub.trial_end_date - sub.start_date).days
-            for sub in trials_with_dates
+    expiring_soon = await db.scalar(
+        select(func.count()).where(
+            UserSubscription.status == SubscriptionStatus.TRIAL,
+            UserSubscription.trial_end_date.between(now, now + timedelta(days=7))
         )
-        avg_trial_days = round(total_days / len(trials_with_dates), 1)
+    )
+
+    trials_with_payment = await db.scalar(
+        select(func.count()).where(
+            UserSubscription.status == SubscriptionStatus.TRIAL,
+            UserSubscription.lemonsqueezy_subscription_id.isnot(None)
+        )
+    )
+
+    trials_without_payment = await db.scalar(
+        select(func.count()).where(
+            UserSubscription.status == SubscriptionStatus.TRIAL,
+            UserSubscription.lemonsqueezy_subscription_id.is_(None)
+        )
+    )
 
     return {
-        "active_trials": active_trials_count,
-        "expiring_within_7_days": expiring_soon_count,
-        "trials_with_payment_method": trials_with_payment,
-        "trials_without_payment_method": trials_without_payment,
-        "average_trial_length_days": avg_trial_days,
-        "conversion_readiness_rate": round(
-            (trials_with_payment / active_trials_count * 100) if active_trials_count > 0 else 0,
-            1
-        )
+        "active_trials": active_trials or 0,
+        "expiring_within_7_days": expiring_soon or 0,
+        "trials_with_payment_method": trials_with_payment or 0,
+        "trials_without_payment_method": trials_without_payment or 0,
     }
 
 
