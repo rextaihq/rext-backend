@@ -164,8 +164,8 @@ class EmailService:
             subject=subject,
             status="queued",
             tags=tags,
-            created_at=datetime.utcnow(),
-            updated_at=datetime.utcnow()
+            created_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(timezone.utc)
         )
 
         self.db.add(email_log)
@@ -322,15 +322,15 @@ class EmailService:
         if result.success:
             email_log.status = "sent"
             email_log.provider_message_id = result.message_id
-            email_log.sent_at = datetime.utcnow()
+            email_log.sent_at = datetime.now(timezone.utc)
             email_log.error_message = None
         else:
             email_log.status = "failed"
             email_log.error_message = result.error
-            email_log.failed_at = datetime.utcnow()
+            email_log.failed_at = datetime.now(timezone.utc)
 
         email_log.provider_response = result.provider_response
-        email_log.updated_at = datetime.utcnow()
+        email_log.updated_at = datetime.now(timezone.utc)
 
     async def get_email_log(self, email_log_id: UUID) -> Optional[EmailLog]:
         """
@@ -416,7 +416,7 @@ class EmailService:
         """
         from datetime import timedelta
 
-        cutoff_time = datetime.utcnow() - timedelta(hours=hours)
+        cutoff_time = datetime.now(timezone.utc) - timedelta(hours=hours)
 
         result = await self.db.execute(
             select(EmailLog)
@@ -475,7 +475,7 @@ class EmailService:
         email_log.status = "queued"
         email_log.error_message = None
         email_log.failed_at = None
-        email_log.updated_at = datetime.utcnow()
+        email_log.updated_at = datetime.now(timezone.utc)
 
         # Try sending with current provider
         provider = get_email_provider()

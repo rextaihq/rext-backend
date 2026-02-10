@@ -6,10 +6,10 @@ enabling activation limit enforcement and management.
 """
 
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
-from sqlalchemy import Column, String, ForeignKey, TIMESTAMP, Boolean, Index
+from sqlalchemy import Column, String, ForeignKey, DateTime, Boolean, Index
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import relationship, Mapped, mapped_column
 from sqlalchemy.sql import func
@@ -69,18 +69,18 @@ class LicenseActivation(Base, SerializableMixin):
 
     # Timestamps
     activated_at: Mapped[datetime] = mapped_column(
-        TIMESTAMP(timezone=True),
+        DateTime(timezone=True),
         nullable=False,
         server_default=func.current_timestamp()
     )
 
     deactivated_at: Mapped[Optional[datetime]] = mapped_column(
-        TIMESTAMP(timezone=True),
+        DateTime(timezone=True),
         nullable=True
     )
 
     last_checked_at: Mapped[Optional[datetime]] = mapped_column(
-        TIMESTAMP(timezone=True),
+        DateTime(timezone=True),
         nullable=True,
         comment="Last time this activation was validated/checked"
     )
@@ -119,7 +119,7 @@ class LicenseActivation(Base, SerializableMixin):
     def deactivate(self):
         """Mark this activation as inactive."""
         self.is_active = False
-        self.deactivated_at = datetime.utcnow()
+        self.deactivated_at = datetime.now(timezone.utc)
 
 
 # Table indexes

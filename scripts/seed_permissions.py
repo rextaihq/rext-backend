@@ -459,7 +459,7 @@ async def create_permissions(db: AsyncSession) -> dict:
                 description=description,
                 resource=resource,
                 action=action,
-                created_at=datetime.utcnow()
+                created_at=datetime.now(timezone.utc)
             )
             db.add(perm)
             await db.flush()
@@ -526,7 +526,7 @@ async def assign_permissions_to_roles(db: AsyncSession, permission_map: dict):
                     id=uuid.uuid4(),
                     role_id=role.id,
                     permission_id=perm_id,
-                    created_at=datetime.utcnow()
+                    created_at=datetime.now(timezone.utc)
                 )
                 db.add(role_perm)
                 assigned_count += 1

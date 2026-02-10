@@ -326,7 +326,7 @@ class StorageService:
         Returns:
             Generated filename path
         """
-        timestamp = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
+        timestamp = datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')
 
         # Create hash for uniqueness
         hash_input = f"{original_filename}{workspace_id}{user_id}{timestamp}"

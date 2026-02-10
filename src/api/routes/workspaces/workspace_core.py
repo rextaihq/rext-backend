@@ -297,7 +297,7 @@ async def delete_workspace_endpoint(
         from datetime import datetime, timedelta
 
         email_service = EmailService(db)
-        recovery_date = (datetime.utcnow() + timedelta(days=30)).strftime("%B %d, %Y")
+        recovery_date = (datetime.now(timezone.utc) + timedelta(days=30)).strftime("%B %d, %Y")
 
         await email_service.send_email(
             to_email=db_user.email,

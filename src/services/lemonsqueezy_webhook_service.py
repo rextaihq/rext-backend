@@ -218,7 +218,7 @@ class LemonSqueezyWebhookService:
             payload=webhook_data.get("raw_payload", {}),
             processed=False,
             retry_count=0,
-            created_at=datetime.utcnow()
+            created_at=datetime.now(timezone.utc)
         )
 
         try:
@@ -297,7 +297,7 @@ class LemonSqueezyWebhookService:
             webhook_event: Database record to update
         """
         webhook_event.processed = True
-        webhook_event.processed_at = datetime.utcnow()
+        webhook_event.processed_at = datetime.now(timezone.utc)
         webhook_event.error_message = None
 
         await self.db.flush()

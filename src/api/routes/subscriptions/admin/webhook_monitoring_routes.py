@@ -173,7 +173,7 @@ async def get_failed_webhook_events(
     await require_super_admin(db, admin_user_id)
 
     # Calculate time filter
-    since_date = datetime.utcnow() - timedelta(hours=hours)
+    since_date = datetime.now(timezone.utc) - timedelta(hours=hours)
 
     # Build filters for failed events
     filters = [
@@ -228,7 +228,7 @@ async def get_failed_webhook_events(
         event_dict["status"] = "failed"
         # Include time since failure
         if event.created_at:
-            minutes_ago = int((datetime.utcnow() - event.created_at).total_seconds() / 60)
+            minutes_ago = int((datetime.now(timezone.utc) - event.created_at).total_seconds() / 60)
             event_dict["minutes_since_failure"] = minutes_ago
         events_data.append(event_dict)
 
@@ -299,7 +299,7 @@ async def retry_failed_webhook(
     webhook_event.processed = False
     webhook_event.error_message = None  # Clear error to allow retry
     webhook_event.retry_count += 1
-    webhook_event.updated_at = datetime.utcnow()
+    webhook_event.updated_at = datetime.now(timezone.utc)
 
     await db.commit()
     await db.refresh(webhook_event)
@@ -335,7 +335,7 @@ async def get_webhook_statistics(
     await require_super_admin(db, admin_user_id)
 
     # Calculate time filter
-    since_date = datetime.utcnow() - timedelta(days=days)
+    since_date = datetime.now(timezone.utc) - timedelta(days=days)
 
     # Get overall statistics
     overall_query = select(

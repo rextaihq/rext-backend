@@ -37,7 +37,7 @@ async def send_invitation_reminders(db: AsyncSession):
         Number of reminders sent
     """
     settings = get_settings()
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     two_days_from_now = now + timedelta(days=2)
 
     # Query invitations that:
