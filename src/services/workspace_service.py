@@ -967,7 +967,7 @@ class WorkspaceService:
         """
         result = await self.db.execute(
             select(Role).where(
-                Role.name == "workspace_owner", Role.is_workspace_role == True
+                Role.name == "workspace_owner", Role.is_workspace_role.is_(True)
             )
         )
         role = result.scalar_one_or_none()

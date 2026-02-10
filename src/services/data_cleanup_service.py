@@ -342,7 +342,7 @@ class DataCleanupService:
             select(func.count(WebhookEvent.id))
             .where(
                 WebhookEvent.created_at < cutoff_date,
-                WebhookEvent.processed == True
+                WebhookEvent.processed.is_(True)
             )
         )
         record_count = count_result.scalar()
@@ -360,7 +360,7 @@ class DataCleanupService:
                     delete(WebhookEvent)
                     .where(
                         WebhookEvent.created_at < cutoff_date,
-                        WebhookEvent.processed == True
+                        WebhookEvent.processed.is_(True)
                     )
                     .execution_options(synchronize_session=False)
                     .returning(WebhookEvent.id)

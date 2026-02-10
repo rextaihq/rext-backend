@@ -1,12 +1,13 @@
 from typing import Annotated, Any, Optional
 from uuid import UUID
-
+from src.utils.url_validator import SSRFValidationError
 from fastapi import APIRouter, BackgroundTasks, Body, Depends, File, Request, UploadFile
 from pydantic import BaseModel, HttpUrl, constr
 from sqlalchemy.ext.asyncio import AsyncSession
 from src.api.database.async_database import get_async_db
 from src.api.middleware.exceptions import RextValidationException
 from src.api.middleware.usage_limiter import check_knowledge_item_limit
+from src.api.middleware.usage_limiter import check_embedding_rate_limit
 from src.api.security.dependencies import get_current_user
 from src.services.knowledge_service import KnowledgeService
 from src.utils.auth_utils import verify_current_user
@@ -145,6 +146,8 @@ async def list_web_knowledge(
 
 @router.post("/web")
 @db_transaction_handler("create web knowledge", "Web knowledge created successfully")
+@router.post("/web")
+@db_transaction_handler("create web knowledge", "Web knowledge created successfully")
 @require_permissions("knowledge.create", workspace_scoped=True)
 async def create_web_knowledge(
     workspace_id: str,
@@ -154,6 +157,7 @@ async def create_web_knowledge(
     db: AsyncSession = Depends(get_async_db),
     user: dict = Depends(get_current_user),
     _: None = Depends(check_knowledge_item_limit()),
+    _rate: None = Depends(check_embedding_rate_limit()),  # ADD THIS
 ):
     """Create a new web knowledge entry by scraping a URL."""
     workspace, _ = await _resolve_workspace(
@@ -194,7 +198,11 @@ async def create_web_knowledge(
             request=request,
             message="Web knowledge added and processed successfully",
         )
-    except Exception as e:
+    except SSRFValidationError as e:
+        raise RextValidationException(
+            message="The provided URL is not allowed",
+            field_errors={"url": [str(e)]}
+        )
         # Schedule failure notification
         await schedule_if_allowed(
             db=db,

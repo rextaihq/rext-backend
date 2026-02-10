@@ -62,8 +62,8 @@ class ContentMedia(Base, SerializableMixin):
     )
 
     # Relationships
-    content = relationship("Content", backref="media_items")
-    media = relationship("Media", backref="used_in_content")
+    content = relationship("Content", back_populates="media_items")
+    media = relationship("Media", back_populates="used_in_content")
 
     def __repr__(self) -> str:
         return f"<ContentMedia(content_id={self.content_id}, media_id={self.media_id})>"

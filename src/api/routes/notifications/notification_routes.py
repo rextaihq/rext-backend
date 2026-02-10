@@ -55,13 +55,13 @@ async def get_notifications(
         # Build base query - exclude deleted and archived by default
         base_conditions = [
             Notification.user_id == user_id,
-            Notification.is_deleted == False,
-            Notification.is_archived == False,
+            Notification.is_deleted.is_(False),
+            Notification.is_archived.is_(False),
         ]
         
         # Add optional filters
         if unread_only:
-            base_conditions.append(Notification.is_read == False)
+            base_conditions.append(Notification.is_read.is_(False))
         
         if type:
             base_conditions.append(Notification.type == type)
@@ -91,9 +91,9 @@ async def get_notifications(
         unread_query = select(func.count(Notification.id)).where(
             and_(
                 Notification.user_id == user_id,
-                Notification.is_read == False,
-                Notification.is_deleted == False,
-                Notification.is_archived == False,
+                Notification.is_read.is_(False),
+                Notification.is_deleted.is_(False),
+                Notification.is_archived.is_(False),
             )
         )
         unread_result = await db.execute(unread_query)
@@ -184,8 +184,8 @@ async def mark_notifications_as_read(
             query = select(Notification).where(
                 and_(
                     Notification.user_id == user_id,
-                    Notification.is_read == False,
-                    Notification.is_deleted == False,
+                    Notification.is_read.is_(False),
+                    Notification.is_deleted.is_(False),
                 )
             )
             result = await db.execute(query)
@@ -227,7 +227,7 @@ async def mark_notifications_as_read(
                 and_(
                     Notification.id.in_(notification_uuids),
                     Notification.user_id == user_id,
-                    Notification.is_deleted == False,
+                    Notification.is_deleted.is_(False),
                 )
             )
             result = await db.execute(query)
@@ -307,8 +307,8 @@ async def clear_notifications(
             query = select(Notification).where(
                 and_(
                     Notification.user_id == user_id,
-                    Notification.is_read == True,
-                    Notification.is_deleted == False,
+                    Notification.is_read.is_(True),
+                    Notification.is_deleted.is_(False),
                 )
             )
             result = await db.execute(query)
@@ -350,7 +350,7 @@ async def clear_notifications(
                 and_(
                     Notification.id.in_(notification_uuids),
                     Notification.user_id == user_id,
-                    Notification.is_deleted == False,
+                    Notification.is_deleted.is_(False),
                 )
             )
             result = await db.execute(query)
@@ -406,9 +406,9 @@ async def get_unread_count(
         query = select(func.count(Notification.id)).where(
             and_(
                 Notification.user_id == user_id,
-                Notification.is_read == False,
-                Notification.is_deleted == False,
-                Notification.is_archived == False,
+                Notification.is_read.is_(False),
+                Notification.is_deleted.is_(False),
+                Notification.is_archived.is_(False),
             )
         )
         result = await db.execute(query)
@@ -460,7 +460,7 @@ async def get_notification_by_id(
             and_(
                 Notification.id == notification_uuid,
                 Notification.user_id == user_id,
-                Notification.is_deleted == False,
+                Notification.is_deleted.is_(False),
             )
         )
         result = await db.execute(query)

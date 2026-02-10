@@ -161,7 +161,7 @@ class WebhookMonitoringService:
         try:
             # Build conditions for failed webhooks
             conditions = [
-                WebhookEvent.processed == False,
+                WebhookEvent.processed.is_(False),
                 WebhookEvent.error_message.isnot(None)
             ]
 
@@ -349,7 +349,7 @@ class WebhookMonitoringService:
 
             # Processed successfully
             stmt_processed = select(func.count(WebhookEvent.id)).where(
-                WebhookEvent.processed == True,
+                WebhookEvent.processed.is_(True),
                 WebhookEvent.error_message.is_(None),
                 *time_condition
             )
@@ -366,7 +366,7 @@ class WebhookMonitoringService:
 
             # Pending (not processed, no error)
             stmt_pending = select(func.count(WebhookEvent.id)).where(
-                WebhookEvent.processed == False,
+                WebhookEvent.processed.is_(False),
                 WebhookEvent.error_message.is_(None),
                 *time_condition
             )
