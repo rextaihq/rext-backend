@@ -7,10 +7,11 @@ import uuid
 from sqlalchemy import Boolean, Column, DateTime, String
 from sqlalchemy.dialects.postgresql import UUID
 
-from src.api.database.base import Base  
+from src.api.database.base import Base
+from src.api.models.base import SerializableMixin  
 
 
-class ImpersonationSession(Base):
+class ImpersonationSession(Base, SerializableMixin):
     """
     Store invalidated impersonation sessions.
     

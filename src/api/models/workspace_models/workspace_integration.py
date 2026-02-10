@@ -1,13 +1,14 @@
+
 from sqlalchemy import Column, String, Boolean, DateTime, ForeignKey, Text
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import relationship
 from src.api.database.base import Base
-from src.api.models.base import SerializableMixin
+from src.api.models.base import SerializableMixin, SoftDeleteMixin
 from datetime import datetime, timezone
 import uuid
 
 
-class WorkspaceIntegration(Base, SerializableMixin):
+class WorkspaceIntegration(Base, SerializableMixin, SoftDeleteMixin):
     """
     Connected Site Model
     
@@ -33,7 +34,6 @@ class WorkspaceIntegration(Base, SerializableMixin):
     # Timestamps
     created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime(timezone=True), nullable=True, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
-    deleted_at = Column(DateTime(timezone=True), nullable=True)
 
     # Relationships
     workspace = relationship("WorkspaceModel", back_populates="integrations")

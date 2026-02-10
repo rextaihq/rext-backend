@@ -100,9 +100,9 @@ class TrialConversion(Base, SerializableMixin):
     )
 
     # Relationships
-    user = relationship("Users", backref="trial_conversions")
-    subscription = relationship("UserSubscription", backref="trial_conversions")
-    plan = relationship("SubscriptionPlan", backref="trial_conversions")
+    user = relationship("Users", back_populates="trial_conversions")
+    subscription = relationship("UserSubscription", back_populates="trial_conversions")
+    plan = relationship("SubscriptionPlan", back_populates="trial_conversions")
 
     def __repr__(self):
         return f"<TrialConversion(id={self.id}, user_id={self.user_id}, converted_at={self.converted_at})>"

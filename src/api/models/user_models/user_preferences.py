@@ -11,9 +11,10 @@ from datetime import datetime
 import uuid
 
 from src.api.database.base import Base
+from src.api.models.base import SerializableMixin
 
 
-class UserPreferences(Base):
+class UserPreferences(Base, SerializableMixin):
     """User preferences for UI and behavior customization"""
 
     __tablename__ = "user_preferences"
@@ -36,16 +37,4 @@ class UserPreferences(Base):
     user = relationship("Users", back_populates="preferences")
 
 
-    def to_dict(self):
-        """Convert to dictionary"""
-        return {
-            "id": str(self.id),
-            "user_id": str(self.user_id),
-            "theme": self.theme,
-            "date_format": self.date_format,
-            "time_format": self.time_format,
-            "items_per_page": self.items_per_page,
-            "sidebar_collapsed": self.sidebar_collapsed,
-            "created_at": self.created_at.isoformat() if self.created_at else None,
-            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
-        }
+    

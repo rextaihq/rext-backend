@@ -50,7 +50,7 @@ class License(Base, SerializableMixin):
     license_metadata = Column(JSONB, default=dict, nullable=False)
 
     # Relationships
-    user = relationship("Users", backref="licenses")
+    user = relationship("Users", back_populates="licenses")
     activations = relationship("LicenseActivation", back_populates="license", cascade="all, delete-orphan")
 
     def __repr__(self):

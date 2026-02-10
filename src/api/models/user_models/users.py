@@ -7,13 +7,13 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 from src.api.database.base import Base
-from src.api.models.base import SerializableMixin
+from src.api.models.base import SerializableMixin, SoftDeleteMixin
 from src.api.models.workspace_models.workspace_member import WorkspaceMembers
 
 # -------------------------
 # Users
 # -------------------------
-class Users(Base, SerializableMixin):
+class Users(Base, SerializableMixin, SoftDeleteMixin):
     __tablename__ = "users"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, unique=True, nullable=False)
@@ -38,7 +38,6 @@ class Users(Base, SerializableMixin):
     created_at = Column(TIMESTAMP, nullable=False, default=lambda: datetime.now(timezone.utc))
     updated_at = Column(TIMESTAMP, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
     deactivated_at = Column(TIMESTAMP)
-    deleted_at = Column(TIMESTAMP)
 
     # Relationships
     user_roles = relationship("UserRole", back_populates="user", foreign_keys="UserRole.user_id")
@@ -55,6 +54,10 @@ class Users(Base, SerializableMixin):
     onboarding = relationship("UserOnboarding", back_populates="user", uselist=False, cascade="all, delete-orphan")
     discount_usages = relationship("DiscountUsage", back_populates="user", cascade="all, delete-orphan")
     refunds = relationship("Refund", back_populates="user", cascade="all, delete-orphan")
+    subscriptions = relationship("UserSubscription", back_populates="user", cascade="all, delete-orphan")
+    trial_conversions = relationship("TrialConversion", back_populates="user", cascade="all, delete-orphan")
+    licenses = relationship("License", back_populates="user")
+    payment_methods = relationship("PaymentMethod", back_populates="user", cascade="all, delete-orphan")
     notifications = relationship("Notification", back_populates="user", cascade="all, delete-orphan")
 
     # Admin invitation relationships
