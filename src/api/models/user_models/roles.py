@@ -1,7 +1,7 @@
 from sqlalchemy import Column, String, Boolean, Integer, Text, TIMESTAMP, ForeignKey, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import relationship
-from datetime import datetime
+from datetime import datetime,timezone
 import uuid
 from src.api.database.base import Base
 from src.api.models.base import SerializableMixin
@@ -25,8 +25,8 @@ class Role(Base, SerializableMixin):
     is_system_role = Column(Boolean, default=False)
     is_workspace_role = Column(Boolean, default=False, nullable=False)
 
-    created_at = Column(TIMESTAMP, default=datetime.utcnow)
-    updated_at = Column(TIMESTAMP, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(TIMESTAMP, nullable=False, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(TIMESTAMP, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
     # Relationships
     permissions = relationship("RolePermission", back_populates="role")

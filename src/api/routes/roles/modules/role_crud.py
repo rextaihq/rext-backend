@@ -27,11 +27,13 @@ router = APIRouter()
 async def list_roles(
     request: Request,
     include_permissions: bool = Query(False, description="Include permissions for each role"),
+    page: int = Query(1, ge=1, description="Page number"),
+    per_page: int = Query(50, ge=1, le=100, description="Items per page"),
     db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user)
 ):
     """
-    List all roles.
+    List all roles with pagination.
 
     **Security: Requires role.read permission**
 
@@ -40,28 +42,30 @@ async def list_roles(
 
     Query Parameters:
     - include_permissions: If true, include permissions for each role
+    - page: Page number (default 1)
+    - per_page: Items per page (default 50, max 100)
 
     Returns:
-    - List of roles sorted by hierarchy_level (descending)
+    - Paginated list of roles sorted by hierarchy_level (descending)
 
     Raises:
         HTTPException: 401 if not authenticated, 403 if insufficient permissions
     """
 
     service = RoleService(db)
-    roles = await service.get_role_hierarchy()
+    result = await service.get_role_hierarchy(page=page, per_page=per_page)
 
     # Format response
     if include_permissions:
         roles_data = []
-        for role in roles:
+        for role in result["roles"]:
             role_data = await service.get_role_with_permissions(role.id)
             roles_data.append(role_data)
     else:
-        roles_data = [role.to_dict() for role in roles]
+        roles_data = [role.to_dict() for role in result["roles"]]
 
     return {
-        "data": {"roles": roles_data, "count": len(roles_data)},
+        "data": {"roles": roles_data, "count": len(roles_data), "pagination": result["pagination"]},
         "message": f"Retrieved {len(roles_data)} roles"
     }
 

@@ -131,7 +131,7 @@ class LicenseResponse(BaseModel):
             "example": {
                 "id": "123e4567-e89b-12d3-a456-426614174000",
                 "license_key": "XXXX-XXXX-XXXX-XXXX",
-                "product_name": "WREXT Pro License",
+                "product_name": "REXT Pro License",
                 "status": "active",
                 "activation_limit": 3,
                 "activation_count": 1,

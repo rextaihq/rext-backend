@@ -22,7 +22,7 @@ from src.api.schema.content_schema import (
 )
 from src.api.middleware.exceptions import (
     ResourceNotFoundException,
-    WrextValidationException
+    RextValidationException
 )
 
 
@@ -71,9 +71,12 @@ class TestContentServiceCreate:
             body_markdown="# Full Content",
             status="draft",
             content_language="Spanish",
-            meta_title="SEO Title",
-            meta_description="SEO Description",
-            focus_keyphrase="keyphrase",
+            seo_data=ContentSEODataSchema(
+                meta_title="SEO Title",
+                meta_description="SEO Description",
+                focus_keyphrase="keyphrase",
+                trust_score=0.95
+            ),
             tags=["tag1", "tag2"]
         )
 
@@ -93,6 +96,7 @@ class TestContentServiceCreate:
         assert content.meta_title == "SEO Title"
         assert content.meta_description == "SEO Description"
         assert content.focus_keyphrase == "keyphrase"
+        assert content.seo_data.trust_score == 0.95
         assert content.tags == ["tag1", "tag2"]
 
     @pytest.mark.asyncio
@@ -241,7 +245,7 @@ class TestContentServiceUpdate:
         service = ContentService(db_session)
 
         # Act & Assert
-        with pytest.raises(WrextValidationException) as exc:
+        with pytest.raises(RextValidationException) as exc:
             await service.update_content(
                 content_id=content.id,
                 workspace_id=workspace.id,
@@ -323,7 +327,7 @@ class TestContentServicePublish:
         service = ContentService(db_session)
 
         # Act & Assert
-        with pytest.raises(WrextValidationException) as exc:
+        with pytest.raises(RextValidationException) as exc:
             await service.publish_content(
                 content_id=content.id,
                 workspace_id=workspace.id,
@@ -355,7 +359,7 @@ class TestContentServiceStatusTransitions:
         """Test draft → published transition is NOT allowed"""
         service = ContentService(db_session)
 
-        with pytest.raises(WrextValidationException) as exc:
+        with pytest.raises(RextValidationException) as exc:
             await service._validate_status_transition("draft", "published")
 
         assert "transition" in str(exc.value).lower()

@@ -19,8 +19,8 @@ from src.api.models.subscription_models.plans import SubscriptionPlan
 from src.api.models.user_models.users import Users
 from src.api.middleware.exceptions import (
     ResourceNotFoundException,
-    WrextValidationException as ValidationException,
-    WrextAuthorizationException as UnauthorizedException
+    RextValidationException as ValidationException,
+    RextAuthorizationException as UnauthorizedException
 )
 from src.utils.logger import logger
 

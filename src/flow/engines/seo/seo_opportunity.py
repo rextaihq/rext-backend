@@ -1,10 +1,9 @@
 from typing import Dict
-from src.flow.states.wrext import WREXT
+from src.flow.states.rext import REXT
 from src.flow.states.seo_state import SEORESULT
 
 
-def seo_opportunity_node(state: WREXT) -> Dict[str, SEORESULT]:
-    print("Seo Oppournity....")
+def seo_opportunity_node(state: REXT) -> Dict[str, SEORESULT]:
     seo = state.get("seo_result", {})
 
     kd = seo.get("keyword_difficulty", {})

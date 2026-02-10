@@ -52,7 +52,7 @@ class TestSendAuthEmail:
                 user_name="John Doe",
                 user_id=sample_user_id,
                 token="test-token-123",
-                frontend_url="https://app.wrext.com"
+                frontend_url="https://app.rext.com"
             )
 
             # Assertions
@@ -60,12 +60,12 @@ class TestSendAuthEmail:
             mock_template.assert_called_once_with(
                 user_name="John Doe",
                 verification_token="test-token-123",
-                frontend_url="https://app.wrext.com"
+                frontend_url="https://app.rext.com"
             )
             mock_email_service_instance.send_email.assert_called_once()
             call_args = mock_email_service_instance.send_email.call_args[1]
             assert call_args['to'] == "test@example.com"
-            assert call_args['subject'] == "Verify Your Email Address - WREXT"
+            assert call_args['subject'] == "Verify Your Email Address - REXT"
             assert call_args['user_id'] == sample_user_id
 
     @pytest.mark.asyncio
@@ -88,7 +88,7 @@ class TestSendAuthEmail:
                 user_name="Jane Smith",
                 user_id=sample_user_id,
                 token="reset-token-456",
-                frontend_url="https://app.wrext.com"
+                frontend_url="https://app.rext.com"
             )
 
             # Assertions
@@ -118,14 +118,14 @@ class TestSendAuthEmail:
                 recipient_email="newuser@example.com",
                 user_name="New User",
                 user_id=sample_user_id,
-                frontend_url="https://app.wrext.com"
+                frontend_url="https://app.rext.com"
             )
 
             # Assertions
             assert result is True
             mock_template.assert_called_once_with(
                 user_name="New User",
-                frontend_url="https://app.wrext.com"
+                frontend_url="https://app.rext.com"
             )
 
     @pytest.mark.asyncio
@@ -144,7 +144,7 @@ class TestSendAuthEmail:
                 user_name="Test User",
                 user_id=sample_user_id,
                 token="token",
-                frontend_url="https://app.wrext.com",
+                frontend_url="https://app.rext.com",
                 background_tasks=mock_background_tasks
             )
 
@@ -186,7 +186,7 @@ class TestSendAuthEmail:
                 user_name="Test User",
                 user_id=sample_user_id,
                 token="token",
-                frontend_url="https://app.wrext.com"
+                frontend_url="https://app.rext.com"
             )
 
             # Should return False on error

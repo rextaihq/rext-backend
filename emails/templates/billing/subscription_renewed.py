@@ -13,8 +13,8 @@ def render_subscription_renewed_email(
     amount: str,
     renewal_date: str,
     next_billing_date: str,
-    dashboard_url: str = "https://app.wrext.com/settings/billing",
-    frontend_url: str = "https://app.wrext.com"
+    dashboard_url: str = "https://app.rext.com/settings/billing",
+    frontend_url: str = "https://app.rext.com"
 ) -> str:
     """
     Render subscription renewed email template.
@@ -45,7 +45,7 @@ def render_subscription_renewed_email(
             Hi {user_name},
         </p>
         <p style="color: #374151; font-size: 16px; line-height: 24px; margin: 0 0 24px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
-            Great news! Your <strong>{plan_name}</strong> subscription has been successfully renewed. Thank you for continuing with WREXT!
+            Great news! Your <strong>{plan_name}</strong> subscription has been successfully renewed. Thank you for continuing with REXT!
         </p>
         """,
         f"""
@@ -92,7 +92,7 @@ def render_subscription_renewed_email(
             You can view your invoice, update payment methods, or manage your subscription from your billing dashboard.
         </p>
         <p style="color: #6b7280; font-size: 14px; line-height: 20px; margin: 16px 0 0 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
-            Thank you for being a valued WREXT customer!
+            Thank you for being a valued REXT customer!
         </p>
         """,
         simple_footer()

@@ -15,7 +15,7 @@ def render_content_generation_completed_email(
     generated_at: str,
     word_count: int,
     ai_model: str = "GPT-4",
-    frontend_url: str = "https://app.wrext.com"
+    frontend_url: str = "https://app.rext.com"
 ) -> str:
     """
     Render content generation completed email template.

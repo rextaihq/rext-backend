@@ -1,5 +1,4 @@
 from fastapi import APIRouter, Depends, Request
-import requests
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from uuid import UUID
@@ -9,7 +8,7 @@ from src.utils.logger import logger
 from src.utils.route_decorators import db_transaction_handler, require_permissions
 from src.api.database.async_database import get_async_db
 from src.api.security.dependencies import get_current_user
-from src.api.middleware.exceptions import WrextValidationException
+from src.api.middleware.exceptions import RextValidationException
 from src.api.schema.content_schema import (
     WorkspaceIntegrationCreate, 
     WorkspaceIntegrationUpdate, 
@@ -68,12 +67,12 @@ async def connect_site(
                 api_endpoint=data.api_endpoint,
                 api_key=data.api_key
             )
-            wp_publisher.validate_plugin()
+            await wp_publisher.validate_plugin()
             logger.info("Rext-AI validation successful")
             
         except Exception as e:
             logger.error(f"Site connection validation failed: {str(e)}")
-            raise WrextValidationException(
+            raise RextValidationException(
                 message=f"Failed to connect to the Rext-AI plugin. Please check your Site URL and API Key.",
                 context={"error": str(e)}
             )
@@ -115,7 +114,7 @@ async def get_site_details(
     site = result.scalar_one_or_none()
     
     if not site:
-        raise WrextValidationException(message="Site not found", context={"site_id": str(site_id)})
+        raise RextValidationException(message="Site not found", context={"site_id": str(site_id)})
         
     return {"site": site.to_dict()}
 
@@ -142,7 +141,7 @@ async def update_site(
     site = result.scalar_one_or_none()
     
     if not site:
-        raise WrextValidationException(message="Site not found", context={"site_id": str(site_id)})
+        raise RextValidationException(message="Site not found", context={"site_id": str(site_id)})
     
     if data.integration_type is not None: site.integration_type = data.integration_type
     if data.is_active is not None: site.is_active = data.is_active
@@ -176,7 +175,7 @@ async def delete_site(
     site = result.scalar_one_or_none()
     
     if not site:
-        raise WrextValidationException(message="Site not found", context={"site_id": str(site_id)})
+        raise RextValidationException(message="Site not found", context={"site_id": str(site_id)})
     
     await db.delete(site)
     
@@ -203,7 +202,7 @@ async def activate_site(
     site = result.scalar_one_or_none()
     
     if not site:
-        raise WrextValidationException(message="Site not found", context={"site_id": str(site_id)})
+        raise RextValidationException(message="Site not found", context={"site_id": str(site_id)})
     
     site.is_active = True
     return {"site": site.to_dict()}
@@ -229,7 +228,7 @@ async def deactivate_site(
     site = result.scalar_one_or_none()
     
     if not site:
-        raise WrextValidationException(message="Site not found", context={"site_id": str(site_id)})
+        raise RextValidationException(message="Site not found", context={"site_id": str(site_id)})
     
     site.is_active = False
     return {"site": site.to_dict()}
@@ -258,7 +257,7 @@ async def publish_to_site(
     site = site_result.scalar_one_or_none()
     
     if not site:
-        raise WrextValidationException(message="Site not found", context={"site_id": str(site_id)})
+        raise RextValidationException(message="Site not found", context={"site_id": str(site_id)})
     
     # Fetch content
     content_query = select(Content).where(
@@ -269,7 +268,7 @@ async def publish_to_site(
     content = content_result.scalar_one_or_none()
     
     if not content:
-        raise WrextValidationException(message="Content not found", context={"content_id": str(content_id)})
+        raise RextValidationException(message="Content not found", context={"content_id": str(content_id)})
     
     if site.integration_type.lower() == "wordpress":
         wp_publisher = WordPressPublisher(
@@ -280,7 +279,7 @@ async def publish_to_site(
         
         try:
             from datetime import timezone
-            result = wp_publisher.publish_post(
+            result = await wp_publisher.publish_post(
                 title=content.title,
                 content=content.body_markdown or content.body_html or "",
                 status=data.status,
@@ -299,6 +298,6 @@ async def publish_to_site(
             }
         except Exception as e:
             logger.error(f"Failed to publish to WordPress: {e}")
-            raise WrextValidationException(message=f"Publishing failed: {str(e)}")
+            raise RextValidationException(message=f"Publishing failed: {str(e)}")
     else:
-        raise WrextValidationException(message=f"Site type {site.integration_type} not supported for publishing yet")
+        raise RextValidationException(message=f"Site type {site.integration_type} not supported for publishing yet")

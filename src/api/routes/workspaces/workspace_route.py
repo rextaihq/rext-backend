@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.database.async_database import get_async_db
-from src.api.middleware.exceptions import WrextValidationException
+from src.api.middleware.exceptions import RextValidationException
 from src.api.middleware.usage_limiter import check_workspace_limit
 from src.api.schema.workspace_schema import WorkspaceSchema
 from src.api.security.dependencies import get_current_user
@@ -86,8 +86,8 @@ async def get_workspace_by_id(
 @traceable(
     name="Create Workspace",
     metadata={"description": "Creates a new workspace and launches onboarding pipeline."},
-    tags=["Workspace", "Create", "Pipeline", "WREXT"],
-    project_name="WREXT"
+    tags=["Workspace", "Create", "Pipeline", "REXT"],
+    project_name="REXT"
 )
 async def create_workspace(
     data: WorkspaceSchema,
@@ -104,13 +104,13 @@ async def create_workspace(
     progress.
     """
     if not data.name:
-        raise WrextValidationException(
+        raise RextValidationException(
             message="Workspace name is required",
             field_errors={"name": ["Name must be provided"]},
         )
 
     if not data.url:
-        raise WrextValidationException(
+        raise RextValidationException(
             message="Workspace URL is required",
             field_errors={"url": ["URL must be provided and valid"]},
         )

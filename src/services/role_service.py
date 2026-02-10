@@ -33,9 +33,9 @@ from src.api.models.workspace_models.workspace_member import WorkspaceMembers
 from src.utils.logger import logger
 from src.api.middleware.exceptions import (
     DuplicateResourceException,
-    WrextValidationException,
+    RextValidationException,
     ResourceNotFoundException,
-    WrextAPIException
+    RextAPIException
 )
 
 
@@ -196,14 +196,14 @@ class RoleService:
 
         Raises:
             ResourceNotFoundException: If role not found
-            WrextAPIException: If trying to update system role
+            RextAPIException: If trying to update system role
             DuplicateResourceException: If display_name already exists
         """
         role = await self.get_role_by_id(role_id)
 
         # Check if protected role (system roles or standard workspace roles)
         if self._is_protected_role(role):
-            raise WrextValidationException(
+            raise RextValidationException(
                 message=f"Cannot update protected role '{role.name}'",
                 field_errors={"role_id": ["Protected roles (platform roles and standard workspace roles) cannot be modified"]}
             )
@@ -233,7 +233,7 @@ class RoleService:
 
         if hierarchy_level is not None:
             if hierarchy_level < 0 or hierarchy_level > 100:
-                raise WrextValidationException(
+                raise RextValidationException(
                     message="Hierarchy level must be between 0 and 100",
                     field_errors={"hierarchy_level": ["Must be 0-100"]}
                 )
@@ -271,14 +271,14 @@ class RoleService:
 
         Raises:
             ResourceNotFoundException: If role not found
-            WrextAPIException: If system role
-            WrextValidationException: If role in use and no reassignment
+            RextAPIException: If system role
+            RextValidationException: If role in use and no reassignment
         """
         role = await self.get_role_by_id(role_id)
 
         # Check if protected role (system roles or standard workspace roles)
         if self._is_protected_role(role):
-            raise WrextValidationException(
+            raise RextValidationException(
                 message=f"Cannot delete protected role '{role.name}'",
                 field_errors={"role_id": ["Protected roles (platform roles and standard workspace roles) cannot be deleted"]}
             )
@@ -291,7 +291,7 @@ class RoleService:
 
         if user_roles:
             if not reassign_to:
-                raise WrextValidationException(
+                raise RextValidationException(
                     message=f"Cannot delete role assigned to {len(user_roles)} user(s). Provide reassign_to role.",
                     field_errors={"role_id": ["Role in use, reassignment required"]}
                 )
@@ -311,13 +311,11 @@ class RoleService:
                 extra={"role_id": str(role_id), "reassign_to": str(reassign_to)}
             )
 
-        # Delete role permissions
-        role_permissions_result = await self.db.execute(
-            select(RolePermission).where(RolePermission.role_id == role_id)
+        # Bulk-delete role permissions
+        from sqlalchemy import delete
+        await self.db.execute(
+            delete(RolePermission).where(RolePermission.role_id == role_id)
         )
-        role_permissions = role_permissions_result.scalars().all()
-        for rp in role_permissions:
-            await self.db.delete(rp)
 
         # Delete the role
         role_name = role.display_name
@@ -357,7 +355,7 @@ class RoleService:
 
         Raises:
             ResourceNotFoundException: If role or user not found
-            WrextValidationException: If user not workspace member
+            RextValidationException: If user not workspace member
         """
         # Validate role exists
         role = await self.get_role_by_id(role_id)
@@ -383,7 +381,7 @@ class RoleService:
                 )
             )
             if not member_result.scalar_one_or_none():
-                raise WrextValidationException(
+                raise RextValidationException(
                     message="User is not a member of this workspace",
                     field_errors={"workspace_id": ["User not a member"]}
                 )
@@ -514,24 +512,24 @@ class RoleService:
         """
         role = await self.get_role_by_id(role_id)
 
-        # Validate all permissions exist
-        for perm_id in permission_ids:
+        # Batch-validate all permissions exist in a single query
+        if permission_ids:
             perm_result = await self.db.execute(
-                select(Permission).where(Permission.id == perm_id)
+                select(Permission.id).where(Permission.id.in_(permission_ids))
             )
-            if not perm_result.scalar_one_or_none():
+            found_ids = {row[0] for row in perm_result.all()}
+            missing_ids = set(permission_ids) - found_ids
+            if missing_ids:
                 raise ResourceNotFoundException(
                     resource_type="Permission",
-                    resource_id=str(perm_id)
+                    resource_id=str(next(iter(missing_ids)))
                 )
 
-        # Remove existing permissions
-        existing_result = await self.db.execute(
-            select(RolePermission).where(RolePermission.role_id == role_id)
+        # Bulk-delete existing permissions
+        from sqlalchemy import delete
+        await self.db.execute(
+            delete(RolePermission).where(RolePermission.role_id == role_id)
         )
-        existing_perms = existing_result.scalars().all()
-        for rp in existing_perms:
-            await self.db.delete(rp)
 
         # Add new permissions
         for perm_id in permission_ids:
@@ -552,23 +550,47 @@ class RoleService:
 
     async def get_role_hierarchy(
         self,
-        workspace_id: Optional[UUID] = None
-    ) -> List[Role]:
+        workspace_id: Optional[UUID] = None,
+        page: int = 1,
+        per_page: int = 50,
+    ) -> Dict[str, Any]:
         """
-        Get roles ordered by hierarchy level (descending).
+        Get roles ordered by hierarchy level (descending) with pagination.
 
         Args:
             workspace_id: Optional workspace filter (future use)
+            page: Page number (1-indexed)
+            per_page: Items per page
 
         Returns:
-            List of Role objects
+            Dict with roles list and pagination metadata
         """
-        result = await self.db.execute(
-            select(Role).order_by(Role.hierarchy_level.desc())
-        )
-        roles = result.scalars().all()
+        base_query = select(Role).order_by(Role.hierarchy_level.desc())
 
-        return list(roles)
+        # Get total count
+        count_result = await self.db.execute(
+            select(func.count()).select_from(Role)
+        )
+        total = count_result.scalar() or 0
+
+        # Apply pagination
+        offset = (page - 1) * per_page
+        result = await self.db.execute(base_query.offset(offset).limit(per_page))
+        roles = list(result.scalars().all())
+
+        total_pages = (total + per_page - 1) // per_page if total > 0 else 0
+
+        return {
+            "roles": roles,
+            "pagination": {
+                "page": page,
+                "per_page": per_page,
+                "total": total,
+                "total_pages": total_pages,
+                "has_next": page < total_pages,
+                "has_prev": page > 1,
+            },
+        }
 
     async def get_user_roles(
         self,

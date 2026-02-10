@@ -23,11 +23,11 @@ def test_verification_email():
     html = create_verification_email(
         user_name="John Doe",
         verification_token="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.example.token",
-        frontend_url="https://app.wrext.com"
+        frontend_url="https://app.rext.com"
     )
 
     # Verify key elements
-    assert "Welcome to WREXT, John Doe!" in html
+    assert "Welcome to REXT, John Doe!" in html
     assert "Verify Email Address" in html
     assert "verify-email?token=" in html
     assert "<!DOCTYPE html>" in html
@@ -51,7 +51,7 @@ def test_password_reset_email():
         user_name="Jane Smith",
         reset_token="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.reset.token",
         user_email="jane@example.com",
-        frontend_url="https://app.wrext.com"
+        frontend_url="https://app.rext.com"
     )
 
     # Verify key elements
@@ -78,7 +78,7 @@ def test_welcome_email():
 
     html = create_welcome_email(
         user_name="Alex Johnson",
-        frontend_url="https://app.wrext.com"
+        frontend_url="https://app.rext.com"
     )
 
     # Verify key elements

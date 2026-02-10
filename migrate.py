@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Alembic Migration Utility Script for Wrext Backend
+Alembic Migration Utility Script for Rext Backend
 
 Usage:
     python migrate.py status          - Show current migration status

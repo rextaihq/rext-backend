@@ -66,7 +66,7 @@ async def send_auth_email(
                 frontend_url=frontend_url,
                 unsubscribe_token=unsubscribe_token
             )
-            subject = "Verify Your Email Address - WREXT"
+            subject = "Verify Your Email Address - REXT"
 
         elif email_type == "password_reset":
             html = create_password_reset_email(
@@ -76,7 +76,7 @@ async def send_auth_email(
                 frontend_url=frontend_url,
                 unsubscribe_token=unsubscribe_token
             )
-            subject = "Reset Your Password - WREXT"
+            subject = "Reset Your Password - REXT"
 
         elif email_type == "password_changed":
             html = create_password_changed_email(
@@ -87,7 +87,7 @@ async def send_auth_email(
                 frontend_url=frontend_url,
                 unsubscribe_token=unsubscribe_token
             )
-            subject = "Your Password Has Been Changed - WREXT"
+            subject = "Your Password Has Been Changed - REXT"
 
         elif email_type == "welcome":
             html = create_welcome_email(
@@ -95,7 +95,7 @@ async def send_auth_email(
                 frontend_url=frontend_url,
                 unsubscribe_token=unsubscribe_token
             )
-            subject = "Welcome to WREXT!"
+            subject = "Welcome to REXT!"
 
         else:
             raise ValueError(f"Unknown email type: {email_type}")

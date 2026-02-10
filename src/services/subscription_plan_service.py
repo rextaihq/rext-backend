@@ -12,9 +12,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.api.middleware.exceptions import (
     DuplicateResourceException,
     ResourceNotFoundException,
-    WrextAuthorizationException,
-    WrextValidationException,
+    RextAuthorizationException,
+    RextValidationException,
 )
+from src.api.cache.decorators import cached, invalidate_cache
 from src.api.models.subscription_models.plans import SubscriptionPlan
 from src.api.models.subscription_models.subscriptions import SubscriptionStatus, UserSubscription
 from src.api.models.user_models.roles import Role
@@ -39,7 +40,7 @@ class SubscriptionPlanService:
 
     async def require_admin(self, user_id: UUID) -> None:
         if not await self.is_admin(user_id):
-            raise WrextAuthorizationException(
+            raise RextAuthorizationException(
                 message="Admin role required for subscription plan administration",
                 required_permission="subscription.admin"
             )
@@ -78,6 +79,12 @@ class SubscriptionPlanService:
             "message": f"Subscription plan '{plan.display_name}' created successfully",
         }
 
+    @cached(
+        key_prefix="subscription:plans",
+        ttl=900,
+        key_builder=lambda self, include_inactive, include_private, is_admin:
+            f"{is_admin}:{include_inactive}:{include_private}",
+    )
     async def list_plans(
         self,
         include_inactive: bool,
@@ -130,7 +137,7 @@ class SubscriptionPlanService:
         update_data = payload.model_dump(exclude_unset=True)
 
         if not update_data:
-            raise WrextValidationException(
+            raise RextValidationException(
                 message="No fields provided for update",
                 field_errors={"update_data": ["At least one field must be provided"]},
             )
@@ -142,6 +149,7 @@ class SubscriptionPlanService:
         await self.db.flush()
         await self.db.refresh(plan)
 
+        await invalidate_cache("subscription:plans:*")
         logger.info("Subscription plan updated", extra={"plan_id": str(plan.id)})
 
         return plan.to_dict()
@@ -158,7 +166,7 @@ class SubscriptionPlanService:
         active_subscriptions = count_result.scalar() or 0
 
         if active_subscriptions > 0 and not force:
-            raise WrextValidationException(
+            raise RextValidationException(
                 message="Cannot delete plan with active subscriptions",
                 field_errors={
                     "plan_id": [
@@ -171,6 +179,7 @@ class SubscriptionPlanService:
         await self.db.delete(plan)
         await self.db.flush()
 
+        await invalidate_cache("subscription:plans:*")
         logger.warning("Subscription plan deleted", extra={"plan_id": str(plan_id), "force": force})
 
         return {

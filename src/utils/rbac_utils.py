@@ -43,7 +43,7 @@ from src.api.models.user_models.roles import Role
 from src.api.models.user_models.permissions import Permission
 from src.api.models.user_models.role_permissions import RolePermission
 from src.api.models.user_models.user_roles import UserRole
-from src.api.middleware.exceptions import WrextAuthorizationException
+from src.api.middleware.exceptions import RextAuthorizationException
 from src.api.lib.logger import auto_logger
 
 logger = auto_logger()
@@ -56,26 +56,21 @@ async def check_permission(
     workspace_id: Optional[UUID] = None
 ) -> bool:
     """
-    Check if user has a specific permission.
+    Check if user has a specific permission (cached).
 
-    Queries the database to determine if the user has the required permission
-    through any of their assigned roles (either workspace-scoped or global).
+    Delegates to get_user_permissions() which is Redis-cached (5-minute TTL).
+    This means all permission checks for the same user/workspace combo hit
+    the cache after the first call, eliminating N+1 query patterns in
+    check_any_permission() and check_all_permissions().
 
     Args:
         db: AsyncSession database session
         user_id: User UUID
         permission_name: Permission name (e.g., "content.delete", "workspace.update")
         workspace_id: Optional workspace UUID for workspace-scoped permissions.
-                     If provided, checks both workspace-scoped roles and global roles.
-                     If None, checks only global roles.
 
     Returns:
         True if user has the permission, False otherwise
-
-    Algorithm:
-        1. Find all roles assigned to user (in specified workspace or globally)
-        2. Find all permissions attached to those roles via role_permissions
-        3. Check if the requested permission_name matches any permission
 
     Example:
         >>> has_perm = await check_permission(db, user_id, "content.delete", workspace_id)
@@ -83,45 +78,12 @@ async def check_permission(
         >>>     # User can delete content
         >>>     pass
     """
-    query = (
-        select(Permission)
-        .join(RolePermission, RolePermission.permission_id == Permission.id)
-        .join(UserRole, UserRole.role_id == RolePermission.role_id)
-        .where(UserRole.user_id == user_id)
-        .where(Permission.name == permission_name)
-        .distinct()  # Add distinct to handle multiple roles with same permission
-    )
-
-    # Workspace-scoped permissions: Check both workspace-specific roles AND global roles
-    if workspace_id:
-        query = query.where(
-            (UserRole.workspace_id == workspace_id) | (UserRole.workspace_id.is_(None))
-        )
-    else:
-        # Global permissions only: User must have global role (workspace_id = NULL)
-        query = query.where(UserRole.workspace_id.is_(None))
-
-    result = await db.execute(query)
-
-    permission = None
-    if hasattr(result, "scalar_one_or_none"):
-        permission = result.scalar_one_or_none()
-    else:
-        scalar_result = result.scalars() if hasattr(result, "scalars") else None
-        if scalar_result is not None:
-            if hasattr(scalar_result, "first"):
-                permission = scalar_result.first()
-            elif hasattr(scalar_result, "all"):
-                items = scalar_result.all()
-                permission = items[0] if items else None
-            else:
-                permission = None
-
-    has_permission = permission is not None
+    permissions = await get_user_permissions(db, user_id, workspace_id)
+    has_permission = permission_name in permissions
 
     logger.debug(
         f"Permission check: user={user_id}, permission={permission_name}, "
-        f"workspace={workspace_id}, result={has_permission}"
+        f"workspace={workspace_id}, result={has_permission} (cached)"
     )
 
     return has_permission
@@ -198,7 +160,7 @@ async def require_permission(
     Require user to have a permission, raise exception if not.
 
     This is a convenience function that checks permission and raises
-    WrextAuthorizationException if the user lacks the required permission.
+    RextAuthorizationException if the user lacks the required permission.
 
     Args:
         db: AsyncSession database session
@@ -208,7 +170,7 @@ async def require_permission(
         resource_name: Optional resource name for better error messages (e.g., "content", "workspace")
 
     Raises:
-        WrextAuthorizationException: If user lacks the required permission
+        RextAuthorizationException: If user lacks the required permission
 
     Example:
         >>> await require_permission(db, user_id, "content.delete", workspace_id, "content")
@@ -223,7 +185,7 @@ async def require_permission(
             f"workspace={workspace_id}, resource={resource_name}"
         )
 
-        raise WrextAuthorizationException(
+        raise RextAuthorizationException(
             message=f"You do not have permission to perform this action",
             context={
                 "required_permission": permission_name,

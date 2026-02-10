@@ -41,14 +41,15 @@ from src.api.models.user_models.user_roles import UserRole
 from src.api.models.content_models.content import Content
 from src.api.middleware.exceptions import (
     ResourceNotFoundException,
-    WrextValidationException,
+    RextValidationException,
     DuplicateResourceException,
-    WrextAuthenticationException,
+    RextAuthenticationException,
 )
 from src.api.schema.knowledge_schema import BrandSchema
 from src.flow.model.llm_manager import load_model
 from src.utils.helper import web_page_scraper
 from src.utils.vector_store import add_to_vector_store, delete_vectors
+from src.api.cache.decorators import cached
 from src.utils.logger import logger
 from src.api.database.async_database import get_async_db
 from src.services.workspace_pipeline import run_workspace_pipeline
@@ -88,7 +89,7 @@ class WorkspaceService:
         name="Create Workspace",
         metadata={"operation": "workspace_create"},
         tags=["WorkspaceService", "Create"],
-        project_name="WREXT",
+        project_name="REXT",
     )
     async def create_workspace_for_user(
         self,
@@ -206,7 +207,7 @@ class WorkspaceService:
         workspace = await self._ensure_membership(workspace_id, user_id)
 
         if not workspace.url:
-            raise WrextValidationException(
+            raise RextValidationException(
                 message="Workspace URL is required to refresh brand voice",
                 field_errors={
                     "url": ["Workspace must have a valid URL before refreshing"]
@@ -482,6 +483,11 @@ class WorkspaceService:
 
         return analytics
 
+    @cached(
+        key_prefix="workspace:brand_voice",
+        ttl=600,
+        key_builder=lambda self, workspace_id: str(workspace_id),
+    )
     async def get_workspace_with_brand_voice(
         self, workspace_id: UUID
     ) -> Dict[str, Any]:
@@ -693,9 +699,9 @@ class WorkspaceService:
         user_role = result.scalar_one_or_none()
 
         if not user_role:
-            from src.api.middleware.exceptions import WrextAuthorizationException
+            from src.api.middleware.exceptions import RextAuthorizationException
 
-            raise WrextAuthorizationException(
+            raise RextAuthorizationException(
                 message="Only workspace owners can perform this action"
             )
 
@@ -916,7 +922,7 @@ class WorkspaceService:
         )
         user = result.scalar_one_or_none()
         if not user:
-            raise WrextAuthenticationException(
+            raise RextAuthenticationException(
                 message="User not found",
                 context={"user_id": str(user_id)},
             )
@@ -984,14 +990,21 @@ class WorkspaceService:
         )
         permissions = result.scalars().all()
 
-        for permission in permissions:
-            existing = await self.db.execute(
-                select(RolePermission).where(
-                    RolePermission.role_id == role_id,
-                    RolePermission.permission_id == permission.id,
-                )
+        if not permissions:
+            return
+
+        # Batch-query existing role-permission assignments to avoid N+1
+        permission_ids = [p.id for p in permissions]
+        existing_result = await self.db.execute(
+            select(RolePermission.permission_id).where(
+                RolePermission.role_id == role_id,
+                RolePermission.permission_id.in_(permission_ids),
             )
-            if existing.scalar_one_or_none():
+        )
+        existing_ids = {row[0] for row in existing_result.all()}
+
+        for permission in permissions:
+            if permission.id in existing_ids:
                 continue
             self.db.add(RolePermission(role_id=role_id, permission_id=permission.id))
 
@@ -1052,7 +1065,7 @@ class WorkspaceService:
         try:
             model = load_model()
             structure_model = model.with_structured_output(BrandSchema)
-            brand_data = structure_model.invoke(content)
+            brand_data = await structure_model.ainvoke(content)
 
             brand_voice = BrandVoice(
                 workspace_id=workspace_id,

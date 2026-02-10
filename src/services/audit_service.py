@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.models.audit_models.audit_logs import AuditLog
 from src.api.schema.audit_schema import AuditLogExportFormat, AuditStatus
-from src.api.middleware.exceptions import WrextValidationException
+from src.api.middleware.exceptions import RextValidationException
 
 
 class AuditService:
@@ -23,7 +23,7 @@ class AuditService:
         self,
         *,
         user_id: Optional[str] = None,
-        username: Optional[str] = None,
+        full_name: Optional[str] = None,
         user_email: Optional[str] = None,
         action: Optional[str] = None,
         resource_type: Optional[str] = None,
@@ -42,8 +42,8 @@ class AuditService:
         if status_filter:
             try:
                 status_enum = AuditStatus(status_filter)
-            except ValueError as exc:
-                raise WrextValidationException(
+            except ValueError as exc:   
+                raise RextValidationException(
                     message=f"Invalid status: {status_filter}",
                     field_errors={"status_filter": ["Unsupported audit status"]},
                 ) from exc
@@ -51,7 +51,7 @@ class AuditService:
         query = await build_audit_query(
             db=self.db,
             user_id=user_id,
-            username=username,
+            full_name=full_name,
             user_email=user_email,
             action=action,
             resource_type=resource_type,
@@ -95,7 +95,7 @@ class AuditService:
         from src.api.routes.audit.modules.helpers import format_audit_log
 
         if days < 1 or days > 365:
-            raise WrextValidationException(
+            raise RextValidationException(
                 message="Analysis period must be between 1 and 365 days",
                 field_errors={"days": ["Value out of allowed range"]},
             )
@@ -129,9 +129,9 @@ class AuditService:
         )
 
         most_active_users_result = await self.db.execute(
-            select(AuditLog.user_id, AuditLog.username, func.count(AuditLog.id))
+            select(AuditLog.user_id, AuditLog.full_name, func.count(AuditLog.id))
             .where(AuditLog.created_at >= cutoff, AuditLog.user_id.isnot(None))
-            .group_by(AuditLog.user_id, AuditLog.username)
+            .group_by(AuditLog.user_id, AuditLog.full_name)
             .order_by(func.count(AuditLog.id).desc())
             .limit(10)
         )
@@ -157,10 +157,10 @@ class AuditService:
             "most_active_users": [
                 {
                     "user_id": str(user_id),
-                    "username": username,
+                    "full_name": full_name,
                     "action_count": count,
                 }
-                for user_id, username, count in most_active_users_result.all()
+                for user_id, full_name, count in most_active_users_result.all()
             ],
             "recent_failures": [
                 format_audit_log(log, include_details=False)

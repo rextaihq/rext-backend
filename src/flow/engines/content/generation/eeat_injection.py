@@ -10,7 +10,7 @@ import logging
 from uuid import UUID
 from sqlalchemy import select
 
-from src.flow.states.wrext import WREXT
+from src.flow.states.rext import REXT
 from src.flow.model.llm_manager import load_model
 from src.flow.model.structure.content import GeneratedContent
 from src.flow.prompts.human.eeat import get_eeat_prompt
@@ -20,7 +20,7 @@ from src.api.models.knowledge_models.persona_model import Persona
 logger = logging.getLogger(__name__)
 
 
-async def inject_eeat(state: WREXT) -> dict:
+async def inject_eeat(state: REXT) -> dict:
     """
     Injects E-E-A-T (Experience, Expertise, Authoritativeness, Trustworthiness)
     signals into generated content using persona data from the database.
@@ -32,7 +32,7 @@ async def inject_eeat(state: WREXT) -> dict:
     - Trust signals through honest limitations and caveats
     
     Args:
-        state: WREXT state containing generated content and serp_payload with workspace_id
+        state: REXT state containing generated content and serp_payload with workspace_id
     
     Returns:
         dict: Updated state with E-E-A-T enhanced content
@@ -124,7 +124,7 @@ async def inject_eeat(state: WREXT) -> dict:
         
         # 8️⃣ Invoke LLM for E-E-A-T injection
         logger.info("Invoking LLM for E-E-A-T signal injection...")
-        eeat_enhanced_content = model.invoke(messages)
+        eeat_enhanced_content = await model.ainvoke(messages)
         eeat_dict = eeat_enhanced_content.model_dump()
         
         logger.info(f"E-E-A-T injection completed. Word count: {eeat_dict.get('word_count', 0)}")

@@ -6,9 +6,9 @@ from fastapi import APIRouter, Depends, Header, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.database.async_database import get_async_db
-from src.api.middleware.exceptions import WrextValidationException
+from src.api.middleware.exceptions import RextValidationException
 from src.api.security.dependencies import get_current_user
-from src.api.security.token_utils import verify_token
+from src.api.security.token_utils import decode_and_verify_token
 from src.services.session_service import SessionService
 from src.utils.logger import logger
 from src.utils.route_decorators import db_transaction_handler, require_permissions
@@ -32,12 +32,12 @@ async def list_user_sessions(
     try:
         _, token = authorization.split()
     except ValueError as exc:
-        raise WrextValidationException(
+        raise RextValidationException(
             message="Invalid authorization header",
             validation_errors={"authorization": "Expected 'Bearer <token>' format"}
         ) from exc
 
-    current_payload = verify_token(token)
+    current_payload = decode_and_verify_token(token)
     current_jti = current_payload.get("jti")
 
     service = SessionService(db)
@@ -99,12 +99,12 @@ async def revoke_all_sessions(
     try:
         _, token = authorization.split()
     except ValueError as exc:
-        raise WrextValidationException(
+        raise RextValidationException(
             message="Invalid authorization header",
             validation_errors={"authorization": "Expected 'Bearer <token>' format"}
         ) from exc
 
-    current_payload = verify_token(token)
+    current_payload = decode_and_verify_token(token)
     current_jti = current_payload.get("jti")
 
     service = SessionService(db)

@@ -25,7 +25,7 @@ from src.api.middleware.exceptions import (
     DuplicateResourceException,
     BusinessRuleViolationException,
     UnauthorizedException,
-    WrextValidationException
+    RextValidationException
 )
 
 
@@ -135,7 +135,7 @@ async def test_create_admin_invitation_invalid_role(async_session, super_admin_u
     """Test that invalid admin role is rejected."""
     service = AdminInvitationService(async_session)
 
-    with pytest.raises(WrextValidationException) as exc_info:
+    with pytest.raises(RextValidationException) as exc_info:
         await service.create_admin_invitation(
             email='newadmin@test.com',
             admin_role='invalid_role',

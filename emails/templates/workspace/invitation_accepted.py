@@ -15,7 +15,7 @@ def render_invitation_accepted_email(
     role_name: str = "Member",
     workspace_url: str = None,
     accepted_by_name: Optional[str] = None,
-    frontend_url: str = "https://app.wrext.com"
+    frontend_url: str = "https://app.rext.com"
 ) -> str:
     """
     Render invitation accepted notification email template.
@@ -118,7 +118,7 @@ def create_invitation_accepted_email(
     new_member_email: str,
     role_name: str = "Member",
     workspace_id: Optional[str] = None,
-    frontend_url: str = "https://app.wrext.com",
+    frontend_url: str = "https://app.rext.com",
     unsubscribe_token: Optional[str] = None
 ) -> str:
     """

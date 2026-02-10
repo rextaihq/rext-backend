@@ -3,7 +3,7 @@ import logging
 from urllib.parse import urlparse
 from collections import Counter
 from typing import List, Dict, Any
-from src.flow.states.wrext import WREXT, Competitor
+from src.flow.states.rext import REXT, Competitor
 from datetime import datetime
 from src.flow.model.llm_manager import load_model
 from src.flow.prompts.system.intent import SEO_INTENT_SYSTEM_PROMPT
@@ -12,12 +12,12 @@ from langchain.messages import SystemMessage,HumanMessage
 
 logger = logging.getLogger(__name__)
 
-def extract_competitors_from_serp(state: WREXT) -> Dict[str, Any]:
+async def extract_competitors_from_serp(state: REXT) -> Dict[str, Any]:
     """
     Extract competitor information from SERP results by grouping data by domain.
 
     Args:
-        state (WREXT): The current state containing the raw serp_result.
+        state (REXT): The current state containing the raw serp_result.
 
     Returns:
         Dict[str, Any]: A dictionary containing the list of extracted competitors.
@@ -106,7 +106,7 @@ def extract_competitors_from_serp(state: WREXT) -> Dict[str, Any]:
             for i, comp in enumerate(competitor_data_list):
                 human_content += f"--- Competitor {i+1} ---\nDomain: {comp['domain']}\nTitle: {comp['title']}\nSnippet: {comp['snippet']}\n\n"
 
-            classification_results = batch_model.invoke([
+            classification_results = await batch_model.ainvoke([
                 SystemMessage(content=SEO_INTENT_SYSTEM_PROMPT + "\nClassify each competitor in the list provided."),
                 HumanMessage(content=human_content)
             ])

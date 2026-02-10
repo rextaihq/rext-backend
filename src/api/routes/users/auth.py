@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, Request, BackgroundTasks, Header
 from src.utils.logger import logger
 from src.api.security.dependencies import get_current_user
 from src.api.schema.user_schema import LoginUser, RegisterUser, RegisterWithInvitation, LoginWithInvitation
-from src.api.security.token_utils import verify_token
+from src.api.security.token_utils import decode_and_verify_token
 from src.api.config import get_settings
 from sqlalchemy.ext.asyncio import AsyncSession
 from src.services.email_service import EmailService
@@ -11,7 +11,7 @@ from src.utils.response_utils import success, error, created
 from src.api.schema.response_schemas import ErrorCode, ErrorSeverity
 from src.api.middleware.exceptions import (
     DuplicateResourceException,
-    WrextAuthenticationException,
+    RextAuthenticationException,
     ResourceNotFoundException,
     BusinessRuleViolationException
 )
@@ -121,32 +121,11 @@ async def create_user(
         auth_service = AuthService(db)
         new_user, verification_token = await auth_service.register_user(
             email=user.email,
-            username=user.username,
             password=user.password,
-            first_name=user.first_name,
-            last_name=user.last_name
+            full_name=user.full_name
         )
 
-        # IMPORTANT: Commit transaction before background task
-        # Background tasks run immediately and need the user to exist in the database
-        await db.commit()
-
-        # Get frontend URL from environment
-        frontend_url = settings.FRONTEND_URL
-
-        # Send verification email in background using professional template
-        background_tasks.add_task(
-            send_verification_email_task,
-            email=new_user.email,
-            first_name=new_user.first_name,
-            verification_token=verification_token,
-            user_id=str(new_user.id),
-            frontend_url=frontend_url
-        )
-
-        # Return user data (excluding password)
-        # Note: Transaction will be committed by transaction decorator (Task 2.2)
-        # set the notification preferences
+        # notification preference for the user
         notification_preference = NotificationPreferences(
             user_id=new_user.id,
             email_notifications=True,
@@ -173,14 +152,27 @@ async def create_user(
             marketing_updates=False
         )
         db.add(notification_preference)
+        
+        # IMPORTANT: Commit all database changes (user + preferences) before adding background tasks
         await db.commit()
-        await db.refresh(notification_preference)
+        await db.refresh(new_user)
+
+        # Get frontend URL from environment
+        frontend_url = settings.FRONTEND_URL
+
+        # Send verification email in background using professional template
+        background_tasks.add_task(
+            send_verification_email_task,
+            email=new_user.email,
+            first_name=new_user.full_name or new_user.display_name,
+            verification_token=verification_token,
+            user_id=str(new_user.id),
+            frontend_url=frontend_url
+        )
         user_data = {
             "id": str(new_user.id),
-            "username": new_user.username,
             "email": new_user.email,
-            "first_name": new_user.first_name,
-            "last_name": new_user.last_name,
+            "full_name": new_user.full_name,
             "display_name": new_user.display_name,
             "language": new_user.language,
             "timezone": new_user.timezone,
@@ -324,10 +316,8 @@ async def register_with_invitation(
             auth_service = AuthService(db)
             new_user, verification_token = await auth_service.register_user(
                 email=user_data.email,
-                username=user_data.username,
                 password=user_data.password,
-                first_name=user_data.first_name,
-                last_name=user_data.last_name
+                full_name=user_data.full_name
             )
 
             # Skip email verification for invited users
@@ -351,21 +341,8 @@ async def register_with_invitation(
             user_id=current_user.id
         )
 
-        # Commit transaction before background tasks
-        await db.commit()
-
-        # Step 6: Send welcome email for new users only
+        # Handle notification preferences for new users
         if not user_exists:
-            frontend_url = settings.FRONTEND_URL
-            background_tasks.add_task(
-                send_welcome_email_task,
-                email=current_user.email,
-                first_name=current_user.first_name,
-                user_id=str(current_user.id),
-                frontend_url=frontend_url
-            )
-
-            #  add a notification preference for the user
             logger.info("Adding notification preference for user")
             notification_preference = NotificationPreferences(
                 user_id=current_user.id,
@@ -393,8 +370,22 @@ async def register_with_invitation(
                 marketing_updates=False
             )
             db.add(notification_preference)
-            await db.commit()
-            await db.refresh(notification_preference)
+
+        # Commit all changes (user creation if new, membership, preferences, invitation status)
+        # before starting background tasks
+        await db.commit()
+        await db.refresh(current_user)
+
+        # Step 6: Send welcome email for new users only
+        if not user_exists:
+            frontend_url = settings.FRONTEND_URL
+            background_tasks.add_task(
+                send_welcome_email_task,
+                email=current_user.email,
+                first_name=current_user.full_name or current_user.display_name,
+                user_id=str(current_user.id),
+                frontend_url=frontend_url
+            )
 
         # Step 7: Get workspace details for response
         from src.services.workspace_service import WorkspaceService
@@ -412,10 +403,8 @@ async def register_with_invitation(
         # Step 8: Return comprehensive response with workspace context
         user_data_response = {
             "id": str(current_user.id),
-            "username": current_user.username,
             "email": current_user.email,
-            "first_name": current_user.first_name,
-            "last_name": current_user.last_name,
+            "full_name": current_user.full_name,
             "display_name": current_user.display_name,
             "language": current_user.language,
             "timezone": current_user.timezone,
@@ -439,8 +428,7 @@ async def register_with_invitation(
             extra={
                 "user_id": str(current_user.id),
                 "workspace_id": str(workspace.id),
-                "invitation_id": str(invitation.id),
-                "user_existed": user_exists
+                "invitation_id": str(invitation.id)
             }
         )
         #  send the notification to user
@@ -453,8 +441,7 @@ async def register_with_invitation(
             payload = {
                 "user_id": str(current_user.id),
                 "workspace_id": str(workspace.id),
-                "invitation_id": str(invitation.id),
-                "user_existed": user_exists
+                "invitation_id": str(invitation.id)
             }
         )
 
@@ -463,7 +450,6 @@ async def register_with_invitation(
                 "user": user_data_response,
                 "workspace": workspace_data,
                 "invitation_accepted": True,
-                "user_existed": user_exists,
                 "message": f"Welcome! You've joined {workspace.name}"
             },
             request=request,
@@ -536,10 +522,9 @@ async def login_user(
                 **tokens,
                 "user": {
                     "id": str(db_user.id),
-                    "username": db_user.username,
                     "email": db_user.email,
-                    "first_name": db_user.first_name,
-                    "last_name": db_user.last_name,
+                    "full_name": db_user.full_name,
+                    "display_name": db_user.display_name,
                     "avatar_url": db_user.avatar_url,
                     "last_login_at": db_user.last_login_at,
                     "login_count": db_user.login_count,
@@ -551,7 +536,7 @@ async def login_user(
             message="User logged in successfully"
         )
 
-    except WrextAuthenticationException as auth_error:
+    except RextAuthenticationException as auth_error:
         # CRITICAL: Commit transaction to persist failed login attempts
         # Without this, account locking after multiple failed attempts won't work
         await db.commit()
@@ -566,7 +551,6 @@ async def login_user(
             code=ErrorCode.INTERNAL_SERVER_ERROR,
             status_code=500,
             severity=ErrorSeverity.HIGH,
-            context={"error_details": str(e)},
             request=request
         )
 
@@ -616,7 +600,7 @@ async def refresh_access_token(
             message="Token refreshed successfully"
         )
 
-    except WrextAuthenticationException:
+    except RextAuthenticationException:
         # Re-raise to be handled by middleware
         raise
     except Exception as e:
@@ -626,7 +610,6 @@ async def refresh_access_token(
             code=ErrorCode.INTERNAL_SERVER_ERROR,
             status_code=500,
             severity=ErrorSeverity.HIGH,
-            context={"error_details": str(e)},
             request=request
         )
 
@@ -649,7 +632,7 @@ async def logout_user(
         scheme, token = authorization.split()
 
         # Decode token to get JTI and expiration
-        payload = verify_token(token)
+        payload = decode_and_verify_token(token, expected_type="access")
         jti = payload.get("jti")
         exp = payload.get("exp")
         user_id = current_user.get("identity")
@@ -664,7 +647,7 @@ async def logout_user(
             message="Logout successful"
         )
 
-    except WrextAuthenticationException:
+    except RextAuthenticationException:
         # Re-raise to be handled by middleware
         raise
     except Exception as e:
@@ -674,7 +657,6 @@ async def logout_user(
             code=ErrorCode.INTERNAL_SERVER_ERROR,
             status_code=500,
             severity=ErrorSeverity.HIGH,
-            context={"error_details": str(e)},
             request=request
         )
 
@@ -700,7 +682,7 @@ async def verify_email(
             background_tasks.add_task(
                 send_welcome_email_task,
                 email=user.email,
-                first_name=user.first_name or user.username,
+                first_name=user.full_name or user.display_name,
                 user_id=str(user.id),
                 frontend_url=frontend_url
             )
@@ -713,7 +695,7 @@ async def verify_email(
             message=message
         )
 
-    except (WrextAuthenticationException, ResourceNotFoundException):
+    except (RextAuthenticationException, ResourceNotFoundException):
         raise
     except Exception as e:
         return error(
@@ -721,7 +703,6 @@ async def verify_email(
             code=ErrorCode.INTERNAL_SERVER_ERROR,
             status_code=500,
             severity=ErrorSeverity.HIGH,
-            context={"error_details": str(e)},
             request=request
         )
 
@@ -765,7 +746,7 @@ async def resend_verification(
         background_tasks.add_task(
             send_verification_email_task,
             email=user.email,
-            first_name=user.first_name or user.username,
+            first_name=user.full_name or user.display_name,
             verification_token=verification_token,
             user_id=str(user.id),
             frontend_url=frontend_url
@@ -778,7 +759,7 @@ async def resend_verification(
             message="Verification email sent successfully"
         )
 
-    except (WrextAuthenticationException, ResourceNotFoundException):
+    except (RextAuthenticationException, ResourceNotFoundException):
         raise
     except Exception as e:
         logger.error(f"Resend verification error: {str(e)}")
@@ -787,7 +768,6 @@ async def resend_verification(
             code=ErrorCode.INTERNAL_SERVER_ERROR,
             status_code=500,
             severity=ErrorSeverity.HIGH,
-            context={"error_details": str(e)},
             request=request
         )
 
@@ -902,10 +882,9 @@ async def oauth_login(
                 **tokens,
                 "user": {
                     "id": str(new_user.id),
-                    "username": new_user.username,
                     "email": new_user.email,
-                    "first_name": new_user.first_name,
-                    "last_name": new_user.last_name,
+                    "full_name": new_user.full_name,
+                    "display_name": new_user.display_name,
                     "avatar_url": new_user.avatar_url,
                     "last_login_at": new_user.last_login_at,
                     "login_count": new_user.login_count,
@@ -917,7 +896,7 @@ async def oauth_login(
             message="OAuth login successful"
         )
 
-    except WrextAuthenticationException:
+    except RextAuthenticationException:
         raise
     except DuplicateResourceException:
         raise
@@ -928,7 +907,6 @@ async def oauth_login(
             code=ErrorCode.INTERNAL_SERVER_ERROR,
             status_code=500,
             severity=ErrorSeverity.HIGH,
-            context={"error_details": str(e)},
             request=request
         )
 
@@ -1009,7 +987,6 @@ async def link_oauth(
             code=ErrorCode.INTERNAL_SERVER_ERROR,
             status_code=500,
             severity=ErrorSeverity.HIGH,
-            context={"error_details": str(e)},
             request=request
         )
 
@@ -1050,6 +1027,5 @@ async def unlink_oauth(
             code=ErrorCode.INTERNAL_SERVER_ERROR,
             status_code=500,
             severity=ErrorSeverity.HIGH,
-            context={"error_details": str(e)},
             request=request
         )

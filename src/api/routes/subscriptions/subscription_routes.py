@@ -486,7 +486,7 @@ async def cancel_subscription(
             "data": None,
             "error": {
                 "code": "internal_server_error",
-                "message": str(e),
+                "message": "Failed to cancel subscription due to server error",
                 "severity": "high",
                 "status_code": 500
             }

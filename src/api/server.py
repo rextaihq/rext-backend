@@ -44,7 +44,7 @@ async def lifespan(app):
     Ensures database tables exist, Redis is connected,
     Sentry and tasks are initialized cleanly.
     """
-    logger.info("🚀 Starting Wrext API server...")
+    logger.info("🚀 Starting Rext API server...")
     logger.info(f"Environment: {settings.ENVIRONMENT}")
 
     # --- Initialize Sentry ---
@@ -106,7 +106,7 @@ async def lifespan(app):
     logger.info("👋 Application shutdown complete.")
 
 app = FastAPI(
-    title="Wrext Content Automation API",
+    title="Rext Content Automation API",
     version="1.0.0",
     description="API for managing content automation workflows with consistent response handling",
     lifespan=lifespan,
@@ -118,8 +118,11 @@ app = FastAPI(
 # ============================================================================
 # MIDDLEWARE CONFIGURATION
 # ============================================================================
+# NOTE: In Starlette/FastAPI, middleware added LAST is the OUTERMOST (processes
+# requests first). CORS must be outermost so preflight OPTIONS requests get
+# proper headers even if inner middleware returns early.
 
-# Request tracking middleware (first in chain)
+# Request tracking middleware
 app.add_middleware(
     RequestTrackerMiddleware,
     header_name="X-Request-ID",
@@ -144,17 +147,6 @@ app.add_middleware(
     max_error_details=10
 )
 
-# CORS middleware
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=settings.allowed_origins_list,
-    allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
-    allow_headers=["*"],
-    expose_headers=["X-Request-ID", "Content-Type"],
-    max_age=3600,
-)
-
 # Security headers middleware
 app.add_middleware(SecurityHeadersMiddleware)
 
@@ -165,6 +157,18 @@ app.add_middleware(
     requests_per_hour=settings.RATE_LIMIT_PER_HOUR,
     requests_per_day=settings.RATE_LIMIT_PER_DAY,
     enable=settings.RATE_LIMITING_ENABLED
+)
+
+# CORS middleware (MUST be added last = outermost, so it handles preflight
+# OPTIONS requests before any other middleware can intercept them)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.allowed_origins_list,
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+    allow_headers=["*"],
+    expose_headers=["X-Request-ID", "Content-Type"],
+    max_age=3600,
 )
 
 # Setup global exception handlers
@@ -201,7 +205,7 @@ def read_root(request: Request):
     """Root endpoint with API information."""
     return success(
         data={
-            "service": "Wrext Content Automation API",
+            "service": "Rext Content Automation API",
             "version": "1.0.0",
             "status": "operational",
             "docs_url": "/docs",
@@ -209,7 +213,7 @@ def read_root(request: Request):
             "openapi_url": "/openapi.json"
         },
         request=request,
-        message="Welcome to Wrext Content Automation API"
+        message="Welcome to Rext Content Automation API"
     )
 
 
@@ -228,7 +232,7 @@ async def health_check(request: Request):
 
     status = {
         "status": "healthy",
-        "service": "wrext-api",
+        "service": "rext-api",
         "version": "1.0.0",
         "environment": settings.ENVIRONMENT,
         "timestamp": datetime.utcnow().isoformat(),
@@ -289,7 +293,7 @@ async def liveness_check(request: Request):
     from datetime import datetime
     return {
         "status": "alive",
-        "service": "wrext-api",
+        "service": "rext-api",
         "timestamp": datetime.utcnow().isoformat()
     }
 
@@ -309,7 +313,7 @@ async def readiness_check(request: Request):
 
     status = {
         "status": "ready",
-        "service": "wrext-api",
+        "service": "rext-api",
         "timestamp": datetime.utcnow().isoformat(),
         "checks": {}
     }

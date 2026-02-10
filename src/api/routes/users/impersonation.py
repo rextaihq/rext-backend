@@ -1,13 +1,12 @@
 """User impersonation API routes."""
 
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from migrate import status
 from src.api.database.async_database import get_async_db
-from src.api.middleware.exceptions import WrextValidationException
+from src.api.middleware.exceptions import RextValidationException
 from src.api.middleware.permissions import is_admin
 from src.api.schema.impersonation_schema import (
     ImpersonateStartRequest,
@@ -19,9 +18,6 @@ from src.services.impersonation_service import ImpersonationService
 from src.utils.audit_helper import create_audit_log_async
 from src.utils.logger import logger
 from src.utils.route_decorators import db_transaction_handler, require_permissions
-from uuid import uuid4
-from fastapi import HTTPException
-from fastapi import status
 
 router = APIRouter()
 
@@ -51,7 +47,7 @@ async def start_impersonation(
     access_token = create_access_token(
         {
             "id": impersonation_context["target_user_id"],
-            "username": impersonation_context["target_username"],
+            "full_name": impersonation_context["target_full_name"],
             "email": impersonation_context["target_email"],
             "roles": impersonation_context["roles"],
             "permissions": impersonation_context["permissions"],
@@ -76,7 +72,7 @@ async def start_impersonation(
         metadata={
             "admin_user_email": impersonation_context["impersonated_by_email"],
             "target_user_email": impersonation_context["target_email"],
-            "target_user_name": impersonation_context["target_display_name"] or impersonation_context["target_username"],
+            "target_user_name": impersonation_context["target_display_name"] or impersonation_context["target_full_name"],
             "session_id": session_id
         },
     )
@@ -93,7 +89,7 @@ async def start_impersonation(
         "original_user_id": str(admin_user_id),
         "impersonated_user_id": impersonation_context["target_user_id"],
         "impersonated_user_email": impersonation_context["target_email"],
-        "impersonated_user_name": impersonation_context["target_display_name"] or impersonation_context["target_username"],
+        "impersonated_user_name": impersonation_context["target_display_name"] or impersonation_context["target_full_name"],
         "roles": impersonation_context["roles"],
         "permissions": impersonation_context["permissions"],
         "access_token": access_token,
@@ -101,9 +97,6 @@ async def start_impersonation(
         "started_at": impersonation_context["impersonation_started_at"],
         "session_id": session_id
     }
-
-from src.api.middleware.exceptions import WrextValidationException
-
 @router.post("/impersonate/stop")
 @require_permissions("user.update")
 @db_transaction_handler("stop impersonation", auto_commit=True) 
@@ -114,21 +107,21 @@ async def stop_impersonation(
 ) -> dict:
     """Stop impersonation and return tokens for the original user."""
     
-    # Use WrextValidationException without validation_errors
+    # Use RextValidationException without validation_errors
     if not current_user.get("is_impersonating", False):
-        raise WrextValidationException(
+        raise RextValidationException(
             message="Not currently impersonating"
         )
 
     original_user_id = current_user.get("original_user_id")
     if not original_user_id:
-        raise WrextValidationException(
+        raise RextValidationException(
             message="Original user ID not found in token"
         )
     
     session_id = current_user.get("session_id")
     if not session_id:
-        raise WrextValidationException(
+        raise RextValidationException(
             message="Session ID not found in token"
         )
 
@@ -149,7 +142,7 @@ async def stop_impersonation(
     access_token = create_access_token(
         {
             "id": original_context["user_id"],
-            "username": original_context["username"],
+            "full_name": original_context["full_name"],
             "email": original_context["email"],
             "roles": original_context["roles"],
             "permissions": original_context["permissions"],
@@ -226,7 +219,7 @@ async def get_impersonation_status(
         "original_user_id": current_user.get("original_user_id"),
         "impersonated_user_id": current_user.get("identity"),
         "impersonated_user_email": current_user.get("email"),
-        "impersonated_user_name": current_user.get("username"),
+        "impersonated_user_name": current_user.get("full_name"),
         "started_at": current_user.get("impersonation_started_at"),
         "session_id": session_id
     }

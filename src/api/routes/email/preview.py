@@ -45,16 +45,16 @@ def get_subject_for_template(template_type: str, **kwargs) -> str:
     """Get suggested subject line for template type."""
     subjects = {
         # Auth templates
-        "verification": "Verify Your Email Address - WREXT",
-        "password_reset": "Reset Your Password - WREXT",
-        "welcome": "Welcome to WREXT!",
+        "verification": "Verify Your Email Address - REXT",
+        "password_reset": "Reset Your Password - REXT",
+        "welcome": "Welcome to REXT!",
         # Workspace templates
         "invitation": f"You've been invited to join {kwargs.get('workspace_name', 'a workspace')}",
         "invitation_accepted": f"New member joined {kwargs.get('workspace_name', 'your workspace')}",
         "role_changed": f"Your role in {kwargs.get('workspace_name', 'the workspace')} has been updated",
         "member_removed": f"Removed from {kwargs.get('workspace_name', 'workspace')}"
     }
-    return subjects.get(template_type, "Email from WREXT")
+    return subjects.get(template_type, "Email from REXT")
 
 
 def extract_preview_text(html: str) -> str:
@@ -143,7 +143,7 @@ async def preview_auth_email(
         logger.error(f"Failed to preview auth email: {str(e)}")
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to generate preview: {str(e)}"
+            detail="Failed to generate preview"
         )
 
 
@@ -248,7 +248,7 @@ async def preview_workspace_email(
         logger.error(f"Failed to preview workspace email: {str(e)}")
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to generate preview: {str(e)}"
+            detail="Failed to generate preview"
         )
 
 

@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, Mock
 
 from src.services.brand_voice_service import BrandVoiceService
 from src.api.models.knowledge_models.knowledge_model import BrandVoice
-from src.api.middleware.exceptions import WrextAuthenticationException
+from src.api.middleware.exceptions import RextAuthenticationException
 from src.api.schema.knowledge_schema import BrandSchema
 
 
@@ -78,9 +78,9 @@ async def test_get_brand_voice_returns_record():
 async def test_get_brand_voice_requires_membership():
     """Should raise authentication exception when membership check fails."""
     service = BrandVoiceService(db=AsyncMock())
-    service._verify_workspace_membership = AsyncMock(side_effect=WrextAuthenticationException("no access"))
+    service._verify_workspace_membership = AsyncMock(side_effect=RextAuthenticationException("no access"))
 
-    with pytest.raises(WrextAuthenticationException):
+    with pytest.raises(RextAuthenticationException):
         await service.get_brand_voice(uuid4(), uuid4())
 
 
@@ -172,5 +172,44 @@ async def test_verify_workspace_membership_raises_when_not_member():
 
     service = BrandVoiceService(mock_db)
 
-    with pytest.raises(WrextAuthenticationException):
+    with pytest.raises(RextAuthenticationException):
         await service._verify_workspace_membership(uuid4(), uuid4())
+@pytest.mark.asyncio
+async def test_delete_brand_voice_success():
+    """delete_brand_voice should return True when record is deleted."""
+    mock_db = AsyncMock()
+    service = BrandVoiceService(mock_db)
+    workspace_id = uuid4()
+    user_id = uuid4()
+
+    service._verify_workspace_membership = AsyncMock()
+    
+    # Mock delete result
+    mock_result = MagicMock()
+    mock_result.rowcount = 1
+    mock_db.execute.return_value = mock_result
+
+    result = await service.delete_brand_voice(workspace_id, user_id)
+
+    assert result is True
+    service._verify_workspace_membership.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_delete_brand_voice_not_found():
+    """delete_brand_voice should return False when no record exists."""
+    mock_db = AsyncMock()
+    service = BrandVoiceService(mock_db)
+    workspace_id = uuid4()
+    user_id = uuid4()
+
+    service._verify_workspace_membership = AsyncMock()
+    
+    # Mock delete result
+    mock_result = MagicMock()
+    mock_result.rowcount = 0
+    mock_db.execute.return_value = mock_result
+
+    result = await service.delete_brand_voice(workspace_id, user_id)
+
+    assert result is False

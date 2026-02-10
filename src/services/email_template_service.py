@@ -37,9 +37,9 @@ from src.utils.email_template_utils import (
 )
 from src.api.middleware.exceptions import (
     DuplicateResourceException,
-    WrextValidationException,
+    RextValidationException,
     ResourceNotFoundException,
-    WrextAuthenticationException
+    RextAuthenticationException
 )
 
 
@@ -66,10 +66,10 @@ class EmailTemplateService:
             Dict with template_type, available_variables, and example_usage
 
         Raises:
-            WrextValidationException: If template type is invalid
+            RextValidationException: If template type is invalid
         """
         if template_type not in TEMPLATE_VARIABLES:
-            raise WrextValidationException(
+            raise RextValidationException(
                 message="Invalid template type",
                 field_errors={"template_type": [f"Unknown template type: {template_type}"]}
             )
@@ -105,7 +105,7 @@ class EmailTemplateService:
             Dict with rendered subject, body, and variables_used
 
         Raises:
-            WrextValidationException: If template variables are invalid
+            RextValidationException: If template variables are invalid
         """
         # Validate template variables
         is_valid, error_msg = validate_template_variables(
@@ -114,7 +114,7 @@ class EmailTemplateService:
         )
 
         if not is_valid:
-            raise WrextValidationException(
+            raise RextValidationException(
                 message="Invalid template variables",
                 field_errors={"variables": [error_msg]}
             )
@@ -157,7 +157,7 @@ class EmailTemplateService:
             Dict with templates list and total_count
 
         Raises:
-            WrextAuthenticationException: If user not workspace member
+            RextAuthenticationException: If user not workspace member
         """
         # Verify workspace membership
         await self._verify_workspace_membership(workspace_id, user_id)
@@ -206,8 +206,8 @@ class EmailTemplateService:
             Created EmailTemplate object
 
         Raises:
-            WrextAuthenticationException: If user not workspace member
-            WrextValidationException: If template type or variables invalid
+            RextAuthenticationException: If user not workspace member
+            RextValidationException: If template type or variables invalid
             DuplicateResourceException: If active template exists
         """
         # Verify workspace membership
@@ -217,7 +217,7 @@ class EmailTemplateService:
         try:
             template_type_enum = TemplateType(template_type)
         except ValueError:
-            raise WrextValidationException(
+            raise RextValidationException(
                 message="Invalid template type",
                 field_errors={"template_type": [f"Unknown template type: {template_type}"]}
             )
@@ -229,7 +229,7 @@ class EmailTemplateService:
         )
 
         if not is_valid:
-            raise WrextValidationException(
+            raise RextValidationException(
                 message="Invalid template variables",
                 field_errors={"variables": [error_msg]}
             )
@@ -302,8 +302,8 @@ class EmailTemplateService:
 
         Raises:
             ResourceNotFoundException: If template not found
-            WrextAuthenticationException: If user not workspace member
-            WrextValidationException: If variables invalid
+            RextAuthenticationException: If user not workspace member
+            RextValidationException: If variables invalid
         """
         # Get template
         template = await self._get_template_or_404(template_id)
@@ -328,7 +328,7 @@ class EmailTemplateService:
             )
 
             if not is_valid:
-                raise WrextValidationException(
+                raise RextValidationException(
                     message="Invalid template variables",
                     field_errors={"variables": [error_msg]}
                 )
@@ -363,8 +363,8 @@ class EmailTemplateService:
 
         Raises:
             ResourceNotFoundException: If template not found
-            WrextAuthenticationException: If user not workspace member
-            WrextValidationException: If trying to delete default template
+            RextAuthenticationException: If user not workspace member
+            RextValidationException: If trying to delete default template
         """
         # Get template
         template = await self._get_template_or_404(template_id)
@@ -374,7 +374,7 @@ class EmailTemplateService:
 
         # Cannot delete default templates
         if template.is_default:
-            raise WrextValidationException(
+            raise RextValidationException(
                 message="Cannot delete default templates",
                 field_errors={"template_id": ["This is a default template"]}
             )
@@ -460,7 +460,7 @@ class EmailTemplateService:
             WorkspaceMembers object
 
         Raises:
-            WrextAuthenticationException: If user not member
+            RextAuthenticationException: If user not member
         """
         result = await self.db.execute(
             select(WorkspaceMembers).where(
@@ -471,7 +471,7 @@ class EmailTemplateService:
         membership = result.scalar_one_or_none()
 
         if not membership:
-            raise WrextAuthenticationException(
+            raise RextAuthenticationException(
                 message="You are not a member of this workspace",
                 context={"workspace_id": str(workspace_id)}
             )

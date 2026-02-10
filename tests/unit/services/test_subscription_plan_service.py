@@ -8,8 +8,8 @@ import pytest
 
 from src.api.middleware.exceptions import (
     DuplicateResourceException,
-    WrextAPIException,
-    WrextValidationException,
+    RextAPIException,
+    RextValidationException,
 )
 from src.api.models.subscription_models.plans import SubscriptionPlan
 from src.api.models.subscription_models.subscriptions import SubscriptionStatus, UserSubscription
@@ -48,7 +48,7 @@ async def test_require_admin_raises_for_non_admin():
     mock_db.execute.return_value = FakeResult(scalar=None)
     service = SubscriptionPlanService(mock_db)
 
-    with pytest.raises(WrextAPIException):
+    with pytest.raises(RextAPIException):
         await service.require_admin(uuid4())
 
 
@@ -109,7 +109,7 @@ async def test_get_plan_enforces_visibility_for_non_admin():
     mock_db.execute.return_value = FakeResult(scalar=plan)
     service = SubscriptionPlanService(mock_db)
 
-    with pytest.raises(WrextAPIException):
+    with pytest.raises(RextAPIException):
         await service.get_plan(plan.id, is_admin=False)
 
 
@@ -145,7 +145,7 @@ async def test_update_plan_requires_fields():
     mock_db.execute.return_value = FakeResult(scalar=plan)
     service = SubscriptionPlanService(mock_db)
 
-    with pytest.raises(WrextValidationException):
+    with pytest.raises(RextValidationException):
         await service.update_plan(plan.id, SubscriptionPlanUpdate())
 
 
@@ -161,7 +161,7 @@ async def test_delete_plan_blocks_without_force():
     mock_db.execute.side_effect = [FakeResult(scalar=plan), FakeResult(scalar=1)]
     service = SubscriptionPlanService(mock_db)
 
-    with pytest.raises(WrextValidationException):
+    with pytest.raises(RextValidationException):
         await service.delete_plan(plan.id, force=False)
 
 

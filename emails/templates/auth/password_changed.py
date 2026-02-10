@@ -14,7 +14,7 @@ def render_password_changed_email(
     changed_at: str,
     ip_address: Optional[str] = None,
     user_agent: Optional[str] = None,
-    frontend_url: str = "https://app.wrext.com"
+    frontend_url: str = "https://app.rext.com"
 ) -> str:
     """
     Render password changed confirmation email template.
@@ -102,7 +102,7 @@ def render_password_changed_email(
             Hi {user_name},
         </p>
         <p style="color: #374151; font-size: 16px; line-height: 24px; margin: 0 0 24px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
-            This is a confirmation that your password was successfully changed for your WREXT account.
+            This is a confirmation that your password was successfully changed for your REXT account.
         </p>
         """,
         """
@@ -165,7 +165,7 @@ def render_password_changed_email(
         """
         <div style="margin-top: 32px; padding: 16px; background-color: #fffbeb; border-radius: 6px;">
             <p style="color: #92400e; font-size: 13px; line-height: 19px; margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
-                <strong>Security Tip:</strong> Never share your password with anyone, and use a unique password for your WREXT account. Consider using a password manager to keep your credentials secure.
+                <strong>Security Tip:</strong> Never share your password with anyone, and use a unique password for your REXT account. Consider using a password manager to keep your credentials secure.
             </p>
         </div>
         """,
@@ -181,7 +181,7 @@ def create_password_changed_email(
     changed_at: str,
     ip_address: Optional[str] = None,
     user_agent: Optional[str] = None,
-    frontend_url: str = "https://app.wrext.com",
+    frontend_url: str = "https://app.rext.com",
     unsubscribe_token: Optional[str] = None
 ) -> str:
     """
@@ -276,7 +276,7 @@ def create_password_changed_email(
             Hi {user_name},
         </p>
         <p style="color: #374151; font-size: 16px; line-height: 24px; margin: 0 0 24px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
-            This is a confirmation that your password was successfully changed for your WREXT account.
+            This is a confirmation that your password was successfully changed for your REXT account.
         </p>
         """,
         """
@@ -339,7 +339,7 @@ def create_password_changed_email(
         """
         <div style="margin-top: 32px; padding: 16px; background-color: #fffbeb; border-radius: 6px;">
             <p style="color: #92400e; font-size: 13px; line-height: 19px; margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
-                <strong>Security Tip:</strong> Never share your password with anyone, and use a unique password for your WREXT account. Consider using a password manager to keep your credentials secure.
+                <strong>Security Tip:</strong> Never share your password with anyone, and use a unique password for your REXT account. Consider using a password manager to keep your credentials secure.
             </p>
         </div>
         """,

@@ -5,7 +5,7 @@ from fastapi import APIRouter, BackgroundTasks, Body, Depends, File, Request, Up
 from pydantic import BaseModel, HttpUrl, constr
 from sqlalchemy.ext.asyncio import AsyncSession
 from src.api.database.async_database import get_async_db
-from src.api.middleware.exceptions import WrextValidationException
+from src.api.middleware.exceptions import RextValidationException
 from src.api.middleware.usage_limiter import check_knowledge_item_limit
 from src.api.security.dependencies import get_current_user
 from src.services.knowledge_service import KnowledgeService
@@ -201,7 +201,7 @@ async def create_web_knowledge(
             user_id=str(user["identity"]),
             background_tasks=background_tasks,
             pref_flag="kb_processing_failed",
-            message=f"Failed to create web knowledge for URL '{raw_url}': {str(e)}",
+            message=f"Failed to create web knowledge for URL '{raw_url}'",
             payload={"url": raw_url, "type": "web"},
             workspace_id=str(workspace.id),
         )
@@ -390,7 +390,7 @@ async def create_file_knowledge(
             user_id=str(user["identity"]),
             background_tasks=background_tasks,
             pref_flag="kb_processing_failed",
-            message=f"Failed to upload file knowledge: {str(e)}",
+            message=f"Failed to upload file knowledge",
             payload={"file_name": knowledge.file_name if 'knowledge' in locals() else None, "type": "file"},
             workspace_id=str(workspace.id),
         )
@@ -572,7 +572,7 @@ async def create_text_knowledge(
             user_id=str(user["identity"]),
             background_tasks=background_tasks,
             pref_flag="kb_processing_failed",
-            message=f"Failed to create text knowledge: {str(e)}",
+            message=f"Failed to create text knowledge",
             payload={"title": payload.title if payload else None, "type": "text"},
             workspace_id=str(workspace.id),
         )
@@ -619,7 +619,7 @@ async def update_text_knowledge(
 ):
     """Update title/content for a text knowledge entry."""
     if not any([payload.title, payload.content, payload.tags]):
-        raise WrextValidationException(
+        raise RextValidationException(
             message="At least one field (title, content, tags) must be provided",
             field_errors={"payload": ["No fields supplied for update"]},
         )

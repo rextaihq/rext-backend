@@ -8,7 +8,7 @@ from uuid import UUID
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.api.middleware.exceptions import ResourceNotFoundException, WrextValidationException
+from src.api.middleware.exceptions import ResourceNotFoundException, RextValidationException
 from src.api.models.subscription_models.plans import SubscriptionPlan
 from src.api.models.subscription_models.subscriptions import SubscriptionStatus, UserSubscription
 from src.api.models.user_models.users import Users
@@ -38,7 +38,7 @@ class SubscriptionRetrievalService:
             try:
                 status_enum = SubscriptionStatus(status_filter.lower())
             except ValueError as exc:
-                raise WrextValidationException(
+                raise RextValidationException(
                     message=f"Invalid status: {status_filter}",
                     field_errors={"status_filter": ["Unsupported subscription status"]},
                 ) from exc
@@ -65,7 +65,7 @@ class SubscriptionRetrievalService:
             data.update(
                 {
                     "user_email": user.email,
-                    "user_username": user.username,
+                    "user_full_name": user.full_name or user.display_name or user.email,
                     "plan_name": plan.name,
                     "plan_display_name": plan.display_name,
                 }
@@ -100,7 +100,7 @@ class SubscriptionRetrievalService:
         data["user"] = {
             "id": str(user.id),
             "email": user.email,
-            "username": user.username,
+            "full_name": user.full_name or user.display_name or user.email,
             "status": user.status,
         }
         data["plan"] = plan.to_dict()

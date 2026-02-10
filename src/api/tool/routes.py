@@ -10,26 +10,26 @@ from src.api.tool.tools import (
     calculate_readability,
     generate_content_ideas,
     generate_faqs,
-    count_text_metrics, 
-    generate_meta_description, 
-    validate_meta_description, 
+    count_text_metrics,
+    generate_meta_description,
+    validate_meta_description,
     generate_title_tags,
     generate_canonical_tag,
-    generate_hreflang_tags,
     broken_link_checker,
     generate_robots_txt,
     grammar_checker,
     generate_hooks,
     generate_seo_blog_titles,
     generate_content_outline
+    generate_questions
 )
 
 from src.api.tool.schema.schema import (
     TextInput,
     TextMetricsOutput,
-    MetaDescriptionRequest, 
-    MetaDescriptionResponse, 
-    BrokenLinkRequest, 
+    MetaDescriptionRequest,
+    MetaDescriptionResponse,
+    BrokenLinkRequest,
     BrokenLinkResponse,
     TitleRequest,
     TitleResponse,
@@ -89,7 +89,7 @@ async def generate_meta_desc(request: MetaDescriptionRequest):
     URL: POST /tools/meta-description/generate
     """
     try:
-        meta_description = generate_meta_description(
+        meta_description = await generate_meta_description(
             page_title=request.page_title,
             target_keywords=request.target_keywords
         )
@@ -109,7 +109,7 @@ async def generate_titles(request: TitleRequest):
     URL: POST /tools/title-tags/generate
     """
     try:
-        titles = generate_title_tags(
+        titles = await generate_title_tags(
             keyword=request.keyword,
             topic=request.topic,
             brand=request.brand,
@@ -154,7 +154,7 @@ async def canonical_tag_generator(request: CanonicalTagRequest):
     URL: POST /tools/canonical-tag-generator
     """
     try:
-        return generate_canonical_tag(str(request.url))
+        return await generate_canonical_tag(str(request.url))
     except Exception as e:
         raise HTTPException(
             status_code=500,
@@ -181,14 +181,14 @@ async def hreflang_tag_generator(request: HreflangRequest):
 @router.post("/question-generator", response_model=QuestionResponse)
 async def generate_questions_route(request: QuestionRequest):
     """
-    AI-powered Google-compliant Hreflang Tag Generator.
-    URL: POST /tools/hreflang-tag-generator
+    AI-powered Question Generator.
+    URL: POST /tools/question-generator
     """
     try:
         if not request.text.strip():
             raise HTTPException(status_code=400, detail="Input text cannot be empty")
             
-        result = generate_questions(request.text)
+        result = await generate_questions(request.text)
         return {"questions": result}
     
     except Exception as e:
@@ -205,7 +205,7 @@ async def broken_link_checker_route(request: BrokenLinkRequest):
     URL: POST /tools/link-checker
     """
     try:
-        result = broken_link_checker(request.url)
+        result = await broken_link_checker(request.url)
         return BrokenLinkResponse(working=result)
     except Exception as e:
         raise HTTPException(
@@ -215,13 +215,13 @@ async def broken_link_checker_route(request: BrokenLinkRequest):
 
 # Content Idea Generator Endpoint
 @router.post("/content-idea-generator", response_model=IdeaGeneratorResponse)
-def content_idea_generator(payload: IdeaGeneratorRequest):
+async def content_idea_generator(payload: IdeaGeneratorRequest):
     """
     Generate curated content ideas for various platforms.
     URL: POST /tools/content-idea-generator
     """
     try:
-        return generate_content_ideas(payload)
+        return await generate_content_ideas(payload)
     except Exception:
         traceback.print_exc()
         raise HTTPException(
@@ -277,7 +277,7 @@ async def hook_generator_route(request: HookGeneratorRequest):
     URL: POST /tools/hook-generator
     """
     try:
-        return generate_hooks(request)
+        return await generate_hooks(request)
     except Exception as e:
         raise HTTPException(
             status_code=500,
@@ -292,7 +292,7 @@ async def seo_blog_titles_route(request: SEOBlogTitleRequest):
     URL: POST /tools/seo-blog-titles
     """
     try:
-        return generate_seo_blog_titles(request)
+        return await generate_seo_blog_titles(request)
     except Exception as e:
         raise HTTPException(
             status_code=500,

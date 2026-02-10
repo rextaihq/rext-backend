@@ -28,6 +28,7 @@ class ContentSEODataSchema(BaseModel):
     search_intent: Optional[List[str]] = None
     seo_score: Optional[float] = None
     readability_score: Optional[float] = None
+    trust_score: Optional[float] = None
     seo_details: Optional[str] = None
 
 

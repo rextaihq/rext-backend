@@ -266,11 +266,11 @@ export function NotificationsDrawer({ open, onClose }: NotificationsDrawerProps)
 
 ```bash
 # Start the backend (if not running)
-cd ../wrext-backend
+cd ../rext-backend
 python -m uvicorn src.main:app --reload --port 2024
 
 # Start the frontend
-cd wrext-admin
+cd rext-admin
 npm run dev
 
 # Open test client

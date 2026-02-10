@@ -238,3 +238,16 @@ class ConclusionRequest(BaseModel):
 
 class ConclusionResponse(BaseModel):
     conclusion: str
+# Question Generator Schemas
+class QuestionRequest(BaseModel):
+    text: str = Field(..., min_length=1)
+
+class QuestionResponse(BaseModel):
+    questions: List[str]
+
+# Tagline Generator Schemas
+class TagLineRequest(BaseModel):
+    text: str = Field(..., min_length=1)
+
+class TagLineResponse(BaseModel):
+    taglines: List[str]

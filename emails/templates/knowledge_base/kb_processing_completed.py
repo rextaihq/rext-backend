@@ -13,9 +13,9 @@ def render_kb_processing_completed_email(
     items_processed: int,
     processing_time: str,
     workspace_name: str,
-    dashboard_url: str = "https://app.wrext.com/knowledge-base",
-    create_content_url: str = "https://app.wrext.com/content/new",
-    frontend_url: str = "https://app.wrext.com"
+    dashboard_url: str = "https://app.rext.com/knowledge-base",
+    create_content_url: str = "https://app.rext.com/content/new",
+    frontend_url: str = "https://app.rext.com"
 ) -> str:
     """
     Render knowledge base processing completed email template.

@@ -15,7 +15,7 @@ TEMPLATE_VARIABLES = {
             {"name": "inviter_name", "description": "Name of person sending invitation", "example": "John Doe"},
             {"name": "recipient_email", "description": "Email of the recipient", "example": "jane@example.com"},
             {"name": "role_name", "description": "Role being assigned", "example": "Editor"},
-            {"name": "invitation_url", "description": "Link to accept invitation", "example": "https://app.wrext.com/accept?token=abc123"},
+            {"name": "invitation_url", "description": "Link to accept invitation", "example": "https://app.rext.com/accept?token=abc123"},
             {"name": "expiry_days", "description": "Days until invitation expires", "example": "7"},
         ],
         "example": """
@@ -31,7 +31,7 @@ Click the link below to accept the invitation:
 This invitation will expire in {{expiry_days}} days.
 
 Best regards,
-The Wrext Team
+The Rext Team
         """
     },
     "invitation_accepted": {
@@ -49,7 +49,7 @@ Good news!
 {{member_name}} ({{member_email}}) has accepted your invitation and joined the "{{workspace_name}}" workspace as a {{role_name}}.
 
 Best regards,
-The Wrext Team
+The Rext Team
         """
     },
     "role_changed": {
@@ -68,7 +68,7 @@ Hi {{recipient_name}},
 Your role in the "{{workspace_name}}" workspace has been changed from {{old_role_name}} to {{new_role_name}} by {{changed_by_name}}.
 
 Best regards,
-The Wrext Team
+The Rext Team
         """
     },
     "member_removed": {
@@ -87,7 +87,7 @@ You have been removed from the "{{workspace_name}}" workspace by {{removed_by_na
 If you believe this was a mistake, please contact the workspace administrator.
 
 Best regards,
-The Wrext Team
+The Rext Team
         """
     },
     "welcome": {
@@ -106,7 +106,7 @@ Welcome to the "{{workspace_name}}" workspace! You've been added as a {{role_nam
 We're excited to have you on board.
 
 Best regards,
-The Wrext Team
+The Rext Team
         """
     }
 }
@@ -128,7 +128,7 @@ This invitation will expire in {{expiry_days}} days.
 If you don't want to join this workspace, you can ignore this email.
 
 Best regards,
-The Wrext Team"""
+The Rext Team"""
     },
     "invitation_accepted": {
         "subject": "{{member_name}} has joined {{workspace_name}}",
@@ -137,7 +137,7 @@ The Wrext Team"""
 {{member_name}} ({{member_email}}) has accepted your invitation and joined the "{{workspace_name}}" workspace as a {{role_name}}.
 
 Best regards,
-The Wrext Team"""
+The Rext Team"""
     },
     "role_changed": {
         "subject": "Your role in {{workspace_name}} has been updated",
@@ -148,7 +148,7 @@ Your role in the "{{workspace_name}}" workspace has been changed from {{old_role
 Your permissions have been updated accordingly.
 
 Best regards,
-The Wrext Team"""
+The Rext Team"""
     },
     "member_removed": {
         "subject": "You have been removed from {{workspace_name}}",
@@ -159,7 +159,7 @@ You have been removed from the "{{workspace_name}}" workspace by {{removed_by_na
 If you believe this was a mistake, please contact the workspace administrator.
 
 Best regards,
-The Wrext Team"""
+The Rext Team"""
     },
     "welcome": {
         "subject": "Welcome to {{workspace_name}}!",
@@ -170,7 +170,7 @@ Welcome to the "{{workspace_name}}" workspace! You've been added as a {{role_nam
 We're excited to have you on board.
 
 Best regards,
-The Wrext Team"""
+The Rext Team"""
     }
 }
 
@@ -331,8 +331,8 @@ async def get_workspace_template(db, workspace_id: str, template_type: str) -> D
 
     # Ultimate fallback
     return {
-        "subject": "Notification from Wrext",
-        "body": "You have a notification from Wrext."
+        "subject": "Notification from Rext",
+        "body": "You have a notification from Rext."
     }
 
 

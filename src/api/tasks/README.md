@@ -20,7 +20,7 @@ Contains automated subscription management tasks that should run daily:
 Add to your crontab (runs daily at 2 AM):
 
 ```bash
-0 2 * * * cd /path/to/wrext-backend && source .venv/bin/activate && python -c "import asyncio; from src.api.tasks.subscription_tasks import run_daily_subscription_tasks; asyncio.run(run_daily_subscription_tasks())" >> /var/log/wrext/subscription-tasks.log 2>&1
+0 2 * * * cd /path/to/rext-backend && source .venv/bin/activate && python -c "import asyncio; from src.api.tasks.subscription_tasks import run_daily_subscription_tasks; asyncio.run(run_daily_subscription_tasks())" >> /var/log/rext/subscription-tasks.log 2>&1
 ```
 
 ### Setup with APScheduler (Recommended)
@@ -65,7 +65,7 @@ Add to your Celery beat schedule:
 from celery import Celery
 from celery.schedules import crontab
 
-app = Celery('wrext')
+app = Celery('rext')
 
 app.conf.beat_schedule = {
     'daily-subscription-tasks': {
@@ -113,7 +113,7 @@ INFO: Daily subscription tasks completed
 Ensure these environment variables are set:
 - `RESEND_API_KEY` - For sending emails
 - `DATABASE_URL` - Database connection
-- `FRONTEND_URL` - For email links (default: https://app.wrext.com)
+- `FRONTEND_URL` - For email links (default: https://app.rext.com)
 
 ### Testing
 

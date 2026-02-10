@@ -1,10 +1,10 @@
 import logging
 import textstat
-from src.flow.states.wrext import WREXT
+from src.flow.states.rext import REXT
 
 logger = logging.getLogger(__name__)
 
-def calculate_readability(state: WREXT):
+def calculate_readability(state: REXT):
     """
     Calculates readability metrics for the generated content.
     """

@@ -1,6 +1,6 @@
 import logging
 from langgraph.graph import StateGraph, START, END
-from src.flow.states.wrext import WREXT
+from src.flow.states.rext import REXT
 
 def create_content_engine():
     """
@@ -21,7 +21,7 @@ def create_content_engine():
     from src.flow.engines.content.review.content.content_review import review_content
     from src.flow.engines.router.outline import outline_router
 
-    graph = StateGraph(WREXT)
+    graph = StateGraph(REXT)
 
     # Add nodes
     graph.add_node("topic_generation", topic_generation)

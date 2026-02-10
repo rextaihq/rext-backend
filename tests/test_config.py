@@ -150,7 +150,7 @@ class TestSettingsDefaults:
 
         settings = Settings()
 
-        assert settings.ACCESS_TOKEN_EXPIRE_MINUTES == 1440  # 24 hours
+        assert settings.ACCESS_TOKEN_EXPIRE_MINUTES == 30  # 30 minutes
         assert settings.REFRESH_TOKEN_EXPIRE_DAYS == 7  # 7 days
 
     def test_frontend_url_defaults(self, monkeypatch):

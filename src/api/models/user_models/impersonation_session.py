@@ -1,7 +1,7 @@
 
 """Impersonation session model for tracking invalidated sessions."""
 
-from datetime import datetime
+from datetime import datetime,timezone
 import uuid
 
 from sqlalchemy import Boolean, Column, DateTime, String
@@ -22,8 +22,8 @@ class ImpersonationSession(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     session_id = Column(String(255), unique=True, nullable=False, index=True)
     is_valid = Column(Boolean, default=False, nullable=False)
-    invalidated_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    invalidated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
 
     def __repr__(self):
         return f"<ImpersonationSession(session_id={self.session_id}, is_valid={self.is_valid})>"

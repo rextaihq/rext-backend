@@ -22,7 +22,9 @@ for simplicity. For higher security requirements, consider using RS256 (RSA)
 or ES256 (Elliptic Curve) with asymmetric key pairs.
 """
 
-from datetime import datetime, timedelta
+from typing import Annotated
+import warnings
+from datetime import datetime, timedelta, timezone
 from fastapi.security import OAuth2PasswordBearer
 from fastapi import Depends, HTTPException, status
 import bcrypt
@@ -53,17 +55,19 @@ def hash_password(password: str) -> str:
     return bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
 
 # verify password
-def verify_password(password: str, hashed_password: str) -> bool:
+def verify_password(password: str, hashed_password: str | None) -> bool:
     """
     Verifies that a plain text password matches the hashed password.
 
     Args:
         password (str): The plain text password.
-        hashed_password (str): The hashed password from the database.
+        hashed_password (str | None): The hashed password from the database.
 
     Returns:
         bool: True if the password matches, False otherwise.
     """
+    if hashed_password is None or hashed_password == "oauth_no_password":
+        return False
     return bcrypt.checkpw(password.encode('utf-8'), hashed_password.encode('utf-8'))
 
 # Create Access Token
@@ -81,7 +85,7 @@ def create_access_token(data: dict, expires_delta: timedelta = None) -> str:
     to_encode = data.copy()
     if expires_delta is None:
         expires_delta = timedelta(minutes=_settings.ACCESS_TOKEN_EXPIRE_MINUTES)
-    expire = datetime.utcnow() + expires_delta
+    expire = datetime.now(timezone.utc) + expires_delta
     jti = str(uuid.uuid4())  # Unique token ID for blacklisting
     to_encode.update({
         "exp": expire,
@@ -106,7 +110,7 @@ def create_refresh_token(data: dict, expires_delta: timedelta = None) -> str:
     to_encode = data.copy()
     if expires_delta is None:
         expires_delta = timedelta(days=_settings.REFRESH_TOKEN_EXPIRE_DAYS)
-    expire = datetime.utcnow() + expires_delta
+    expire = datetime.now(timezone.utc) + expires_delta
     jti = str(uuid.uuid4())  # Unique token ID for blacklisting
     to_encode.update({
         "exp": expire,
@@ -119,7 +123,7 @@ def create_refresh_token(data: dict, expires_delta: timedelta = None) -> str:
 # Reset Token
 def create_reset_token(data: dict, expires_delta: timedelta = timedelta(minutes=30)) -> str:
     """
-    Creates a JWT token for password reset.
+    Creates a JWT token for password reset with JTI and type.
 
     Args:
         data (dict): The payload to include in the token.
@@ -129,15 +133,20 @@ def create_reset_token(data: dict, expires_delta: timedelta = timedelta(minutes=
         str: The JWT token.
     """
     to_encode = data.copy()
-    expire = datetime.utcnow() + expires_delta
-    to_encode.update({"exp": expire})
+    expire = datetime.now(timezone.utc) + expires_delta
+    jti = str(uuid.uuid4())
+    to_encode.update({
+        "exp": expire,
+        "jti": jti,
+        "type": "password_reset"
+    })
     token = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return token
 
 # Verification Token
 def create_verification_token(data: dict, expires_delta: timedelta = timedelta(hours=24)) -> str:
     """
-    Creates a JWT token for email verification.
+    Creates a JWT token for email verification with JTI and type.
 
     Args:
         data (dict): The payload to include in the token.
@@ -147,8 +156,13 @@ def create_verification_token(data: dict, expires_delta: timedelta = timedelta(h
         str: The JWT token.
     """
     to_encode = data.copy()
-    expire = datetime.utcnow() + expires_delta
-    to_encode.update({"exp": expire})
+    expire = datetime.now(timezone.utc) + expires_delta
+    jti = str(uuid.uuid4())
+    to_encode.update({
+        "exp": expire,
+        "jti": jti,
+        "type": "email_verification"
+    })
     token = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return token
 
@@ -172,10 +186,80 @@ def create_verification_token(data: dict, expires_delta: timedelta = timedelta(h
 #             headers={"WWW-Authenticate": "Bearer"},
 #         )
 
-# verify password
+
+def decode_and_verify_token(token: str, expected_type: str | None = None) -> dict:
+    """
+    Decode and verify a JWT token.
+
+    This is a pure utility function for direct calls. For FastAPI route
+    dependencies, use the VerifiedToken annotated type instead.
+
+    Args:
+        token: The JWT token string to verify.
+
+    Returns:
+        dict: The decoded token payload.
+
+    Raises:
+        HTTPException: If token is invalid, expired, or malformed.
+    """
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        
+        # Check expiration
+        exp = payload.get("exp")
+        if exp and datetime.fromtimestamp(exp, tz=timezone.utc) < datetime.now(timezone.utc):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Token has expired",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+            
+        # Check token type if expected
+        if expected_type and payload.get("type") != expected_type:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail=f"Invalid token type - expected {expected_type}",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+            
+        return payload
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token has expired",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    except jwt.InvalidTokenError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token",
+            headers={"WWW-Authenticate": "Bearer"}
+        )
+
+
+def _get_verified_token(token: str = Depends(oauth2_scheme)) -> dict:
+    """
+    FastAPI dependency that extracts and verifies the JWT token from the
+    Authorization header.
+
+    This is an internal function. Use VerifiedToken type annotation in routes.
+    """
+    return decode_and_verify_token(token)
+
+
+# Type alias for use in route function signatures
+VerifiedToken = Annotated[dict, Depends(_get_verified_token)]
+
+
 def verify_token(token: str = Depends(oauth2_scheme)) -> dict:
     """
     Verifies the JWT token and decodes the payload.
+
+    .. deprecated::
+        This function has a confusing dual-purpose signature.
+        - For direct calls, use decode_and_verify_token(token) instead.
+        - For FastAPI dependencies, use VerifiedToken type annotation.
 
     Args:
         token (str): JWT token passed via the Authorization header.
@@ -186,22 +270,15 @@ def verify_token(token: str = Depends(oauth2_scheme)) -> dict:
     Returns:
         dict: The decoded payload.
     """
-    try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        exp = payload.get("exp")
-        if exp and datetime.utcfromtimestamp(exp) < datetime.utcnow():
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Token has expired",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
-        return payload
-    except Exception:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid token",
-            headers={"WWW-Authenticate": "Bearer"}
-        )
+    warnings.warn(
+        "verify_token() is deprecated. Use decode_and_verify_token() for direct calls "
+        "or VerifiedToken for FastAPI dependencies.",
+        DeprecationWarning,
+        stacklevel=2
+    )
+    # If called as a dependency, token might be provided by Depends(oauth2_scheme)
+    # If called directly, token is passed as argument.
+    return decode_and_verify_token(token)
 
 
 # Verify Refresh Token
@@ -223,7 +300,7 @@ def verify_refresh_token(token: str) -> dict:
 
         # Check expiration
         exp = payload.get("exp")
-        if exp and datetime.utcfromtimestamp(exp) < datetime.utcnow():
+        if exp and datetime.fromtimestamp(exp, tz=timezone.utc) < datetime.now(timezone.utc):
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Refresh token has expired",

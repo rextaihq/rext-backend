@@ -1,11 +1,11 @@
 import logging
 from langgraph.graph import END
 from langgraph.types import interrupt, Command
-from src.flow.states.wrext import WREXT
+from src.flow.states.rext import REXT
 
 logger = logging.getLogger(__name__)
 
-def review_outline(state: WREXT):
+def review_outline(state: REXT):
     """
     Interrupts for human approval of the generated outline.
     """

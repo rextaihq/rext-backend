@@ -1,12 +1,12 @@
 import logging
 import textstat
-from src.flow.states.wrext import WREXT
+from src.flow.states.rext import REXT
 
 logger = logging.getLogger(__name__)
 
 
-def calculate_eeat_trust(state: WREXT):
-    # get the content state form wrext state
+def calculate_eeat_trust(state: REXT):
+    # get the content state form rext state
     content_state = state.get("content", {})
     final_content = content_state.get("final_content", {})
 

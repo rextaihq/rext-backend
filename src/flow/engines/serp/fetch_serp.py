@@ -1,12 +1,9 @@
 import httpx
 import logging
-from typing import Dict, Any, List
-from src.flow.states.wrext import WREXT, SERPEngineState
-from src.flow.states.countries import VALID_COUNTRY_CODES
-from dotenv import load_dotenv
 import os
-
-load_dotenv()
+from typing import Dict, Any, List
+from src.flow.states.rext import REXT, SERPEngineState
+from src.flow.states.countries import VALID_COUNTRY_CODES
 
 logger = logging.getLogger(__name__)
 
@@ -19,6 +16,8 @@ from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_excep
     reraise=True
 )
 async def _do_fetch_serp(client: httpx.AsyncClient, query: str, country: str, api_key: str) -> Dict[str, Any]:
+    if country == "global":
+        country = ""
     payload = {"q": query, "gl": country}
     headers = {
         "X-API-KEY": api_key,
@@ -82,7 +81,7 @@ def _parse_serp_response(raw_data: Dict[str, Any]) -> SERPEngineState:
         "total_results": len(organic_results)
     }
 
-async def fetch_serp_results(state: WREXT) -> Dict[str, Any]:
+async def fetch_serp_results(state: REXT) -> Dict[str, Any]:
     """
     Fetch raw Google SERP results for a given keyword using the Serper.dev API.
     """

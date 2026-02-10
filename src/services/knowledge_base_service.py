@@ -27,7 +27,7 @@ from src.api.models.knowledge_models.knowledge_model import KnowledgeBase, Websi
 from src.utils.logger import logger
 from src.api.middleware.exceptions import (
     ResourceNotFoundException,
-    WrextValidationException,
+    RextValidationException,
     DuplicateResourceException
 )
 
@@ -205,7 +205,7 @@ class KnowledgeBaseService:
 
         Raises:
             ResourceNotFoundException: If knowledge base not found
-            WrextValidationException: If trying to update default knowledge base name
+            RextValidationException: If trying to update default knowledge base name
             DuplicateResourceException: If new name already exists
         """
         # Get knowledge base
@@ -225,7 +225,7 @@ class KnowledgeBaseService:
 
         # Prevent renaming default knowledge base
         if knowledge_base.type == "default" and name and name != knowledge_base.name:
-            raise WrextValidationException(
+            raise RextValidationException(
                 message="Cannot rename the default knowledge base",
                 field_errors={"name": ["Default knowledge base name cannot be changed"]}
             )
@@ -279,7 +279,7 @@ class KnowledgeBaseService:
 
         Raises:
             ResourceNotFoundException: If knowledge base not found
-            WrextValidationException: If trying to delete default knowledge base
+            RextValidationException: If trying to delete default knowledge base
         """
         # Get knowledge base
         result = await self.db.execute(
@@ -298,7 +298,7 @@ class KnowledgeBaseService:
 
         # Prevent deletion of default knowledge base
         if knowledge_base.type == "default":
-            raise WrextValidationException(
+            raise RextValidationException(
                 message="Cannot delete the default knowledge base",
                 field_errors={"knowledge_base_id": ["Default knowledge base cannot be deleted"]}
             )

@@ -171,7 +171,7 @@ def get_trials_expiring_soon(
             "subscription_id": str(subscription.id),
             "user_id": str(user.id),
             "email": user.email,
-            "username": user.username,
+            "full_name": user.full_name,
             "plan_name": plan.display_name,
             "trial_end_date": subscription.trial_end_date.isoformat(),
             "days_remaining": max(0, days_remaining),
@@ -383,8 +383,8 @@ async def send_trial_expiring_notification_async(
                     <li><strong>Add Payment:</strong> Convert to paid subscription and keep all premium features</li>
                     <li><strong>Do Nothing:</strong> Automatically downgrade to free plan with limited features</li>
                 </ul>
-                <p><a href="https://app.wrext.com/settings/subscription" style="background-color: #4CAF50; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">Manage Subscription</a></p>
-                <p>Thank you for trying WREXT!</p>
+                <p><a href="https://app.rext.com/settings/subscription" style="background-color: #4CAF50; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">Manage Subscription</a></p>
+                <p>Thank you for trying REXT!</p>
             """
 
             await email_service.send_email(
@@ -435,7 +435,7 @@ async def send_trial_expired_notification_async(
                     <h2>Your {plan_name} Trial Has Ended</h2>
                     <p>Hello,</p>
                     <p>Your {plan_name} trial has expired and you've been moved to our <strong>Free Plan</strong>.</p>
-                    <p>You can still use WREXT with our free plan features, but some premium features are now unavailable.</p>
+                    <p>You can still use REXT with our free plan features, but some premium features are now unavailable.</p>
                     <h3>Want to upgrade?</h3>
                     <p>Unlock all premium features by subscribing to a paid plan:</p>
                     <ul>
@@ -444,8 +444,8 @@ async def send_trial_expired_notification_async(
                         <li>Priority support</li>
                         <li>And much more!</li>
                     </ul>
-                    <p><a href="https://app.wrext.com/settings/subscription" style="background-color: #4CAF50; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">Upgrade Now</a></p>
-                    <p>Thank you for using WREXT!</p>
+                    <p><a href="https://app.rext.com/settings/subscription" style="background-color: #4CAF50; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">Upgrade Now</a></p>
+                    <p>Thank you for using REXT!</p>
                 """
             else:
                 html_content = f"""
@@ -453,8 +453,8 @@ async def send_trial_expired_notification_async(
                     <p>Hello,</p>
                     <p>Your {plan_name} trial has expired.</p>
                     <p>Your subscription is now active with the payment method on file. You'll continue to enjoy all premium features!</p>
-                    <p>Thank you for choosing WREXT!</p>
-                    <p><a href="https://app.wrext.com/settings/subscription" style="color: #4CAF50;">View Subscription Details</a></p>
+                    <p>Thank you for choosing REXT!</p>
+                    <p><a href="https://app.rext.com/settings/subscription" style="color: #4CAF50;">View Subscription Details</a></p>
                 """
 
             await email_service.send_email(

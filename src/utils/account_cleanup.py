@@ -110,7 +110,7 @@ def get_pending_deletions(db: Session) -> list:
             pending_deletions.append({
                 "user_id": str(user.id),
                 "email": user.email,
-                "username": user.username,
+                "full_name": user.full_name,
                 "deactivated_at": user.deactivated_at.isoformat(),
                 "scheduled_deletion": scheduled_deletion.isoformat(),
                 "days_remaining": max(0, days_remaining)

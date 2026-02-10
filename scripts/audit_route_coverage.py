@@ -10,7 +10,7 @@ Usage:
     python scripts/audit_route_coverage.py --show-protected
 
 Requirements:
-    - Must be run from wrext-backend directory
+    - Must be run from rext-backend directory
     - Python 3.11+
 
 Reference:

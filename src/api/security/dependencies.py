@@ -11,13 +11,13 @@ from langgraph_sdk import Auth
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.database.async_database import get_async_db
-from src.api.security.token_utils import verify_token, is_token_blacklisted
+from src.api.security.token_utils import decode_and_verify_token, is_token_blacklisted
 from src.utils.logger import logger
 
 # Lazy import to avoid circular dependency
 if TYPE_CHECKING:
     from src.api.middleware.exceptions import (
-        WrextAuthenticationException,
+        RextAuthenticationException,
         TokenExpiredException,
     )
 
@@ -29,37 +29,37 @@ async def get_current_user(
     """Check if the user's token is valid and not blacklisted."""
     # Import exceptions at runtime to avoid circular dependency
     from src.api.middleware.exceptions import (
-        WrextAuthenticationException,
+        RextAuthenticationException,
         TokenExpiredException,
     )
 
     if not authorization:
-        raise WrextAuthenticationException(
+        raise RextAuthenticationException(
             message="Authorization header missing",
             context={"expected_format": "Bearer <token>"}
         )
     try:
         scheme, token = authorization.split()
     except ValueError:
-        raise WrextAuthenticationException(
+        raise RextAuthenticationException(
             message="Invalid authorization header format",
             context={"expected_format": "Bearer <token>"}
         )
 
     if scheme.lower() != "bearer":
-        raise WrextAuthenticationException(
+        raise RextAuthenticationException(
             message="Invalid authentication scheme",
             context={"provided_scheme": scheme, "expected_scheme": "bearer"}
         )
 
     try:
         # Verify the token
-        payload = verify_token(token)
+        payload = decode_and_verify_token(token)
 
         # Check if token is blacklisted
         jti = payload.get("jti")
         if jti and await is_token_blacklisted(jti, db):
-            raise WrextAuthenticationException(
+            raise RextAuthenticationException(
                 message="Token has been revoked",
                 context={"reason": "Token blacklisted"}
             )
@@ -70,15 +70,15 @@ async def get_current_user(
                 message="Authentication token has expired"
             )
         else:
-            raise WrextAuthenticationException(
+            raise RextAuthenticationException(
                 message="Invalid authentication token",
                 context={"token_error": str(e.detail)}
             )
-    except WrextAuthenticationException:
+    except RextAuthenticationException:
         # Re-raise authentication exceptions (including blacklist check)
         raise
     except Exception as e:
-        raise WrextAuthenticationException(
+        raise RextAuthenticationException(
             message="Token validation failed",
             context={"error_details": str(e)}
         )
@@ -86,14 +86,13 @@ async def get_current_user(
     # Extract user info from JWT payload
     user_id = payload.get("id")  # usually `sub` holds user id
     if not user_id:
-        raise WrextAuthenticationException(
+        raise RextAuthenticationException(
             message="User ID missing in token payload",
             context={"payload_keys": list(payload.keys())}
         )
 
     user_info = {
         "identity": user_id,
-        "username": payload.get("username"),
         "email": payload.get("email"),
         "roles": payload.get("roles", []),
         "is_impersonating": payload.get("is_impersonating", False),
@@ -134,10 +133,13 @@ async def get_current_user_sse(
     """
     Authentication dependency for SSE that supports both Header and Query param.
     EventSource API does not support custom headers, so we allow passing token via query param.
+
+    DEPRECATED: Passing token via query parameter is deprecated for security reasons (token leakage in logs).
+    Please use the 'Authorization' header where possible (e.g., using a custom polyfill or library that supports headers).
     """
     # Import exceptions at runtime to avoid circular dependency
     from src.api.middleware.exceptions import (
-        WrextAuthenticationException,
+        RextAuthenticationException,
         TokenExpiredException,
     )
 
@@ -151,22 +153,26 @@ async def get_current_user_sse(
             pass
     
     if not auth_token and token:
+        logger.warning(
+            "Authentication via 'token' query parameter is deprecated and will be removed in a future version. "
+            "Please use the 'Authorization' header instead."
+        )
         auth_token = token
 
     if not auth_token:
-        raise WrextAuthenticationException(
+        raise RextAuthenticationException(
             message="Authentication required",
             context={"expected_sources": ["Authorization header", "token query param"]}
         )
 
     try:
         # Verify the token
-        payload = verify_token(auth_token)
+        payload = decode_and_verify_token(auth_token)
 
         # Check if token is blacklisted
         jti = payload.get("jti")
         if jti and await is_token_blacklisted(jti, db):
-            raise WrextAuthenticationException(
+            raise RextAuthenticationException(
                 message="Token has been revoked",
                 context={"reason": "Token blacklisted"}
             )
@@ -177,14 +183,14 @@ async def get_current_user_sse(
                 message="Authentication token has expired"
             )
         else:
-            raise WrextAuthenticationException(
+            raise RextAuthenticationException(
                 message="Invalid authentication token",
                 context={"token_error": str(e.detail)}
             )
-    except WrextAuthenticationException:
+    except RextAuthenticationException:
         raise
     except Exception as e:
-        raise WrextAuthenticationException(
+        raise RextAuthenticationException(
             message="Token validation failed",
             context={"error_details": str(e)}
         )
@@ -192,14 +198,13 @@ async def get_current_user_sse(
     # Extract user info from JWT payload
     user_id = payload.get("id")
     if not user_id:
-        raise WrextAuthenticationException(
+        raise RextAuthenticationException(
             message="User ID missing in token payload",
             context={"payload_keys": list(payload.keys())}
         )
 
     user_info = {
         "identity": user_id,
-        "username": payload.get("username"),
         "email": payload.get("email"),
         "roles": payload.get("roles", []),
         "is_impersonating": payload.get("is_impersonating", False),

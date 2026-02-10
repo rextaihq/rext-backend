@@ -17,7 +17,7 @@ from src.api.security.dependencies import get_current_user
 from src.services.workspace_service import WorkspaceService
 from src.utils.response_utils import created, success
 from src.utils.route_decorators import db_transaction_handler, require_permissions
-from src.api.middleware.exceptions import WrextValidationException
+from src.api.middleware.exceptions import RextValidationException
 from src.api.middleware.usage_limiter import check_workspace_limit
 
 router = APIRouter(prefix="/workspace", tags=["workspace"])
@@ -57,13 +57,13 @@ async def create_workspace_restful(
     tracking background processing via SSE.
     """
     if not data.name:
-        raise WrextValidationException(
+        raise RextValidationException(
             message="Workspace name is required",
             field_errors={"name": ["Name must be provided"]},
         )
 
     if not data.url:
-        raise WrextValidationException(
+        raise RextValidationException(
             message="Workspace URL is required",
             field_errors={"url": ["URL must be provided and valid"]},
         )

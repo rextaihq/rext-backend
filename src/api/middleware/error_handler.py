@@ -32,7 +32,7 @@ from src.api.schema.response_schemas import (
     get_error_code_for_http_status,
     get_severity_for_http_status,
 )
-from src.api.middleware.exceptions import WrextAPIException
+from src.api.middleware.exceptions import RextAPIException
 from src.api.middleware.request_tracker import get_request_id, get_processing_time_ms
 from src.utils.logger import logger
 
@@ -125,8 +125,8 @@ class ErrorHandlerMiddleware(BaseHTTPMiddleware):
             processing_time_ms = get_processing_time_ms(start_time)
 
         # Handle different exception types
-        if isinstance(exception, WrextAPIException):
-            error_response = self._handle_wrext_exception(
+        if isinstance(exception, RextAPIException):
+            error_response = self._handle_rext_exception(
                 exception, request_id, processing_time_ms
             )
         elif isinstance(exception, HTTPException):
@@ -150,17 +150,17 @@ class ErrorHandlerMiddleware(BaseHTTPMiddleware):
             content=json.loads(error_response.json())
         )
 
-    def _handle_wrext_exception(
+    def _handle_rext_exception(
         self,
-        exception: WrextAPIException,
+        exception: RextAPIException,
         request_id: str,
         processing_time_ms: Optional[int] = None
     ) -> ErrorResponse:
         """
-        Handle custom Wrext API exceptions.
+        Handle custom Rext API exceptions.
 
         Args:
-            exception: WrextAPIException instance
+            exception: RextAPIException instance
             request_id: Request ID for correlation
             processing_time_ms: Processing time in milliseconds
 
@@ -181,7 +181,7 @@ class ErrorHandlerMiddleware(BaseHTTPMiddleware):
                     level="error" if exception.severity == "high" else "fatal",
                     tags={
                         "error_code": exception.error_code.value,
-                        "error_type": "wrext_api_exception",
+                        "error_type": "rext_api_exception",
                     }
                 )
             except Exception as sentry_error:
@@ -372,7 +372,7 @@ class ErrorHandlerMiddleware(BaseHTTPMiddleware):
         filtered_details = []
         sensitive_fields = {
             'password', 'token', 'secret', 'key', 'authorization',
-            'cookie', 'session', 'credential', 'private'
+            'cookie', 'session', 'credential', 'private', 'conflicting_value'
         }
 
         for detail in details:
@@ -411,7 +411,7 @@ class ErrorHandlerMiddleware(BaseHTTPMiddleware):
         filtered_context = {}
         sensitive_keys = {
             'password', 'token', 'secret', 'key', 'authorization',
-            'cookie', 'session', 'credential', 'private', 'api_key'
+            'cookie', 'session', 'credential', 'private', 'api_key', 'conflicting_value'
         }
 
         for key, value in context.items():
@@ -466,7 +466,7 @@ class ErrorHandlerMiddleware(BaseHTTPMiddleware):
             logger.warning(
                 f"Handled error in {request.method} {request.url.path}: {error_response.error['message']}",
                 extra=log_context,
-                exc_info=isinstance(exception, WrextAPIException) and self.log_full_traceback
+                exc_info=isinstance(exception, RextAPIException) and self.log_full_traceback
             )
         else:  # low severity
             logger.info(
@@ -482,9 +482,9 @@ def setup_exception_handlers(app: FastAPI) -> None:
     Args:
         app: FastAPI application instance
     """
-    @app.exception_handler(WrextAPIException)
-    async def wrext_exception_handler(request: Request, exc: WrextAPIException):
-        """Handle custom Wrext API exceptions."""
+    @app.exception_handler(RextAPIException)
+    async def rext_exception_handler(request: Request, exc: RextAPIException):
+        """Handle custom Rext API exceptions."""
         request_id = get_request_id(request)
 
         error_response = create_error_response(
@@ -498,7 +498,7 @@ def setup_exception_handlers(app: FastAPI) -> None:
         )
 
         logger.error(
-            f"Wrext API Exception: {exc.message}",
+            f"Rext API Exception: {exc.message}",
             extra={
                 "request_id": request_id,
                 "error_code": exc.error_code.value,

@@ -1,6 +1,6 @@
 import logging
 from langgraph.graph import StateGraph, START, END
-from src.flow.states.wrext import WREXT
+from src.flow.states.rext import REXT
 
 logger = logging.getLogger(__name__)
 
@@ -18,21 +18,13 @@ def create_seo_engine():
     from src.flow.engines.seo.keyword_finder import relevance_keyword_finder
     from src.flow.engines.seo.recomendation.keyword_recomendation import keyword_recommendation
 
-    graph = StateGraph(WREXT)
+    graph = StateGraph(REXT)
 
-    def debug_node(func, node_name):
-        def wrapped(state):
-            result = func(state)
-            print(f"\n{'='*20} NODE: {node_name} {'='*20}")
-            print('='*50 + "\n")
-            return result
-        return wrapped
-
-    graph.add_node("seo_entry", debug_node(lambda state: state, "seo_entry"))
+    graph.add_node("seo_entry", lambda state: state)
 
     graph.add_node(
     "compute_keyword_difficulty",
-    debug_node(compute_keyword_difficulty, "compute_keyword_difficulty")
+    compute_keyword_difficulty
     )
 
     # Add Nodes

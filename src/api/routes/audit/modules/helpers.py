@@ -5,13 +5,13 @@ from datetime import datetime
 
 from src.api.models.audit_models.audit_logs import AuditLog
 from src.api.schema.audit_schema import AuditStatus
-from src.api.middleware.exceptions import WrextValidationException
+from src.api.middleware.exceptions import RextValidationException
 
 
 async def build_audit_query(
     db: AsyncSession,
     user_id: Optional[str] = None,
-    username: Optional[str] = None,
+    full_name: Optional[str] = None,
     user_email: Optional[str] = None,
     action: Optional[str] = None,
     resource_type: Optional[str] = None,
@@ -31,8 +31,8 @@ async def build_audit_query(
     # Filter by user
     if user_id:
         query = query.where(AuditLog.user_id == user_id)
-    if username:
-        query = query.where(AuditLog.username.ilike(f"%{username}%"))
+    if full_name:
+        query = query.where(AuditLog.full_name.ilike(f"%{full_name}%"))
     if user_email:
         query = query.where(AuditLog.user_email.ilike(f"%{user_email}%"))
 
@@ -65,7 +65,7 @@ async def build_audit_query(
             date_from_dt = datetime.fromisoformat(date_from.replace("Z", "+00:00"))
             query = query.where(AuditLog.created_at >= date_from_dt)
         except ValueError:
-            raise WrextValidationException(
+            raise RextValidationException(
                 field="date_from",
                 message="Invalid date format. Use ISO 8601 format (e.g., 2025-10-01T00:00:00Z)"
             )
@@ -75,7 +75,7 @@ async def build_audit_query(
             date_to_dt = datetime.fromisoformat(date_to.replace("Z", "+00:00"))
             query = query.where(AuditLog.created_at <= date_to_dt)
         except ValueError:
-            raise WrextValidationException(
+            raise RextValidationException(
                 field="date_to",
                 message="Invalid date format. Use ISO 8601 format (e.g., 2025-10-02T23:59:59Z)"
             )
@@ -97,7 +97,7 @@ def format_audit_log(log: AuditLog, include_details: bool = False) -> dict:
     base_data = {
         "id": str(log.id),
         "user_id": str(log.user_id) if log.user_id else None,
-        "username": log.username,
+        "full_name": log.full_name,
         "user_email": log.user_email,
         "action": log.action,
         "resource_type": log.resource_type,

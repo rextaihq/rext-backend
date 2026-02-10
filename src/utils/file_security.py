@@ -24,7 +24,7 @@ from typing import Optional, Tuple
 from pathlib import Path
 
 import filetype
-import requests
+import httpx
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -373,28 +373,32 @@ class FileSecurityValidator:
             # Upload file for scanning
             url = "https://www.virustotal.com/api/v3/files"
             headers = {"x-apikey": self.settings.VIRUSTOTAL_API_KEY}
-            files = {"file": (filename, io.BytesIO(file_bytes))}
 
-            response = requests.post(url, headers=headers, files=files, timeout=30)
+            async with httpx.AsyncClient() as client:
+                response = await client.post(
+                    url, headers=headers,
+                    files={"file": (filename, io.BytesIO(file_bytes))},
+                    timeout=30
+                )
 
-            if response.status_code != 200:
-                logger.error(f"VirusTotal API error: {response.status_code} - {response.text}")
-                return ValidationResult(is_valid=True)  # Fail open
+                if response.status_code != 200:
+                    logger.error(f"VirusTotal API error: {response.status_code} - {response.text}")
+                    return ValidationResult(is_valid=True)  # Fail open
 
-            data = response.json()
-            analysis_id = data.get("data", {}).get("id")
+                data = response.json()
+                analysis_id = data.get("data", {}).get("id")
 
-            if not analysis_id:
-                logger.error("VirusTotal: No analysis ID in response")
-                return ValidationResult(is_valid=True)  # Fail open
+                if not analysis_id:
+                    logger.error("VirusTotal: No analysis ID in response")
+                    return ValidationResult(is_valid=True)  # Fail open
 
-            # Get analysis results
-            analysis_url = f"https://www.virustotal.com/api/v3/analyses/{analysis_id}"
-            analysis_response = requests.get(analysis_url, headers=headers, timeout=30)
+                # Get analysis results
+                analysis_url = f"https://www.virustotal.com/api/v3/analyses/{analysis_id}"
+                analysis_response = await client.get(analysis_url, headers=headers, timeout=30)
 
-            if analysis_response.status_code != 200:
-                logger.error(f"VirusTotal analysis error: {analysis_response.status_code}")
-                return ValidationResult(is_valid=True)  # Fail open
+                if analysis_response.status_code != 200:
+                    logger.error(f"VirusTotal analysis error: {analysis_response.status_code}")
+                    return ValidationResult(is_valid=True)  # Fail open
 
             analysis_data = analysis_response.json()
             stats = analysis_data.get("data", {}).get("attributes", {}).get("stats", {})
@@ -411,7 +415,7 @@ class FileSecurityValidator:
             logger.info(f"VirusTotal scan passed: {filename}")
             return ValidationResult(is_valid=True)
 
-        except requests.RequestException as e:
+        except httpx.HTTPError as e:
             logger.error(f"VirusTotal API request error: {e}", exc_info=True)
             return ValidationResult(is_valid=True)  # Fail open
         except Exception as e:

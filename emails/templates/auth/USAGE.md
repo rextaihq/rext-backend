@@ -12,7 +12,7 @@ This guide shows how to integrate the auth email templates with the existing aut
 
 ### 1. Email Verification (Registration)
 
-**File:** `wrext-backend/src/api/routes/users/auth.py`
+**File:** `rext-backend/src/api/routes/users/auth.py`
 
 **Current Implementation:**
 ```python
@@ -47,7 +47,7 @@ email_service = EmailService(db)
 background_tasks.add_task(
     email_service.send_email,
     to=new_user.email,
-    subject="Verify Your Email Address - WREXT",
+    subject="Verify Your Email Address - REXT",
     html=email_html,
     user_id=new_user.id,
     template_type="email_verification",
@@ -79,7 +79,7 @@ email_service = EmailService(db)
 background_tasks.add_task(
     email_service.send_email,
     to=user.email,
-    subject="Reset Your Password - WREXT",
+    subject="Reset Your Password - REXT",
     html=email_html,
     user_id=user.id,
     template_type="password_reset",
@@ -109,7 +109,7 @@ email_service = EmailService(db)
 background_tasks.add_task(
     email_service.send_email,
     to=user.email,
-    subject="Welcome to WREXT!",
+    subject="Welcome to REXT!",
     html=email_html,
     user_id=user.id,
     template_type="welcome",
@@ -119,7 +119,7 @@ background_tasks.add_task(
 
 ## Complete Example: Update Registration Route
 
-**File:** `wrext-backend/src/api/routes/users/auth.py`
+**File:** `rext-backend/src/api/routes/users/auth.py`
 
 ```python
 from fastapi import APIRouter, Depends, Request, BackgroundTasks
@@ -169,7 +169,7 @@ async def register_user(
     async def send_verification():
         await email_service.send_email(
             to=new_user.email,
-            subject="Verify Your Email Address - WREXT",
+            subject="Verify Your Email Address - REXT",
             html=email_html,
             user_id=new_user.id,
             template_type="email_verification",
@@ -234,7 +234,7 @@ email_html = render_verification_email(
 
 ```python
 # Use different URL for staging/production
-frontend_url = os.getenv("FRONTEND_URL", "https://app.wrext.com")
+frontend_url = os.getenv("FRONTEND_URL", "https://app.rext.com")
 
 email_html = create_verification_email(
     user_name="John",
@@ -308,13 +308,13 @@ Ensure these are set in `.env`:
 
 ```env
 # Frontend URL for email links
-FRONTEND_URL=https://app.wrext.com
+FRONTEND_URL=https://app.rext.com
 
 # Email service configuration (already set in Phase 1)
 EMAIL_PROVIDER=resend
 RESEND_API_KEY=re_xxxxxxxxxxxxx
-RESEND_FROM_EMAIL=noreply@wrext.com
-RESEND_FROM_NAME=WREXT
+RESEND_FROM_EMAIL=noreply@rext.com
+RESEND_FROM_NAME=REXT
 ```
 
 ## Troubleshooting
@@ -364,5 +364,5 @@ After implementing auth templates:
 
 For questions or issues:
 - Check [emails/README.md](../../README.md) for component documentation
-- Review [EmailService documentation](../../../wrext-backend/src/services/email_service.py)
+- Review [EmailService documentation](../../../rext-backend/src/services/email_service.py)
 - Test templates using `emails/examples/auth_templates_test.py`

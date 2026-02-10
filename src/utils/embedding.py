@@ -1,10 +1,4 @@
 from langchain_openai import OpenAIEmbeddings
-from dotenv import load_dotenv
-import os
-
-# Resolve and load .env from project root
-project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-load_dotenv(os.path.join(project_root, ".env"))
 
 from src.utils.logger import logger
 

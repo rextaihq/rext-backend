@@ -1,12 +1,11 @@
-# name: STAGE_CI_CD
+# name: DEV_CI_CD
 
 # on:
 #   pull_request:
 #     types:
 #       - closed
 #     branches:
-#       - stage
-
+#       - dev
 # jobs:
 #   build:
 #     if: github.event.pull_request.merged == true
@@ -21,6 +20,9 @@
 #         with:
 #           python-version: '3.11'
       
+#       - name: Install uv
+#         run: pip install uv
+      
 #       - name: Cache uv dependencies
 #         uses: actions/cache@v3
 #         with:
@@ -29,6 +31,9 @@
 #           restore-keys: |
 #             ${{ runner.os }}-uv-
 
+#       - name: Install dependencies
+#         run: uv sync
+
 #       - name: Cache pip packages
 #         uses: actions/cache@v3
 #         with:
@@ -36,7 +41,7 @@
 #           key: ${{ runner.os }}-pip-${{ hashFiles('**/uv.lock') }}
 #           restore-keys: |
 #             ${{ runner.os }}-pip-
-
+     
 #       - name: Install system dependencies
 #         run: |
 #           sudo apt-get update
@@ -50,11 +55,8 @@
 #             libstdc++6 \
 #             && sudo apt-get clean
 
-#       - name: Install UV and Python dependencies
-#         run: |
-#           pip install uv
-#           uv sync
-#           uv pip install --system --no-cache-dir playwright crawl4ai
+#       - name: Install uv and Python dependencies
+#         run: pip install uv && uv pip install --system --no-cache-dir playwright crawl4ai
 
 #       - name: Install Playwright browser
 #         run: playwright install chromium
@@ -85,102 +87,118 @@
 #         run: pip install langgraph-cli
           
 #       - name: Build Docker image with LangGraph
-#         run: langgraph build -t ${{ secrets.DOCKER_USERNAME }}/wrext:stage
+#         run: langgraph build -t  ${{ secrets.DOCKER_USERNAME }}/wrext:dev
 
 #       - name: Push Docker image
-#         run: docker push ${{ secrets.DOCKER_USERNAME }}/wrext:stage
+#         run: docker push ${{ secrets.DOCKER_USERNAME }}/wrext:dev
   
-#   deploy:
-#     needs: docker_job
-#     runs-on: self-hosted
+  # deploy:
+  #   needs: docker_job
+  #   runs-on: self-hosted
 
-#     env:
-#       IMAGE_TAG: stage
-#       ENVIRONMENT: staging
-#       DEBUG: "true"
+  #   env:
+  #     # Image tag for docker-compose
+  #     IMAGE_TAG: dev
+      
+  #     # Environment settings
+  #     ENVIRONMENT: development
+  #     DEBUG: "true"
+      
+  #     # Core API Keys
+  #     OPENAI_API_KEY: ${{ secrets.DEV_OPENAI_API_KEY }}
+  #     LANGSMITH_API_KEY: ${{ secrets.DEV_LANGSMITH_API_KEY }}
+      
+  #     # Database
+  #     POSTGRES_URI_CUSTOM: ${{ secrets.DEV_POSTGRES_URI_CUSTOM }}
+  #     DATABASE_URI: ${{ secrets.DEV_DATABASE_URI }}
+  #     REDIS_URI: ${{ secrets.DEV_REDIS_URI }}
+  #     REDIS_URL: ${{ secrets.DEV_REDIS_URL }}
+      
+  #     # Security
+  #     SECRET_KEY: ${{ secrets.DEV_SECRET_KEY }}
+  #     REFRESH_SECRET_KEY: ${{ secrets.DEV_REFRESH_SECRET_KEY }}
+  #     ALGORITHM: ${{ secrets.DEV_ALGORITHM }}
+      
+  #     # Frontend + CORS
+  #     FRONTEND_URL: ${{ secrets.DEV_FRONTEND_URL }}
+  #     ALLOWED_ORIGINS: ${{ secrets.DEV_ALLOWED_ORIGINS }}
+      
+  #     # Admin
+  #     SUPER_ADMIN_EMAIL: ${{ secrets.DEV_SUPER_ADMIN_EMAIL }}
+  #     SUPER_ADMIN_PASSWORD: ${{ secrets.DEV_SUPER_ADMIN_PASSWORD }}
 
-#       # Core API Keys
-#       OPENAI_API_KEY: ${{ secrets.STAGE_OPENAI_API_KEY }}
-#       LANGSMITH_API_KEY: ${{ secrets.STAGE_LANGSMITH_API_KEY }}
-#       PERPLEXITY_API_KEY: ${{ secrets.STAGE_PERPLEXITY_API_KEY }}
-#       SERPER_API_KEY: ${{ secrets.STAGE_SERPER_API_KEY }}
+  #   steps:
+  #     - name: Checkout code
+  #       uses: actions/checkout@v3
 
-#       # Database
-#       POSTGRES_URI_CUSTOM: ${{ secrets.STAGE_POSTGRES_URI_CUSTOM }}
-#       DATABASE_URI: ${{ secrets.STAGE_DATABASE_URI }}
-#       REDIS_URI: ${{ secrets.STAGE_REDIS_URI }}
-#       REDIS_URL: ${{ secrets.STAGE_REDIS_URL }}
+  #     - name: Deploy Docker to DEV
+  #       run: |
+  #         # Ensure correct working directory for DEV
+  #         DEPLOY_DIR=~/REXT/dev/backend
+  #         mkdir -p $DEPLOY_DIR
+  #         cp -r $GITHUB_WORKSPACE/* $DEPLOY_DIR/
+  #         cd $DEPLOY_DIR
 
-#       # Security
-#       SECRET_KEY: ${{ secrets.STAGE_SECRET_KEY }}
-#       REFRESH_SECRET_KEY: ${{ secrets.STAGE_REFRESH_SECRET_KEY }}
-#       ALGORITHM: ${{ secrets.STAGE_ALGORITHM }}
+  #         echo "🚀 Starting DEV deployment..."
 
-#       # Frontend + CORS
-#       FRONTEND_URL: ${{ secrets.STAGE_FRONTEND_URL }}
-#       ALLOWED_ORIGINS: ${{ secrets.STAGE_ALLOWED_ORIGINS }}
+  #         # Create .env file dynamically from GitHub secrets
+  #         cat > .env <<EOF
+  #         IMAGE_TAG=dev
+  #         ENVIRONMENT=development
+  #         DEBUG=true
 
-#       # Admin
-#       SUPER_ADMIN_EMAIL: ${{ secrets.STAGE_SUPER_ADMIN_EMAIL }}
-#       SUPER_ADMIN_PASSWORD: ${{ secrets.STAGE_SUPER_ADMIN_PASSWORD }}
+  #         # Core API Keys
+  #         OPENAI_API_KEY=${{ secrets.DEV_OPENAI_API_KEY }}
+  #         LANGSMITH_API_KEY=${{ secrets.DEV_LANGSMITH_API_KEY }}
 
-#       # Payment
-#       PAYMENT_CANCEL_URL: ${{ secrets.STAGE_PAYMENT_CANCEL_URL }}
-#       PAYMENT_SUCCESS_URL: ${{ secrets.STAGE_PAYMENT_SUCCESS_URL }}
+  #         # Database
+  #         POSTGRES_URI_CUSTOM=${{ secrets.DEV_POSTGRES_URI_CUSTOM }}
+  #         DATABASE_URI=${{ secrets.DEV_DATABASE_URI }}
+  #         REDIS_URI=${{ secrets.DEV_REDIS_URI }}
+  #         REDIS_URL=${{ secrets.DEV_REDIS_URL }}
 
-#     steps:
-#       - name: Checkout code
-#         uses: actions/checkout@v3
+  #         # Security
+  #         SECRET_KEY=${{ secrets.DEV_SECRET_KEY }}
+  #         REFRESH_SECRET_KEY=${{ secrets.DEV_REFRESH_SECRET_KEY }}
+  #         ALGORITHM=${{ secrets.DEV_ALGORITHM }}
 
-#       - name: Deploy Docker to STAGE
-#         run: |
-#           DEPLOY_DIR=~/WREXT/stage/backend
-#           mkdir -p $DEPLOY_DIR
-#           cp -r $GITHUB_WORKSPACE/* $DEPLOY_DIR/
-#           cd $DEPLOY_DIR
+  #         # Frontend + CORS
+  #         FRONTEND_URL=${{ secrets.DEV_FRONTEND_URL }}
+  #         ALLOWED_ORIGINS=${{ secrets.DEV_ALLOWED_ORIGINS }}
 
-#           echo "🚀 Starting STAGE deployment..."
-#           cat > .env <<EOF
-# IMAGE_TAG=stage
-# ENVIRONMENT=staging
-# DEBUG=true
+  #         # Admin
+  #         SUPER_ADMIN_EMAIL=${{ secrets.DEV_SUPER_ADMIN_EMAIL }}
+  #         SUPER_ADMIN_PASSWORD=${{ secrets.DEV_SUPER_ADMIN_PASSWORD }}
 
-# # Core API Keys
-# OPENAI_API_KEY=${{ secrets.STAGE_OPENAI_API_KEY }}
-# LANGSMITH_API_KEY=${{ secrets.STAGE_LANGSMITH_API_KEY }}
-# PERPLEXITY_API_KEY=${{ secrets.STAGE_PERPLEXITY_API_KEY }}
-# SERPER_API_KEY=${{ secrets.STAGE_SERPER_API_KEY }}
+  #         # LangGraph
+  #         SERPER_API_KEY=${{ secrets.DEV_SERPER_API_KEY }}
+  #         PERPLEXITY_API_KEY=${{ secrets.DEV_PERPLEXITY_API_KEY }}
+  #         PAYMENT_CANCEL_URL=${{ secrets.PAYMENT_CANCEL_URL }}
+  #         PAYMENT_SUCCESS_URL=${{ secrets.PAYMENT_SUCCESS_URL }}
 
-# # Database
-# POSTGRES_URI_CUSTOM=${{ secrets.STAGE_POSTGRES_URI_CUSTOM }}
-# DATABASE_URI=${{ secrets.STAGE_DATABASE_URI }}
-# REDIS_URI=${{ secrets.STAGE_REDIS_URI }}
-# REDIS_URL=${{ secrets.STAGE_REDIS_URL }}
+  #         # For Langgraph Task
+  #         BG_JOB_ISOLATED_LOOPS=true
+  #         N_JOBS_PER_WORKER=50
+  #         EOF
 
-# # Security
-# SECRET_KEY=${{ secrets.STAGE_SECRET_KEY }}
-# REFRESH_SECRET_KEY=${{ secrets.STAGE_REFRESH_SECRET_KEY }}
-# ALGORITHM=${{ secrets.STAGE_ALGORITHM }}
+  #         echo ".env file created ✅"
 
-# # Frontend + CORS
-# FRONTEND_URL=${{ secrets.STAGE_FRONTEND_URL }}
-# ALLOWED_ORIGINS=${{ secrets.STAGE_ALLOWED_ORIGINS }}
+  #         # Log in to Docker
+  #         echo "${{ secrets.DOCKER_PASSWORD }}" | docker login -u "${{ secrets.DOCKER_USERNAME }}" --password-stdin
 
-# # Admin
-# SUPER_ADMIN_EMAIL=${{ secrets.STAGE_SUPER_ADMIN_EMAIL }}
-# SUPER_ADMIN_PASSWORD=${{ secrets.STAGE_SUPER_ADMIN_PASSWORD }}
+  #         # Pull latest DEV image
+  #         docker pull ${{ secrets.DOCKER_USERNAME }}/wrext:dev
 
-# # Payment
-# PAYMENT_CANCEL_URL=${{ secrets.STAGE_PAYMENT_CANCEL_URL }}
-# PAYMENT_SUCCESS_URL=${{ secrets.STAGE_PAYMENT_SUCCESS_URL }}
-# EOF
+  #         # Stop and remove old containers
+  #         docker compose down || true
 
-#           echo ".env file created ✅"
+  #         # Start containers (Docker Compose will automatically load .env)
+  #         docker compose up -d
 
-#           # Pull latest STAGE image
-#           docker pull ${{ secrets.DOCKER_USERNAME }}/wrext:stage
+  #         # Clean up old images
+  #         docker image prune -f
 
-#           # Start containers
-#           docker compose up -d
+  #         # Show running containers
+  #         docker ps
 
-#           echo "✅ STAGE Deployment completed successfully."
+  #         echo "✅ DEV Deployment completed successfully."

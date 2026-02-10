@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Request, BackgroundTasks
+from fastapi import APIRouter, Depends, Request, BackgroundTasks, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from uuid import UUID
 import uuid
@@ -14,7 +14,7 @@ from src.api.database.async_database import get_async_db
 from src.utils.response_utils import success, error
 from src.api.schema.response_schemas import ErrorCode, ErrorSeverity
 from src.services.user_service import UserService
-from src.api.middleware.exceptions import ResourceNotFoundException, WrextValidationException
+from src.api.middleware.exceptions import ResourceNotFoundException, RextValidationException
 from src.api.models.workspace_models.workspace_member import WorkspaceMembers
 from src.api.config import get_settings
 from sqlalchemy import select, delete
@@ -68,7 +68,7 @@ async def send_data_export_email_task(
             </ul>
 
             <p>Your data is included below as JSON.</p>
-            <p><a href="{frontend_url}">Return to WREXT</a></p>
+            <p><a href="{frontend_url}">Return to REXT</a></p>
 
             <hr>
             <pre style="background: #f4f4f4; padding: 15px; border-radius: 5px; overflow-x: auto;">
@@ -78,7 +78,7 @@ async def send_data_export_email_task(
 
             await email_service.send_email(
                 to=email,
-                subject="Your WREXT Data Export",
+                subject="Your REXT Data Export",
                 html=body_html,
                 user_id=UUID(user_id),
                 template_type="data_export",
@@ -94,12 +94,13 @@ async def send_data_export_email_task(
 async def get_users(
     request: Request,
     workspace_id: str = None,
+    page: int = Query(1, ge=1, description="Page number"),
+    per_page: int = Query(50, ge=1, le=100, description="Items per page"),
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_async_db)
 ):
     """
-    Retrieve users, optionally filtered by workspace.
-    Thin controller - business logic could be extracted to service.
+    Retrieve users, optionally filtered by workspace. Supports pagination.
 
     Requires authentication.
     """
@@ -107,17 +108,20 @@ async def get_users(
         service = UserService(db)
         workspace_uuid = UUID(workspace_id) if workspace_id else None
 
-        # Get users via service
-        users = await service.get_users(workspace_id=workspace_uuid)
+        result = await service.get_users(
+            workspace_id=workspace_uuid,
+            page=page,
+            per_page=per_page,
+        )
 
-        # Convert users to dict format (excluding passwords)
-        user_data = [user.to_dict() for user in users]
+        user_data = [user.to_dict() for user in result["users"]]
 
         return success(
             data={
                 "users": user_data,
-                "total_count": len(user_data),
-                "workspace_id": workspace_id
+                "total_count": result["pagination"]["total"],
+                "workspace_id": workspace_id,
+                "pagination": result["pagination"],
             },
             request=request,
             message=f"Retrieved {len(user_data)} users successfully"
@@ -189,9 +193,9 @@ async def delete_user(
             severity=ErrorSeverity.MEDIUM,
             request=request
         )
-    except WrextValidationException as e:
+    except RextValidationException:
         return error(
-            message=str(e),
+            message="Validation failed",
             code=ErrorCode.DEPENDENCY_ERROR,
             status_code=400,
             severity=ErrorSeverity.MEDIUM,
@@ -221,9 +225,7 @@ async def update_user(
         db_user = await service.update_user(
             user_id=UUID(user_id),
             email=user.email,
-            username=user.username,
-            first_name=user.first_name,
-            last_name=user.last_name,
+            full_name=user.full_name,
             display_name=user.display_name,
             language=user.language,
             timezone=user.timezone
@@ -232,10 +234,8 @@ async def update_user(
         # Return updated user data (excluding password)
         user_data = {
             "id": str(db_user.id),
-            "username": db_user.username,
             "email": db_user.email,
-            "first_name": db_user.first_name,
-            "last_name": db_user.last_name,
+            "full_name": db_user.full_name,
             "display_name": db_user.display_name,
             "language": db_user.language,
             "timezone": db_user.timezone,
@@ -257,9 +257,9 @@ async def update_user(
             severity=ErrorSeverity.MEDIUM,
             request=request
         )
-    except WrextValidationException as e:
+    except RextValidationException:
         return error(
-            message=str(e),
+            message="Validation failed",
             code=ErrorCode.DUPLICATE_RESOURCE,
             status_code=400,
             severity=ErrorSeverity.MEDIUM,
@@ -312,9 +312,7 @@ async def export_user_data(
             export_data["profile"] = {
                 "id": str(db_user.id),
                 "email": db_user.email,
-                "username": db_user.username,
-                "first_name": db_user.first_name,
-                "last_name": db_user.last_name,
+                "full_name": db_user.full_name,
                 "display_name": db_user.display_name,
                 "language": db_user.language,
                 "timezone": db_user.timezone,
@@ -414,7 +412,7 @@ async def export_user_data(
         background_tasks.add_task(
             send_data_export_email_task,
             email=db_user.email,
-            name=db_user.first_name or db_user.username,
+            name=db_user.full_name or "User",
             export_id=export_id,
             export_json=export_json,
             export_request=export_request,
@@ -453,6 +451,5 @@ async def export_user_data(
             code=ErrorCode.INTERNAL_SERVER_ERROR,
             status_code=500,
             severity=ErrorSeverity.HIGH,
-            context={"error_details": str(e)},
             request=request
         )
