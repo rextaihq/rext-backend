@@ -25,9 +25,9 @@ class TokenBlacklist(Base, SerializableMixin):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     jti = Column(String(255), unique=True, nullable=False)  # JWT ID (unique token identifier)
     token_type = Column(String(20), nullable=False)  # "access" or "refresh"
-    user_id = Column(UUID(as_uuid=True), nullable=False, index=True)  # User who owned the token
+    user_id = Column(UUID(as_uuid=True), nullable=False)  # User who owned the token
     revoked_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)  # When token was blacklisted
-    expires_at = Column(DateTime(timezone=True), nullable=False, index=True)  # When token would naturally expire
+    expires_at = Column(DateTime(timezone=True), nullable=False)  # When token would naturally expire
     reason = Column(String(100))  # "logout", "refresh", "forced_logout", "password_change", etc.
     updated_at = Column(DateTime(timezone=True), onupdate=lambda: datetime.now(timezone.utc), nullable=True)
 
