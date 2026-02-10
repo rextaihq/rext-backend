@@ -37,9 +37,12 @@ class WorkspacePermissionService:
         Raises:
             ValueError: If workspace not found or user doesn't have access
         """
-        # Check if workspace exists
+        # Check if workspace exists (exclude soft-deleted)
         workspace_result = await db.execute(
-            select(WorkspaceModel).where(WorkspaceModel.id == workspace_id)
+            select(WorkspaceModel).where(
+                WorkspaceModel.id == workspace_id,
+                WorkspaceModel.deleted_at.is_(None),
+            )
         )
         workspace = workspace_result.scalar_one_or_none()
 
@@ -144,9 +147,12 @@ class WorkspacePermissionService:
         Raises:
             ValueError: If workspace not found or user doesn't have access
         """
-        # Get workspace by slug
+        # Get workspace by slug (exclude soft-deleted)
         workspace_result = await db.execute(
-            select(WorkspaceModel).where(WorkspaceModel.slug == workspace_slug)
+            select(WorkspaceModel).where(
+                WorkspaceModel.slug == workspace_slug,
+                WorkspaceModel.deleted_at.is_(None),
+            )
         )
         workspace = workspace_result.scalar_one_or_none()
 

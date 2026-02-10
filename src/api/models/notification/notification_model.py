@@ -83,13 +83,13 @@ class Notification(Base, SerializableMixin, SoftDeleteMixin):
     # NOTIFICATION STATE
     # ==============================
     is_read = Column(Boolean, default=False, nullable=False, index=True)
-    read_at = Column(TIMESTAMP, nullable=True)
+    read_at = Column(DateTime(timezone=True), nullable=True)
 
     is_archived = Column(Boolean, default=False, nullable=False, index=True)
-    archived_at = Column(TIMESTAMP, nullable=True)
+    archived_at = Column(DateTime(timezone=True), nullable=True)
 
     is_deleted = Column(Boolean, default=False, nullable=False, index=True)
-    deleted_at = Column(TIMESTAMP, nullable=True)
+    deleted_at = Column(DateTime(timezone=True), nullable=True)
 
     # ==============================
     # ADDITIONAL DATA
@@ -109,7 +109,7 @@ class Notification(Base, SerializableMixin, SoftDeleteMixin):
     # ==============================
     # EXPIRATION
     # ==============================
-    expires_at = Column(TIMESTAMP, nullable=True)
+    expires_at = Column(DateTime(timezone=True), nullable=True)
 
     # ==============================
     # TIMESTAMPS

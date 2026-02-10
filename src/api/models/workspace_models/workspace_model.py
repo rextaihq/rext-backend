@@ -9,7 +9,7 @@ import uuid
 # -------------------------
 # Workspace
 # -------------------------
-class WorkspaceModel(Base, SerializableMixin, SoftDeleteMixin):
+class WorkspaceModel(Base, SerializableMixin):
     __tablename__ = "workspace"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, unique=True, nullable=False)
