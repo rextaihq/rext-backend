@@ -33,5 +33,5 @@ async def get_seed_session():
 
 
 def utc_now() -> datetime:
-    """Return current UTC datetime (timezone-aware)."""
-    return datetime.now(timezone.utc)
+    """Return current UTC datetime (naive UTC for DB compatibility)."""
+    return datetime.now(timezone.utc).replace(tzinfo=None)
