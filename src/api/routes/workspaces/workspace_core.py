@@ -15,6 +15,34 @@ from src.services.workspace_service import WorkspaceService
 
 router = APIRouter()
 
+def _merge_analytics_into_workspace(workspace_data: dict, analytics: dict) -> dict:
+    """
+    Merge analytics data into workspace response dict.
+
+    Transforms the flat analytics dict from WorkspaceService.get_workspace_analytics()
+    into the nested structure expected by the frontend.
+
+    Args:
+        workspace_data: Workspace dict from get_workspace_with_brand_voice()
+        analytics: Analytics dict from get_workspace_analytics()
+
+    Returns:
+        The workspace_data dict with analytics merged in.
+    """
+    workspace_data["knowledge_stats"] = analytics["knowledge_stats"]
+    workspace_data["analytics"] = {
+        "knowledge_counts": {
+            "web_knowledge": analytics["knowledge_stats"]["web_knowledge"],
+            "files": analytics["knowledge_stats"]["files"],
+            "text_knowledge": analytics["knowledge_stats"]["text_knowledge"],
+            "total_knowledge_items": analytics["knowledge_stats"]["total"],
+        },
+        "content_metrics": analytics.get("content_metrics", {}),
+        "team_metrics": {
+            "total_members": analytics["members_count"],
+        },
+    }
+    return workspace_data
 
 # -------------------------
 # Health Check
@@ -79,20 +107,7 @@ async def get_workspace_by_id(
     # Get analytics with word counts
     analytics = await workspace_service.get_workspace_analytics(UUID(workspace_id), include_word_counts=True)
 
-    # Merge analytics into workspace data
-    workspace_data["knowledge_stats"] = analytics["knowledge_stats"]
-    workspace_data["analytics"] = {
-        "knowledge_counts": {
-            "web_knowledge": analytics["knowledge_stats"]["web_knowledge"],
-            "files": analytics["knowledge_stats"]["files"],
-            "text_knowledge": analytics["knowledge_stats"]["text_knowledge"],
-            "total_knowledge_items": analytics["knowledge_stats"]["total"]
-        },
-        "content_metrics": analytics.get("content_metrics", {}),
-        "team_metrics": {
-            "total_members": analytics["members_count"]
-        }
-    }
+    _merge_analytics_into_workspace(workspace_data, analytics)
 
     # Return raw data - decorator handles success response
     return {"workspace": workspace_data}
@@ -126,19 +141,7 @@ async def get_workspace_by_slug(
     analytics = await workspace_service.get_workspace_analytics(workspace.id, include_word_counts=True)
 
     # Merge analytics into workspace data
-    workspace_data["knowledge_stats"] = analytics["knowledge_stats"]
-    workspace_data["analytics"] = {
-        "knowledge_counts": {
-            "web_knowledge": analytics["knowledge_stats"]["web_knowledge"],
-            "files": analytics["knowledge_stats"]["files"],
-            "text_knowledge": analytics["knowledge_stats"]["text_knowledge"],
-            "total_knowledge_items": analytics["knowledge_stats"]["total"]
-        },
-        "content_metrics": analytics.get("content_metrics", {}),
-        "team_metrics": {
-            "total_members": analytics["members_count"]
-        }
-    }
+    _merge_analytics_into_workspace(workspace_data, analytics)
 
     # Return raw data - decorator handles success response
     return {"workspace": workspace_data}
@@ -179,19 +182,7 @@ async def get_workspace_by_id_path(
     analytics = await workspace_service.get_workspace_analytics(workspace.id, include_word_counts=True)
 
     # Merge analytics into workspace data
-    workspace_data["knowledge_stats"] = analytics["knowledge_stats"]
-    workspace_data["analytics"] = {
-        "knowledge_counts": {
-            "web_knowledge": analytics["knowledge_stats"]["web_knowledge"],
-            "files": analytics["knowledge_stats"]["files"],
-            "text_knowledge": analytics["knowledge_stats"]["text_knowledge"],
-            "total_knowledge_items": analytics["knowledge_stats"]["total"]
-        },
-        "content_metrics": analytics.get("content_metrics", {}),
-        "team_metrics": {
-            "total_members": analytics["members_count"]
-        }
-    }
+    _merge_analytics_into_workspace(workspace_data, analytics)
 
     # Return raw data - decorator handles success response
     return {"workspace": workspace_data}
