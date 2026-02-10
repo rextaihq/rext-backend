@@ -3,7 +3,7 @@ Email Preferences API Routes
 
 Manage user email notification preferences and unsubscribe functionality.
 """
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel
 from typing import List, Optional
@@ -11,7 +11,8 @@ from typing import List, Optional
 from src.api.database.async_database import get_async_db
 from src.api.security.dependencies import get_current_user
 from src.services.email_preferences_service import EmailPreferencesService
-from src.utils.response_utils import success
+from src.utils.response_utils import success, error
+from src.api.schema.response_schemas import ErrorCode, ErrorSeverity
 from src.utils.logger import logger
 from uuid import UUID
 
@@ -65,6 +66,7 @@ class UnsubscribeRequest(BaseModel):
 
 @router.get("/")
 async def get_preferences(
+    request: Request,
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_async_db)
 ):
@@ -80,16 +82,24 @@ async def get_preferences(
 
         return success(
             data=prefs.to_dict(),
+            request=request,
             message="Email preferences retrieved successfully"
         )
     except Exception as e:
         logger.error(f"Failed to get email preferences: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to retrieve email preferences")
+        return error(
+            message="Failed to retrieve email preferences",
+            code=ErrorCode.INTERNAL_SERVER_ERROR,
+            status_code=500,
+            severity=ErrorSeverity.HIGH,
+            request=request
+        )
 
 
 @router.put("/")
 async def update_preferences(
-    request: UpdatePreferencesRequest,
+    request: Request,
+    preferences_update: UpdatePreferencesRequest,
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_async_db)
 ):
@@ -104,11 +114,12 @@ async def update_preferences(
         service = EmailPreferencesService(db)
 
         # Build update dict from non-None fields
-        updates = {k: v for k, v in request.dict().items() if v is not None}
+        updates = {k: v for k, v in preferences_update.dict().items() if v is not None}
 
         if not updates:
             return success(
                 data={},
+                request=request,
                 message="No preferences to update"
             )
 
@@ -116,16 +127,24 @@ async def update_preferences(
 
         return success(
             data=prefs.to_dict(),
+            request=request,
             message="Email preferences updated successfully"
         )
     except Exception as e:
         logger.error(f"Failed to update email preferences: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to update email preferences")
+        return error(
+            message="Failed to update email preferences",
+            code=ErrorCode.INTERNAL_SERVER_ERROR,
+            status_code=500,
+            severity=ErrorSeverity.HIGH,
+            request=request
+        )
 
 
 @router.post("/unsubscribe")
 async def unsubscribe(
-    request: UnsubscribeRequest,
+    request: Request,
+    unsubscribe_data: UnsubscribeRequest,
     db: AsyncSession = Depends(get_async_db)
 ):
     """
@@ -139,22 +158,33 @@ async def unsubscribe(
     try:
         service = EmailPreferencesService(db)
         success_result = await service.unsubscribe(
-            request.token,
-            request.email_types or [],
+            unsubscribe_data.token,
+            unsubscribe_data.email_types or [],
             db
         )
 
         if not success_result:
-            raise HTTPException(status_code=404, detail="Invalid unsubscribe token")
+            return error(
+                message="Invalid unsubscribe token",
+                code=ErrorCode.RESOURCE_NOT_FOUND,
+                status_code=404,
+                severity=ErrorSeverity.MEDIUM,
+                request=request
+            )
 
-        email_types_str = ", ".join(request.email_types) if request.email_types else "all emails"
+        email_types_str = ", ".join(unsubscribe_data.email_types) if unsubscribe_data.email_types else "all emails"
 
         return success(
             data={"unsubscribed_from": email_types_str},
+            request=request,
             message=f"Successfully unsubscribed from {email_types_str}"
         )
-    except HTTPException:
-        raise
     except Exception as e:
         logger.error(f"Failed to unsubscribe: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to process unsubscribe request")
+        return error(
+            message="Failed to process unsubscribe request",
+            code=ErrorCode.INTERNAL_SERVER_ERROR,
+            status_code=500,
+            severity=ErrorSeverity.HIGH,
+            request=request
+        )
