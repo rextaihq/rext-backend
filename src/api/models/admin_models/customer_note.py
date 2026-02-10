@@ -7,9 +7,10 @@ from sqlalchemy import Column, DateTime, ForeignKey, String, Text
 from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
 
 from src.api.database.base import Base
+from src.api.models.base import SerializableMixin
 
 
-class CustomerNote(Base):
+class CustomerNote(Base, SerializableMixin):
     """
     Model for internal admin notes on customer accounts.
 
@@ -39,15 +40,3 @@ class CustomerNote(Base):
         default=datetime.utcnow,
         onupdate=datetime.utcnow
     )
-
-    def to_dict(self) -> dict:
-        """Convert note to dictionary."""
-        return {
-            "id": str(self.id),
-            "user_id": str(self.user_id),
-            "admin_id": str(self.admin_id),
-            "note": self.note,
-            "category": self.category,
-            "created_at": self.created_at.isoformat() if self.created_at else None,
-            "updated_at": self.updated_at.isoformat() if self.updated_at else None
-        }

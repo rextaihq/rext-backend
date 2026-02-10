@@ -2,14 +2,14 @@ from sqlalchemy import Column, String, DateTime, func, ForeignKey
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 from src.api.database.base import Base
-from src.api.models.base import SerializableMixin
-from datetime import datetime
+from src.api.models.base import SerializableMixin, SoftDeleteMixin
+from datetime import datetime, timezone
 import uuid
 
 # -------------------------
 # Workspace
 # -------------------------
-class WorkspaceModel(Base, SerializableMixin):
+class WorkspaceModel(Base, SerializableMixin, SoftDeleteMixin):
     __tablename__ = "workspace"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, unique=True, nullable=False)
@@ -18,9 +18,8 @@ class WorkspaceModel(Base, SerializableMixin):
     slug = Column(String, unique=True, nullable=False, index=True)
     timezone = Column(String(50), nullable=True)  # IANA timezone identifier (e.g., America/New_York, UTC)
     url = Column(String, nullable=True)
-    created_at = Column(DateTime(timezone=True), nullable=False, default=datetime.utcnow)
-    updated_at = Column(DateTime(timezone=True), nullable=True, default=datetime.utcnow, onupdate=datetime.utcnow)
-    deleted_at = Column(DateTime(timezone=True), nullable=True)  # Soft delete timestamp
+    created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime(timezone=True), nullable=True, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
     deleted_by = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)  # User who deleted
 
     # Relationships

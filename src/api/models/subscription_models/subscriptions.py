@@ -74,11 +74,13 @@ class UserSubscription(Base, SerializableMixin):
     updated_at = Column(TIMESTAMP, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     # Relationships
-    user = relationship("Users", backref="subscriptions")
+    user = relationship("Users", back_populates="subscriptions")
     plan = relationship("SubscriptionPlan", back_populates="subscriptions")
     discount_usages = relationship("DiscountUsage", back_populates="subscription", cascade="all, delete-orphan")
     refunds = relationship("Refund", back_populates="subscription")
+    trial_conversions = relationship("TrialConversion", back_populates="subscription")
 
+    
     def to_dict(self, **kwargs):
         """Custom serialization handling enum values"""
         data = super().to_dict(exclude=['provider_subscription_id', 'provider_customer_id', 'subscription_metadata'], **kwargs)

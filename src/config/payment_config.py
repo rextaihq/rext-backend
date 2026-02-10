@@ -5,7 +5,7 @@ This module handles configuration for the LemonSqueezy payment provider.
 """
 
 from typing import Literal
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import field_validator
 
 
@@ -43,10 +43,12 @@ class PaymentSettings(BaseSettings):
             )
         return v
 
-    class Config:
-        env_file = ".env"
-        case_sensitive = False
-        extra = "ignore"
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=True,
+        extra="ignore",
+    )
 
 
 # Global settings instance
