@@ -41,7 +41,7 @@ async def delete_deactivated_accounts(db: AsyncSession) -> int:
 
         for user in deactivated_users:
             try:
-                user.deleted_at = datetime.utcnow()
+                user.deleted_at = datetime.now(timezone.utc)
 
                 logger.info(
                     f"Deleting deactivated account: {user.email} (ID: {user.id}), "
@@ -90,7 +90,7 @@ async def get_pending_deletions(db: AsyncSession) -> list:
 
         for user in deactivated_users:
             scheduled_deletion = user.deactivated_at + timedelta(days=14)
-            days_remaining = (scheduled_deletion - datetime.utcnow()).days
+            days_remaining = (scheduled_deletion - datetime.now(timezone.utc)).days
 
             pending_deletions.append(
                 {
@@ -132,7 +132,7 @@ async def cancel_account_deactivation(user_id: str, db: AsyncSession) -> bool:
         # Reactivate account
         user.status = "active"
         user.deactivated_at = None
-        user.updated_at = datetime.utcnow()
+        user.updated_at = datetime.now(timezone.utc)
 
         await db.commit()
 

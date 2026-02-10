@@ -6,11 +6,10 @@ Expired tokens can be safely removed since they would be rejected anyway.
 
 Usage:
     from src.utils.token_cleanup import cleanup_expired_tokens
-    from src.api.database.database import SessionLocal
+    from src.api.database.async_database import AsyncSessionLocal
 
-    db = SessionLocal()
-    deleted_count = cleanup_expired_tokens(db)
-    db.close()
+    async with AsyncSessionLocal() as db:
+        deleted_count = await cleanup_expired_tokens(db)
 """
 
 

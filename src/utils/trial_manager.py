@@ -81,10 +81,12 @@ async def expire_trial_subscriptions(db: AsyncSession) -> Dict[str, int]:
 
 
     # Find all expired trials
-    expired_trials = db.query(UserSubscription).filter(
+    stmt = select(UserSubscription).where(
         UserSubscription.status == SubscriptionStatus.TRIAL,
         UserSubscription.trial_end_date < now
-    ).all()
+    )
+    result = await db.execute(stmt)
+    expired_trials = result.scalars().all()
 
     expired_count = 0
     converted_count = 0
@@ -102,10 +104,12 @@ async def expire_trial_subscriptions(db: AsyncSession) -> Dict[str, int]:
                 logger.info(f"Converted trial subscription {subscription.id} to active")
             else:
                 # No payment method - expire trial and downgrade to free plan
-                free_plan = db.query(SubscriptionPlan).filter(
+                stmt_plan = select(SubscriptionPlan).where(
                     SubscriptionPlan.name == "free",
                     SubscriptionPlan.is_active == True
-                ).first()
+                )
+                result_plan = await db.execute(stmt_plan)
+                free_plan = result_plan.scalar_one_or_none()
 
                 if free_plan:
                     subscription.plan_id = free_plan.id
@@ -121,11 +125,11 @@ async def expire_trial_subscriptions(db: AsyncSession) -> Dict[str, int]:
                     logger.warning(f"Expired trial subscription {subscription.id} (no free plan found)")
 
             subscription.updated_at = now
-            db.commit()
+            await db.commit()
 
         except Exception as e:
             logger.error(f"Error processing expired trial {subscription.id}: {e}")
-            db.rollback()
+            await db.rollback()
             continue
 
     total_processed = converted_count + downgraded_count + expired_count
