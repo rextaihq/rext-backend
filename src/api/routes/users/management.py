@@ -158,7 +158,7 @@ async def delete_user(
         if not has_permission:
             return error(
                 message="Missing required permission: user.delete",
-                code=ErrorCode.AUTHORIZATION_ERROR,
+                code=ErrorCode.FORBIDDEN,
                 status_code=403,
                 severity=ErrorSeverity.HIGH,
                 context={"required_permission": "user.delete"},
@@ -188,7 +188,7 @@ async def delete_user(
     except ResourceNotFoundException:
         return error(
             message="User not found",
-            code=ErrorCode.NOT_FOUND,
+            code=ErrorCode.RESOURCE_NOT_FOUND,
             status_code=404,
             severity=ErrorSeverity.MEDIUM,
             request=request

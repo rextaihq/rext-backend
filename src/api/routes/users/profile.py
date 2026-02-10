@@ -176,7 +176,7 @@ async def update_profile(
             user_id=str(user_id),
             background_tasks=background_tasks,
             pref_flag="in_app_notifications",
-            message="Failed to update profile",
+            message="Failed to update profile due to an internal error",
             payload={"user_id": str(user_id), "error": "An internal error occurred"},
             workspace_id=None,
             title="Profile Update Failed",
@@ -210,7 +210,7 @@ async def upload_avatar(
         if file.content_type not in allowed_types:
             return error(
                 message=f"Invalid file type. Allowed: {', '.join(allowed_types)}",
-                code=ErrorCode.INVALID_INPUT,
+                code=ErrorCode.INVALID_VALUE,
                 status_code=400,
                 severity=ErrorSeverity.LOW,
                 request=request
@@ -224,7 +224,7 @@ async def upload_avatar(
         if file_size > max_size:
             return error(
                 message=f"File too large. Max: 5MB, Yours: {file_size / (1024 * 1024):.2f}MB",
-                code=ErrorCode.INVALID_INPUT,
+                code=ErrorCode.INVALID_VALUE,
                 status_code=400,
                 severity=ErrorSeverity.LOW,
                 request=request
@@ -242,7 +242,7 @@ async def upload_avatar(
             )
             return error(
                 message="Invalid image file. File content does not match an allowed image format (JPEG, PNG, GIF, WebP).",
-                code=ErrorCode.INVALID_INPUT,
+                code=ErrorCode.INVALID_VALUE,
                 status_code=400,
                 severity=ErrorSeverity.MEDIUM,
                 request=request
@@ -253,7 +253,7 @@ async def upload_avatar(
             logger.warning(f"SVG upload attempt blocked for user {user_id}")
             return error(
                 message="SVG files are not supported for security reasons.",
-                code=ErrorCode.INVALID_INPUT,
+                code=ErrorCode.INVALID_VALUE,
                 status_code=400,
                 severity=ErrorSeverity.MEDIUM,
                 request=request
@@ -466,8 +466,8 @@ async def delete_avatar(
             user_id=str(user_id),
             background_tasks=background_tasks,
             pref_flag="in_app_notifications",
-            payload={"user_id": str(user_id), "error": "An internal error occurred"},
             message="failed to delete avatar",
+            payload={"user_id": str(user_id), "error": "An internal error occurred"},
             workspace_id=None
         )
         return error(
@@ -652,7 +652,7 @@ async def deactivate_account(
         if not deactivate_request.confirm:
             return error(
                 message="You must confirm account deactivation",
-                code=ErrorCode.INVALID_INPUT,
+                code=ErrorCode.INVALID_VALUE,
                 status_code=400,
                 severity=ErrorSeverity.LOW,
                 request=request
@@ -663,7 +663,7 @@ async def deactivate_account(
             logger.warning(f"Failed deactivation attempt for user {user_id}: invalid password")
             return error(
                 message="Invalid password. Please enter your current password to deactivate your account.",
-                code=ErrorCode.AUTHENTICATION_ERROR,
+                code=ErrorCode.UNAUTHORIZED,
                 status_code=401,
                 severity=ErrorSeverity.HIGH,
                 request=request
@@ -676,7 +676,7 @@ async def deactivate_account(
         if user.status == "inactive":
             return error(
                 message="Account is already deactivated",
-                code=ErrorCode.INVALID_INPUT,
+                code=ErrorCode.INVALID_VALUE,
                 status_code=400,
                 severity=ErrorSeverity.LOW,
                 request=request
