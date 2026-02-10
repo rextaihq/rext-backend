@@ -41,37 +41,40 @@ class Users(Base, SerializableMixin):
     deleted_at = Column(TIMESTAMP)
 
     # Relationships
-    user_roles = relationship("UserRole", back_populates="user", foreign_keys="UserRole.user_id")
-    workspace_memberships = relationship("WorkspaceMembers", back_populates="user")
-    workspaces = relationship("WorkspaceModel", foreign_keys="WorkspaceModel.user_id", back_populates="owner")
-    sent_invitations = relationship("UserInvitations", back_populates="invited_by")
-    assigned_roles = relationship("UserRole", back_populates="assigned_by", foreign_keys="UserRole.assigned_by_user_id")
+    user_roles = relationship("UserRole", back_populates="user", foreign_keys="UserRole.user_id", passive_deletes=True)
+    workspace_memberships = relationship("WorkspaceMembers", back_populates="user", passive_deletes=True)
+    workspaces = relationship("WorkspaceModel", foreign_keys="WorkspaceModel.user_id", back_populates="owner", passive_deletes=True)
+    sent_invitations = relationship("UserInvitations", back_populates="invited_by", passive_deletes=True)
+    assigned_roles = relationship("UserRole", back_populates="assigned_by", foreign_keys="UserRole.assigned_by_user_id", passive_deletes=True)
     notification_preferences = relationship("NotificationPreferences", back_populates="user", uselist=False)
-    sessions = relationship("UserSession", back_populates="user", cascade="all, delete-orphan")
-    email_preferences = relationship("EmailPreferences", back_populates="user", uselist=False)
-    preferences = relationship("UserPreferences", back_populates="user", uselist=False, cascade="all, delete-orphan")
-    media = relationship("Media", back_populates="user", cascade="all, delete-orphan")
-    oauth_accounts = relationship("OAuthAccount", back_populates="user", cascade="all, delete-orphan")
-    onboarding = relationship("UserOnboarding", back_populates="user", uselist=False, cascade="all, delete-orphan")
-    discount_usages = relationship("DiscountUsage", back_populates="user", cascade="all, delete-orphan")
-    refunds = relationship("Refund", back_populates="user", cascade="all, delete-orphan")
-    notifications = relationship("Notification", back_populates="user", cascade="all, delete-orphan")
+    sessions = relationship("UserSession", back_populates="user", cascade="all, delete-orphan", passive_deletes=True)
+    email_preferences = relationship("EmailPreferences", back_populates="user", uselist=False, passive_deletes=True)
+    preferences = relationship("UserPreferences", back_populates="user", uselist=False, cascade="all, delete-orphan", passive_deletes=True)
+    media = relationship("Media", back_populates="user", cascade="all, delete-orphan", passive_deletes=True)
+    oauth_accounts = relationship("OAuthAccount", back_populates="user", cascade="all, delete-orphan", passive_deletes=True)
+    onboarding = relationship("UserOnboarding", back_populates="user", uselist=False, cascade="all, delete-orphan", passive_deletes=True)
+    discount_usages = relationship("DiscountUsage", back_populates="user", cascade="all, delete-orphan", passive_deletes=True)
+    refunds = relationship("Refund", back_populates="user", cascade="all, delete-orphan", passive_deletes=True)
+    notifications = relationship("Notification", back_populates="user", cascade="all, delete-orphan", passive_deletes=True)
 
     # Admin invitation relationships
     sent_admin_invitations = relationship(
         "PlatformAdminInvitations",
         back_populates="invited_by",
-        foreign_keys="PlatformAdminInvitations.invited_by_admin_id"
+        foreign_keys="PlatformAdminInvitations.invited_by_admin_id",
+        passive_deletes=True
     )
     accepted_admin_invitations = relationship(
         "PlatformAdminInvitations",
         back_populates="accepted_by",
-        foreign_keys="PlatformAdminInvitations.accepted_by_user_id"
+        foreign_keys="PlatformAdminInvitations.accepted_by_user_id",
+        passive_deletes=True
     )
     revoked_admin_invitations = relationship(
         "PlatformAdminInvitations",
         back_populates="revoked_by",
-        foreign_keys="PlatformAdminInvitations.revoked_by_admin_id"
+        foreign_keys="PlatformAdminInvitations.revoked_by_admin_id",
+        passive_deletes=True
     )
 
     def to_dict(self, **kwargs):
