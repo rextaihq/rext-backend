@@ -1,0 +1,246 @@
+# Task 021: Add Unique Constraint to Role Name Column
+
+## Metadata
+- **Task ID:** TASK-021
+- **Source:** B1 - Authentication & Authorization (Finding #20 under P2 Medium)
+- **Audit Report:** `audit-reports/backend-authentication.md`
+- **Priority:** P2 Medium
+- **Category:** data-integrity
+- **Effort Estimate:** small (< 1 hour)
+
+---
+
+## Description
+
+The `Role` model in `src/api/models/user_models/roles.py` defines the `name` column without a unique constraint. Currently, the column is defined as `name = Column(String(100), nullable=False)` on line 17, which only enforces that the value cannot be NULL but does not prevent duplicate role names from being inserted into the database.
+
+This is problematic because the application logic relies on role names being unique. The `_get_or_create_default_role()` method in `AuthService` (line 720-723) queries roles by name using `select(Role).where(Role.name == "user")`. If multiple roles with the same name exist, `scalar_one_or_none()` would return the first match non-deterministically, or potentially raise an exception if multiple results are found depending on the query context.
+
+The `SubscriptionPlan` model (`src/api/models/subscription_models/plans.py:16`) correctly uses `unique=True` on its name column: `name = Column(String(100), unique=True, nullable=False)`. The `Role` model should follow this same pattern for consistency and data integrity.
+
+Without a unique constraint at the database level, concurrent requests or bugs could create duplicate roles, leading to non-deterministic behavior in role lookups, permission assignments, and RBAC checks across the entire application.
+
+---
+
+## Current Code
+
+```python
+# File: rext-backend/src/api/models/user_models/roles.py
+# Lines: 13-35
+class Role(Base, SerializableMixin):
+    __tablename__ = "roles"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, unique=True, nullable=False)
+    name = Column(String(100), nullable=False)  # <-- Missing unique=True
+    display_name = Column(String(150), nullable=False)
+    description = Column(Text)
+    hierarchy_level = Column(Integer, default=0)
+
+    # Role Classification:
+    # - is_system_role: Platform-level roles (super_admin, admin, user)
+    # - is_workspace_role: Can be assigned to workspace members (workspace_owner, editor, etc.)
+    is_system_role = Column(Boolean, default=False)
+    is_workspace_role = Column(Boolean, default=False, nullable=False)
+
+    created_at = Column(TIMESTAMP, default=datetime.utcnow)
+    updated_at = Column(TIMESTAMP, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Relationships
+    permissions = relationship("RolePermission", back_populates="role")
+    user_roles = relationship("UserRole", back_populates="role")
+    invited_roles = relationship("UserInvitations", back_populates="role")
+```
+
+---
+
+## Why This Matters (Context & Reasoning)
+
+The `Role` model is central to the Role-Based Access Control (RBAC) system. Every user is assigned one or more roles, and each role has associated permissions. The application frequently queries roles by name:
+
+1. **User Registration:** `_get_or_create_default_role()` looks up the "user" role by name
+2. **OAuth Registration:** Same lookup occurs in `oauth_service.py`
+3. **Admin Functions:** Super admin creation uses role name lookups
+4. **Seed Scripts:** Database seeds reference roles by name
+
+If duplicate role names exist:
+- Permission assignments could go to the wrong role
+- Users could get inconsistent permissions
+- RBAC cache could return stale/wrong data
+- Debugging permission issues becomes extremely difficult
+
+Database constraints are essential as a safety net—they prevent data corruption from concurrent requests, bugs, or direct database access. Never rely solely on application-level validation.
+
+---
+
+## Impact
+
+- **Severity:** Duplicate role names can cause non-deterministic behavior in role assignment and permission checks. Users may receive incorrect permissions, potentially granting unauthorized access or blocking legitimate actions.
+- **Affected Users/Flows:** All users during registration, login, and any RBAC-protected operation.
+- **Blast Radius:** System-wide. Every permission check depends on roles being correctly resolved.
+
+---
+
+## Recommended Solution
+
+### Step 1: Update the Role Model
+
+```python
+# File: rext-backend/src/api/models/user_models/roles.py
+# Line 17 - Replace:
+    name = Column(String(100), nullable=False)
+
+# With:
+    name = Column(String(100), unique=True, nullable=False)
+```
+
+### Step 2: Create Alembic Migration
+
+Generate and edit a migration to add the unique constraint to the existing database:
+
+```bash
+cd rext-backend
+alembic revision -m "add_unique_constraint_to_role_name"
+```
+
+Then edit the generated migration file:
+
+```python
+# File: rext-backend/alembic/versions/<timestamp>_add_unique_constraint_to_role_name.py
+"""Add unique constraint to role name column.
+
+Revision ID: <auto-generated>
+Revises: <previous-revision>
+Create Date: <auto-generated>
+"""
+from typing import Sequence, Union
+
+from alembic import op
+import sqlalchemy as sa
+
+
+# revision identifiers, used by Alembic.
+revision: str = '<auto-generated>'
+down_revision: Union[str, None] = '<previous-revision>'
+branch_labels: Union[str, Sequence[str], None] = None
+depends_on: Union[str, Sequence[str], None] = None
+
+
+def upgrade() -> None:
+    # First, check for and remove any duplicate role names
+    # This query keeps the oldest role for each name and deletes duplicates
+    op.execute("""
+        DELETE FROM roles
+        WHERE id NOT IN (
+            SELECT MIN(id)
+            FROM roles
+            GROUP BY name
+        )
+    """)
+
+    # Add unique constraint with explicit name for easier maintenance
+    op.create_unique_constraint('uq_roles_name', 'roles', ['name'])
+
+
+def downgrade() -> None:
+    op.drop_constraint('uq_roles_name', 'roles', type_='unique')
+```
+
+### Step 3: Run the Migration
+
+```bash
+cd rext-backend
+alembic upgrade head
+```
+
+### Step 4: Verify the Constraint
+
+Connect to the database and verify:
+
+```sql
+-- PostgreSQL: Check constraints on roles table
+SELECT conname, contype
+FROM pg_constraint
+WHERE conrelid = 'roles'::regclass;
+
+-- Should show: uq_roles_name | u
+```
+
+---
+
+## Other Affected Locations
+
+| File | Line(s) | Description |
+|------|---------|-------------|
+| `rext-backend/src/services/auth_service.py` | 720-723 | `_get_or_create_default_role()` queries by name |
+| `rext-backend/src/services/oauth_service.py` | 420-441 | Duplicate `_get_or_create_default_role()` method |
+| `rext-backend/alembic/versions/seed*` | Various | Seed scripts insert roles by name |
+| `rext-backend/scripts/seed_permissions.py` | Various | Permission seeding references roles by name |
+
+---
+
+## Testing Instructions
+
+### Before Fix (Reproduce the Issue):
+1. Connect to the database directly (bypassing application)
+2. Attempt to insert duplicate role:
+   ```sql
+   INSERT INTO roles (id, name, display_name, is_system_role, is_workspace_role, created_at, updated_at)
+   VALUES (gen_random_uuid(), 'user', 'Duplicate User', false, false, NOW(), NOW());
+   ```
+3. Verify it succeeds (no constraint violation)
+4. Query roles: `SELECT id, name FROM roles WHERE name = 'user';`
+5. Observe multiple rows returned
+
+### After Fix (Verify the Solution):
+1. Run the migration: `alembic upgrade head`
+2. Attempt to insert duplicate role:
+   ```sql
+   INSERT INTO roles (id, name, display_name, is_system_role, is_workspace_role, created_at, updated_at)
+   VALUES (gen_random_uuid(), 'user', 'Duplicate User', false, false, NOW(), NOW());
+   ```
+3. Verify it fails with unique constraint violation:
+   ```
+   ERROR: duplicate key value violates unique constraint "uq_roles_name"
+   ```
+4. Verify application still works:
+   - Register a new user
+   - Log in
+   - Check that role assignment succeeds
+
+### Run Existing Tests:
+```bash
+cd rext-backend
+pytest tests/ -v -k "role or auth"
+```
+
+---
+
+## Acceptance Criteria
+
+- [ ] `Role.name` column has `unique=True` in the model definition
+- [ ] Alembic migration adds unique constraint to existing database
+- [ ] Migration handles potential duplicate roles before adding constraint
+- [ ] Database-level unique constraint prevents duplicate role names
+- [ ] User registration still works correctly
+- [ ] OAuth registration still works correctly
+- [ ] No new warnings or errors introduced
+- [ ] Existing tests still pass
+- [ ] Code has been reviewed by a senior developer
+
+---
+
+## References & Resources
+
+- **Official Docs:** [SQLAlchemy 2.0 Column Parameters](https://docs.sqlalchemy.org/en/20/core/metadata.html#sqlalchemy.schema.Column.params.unique)
+- **Security Advisory:** N/A
+- **Migration Guide:** [Alembic - The Importance of Naming Constraints](https://alembic.sqlalchemy.org/en/latest/naming.html)
+- **Best Practice Reference:** [SQLAlchemy Unique Constraint Best Practices](https://copyprogramming.com/howto/unique-constraint-on-multiple-columns-in-sqlalchemy)
+- **Related Issues/PRs:** None
+
+---
+
+## Dependencies & Related Tasks
+
+- **Depends on:** None
+- **Blocks:** None
+- **Related:** TASK-004 (datetime.utcnow deprecation in Role model - line 28-29)
