@@ -22,9 +22,9 @@ from datetime import datetime, timezone
 import re
 from asyncio import create_task
 
-from sqlalchemy import select, func, distinct
+from sqlalchemy import select, func, distinct, case
 from sqlalchemy.ext.asyncio import AsyncSession
-
+from sqlalchemy.sql import expression
 from src.api.models.workspace_models.workspace_model import WorkspaceModel
 from src.api.models.workspace_models.workspace_member import WorkspaceMembers
 from src.api.models.knowledge_models.knowledge_model import (
@@ -54,7 +54,10 @@ from src.utils.logger import logger
 from src.api.database.async_database import get_async_db
 from src.services.workspace_pipeline import run_workspace_pipeline
 from langsmith import traceable, trace
+import weakref
 
+# Track background pipeline tasks to prevent garbage collection
+_background_tasks: set = set()
 
 class WorkspaceService:
     """Service for workspace business logic"""
@@ -107,10 +110,8 @@ class WorkspaceService:
         with trace(name="Create Workspace Record"):
             # check if the url for same workspace exists in the knowledge base file
             result = await self.db.execute(
-                select(WorkspaceModel).where(
-                    WorkspaceModel.user_id == user_id, 
-                    WorkspaceModel.url == url,
-                    WorkspaceModel.deleted_at.is_(None)
+                select(Website).where(
+                    Website.workspace_id == user_id, Website.url == url
                 )
             )
             if result.scalar_one_or_none():
@@ -162,11 +163,21 @@ class WorkspaceService:
                     break
 
         task = create_task(run_pipeline())
+        _background_tasks.add(task)
 
         def handle_completion(pipeline_task) -> None:
-            with trace(name="Worksapce Completion"):
+
+            _background_tasks.discard(pipeline_task)
+            with trace(name="Workspace Completion"):
                 try:
                     pipeline_task.result()
+                    logger.info(
+                        "Workspace pipeline completed successfully",
+                        extra={
+                            "operation_id": operation_id,
+                            "workspace_id": str(workspace.id),
+                        },
+                    )
                 except Exception as exc:
                     logger.error(
                         "Workspace pipeline task raised exception",
@@ -179,6 +190,7 @@ class WorkspaceService:
                     )
 
         task.add_done_callback(handle_completion)
+
 
         logger.info(
             "Workspace created and background pipeline scheduled",
@@ -271,7 +283,7 @@ class WorkspaceService:
         """Delete workspace after verifying membership and cleanup."""
         await self._ensure_active_user(user_id)
         workspace = await self._ensure_membership(workspace_id, user_id)
-        self._delete_vectors_safe(workspace.id)
+        self._delete_vectors_safe(workspace.id) 
         await self.delete_workspace(workspace_id, user_id)
 
     async def update_workspace_for_user(
@@ -388,65 +400,65 @@ class WorkspaceService:
         Uses optimized queries to fetch knowledge counts, content counts,
         member counts, and optionally word counts.
 
-        This is the canonical analytics method - all routes should delegate
-        to this method rather than duplicating query logic.
-
         Args:
             workspace_id: Workspace UUID
             include_word_counts: Whether to include detailed word count analytics
 
         Returns:
-            Dict with analytics data containing:
-            - knowledge_stats: Counts of web/file/text knowledge items
-            - members_count: Number of workspace members
-            - content_count: Number of non-deleted content items
-            - content_metrics: (optional) Word count statistics if include_word_counts=True
-
-        Raises:
-            ResourceNotFoundException: If workspace not found or soft-deleted
+            Dict with analytics data
         """
-        # Verify workspace exists and isn't soft-deleted
-        await self.get_workspace(workspace_id)
-
-        # Get knowledge base counts
-        result = await self.db.execute(
-            select(func.count(Website.id)).where(Website.workspace_id == workspace_id)
+        # Get counts in separate queries (simplified version)
+        # Combine all counts into a single query using scalar subqueries
+        web_count_subq = (
+            select(func.count(Website.id))
+            .where(Website.workspace_id == workspace_id)
+            .correlate(None)
+            .scalar_subquery()
         )
-        web_count = result.scalar() or 0
-
-        result = await self.db.execute(
-            select(func.count(KnowledgeFiles.id)).where(
-                KnowledgeFiles.workspace_id == workspace_id
-            )
+        files_count_subq = (
+            select(func.count(KnowledgeFiles.id))
+            .where(KnowledgeFiles.workspace_id == workspace_id)
+            .correlate(None)
+            .scalar_subquery()
         )
-        files_count = result.scalar() or 0
-
-        result = await self.db.execute(
-            select(func.count(TextKnowledge.id)).where(
-                TextKnowledge.workspace_id == workspace_id
-            )
+        text_count_subq = (
+            select(func.count(TextKnowledge.id))
+            .where(TextKnowledge.workspace_id == workspace_id)
+            .correlate(None)
+            .scalar_subquery()
         )
-        text_count = result.scalar() or 0
-
-        # Get team metrics
-        result = await self.db.execute(
-            select(func.count(WorkspaceMembers.id)).where(
-                WorkspaceMembers.workspace_id == workspace_id
-            )
+        members_count_subq = (
+            select(func.count(WorkspaceMembers.id))
+            .where(WorkspaceMembers.workspace_id == workspace_id)
+            .correlate(None)
+            .scalar_subquery()
         )
-        members_count = result.scalar() or 0
-
-        # Get content count (excluding soft-deleted content)
-        # FIXED: Use .is_(None) instead of == None for SQLAlchemy NULL comparison
-        result = await self.db.execute(
-            select(func.count(Content.id)).where(
+        content_count_subq = (
+            select(func.count(Content.id))
+            .where(
                 Content.workspace_id == workspace_id,
-                Content.deleted_at.is_(None)
+                Content.deleted_at.is_(None),
+            )
+            .correlate(None)
+            .scalar_subquery()
+        )
+
+        result = await self.db.execute(
+            select(
+                web_count_subq.label("web_count"),
+                files_count_subq.label("files_count"),
+                text_count_subq.label("text_count"),
+                members_count_subq.label("members_count"),
+                content_count_subq.label("content_count"),
             )
         )
-        content_count = result.scalar() or 0
+        row = result.one()
+        web_count = row.web_count or 0
+        files_count = row.files_count or 0
+        text_count = row.text_count or 0
+        members_count = row.members_count or 0
+        content_count = row.content_count or 0
 
-        # Build base analytics response
         analytics = {
             "knowledge_stats": {
                 "web_knowledge": web_count,
@@ -460,21 +472,55 @@ class WorkspaceService:
 
         # Add word count analytics if requested
         if include_word_counts:
-            # Web content word stats
-            web_word_query = select(
-                func.sum(Website.word_count).label("total_words"),
-                func.avg(Website.word_count).label("avg_words"),
-            ).where(Website.workspace_id == workspace_id)
-            result = await self.db.execute(web_word_query)
-            web_word_stats = result.first()
+            word_stats_query = select(
+                func.coalesce(
+                    select(func.sum(Website.word_count))
+                    .where(Website.workspace_id == workspace_id)
+                    .correlate(None)
+                    .scalar_subquery(),
+                    0,
+                ).label("total_web_words"),
+                func.coalesce(
+                    select(func.avg(Website.word_count))
+                    .where(Website.workspace_id == workspace_id)
+                    .correlate(None)
+                    .scalar_subquery(),
+                    0,
+                ).label("avg_web_words"),
+                func.coalesce(
+                    select(func.sum(KnowledgeFiles.word_count))
+                    .where(KnowledgeFiles.workspace_id == workspace_id)
+                    .correlate(None)
+                    .scalar_subquery(),
+                    0,
+                ).label("total_file_words"),
+                func.coalesce(
+                    select(func.avg(KnowledgeFiles.word_count))
+                    .where(KnowledgeFiles.workspace_id == workspace_id)
+                    .correlate(None)
+                    .scalar_subquery(),
+                    0,
+                ).label("avg_file_words"),
+            )
+            result = await self.db.execute(word_stats_query)
+            word_row = result.one()
 
-            # File content word stats
-            file_word_query = select(
-                func.sum(KnowledgeFiles.word_count).label("total_words"),
-                func.avg(KnowledgeFiles.word_count).label("avg_words"),
-            ).where(KnowledgeFiles.workspace_id == workspace_id)
-            result = await self.db.execute(file_word_query)
-            file_word_stats = result.first()
+            total_web_words = int(word_row.total_web_words)
+            avg_web_words = int(word_row.avg_web_words)
+            total_file_words = int(word_row.total_file_words)
+            avg_file_words = int(word_row.avg_file_words)
+
+            total_words = total_web_words + total_file_words
+            estimated_reading_time = total_words // 200
+
+            analytics["content_metrics"] = {
+                "total_words": total_words,
+                "web_content_words": total_web_words,
+                "file_content_words": total_file_words,
+                "avg_web_article_words": avg_web_words,
+                "avg_file_words": avg_file_words,
+                "estimated_reading_time_minutes": estimated_reading_time,
+            }
 
             total_web_words = int(web_word_stats.total_words or 0)
             avg_web_words = int(web_word_stats.avg_words or 0)
@@ -714,7 +760,7 @@ class WorkspaceService:
                 Role.name == "workspace_owner",
             )
         )
-
+        
         result = await self.db.execute(query)
         user_role = result.scalar_one_or_none()
 
@@ -817,7 +863,7 @@ class WorkspaceService:
         member = WorkspaceMembers(
             workspace_id=workspace_id,
             user_id=user_id,
-            joined_at=datetime.now(timezone.utc),
+            joined_at=datetime.utcnow(),
             is_default=is_default,
             status=status,
             invitation_id=None,
@@ -896,13 +942,15 @@ class WorkspaceService:
         Raises:
             ResourceNotFoundException: If workspace not found
         """
-        # Verify ownership first
-        await self.verify_user_is_workspace_owner(workspace_id, user_id)
+        from datetime import datetime
 
+        # Verify ownership first
+        await self.verify_user_is_workspace_owner(workspace_id, user_id )
+         
         workspace = await self.get_workspace(workspace_id)
 
         # Soft delete: set deleted_at and deleted_by
-        workspace.deleted_at = datetime.now(timezone.utc)
+        workspace.deleted_at = datetime.utcnow()
         workspace.deleted_by = user_id
 
         logger.info(
@@ -985,7 +1033,7 @@ class WorkspaceService:
         """
         result = await self.db.execute(
             select(Role).where(
-                Role.name == "workspace_owner", Role.is_workspace_role.is_(True)
+                Role.name == "workspace_owner", Role.is_workspace_role == True
             )
         )
         role = result.scalar_one_or_none()
@@ -1093,7 +1141,7 @@ class WorkspaceService:
                 target_audience=brand_data.target_audience,
                 brand_voice=brand_data.brand_voice,
                 competitors=brand_data.competitors,
-                content_strategy=brand_data.content_strategy,
+                content_strategy=brand_data.content_pillar,
             )
             self.db.add(brand_voice)
             await self.db.flush()

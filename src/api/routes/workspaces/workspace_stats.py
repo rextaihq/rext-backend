@@ -5,15 +5,20 @@ Provides real-time statistics for workspace onboarding tracking and dashboard.
 """
 
 from fastapi import APIRouter, Depends, Request
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from uuid import UUID
 
 from src.api.database.async_database import get_async_db
 from src.api.security.dependencies import get_current_user
-from src.services.workspace_service import WorkspaceService
+from src.api.models.content_models.content import Content
+from src.api.models.knowledge_models.knowledge_model import Website, KnowledgeFiles, TextKnowledge
+from src.api.models.workspace_models.workspace_member import WorkspaceMembers
 from src.services.subscription_service import SubscriptionService
-from src.utils.auth_utils import verify_current_user
+from src.utils.response_utils import success
 from src.utils.route_decorators import db_transaction_handler, require_permissions
+from src.utils.auth_utils import verify_current_user
+from src.services.workspace_service import WorkspaceService
 
 router = APIRouter()
 
@@ -47,27 +52,36 @@ async def get_workspace_stats(
 
     workspace_uuid = UUID(workspace_id)
 
-    # Delegate analytics to the service layer (single source of truth)
+    # Delegate to service layer instead of inline queries
+    from src.services.workspace_service import WorkspaceService
     workspace_service = WorkspaceService(db)
     analytics = await workspace_service.get_workspace_analytics(workspace_uuid)
 
-    # Check feature availability from user's subscription
-    
+    content_count = analytics["content_count"]
+    knowledge_items_count = analytics["knowledge_stats"]["total"]
+    members_count = analytics["members_count"]
+
+
     # Check feature availability from user's subscription
     subscription_service = SubscriptionService(db)
     user_subscription = await subscription_service.get_subscription_by_user(UUID(user_id))
 
+    # Default to True if no subscription (free tier) or if plan doesn't specify
     has_content_builder = True
+
     if user_subscription and user_subscription.plan:
         plan_features = user_subscription.plan.features or {}
+
+        # Check if features are explicitly set to False (disabled)
+        # If not set, default to True (enabled)
         if 'content_builder' in plan_features:
             has_content_builder = bool(plan_features.get('content_builder'))
 
     stats = {
-        "workspace_exists": True,
-        "content_count": analytics["content_count"],
-        "knowledge_items_count": analytics["knowledge_stats"]["total"],
-        "members_count": analytics["members_count"],
+        "workspace_exists": True,  # If we got here, workspace exists
+        "content_count": content_count,
+        "knowledge_items_count": knowledge_items_count,
+        "members_count": members_count,
         "has_content_builder": has_content_builder,
     }
 
