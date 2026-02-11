@@ -353,7 +353,7 @@ class WorkspacePipeline:
                     target_audience=data.get("target_audience") or [],
                     brand_voice=data.get("brand_voice") or [],
                     competitors=data.get("competitors") or [],
-                    content_strategy=data.get("content_pillar") or [],
+                    content_strategy=data.get("content_strategy") or [],
                 )
                 self.db.add(brand_voice_record)
 
