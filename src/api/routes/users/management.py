@@ -141,29 +141,11 @@ async def delete_user(
 ):
     """
     Soft delete a user by setting deleted_at timestamp.
-    Thin controller - permission check inline, deletion logic simple.
-
     Requires user.delete permission (super_admin only).
+    Permission enforced by @require_permissions decorator.
     """
     try:
         service = UserService(db)
-        current_user_id = UUID(current_user.get("identity"))
-
-        # Check permission via service
-        has_permission = await service.check_user_permission(
-            user_id=current_user_id,
-            permission_name="user.delete"
-        )
-
-        if not has_permission:
-            return error(
-                message="Missing required permission: user.delete",
-                code=ErrorCode.FORBIDDEN,
-                status_code=403,
-                severity=ErrorSeverity.HIGH,
-                context={"required_permission": "user.delete"},
-                request=request
-            )
 
         # Delete workspace memberships if any
         memberships = await db.execute(

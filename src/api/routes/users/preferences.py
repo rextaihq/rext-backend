@@ -4,43 +4,20 @@ User Preferences API endpoints.
 This module provides endpoints for managing user-specific preferences.
 """
 
-from fastapi import APIRouter, Depends, Request, HTTPException, status
+from fastapi import APIRouter, Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from uuid import UUID
-from pydantic import BaseModel, Field
-from typing import Optional
 
 from src.api.database.async_database import get_async_db
 from src.api.security.dependencies import get_current_user
 from src.utils.route_decorators import require_permissions
 from src.utils.response_utils import success, error
 from src.api.schema.response_schemas import ErrorCode, ErrorSeverity
+from src.api.schema.preferences_schema import UserPreferencesResponse, UpdateUserPreferencesRequest
 from src.utils.logger import logger
 from src.services.user_preferences_service import UserPreferencesService
 
 router = APIRouter()
-
-
-class UserPreferencesResponse(BaseModel):
-    """User preferences response schema"""
-    id: str
-    user_id: str
-    theme: Optional[str] = "system"
-    date_format: Optional[str] = "iso"
-    time_format: Optional[str] = "24h"
-    items_per_page: Optional[int] = 25
-    sidebar_collapsed: Optional[bool] = False
-    created_at: str
-    updated_at: str
-
-
-class UpdateUserPreferencesRequest(BaseModel):
-    """Update user preferences request schema"""
-    theme: Optional[str] = Field(None, pattern="^(system|light|dark)$")
-    date_format: Optional[str] = Field(None, pattern="^(iso|us|eu|relative)$")
-    time_format: Optional[str] = Field(None, pattern="^(24h|12h)$")
-    items_per_page: Optional[int] = Field(None, ge=10, le=100)
-    sidebar_collapsed: Optional[bool] = None
 
 
 @router.get("/preferences", response_model=dict)
