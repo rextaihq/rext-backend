@@ -11,8 +11,8 @@ When a token is blacklisted:
 """
 
 import uuid
-from datetime import datetime,timezone
-from sqlalchemy import Column, String, TIMESTAMP, Index, ForeignKey
+from datetime import datetime, timezone
+from sqlalchemy import Column, String, DateTime, Index, ForeignKey
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 from src.api.database.base import Base
@@ -31,9 +31,10 @@ class TokenBlacklist(Base, SerializableMixin):
         ForeignKey("users.id", ondelete="CASCADE"),
         nullable=False
     )  # User who owned the token - cascade delete when user is removed
-    revoked_at = Column(TIMESTAMP, default=lambda: datetime.now(timezone.utc), nullable=False)  # When token was blacklisted
-    expires_at = Column(TIMESTAMP, nullable=False)  # When token would naturally expire
+    revoked_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)  # When token was blacklisted
+    expires_at = Column(DateTime(timezone=True), nullable=False)  # When token would naturally expire
     reason = Column(String(100))  # "logout", "refresh", "forced_logout", "password_change", etc.
+    updated_at = Column(DateTime(timezone=True), onupdate=lambda: datetime.now(timezone.utc), nullable=True)
 
     # Relationships
     user = relationship("Users", back_populates="blacklisted_tokens")

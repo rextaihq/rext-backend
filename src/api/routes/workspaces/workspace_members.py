@@ -259,7 +259,7 @@ async def remove_workspace_member(
             field_errors={
                 "member_id": ["This member is the workspace owner and cannot be removed"]
             },
-            error_code=ErrorCode.VALIDATION_ERROR,
+            error_code=ErrorCode.VALIDATION_FAILED,
             error_severity=ErrorSeverity.ERROR,
         )
 
@@ -388,7 +388,7 @@ async def update_workspace_member_role(
         },
     }
     # Current timestamp for response
-    timestamp = datetime.utcnow()
+    timestamp = datetime.now(timezone.utc)
 
     await schedule_if_allowed(
         db=db,

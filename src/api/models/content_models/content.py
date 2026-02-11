@@ -1,13 +1,14 @@
+
 from sqlalchemy import Column, String, Text, Integer, Float, DateTime, Boolean, ForeignKey
 from sqlalchemy.dialects.postgresql import UUID, ARRAY, JSONB
 from sqlalchemy.orm import relationship
 from src.api.database.base import Base
-from src.api.models.base import SerializableMixin
-from datetime import datetime
+from src.api.models.base import SerializableMixin, SoftDeleteMixin
+from datetime import datetime, timezone
 import uuid
 
 
-class Content(Base, SerializableMixin):
+class Content(Base, SerializableMixin, SoftDeleteMixin):
     """Main content table - stores core content and metadata"""
     __tablename__ = "content"
 
@@ -40,14 +41,11 @@ class Content(Base, SerializableMixin):
     wordpress_url = Column(Text, nullable=True)
     wordpress_published_at = Column(DateTime(timezone=True), nullable=True)
 
-    created_at = Column(DateTime(timezone=True), nullable=False, default=datetime.utcnow)
-    updated_at = Column(DateTime(timezone=True), nullable=True, default=datetime.utcnow, onupdate=datetime.utcnow)
-    deleted_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime(timezone=True), nullable=True, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
     # Relationships
     workspace = relationship("WorkspaceModel", back_populates="content_items")
     created_by = relationship("Users", foreign_keys=[created_by_user_id])
-    seo_data = relationship("ContentSEOData", back_populates="content", uselist=False, cascade="all, delete-orphan")
-
-    def to_dict(self, **kwargs):
-        return super().to_dict(**kwargs)
+    seo_data = relationship("ContentSEOData", back_populates="content", uselist=False, cascade="all, delete-orphan", passive_deletes=True)
+    media_items = relationship("ContentMedia", back_populates="content", cascade="all, delete-orphan", passive_deletes=True)

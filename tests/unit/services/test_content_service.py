@@ -71,9 +71,12 @@ class TestContentServiceCreate:
             body_markdown="# Full Content",
             status="draft",
             content_language="Spanish",
-            meta_title="SEO Title",
-            meta_description="SEO Description",
-            focus_keyphrase="keyphrase",
+            seo_data=ContentSEODataSchema(
+                meta_title="SEO Title",
+                meta_description="SEO Description",
+                focus_keyphrase="keyphrase",
+                trust_score=0.95
+            ),
             tags=["tag1", "tag2"]
         )
 
@@ -93,6 +96,7 @@ class TestContentServiceCreate:
         assert content.meta_title == "SEO Title"
         assert content.meta_description == "SEO Description"
         assert content.focus_keyphrase == "keyphrase"
+        assert content.seo_data.trust_score == 0.95
         assert content.tags == ["tag1", "tag2"]
 
     @pytest.mark.asyncio

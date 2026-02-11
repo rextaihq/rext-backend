@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from uuid import UUID
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from src.utils.logger import logger
 from src.api.security.dependencies import get_current_user
@@ -48,7 +48,7 @@ async def suspend_user(
         if not is_admin(current_user):
             return error(
                 message="Insufficient permissions. Admin role required.",
-                code=ErrorCode.PERMISSION_DENIED,
+                code=ErrorCode.INSUFFICIENT_PERMISSIONS,
                 status_code=403,
                 severity=ErrorSeverity.HIGH,
                 request=request
@@ -62,7 +62,7 @@ async def suspend_user(
 
         # Update status directly (could be extracted to service method)
         target_user.status = "suspended"
-        target_user.updated_at = datetime.utcnow()
+        target_user.updated_at = datetime.now(timezone.utc)
         await db.flush()
 
         # Get admin user for audit log
@@ -104,7 +104,7 @@ async def suspend_user(
 
     except ResourceNotFoundException:
         return error(
-            message="User not found",
+            message="User not found or access denied",
             code=ErrorCode.RESOURCE_NOT_FOUND,
             status_code=404,
             severity=ErrorSeverity.MEDIUM,
@@ -117,7 +117,6 @@ async def suspend_user(
             code=ErrorCode.INTERNAL_SERVER_ERROR,
             status_code=500,
             severity=ErrorSeverity.HIGH,
-            context={"error_details": str(e)},
             request=request
         )
 
@@ -145,7 +144,7 @@ async def activate_user(
         if not is_admin(current_user):
             return error(
                 message="Insufficient permissions. Admin role required.",
-                code=ErrorCode.PERMISSION_DENIED,
+                code=ErrorCode.INSUFFICIENT_PERMISSIONS,
                 status_code=403,
                 severity=ErrorSeverity.HIGH,
                 request=request
@@ -199,7 +198,7 @@ async def activate_user(
 
     except ResourceNotFoundException:
         return error(
-            message="User not found",
+            message="User not found or access denied",
             code=ErrorCode.RESOURCE_NOT_FOUND,
             status_code=404,
             severity=ErrorSeverity.MEDIUM,
@@ -212,7 +211,6 @@ async def activate_user(
             code=ErrorCode.INTERNAL_SERVER_ERROR,
             status_code=500,
             severity=ErrorSeverity.HIGH,
-            context={"error_details": str(e)},
             request=request
         )
 
@@ -240,7 +238,7 @@ async def ban_user(
         if not is_admin(current_user):
             return error(
                 message="Insufficient permissions. Admin role required.",
-                code=ErrorCode.PERMISSION_DENIED,
+                code=ErrorCode.INSUFFICIENT_PERMISSIONS,
                 status_code=403,
                 severity=ErrorSeverity.HIGH,
                 request=request
@@ -254,7 +252,7 @@ async def ban_user(
 
         # Update status directly (could be extracted to service method)
         target_user.status = "banned"
-        target_user.updated_at = datetime.utcnow()
+        target_user.updated_at = datetime.now(timezone.utc)
         await db.flush()
 
         # Get admin user for audit log
@@ -296,7 +294,7 @@ async def ban_user(
 
     except ResourceNotFoundException:
         return error(
-            message="User not found",
+            message="User not found or access denied",
             code=ErrorCode.RESOURCE_NOT_FOUND,
             status_code=404,
             severity=ErrorSeverity.MEDIUM,
@@ -309,7 +307,6 @@ async def ban_user(
             code=ErrorCode.INTERNAL_SERVER_ERROR,
             status_code=500,
             severity=ErrorSeverity.HIGH,
-            context={"error_details": str(e)},
             request=request
         )
 
@@ -347,7 +344,7 @@ async def deactivate_account(
         if db_user.status == "inactive":
             return error(
                 message="Account is already deactivated",
-                code=ErrorCode.INVALID_INPUT,
+                code=ErrorCode.INVALID_VALUE,
                 status_code=400,
                 severity=ErrorSeverity.LOW,
                 request=request
@@ -356,7 +353,7 @@ async def deactivate_account(
         # Store old status for audit
         old_status = db_user.status
 
-        # NEW: Check for active subscriptions
+        # Check for active subscriptions
         from src.api.models.subscription_models.subscriptions import UserSubscription
         from src.services.subscription_service import SubscriptionService
 
@@ -383,14 +380,13 @@ async def deactivate_account(
 
             return error(
                 message="You have active subscriptions. Please cancel them first or enable automatic cancellation.",
-                code=ErrorCode.VALIDATION_ERROR,
+                code=ErrorCode.VALIDATION_FAILED,
                 status_code=400,
                 severity=ErrorSeverity.MEDIUM,
-                context={"active_subscriptions": subscription_details},
                 request=request
             )
 
-        # NEW: Auto-cancel subscriptions if requested
+        # Auto-cancel subscriptions if requested
         if active_subs and deactivation_data.cancel_subscriptions:
             subscription_service = SubscriptionService(db)
             canceled_count = 0
@@ -465,6 +461,5 @@ async def deactivate_account(
             code=ErrorCode.INTERNAL_SERVER_ERROR,
             status_code=500,
             severity=ErrorSeverity.HIGH,
-            context={"error_details": str(e)},
             request=request
         )

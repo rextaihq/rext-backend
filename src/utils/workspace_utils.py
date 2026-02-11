@@ -3,7 +3,6 @@ Workspace utility functions for handling workspace resolution
 """
 from uuid import UUID
 from typing import Optional
-from sqlalchemy.orm import Session
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from src.api.models.workspace_models.workspace_model import WorkspaceModel
@@ -32,47 +31,9 @@ def is_valid_uuid(value) -> bool:
         return False
 
 
-def resolve_workspace(db: Session, identifier: str) -> Optional[WorkspaceModel]:
+async def resolve_workspace(db: AsyncSession, identifier: str) -> Optional[WorkspaceModel]:
     """
     Resolve a workspace by either UUID or slug
-
-    Args:
-        db: Database session
-        identifier: Either a workspace UUID or slug
-
-    Returns:
-        WorkspaceModel if found, None otherwise
-    """
-    if is_valid_uuid(identifier):
-        # It's a UUID, query by ID
-        return db.query(WorkspaceModel).filter(
-            WorkspaceModel.id == UUID(identifier)
-        ).first()
-    else:
-        # It's a slug, query by slug
-        return db.query(WorkspaceModel).filter(
-            WorkspaceModel.slug == identifier
-        ).first()
-
-
-def get_workspace_id_from_identifier(db: Session, identifier: str) -> Optional[UUID]:
-    """
-    Get workspace UUID from either a UUID string or slug
-
-    Args:
-        db: Database session
-        identifier: Either a workspace UUID or slug
-
-    Returns:
-        UUID of the workspace if found, None otherwise
-    """
-    workspace = resolve_workspace(db, identifier)
-    return workspace.id if workspace else None
-
-
-async def async_resolve_workspace(db: AsyncSession, identifier: str) -> Optional[WorkspaceModel]:
-    """
-    Async version: Resolve a workspace by either UUID or slug
 
     Args:
         db: Async database session
@@ -97,9 +58,9 @@ async def async_resolve_workspace(db: AsyncSession, identifier: str) -> Optional
         return result.scalar_one_or_none()
 
 
-async def async_get_workspace_id_from_identifier(db: AsyncSession, identifier: str) -> Optional[UUID]:
+async def get_workspace_id_from_identifier(db: AsyncSession, identifier: str) -> Optional[UUID]:
     """
-    Async version: Get workspace UUID from either a UUID string or slug
+    Get workspace UUID from either a UUID string or slug
 
     Args:
         db: Async database session
@@ -108,7 +69,7 @@ async def async_get_workspace_id_from_identifier(db: AsyncSession, identifier: s
     Returns:
         UUID of the workspace if found, None otherwise
     """
-    workspace = await async_resolve_workspace(db, identifier)
+    workspace = await resolve_workspace(db, identifier)
     return workspace.id if workspace else None
 
 
@@ -192,7 +153,7 @@ async def resolve_and_verify_workspace(
         ... )
     """
     # Resolve workspace ID from identifier (supports both UUID and slug)
-    workspace_uuid = await async_get_workspace_id_from_identifier(db, workspace_identifier)
+    workspace_uuid = await get_workspace_id_from_identifier(db, workspace_identifier)
 
     if not workspace_uuid:
         raise ResourceNotFoundException(
@@ -203,3 +164,7 @@ async def resolve_and_verify_workspace(
 
     # Verify membership and return workspace + membership objects
     return await verify_workspace_membership(db, workspace_uuid, user_id, check_active)
+
+
+# Alias for backward compatibility with older route implementations
+async_get_workspace_id_from_identifier = get_workspace_id_from_identifier

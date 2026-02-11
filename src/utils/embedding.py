@@ -1,54 +1,39 @@
-from langchain_openai import OpenAIEmbeddings
-from dotenv import load_dotenv
 import os
 
-# Resolve and load .env from project root
-project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-load_dotenv(os.path.join(project_root, ".env"))
+from langchain_openai import OpenAIEmbeddings
 
 from src.utils.logger import logger
 
 _embedding_model = None
 
-def get_embedding():
+
+def get_embedding() -> OpenAIEmbeddings:
     """
-    Get OpenAI embedding model for vector retrieval tasks.
+    Get or create the singleton OpenAI embedding model.
+
+    Uses the text-embedding-3-small model (1536 dimensions).
+    Fails fast if OPENAI_API_KEY is not set.
+
+    Returns:
+        OpenAIEmbeddings: Configured embedding model instance.
+
+    Raises:
+        ValueError: If OPENAI_API_KEY environment variable is not set.
     """
     global _embedding_model
     if _embedding_model is not None:
         return _embedding_model
 
-    try:
-        api_key = os.getenv("OPENAI_API_KEY")
-        if not api_key:
-            logger.warning("OPENAI_API_KEY not found in environment")
-            
-        _embedding_model = OpenAIEmbeddings(
-            model="text-embedding-3-small",
-            api_key=api_key
-        )
-        return _embedding_model
-    except Exception as e:
-        logger.error(f"Failed to initialize embedding model: {e}", exc_info=True)
-        # Final fallback
-        return OpenAIEmbeddings(
-            model="text-embedding-3-small",
-            api_key=os.getenv("OPENAI_API_KEY")
+    api_key = os.getenv("OPENAI_API_KEY")
+    if not api_key:
+        raise ValueError(
+            "OPENAI_API_KEY environment variable is required but not set. "
+            "Please set it in your .env file or environment."
         )
 
-
-if __name__ == "__main__":
-    embedding = get_embedding()
-    print(embedding.embed_query("Hello World"))
-
-    # Test batch document embedding
-    docs = [
-            "Artificial Intelligence is evolving rapidly.",
-            "Large Language Models are becoming more efficient.",
-            "Agentic workflows are the next big thing in software development."
-        ]
-    print(f"\n2. Testing embed_documents with {len(docs)} documents")
-    doc_vectors = embedding.embed_documents(docs)
-    print(f"   Success! Created {len(doc_vectors)} vectors.")
-    
-    print("\n✅ Ollama embedding model is working correctly!")
+    _embedding_model = OpenAIEmbeddings(
+        model="text-embedding-3-small",
+        api_key=api_key,
+    )
+    logger.info("OpenAI embedding model initialized successfully (text-embedding-3-small)")
+    return _embedding_model

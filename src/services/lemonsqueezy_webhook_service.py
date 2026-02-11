@@ -218,7 +218,7 @@ class LemonSqueezyWebhookService:
             payload=webhook_data.get("raw_payload", {}),
             processed=False,
             retry_count=0,
-            created_at=datetime.utcnow()
+            created_at=datetime.now(timezone.utc)
         )
 
         try:
@@ -297,7 +297,7 @@ class LemonSqueezyWebhookService:
             webhook_event: Database record to update
         """
         webhook_event.processed = True
-        webhook_event.processed_at = datetime.utcnow()
+        webhook_event.processed_at = datetime.now(timezone.utc)
         webhook_event.error_message = None
 
         await self.db.flush()
@@ -449,7 +449,7 @@ class LemonSqueezyWebhookService:
         stmt = (
             select(WebhookEvent)
             .where(
-                WebhookEvent.processed == False,
+                WebhookEvent.processed.is_(False),
                 WebhookEvent.retry_count < max_retries
             )
             .order_by(WebhookEvent.created_at.desc())
@@ -479,21 +479,21 @@ class LemonSqueezyWebhookService:
 
         # Processed events
         processed_stmt = select(func.count(WebhookEvent.id)).where(
-            WebhookEvent.processed == True
+            WebhookEvent.processed.is_(True)
         )
         processed_result = await self.db.execute(processed_stmt)
         processed = processed_result.scalar()
 
         # Failed events
         failed_stmt = select(func.count(WebhookEvent.id)).where(
-            WebhookEvent.processed == False
+            WebhookEvent.processed.is_(False)
         )
         failed_result = await self.db.execute(failed_stmt)
         failed = failed_result.scalar()
 
         # Pending retries (failed with retry_count < 3)
         pending_stmt = select(func.count(WebhookEvent.id)).where(
-            WebhookEvent.processed == False,
+            WebhookEvent.processed.is_(False),
             WebhookEvent.retry_count < 3
         )
         pending_result = await self.db.execute(pending_stmt)

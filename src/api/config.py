@@ -7,7 +7,7 @@ Note: dotenv is loaded in server.py before importing this module.
 from typing import List, Optional
 from pathlib import Path
 from pydantic import Field, field_validator
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -26,7 +26,7 @@ class Settings(BaseSettings):
     SECRET_KEY: str = Field(..., min_length=32, description="JWT access token secret key (min 32 chars)")
     REFRESH_SECRET_KEY: str = Field(..., min_length=32, description="JWT refresh token secret key (min 32 chars)")
     ALGORITHM: str = Field(default="HS256", description="JWT signing algorithm")
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = Field(default=1440, description="Access token expiration (minutes)")
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = Field(default=30, description="Access token expiration (minutes)")
     REFRESH_TOKEN_EXPIRE_DAYS: int = Field(default=7, description="Refresh token expiration (days)")
 
     # API Key Authentication (Optional)
@@ -326,13 +326,12 @@ class Settings(BaseSettings):
         else:  # free or unknown defaults to free
             return self.TIER_FREE_MAX_STORAGE_MB
 
-    class Config:
-        """Pydantic configuration."""
-        env_file = ".env"
-        env_file_encoding = "utf-8"
-        case_sensitive = True
-        extra = "ignore"  # Ignore extra env vars not defined in this class
-
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=True,
+        extra="ignore",
+    )
 
 # Singleton pattern for settings
 _settings: Optional[Settings] = None

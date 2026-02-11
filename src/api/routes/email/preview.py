@@ -143,7 +143,7 @@ async def preview_auth_email(
         logger.error(f"Failed to preview auth email: {str(e)}")
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to generate preview: {str(e)}"
+            detail="Failed to generate preview"
         )
 
 
@@ -248,7 +248,7 @@ async def preview_workspace_email(
         logger.error(f"Failed to preview workspace email: {str(e)}")
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to generate preview: {str(e)}"
+            detail="Failed to generate preview"
         )
 
 

@@ -28,8 +28,26 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         # Prevent clickjacking
         response.headers["X-Frame-Options"] = "DENY"
 
-        # Enable XSS filter
-        response.headers["X-XSS-Protection"] = "1; mode=block"
+        # Content Security Policy
+        # Restricts where resources can be loaded from and blocks embedding
+        # Updated to allow API docs (Swagger/Redoc) external resources
+        csp = (
+            "default-src 'self'; "
+            "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net; "
+            "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net; "
+            "img-src 'self' data: https://fastapi.tiangolo.com; "
+            "font-src 'self' https://fonts.gstatic.com; "
+            "frame-ancestors 'none';"
+        )
+        response.headers["Content-Security-Policy"] = csp
+
+        # Referrer Policy
+        # Controls how much referrer information is included with requests
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+
+        # Permissions Policy
+        # Disables unused browser features for enhanced privacy
+        response.headers["Permissions-Policy"] = "geolocation=(), camera=(), microphone=()"
 
         # HSTS (only for HTTPS)
         if request.url.scheme == "https":

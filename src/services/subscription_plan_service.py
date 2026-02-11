@@ -15,6 +15,7 @@ from src.api.middleware.exceptions import (
     RextAuthorizationException,
     RextValidationException,
 )
+from src.api.cache.decorators import cached, invalidate_cache
 from src.api.models.subscription_models.plans import SubscriptionPlan
 from src.api.models.subscription_models.subscriptions import SubscriptionStatus, UserSubscription
 from src.api.models.user_models.roles import Role
@@ -63,8 +64,8 @@ class SubscriptionPlanService:
             is_public=payload.is_public,
             stripe_price_id_monthly=payload.stripe_price_id_monthly,
             stripe_price_id_yearly=payload.stripe_price_id_yearly,
-            created_at=datetime.utcnow(),
-            updated_at=datetime.utcnow(),
+            created_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(timezone.utc),
         )
 
         self.db.add(plan)
@@ -78,6 +79,12 @@ class SubscriptionPlanService:
             "message": f"Subscription plan '{plan.display_name}' created successfully",
         }
 
+    @cached(
+        key_prefix="subscription:plans",
+        ttl=900,
+        key_builder=lambda self, include_inactive, include_private, is_admin:
+            f"{is_admin}:{include_inactive}:{include_private}",
+    )
     async def list_plans(
         self,
         include_inactive: bool,
@@ -138,10 +145,11 @@ class SubscriptionPlanService:
         for field, value in update_data.items():
             setattr(plan, field, value)
 
-        plan.updated_at = datetime.utcnow()
+        plan.updated_at = datetime.now(timezone.utc)
         await self.db.flush()
         await self.db.refresh(plan)
 
+        await invalidate_cache("subscription:plans:*")
         logger.info("Subscription plan updated", extra={"plan_id": str(plan.id)})
 
         return plan.to_dict()
@@ -171,6 +179,7 @@ class SubscriptionPlanService:
         await self.db.delete(plan)
         await self.db.flush()
 
+        await invalidate_cache("subscription:plans:*")
         logger.warning("Subscription plan deleted", extra={"plan_id": str(plan_id), "force": force})
 
         return {

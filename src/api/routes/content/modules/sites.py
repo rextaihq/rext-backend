@@ -1,5 +1,4 @@
 from fastapi import APIRouter, Depends, Request
-import requests
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from uuid import UUID
@@ -68,14 +67,13 @@ async def connect_site(
                 api_endpoint=data.api_endpoint,
                 api_key=data.api_key
             )
-            wp_publisher.validate_plugin()
+            await wp_publisher.validate_plugin()
             logger.info("Rext-AI validation successful")
             
         except Exception as e:
             logger.error(f"Site connection validation failed: {str(e)}")
             raise RextValidationException(
                 message=f"Failed to connect to the Rext-AI plugin. Please check your Site URL and API Key.",
-                context={"error": str(e)}
             )
 
     new_site = WorkspaceIntegration(
@@ -280,7 +278,7 @@ async def publish_to_site(
         
         try:
             from datetime import timezone
-            result = wp_publisher.publish_post(
+            result = await wp_publisher.publish_post(
                 title=content.title,
                 content=content.body_markdown or content.body_html or "",
                 status=data.status,

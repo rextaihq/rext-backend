@@ -44,7 +44,7 @@ async def _publish_to_all_sites(
     # Fetch all active sites
     sites_query = select(WorkspaceIntegration).where(
         WorkspaceIntegration.workspace_id == workspace_id,
-        WorkspaceIntegration.is_active == True
+        WorkspaceIntegration.is_active.is_(True)
     )
     sites_result = await db.execute(sites_query)
     sites = sites_result.scalars().all()
@@ -249,7 +249,8 @@ async def publish_existing_content(
         seo_data = ContentSEODataSchema(
             meta_title=content.seo_data.meta_title,
             meta_description=content.seo_data.meta_description,
-            focus_keyphrase=content.seo_data.focus_keyphrase
+            focus_keyphrase=content.seo_data.focus_keyphrase,
+            trust_score=content.seo_data.trust_score
         )
     
     content_data = ContentCreate(

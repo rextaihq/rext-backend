@@ -75,7 +75,7 @@ async def get_failed_emails(
         List of failed email logs
     """
     try:
-        cutoff_date = datetime.utcnow() - timedelta(days=days_back)
+        cutoff_date = datetime.now(timezone.utc) - timedelta(days=days_back)
 
         stmt = (
             select(EmailLog)
