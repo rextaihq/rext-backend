@@ -21,7 +21,7 @@ from uuid import UUID
 from datetime import datetime, timezone
 import bcrypt
 
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from src.utils.password_utils import validate_password_strength
 
@@ -35,6 +35,8 @@ from src.api.middleware.exceptions import (
 from src.utils.account_cleanup import delete_deactivated_accounts, get_pending_deletions
 from src.utils.token_cleanup import cleanup_expired_tokens
 
+from src.api.security.token_utils import verify_password, hash_password
+from src.api.models.workspace_models.workspace_member import WorkspaceMembers 
 
 class UserService:
     """Service for user business logic"""
@@ -176,7 +178,7 @@ class UserService:
             ResourceNotFoundException: If user not found
             RextValidationException: If current password incorrect or passwords same
         """
-        from src.api.security.token_utils import verify_password, hash_password
+        
         
         user = await self.get_user_by_id(user_id)
 
@@ -347,8 +349,6 @@ class UserService:
         Returns:
             Dict with users list and pagination metadata
         """
-        from src.api.models.workspace_models.workspace_member import WorkspaceMembers
-        from sqlalchemy import func
 
         base_query = select(Users)
 
@@ -479,7 +479,6 @@ class UserService:
             ResourceNotFoundException: If user not found
             RextValidationException: If email already exists
         """
-        from src.api.middleware.exceptions import RextValidationException
 
         user = await self.get_user_by_id(user_id)
 
@@ -551,7 +550,6 @@ class UserService:
         Raises:
             ResourceNotFoundException: If no user found with that token
         """
-        from src.api.security.token_utils import hash_password
 
         # Find user by reset token
         query = select(Users).where(Users.reset_token == reset_token)
@@ -590,7 +588,7 @@ class UserService:
         Raises:
             ResourceNotFoundException: If user not found
         """
-        from src.api.security.token_utils import verify_password
+        
 
         user = await self.get_user_by_id(user_id)
 

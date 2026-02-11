@@ -5,10 +5,11 @@ from dataclasses import dataclass
 from typing import Any, Awaitable, Callable, Dict, List, Optional, Sequence, Tuple
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import select, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.models.knowledge_models.knowledge_model import BrandVoice
+from src.api.models.knowledge_models.persona_model import Persona
 from src.api.schema.knowledge_schema import BrandSchema
 from src.flow.model.llm_manager import load_model
 from src.services.sse_service import (
@@ -20,6 +21,8 @@ from src.services.sse_service import (
 from src.utils.helper import web_page_scraper
 from src.utils.logger import logger
 from src.utils.vector_store import add_to_vector_store
+
+        
 
 ScrapeCallable = Callable[[str], Awaitable[Tuple[List[Any], List[Any]]]]
 VectorUploaderCallable = Callable[[Sequence[Any], str], Awaitable[bool]]
@@ -466,9 +469,7 @@ class WorkspacePipeline:
                 extra={"workspace_id": str(self.workspace_id), "operation_id": self.operation_id}
             )
         
-        from sqlalchemy import delete
-        from src.api.models.knowledge_models.persona_model import Persona
-        
+    
         # Delete existing personas for this workspace
         await self.db.execute(
             delete(Persona).where(Persona.workspace_id == self.workspace_id)

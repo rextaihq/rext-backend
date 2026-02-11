@@ -37,11 +37,14 @@ Does NOT:
 from typing import List, Optional, Dict, Any
 from uuid import UUID
 from pathlib import Path
+import os
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi import UploadFile
 
+from src.api.models.workspace_models.workspace_model import WorkspaceModel
+from src.api.models.user_models.users import Users
 from src.api.models.knowledge_models.knowledge_model import KnowledgeFiles, TextKnowledge, Website, KnowledgeBase
 from src.utils.logger import logger
 from src.utils.file_upload_utils import validate_and_store_file, delete_file
@@ -57,6 +60,9 @@ from src.api.middleware.exceptions import (
     RextExternalServiceException
 )
 from src.services.knowledge_base_service import KnowledgeBaseService
+from src.services.email_service import EmailService
+
+from emails.templates.knowledge_base.kb_processing_completed import render_kb_processing_completed_email
 
 
 
@@ -656,13 +662,7 @@ class KnowledgeService:
         chunks_count: int
     ) -> None:
         """Send email notification when knowledge base file processing completes."""
-        from emails.templates.knowledge_base.kb_processing_completed import render_kb_processing_completed_email
-        from src.services.email_service import EmailService
-        from src.api.models.workspace_models.workspace_model import WorkspaceModel
-        from src.api.models.knowledge_models.knowledge_model import KnowledgeBase
-        from src.api.models.user_models.users import Users
-        import os
-
+        
         try:
             # Fetch knowledge base
             result = await self.db.execute(

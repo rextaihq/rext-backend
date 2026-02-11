@@ -44,6 +44,7 @@ from src.api.middleware.exceptions import (
     RextValidationException,
     DuplicateResourceException,
     RextAuthenticationException,
+    RextAuthorizationException,
 )
 from src.api.schema.knowledge_schema import BrandSchema
 from src.flow.model.llm_manager import load_model
@@ -55,6 +56,8 @@ from src.api.database.async_database import get_async_db
 from src.services.workspace_pipeline import run_workspace_pipeline
 from langsmith import traceable, trace
 
+
+ 
 
 class WorkspaceService:
     """Service for workspace business logic"""
@@ -701,7 +704,7 @@ class WorkspaceService:
         user_role = result.scalar_one_or_none()
 
         if not user_role:
-            from src.api.middleware.exceptions import RextAuthorizationException
+            
 
             raise RextAuthorizationException(
                 message="Only workspace owners can perform this action"
@@ -878,7 +881,6 @@ class WorkspaceService:
         Raises:
             ResourceNotFoundException: If workspace not found
         """
-        from datetime import datetime
 
         # Verify ownership first
         await self.verify_user_is_workspace_owner(workspace_id, user_id )

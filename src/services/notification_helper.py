@@ -3,9 +3,12 @@ from uuid import UUID
 from fastapi import BackgroundTasks
 from src.services.notifications_services import notification_service
 from src.api.models.user_models.notification_preferences import NotificationPreferences
+from src.api.models.notification.notification_model import Notification
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 import logging
+from datetime import timezone, datetime
+
 
 logger = logging.getLogger(__name__)
 
@@ -128,8 +131,7 @@ async def schedule_if_allowed(
         notification_status = "error"
     
     # 5️⃣ Create notification record in database
-    from src.api.models.notification.notification_model import Notification
-    from datetime import datetime
+
     
     notification = Notification(
         user_id=UUID(user_id),
