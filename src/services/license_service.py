@@ -76,6 +76,12 @@ class LicenseService:
                 field_errors={"license_key": ["License is disabled"]}
             )
 
+        if license_obj.status == LicenseStatus.REVOKED:
+            raise RextValidationException(
+                message="This license has been revoked",
+                field_errors={"license_key": ["License has been revoked by an administrator"]}
+            )
+
         # Check if license is expired
         if license_obj.is_expired:
             raise RextValidationException(
@@ -369,7 +375,7 @@ class LicenseService:
             activation.deactivate()
 
         # Update license status
-        license_obj.status = LicenseStatus.DISABLED
+        license_obj.status = LicenseStatus.REVOKED
         license_obj.activation_count = 0
 
         await self.db.flush()

@@ -1,14 +1,3 @@
-"""
-Knowledge Base Routes - HTTP endpoints for knowledge base CRUD operations
-
-Endpoints:
-- GET    /workspaces/{workspace_id}/knowledge-bases - List all knowledge bases
-- POST   /workspaces/{workspace_id}/knowledge-bases - Create knowledge base
-- GET    /workspaces/{workspace_id}/knowledge-bases/{kb_id} - Get knowledge base
-- PUT    /workspaces/{workspace_id}/knowledge-bases/{kb_id} - Update knowledge base
-- DELETE /workspaces/{workspace_id}/knowledge-bases/{kb_id} - Delete knowledge base
-"""
-
 from typing import Any
 from uuid import UUID
 
@@ -29,7 +18,7 @@ from src.utils.logger import logger
 from src.utils.response_utils import created, success
 from src.utils.route_decorators import db_transaction_handler, require_permissions
 from src.utils.workspace_utils import resolve_and_verify_workspace
-
+from src.api.dependencies.feature_gate import RequireFeature  # <-- added
 
 router = APIRouter(
     prefix="/workspaces/{workspace_id}/knowledge-bases",
@@ -78,7 +67,10 @@ async def list_knowledge_bases(
     )
 
 
-@router.post("")
+@router.post(
+    "",
+    dependencies=[Depends(RequireFeature("knowledge_items"))],  # <-- added
+)
 @db_transaction_handler("create knowledge base", "Knowledge base created successfully")
 @require_permissions("knowledge.create", workspace_scoped=True)
 async def create_knowledge_base(
@@ -141,7 +133,10 @@ async def get_knowledge_base(
     )
 
 
-@router.put("/{kb_id}")
+@router.put(
+    "/{kb_id}",
+    dependencies=[Depends(RequireFeature("knowledge_items"))],  # <-- added
+)
 @db_transaction_handler("update knowledge base", auto_commit=True)
 @require_permissions("knowledge.update", workspace_scoped=True)
 async def update_knowledge_base(
@@ -174,7 +169,10 @@ async def update_knowledge_base(
     )
 
 
-@router.delete("/{kb_id}")
+@router.delete(
+    "/{kb_id}",
+    dependencies=[Depends(RequireFeature("knowledge_items"))],  # <-- added
+)
 @db_transaction_handler("delete knowledge base", "Knowledge base deleted successfully")
 @require_permissions("knowledge.delete", workspace_scoped=True)
 async def delete_knowledge_base(

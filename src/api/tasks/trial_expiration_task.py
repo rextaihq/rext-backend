@@ -178,45 +178,66 @@ class TrialExpirationTask:
 
         return sent_count
 
-    async def process_expired_trials(self) -> int:
-        """
-        Process trials that have already expired.
+async def process_expired_trials(self) -> int:
+    """
+    Process trials that have already expired.
 
-        Returns:
-            Number of trials expired
-        """
-        logger.info("Processing expired trials...")
+    Returns:
+        Number of trials expired
+    """
+    logger.info("Processing expired trials...")
 
-        expired_trials = await self.trial_service.get_expired_trials()
+    expired_trials = await self.trial_service.get_expired_trials()
 
-        logger.info(f"Found {len(expired_trials)} expired trials")
+    logger.info(f"Found {len(expired_trials)} expired trials")
 
-        expired_count = 0
-        for subscription in expired_trials:
-            try:
-                # Update status to expired
-                await self.trial_service.expire_trial(subscription.id)
+    expired_count = 0
+    # Collect email data to send AFTER commit
+    pending_emails = []
+    
+    for subscription in expired_trials:
+        try:
+            # Update status to expired
+            await self.trial_service.expire_trial(subscription.id)
+            
+            # Queue email for sending after commit
+            pending_emails.append(subscription)
+            expired_count += 1
+            
+        except Exception as e:
+            logger.error(
+                f"Failed to expire trial {subscription.id}: {str(e)}",
+                extra={
+                    "subscription_id": str(subscription.id),
+                    "error": str(e)
+                }
+            )
 
-                # Send expiration email
-                await self.send_trial_expired_email(subscription)
+    # Commit all changes FIRST
+    await self.db.commit()
+    
+    # Send emails ONLY AFTER successful commit
+    email_success_count = 0
+    for subscription in pending_emails:
+        try:
+            success = await self.send_trial_expired_email(subscription)
+            if success:
+                email_success_count += 1
+        except Exception as e:
+            logger.error(
+                f"Failed to send expiration email for subscription {subscription.id}: {str(e)}",
+                extra={
+                    "subscription_id": str(subscription.id),
+                    "error": str(e)
+                }
+            )
 
-                expired_count += 1
+    logger.info(
+        f"Expired {expired_count}/{len(expired_trials)} trials, "
+        f"sent {email_success_count}/{len(pending_emails)} expiration emails"
+    )
 
-            except Exception as e:
-                logger.error(
-                    f"Failed to process expired trial {subscription.id}: {str(e)}",
-                    extra={
-                        "subscription_id": str(subscription.id),
-                        "error": str(e)
-                    }
-                )
-
-        # Commit all changes
-        await self.db.commit()
-
-        logger.info(f"Expired {expired_count}/{len(expired_trials)} trials")
-
-        return expired_count
+    return expired_count    
 
     async def run(self):
         """

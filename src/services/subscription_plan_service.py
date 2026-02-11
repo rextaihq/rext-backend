@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime,timezone 
 from typing import Dict, Optional
 from uuid import UUID
 
@@ -49,24 +49,24 @@ class SubscriptionPlanService:
         await self._ensure_unique_name(payload.name)
 
         plan = SubscriptionPlan(
-            name=payload.name.lower(),
-            display_name=payload.display_name,
-            description=payload.description,
-            price_monthly=payload.price_monthly,
-            price_yearly=payload.price_yearly,
-            features=payload.features or {},
-            max_workspaces=payload.max_workspaces,
-            max_members_per_workspace=payload.max_members_per_workspace,
-            max_topics=payload.max_topics,
-            max_knowledge_items=payload.max_knowledge_items,
-            max_api_calls_per_month=payload.max_api_calls_per_month,
-            is_active=payload.is_active,
-            is_public=payload.is_public,
-            stripe_price_id_monthly=payload.stripe_price_id_monthly,
-            stripe_price_id_yearly=payload.stripe_price_id_yearly,
-            created_at=datetime.now(timezone.utc),
-            updated_at=datetime.now(timezone.utc),
-        )
+        name=payload.name.lower(),
+        display_name=payload.display_name,
+        description=payload.description,
+        price_monthly=payload.price_monthly,
+        price_yearly=payload.price_yearly,
+        features=payload.features or {},
+        max_workspaces=payload.max_workspaces,
+        max_members_per_workspace=payload.max_members_per_workspace,
+        max_topics=payload.max_topics,
+        max_knowledge_items=payload.max_knowledge_items,
+        max_api_calls_per_month=payload.max_api_calls_per_month,
+        is_active=payload.is_active,
+        is_public=payload.is_public,
+        lemonsqueezy_product_id=payload.lemonsqueezy_product_id,
+        lemonsqueezy_variant_id_monthly=payload.lemonsqueezy_variant_id_monthly,
+        lemonsqueezy_variant_id_yearly=payload.lemonsqueezy_variant_id_yearly,
+        created_at=datetime.now(timezone.utc),
+        updated_at=datetime.now(timezone.utc),)
 
         self.db.add(plan)
         await self.db.flush()
