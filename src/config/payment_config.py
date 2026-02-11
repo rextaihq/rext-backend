@@ -18,6 +18,9 @@ class PaymentSettings(BaseSettings):
     # Provider selection (only lemonsqueezy supported)
     payment_provider: PaymentProviderType = "lemonsqueezy"
 
+    # Sandbox/test mode toggle
+    payment_sandbox_mode: bool = False
+
     # Generic settings
     payment_currency: str = "USD"
     payment_success_url: str = "http://localhost:3000/checkout/success"

@@ -34,6 +34,7 @@ from src.utils.logger import logger
 from src.services.audit_logger import audit_logger
 from .shared.auth import require_super_admin
 from src.api.config import settings
+from src.config.payment_config import payment_settings
 
 
 router = APIRouter()
@@ -46,10 +47,10 @@ router = APIRouter()
 async def get_lemonsqueezy_provider() -> LemonSqueezyProvider:
     """Get LemonSqueezy provider instance."""
     return LemonSqueezyProvider(
-        api_key=settings.LEMONSQUEEZY_API_KEY,
-        store_id=settings.LEMONSQUEEZY_STORE_ID,
-        webhook_secret=settings.LEMONSQUEEZY_WEBHOOK_SECRET,
-        sandbox_mode=settings.LEMONSQUEEZY_SANDBOX_MODE
+        api_key=payment_settings.lemonsqueezy_api_key,
+        store_id=payment_settings.lemonsqueezy_store_id,
+        webhook_secret=payment_settings.lemonsqueezy_webhook_secret,
+        sandbox_mode=payment_settings.payment_sandbox_mode
     )
 
 
