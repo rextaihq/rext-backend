@@ -440,7 +440,7 @@ async def delete_avatar(
             message="Avatar deleted successfully"
         )
 
-    except ResourceNotFoundException:
+    except ResourceNotFoundException as e:
         # Schedule notification
         await schedule_if_allowed(
             db=db,
