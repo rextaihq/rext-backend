@@ -7,9 +7,9 @@ Provides webhook event tracking and monitoring capabilities:
 - Retry failed webhooks
 - Get webhook statistics
 """
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional, Any
-from sqlalchemy import func, and_, or_, desc
+from sqlalchemy import func, Integer,and_, or_, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
@@ -65,7 +65,7 @@ class WebhookMonitoringService:
                 conditions.append(WebhookEvent.processed == processed)
 
             if hours:
-                cutoff_time = datetime.utcnow() - timedelta(hours=hours)
+                cutoff_time = datetime.now(timezone.utc) - timedelta(hours=hours)
                 conditions.append(WebhookEvent.created_at >= cutoff_time)
 
             # Count total matching events
@@ -166,7 +166,7 @@ class WebhookMonitoringService:
             ]
 
             if hours:
-                cutoff_time = datetime.utcnow() - timedelta(hours=hours)
+                cutoff_time = datetime.now(timezone.utc) - timedelta(hours=hours)
                 conditions.append(WebhookEvent.created_at >= cutoff_time)
 
             # Count total failed events
@@ -262,7 +262,7 @@ class WebhookMonitoringService:
             try:
                 # Increment retry count
                 event.retry_count += 1
-                event.updated_at = datetime.utcnow()
+                event.updated_at = datetime.now(timezone.utc)
 
                 # Process the webhook using the webhook service
                 await self.webhook_service.process_webhook_event(
@@ -273,7 +273,7 @@ class WebhookMonitoringService:
 
                 # Mark as processed
                 event.processed = True
-                event.processed_at = datetime.utcnow()
+                event.processed_at = datetime.now(timezone.utc)
                 event.error_message = None
 
                 await self.db.commit()
@@ -336,7 +336,7 @@ class WebhookMonitoringService:
             # Build time filter
             time_condition = []
             if hours:
-                cutoff_time = datetime.utcnow() - timedelta(hours=hours)
+                cutoff_time = datetime.now(timezone.utc) - timedelta(hours=hours)
                 time_condition.append(WebhookEvent.created_at >= cutoff_time)
 
             # Total events

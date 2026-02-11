@@ -168,10 +168,10 @@ async def handle_order_created(
         status=LicenseStatus.ACTIVE if status == "paid" else LicenseStatus.INACTIVE,
         activation_limit=activation_limit,  # None = Unlimited, otherwise from license data
         activation_count=0,  # Fixed: was activation_usage, should be activation_count
-        activated_at=datetime.utcnow() if status == "paid" else None,
+        activated_at=datetime.now(timezone.utc) if status == "paid" else None,
         expires_at=None,  # Lifetime - never expires
-        created_at=datetime.utcnow(),
-        updated_at=datetime.utcnow()
+        created_at=datetime.now(timezone.utc),
+        updated_at=datetime.now(timezone.utc)
     )
 
     db.add(license_record)
@@ -198,7 +198,7 @@ async def handle_order_created(
         existing_sub = result.scalar_one_or_none()
 
         if not existing_sub:
-            now = datetime.utcnow()
+            now = datetime.now(timezone.utc)
             subscription = UserSubscription(
                 user_id=user.id,
                 plan_id=plan.id,
@@ -337,7 +337,7 @@ async def handle_order_refunded(
     # Disable license
     if license_record:
         license_record.status = LicenseStatus.DISABLED
-        license_record.updated_at = datetime.utcnow()
+        license_record.updated_at = datetime.now(timezone.utc)
         await db.flush()
 
         logger.info(
@@ -348,9 +348,9 @@ async def handle_order_refunded(
     # Cancel subscription
     if subscription:
         subscription.status = SubscriptionStatus.CANCELLED
-        subscription.cancelled_at = datetime.utcnow()
-        subscription.end_date = datetime.utcnow()
-        subscription.updated_at = datetime.utcnow()
+        subscription.cancelled_at = datetime.now(timezone.utc)
+        subscription.end_date = datetime.now(timezone.utc)
+        subscription.updated_at = datetime.now(timezone.utc)
         await db.flush()
 
         logger.info(
@@ -437,7 +437,7 @@ async def handle_license_key_created(
         license_record.activation_limit = activation_limit if activation_limit and activation_limit > 0 else None
         license_record.activation_count = activation_usage
         license_record.expires_at = datetime.fromisoformat(expires_at) if expires_at else None
-        license_record.updated_at = datetime.utcnow()
+        license_record.updated_at = datetime.now(timezone.utc)
 
         await db.flush()
 

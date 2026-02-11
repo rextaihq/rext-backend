@@ -118,14 +118,14 @@ class TestInvitationEdgeCases:
         await db.commit()
 
         # Performance test: Fetch all user workspaces
-        start_time = datetime.utcnow()
+        start_time = datetime.now(timezone.utc)
 
         user_workspaces = await workspace_service.get_user_workspaces(
             db=db,
             user_id=test_user.id
         )
 
-        end_time = datetime.utcnow()
+        end_time = datetime.now(timezone.utc)
         duration = (end_time - start_time).total_seconds()
 
         # Assertions
@@ -216,7 +216,7 @@ class TestInvitationEdgeCases:
         )
 
         # Soft-delete the inviter
-        inviter.deleted_at = datetime.utcnow()
+        inviter.deleted_at = datetime.now(timezone.utc)
         await db.commit()
 
         # Try to accept invitation
@@ -256,7 +256,7 @@ class TestInvitationEdgeCases:
         )
 
         # Soft-delete the workspace
-        test_workspace.deleted_at = datetime.utcnow()
+        test_workspace.deleted_at = datetime.now(timezone.utc)
         await db.commit()
 
         # Try to accept invitation
@@ -332,7 +332,7 @@ class TestInvitationEdgeCases:
         )
 
         # Manually expire the invitation
-        invitation.expires_at = datetime.utcnow() - timedelta(days=1)
+        invitation.expires_at = datetime.now(timezone.utc) - timedelta(days=1)
         await db.commit()
 
         # Try to accept expired invitation
@@ -384,8 +384,8 @@ class TestInvitationEdgeCases:
             invitations.append(inv)
 
         # Soft-delete 2 workspaces
-        workspaces[0].deleted_at = datetime.utcnow()
-        workspaces[1].deleted_at = datetime.utcnow()
+        workspaces[0].deleted_at = datetime.now(timezone.utc)
+        workspaces[1].deleted_at = datetime.now(timezone.utc)
         await db.commit()
 
         # Get pending invitations

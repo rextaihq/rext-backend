@@ -431,7 +431,7 @@ class TestEmailServiceRetryFailedEmail:
             provider="mock",
             from_email="noreply@rext.com",
             error_message="Previous failure",
-            failed_at=datetime.utcnow()
+            failed_at=datetime.now(timezone.utc)
         )
 
         # Mock get_email_log to return the failed log

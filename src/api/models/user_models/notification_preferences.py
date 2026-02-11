@@ -1,10 +1,11 @@
 import uuid
-from sqlalchemy import Column, String, Boolean, TIMESTAMP, ForeignKey
+from sqlalchemy import Column, String, Boolean, DateTime, ForeignKey
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from src.api.database.base import Base
 from src.api.models.base import SerializableMixin
+import secrets
 
 
 class NotificationPreferences(Base, SerializableMixin):
@@ -89,15 +90,20 @@ class NotificationPreferences(Base, SerializableMixin):
     # MARKETING COMMUNICATIONS
     # ==============================
     marketing_updates = Column(Boolean, default=False, nullable=False)
-
+    unsubscribe_token = Column(
+        String,
+        unique=True,
+        nullable=False,
+        default=lambda: secrets.token_urlsafe(32)
+    )
     # ==============================
     # TIMESTAMPS
     # ==============================
-    created_at = Column(TIMESTAMP, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
     updated_at = Column(
-        TIMESTAMP,
-        default=datetime.utcnow,
-        onupdate=datetime.utcnow,
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
         nullable=False
     )
 
