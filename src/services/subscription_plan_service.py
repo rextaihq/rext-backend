@@ -62,8 +62,8 @@ class SubscriptionPlanService:
             max_api_calls_per_month=payload.max_api_calls_per_month,
             is_active=payload.is_active,
             is_public=payload.is_public,
-            stripe_price_id_monthly=payload.stripe_price_id_monthly,
-            stripe_price_id_yearly=payload.stripe_price_id_yearly,
+            lemonsqueezy_variant_id_monthly=payload.lemonsqueezy_variant_id_monthly,
+            lemonsqueezy_variant_id_yearly=payload.lemonsqueezy_variant_id_yearly,
             created_at=datetime.now(timezone.utc),
             updated_at=datetime.now(timezone.utc),
         )

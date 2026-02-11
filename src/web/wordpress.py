@@ -2,13 +2,16 @@
 WordPress Publishing Service
 
 Handles publishing content to WordPress via REST API.
+Move from src/services/wordpress_publisher.py to src/web/wordpress.py.
 """
 
 import logging
 import os
+from typing import Dict, Optional, Any, List
+from src.api.schema.content_schema import ContentCreate
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 import httpx
-from typing import Dict, Optional
-from src.api.schema.content_schema import ContentCreate, ContentUpdate, ContentResponse
+from src.api.middleware.exceptions import RextExternalServiceException, ExternalServiceTimeoutException
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +44,13 @@ class WordPressPublisher:
         self.username = username or os.getenv("WORDPRESS_USERNAME", "")
         self.app_password = app_password or os.getenv("WORDPRESS_APP_PASSWORD", "")
         self.api_key = api_key or os.getenv("WORDPRESS_API_KEY", "")
-        self.verify_ssl = verify_ssl if os.getenv("ENVIRONMENT") == "production" else False
+        
+        # SSL verification logic
+        env = os.getenv("ENVIRONMENT", "development")
+        if env == "production":
+            self.verify_ssl = verify_ssl
+        else:
+            self.verify_ssl = False
 
         # Remove trailing slash from URLs
         self.site_url = self.site_url.rstrip("/")
@@ -57,8 +66,7 @@ class WordPressPublisher:
 
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
-            masked_key = f"{self.api_key[:10]}...{self.api_key[-6:]}" if len(self.api_key) > 16 else "***"
-            logger.info(f"WordPress publisher initialized with API key: {masked_key}")
+            logger.info(f"WordPress publisher initialized with API key for site: {self.site_url}")
         elif self.username and self.app_password:
             auth = httpx.BasicAuth(self.username, self.app_password)
         else:
@@ -73,6 +81,24 @@ class WordPressPublisher:
             auth=auth,
         )
 
+    async def __aenter__(self):
+        """Async context manager entry."""
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        """Async context manager exit, ensures client is closed."""
+        await self.close()
+
+    async def close(self):
+        """Close the underlying HTTP client."""
+        await self.client.aclose()
+
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=2, max=10),
+        retry=retry_if_exception_type((httpx.NetworkError, httpx.TimeoutException)),
+        reraise=True
+    )
     async def validate_plugin(self) -> bool:
         """
         Validate the Rext-AI WordPress plugin connection.
@@ -87,41 +113,49 @@ class WordPressPublisher:
 
             if response.status_code == 200:
                 return True
-            else:
-                error_msg = f"Rext-AI validation failed (Status {response.status_code}): {response.text}"
-                logger.error(error_msg)
-                raise Exception(error_msg)
-
+        except httpx.TimeoutException as e:
+            error_msg = f"Timeout connecting to Rext-AI plugin at {endpoint}: {str(e)}"
+            logger.error(error_msg)
+            raise ExternalServiceTimeoutException(service_name="WordPress (Plugin)", timeout_seconds=15)
+            
         except httpx.HTTPError as e:
             error_msg = f"Failed to connect to Rext-AI plugin at {endpoint}: {str(e)}"
             logger.error(error_msg)
-            raise Exception(error_msg)
+            raise RextExternalServiceException(message=error_msg, service_name="WordPress")
+        
+        except Exception as e:
+            error_msg = f"Unexpected error during WordPress plugin validation: {str(e)}"
+            logger.error(error_msg)
+            raise RextExternalServiceException(message=error_msg, service_name="WordPress")
 
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=2, max=10),
+        retry=retry_if_exception_type((httpx.NetworkError, httpx.TimeoutException)),
+        reraise=True
+    )
     async def publish_post(
         self,
         data: ContentCreate,
         status: str = "publish",
         excerpt: Optional[str] = None,
-        tags: Optional[list] = None,
-        categories: Optional[list] = None,
-        meta: Optional[Dict] = None
-    ) -> Dict:
+        tags: Optional[List[str]] = None,
+        categories: Optional[List[int]] = None,
+        meta: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
         """
         Publish a post to WordPress.
 
         Args:
             data: ContentCreate schema with content data
             status: Post status ('publish', 'draft', 'pending', 'private')
-            excerpt: Post excerpt/meta description (falls back to SEO meta_description)
-            tags: List of tag names (falls back to data.tags)
+            excerpt: Post excerpt/meta description
+            tags: List of tag names
             categories: List of category names or IDs
             meta: Custom meta fields
 
         Returns:
             Dict containing post data from WordPress API
-
-        Raises:
-            Exception: If publishing fails
         """
         if self.api_key and self.api_endpoint:
             endpoint = f"{self.api_endpoint}/posts"
@@ -173,8 +207,7 @@ class WordPressPublisher:
 
         try:
             logger.info(f"Publishing post to WordPress: {title}")
-            logger.info(f"Using endpoint: {endpoint}")
-
+            
             response = await self.client.post(endpoint, json=post_data, timeout=30)
             response.raise_for_status()
 
@@ -192,28 +225,25 @@ class WordPressPublisher:
                 "title": post.get("title", {}).get("rendered"),
             }
 
+        except httpx.TimeoutException as e:
+            error_msg = f"Timeout publishing to WordPress: {e}"
+            logger.error(error_msg)
+            raise ExternalServiceTimeoutException(service_name="WordPress", timeout_seconds=30)
+
         except httpx.HTTPStatusError as e:
             error_msg = f"WordPress API error: {e}"
             if e.response is not None:
                 error_msg += f" - {e.response.text}"
             logger.error(error_msg)
-            raise Exception(error_msg)
+            raise RextExternalServiceException(message=error_msg, service_name="WordPress")
 
         except Exception as e:
-            error_msg = f"Failed to publish to WordPress: {str(e)}"
+            error_msg = f"Unexpected failure to publish to WordPress: {str(e)}"
             logger.error(error_msg)
-            raise Exception(error_msg)
+            raise RextExternalServiceException(message=error_msg, service_name="WordPress")
 
-    async def _get_or_create_tags(self, tag_names: list) -> list:
-        """
-        Get tag IDs for tag names, creating them if they don't exist.
-
-        Args:
-            tag_names: List of tag names
-
-        Returns:
-            List of tag IDs
-        """
+    async def _get_or_create_tags(self, tag_names: List[str]) -> List[int]:
+        """Get tag IDs for tag names, creating them if they don't exist."""
         tag_ids = []
         if self.api_key and self.api_endpoint:
             endpoint = f"{self.api_endpoint}/tags"
@@ -247,17 +277,8 @@ class WordPressPublisher:
 
         return tag_ids
 
-    async def update_post(self, post_id: int, **kwargs) -> Dict:
-        """
-        Update an existing WordPress post.
-
-        Args:
-            post_id: WordPress post ID
-            **kwargs: Fields to update (title, content, status, etc.)
-
-        Returns:
-            Dict containing updated post data
-        """
+    async def update_post(self, post_id: int, **kwargs) -> Dict[str, Any]:
+        """Update an existing WordPress post."""
         if self.api_key and self.api_endpoint:
             endpoint = f"{self.api_endpoint}/posts/{post_id}"
         else:
