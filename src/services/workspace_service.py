@@ -522,23 +522,6 @@ class WorkspaceService:
                 "estimated_reading_time_minutes": estimated_reading_time,
             }
 
-            total_web_words = int(web_word_stats.total_words or 0)
-            avg_web_words = int(web_word_stats.avg_words or 0)
-            total_file_words = int(file_word_stats.total_words or 0)
-            avg_file_words = int(file_word_stats.avg_words or 0)
-
-            total_words = total_web_words + total_file_words
-            estimated_reading_time = total_words // 200
-
-            analytics["content_metrics"] = {
-                "total_words": total_words,
-                "web_content_words": total_web_words,
-                "file_content_words": total_file_words,
-                "avg_web_article_words": avg_web_words,
-                "avg_file_words": avg_file_words,
-                "estimated_reading_time_minutes": estimated_reading_time,
-            }
-
         logger.info(
             f"Retrieved analytics for workspace",
             extra={

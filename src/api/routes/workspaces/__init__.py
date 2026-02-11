@@ -41,7 +41,7 @@ workspaces_router.add_api_route("/slug/{workspace_slug}", get_workspace_by_slug,
 
 # POST/PUT/DELETE endpoints - RESTful wrappers
 @workspaces_router.post("")
-@require_permissions("workspace.create")
+@require_permissions("workspace.create",  workspace_scoped=False)
 @db_transaction_handler("create workspace", auto_commit=True)
 async def create_workspace_restful(
     data: WorkspaceSchema,
