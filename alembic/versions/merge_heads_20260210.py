@@ -1,28 +1,22 @@
-"""add trust_score to content_seo_data
+"""merge heads 20260210
 
-Revision ID: 7134b1198eef
-Revises: 625b40a3c6ba
-Create Date: 2026-02-02 20:13:59.596250
+Revision ID: merge_20260210
+Revises: rev_add_fk_tb, 583351904869
+Create Date: 2026-02-10 12:00:00.000000
 
 """
 from typing import Sequence, Union
-
 from alembic import op
 import sqlalchemy as sa
 
-
 # revision identifiers, used by Alembic.
-revision: str = '7134b1198eef'
-down_revision: Union[str, Sequence[str], None] = '625b40a3c6ba'
+revision: str = 'merge_20260210'
+down_revision: Union[str, Sequence[str], None] = ('rev_add_fk_tb', '583351904869')
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
-
 def upgrade() -> None:
-    """Upgrade schema."""
     pass
 
-
 def downgrade() -> None:
-    """Downgrade schema."""
     pass

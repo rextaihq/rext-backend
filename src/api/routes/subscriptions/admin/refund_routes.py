@@ -10,7 +10,7 @@ All endpoints require super admin permissions.
 """
 
 from typing import Optional
-from datetime import datetime
+from datetime import datetime, timezone
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Request, Query, HTTPException, status

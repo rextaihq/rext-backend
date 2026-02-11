@@ -237,7 +237,7 @@ class SMTPEmailProvider(IEmailProvider):
             Simple message ID based on recipient and timestamp
         """
         import hashlib
-        from datetime import datetime
+        from datetime import datetime, timezone
 
         # Create a simple message ID from recipient and timestamp
         to_email = message.to[0].email if message.to else "unknown"

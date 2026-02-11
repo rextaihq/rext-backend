@@ -11,7 +11,7 @@ Or with cron:
     0 9 * * * cd /path/to/rext-backend && /path/to/python -m src.scripts.send_invitation_reminders
 """
 import asyncio
-from datetime import datetime, timedelta
+from datetime import datetime, timezone, timedelta
 from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 

@@ -168,7 +168,7 @@ class EmailEventService:
             if email_log:
                 await self._update_email_log_status(email_log, event_type, event_timestamp)
 
-            await self.db.commit()
+            await self.db.flush()
 
             return WebhookProcessingResult(
                 success=True,

@@ -691,7 +691,7 @@ async def get_invoices(
                 customer_name=inv_data.get("customer_name"),
                 items=inv_data.get("items", [])
             )
-            invoices.append(invoice.dict())
+            invoices.append(invoice.model_dump())
 
         return success(
             data={

@@ -5,7 +5,7 @@ Testing and development email provider that doesn't send real emails.
 Implements the IEmailProvider interface for provider abstraction.
 """
 from typing import List, Dict, Any
-from datetime import datetime
+from datetime import datetime, timezone
 from src.providers.email.base import IEmailProvider, EmailMessage, EmailResult
 from src.api.lib.logger import auto_logger
 

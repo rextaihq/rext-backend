@@ -6,7 +6,7 @@ Acts as the main interface between application code and email providers.
 """
 from typing import Optional, Dict, Any, List
 from uuid import UUID
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from tenacity import (
@@ -214,7 +214,7 @@ class EmailService:
 
         # Commit transaction (unless disabled for testing)
         if auto_commit:
-            await self.db.commit()
+            await self.db.flush()  # Changed from commit() as per Task 074
 
         # Note: We don't refresh after commit because:
         # 1. We already have all the data we just set
@@ -485,7 +485,7 @@ class EmailService:
         self._update_log_with_result(email_log, result)
 
         if auto_commit:
-            await self.db.commit()
+            await self.db.flush()  # Changed from commit() as per Task 074
 
         # Note: No refresh after commit (see send_email for explanation)
 

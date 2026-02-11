@@ -1,7 +1,7 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from typing import Optional
-from datetime import datetime
+from datetime import datetime, timezone
 
 from src.api.models.audit_models.audit_logs import AuditLog
 from src.api.schema.audit_schema import AuditStatus

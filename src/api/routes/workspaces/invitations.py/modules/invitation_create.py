@@ -302,7 +302,7 @@ async def create_bulk_invitations(
             "total_requested": len(invitation_data.emails),
             "successful": successful,
             "failed": failed,
-            "results": [r.dict() for r in results]
+            "results": [r.model_dump() for r in results]
         },
         "message": f"Bulk invitation completed: {successful} sent, {failed} failed"
     }

@@ -13,7 +13,7 @@ class PaymentMethod(Base, SerializableMixin):
     __tablename__ = "payment_methods"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, unique=True, nullable=False)
-    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
 
     # Payment provider integration (provider-agnostic)
     provider_payment_method_id = Column(String(255), unique=True, nullable=False)

@@ -5,7 +5,7 @@ from src.flow.model.structure.topics import SEOTopics
 from src.flow.model.llm_manager import load_model
 from langgraph.types import interrupt
 from langchain_core.messages import SystemMessage, HumanMessage
-from datetime import datetime
+from datetime import datetime, timezone
 logger = logging.getLogger(__name__)
 
 

@@ -6,7 +6,7 @@ Separate from workspace invitation schemas for clarity and type safety.
 """
 from pydantic import BaseModel, EmailStr, Field, field_validator
 from typing import Optional, List, Dict, Any
-from datetime import datetime
+from datetime import datetime, timezone
 
 
 class CreateAdminInvitationRequest(BaseModel):

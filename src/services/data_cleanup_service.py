@@ -86,7 +86,7 @@ class DataCleanupService:
                     break
 
                 deleted_total += deleted_batch
-                await self.db.commit()
+                await self.db.flush()
 
                 logger.debug(f"Deleted batch of {deleted_batch} audit logs (total: {deleted_total})")
 
@@ -153,7 +153,7 @@ class DataCleanupService:
                     break
 
                 deleted_total += deleted_batch
-                await self.db.commit()
+                await self.db.flush()
 
                 logger.debug(f"Deleted batch of {deleted_batch} email logs (total: {deleted_total})")
 
@@ -225,7 +225,7 @@ class DataCleanupService:
                     break
 
                 deleted_total += deleted_batch
-                await self.db.commit()
+                await self.db.flush()
 
                 logger.debug(f"Deleted batch of {deleted_batch} orphaned email events (total: {deleted_total})")
 
@@ -300,7 +300,7 @@ class DataCleanupService:
                     break
 
                 deleted_total += deleted_batch
-                await self.db.commit()
+                await self.db.flush()
 
                 logger.debug(f"Deleted batch of {deleted_batch} inactive sessions (total: {deleted_total})")
 
@@ -342,7 +342,7 @@ class DataCleanupService:
             select(func.count(WebhookEvent.id))
             .where(
                 WebhookEvent.created_at < cutoff_date,
-                WebhookEvent.processed == True
+                WebhookEvent.processed.is_(True)
             )
         )
         record_count = count_result.scalar()
@@ -360,7 +360,7 @@ class DataCleanupService:
                     delete(WebhookEvent)
                     .where(
                         WebhookEvent.created_at < cutoff_date,
-                        WebhookEvent.processed == True
+                        WebhookEvent.processed.is_(True)
                     )
                     .execution_options(synchronize_session=False)
                     .returning(WebhookEvent.id)
@@ -372,7 +372,7 @@ class DataCleanupService:
                     break
 
                 deleted_total += deleted_batch
-                await self.db.commit()
+                await self.db.flush()
 
                 logger.debug(f"Deleted batch of {deleted_batch} webhook events (total: {deleted_total})")
 
@@ -443,7 +443,7 @@ class DataCleanupService:
                 .returning(UserSubscription.id)
             )
             anonymized_count = len(result.fetchall())
-            await self.db.commit()
+            await self.db.flush()
 
             logger.info(
                 f"Anonymized {anonymized_count} cancelled subscriptions (user_id set to NULL)",
@@ -511,7 +511,7 @@ class DataCleanupService:
         )
         result = await self.db.execute(stmt)
         deleted = result.rowcount
-        await self.db.commit()
+        await self.db.flush()
 
         logger.info(f"Cleaned up {deleted} expired tokens from blacklist")
         return deleted
