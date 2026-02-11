@@ -549,8 +549,6 @@ async def create_text_knowledge(
         tags=payload.tags,
     )
 
-    if payload.tags:
-        logger.warning("Tags provided for text knowledge are currently ignored", extra={"tags": payload.tags})
 
     try:
         # Schedule success notification
