@@ -107,6 +107,7 @@ class BrandSchema(BaseModel):
 
 
 # -------------------------------------
+# -------------------------------------
 # Text Knowledge Schema
 # -------------------------------------
 class TextKnowledgeSchema(BaseModel):
@@ -120,6 +121,21 @@ class TextKnowledgeSchema(BaseModel):
         description="Workspace identifier",
         example="123e4567-e89b-12d3-a456-426614174000"
     )
+
+
+class TextKnowledgeResponseSchema(BaseModel):
+    """Schema for text knowledge response"""
+    id: UUID = Field(..., description="Knowledge item ID")
+    workspace_id: UUID = Field(..., description="Workspace ID")
+    knowledge_base_id: UUID = Field(..., description="Knowledge base ID")
+    title: str = Field(..., description="Knowledge title")
+    content: str = Field(..., description="Full text content")
+    tags: Optional[List[str]] = Field(default_factory=list, description="Tags")
+    created_at: datetime = Field(..., description="Creation timestamp")
+    updated_at: Optional[datetime] = Field(None, description="Last update timestamp")
+
+    class Config:
+        from_attributes = True
 
 
 # -------------------------------------
@@ -136,3 +152,40 @@ class WebKnowledgeSchema(BaseModel):
         description="Workspace identifier",
         example="123e4567-e89b-12d3-a456-426614174000"
     )
+
+
+class WebKnowledgeResponseSchema(BaseModel):
+    """Schema for web knowledge response"""
+    id: UUID = Field(..., description="Knowledge item ID")
+    workspace_id: UUID = Field(..., description="Workspace ID")
+    knowledge_base_id: UUID = Field(..., description="Knowledge base ID")
+    url: str = Field(..., description="Scraped URL")
+    title: Optional[str] = Field(None, description="Page title")
+    status: str = Field(..., description="Training status")
+    char_count: int = Field(0, description="Character count")
+    word_count: int = Field(0, description="Word count")
+    created_at: datetime = Field(..., description="Creation timestamp")
+    updated_at: Optional[datetime] = Field(None, description="Last update timestamp")
+
+    class Config:
+        from_attributes = True
+
+
+# -------------------------------------
+# File Knowledge Schema
+# -------------------------------------
+class FileKnowledgeResponseSchema(BaseModel):
+    """Schema for file knowledge response"""
+    id: UUID = Field(..., description="Knowledge item ID")
+    workspace_id: UUID = Field(..., description="Workspace ID")
+    knowledge_base_id: UUID = Field(..., description="Knowledge base ID")
+    file_name: str = Field(..., description="Name of the file")
+    file_type: str = Field(..., description="MIME type or extension")
+    file_size: int = Field(..., description="File size in bytes")
+    mime_type: str = Field(..., description="Exact MIME type")
+    chunk_count: int = Field(0, description="Number of text chunks")
+    created_at: datetime = Field(..., description="Creation timestamp")
+    updated_at: Optional[datetime] = Field(None, description="Last update timestamp")
+
+    class Config:
+        from_attributes = True

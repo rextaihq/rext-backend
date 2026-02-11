@@ -17,7 +17,7 @@ from src.api.schema.content_schema import (
     PublishToSiteRequest
 )
 from src.api.models import WorkspaceIntegration, Content
-from src.services.wordpress_publisher import WordPressPublisher
+from src.web.wordpress import WordPressPublisher
 from src.utils.workspace_utils import resolve_and_verify_workspace
 
 router = APIRouter()
@@ -25,11 +25,12 @@ router = APIRouter()
 #list of connected sites
 @router.get("/list")
 @require_permissions("content.read", workspace_scoped=True)
+@db_transaction_handler("list connected sites")
 async def list_connected_sites(
     workspace_id: str,
     db: AsyncSession = Depends(get_async_db),
     user: dict = Depends(get_current_user)
-):
+) -> dict:
     """List all connected sites for a workspace"""
     user_id = user.get("identity")
     workspace, _ = await resolve_and_verify_workspace(db, workspace_id, UUID(user_id))
@@ -62,12 +63,12 @@ async def connect_site(
     if data.api_key:
         try:
             logger.info(f"Validating site connection for {data.site_url} using Rext-AI plugin")
-            wp_publisher = WordPressPublisher(
+            async with WordPressPublisher(
                 site_url=data.site_url,
                 api_endpoint=data.api_endpoint,
                 api_key=data.api_key
-            )
-            await wp_publisher.validate_plugin()
+            ) as wp_publisher:
+                await wp_publisher.validate_plugin()
             logger.info("Rext-AI validation successful")
             
         except Exception as e:
@@ -95,12 +96,13 @@ async def connect_site(
 #details of site
 @router.get("/{site_id}")
 @require_permissions("content.read", workspace_scoped=True)
+@db_transaction_handler("get site details")
 async def get_site_details(
     site_id: UUID,
     workspace_id: str,
     db: AsyncSession = Depends(get_async_db),
     user: dict = Depends(get_current_user)
-):
+) -> dict:
     """Get details of a specific connected site"""
     user_id = user.get("identity")
     workspace, _ = await resolve_and_verify_workspace(db, workspace_id, UUID(user_id))
@@ -270,28 +272,34 @@ async def publish_to_site(
         raise RextValidationException(message="Content not found", context={"content_id": str(content_id)})
     
     if site.integration_type.lower() == "wordpress":
-        wp_publisher = WordPressPublisher(
-            site_url=site.site_url,
-            username=site.username,
-            app_password=site.app_password
-        )
-        
         try:
             from datetime import timezone
-            result = await wp_publisher.publish_post(
+            from src.api.schema.content_schema import ContentCreate
+            
+            # Create a ContentCreate object for the publisher
+            content_data = ContentCreate(
                 title=content.title,
-                content=content.body_markdown or content.body_html or "",
-                status=data.status,
-                excerpt=(content.metadata_json or {}).get("content_summary", ""),
-                tags=(content.seo_data.content_primary_keywords if content.seo_data else [])
+                body_markdown=content.body_markdown,
+                body_html=content.body_html,
+                tags=(content.seo_data.content_primary_keywords if content.seo_data else []),
+                seo_data=content.seo_data
             )
+            
+            async with WordPressPublisher(
+                site_url=site.site_url,
+                username=site.username,
+                app_password=site.app_password
+            ) as wp_publisher:
+                result = await wp_publisher.publish_post(
+                    data=content_data,
+                    status=data.status
+                )
             
             # Update content status
             content.status = "published"
             content.published_at = datetime.now(timezone.utc)
             
             return {
-                "success": True,
                 "wordpress_result": result,
                 "content_id": str(content.id)
             }

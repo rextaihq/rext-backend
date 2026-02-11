@@ -229,5 +229,5 @@ class ContentService:
         return content
 
     async def _validate_status_transition(self, current: str, new: str) -> None:
-        ALLOWED = {"generating": ["ready", "archived", "draft"], "draft": ["ready", "archived", "generating"], "ready": ["published", "draft", "archived", "generating"], "published": ["archived", "ready"], "archived": []}
+        ALLOWED = {"generating": ["ready", "archived", "draft"], "draft": ["ready", "archived", "generating"], "ready": ["published", "draft", "archived", "generating"], "published": ["archived", "ready"], "archived": [], "publish_failed": ["draft", "ready", "archived", "generating"]}
         if new not in ALLOWED.get(current, []): raise RextValidationException(message=f"Invalid transition: {current} -> {new}")

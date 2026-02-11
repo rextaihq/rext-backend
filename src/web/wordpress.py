@@ -2,13 +2,14 @@
 WordPress Publishing Service
 
 Handles publishing content to WordPress via REST API.
+Move from src/services/wordpress_publisher.py to src/web/wordpress.py.
 """
 
 import logging
 import os
 import httpx
-from typing import Dict, Optional
-from src.api.schema.content_schema import ContentCreate, ContentUpdate, ContentResponse
+from typing import Dict, Optional, Any, List
+from src.api.schema.content_schema import ContentCreate
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +42,13 @@ class WordPressPublisher:
         self.username = username or os.getenv("WORDPRESS_USERNAME", "")
         self.app_password = app_password or os.getenv("WORDPRESS_APP_PASSWORD", "")
         self.api_key = api_key or os.getenv("WORDPRESS_API_KEY", "")
-        self.verify_ssl = verify_ssl if os.getenv("ENVIRONMENT") == "production" else False
+        
+        # SSL verification logic
+        env = os.getenv("ENVIRONMENT", "development")
+        if env == "production":
+            self.verify_ssl = verify_ssl
+        else:
+            self.verify_ssl = False
 
         # Remove trailing slash from URLs
         self.site_url = self.site_url.rstrip("/")
@@ -73,6 +80,18 @@ class WordPressPublisher:
             auth=auth,
         )
 
+    async def __aenter__(self):
+        """Async context manager entry."""
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        """Async context manager exit, ensures client is closed."""
+        await self.close()
+
+    async def close(self):
+        """Close the underlying HTTP client."""
+        await self.client.aclose()
+
     async def validate_plugin(self) -> bool:
         """
         Validate the Rext-AI WordPress plugin connection.
@@ -102,26 +121,23 @@ class WordPressPublisher:
         data: ContentCreate,
         status: str = "publish",
         excerpt: Optional[str] = None,
-        tags: Optional[list] = None,
-        categories: Optional[list] = None,
-        meta: Optional[Dict] = None
-    ) -> Dict:
+        tags: Optional[List[str]] = None,
+        categories: Optional[List[int]] = None,
+        meta: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
         """
         Publish a post to WordPress.
 
         Args:
             data: ContentCreate schema with content data
             status: Post status ('publish', 'draft', 'pending', 'private')
-            excerpt: Post excerpt/meta description (falls back to SEO meta_description)
-            tags: List of tag names (falls back to data.tags)
+            excerpt: Post excerpt/meta description
+            tags: List of tag names
             categories: List of category names or IDs
             meta: Custom meta fields
 
         Returns:
             Dict containing post data from WordPress API
-
-        Raises:
-            Exception: If publishing fails
         """
         if self.api_key and self.api_endpoint:
             endpoint = f"{self.api_endpoint}/posts"
@@ -173,8 +189,7 @@ class WordPressPublisher:
 
         try:
             logger.info(f"Publishing post to WordPress: {title}")
-            logger.info(f"Using endpoint: {endpoint}")
-
+            
             response = await self.client.post(endpoint, json=post_data, timeout=30)
             response.raise_for_status()
 
@@ -204,16 +219,8 @@ class WordPressPublisher:
             logger.error(error_msg)
             raise Exception(error_msg)
 
-    async def _get_or_create_tags(self, tag_names: list) -> list:
-        """
-        Get tag IDs for tag names, creating them if they don't exist.
-
-        Args:
-            tag_names: List of tag names
-
-        Returns:
-            List of tag IDs
-        """
+    async def _get_or_create_tags(self, tag_names: List[str]) -> List[int]:
+        """Get tag IDs for tag names, creating them if they don't exist."""
         tag_ids = []
         if self.api_key and self.api_endpoint:
             endpoint = f"{self.api_endpoint}/tags"
@@ -247,17 +254,8 @@ class WordPressPublisher:
 
         return tag_ids
 
-    async def update_post(self, post_id: int, **kwargs) -> Dict:
-        """
-        Update an existing WordPress post.
-
-        Args:
-            post_id: WordPress post ID
-            **kwargs: Fields to update (title, content, status, etc.)
-
-        Returns:
-            Dict containing updated post data
-        """
+    async def update_post(self, post_id: int, **kwargs) -> Dict[str, Any]:
+        """Update an existing WordPress post."""
         if self.api_key and self.api_endpoint:
             endpoint = f"{self.api_endpoint}/posts/{post_id}"
         else:

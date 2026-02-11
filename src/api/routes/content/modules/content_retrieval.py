@@ -18,6 +18,7 @@ router = APIRouter()
 # List Content for Workspace
 # -------------------------
 @router.get("/")
+@require_permissions("content.read", workspace_scoped=True)
 @db_transaction_handler("list content", auto_commit=False)
 async def list_content(
     request: Request,

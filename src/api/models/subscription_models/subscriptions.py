@@ -44,6 +44,7 @@ class UserSubscription(Base, SerializableMixin):
     end_date = Column(DateTime(timezone=True), nullable=True)  # Null for active subscriptions
     trial_end_date = Column(DateTime(timezone=True), nullable=True)
     cancelled_at = Column(DateTime(timezone=True), nullable=True)
+    cancellation_reason = Column(String(500), nullable=True, comment="User-provided reason for cancellation")
 
     # Payment Provider Integration (provider-agnostic)
     provider_subscription_id = Column(String(255), unique=True)

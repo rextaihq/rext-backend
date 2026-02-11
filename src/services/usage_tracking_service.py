@@ -88,20 +88,30 @@ class UsageTrackingService:
         # Get API calls this month
         api_calls = subscription.current_api_calls or 0
 
+        # Helper to build metric dict
+        def build_metric(used, limit):
+            unlimited = limit == -1 or limit is None
+            return {
+                "used": used,
+                "limit": limit if not unlimited else None,
+                "percentage": self._calc_percentage(used, limit),
+                "unlimited": unlimited
+            }
+
         usage_data = {
-            "subscription_id": str(subscription.id),
-            "plan_name": plan.name if plan else "Unknown",
-            "billing_period": subscription.billing_period.value,
-            "current_workspaces": workspace_count,
-            "current_knowledge_items": knowledge_count,
-            "current_api_calls": subscription.current_api_calls,
-            "max_workspaces": plan.max_workspaces if plan else 0,
-            "max_knowledge_items": plan.max_knowledge_items if plan else 0,
-            "max_api_calls_per_month": plan.max_api_calls_per_month if plan else 0,
-            "workspaces_usage_percent": self._calc_percentage(workspace_count, plan.max_workspaces if plan else 0),
-            "knowledge_items_usage_percent": self._calc_percentage(knowledge_count, plan.max_knowledge_items if plan else 0),
-            "api_calls_usage_percent": self._calc_percentage(api_calls, plan.max_api_calls_per_month if plan else 0),
-            "usage_reset_date": subscription.usage_reset_date.isoformat() if subscription.usage_reset_date else None
+            "workspaces": build_metric(workspace_count, plan.max_workspaces),
+            "members": build_metric(member_count, plan.max_members_per_workspace),
+            "topics": build_metric(0, plan.max_topics), # Topic tracking not fully implemented here
+            "knowledge_items": build_metric(knowledge_count, plan.max_knowledge_items),
+            "api_calls": {
+                **build_metric(api_calls, plan.max_api_calls_per_month),
+                "reset_date": subscription.usage_reset_date.isoformat() if subscription.usage_reset_date else None
+            },
+            "meta": {
+                "subscription_id": str(subscription.id),
+                "plan_name": plan.name,
+                "billing_period": subscription.billing_period.value
+            }
         }
 
         return usage_data
@@ -245,25 +255,30 @@ class UsageTrackingService:
         # Count knowledge items
         knowledge_count = await self._count_knowledge_items(user_id)
 
-        # Free tier limits
-        free_max_workspaces = 1
-        free_max_knowledge_items = 50
-        free_max_api_calls = 100
+        # Helper to build metric dict
+        def build_metric(used, limit):
+            unlimited = limit == -1 or limit is None
+            return {
+                "used": used,
+                "limit": limit if not unlimited else None,
+                "percentage": self._calc_percentage(used, limit),
+                "unlimited": unlimited
+            }
 
         usage_data = {
-            "subscription_id": None,
-            "plan_name": "Free",
-            "billing_period": None,
-            "current_workspaces": workspace_count,
-            "current_knowledge_items": knowledge_count,
-            "current_api_calls": 0,
-            "max_workspaces": free_max_workspaces,
-            "max_knowledge_items": free_max_knowledge_items,
-            "max_api_calls_per_month": free_max_api_calls,
-            "workspaces_usage_percent": self._calc_percentage(workspace_count, free_max_workspaces),
-            "knowledge_items_usage_percent": self._calc_percentage(knowledge_count, free_max_knowledge_items),
-            "api_calls_usage_percent": 0.0,
-            "usage_reset_date": None
+            "workspaces": build_metric(workspace_count, free_max_workspaces),
+            "members": build_metric(member_count, 3), # Default free limit if not in plan
+            "topics": build_metric(0, 5), # Default free limit
+            "knowledge_items": build_metric(knowledge_count, free_max_knowledge_items),
+            "api_calls": {
+                **build_metric(0, free_max_api_calls),
+                "reset_date": None
+            },
+            "meta": {
+                "subscription_id": None,
+                "plan_name": "Free",
+                "billing_period": None
+            }
         }
 
         return usage_data

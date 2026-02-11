@@ -6,10 +6,12 @@ from src.api.schema.user_schema import (
     RegisterUser, 
     RegisterWithInvitation, 
     LoginWithInvitation,
-    RefreshTokenRequest,  # Added
-    ResendVerificationRequest,  # Added
-    OAuthLoginRequest,  # Added
-    OAuthLinkRequest  # Added
+    RefreshTokenRequest,
+    ResendVerificationRequest,
+    OAuthLoginRequest,
+    OAuthLinkRequest,
+    UserResponse,
+    LoginResponse
 )
 from src.api.security.token_utils import decode_and_verify_token
 from src.api.config import get_settings
@@ -118,14 +120,14 @@ async def send_welcome_email_task(
 
 
 @router.post("/register")
-@db_transaction_handler("user registration", auto_commit=True)
+@db_transaction_handler("user registration", auto_commit=False)
 async def create_user(
     user: RegisterUser,
     request: Request,
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_async_db),
     _rate_limit: None = Depends(registration_rate_limit())
-):
+) -> dict:
     """
     Endpoint to create a new user.
     """
@@ -182,38 +184,24 @@ async def create_user(
         frontend_url=frontend_url
     )
     
-    return created(
-        data={
-            "user": {
-                "id": str(new_user.id),
-                "email": new_user.email,
-                "full_name": new_user.full_name,
-                "display_name": new_user.display_name,
-                "language": new_user.language,
-                "timezone": new_user.timezone,
-                "status": new_user.status,
-                "roles": [{"name": "user", "display_name": "User"}],
-                "created_at": new_user.created_at.isoformat() if hasattr(new_user, 'created_at') else None,
-            }
-        },
-        request=request,
-        message="User created successfully"
-    )
+    return {
+        "user": UserResponse.model_validate(new_user).model_dump()
+    }
 
 
 
 
 @router.post("/login")
-@db_transaction_handler("user login", auto_commit=True)
+@db_transaction_handler("user login", auto_commit=False)
 async def login_user(
     user: LoginUser,
     request: Request,
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_async_db),
     _rate_limit: None = Depends(login_rate_limit())
-):
+) -> dict:
     """
-    Endpoint to log in a user with table updates.
+    Endpoint to log in a user with device tracking and security persistence.
     """
     # Parse user agent for device information
     user_agent_string = request.headers.get("user-agent", "Unknown")
@@ -232,8 +220,6 @@ async def login_user(
     # Use auth service
     auth_service = AuthService(db)
     
-    # We wrap the service call in a local try/except ONLY for login to handle
-    # the specific requirement of committing failed login attempts for account locking.
     try:
         db_user, tokens = await auth_service.login_user(
             email=user.email,
@@ -243,25 +229,22 @@ async def login_user(
             db=db
         )
         
-        # Explicit commit here for login context tracking
+        # PERSIST: We must commit here to save login sessions/logins counts
         await db.commit()
         
+        # Build response using standardized schema
         return {
-            **tokens,
-            "user": {
-                "id": str(db_user.id),
-                "email": db_user.email,
-                "full_name": db_user.full_name,
-                "display_name": db_user.display_name,
-                "avatar_url": db_user.avatar_url,
-                "last_login_at": db_user.last_login_at,
-                "login_count": db_user.login_count,
-                "roles": tokens.get("roles", []),
-                "permissions": tokens.get("permissions", [])
-            }
+            "access_token": tokens["access_token"],
+            "refresh_token": tokens["refresh_token"],
+            "token_type": tokens.get("token_type", "bearer"),
+            "expires_in": tokens.get("expires_in", 3600),
+            "user": UserResponse.model_validate(db_user).model_dump(),
+            "roles": tokens.get("roles", []),
+            "permissions": tokens.get("permissions", [])
         }
+
     except RextAuthenticationException as auth_error:
-        # Commit transaction to persist failed login attempts for security
+        # CRITICAL: Commit transaction to persist failed login attempts for account locking
         await db.commit()
         raise auth_error
 
@@ -270,23 +253,15 @@ async def login_user(
 @db_transaction_handler("token refresh", auto_commit=True)
 async def refresh_access_token(
     request: Request,
+    token_data: RefreshTokenRequest,
     db: AsyncSession = Depends(get_async_db)
-):
+) -> dict:
     """
     Refresh access token using refresh token.
     """
-    # Extract refresh token from request body
-    body = await request.json()
-    refresh_token = body.get("refresh_token")
-
-    if not refresh_token:
-        raise RextValidationException(
-            message="Refresh token is required"
-        )
-
     # Use auth service
     auth_service = AuthService(db)
-    tokens = await auth_service.refresh_token(refresh_token)
+    tokens = await auth_service.refresh_token(token_data.refresh_token)
 
     return tokens
 
@@ -299,7 +274,7 @@ async def logout_user(
     current_user: dict = Depends(get_current_user),
     authorization: str = Header(...),
     db: AsyncSession = Depends(get_async_db)
-):
+) -> dict:
     """
     Logout user by blacklisting their access token.
     """
@@ -326,7 +301,7 @@ async def verify_email(
     request: Request,
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_async_db)
-):
+) -> dict:
     """
     Verify user's email using the provided token and send welcome email
     """
@@ -355,24 +330,17 @@ async def verify_email(
 @db_transaction_handler("resend verification", auto_commit=True)
 async def resend_verification(
     request: Request,
+    verification_data: ResendVerificationRequest,
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_async_db),
     _rate_limit: None = Depends(registration_rate_limit())
-):
+) -> dict:
     """
     Resend email verification link.
     """
-    body = await request.json()
-    email = body.get("email")
-
-    if not email:
-        raise RextValidationException(
-            message="Email is required"
-        )
-
     # Use auth service
     auth_service = AuthService(db)
-    user, verification_token = await auth_service.resend_verification_email(email)
+    user, verification_token = await auth_service.resend_verification_email(verification_data.email)
 
     # Get frontend URL
     frontend_url = settings.FRONTEND_URL
@@ -395,683 +363,185 @@ async def resend_verification(
 
 @router.post("/oauth/login")
 @db_transaction_handler("oauth login", auto_commit=True)
-
-@router.post("/oauth/login")
-@db_transaction_handler("oauth login", auto_commit=True)
 async def oauth_login(
     oauth_data: OAuthLoginRequest,
     request: Request,
     db: AsyncSession = Depends(get_async_db),
     _rate_limit: None = Depends(oauth_rate_limit())
-):
+) -> dict:
     """
     Login or register user via OAuth provider.
     """
     from src.services.oauth_service import OAuthService
-    from datetime import datetime, timezone
 
-    try:
-        # Parse token_expires_at
-        token_expires_at = None
-        if oauth_data.token_expires_at:
-            try:
-                expires_str = oauth_data.token_expires_at
-                if expires_str.endswith('Z'):
-                    expires_str = expires_str[:-1]
-                parsed_dt = datetime.fromisoformat(expires_str)
-                if parsed_dt.tzinfo is not None:
-                    parsed_dt = parsed_dt.replace(tzinfo=None)
-                token_expires_at = parsed_dt
-            except (ValueError, AttributeError) as e:
-                logger.warning(f"Failed to parse token_expires_at: {oauth_data.token_expires_at}, error: {e}")
+    oauth_service = OAuthService(db)
+    # Parse expires_at if provided
+    token_expires_at = None
+    if oauth_data.token_expires_at:
+        try:
+            expires_str = oauth_data.token_expires_at
+            if expires_str.endswith('Z'):
+                expires_str = expires_str[:-1]
+            token_expires_at = datetime.fromisoformat(expires_str)
+        except Exception:
+            pass
 
-        oauth_service = OAuthService(db)
-        new_user, tokens = await oauth_service.oauth_login_or_register(
-            provider=oauth_data.provider,
-            provider_account_id=oauth_data.provider_account_id,
-            provider_email=oauth_data.provider_email,
-            provider_name=oauth_data.provider_name or "",
-            provider_avatar_url=oauth_data.provider_avatar_url,
-            provider_username=oauth_data.provider_username,
-            access_token=oauth_data.access_token,
-            refresh_token=oauth_data.refresh_token,
-            token_expires_at=token_expires_at
-        )
+    new_user, tokens = await oauth_service.oauth_login_or_register(
+        provider=oauth_data.provider,
+        provider_account_id=oauth_data.provider_account_id,
+        provider_email=oauth_data.provider_email,
+        provider_name=oauth_data.provider_name or "",
+        provider_avatar_url=oauth_data.provider_avatar_url,
+        provider_username=oauth_data.provider_username,
+        access_token=oauth_data.access_token,
+        refresh_token=oauth_data.refresh_token,
+        token_expires_at=token_expires_at
+    )
 
-        # Check if notification preferences exist
-        from sqlalchemy import select
-        existing_prefs_result = await db.execute(
-            select(NotificationPreferences).where(NotificationPreferences.user_id == new_user.id)
-        )
-        existing_prefs = existing_prefs_result.scalar_one_or_none()
-        
-        if not existing_prefs:
-            notification_preference = NotificationPreferences(
-                user_id=new_user.id,
-                email_notifications=True,
-                in_app_notifications=True,
-                ws_invite_received=True,
-                ws_invite_accepted=True,
-                ws_role_changed=True,
-                ws_member_removed=True,
-                gen_started=True,
-                gen_completed=True,
-                gen_failed=True,
-                gen_published=True,
-                billing_payment_success=True,
-                billing_payment_failed=True,
-                billing_subscription_cancelled=True,
-                billing_subscription_expiring=True,
-                billing_trial_ending=True,
-                billing_usage_limit_warning=True,
-                billing_usage_limit_exceeded=True,
-                kb_processing_completed=True,
-                kb_processing_failed=True,
-                digest_enabled=True,
-                digest_frequency="daily",
-                marketing_updates=False
-            )
-            db.add(notification_preference)
-            await db.flush()
-            logger.info(f"Created notification preferences for new OAuth user: {new_user.id}")
-        
-        await db.refresh(new_user)
+    # Check if notification preferences exist
+    from sqlalchemy import select
+    existing_prefs_result = await db.execute(
+        select(NotificationPreferences).where(NotificationPreferences.user_id == new_user.id)
+    )
+    if not existing_prefs_result.scalar_one_or_none():
+        notification_preference = NotificationPreferences(user_id=new_user.id)
+        db.add(notification_preference)
+        await db.flush()
 
-        # Extract roles and permissions
-        role_names = tokens.get("roles", [])
-        permissions = tokens.get("permissions", [])
-
-        return success(
-            data={
-                **tokens,
-                "user": {
-                    "id": str(new_user.id),
-                    "email": new_user.email,
-                    "full_name": new_user.full_name,
-                    "display_name": new_user.display_name,
-                    "avatar_url": new_user.avatar_url,
-                    "last_login_at": new_user.last_login_at,
-                    "login_count": new_user.login_count,
-                    "roles": role_names,
-                    "permissions": permissions
-                }
-            },
-            request=request,
-            message="OAuth login successful"
-        )
-    except Exception as e:
-        logger.error(f"OAuth login failed: {str(e)}", exc_info=True)
-        return error(
-            message="OAuth login failed",
-            code=ErrorCode.INTERNAL_SERVER_ERROR,
-            status_code=500,
-            severity=ErrorSeverity.HIGH,
-            request=request
-        )
+    return {
+        "access_token": tokens["access_token"],
+        "refresh_token": tokens["refresh_token"],
+        "token_type": tokens.get("token_type", "bearer"),
+        "expires_in": tokens.get("expires_in", 3600),
+        "user": UserResponse.model_validate(new_user).model_dump(),
+        "roles": tokens.get("roles", []),
+        "permissions": tokens.get("permissions", [])
+    }
 
 
 @router.post("/register-with-invitation")
+@db_transaction_handler("register with invitation", auto_commit=False)
 async def register_with_invitation(
     user_data: RegisterWithInvitation,
     request: Request,
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_async_db),
     _rate_limit: None = Depends(registration_rate_limit())
-):
+) -> dict:
     """
-    Create a new user account via workspace invitation OR accept invitation for existing user.
-
-    This endpoint handles the complete invitation acceptance flow:
-    1. Validates the invitation token
-    2. Checks if user already exists:
-       a. If user exists: Auto-accepts invitation and adds to workspace
-       b. If new user: Creates user account, auto-accepts invitation
-    3. Creates workspace membership
-    4. Skips email verification (invitation email already validated)
-    5. Returns user + workspace context
-
-    This is the recommended flow for users accepting invitation links.
-
-    Args:
-        user_data: RegisterWithInvitation schema with user details + invitation token
-        request: FastAPI request object
-        background_tasks: For sending welcome emails
-        db: Database session
-
-    Returns:
-        User data + workspace information + authentication tokens
-
-    Raises:
-        ResourceNotFoundException: If invitation not found
-        BusinessRuleViolationException: If invitation expired or email mismatch
+    Create or use account via workspace invitation.
     """
-    try:
-        # Step 1: Validate invitation token
-        invitation_service = InvitationService(db)
-        invitation = await invitation_service.get_invitation_by_token(user_data.invitation_token)
+    invitation_service = InvitationService(db)
+    invitation = await invitation_service.get_invitation_by_token(user_data.invitation_token)
 
-        logger.info(
-            "Processing invitation registration",
-            extra={
-                "invitation_id": str(invitation.id),
-                "invitation_status": invitation.status,
-                "invitation_email": invitation.email,
-                "registration_email": user_data.email
-            }
-        )
+    if invitation.status != "pending" or is_invitation_expired(invitation):
+        raise BusinessRuleViolationException("Invitation is invalid or expired")
 
-        # Check invitation status
-        if invitation.status != "pending":
-            # Provide helpful error messages based on status
-            if invitation.status == "accepted":
-                raise BusinessRuleViolationException(
-                    message="This invitation has already been accepted. If you need access to this workspace, please contact the workspace administrator for a new invitation.",
-                    rule_name="invitation_already_accepted"
-                )
-            elif invitation.status == "expired":
-                raise BusinessRuleViolationException(
-                    message="This invitation has expired. Please request a new invitation from the workspace administrator.",
-                    rule_name="invitation_expired"
-                )
-            elif invitation.status == "revoked":
-                raise BusinessRuleViolationException(
-                    message="This invitation has been revoked. Please contact the workspace administrator if you believe this is an error.",
-                    rule_name="invitation_revoked"
-                )
-            else:
-                raise BusinessRuleViolationException(
-                    message=f"Invitation is {invitation.status} and cannot be used",
-                    rule_name="invitation_must_be_pending"
-                )
+    if user_data.email.lower() != invitation.email.lower():
+        raise BusinessRuleViolationException("Email must match invitation")
 
-        # Check if invitation expired
-        if is_invitation_expired(invitation):
-            invitation.status = "expired"
-            await db.flush()
-            raise BusinessRuleViolationException(
-                message="Invitation has expired",
-                rule_name="invitation_not_expired"
-            )
+    user_service = UserService(db)
+    existing_user = await user_service.get_user_by_email(user_data.email)
 
-        # Step 2: Verify email matches invitation
-        # This is a critical security check
-        if user_data.email.lower() != invitation.email.lower():
-            raise BusinessRuleViolationException(
-                message=f"Email must match invitation email: {invitation.email}",
-                rule_name="email_must_match_invitation"
-            )
-
-        # Step 3: Check if user already exists
-        user_service = UserService(db)
-        existing_user = await user_service.get_user_by_email(user_data.email)
-
-        if existing_user:
-            user_exists = True
-            current_user = existing_user
-            logger.info(
-                f"Existing user found for invitation: {user_data.email}",
-                extra={
-                    "user_id": str(existing_user.id),
-                    "invitation_id": str(invitation.id)
-                }
-            )
-        else:
-            user_exists = False
-            current_user = None
-            logger.info(
-                f"New user will be created for invitation: {user_data.email}",
-                extra={
-                    "invitation_id": str(invitation.id)
-                }
-            )
-
-        # Step 4: Create user account if doesn't exist, otherwise use existing
-        if not user_exists:
-            auth_service = AuthService(db)
-            new_user, verification_token = await auth_service.register_user(
-                email=user_data.email,
-                password=user_data.password,
-                full_name=user_data.full_name
-            )
-
-            # Skip email verification for invited users
-            # Rationale: Email was already validated by invitation system
-            new_user.email_verified = True
-            new_user.email_verified_at = datetime.now(timezone.utc)
-            await db.flush()
-
-            current_user = new_user
-            logger.info(
-                f"New user created via invitation: {user_data.email}",
-                extra={
-                    "user_id": str(new_user.id),
-                    "invitation_id": str(invitation.id)
-                }
-            )
-
-        # Step 5: Auto-accept invitation
-        acceptance_result = await invitation_service.accept_invitation(
-            invitation_id=invitation.id,
-            user_id=current_user.id
-        )
-
-        # Handle notification preferences for new users
-        if not user_exists:
-            logger.info("Adding notification preference for user")
-            notification_preference = NotificationPreferences(
-                user_id=current_user.id,
-                email_notifications=True,
-                in_app_notifications=True,
-                ws_invite_received=True,
-                ws_invite_accepted=True,
-                ws_role_changed=True,
-                ws_member_removed=True,
-                gen_started=True,
-                gen_completed=True,
-                gen_failed=True,
-                gen_published=True,
-                billing_payment_success=True,
-                billing_payment_failed=True,
-                billing_subscription_cancelled=True,
-                billing_subscription_expiring=True,
-                billing_trial_ending=True,
-                billing_usage_limit_warning=True,
-                billing_usage_limit_exceeded=True,
-                kb_processing_completed=True,
-                kb_processing_failed=True,
-                digest_enabled=True,
-                digest_frequency="daily",
-                marketing_updates=False
-            )
-            db.add(notification_preference)
-
-        # Commit all changes (user creation if new, membership, preferences, invitation status)
-        # before starting background tasks
-        await db.commit()
-        await db.refresh(current_user)
-
-        # Step 6: Send welcome email for new users only
-        if not user_exists:
-            frontend_url = settings.FRONTEND_URL
-            background_tasks.add_task(
-                send_welcome_email_task,
-                email=current_user.email,
-                first_name=current_user.full_name or current_user.display_name,
-                user_id=str(current_user.id),
-                frontend_url=frontend_url
-            )
-
-        # Step 7: Get workspace details for response
-        from src.services.workspace_service import WorkspaceService
-        workspace_service = WorkspaceService(db)
-        workspace = await workspace_service.get_workspace(invitation.workspace_id)
-
-        # Step 7.5: Get the assigned role from invitation
-        from src.api.models.user_models.roles import Role
-        from sqlalchemy import select
-        result = await db.execute(
-            select(Role).where(Role.id == invitation.role_id)
-        )
-        assigned_role = result.scalar_one_or_none()
-
-        # Step 8: Return comprehensive response with workspace context
-        user_data_response = {
-            "id": str(current_user.id),
-            "email": current_user.email,
-            "full_name": current_user.full_name,
-            "display_name": current_user.display_name,
-            "language": current_user.language,
-            "timezone": current_user.timezone,
-            "status": current_user.status,
-            "email_verified": current_user.email_verified,
-            "roles": [{"name": assigned_role.name, "display_name": assigned_role.display_name}] if assigned_role else [{"name": "user", "display_name": "User"}],
-            "created_at": current_user.created_at.isoformat() if hasattr(current_user, 'created_at') else None,
-        }
-
-        workspace_data = {
-            "id": str(workspace.id),
-            "slug": workspace.slug,
-            "name": workspace.name,
-            "membership_id": acceptance_result["membership_id"]
-        }
-
-        action_message = "Account created and workspace joined" if not user_exists else "Workspace joined"
-
-        logger.info(
-            f"User {'registered' if not user_exists else 'accepted invitation'} via invitation: {current_user.email}",
-            extra={
-                "user_id": str(current_user.id),
-                "workspace_id": str(workspace.id),
-                "invitation_id": str(invitation.id)
-            }
-        )
-        #  send the notification to user
-        await schedule_if_allowed(
-            db=db,
-            user_id=str(invitation.invited_by_user_id),
-            background_tasks=background_tasks,
-            pref_flag="ws_invite_accepted",
-            message=f"{current_user.email} has accepted an invitation to join a workspace.",
-            payload = {
-                "user_id": str(current_user.id),
-                "workspace_id": str(workspace.id),
-                "invitation_id": str(invitation.id)
-            }
-        )
-
-        return created(
-            data={
-                "user": user_data_response,
-                "workspace": workspace_data,
-                "invitation_accepted": True,
-                "message": f"Welcome! You've joined {workspace.name}"
-            },
-            request=request,
-            message=f"{action_message} successfully"
-        )
-
-    except (ResourceNotFoundException, BusinessRuleViolationException):
-        # Re-raise to be handled by middleware
-        raise
-    except Exception as e:
-        logger.error(f"Registration with invitation failed: {str(e)}", exc_info=True)
-        raise
-
-
-@router.post("/login")
-async def login_user(
-    user: LoginUser,
-    request: Request,
-    background_tasks: BackgroundTasks,
-    db: AsyncSession = Depends(get_async_db),
-    _rate_limit: None = Depends(login_rate_limit())
-):
-    """
-    Endpoint to log in a user with table updates.
-    """
-    try:
-        # Parse user agent for device information
-        user_agent_string = request.headers.get("user-agent", "Unknown")
-        user_agent = parse_user_agent(user_agent_string)
-        device_type = "mobile" if user_agent.is_mobile else ("tablet" if user_agent.is_tablet else "desktop")
-        device_name = f"{user_agent.browser.family} on {user_agent.os.family}"
-        client_ip = request.client.host if request.client else "Unknown"
-
-        device_info = {
-            "device_name": device_name,
-            "device_type": device_type,
-            "user_agent": user_agent_string,
-            "ip_address": client_ip
-        }
-
-        # Use auth service
+    if not existing_user:
         auth_service = AuthService(db)
-        db_user, tokens = await auth_service.login_user(
-            email=user.email,
-            password=user.password,
-            device_info=device_info,
-            background_tasks=background_tasks,
-            db=db
+        existing_user, _ = await auth_service.register_user(
+            email=user_data.email,
+            password=user_data.password,
+            full_name=user_data.full_name
+        )
+        existing_user.email_verified = True
+        existing_user.email_verified_at = datetime.now(timezone.utc)
+        
+        # Add notification preference
+        db.add(NotificationPreferences(user_id=existing_user.id))
+        await db.flush()
+        
+        background_tasks.add_task(
+            send_welcome_email_task,
+            email=existing_user.email,
+            first_name=existing_user.full_name or existing_user.display_name,
+            user_id=str(existing_user.id),
+            frontend_url=settings.FRONTEND_URL
         )
 
-        # Commit transaction to persist auto-accepted invitations
-        # (WorkspaceMembers and UserRole records created during login)
-        logger.info(
-            f"[LOGIN] Committing transaction for user {user.email}",
-            extra={"user_id": str(db_user.id), "user_email": user.email}
-        )
-        await db.commit()
-        logger.info(
-            f"[LOGIN] Transaction committed successfully",
-            extra={"user_id": str(db_user.id), "user_email": user.email}
-        )
+    # Accept invitation
+    acceptance_result = await invitation_service.accept_invitation(
+        invitation_id=invitation.id,
+        user_id=existing_user.id
+    )
 
-        # Extract roles and permissions from service response
-        role_names = tokens.get("roles", [])
-        permissions = tokens.get("permissions", [])
+    await db.commit()
+    
+    # Notify inviter
+    await schedule_if_allowed(
+        db=db,
+        user_id=str(invitation.invited_by_user_id),
+        background_tasks=background_tasks,
+        pref_flag="ws_invite_accepted",
+        message=f"{existing_user.email} joined your workspace.",
+        payload={"user_id": str(existing_user.id), "workspace_id": str(invitation.workspace_id)}
+    )
 
-        # Return successful login response
-        return success(
-            data={
-                **tokens,
-                "user": {
-                    "id": str(db_user.id),
-                    "email": db_user.email,
-                    "full_name": db_user.full_name,
-                    "display_name": db_user.display_name,
-                    "avatar_url": db_user.avatar_url,
-                    "last_login_at": db_user.last_login_at,
-                    "login_count": db_user.login_count,
-                    "roles": role_names,
-                    "permissions": permissions
-                }
-            },
-            request=request,
-            message="User logged in successfully"
-        )
-
-    except RextAuthenticationException as auth_error:
-        # CRITICAL: Commit transaction to persist failed login attempts
-        # Without this, account locking after multiple failed attempts won't work
-        await db.commit()
-        # Re-raise to be handled by middleware
-        raise auth_error
-    except Exception as e:
-        # Rollback transaction on error
-        await db.rollback()
-        logger.error(f"Login failed: {str(e)}", exc_info=True)
-        return error(
-            message="Login failed due to server error",
-            code=ErrorCode.INTERNAL_SERVER_ERROR,
-            status_code=500,
-            severity=ErrorSeverity.HIGH,
-            request=request
-        )
-
-
-@router.post("/refresh")
-async def refresh_access_token(
-    token_data: RefreshTokenRequest,
-    request: Request,
-    db: AsyncSession = Depends(get_async_db)
-):
-    """
-    Refresh access token using refresh token.
-
-    This endpoint allows clients to obtain a new access token
-    without requiring the user to log in again. Implements refresh
-    token rotation for better security - old refresh token is
-    blacklisted and a new pair is issued.
-
-    Request Body:
-    {
-        "refresh_token": "your-refresh-token-here"
+    return {
+        "user": UserResponse.model_validate(existing_user).model_dump(),
+        "invitation_accepted": True
     }
-
-    Security Note: Refresh token is now sent in POST body instead of URL
-    to prevent token exposure in server logs and browser history.
-    """
-    try:
-        refresh_token = token_data.refresh_token
-
-        if not refresh_token:
-            return error(
-                message="Refresh token is required",
-                code=ErrorCode.INVALID_VALUE,
-                status_code=400,
-                severity=ErrorSeverity.LOW,
-                request=request
-            )
-
-        # Use auth service
-        auth_service = AuthService(db)
-        tokens = await auth_service.refresh_token(refresh_token)
-
-        return success(
-            data=tokens,
-            request=request,
-            message="Token refreshed successfully"
-        )
-
-    except RextAuthenticationException:
-        # Re-raise to be handled by middleware
-        raise
-    except Exception as e:
-        logger.error(f"Token refresh failed: {str(e)}")
-        return error(
-            message="Failed to refresh token",
-            code=ErrorCode.INTERNAL_SERVER_ERROR,
-            status_code=500,
-            severity=ErrorSeverity.HIGH,
-            request=request
-        )
-
-
-@router.post("/logout")
-async def logout_user(
-    request: Request,
-    current_user: dict = Depends(get_current_user),
-    authorization: str = Header(...),
-    db: AsyncSession = Depends(get_async_db)
-):
-    """
-    Logout user by blacklisting their access token.
-
-    The client should also delete stored refresh tokens locally.
-    This prevents the access token from being reused after logout.
-    """
-    try:
-        # Extract token from authorization header
-        scheme, token = authorization.split()
-
-        # Decode token to get JTI and expiration
-        payload = decode_and_verify_token(token, expected_type="access")
-        jti = payload.get("jti")
-        exp = payload.get("exp")
-        user_id = current_user.get("identity")
-
-        # Use auth service
-        auth_service = AuthService(db)
-        await auth_service.logout_user(user_id, jti, exp)
-
-        return success(
-            data={"message": "Logged out successfully"},
-            request=request,
-            message="Logout successful"
-        )
-
-    except RextAuthenticationException:
-        # Re-raise to be handled by middleware
-        raise
-    except Exception as e:
-        logger.error(f"Logout failed: {str(e)}")
-        return error(
-            message="Logout failed",
-            code=ErrorCode.INTERNAL_SERVER_ERROR,
-            status_code=500,
-            severity=ErrorSeverity.HIGH,
-            request=request
-        )
 
 
 @router.post("/oauth/link")
-@db_transaction_handler("link oauth", auto_commit=True)
+@require_permissions("user.read", workspace_scoped=False)
+@db_transaction_handler("link oauth account", auto_commit=True)
 async def link_oauth(
     oauth_data: OAuthLinkRequest,
     request: Request,
     current_user: dict = Depends(get_current_user),
-    db: AsyncSession = Depends(get_async_db),
-    _rate_limit: None = Depends(oauth_rate_limit())
-):
+    db: AsyncSession = Depends(get_async_db)
+) -> dict:
     """
-    Link an OAuth account to the current user.
+    Link OAuth account to current user.
     """
     from src.services.oauth_service import OAuthService
-    from datetime import datetime, timezone
-    from uuid import UUID
-    from src.core.exceptions import DuplicateResourceException, ResourceNotFoundException
+    user_id = UUID(current_user.get("identity"))
+    oauth_service = OAuthService(db)
+    
+    token_expires_at = None
+    if oauth_data.token_expires_at:
+        try:
+            token_expires_at = datetime.fromisoformat(oauth_data.token_expires_at.replace('Z', ''))
+        except Exception:
+            pass
 
-    try:
-        user_id = UUID(current_user.get("identity"))
+    oauth_account = await oauth_service.link_oauth_account(
+        user_id=user_id,
+        provider=oauth_data.provider,
+        provider_account_id=oauth_data.provider_account_id,
+        provider_email=oauth_data.provider_email,
+        provider_username=oauth_data.provider_username,
+        provider_avatar_url=oauth_data.provider_avatar_url,
+        access_token=oauth_data.access_token,
+        refresh_token=oauth_data.refresh_token,
+        token_expires_at=token_expires_at
+    )
 
-        # Parse token_expires_at
-        token_expires_at = None
-        if oauth_data.token_expires_at:
-            try:
-                expires_str = oauth_data.token_expires_at
-                if expires_str.endswith('Z'):
-                    expires_str = expires_str[:-1]
-                parsed_dt = datetime.fromisoformat(expires_str)
-                if parsed_dt.tzinfo is not None:
-                    parsed_dt = parsed_dt.replace(tzinfo=None)
-                token_expires_at = parsed_dt
-            except (ValueError, AttributeError) as e:
-                logger.warning(f"Failed to parse token_expires_at: {oauth_data.token_expires_at}, error: {e}")
+    return oauth_account.to_dict()
 
-        oauth_service = OAuthService(db)
-        oauth_account = await oauth_service.link_oauth_account(
-            user_id=user_id,
-            provider=oauth_data.provider,
-            provider_account_id=oauth_data.provider_account_id,
-            provider_email=oauth_data.provider_email,
-            provider_username=oauth_data.provider_username,
-            provider_avatar_url=oauth_data.provider_avatar_url,
-            access_token=oauth_data.access_token,
-            refresh_token=oauth_data.refresh_token,
-            token_expires_at=token_expires_at
-        )
-
-        return success(
-            data=oauth_account.to_dict(),
-            request=request,
-            message=f"{oauth_data.provider.capitalize()} account linked successfully"
-        )
-    except (DuplicateResourceException, ResourceNotFoundException):
-        raise
-    except Exception as e:
-        logger.error(f"OAuth link failed: {str(e)}", exc_info=True)
-        return error(
-            message="Failed to link OAuth account",
-            code=ErrorCode.INTERNAL_SERVER_ERROR,
-            status_code=500,
-            severity=ErrorSeverity.HIGH,
-            request=request
-        )
 
 @router.delete("/oauth/{provider}")
-@db_transaction_handler("unlink oauth", auto_commit=True)
+@require_permissions("user.read", workspace_scoped=False)
+@db_transaction_handler("unlink oauth account", auto_commit=True)
 async def unlink_oauth(
     provider: str,
     request: Request,
     current_user: dict = Depends(get_current_user),
-    db: AsyncSession = Depends(get_async_db),
-    _rate_limit: None = Depends(oauth_rate_limit())
-):
+    db: AsyncSession = Depends(get_async_db)
+) -> dict:
     """
-    Unlink an OAuth account from the current user.
+    Unlink OAuth account from current user.
     """
     from src.services.oauth_service import OAuthService
-    from uuid import UUID
-    from src.core.exceptions import ResourceNotFoundException
-
-    try:
-        user_id = UUID(current_user.get("identity"))
-        oauth_service = OAuthService(db)
-        await oauth_service.unlink_oauth_account(user_id, provider)
-
-        return success(
-            data={"provider": provider},
-            request=request,
-            message=f"{provider.capitalize()} account unlinked successfully"
-        )
-    except ResourceNotFoundException:
-        raise
-    except Exception as e:
-        logger.error(f"OAuth unlink failed: {str(e)}", exc_info=True)
-        return error(
-            message="Failed to unlink OAuth account",
-            code=ErrorCode.INTERNAL_SERVER_ERROR,
-            status_code=500,
-            severity=ErrorSeverity.HIGH,
-            request=request
-        )
+    user_id = UUID(current_user.get("identity"))
+    oauth_service = OAuthService(db)
+    
+    await oauth_service.unlink_oauth_account(user_id, provider)
+    return {"provider": provider, "status": "unlinked"}

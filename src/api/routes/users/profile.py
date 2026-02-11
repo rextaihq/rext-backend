@@ -29,45 +29,26 @@ router = APIRouter()
 AVATAR_UPLOAD_DIR = Path("media/avatars")
 AVATAR_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
+@router.get("/profile")
 @require_permissions("user.read")
-@router.get("/profile", response_model=dict)
 @db_transaction_handler("get profile", auto_commit=False)
 async def get_profile(
     request: Request,
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_async_db)
-):
+) -> dict:
     """
     Get current authenticated user's profile.
-    Uses UserService for business logic.
     """
     user_id = current_user.get("identity")
     service = UserService(db)
-
-    # Get user via service
     user = await service.get_user_by_id(user_id)
 
-    # Build profile response
-    return {
-        "profile": {
-            "id": str(user.id),
-            "email": user.email,
-            "full_name": user.full_name,
-            "display_name": user.display_name,
-            "bio": user.bio,
-            "language": user.language or "en",
-            "timezone": user.timezone or "UTC",
-            "status": user.status,
-            "email_verified": user.email_verified,
-            "avatar_url": user.avatar_url,
-            "created_at": user.created_at.isoformat() if user.created_at else None,
-            "updated_at": user.updated_at.isoformat() if user.updated_at else None
-        }
-    }
+    return UserResponse.model_validate(user).model_dump()
 
 
-@require_permissions("user.update")
 @router.patch("/profile")
+@require_permissions("user.update")
 @db_transaction_handler("update profile", auto_commit=True)
 async def update_profile(
     request: Request,
@@ -75,54 +56,21 @@ async def update_profile(
     profile_data: UpdateProfileRequest,
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_async_db)
-):
+) -> dict:
     """
     Update current authenticated user's profile.
-    Uses UserService for business logic.
     """
     user_id = current_user.get("identity")
     service = UserService(db)
 
-    # Track what was updated for response
-    updated_fields = []
-    update_kwargs = {}
-
-    if profile_data.full_name is not None:
-        update_kwargs["full_name"] = profile_data.full_name
-        updated_fields.append("full_name")
-    if profile_data.display_name is not None:
-        update_kwargs["display_name"] = profile_data.display_name
-        updated_fields.append("display_name")
-    if profile_data.bio is not None:
-        update_kwargs["bio"] = profile_data.bio
-        updated_fields.append("bio")
-    if profile_data.language is not None:
-        update_kwargs["language"] = profile_data.language
-        updated_fields.append("language")
-    if profile_data.timezone is not None:
-        update_kwargs["timezone"] = profile_data.timezone
-        updated_fields.append("timezone")
-
-    if not updated_fields:
+    # Prepare update data dynamically
+    update_data = profile_data.model_dump(exclude_unset=True)
+    if not update_data:
         raise RextValidationException(message="No fields provided for update")
 
     # Update via service
-    user = await service.update_profile(user_id=user_id, **update_kwargs)
-
-    # Build response
-    profile_response = {
-        "id": str(user.id),
-        "email": user.email,
-        "full_name": user.full_name,
-        "display_name": user.display_name,
-        "bio": user.bio,
-        "language": user.language,
-        "timezone": user.timezone,
-        "status": user.status,
-        "email_verified": user.email_verified,
-        "avatar_url": user.avatar_url,
-        "updated_at": user.updated_at.isoformat()
-    }
+    user = await service.update_profile(user_id=user_id, **update_data)
+    updated_fields = list(update_data.keys())
 
     logger.info(f"Profile updated for user {user_id}. Fields: {', '.join(updated_fields)}")
 
@@ -137,14 +85,10 @@ async def update_profile(
         workspace_id=None
     )
 
-    return success(
-        data={
-            "profile": profile_response,
-            "updated_fields": updated_fields
-        },
-        request=request,
-        message="Profile updated successfully"
-    )
+    return {
+        "user": UserResponse.model_validate(user).model_dump(),
+        "updated_fields": updated_fields
+    }
 
 
 @router.post("/avatar/upload")
@@ -295,14 +239,10 @@ async def upload_avatar(
         workspace_id=None
     )
 
-    return success(
-        data={
-            "avatar_url": relative_path,
-            "updated_at": updated_user.updated_at.isoformat()
-        },
-        request=request,
-        message="Avatar uploaded successfully"
-    )
+    return {
+        "avatar_url": relative_path,
+        "user": UserResponse.model_validate(updated_user).model_dump()
+    }
 
 
 @router.delete("/avatar")
@@ -362,14 +302,10 @@ async def delete_avatar(
         workspace_id=None
     )
 
-    return success(
-        data={
-            "deleted_avatar_url": old_avatar_url,
-            "deleted_at": updated_user.updated_at.isoformat()
-        },
-        request=request,
-        message="Avatar deleted successfully"
-    )
+    return {
+        "deleted_avatar_url": old_avatar_url,
+        "user": UserResponse.model_validate(updated_user).model_dump()
+    }
 
 
 @router.get("/preferences/notifications", response_model=None)
@@ -481,11 +417,7 @@ async def update_notification_preferences(
         workspace_id=None
     )
 
-    return success(
-        data=preferences.to_dict(),
-        request=request,
-        message="Notification preferences updated successfully"
-    )
+    return preferences.to_dict()
 
 from src.api.schema.user_schema import DeactivateAccountRequest
 
@@ -565,7 +497,7 @@ async def deactivate_account(
             subscription.canceled_at = datetime.now(timezone.utc)
             logger.info(f"Canceled subscription {subscription.id} for user {user_id}")
 
-    # Deactivate user account
+    # Soft delete user account (30-day recovery period)
     now = datetime.now(timezone.utc)
     scheduled_deletion = now + timedelta(days=14)
 
@@ -578,18 +510,10 @@ async def deactivate_account(
     else:
         logger.info(f"User {user_id} deactivated account")
 
-    # The decorator handles the commit
-    
-    return success(
-        data={
-            "success": True,
-            "user_id": str(user.id),
-            "email": user.email,
-            "status": user.status,
-            "deactivated_at": user.deactivated_at.isoformat(),
-            "scheduled_deletion_at": scheduled_deletion.isoformat(),
-            "message": "Your account has been deactivated and will be deleted in 14 days."
-        },
-        request=request,
-        message="Account deactivated successfully"
-    )
+    return {
+        "user_id": str(user.id),
+        "status": user.status,
+        "deactivated_at": user.deactivated_at.isoformat(),
+        "scheduled_deletion_at": scheduled_deletion.isoformat(),
+        "message": "Your account has been deactivated and will be deleted in 14 days."
+    }

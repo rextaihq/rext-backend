@@ -83,6 +83,7 @@ class UserSubscriptionResponse(BaseModel):
     end_date: Optional[str] = Field(None, description="Subscription end date")
     trial_end_date: Optional[str] = Field(None, description="Trial end date")
     cancelled_at: Optional[str] = Field(None, description="Cancellation date")
+    cancellation_reason: Optional[str] = Field(None, description="Reason for cancellation")
     current_api_calls: int = Field(..., description="Current API calls this period")
     created_at: str = Field(..., description="Creation timestamp")
 

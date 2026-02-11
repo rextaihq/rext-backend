@@ -19,7 +19,7 @@ from src.api.schema.content_schema import (
 )
 from src.utils.workspace_utils import resolve_and_verify_workspace
 from src.services.content_service import ContentService
-from src.services.wordpress_publisher import WordPressPublisher
+from src.web.wordpress import WordPressPublisher
 from src.api.models.content_models import Content
 from src.api.models.workspace_models.workspace_integration import WorkspaceIntegration
 
@@ -59,19 +59,18 @@ async def _publish_to_all_sites(
     for site in sites:
         try:
             # Initialize WordPress publisher with site credentials
-            wp_publisher = WordPressPublisher(
+            async with WordPressPublisher(
                 site_url=site.site_url,
                 api_endpoint=site.api_endpoint,
                 username=site.username,
                 app_password=site.app_password,
                 api_key=site.api_key
-            )
-            
-            # Publish to WordPress
-            wp_response = wp_publisher.publish_post(
-                data=content_data,
-                status=status
-            )
+            ) as wp_publisher:
+                # Publish to WordPress
+                wp_response = await wp_publisher.publish_post(
+                    data=content_data,
+                    status=status
+                )
             
             results.append(PublishResponse(
                 site_id=site.id,
@@ -203,6 +202,13 @@ async def save_and_publish(
         content.wordpress_url = first_success.wordpress_url
         content.wordpress_published_at = datetime.now(timezone.utc)
         content.status = "published"
+    else:
+        # All sites failed — mark content with a distinct status
+        content.status = "publish_failed"
+        logger.error(
+            "Publishing failed for all sites. Content %s saved with status 'publish_failed'. Errors: %s",
+            content.id, [r.error for r in results if r.error]
+        )
     
     return {
         "content": content.to_dict(),
@@ -210,7 +216,8 @@ async def save_and_publish(
             "total_sites": len(results),
             "successful": len(successful_results),
             "failed": len(results) - len(successful_results),
-            "results": [r.model_dump() for r in results]
+            "results": [r.model_dump() for r in results],
+            "all_failed": len(successful_results) == 0
         }
     }
 
@@ -283,6 +290,12 @@ async def publish_existing_content(
         content.wordpress_url = first_success.wordpress_url
         content.wordpress_published_at = datetime.now(timezone.utc)
         content.status = "published"
+    else:
+        content.status = "publish_failed"
+        logger.error(
+            "Publishing failed for all sites. Content %s status set to 'publish_failed'. Errors: %s",
+            content.id, [r.error for r in results if r.error]
+        )
     
     return {
         "content": content.to_dict(),
@@ -291,7 +304,8 @@ async def publish_existing_content(
             "total_sites": len(results),
             "successful": len(successful_results),
             "failed": len(results) - len(successful_results),
-            "results": [r.model_dump() for r in results]
+            "results": [r.model_dump() for r in results],
+            "all_failed": len(successful_results) == 0
         }
     }
 

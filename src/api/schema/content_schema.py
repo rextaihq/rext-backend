@@ -205,3 +205,4 @@ class PublishToSitesResponse(BaseModel):
     successful: int
     failed: int
     results: List[PublishResponse]
+    all_failed: bool = False
