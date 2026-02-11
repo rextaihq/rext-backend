@@ -26,6 +26,7 @@ from src.services.license_service import LicenseService
 from src.utils.response_utils import success
 from src.utils.route_decorators import db_transaction_handler
 from src.utils.logger import logger
+from src.api.routes.subscriptions.admin.shared.auth import require_super_admin
 
 
 router = APIRouter(
@@ -481,6 +482,8 @@ async def revoke_license_endpoint(
     - 403: Not authorized (admin only)
     """
     admin_user_id = current_user.get("identity")
+    await require_super_admin(db, admin_user_id)
+
     service = LicenseService(db)
 
     # Revoke license
