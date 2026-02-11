@@ -7,7 +7,7 @@ Useful for testing and debugging email designs.
 from fastapi import APIRouter, HTTPException, Depends
 from fastapi.responses import HTMLResponse
 from typing import Literal
-import os
+
 
 from src.api.config import get_settings
 from src.api.schema.email_preview_schema import (

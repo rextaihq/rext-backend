@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from typing import Any, Dict, List
 from uuid import UUID
-import os
+
 
 from fastapi import APIRouter, Depends, Request, status, BackgroundTasks
 from sqlalchemy import select
