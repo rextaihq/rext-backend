@@ -13,7 +13,7 @@ Business Rules:
 """
 
 from typing import List, Optional, Dict, Any
-from datetime import datetime
+from datetime import datetime, timezone
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -359,7 +359,7 @@ class LicenseService:
         stmt = select(LicenseActivation).where(
             and_(
                 LicenseActivation.license_id == license_id,
-                LicenseActivation.is_active == True
+                LicenseActivation.is_active.is_(True)
             )
         )
         result = await self.db.execute(stmt)
@@ -422,7 +422,7 @@ class LicenseService:
         stmt = select(func.count(LicenseActivation.id)).where(
             and_(
                 LicenseActivation.license_id == license_id,
-                LicenseActivation.is_active == True
+                LicenseActivation.is_active.is_(True)
             )
         )
         result = await self.db.execute(stmt)

@@ -2,7 +2,7 @@ import uuid
 from sqlalchemy import Column, String, Boolean, DateTime, ForeignKey
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
-from datetime import datetime
+from datetime import datetime, timezone
 from src.api.database.base import Base
 from src.api.models.base import SerializableMixin
 import secrets

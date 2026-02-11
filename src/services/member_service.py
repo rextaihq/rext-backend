@@ -18,7 +18,7 @@ Does NOT:
 
 from typing import Optional, List, Dict, Any
 from uuid import UUID
-from datetime import datetime,timezone
+from datetime import datetime, timezone
 
 from sqlalchemy import select, and_, func
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -44,7 +44,7 @@ class MemberService(InvitationService):
         Args:
             db: Async database session
         """
-        self.db = db
+        super().__init__(db)
 
     async def add_member(
         self,
@@ -571,7 +571,7 @@ class MemberService(InvitationService):
             old_role = old_role_result.scalar_one_or_none()
 
         # Update or create user role
-        # Use utcnow() for timezone-naive datetime to match TIMESTAMP WITHOUT TIME ZONE column
+        # Use timezone-aware datetime
         timestamp = datetime.now(timezone.utc)
         if user_role:
             user_role.role_id = new_role_id
@@ -622,8 +622,8 @@ class MemberService(InvitationService):
         for user_role in user_roles:
             await self.db.delete(user_role)
 
-        # ✅ Commit the changes
-        await self.db.commit()
+        # Flush to execute deletes within current transaction
+        await self.db.flush()
 
     async def get_workspace_members_with_users(
         self,

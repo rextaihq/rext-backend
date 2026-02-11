@@ -10,7 +10,7 @@ Handles automated subscription management tasks:
 These tasks should be run by a scheduler (e.g., cron, APScheduler, Celery).
 """
 
-from datetime import datetime, timedelta
+from datetime import datetime, timezone, timedelta
 from typing import Dict, List
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_

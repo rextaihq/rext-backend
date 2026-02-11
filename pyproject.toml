@@ -61,6 +61,8 @@ dependencies = [
     "seokar>=1.0.0",
     "language-tool-python>=3.2.2",
     "aiosmtplib>=3.0.0",
+    "docx2txt>=0.8",
+    "openpyxl>=3.1.0",
 ]
 
 [project.scripts]

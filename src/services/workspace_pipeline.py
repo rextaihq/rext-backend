@@ -7,6 +7,7 @@ from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import delete, select
 
 from src.api.models.knowledge_models.knowledge_model import BrandVoice
 from src.api.schema.knowledge_schema import BrandSchema
@@ -17,6 +18,8 @@ from src.services.sse_service import (
     emit_step_start,
     emit_step_success,
 )
+from src.api.models.knowledge_models.persona_model import Persona
+
 from src.utils.helper import web_page_scraper
 from src.utils.logger import logger
 from src.utils.vector_store import add_to_vector_store
@@ -337,7 +340,7 @@ class WorkspacePipeline:
                 existing.target_audience = data.get("target_audience") or []
                 existing.brand_voice = data.get("brand_voice") or []
                 existing.competitors = data.get("competitors") or []
-                existing.content_strategy = data.get("content_pillar") or []
+                existing.content_strategy = data.get("content_strategy") or []
                 brand_voice_record = existing
             else:
                 brand_voice_record = BrandVoice(
@@ -348,7 +351,7 @@ class WorkspacePipeline:
                     target_audience=data.get("target_audience") or [],
                     brand_voice=data.get("brand_voice") or [],
                     competitors=data.get("competitors") or [],
-                    content_strategy=data.get("content_pillar") or [],
+                    content_strategy=data.get("content_strategy") or [],
                 )
                 self.db.add(brand_voice_record)
 
@@ -357,7 +360,7 @@ class WorkspacePipeline:
             # Persist personas separately
             await self._persist_personas(personas_data)
             
-            await self.db.commit()
+            await self.db.flush()
             return brand_voice_record
 
         except Exception as exc:  # noqa: BLE001 - rollback and propagate
@@ -400,49 +403,113 @@ class WorkspacePipeline:
                 "persona_names": [p.get("name", "Unnamed") for p in personas_data],
             },
         )
-        logger.debug(
-            "Extracted persona details",
-            extra={
-                "workspace_id": str(self.workspace_id),
-                "operation_id": self.operation_id,
-                "personas": [
-                    {
-                        "name": p.get("name"),
-                        "description": p.get("description"),
-                        "professional_title": p.get("professional_title"),
-                        "has_bio": bool(p.get("bio")),
-                        "has_linkedin": bool(p.get("linkedin_url")),
-                    }
-                    for p in personas_data
-                ],
-            },
-        )
         
-        # Insert new personas with ALL fields
-        for persona_data in personas_data:
-            persona = Persona(
-                workspace_id=self.workspace_id,
-                # Basic fields
-                name=persona_data.get("name"),
-                description=persona_data.get("description"),
-                # E-E-A-T Professional fields
-                full_name=persona_data.get("full_name"),
-                professional_title=persona_data.get("professional_title"),
-                areas_of_expertise=persona_data.get("areas_of_expertise"),
-                tone_of_voice=persona_data.get("tone_of_voice"),
-                bio=persona_data.get("bio"),
-                linkedin_url=persona_data.get("linkedin_url"),
-                # User persona fields
-                demographics=persona_data.get("demographics"),
-                pain_points=persona_data.get("pain_points"),
-                goals=persona_data.get("goals"),
-                behaviors=persona_data.get("behaviors"),
+        for idx, persona_data in enumerate(personas_data, 1):
+            logger.info(
+                f"\n👤 PERSONA #{idx}: {persona_data.get('name', 'Unnamed')}",
+                extra={"workspace_id": str(self.workspace_id), "operation_id": self.operation_id}
             )
-            self.db.add(persona)
+            logger.info(
+                f"  📝 Description: {persona_data.get('description', 'N/A')}",
+                extra={"workspace_id": str(self.workspace_id), "operation_id": self.operation_id}
+            )
+            
+            # E-E-A-T Professional Fields
+            if persona_data.get('full_name'):
+                logger.info(
+                    f"  👔 Full Name: {persona_data.get('full_name')}",
+                    extra={"workspace_id": str(self.workspace_id), "operation_id": self.operation_id}
+                )
+            if persona_data.get('professional_title'):
+                logger.info(
+                    f"  💼 Title: {persona_data.get('professional_title')}",
+                    extra={"workspace_id": str(self.workspace_id), "operation_id": self.operation_id}
+                )
+            if persona_data.get('areas_of_expertise'):
+                logger.info(
+                    f"  🎓 Expertise: {persona_data.get('areas_of_expertise')}",
+                    extra={"workspace_id": str(self.workspace_id), "operation_id": self.operation_id}
+                )
+            if persona_data.get('tone_of_voice'):
+                logger.info(
+                    f"  🗣️  Tone: {persona_data.get('tone_of_voice')}",
+                    extra={"workspace_id": str(self.workspace_id), "operation_id": self.operation_id}
+                )
+            if persona_data.get('bio'):
+                logger.info(
+                    f"  📖 Bio: {persona_data.get('bio')[:100]}...",
+                    extra={"workspace_id": str(self.workspace_id), "operation_id": self.operation_id}
+                )
+            if persona_data.get('linkedin_url'):
+                logger.info(
+                    f"  🔗 LinkedIn: {persona_data.get('linkedin_url')}",
+                    extra={"workspace_id": str(self.workspace_id), "operation_id": self.operation_id}
+                )
+            
+            # User Persona Fields (if any)
+            if persona_data.get('demographics'):
+                logger.info(
+                    f"  👥 Demographics: {persona_data.get('demographics')}",
+                    extra={"workspace_id": str(self.workspace_id), "operation_id": self.operation_id}
+                )
+            if persona_data.get('pain_points'):
+                logger.info(
+                    f"  ⚠️  Pain Points: {persona_data.get('pain_points')}",
+                    extra={"workspace_id": str(self.workspace_id), "operation_id": self.operation_id}
+                )
+            if persona_data.get('goals'):
+                logger.info(
+                    f"  🎯 Goals: {persona_data.get('goals')}",
+                    extra={"workspace_id": str(self.workspace_id), "operation_id": self.operation_id}
+                )
+            if persona_data.get('behaviors'):
+                logger.info(
+                    f"  🔄 Behaviors: {persona_data.get('behaviors')}",
+                    extra={"workspace_id": str(self.workspace_id), "operation_id": self.operation_id}
+                )
+            
+            logger.info(
+                "-" * 80,
+                extra={"workspace_id": str(self.workspace_id), "operation_id": self.operation_id}
+            )
         
-        await self.db.flush()
+
+        # Use a savepoint to make the delete-then-insert atomic.
+        # If insertion fails, the savepoint rollback also undoes the deletion,
+        # preserving the original personas.
+        async with self.db.begin_nested():
+            # Delete existing personas for this workspace
+            await self.db.execute(
+                delete(Persona).where(Persona.workspace_id == self.workspace_id)
+            )
+
+            # Insert new personas with ALL fields
+            for persona_data in personas_data:
+                persona = Persona(
+                    workspace_id=self.workspace_id,
+                    # Basic fields
+                    name=persona_data.get("name"),
+                    description=persona_data.get("description"),
+                    # E-E-A-T Professional fields
+                    full_name=persona_data.get("full_name"),
+                    professional_title=persona_data.get("professional_title"),
+                    areas_of_expertise=persona_data.get("areas_of_expertise"),
+                    tone_of_voice=persona_data.get("tone_of_voice"),
+                    bio=persona_data.get("bio"),
+                    linkedin_url=persona_data.get("linkedin_url"),
+                    # User persona fields
+                    demographics=persona_data.get("demographics"),
+                    pain_points=persona_data.get("pain_points"),
+                    goals=persona_data.get("goals"),
+                    behaviors=persona_data.get("behaviors"),
+                )
+                self.db.add(persona)
+
+            # Flush within the savepoint to detect constraint violations
+            await self.db.flush()
+
         logger.info(
-            f"✅ Persisted {len(personas_data)} persona(s)",
+            f"Persisted {len(personas_data)} persona(s)",
             extra={"workspace_id": str(self.workspace_id), "operation_id": self.operation_id}
         )
 

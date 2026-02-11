@@ -3,7 +3,7 @@ Trial management service.
 
 Handles trial expiration, reminders, conversions, and extensions.
 """
-from datetime import datetime, timedelta
+from datetime import datetime, timezone, timedelta
 from typing import List, Optional, Dict, Any
 from uuid import UUID
 from decimal import Decimal

@@ -18,7 +18,7 @@ Usage:
 """
 
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Dict, Optional
 from uuid import UUID

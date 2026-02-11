@@ -12,7 +12,6 @@ from src.api.database.async_database import get_async_db
 from src.api.security.dependencies import get_current_user
 from src.api.schema.user_role_schema import AssignUserRoleRequest
 from src.services.role_service import RoleService
-from src.utils.response_utils import success
 from src.utils.route_decorators import db_transaction_handler, require_permissions
 from src.utils.logger import logger
 
@@ -72,16 +71,12 @@ async def assign_role_to_user(
         workspace = ws_result.scalar_one_or_none()
         workspace_name = workspace.name if workspace else None
 
-    return success(
-        data={
-            "assignment": user_role.to_dict(),
-            "role_name": role.name,
-            "role_display_name": role.display_name,
-            "workspace_name": workspace_name
-        },
-        request=request,
-        message=f"Role '{role.display_name}' assigned successfully"
-    )
+    return {
+        "assignment": user_role.to_dict(),
+        "role_name": role.name,
+        "role_display_name": role.display_name,
+        "workspace_name": workspace_name
+    }
 
 
 @router.delete("/{user_id}/roles/{role_id}")
@@ -120,16 +115,12 @@ async def revoke_role_from_user(
         workspace_id=UUID(workspace_id) if workspace_id else None
     )
 
-    return success(
-        data={
-            "user_id": user_id,
-            "role_id": role_id,
-            "workspace_id": workspace_id,
-            "role_name": role.name
-        },
-        request=request,
-        message=f"Role '{role.display_name}' revoked successfully"
-    )
+    return {
+        "user_id": user_id,
+        "role_id": role_id,
+        "workspace_id": workspace_id,
+        "role_name": role.name
+    }
 
 
 @router.get("/{user_id}/roles")
@@ -169,8 +160,7 @@ async def list_user_roles(
         workspace_id=UUID(workspace_id) if workspace_id else None
     )
 
-    return success(
-        data={"roles": roles_data, "count": len(roles_data)},
-        request=request,
-        message=f"Retrieved {len(roles_data)} role(s) for user"
-    )
+    return {
+        "roles": roles_data,
+        "count": len(roles_data)
+    }

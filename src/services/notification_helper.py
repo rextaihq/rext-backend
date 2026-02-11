@@ -129,7 +129,7 @@ async def schedule_if_allowed(
     
     # 5️⃣ Create notification record in database
     from src.api.models.notification.notification_model import Notification
-    from datetime import datetime
+    from datetime import datetime, timezone
     
     notification = Notification(
         user_id=UUID(user_id),
@@ -147,7 +147,7 @@ async def schedule_if_allowed(
     )
     
     db.add(notification)
-    await db.commit()
+    await db.flush()
     await db.refresh(notification)
     
     logger.info(

@@ -55,7 +55,6 @@ class UserFactory(AsyncFactory):
 
     id = LazyFunction(uuid4)
     email = Faker("email")
-    username = Faker("user_name")
     display_name = Faker("name")
     password_hash = "$2b$12$KIXqXqz5Y5rZK5Y5rZK5YO"  # bcrypt hash of "password123"
     status = "active"

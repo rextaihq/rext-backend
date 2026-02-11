@@ -21,7 +21,7 @@ import time
 from typing import Dict, Tuple, Optional
 from fastapi import Request, HTTPException, status, Depends
 from starlette.middleware.base import BaseHTTPMiddleware
-from datetime import datetime, timedelta
+from datetime import datetime, timezone, timedelta
 from collections import defaultdict, deque
 import hashlib
 from sqlalchemy.ext.asyncio import AsyncSession

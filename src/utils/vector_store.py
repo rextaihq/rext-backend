@@ -2,6 +2,7 @@ from langchain_community.vectorstores import FAISS
 from  src.utils.embedding import get_embedding
 from langchain_community.docstore.in_memory import InMemoryDocstore
 from langchain_core.documents import Document
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 from src.utils.logger import logger
 from uuid import uuid4
 from tqdm import tqdm
@@ -154,19 +155,13 @@ def add_to_vector_store(
 
     logger.info(f"\n📦 Preparing to insert {len(documents_with_metadata)} documents into FAISS...\n")
 
-    for i in tqdm(range(0, len(documents_with_metadata), batch_size), desc="🔍 Embedding & Inserting", unit="batch"):
+    for i in tqdm(range(0, len(documents_with_metadata), batch_size), desc="Embedding & Inserting", unit="batch"):
         try:
             batch_docs = documents_with_metadata[i:i+batch_size]
             batch_ids = uuids[i:i+batch_size]
-            vector_store.add_documents(documents=batch_docs, ids=batch_ids)
+            _add_batch_with_retry(vector_store, batch_docs, batch_ids)
         except Exception as e:
-            logger.error(
-                "Error during batch insertion",
-                exc_info=True,
-                extra={
-                    "error": str(e),
-                }
-            )
+            logger.error(f"Error during batch insertion after retries: {str(e)}", exc_info=True)
             return False
 
     logger.info("✅ Documents successfully inserted into FAISS")
@@ -175,6 +170,18 @@ def add_to_vector_store(
     vector_store.save_local(vector_store_path)
     logger.info(f"💾 Vector store saved at {vector_store_path}")
     return True
+
+@retry(
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1, min=2, max=30),
+    retry=retry_if_exception_type(Exception),
+    before_sleep=lambda retry_state: logger.warning(
+        f"Retrying embedding batch (attempt {retry_state.attempt_number})"
+    ),
+)
+def _add_batch_with_retry(vector_store, batch_docs, batch_ids):
+    """Add a batch of documents to the vector store with retry on failure."""
+    vector_store.add_documents(documents=batch_docs, ids=batch_ids)
 
 def load_vector_store(file_path: str = None) -> FAISS:
     """

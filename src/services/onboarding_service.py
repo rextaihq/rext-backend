@@ -1,6 +1,6 @@
 """Onboarding service for managing user onboarding flow."""
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 from uuid import UUID, uuid4
 
@@ -52,7 +52,7 @@ class OnboardingService:
                 skipped_steps=[],
             )
             db.add(onboarding)
-            await db.commit()
+            await db.flush()
             await db.refresh(onboarding)
 
         return onboarding
@@ -112,7 +112,7 @@ class OnboardingService:
             onboarding.completed = True
             onboarding.completed_at = datetime.now(timezone.utc)
 
-        await db.commit()
+        await db.flush()
         await db.refresh(onboarding)
         return onboarding
 
@@ -160,7 +160,7 @@ class OnboardingService:
             onboarding.completed = True
             onboarding.completed_at = datetime.now(timezone.utc)
 
-        await db.commit()
+        await db.flush()
         await db.refresh(onboarding)
         return onboarding
 
@@ -179,7 +179,7 @@ class OnboardingService:
         """
         onboarding = await OnboardingService.get_or_create_onboarding(db, user_id)
         onboarding.current_step = step
-        await db.commit()
+        await db.flush()
         await db.refresh(onboarding)
         return onboarding
 
@@ -206,7 +206,7 @@ class OnboardingService:
             if step not in onboarding.completed_steps:
                 onboarding.completed_steps = onboarding.completed_steps + [step]
 
-        await db.commit()
+        await db.flush()
         await db.refresh(onboarding)
         return onboarding
 
@@ -230,7 +230,7 @@ class OnboardingService:
         onboarding.completed_at = None
         onboarding.started_at = datetime.now(timezone.utc)
 
-        await db.commit()
+        await db.flush()
         await db.refresh(onboarding)
         return onboarding
 
@@ -323,7 +323,7 @@ class OnboardingService:
         if heard_from is not None:
             onboarding.heard_from = heard_from
 
-        await db.commit()
+        await db.flush()
         await db.refresh(onboarding)
         return onboarding
 

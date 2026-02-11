@@ -16,7 +16,7 @@ Does NOT:
 
 from typing import Optional, Dict, Any
 from uuid import UUID
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -119,7 +119,7 @@ class UserPreferencesService:
 
         if updates:
             preferences.updated_at = datetime.now(timezone.utc)
-            await self.db.commit() 
+            await self.db.flush() 
             logger.info(f"Updated preferences for user {user_id}: {', '.join(updates)}")
         else:
             logger.debug(f"No preferences updated for user {user_id}")

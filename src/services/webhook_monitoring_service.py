@@ -7,7 +7,7 @@ Provides webhook event tracking and monitoring capabilities:
 - Retry failed webhooks
 - Get webhook statistics
 """
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone, timedelta, timezone
 from typing import Dict, List, Optional, Any
 from sqlalchemy import func, Integer,and_, or_, desc
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -161,7 +161,7 @@ class WebhookMonitoringService:
         try:
             # Build conditions for failed webhooks
             conditions = [
-                WebhookEvent.processed == False,
+                WebhookEvent.processed.is_(False),
                 WebhookEvent.error_message.isnot(None)
             ]
 
@@ -276,7 +276,7 @@ class WebhookMonitoringService:
                 event.processed_at = datetime.now(timezone.utc)
                 event.error_message = None
 
-                await self.db.commit()
+                await self.db.flush()
 
                 logger.info(f"Successfully retried webhook: {webhook_id}")
 
@@ -289,7 +289,7 @@ class WebhookMonitoringService:
             except Exception as process_error:
                 # Update error message
                 event.error_message = str(process_error)
-                await self.db.commit()
+                await self.db.flush()
 
                 logger.error(
                     f"Failed to retry webhook {webhook_id}: {str(process_error)}",
@@ -349,7 +349,7 @@ class WebhookMonitoringService:
 
             # Processed successfully
             stmt_processed = select(func.count(WebhookEvent.id)).where(
-                WebhookEvent.processed == True,
+                WebhookEvent.processed.is_(True),
                 WebhookEvent.error_message.is_(None),
                 *time_condition
             )
@@ -366,7 +366,7 @@ class WebhookMonitoringService:
 
             # Pending (not processed, no error)
             stmt_pending = select(func.count(WebhookEvent.id)).where(
-                WebhookEvent.processed == False,
+                WebhookEvent.processed.is_(False),
                 WebhookEvent.error_message.is_(None),
                 *time_condition
             )

@@ -9,7 +9,7 @@ Documentation: https://docs.lemonsqueezy.com/api
 """
 
 from typing import Optional, Dict, Any
-from datetime import datetime
+from datetime import datetime, timezone
 import httpx
 import hmac
 import hashlib

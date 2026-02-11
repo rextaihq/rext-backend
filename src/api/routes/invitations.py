@@ -13,7 +13,7 @@ Public endpoints:
 from fastapi import APIRouter, Depends, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from uuid import UUID
-from datetime import datetime
+from datetime import datetime, timezone
 
 from src.api.database.async_database import get_async_db
 from src.api.models.user_models.invitations import UserInvitations

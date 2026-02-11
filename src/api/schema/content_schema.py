@@ -1,6 +1,6 @@
 from pydantic import BaseModel, Field, field_validator
 from typing import Optional, List, Dict, Any
-from datetime import datetime
+from datetime import datetime, timezone
 from uuid import UUID
 
 

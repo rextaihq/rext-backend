@@ -6,7 +6,7 @@ This module defines Pydantic models for audit log API operations.
 
 from pydantic import BaseModel, Field, field_validator
 from typing import Optional, Dict, Any, List
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 
 

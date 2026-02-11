@@ -2,7 +2,7 @@ import math
 import statistics
 from collections import Counter
 from typing import List, Dict, Any
-from datetime import datetime
+from datetime import datetime, timezone
 
 ugc_keywords = ["reddit.com", "quora.com", "stackexchange.com", "stackoverflow.com"]
 
