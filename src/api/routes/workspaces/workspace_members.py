@@ -388,7 +388,7 @@ async def update_workspace_member_role(
         },
     }
     # Current timestamp for response
-    timestamp = datetime.utcnow()
+    timestamp = datetime.now(timezone.utc)
 
     await schedule_if_allowed(
         db=db,

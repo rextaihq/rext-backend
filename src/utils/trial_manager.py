@@ -79,7 +79,6 @@ async def expire_trial_subscriptions(db: AsyncSession) -> Dict[str, int]:
     """
     now = datetime.now(timezone.utc)
 
-
     # Find all expired trials
     stmt = select(UserSubscription).where(
         UserSubscription.status == SubscriptionStatus.TRIAL,
@@ -148,6 +147,18 @@ async def get_trials_expiring_soon(
     days_threshold: int = 3
 ) -> List[Dict]:
 
+    """
+    Get a list of trial subscriptions that will expire within the threshold.
+
+    Useful for sending reminder emails to users.
+
+    Args:
+        db: Database session
+        days_threshold: Number of days to look ahead (default: 3)
+
+    Returns:
+        List of dicts with subscription and user information
+    """
     now = datetime.now(timezone.utc)
     threshold_date = now + timedelta(days=days_threshold)
 
@@ -238,6 +249,7 @@ async def convert_trial_to_active(
 
     if lemonsqueezy_subscription_id:
         subscription.lemonsqueezy_subscription_id = lemonsqueezy_subscription_id
+    subscription.updated_at = datetime.now(timezone.utc)
 
     subscription.updated_at = datetime.now(timezone.utc)
 

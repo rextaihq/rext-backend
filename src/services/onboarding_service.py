@@ -110,7 +110,7 @@ class OnboardingService:
             # All steps completed or skipped
             onboarding.current_step = 1  # Last step
             onboarding.completed = True
-            onboarding.completed_at = datetime.utcnow()
+            onboarding.completed_at = datetime.now(timezone.utc)
 
         await db.commit()
         await db.refresh(onboarding)
@@ -158,7 +158,7 @@ class OnboardingService:
             # All steps completed or skipped
             onboarding.current_step = 1
             onboarding.completed = True
-            onboarding.completed_at = datetime.utcnow()
+            onboarding.completed_at = datetime.now(timezone.utc)
 
         await db.commit()
         await db.refresh(onboarding)
@@ -197,7 +197,7 @@ class OnboardingService:
         """
         onboarding = await OnboardingService.get_or_create_onboarding(db, user_id)
         onboarding.completed = True
-        onboarding.completed_at = datetime.utcnow()
+        onboarding.completed_at = datetime.now(timezone.utc)
         onboarding.current_step = 2
 
         # Mark all required steps as completed if not already
@@ -228,7 +228,7 @@ class OnboardingService:
         onboarding.completed_steps = []
         onboarding.skipped_steps = []
         onboarding.completed_at = None
-        onboarding.started_at = datetime.utcnow()
+        onboarding.started_at = datetime.now(timezone.utc)
 
         await db.commit()
         await db.refresh(onboarding)

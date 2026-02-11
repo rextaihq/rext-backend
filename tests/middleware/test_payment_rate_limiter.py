@@ -201,7 +201,7 @@ class TestEndpointRateLimiterPayments:
 
         # Simulate time passing (61 seconds = outside the 60 second window)
         client_key = "user:user-123-uuid"
-        old_time = datetime.utcnow() - timedelta(seconds=61)
+        old_time = datetime.now(timezone.utc) - timedelta(seconds=61)
         limiter.storage[client_key] = deque([old_time] * 5)
 
         # Next request should succeed (old timestamps cleaned up)
@@ -255,7 +255,7 @@ class TestEndpointRateLimiterPayments:
         limiter = checkout_rate_limit()
 
         # Record start time
-        start_time = datetime.utcnow()
+        start_time = datetime.now(timezone.utc)
 
         # Make 5 requests to hit the limit
         for i in range(5):
@@ -332,7 +332,7 @@ class TestPaymentRateLimiterEdgeCases:
         client_key = "user:user-123-uuid"
 
         # Add 3 old timestamps (expired) and 2 recent ones
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         old_time = now - timedelta(seconds=61)
 
         limiter.storage[client_key] = deque([

@@ -65,7 +65,7 @@ async def export_audit_logs(
             content=content,
             media_type="application/json",
             headers={
-                "Content-Disposition": f"attachment; filename=audit_logs_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.json"
+                "Content-Disposition": f"attachment; filename=audit_logs_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}.json"
             },
         )
 
@@ -112,7 +112,7 @@ async def export_audit_logs(
         content=csv_content,
         media_type="text/csv",
         headers={
-            "Content-Disposition": f"attachment; filename=audit_logs_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.csv"
+            "Content-Disposition": f"attachment; filename=audit_logs_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}.csv"
         },
     )
 

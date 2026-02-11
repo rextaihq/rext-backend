@@ -11,6 +11,7 @@ import secrets
 
 from src.api.models.user_models.email_preferences import EmailPreferences
 from src.api.lib.logger import auto_logger
+from src.api.models.user_models.notification_preferences import NotificationPreferences
 
 logger = auto_logger()
 
@@ -21,22 +22,22 @@ class EmailPreferencesService:
     def __init__(self, db: AsyncSession):
         self.db = db
 
-    async def get_or_create_preferences(self, user_id: UUID, db: AsyncSession) -> EmailPreferences:
+    async def get_or_create_preferences(self, user_id: UUID, db: AsyncSession) -> NotificationPreferences:
         """Get user preferences or create default if not exists."""
         result = await db.execute(
-            select(EmailPreferences).where(EmailPreferences.user_id == user_id)
+            select(NotificationPreferences).where(NotificationPreferences.user_id == user_id)
         )
         prefs = result.scalar_one_or_none()
 
         if not prefs:
-            prefs = EmailPreferences(
+            prefs = NotificationPreferences(
                 user_id=user_id,
                 unsubscribe_token=secrets.token_urlsafe(32)
             )
             db.add(prefs)
             await db.flush()
             await db.refresh(prefs)
-            logger.info(f"Created default email preferences for user {user_id}")
+            logger.info(f"Created default notification preferences for user {user_id}")
 
         return prefs
 
@@ -44,17 +45,20 @@ class EmailPreferencesService:
         """Check if user allows this email type."""
         prefs = await self.get_or_create_preferences(user_id, db)
 
-        # Map email types to preference fields
+        # Check master email toggle first
+        if not prefs.email_notifications:
+            return False
+
+        # Map email types to NotificationPreferences columns
         type_mapping = {
-            "workspace_invitation": prefs.workspace_invitation,
-            "invitation": prefs.workspace_invitation,  # Alias
-            "invitation_accepted": prefs.invitation_accepted,
-            "role_changed": prefs.role_changed,
-            "member_removed": prefs.member_removed,
-            "marketing": prefs.marketing
+            "workspace_invitation": prefs.ws_invite_received,
+            "invitation": prefs.ws_invite_received,
+            "invitation_accepted": prefs.ws_invite_accepted,
+            "role_changed": prefs.ws_role_changed,
+            "member_removed": prefs.ws_member_removed,
+            "marketing": prefs.marketing_updates,
         }
 
-        # Default to True if unknown type (don't block important emails)
         return type_mapping.get(email_type, True)
 
     async def update_preferences(

@@ -11,9 +11,41 @@ from src.api.security.dependencies import get_current_user
 from src.api.middleware.exceptions import (
     ResourceNotFoundException,
 )
+from src.api.schema.workspace_schema import WorkspaceUpdateSchema
+
 from src.services.workspace_service import WorkspaceService
 
 router = APIRouter()
+
+
+def _merge_analytics_into_workspace(workspace_data: dict, analytics: dict) -> dict:
+    """
+    Merge analytics data into workspace response dict.
+
+    Transforms the flat analytics dict from WorkspaceService.get_workspace_analytics()
+    into the nested structure expected by the frontend.
+
+    Args:
+        workspace_data: Workspace dict from get_workspace_with_brand_voice()
+        analytics: Analytics dict from get_workspace_analytics()
+
+    Returns:
+        The workspace_data dict with analytics merged in.
+    """
+    workspace_data["knowledge_stats"] = analytics["knowledge_stats"]
+    workspace_data["analytics"] = {
+        "knowledge_counts": {
+            "web_knowledge": analytics["knowledge_stats"]["web_knowledge"],
+            "files": analytics["knowledge_stats"]["files"],
+            "text_knowledge": analytics["knowledge_stats"]["text_knowledge"],
+            "total_knowledge_items": analytics["knowledge_stats"]["total"],
+        },
+        "content_metrics": analytics.get("content_metrics", {}),
+        "team_metrics": {
+            "total_members": analytics["members_count"],
+        },
+    }
+    return workspace_data
 
 
 # -------------------------
@@ -49,6 +81,7 @@ async def get_workspaces(
     # Return raw data - decorator handles success response
     return {"workspaces": workspace_data, "total_count": len(workspace_data)}
 
+
 # -------------------------
 # Get workspace by ID
 # -------------------------
@@ -79,20 +112,8 @@ async def get_workspace_by_id(
     # Get analytics with word counts
     analytics = await workspace_service.get_workspace_analytics(UUID(workspace_id), include_word_counts=True)
 
-    # Merge analytics into workspace data
-    workspace_data["knowledge_stats"] = analytics["knowledge_stats"]
-    workspace_data["analytics"] = {
-        "knowledge_counts": {
-            "web_knowledge": analytics["knowledge_stats"]["web_knowledge"],
-            "files": analytics["knowledge_stats"]["files"],
-            "text_knowledge": analytics["knowledge_stats"]["text_knowledge"],
-            "total_knowledge_items": analytics["knowledge_stats"]["total"]
-        },
-        "content_metrics": analytics.get("content_metrics", {}),
-        "team_metrics": {
-            "total_members": analytics["members_count"]
-        }
-    }
+    # Merge analytics into workspace data using helper function
+    _merge_analytics_into_workspace(workspace_data, analytics)
 
     # Return raw data - decorator handles success response
     return {"workspace": workspace_data}
@@ -125,20 +146,8 @@ async def get_workspace_by_slug(
     # Get analytics with word counts
     analytics = await workspace_service.get_workspace_analytics(workspace.id, include_word_counts=True)
 
-    # Merge analytics into workspace data
-    workspace_data["knowledge_stats"] = analytics["knowledge_stats"]
-    workspace_data["analytics"] = {
-        "knowledge_counts": {
-            "web_knowledge": analytics["knowledge_stats"]["web_knowledge"],
-            "files": analytics["knowledge_stats"]["files"],
-            "text_knowledge": analytics["knowledge_stats"]["text_knowledge"],
-            "total_knowledge_items": analytics["knowledge_stats"]["total"]
-        },
-        "content_metrics": analytics.get("content_metrics", {}),
-        "team_metrics": {
-            "total_members": analytics["members_count"]
-        }
-    }
+    # Merge analytics into workspace data using helper function
+    _merge_analytics_into_workspace(workspace_data, analytics)
 
     # Return raw data - decorator handles success response
     return {"workspace": workspace_data}
@@ -178,20 +187,8 @@ async def get_workspace_by_id_path(
     # Get analytics with word counts
     analytics = await workspace_service.get_workspace_analytics(workspace.id, include_word_counts=True)
 
-    # Merge analytics into workspace data
-    workspace_data["knowledge_stats"] = analytics["knowledge_stats"]
-    workspace_data["analytics"] = {
-        "knowledge_counts": {
-            "web_knowledge": analytics["knowledge_stats"]["web_knowledge"],
-            "files": analytics["knowledge_stats"]["files"],
-            "text_knowledge": analytics["knowledge_stats"]["text_knowledge"],
-            "total_knowledge_items": analytics["knowledge_stats"]["total"]
-        },
-        "content_metrics": analytics.get("content_metrics", {}),
-        "team_metrics": {
-            "total_members": analytics["members_count"]
-        }
-    }
+    # Merge analytics into workspace data using helper function
+    _merge_analytics_into_workspace(workspace_data, analytics)
 
     # Return raw data - decorator handles success response
     return {"workspace": workspace_data}
@@ -203,31 +200,25 @@ async def get_workspace_by_id_path(
 @router.put("/{workspace_id}")
 @require_permissions("workspace.update", workspace_scoped=True)
 @db_transaction_handler("update workspace", auto_commit=True)
-async def update_workspace(
+async def update_workspace_endpoint(
     workspace_id: str,
+    body: WorkspaceUpdateSchema,
     request: Request,
     db: AsyncSession = Depends(get_async_db),
-    user: dict = Depends(get_current_user)
+    user: dict = Depends(get_current_user),
 ):
     """
-    Update workspace details (name, slug, description, url).
+    Update workspace details.
+
+    Accepts optional fields: name, timezone, url.
+    Only provided fields will be updated.
 
     Args:
         workspace_id: Workspace UUID or slug
-
-    Body:
-        {
-          "title": "New Name",
-          "slug": "new-slug",
-          "description": "New description",
-          "url": "https://example.com"
-        }
+        body: WorkspaceUpdateSchema with optional update fields
     """
     user_id = user.get("identity")
     db_user = await verify_current_user(db, user_id)
-
-    # Parse request body
-    body = await request.json()
 
     # Use workspace service
     workspace_service = WorkspaceService(db)
@@ -236,18 +227,17 @@ async def update_workspace(
     from src.utils.workspace_utils import resolve_and_verify_workspace
     workspace, _ = await resolve_and_verify_workspace(db, workspace_id, UUID(user_id))
 
-    # Update workspace
+    # Update workspace — pass only the fields that match the service method signature
     updated_workspace = await workspace_service.update_workspace(
         workspace.id,
-        title=body.get("title"),
-        slug=body.get("slug"),
-        description=body.get("description"),
-        url=body.get("url")
+        name=body.name,
+        tz=body.timezone,
+        url=str(body.url) if body.url else None,
     )
 
     logger.info(
-        f"Workspace updated: {workspace.id}",
-        extra={"workspace_id": str(workspace.id), "user_id": user_id}
+        "Workspace updated",
+        extra={"workspace_id": str(workspace.id), "user_id": user_id},
     )
 
     # Return raw data - decorator handles success response
@@ -306,7 +296,7 @@ async def delete_workspace_endpoint(
         from datetime import datetime, timedelta
 
         email_service = EmailService(db)
-        recovery_date = (datetime.utcnow() + timedelta(days=30)).strftime("%B %d, %Y")
+        recovery_date = (datetime.now(timezone.utc) + timedelta(days=30)).strftime("%B %d, %Y")
 
         await email_service.send_email(
             to_email=db_user.email,

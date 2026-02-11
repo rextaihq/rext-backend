@@ -5,19 +5,15 @@ Provides real-time statistics for workspace onboarding tracking and dashboard.
 """
 
 from fastapi import APIRouter, Depends, Request
-from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from uuid import UUID
 
 from src.api.database.async_database import get_async_db
 from src.api.security.dependencies import get_current_user
-from src.api.models.content_models.content import Content
-from src.api.models.knowledge_models.knowledge_model import Website, KnowledgeFiles, TextKnowledge
-from src.api.models.workspace_models.workspace_member import WorkspaceMembers
+from src.services.workspace_service import WorkspaceService
 from src.services.subscription_service import SubscriptionService
-from src.utils.response_utils import success
-from src.utils.route_decorators import db_transaction_handler, require_permissions
 from src.utils.auth_utils import verify_current_user
+from src.utils.route_decorators import db_transaction_handler, require_permissions
 
 router = APIRouter()
 
@@ -51,68 +47,27 @@ async def get_workspace_stats(
 
     workspace_uuid = UUID(workspace_id)
 
+    # Delegate analytics to the service layer (single source of truth)
+    workspace_service = WorkspaceService(db)
+    analytics = await workspace_service.get_workspace_analytics(workspace_uuid)
 
-    # Count content items (non-deleted)
-    result = await db.execute(
-        select(func.count(Content.id)).where(
-            Content.workspace_id == workspace_uuid,
-            Content.deleted_at == None
-        )
-    )
-    content_count = result.scalar() or 0
-
-    # Count knowledge items (all types combined)
-    result = await db.execute(
-        select(func.count(Website.id)).where(
-            Website.workspace_id == workspace_uuid
-        )
-    )
-    web_knowledge_count = result.scalar() or 0
-
-    result = await db.execute(
-        select(func.count(KnowledgeFiles.id)).where(
-            KnowledgeFiles.workspace_id == workspace_uuid
-        )
-    )
-    files_count = result.scalar() or 0
-
-    result = await db.execute(
-        select(func.count(TextKnowledge.id)).where(
-            TextKnowledge.workspace_id == workspace_uuid
-        )
-    )
-    text_knowledge_count = result.scalar() or 0
-
-    knowledge_items_count = web_knowledge_count + files_count + text_knowledge_count
-
-    # Count workspace members
-    result = await db.execute(
-        select(func.count(WorkspaceMembers.id)).where(
-            WorkspaceMembers.workspace_id == workspace_uuid
-        )
-    )
-    members_count = result.scalar() or 0
-
+    # Check feature availability from user's subscription
+    
     # Check feature availability from user's subscription
     subscription_service = SubscriptionService(db)
     user_subscription = await subscription_service.get_subscription_by_user(UUID(user_id))
 
-    # Default to True if no subscription (free tier) or if plan doesn't specify
     has_content_builder = True
-
     if user_subscription and user_subscription.plan:
         plan_features = user_subscription.plan.features or {}
-
-        # Check if features are explicitly set to False (disabled)
-        # If not set, default to True (enabled)
         if 'content_builder' in plan_features:
             has_content_builder = bool(plan_features.get('content_builder'))
 
     stats = {
-        "workspace_exists": True,  # If we got here, workspace exists
-        "content_count": content_count,
-        "knowledge_items_count": knowledge_items_count,
-        "members_count": members_count,
+        "workspace_exists": True,
+        "content_count": analytics["content_count"],
+        "knowledge_items_count": analytics["knowledge_stats"]["total"],
+        "members_count": analytics["members_count"],
         "has_content_builder": has_content_builder,
     }
 

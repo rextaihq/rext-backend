@@ -38,7 +38,7 @@ class SubscriptionAnalyticsService:
         mrr = await self._calculate_mrr(include_trial=True)
         arr = mrr * 12
 
-        thirty_days_ago = datetime.utcnow() - timedelta(days=30)
+        thirty_days_ago = datetime.now(timezone.utc) - timedelta(days=30)
         cancellations_last_month = await self._count_cancellations(thirty_days_ago)
         churn_rate = self._safe_percentage(cancellations_last_month, counts[SubscriptionStatus.ACTIVE])
 
@@ -90,8 +90,8 @@ class SubscriptionAnalyticsService:
 
     async def get_churn_analysis(self, period_days: int) -> Dict[str, Any]:
         """Return churn analysis over a period."""
-        period_start = datetime.utcnow() - timedelta(days=period_days)
-        period_end = datetime.utcnow()
+        period_start = datetime.now(timezone.utc) - timedelta(days=period_days)
+        period_end = datetime.now(timezone.utc)
 
         total_active_start = await self._count_active_at_start(period_start)
         new_subscriptions = await self._count_new_subscriptions(period_start, period_end)
@@ -116,7 +116,7 @@ class SubscriptionAnalyticsService:
 
     async def get_trial_conversion_metrics(self, period_days: int) -> Dict[str, Any]:
         """Return trial conversion metrics over a period."""
-        period_start = datetime.utcnow() - timedelta(days=period_days)
+        period_start = datetime.now(timezone.utc) - timedelta(days=period_days)
 
         total_trials_started = await self._count_trials_started(period_start)
         trials_converted = await self._count_trials_converted(period_start)
@@ -207,7 +207,7 @@ class SubscriptionAnalyticsService:
         return float(value) if value else 0.0
 
     async def _calculate_new_revenue(self, days: int) -> float:
-        start_date = datetime.utcnow() - timedelta(days=days)
+        start_date = datetime.now(timezone.utc) - timedelta(days=days)
         query = (
             select(
                 func.sum(
@@ -369,7 +369,7 @@ class SubscriptionAnalyticsService:
         arr = mrr * 12
 
         # Calculate churn rate
-        thirty_days_ago = datetime.utcnow() - timedelta(days=30)
+        thirty_days_ago = datetime.now(timezone.utc) - timedelta(days=30)
         cancellations_last_month = await self._count_cancellations(thirty_days_ago)
         churn_rate = self._safe_percentage(cancellations_last_month, counts[SubscriptionStatus.ACTIVE])
 
@@ -419,7 +419,7 @@ class SubscriptionAnalyticsService:
         months = period_map.get(period, 12)
 
         history_data = []
-        current_date = datetime.utcnow()
+        current_date = datetime.now(timezone.utc)
 
         for i in range(months, -1, -1):
             month_date = current_date - timedelta(days=30 * i)
@@ -471,7 +471,7 @@ class SubscriptionAnalyticsService:
     async def get_cohort_retention(self, cohort_months: int = 6) -> Dict[str, Any]:
         """Return cohort retention analysis."""
         cohorts = []
-        current_date = datetime.utcnow()
+        current_date = datetime.now(timezone.utc)
 
         for i in range(cohort_months, -1, -1):
             cohort_date = current_date - timedelta(days=30 * i)
