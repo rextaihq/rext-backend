@@ -14,7 +14,7 @@ from src.api.middleware.exceptions import (
     ResourceNotFoundException,
     RextValidationException,
 )
-from src.api.schema.workspace_schema import WorkspaceSchema
+from src.api.schema.workspace_schema import WorkspaceSchema,WorkspaceUpdateSchema
 from src.api.middleware.usage_limiter import check_workspace_limit
 from src.services.workspace_service import WorkspaceService
 

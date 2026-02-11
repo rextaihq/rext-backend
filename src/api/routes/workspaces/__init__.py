@@ -4,7 +4,7 @@ from .workspace_core import (
     get_workspace_by_slug,
     get_workspace_by_id_path,
     create_workspace,
-    update_workspace,
+    update_workspace_endpoint,
     delete_workspace_endpoint,
     get_available_roles,
 )
@@ -40,7 +40,7 @@ workspaces_router.add_api_route("/slug/{workspace_slug}", get_workspace_by_slug,
 
 # POST/PUT/DELETE endpoints - RESTful wrappers
 workspaces_router.add_api_route("", create_workspace, methods=["POST"], name="create_workspace_restful")
-workspaces_router.add_api_route("/{workspace_id}", update_workspace, methods=["PUT"], name="update_workspace_restful")
+workspaces_router.add_api_route("/{workspace_id}", update_workspace_endpoint, methods=["PUT"], name="update_workspace_restful")
 workspaces_router.add_api_route("/{workspace_id}", delete_workspace_endpoint, methods=["DELETE"], name="delete_workspace_restful")
 workspaces_router.add_api_route("/available-roles", get_available_roles, methods=["GET"], name="get_available_roles")
 
