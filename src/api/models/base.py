@@ -16,7 +16,7 @@ Usage:
 
         id = Column(UUID(as_uuid=True), primary_key=True)
         name = Column(String, nullable=False)
-        created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
+        created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
     # Basic serialization
     obj = MyModel(name="Example")

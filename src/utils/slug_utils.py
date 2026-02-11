@@ -2,6 +2,7 @@
 Slug generation utilities for creating URL-safe identifiers
 """
 import re
+from uuid import UUID
 from typing import Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -44,10 +45,13 @@ async def generate_unique_slug(
     base_slug: str,
     model_class,
     slug_field: str = 'slug',
-    exclude_id: Optional[str] = None
+    exclude_id: Optional[UUID] = None,
+    workspace_id: Optional[UUID] = None,
+    workspace_field: str = 'workspace_id'
 ) -> str:
     """
-    Generate unique slug by appending number if needed
+    Generate unique slug by appending number if needed.
+    Optimized to fetch all matching slugs in a single query.
 
     Args:
         db: Async database session
@@ -55,35 +59,36 @@ async def generate_unique_slug(
         model_class: SQLAlchemy model class to check against
         slug_field: Name of the slug field in the model
         exclude_id: Optional ID to exclude from uniqueness check (for updates)
+        workspace_id: Optional workspace ID for scoped uniqueness
+        workspace_field: Name of the workspace_id field in the model
 
     Returns:
         Unique slug string
     """
-    slug = base_slug
+    slug_col = getattr(model_class, slug_field)
+    pattern = f"{base_slug}%"
+
+    query = select(slug_col).where(
+        slug_col.like(pattern),
+        model_class.deleted_at == None,
+    )
+
+    if workspace_id is not None:
+        query = query.where(getattr(model_class, workspace_field) == workspace_id)
+
+    if exclude_id is not None:
+        query = query.where(model_class.id != exclude_id)
+
+    result = await db.execute(query)
+    existing_slugs = {row[0] for row in result.fetchall()}
+
+    if base_slug not in existing_slugs:
+        return base_slug
+
     counter = 1
-
-    while True:
-        # Build query to check if slug exists
-        query = select(model_class).where(
-            getattr(model_class, slug_field) == slug,
-            model_class.deleted_at == None
-        )
-
-        # Exclude current record if updating
-        if exclude_id:
-            query = query.where(model_class.id != exclude_id)
-
-        result = await db.execute(query)
-        exists = result.scalar_one_or_none()
-
-        if not exists:
-            break
-
-        # Append counter to make unique
-        slug = f"{base_slug}-{counter}"
+    while f"{base_slug}-{counter}" in existing_slugs:
         counter += 1
-
-    return slug
+    return f"{base_slug}-{counter}"
 
 
 def generate_workspace_slug(name: str) -> str:

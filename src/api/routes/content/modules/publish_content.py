@@ -15,11 +15,12 @@ from src.api.schema.content_schema import (
     ContentResponse,
     PublishToSiteRequest,
     PublishResponse,
-    PublishToSitesResponse
+    PublishToSitesResponse,
+    ContentSEODataSchema
 )
 from src.utils.workspace_utils import resolve_and_verify_workspace
 from src.services.content_service import ContentService
-from src.services.wordpress_publisher import WordPressPublisher
+from src.web.wordpress import WordPressPublisher
 from src.api.models.content_models import Content
 from src.api.models.workspace_models.workspace_integration import WorkspaceIntegration
 
@@ -29,120 +30,6 @@ router = APIRouter()
 # -------------------------
 # Helper: Publish to All Active Sites
 # -------------------------
-async def _publish_to_all_sites(
-    db: AsyncSession,
-    workspace_id: UUID,
-    content_data: ContentCreate,
-    status: str = "publish"
-) -> List[PublishResponse]:
-    """
-    Publish content to all active WordPress sites in the workspace.
-    Returns list of results for each site.
-    """
-    results = []
-    
-    # Fetch all active sites
-    sites_query = select(WorkspaceIntegration).where(
-        WorkspaceIntegration.workspace_id == workspace_id,
-        WorkspaceIntegration.is_active.is_(True)
-    )
-    sites_result = await db.execute(sites_query)
-    sites = sites_result.scalars().all()
-    
-    if not sites:
-        logger.warning(f"No active sites found for workspace {workspace_id}")
-        raise HTTPException(
-            status_code=400,
-            detail="No active WordPress sites found in this workspace. Please connect a site before publishing."
-        )
-    
-    for site in sites:
-        try:
-            # Initialize WordPress publisher with site credentials
-            wp_publisher = WordPressPublisher(
-                site_url=site.site_url,
-                api_endpoint=site.api_endpoint,
-                username=site.username,
-                app_password=site.app_password,
-                api_key=site.api_key
-            )
-            
-            # Publish to WordPress
-            wp_response = wp_publisher.publish_post(
-                data=content_data,
-                status=status
-            )
-            
-            results.append(PublishResponse(
-                site_id=site.id,
-                site_url=site.site_url,
-                success=True,
-                wordpress_post_id=wp_response.get("post_id"),
-                wordpress_url=wp_response.get("link")
-            ))
-            
-            logger.info(f"Published to {site.site_url}: post_id={wp_response.get('post_id')}")
-            
-        except Exception as e:
-            logger.error(f"Failed to publish to {site.site_url}: {str(e)}")
-            results.append(PublishResponse(
-                site_id=site.id,
-                site_url=site.site_url,
-                success=False,
-                error=str(e)
-            ))
-    
-    return results
-
-
-# -------------------------
-# 1. Save Content (Draft Only)
-# -------------------------
-@router.post("/save", response_model=ContentResponse)
-@db_transaction_handler("save content", "Content saved successfully")
-@require_permissions("content.create", workspace_scoped=True)
-async def save_content(
-    data: ContentCreate,
-    request: Request,
-    workspace_id: str,
-    db: AsyncSession = Depends(get_async_db),
-    user: dict = Depends(get_current_user)
-):
-    """
-    Save content as draft without publishing.
-    
-    Use this to save work in progress. To publish,
-    use the /publish endpoint.
-    """
-    user_id = user.get("identity")
-    workspace, _ = await resolve_and_verify_workspace(db, workspace_id, UUID(user_id))
-
-    # Check if title already exists in workspace
-    title_query = select(Content).where(
-        Content.workspace_id == workspace.id,
-        Content.title == data.title,
-        Content.deleted_at == None
-    )
-    existing_result = await db.execute(title_query)
-    if existing_result.scalar_one_or_none():
-        raise HTTPException(
-            status_code=400,
-            detail=f"Content with title '{data.title}' already exists in this workspace."
-        )
-
-    # Force draft status
-    data.status = "draft"
-
-    service = ContentService(db)
-    content = await service.create_content(
-        workspace_id=workspace.id,
-        user_id=UUID(user_id),
-        data=data
-    )
-
-    return content.to_dict()
-
-
 # -------------------------
 # 2. Save & Publish (New Content)
 # -------------------------
@@ -159,25 +46,9 @@ async def save_and_publish(
 ):
     """
     Save content AND publish to all active WordPress sites.
-    
-    This is the primary endpoint for direct publishing.
-    Content is saved to database and published to all active sites.
     """
     user_id = user.get("identity")
     workspace, _ = await resolve_and_verify_workspace(db, workspace_id, UUID(user_id))
-
-    # Check if title already exists in workspace
-    title_query = select(Content).where(
-        Content.workspace_id == workspace.id,
-        Content.title == data.title,
-        Content.deleted_at == None
-    )
-    existing_result = await db.execute(title_query)
-    if existing_result.scalar_one_or_none():
-        raise HTTPException(
-            status_code=400,
-            detail=f"Content with title '{data.title}' already exists in this workspace."
-        )
 
     # Save content first
     service = ContentService(db)
@@ -187,22 +58,14 @@ async def save_and_publish(
         data=data
     )
     
-    # Publish to all active sites
-    results = await _publish_to_all_sites(
-        db=db,
+    # Publish to all active sites via service
+    results = await service.publish_to_sites(
+        content=content,
         workspace_id=workspace.id,
-        content_data=data,
-        status=publish_status
+        publish_status=publish_status
     )
     
-    # Update content with first successful publish info
     successful_results = [r for r in results if r.success]
-    if successful_results:
-        first_success = successful_results[0]
-        content.wordpress_post_id = first_success.wordpress_post_id
-        content.wordpress_url = first_success.wordpress_url
-        content.wordpress_published_at = datetime.now(timezone.utc)
-        content.status = "published"
     
     return {
         "content": content.to_dict(),
@@ -210,7 +73,8 @@ async def save_and_publish(
             "total_sites": len(results),
             "successful": len(successful_results),
             "failed": len(results) - len(successful_results),
-            "results": [r.model_dump() for r in results]
+            "results": [r.model_dump() for r in results],
+            "all_failed": len(successful_results) == 0
         }
     }
 
@@ -231,8 +95,6 @@ async def publish_existing_content(
 ):
     """
     Publish existing content to all active WordPress sites.
-    
-    Fetches content from database and publishes to all active sites.
     """
     user_id = user.get("identity")
     workspace, _ = await resolve_and_verify_workspace(db, workspace_id, UUID(user_id))
@@ -241,48 +103,19 @@ async def publish_existing_content(
     service = ContentService(db)
     content = await service._get_content_or_404(content_id, workspace.id, include_seo=True)
     
-    # Build ContentCreate from existing content
-    from src.api.schema.content_schema import ContentSEODataSchema
-    
-    seo_data = None
-    if hasattr(content, 'seo_data') and content.seo_data:
-        seo_data = ContentSEODataSchema(
-            meta_title=content.seo_data.meta_title,
-            meta_description=content.seo_data.meta_description,
-            focus_keyphrase=content.seo_data.focus_keyphrase,
-            trust_score=content.seo_data.trust_score
-        )
-    
-    content_data = ContentCreate(
-        title=content.title,
-        introduction=content.introduction,
-        body_html=content.body_html,
-        body_markdown=content.body_markdown,
-        tags=content.tags,
-        seo_data=seo_data
-    )
-    
     # Get publish status from request or default to "publish"
     status = "publish"
     if publish_data and publish_data.status:
         status = publish_data.status
     
-    # Publish to all active sites
-    results = await _publish_to_all_sites(
-        db=db,
+    # Publish to all active sites via service
+    results = await service.publish_to_sites(
+        content=content,
         workspace_id=workspace.id,
-        content_data=content_data,
-        status=status
+        publish_status=status
     )
     
-    # Update content with first successful publish info
     successful_results = [r for r in results if r.success]
-    if successful_results:
-        first_success = successful_results[0]
-        content.wordpress_post_id = first_success.wordpress_post_id
-        content.wordpress_url = first_success.wordpress_url
-        content.wordpress_published_at = datetime.now(timezone.utc)
-        content.status = "published"
     
     return {
         "content": content.to_dict(),
@@ -291,8 +124,64 @@ async def publish_existing_content(
             "total_sites": len(results),
             "successful": len(successful_results),
             "failed": len(results) - len(successful_results),
-            "results": [r.model_dump() for r in results]
+            "results": [r.model_dump() for r in results],
+            "all_failed": len(successful_results) == 0
         }
+    }
+
+
+# -------------------------
+# Retry Content Generation/Publishing
+# -------------------------
+@router.post("/{content_id}/retry")
+@db_transaction_handler("retry content", "Retry initiated")
+@require_permissions("content.create", workspace_scoped=True)
+async def retry_content(
+    content_id: UUID,
+    workspace_id: str,
+    db: AsyncSession = Depends(get_async_db),
+    user: dict = Depends(get_current_user)
+):
+    """
+    Retry a failed content operation.
+    
+    If it was a publishing failure, attempts to re-publish.
+    If it was a generation failure, transitions back to draft/generating.
+    """
+    user_id = user.get("identity")
+    workspace, _ = await resolve_and_verify_workspace(db, workspace_id, UUID(user_id))
+    
+    service = ContentService(db)
+    content = await service._get_content_or_404(content_id, workspace.id, include_seo=True)
+    
+    if content.status != "failed":
+        raise HTTPException(status_code=400, detail=f"Only failed content can be retried. Current status: {content.status}")
+    
+    # If we have body content but no WP post ID, it likely failed at publishing
+    if content.body_markdown and not content.wordpress_post_id:
+        logger.info(f"Retrying publishing for content {content_id}")
+        results = await service.publish_to_sites(
+            content=content,
+            workspace_id=workspace.id
+        )
+        successful_results = [r for r in results if r.success]
+        return {
+            "content_id": str(content_id),
+            "status": content.status,
+            "retry_type": "publishing",
+            "successful": len(successful_results) > 0
+        }
+    
+    # Otherwise, it might have failed at generation or some other step
+    # Reset to draft for now so it can be manually re-triggered or edited
+    content.status = "draft"
+    content.updated_at = datetime.now(timezone.utc)
+    await db.flush()
+    
+    return {
+        "content_id": str(content_id),
+        "status": content.status,
+        "retry_type": "unspecified_reset_to_draft"
     }
 
 # -------------------------

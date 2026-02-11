@@ -18,13 +18,12 @@ router = APIRouter()
 # List Content for Workspace
 # -------------------------
 @router.get("/")
+@require_permissions("content.read", workspace_scoped=True)
 @db_transaction_handler("list content", auto_commit=False)
 async def list_content(
     request: Request,
     workspace_id: str,
     status: Optional[str] = Query(None, description="Filter by status"),
-    include_metadata: bool = Query(False, description="Include metadata in response"),
-    include_seo: bool = Query(False, description="Include SEO data in response"),
     limit: int = Query(100, le=500, description="Maximum number of items to return"),
     offset: int = Query(0, ge=0, description="Number of items to skip"),
     db: AsyncSession = Depends(get_async_db),
@@ -74,8 +73,6 @@ async def get_content(
     content_id: UUID,
     request: Request,
     workspace_id: str,
-    include_metadata: bool = Query(True, description="Include metadata in response"),
-    include_seo: bool = Query(True, description="Include SEO data in response"),
     db: AsyncSession = Depends(get_async_db),
     user: dict = Depends(get_current_user)
 ):

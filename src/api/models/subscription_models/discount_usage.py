@@ -1,4 +1,12 @@
-from datetime import datetime
+"""
+Discount Usage model for tracking discount code usage.
+
+This model records when users apply discount codes during checkout,
+enabling analytics and fraud prevention.
+"""
+
+from datetime import datetime, timezone
+from decimal import Decimal
 from typing import Optional
 from uuid import UUID, uuid4
 
