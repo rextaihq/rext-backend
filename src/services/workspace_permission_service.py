@@ -3,7 +3,7 @@
 from typing import List, Optional
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import select, distinct
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.models.user_models.permissions import Permission
@@ -50,7 +50,6 @@ class WorkspacePermissionService:
             raise ValueError(f"Workspace {workspace_id} not found")
 
         # Check if user is super_admin FIRST (super_admin has access to all workspaces)
-        # This ensures super_admin role is always returned, even if user also has workspace-specific role
         super_admin_check = await db.execute(
             select(UserRole, Role)
             .join(Role, Role.id == UserRole.role_id)
@@ -61,12 +60,9 @@ class WorkspacePermissionService:
         is_super_admin = super_admin_check.first() is not None
 
         if is_super_admin:
-            # Super admin gets all permissions
+            # Super admin gets all permissions — dynamically from database
             all_permissions_result = await db.execute(
-                select(Permission.name)
-                .where(Permission.resource.in_([
-                    'workspace', 'content', 'topic', 'knowledge', 'member'
-                ]))
+                select(distinct(Permission.name))
             )
             all_permissions = [row[0] for row in all_permissions_result.all()]
 
