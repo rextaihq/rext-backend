@@ -72,8 +72,8 @@ def db_transaction_handler(
                     Set to False if you need manual transaction control
         error_severity: Severity level for unexpected errors (default: HIGH)
         error_code: Error code for unexpected errors (default: INTERNAL_SERVER_ERROR)
-        include_error_details: Whether to include error details in response context (default: True)
-                              Useful for debugging, may want to disable in production
+        include_error_details: Whether to include error details in logging (default: True)
+                              Error details are always logged but this controls the verbosity
 
     Returns:
         Decorated async function that handles transactions and errors
@@ -167,8 +167,6 @@ def db_transaction_handler(
                 raise
 
             except RextAPIException as e:
-    # existing code...
-
                 # Business/validation exceptions - rollback and re-raise
                 # These are handled by the global exception middleware
                 if db and hasattr(db, "rollback"):
@@ -203,30 +201,30 @@ def db_transaction_handler(
                     )
 
                 # Log unexpected exception at ERROR level with full stack trace
-                logger.exception(
-                    f"Unexpected error in {operation_name}",
-                    extra={
-                        "operation": func.__name__,
-                        "error_type": type(e).__name__,
-                        "error_message": str(e)
-                    }
-                )
-
-                # Build error context
-                context = {}
+                # include_error_details controls whether we log additional context
                 if include_error_details:
-                    context["error_details"] = str(e)
-                    context["error_type"] = type(e).__name__
-                    context["operation"] = operation_name
+                    logger.exception(
+                        f"Unexpected error in {operation_name}",
+                        extra={
+                            "operation": func.__name__,
+                            "error_type": type(e).__name__,
+                            "error_message": str(e)
+                        }
+                    )
+                else:
+                    logger.exception(
+                        f"Unexpected error in {operation_name}",
+                        extra={"operation": func.__name__}
+                    )
 
-                # Return standardized error response
+                # Return standardized error response without context parameter
+                # Error details are logged above but not included in the response
                 return error(
                     message=f"Failed to {operation_name}",
                     code=error_code,
                     status_code=500,
                     severity=error_severity,
-                    request=request,
-                    context=context
+                    request=request
                 )
 
         return wrapper

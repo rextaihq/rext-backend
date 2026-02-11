@@ -44,7 +44,7 @@ async def _publish_to_all_sites(
     # Fetch all active sites
     sites_query = select(WorkspaceIntegration).where(
         WorkspaceIntegration.workspace_id == workspace_id,
-        WorkspaceIntegration.is_active == True
+        WorkspaceIntegration.is_active.is_(True)
     )
     sites_result = await db.execute(sites_query)
     sites = sites_result.scalars().all()

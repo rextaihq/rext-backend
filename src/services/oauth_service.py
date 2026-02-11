@@ -250,7 +250,7 @@ class OAuthService:
             select(UserRole)
             .options(selectinload(UserRole.role))
             .where(UserRole.user_id == user.id)
-            .where(UserRole.is_primary == True)
+            .where(UserRole.is_primary.is_(True))
         )
         user_roles = user_roles_result.scalars().all()
         role_names = [ur.role.name for ur in user_roles]
@@ -445,7 +445,7 @@ class OAuthService:
         result = await self.db.execute(
             select(SubscriptionPlan).where(
                 SubscriptionPlan.name == "trial",
-                SubscriptionPlan.is_active == True
+                SubscriptionPlan.is_active.is_(True)
             )
         )
         trial_plan = result.scalar_one_or_none()

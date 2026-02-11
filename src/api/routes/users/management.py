@@ -14,7 +14,7 @@ from src.api.database.async_database import get_async_db
 from src.services.user_service import UserService
 from src.api.middleware.exceptions import ResourceNotFoundException, RextValidationException, RextAuthorizationException
 from src.api.models.workspace_models.workspace_member import WorkspaceMembers
-from src.api.config import get_settings
+from src.api.config import get_settings, settings
 from sqlalchemy import select, delete
 
 router = APIRouter()
@@ -144,19 +144,29 @@ async def delete_user(
 
     Requires user.delete permission (super_admin only).
     """
-    service = UserService(db)
-    current_user_id = UUID(current_user.get("identity"))
+    try:
+        service = UserService(db)
+        current_user_id = UUID(current_user.get("identity"))
 
-    # Check permission via service
-    has_permission = await service.check_user_permission(
-        user_id=current_user_id,
-        permission_name="user.delete"
-    )
+        # Check permission via service
+        has_permission = await service.check_user_permission(
+            user_id=current_user_id,
+            permission_name="user.delete"
+        )
 
-    if not has_permission:
-        raise RextAuthorizationException(
-            message="Missing required permission: user.delete",
-            required_permission="user.delete"
+        if not has_permission:
+            return error(
+                message="Missing required permission: user.delete",
+                code=ErrorCode.FORBIDDEN,
+                status_code=403,
+                severity=ErrorSeverity.HIGH,
+                context={"required_permission": "user.delete"},
+                request=request
+            )
+
+        # Delete workspace memberships if any
+        memberships = await db.execute(
+            select(WorkspaceMembers).where(WorkspaceMembers.user_id == UUID(user_id))
         )
 
     # Delete workspace memberships if any
@@ -171,9 +181,25 @@ async def delete_user(
         logger.info(f"Deleted {len(membership_list)} workspace memberships for user {user_id}")
         await db.flush()
 
-    # Delete user via service (includes validation)
-    db_user = await service.delete_user(UUID(user_id))
-    return {"id": str(db_user.id)}
+    except ResourceNotFoundException:
+        return error(
+            message="User not found",
+            code=ErrorCode.RESOURCE_NOT_FOUND,
+            status_code=404,
+            severity=ErrorSeverity.MEDIUM,
+            request=request
+        )
+    except RextValidationException:
+        return error(
+            message="Validation failed",
+            code=ErrorCode.DEPENDENCY_ERROR,
+            status_code=400,
+            severity=ErrorSeverity.MEDIUM,
+            request=request
+        )
+    except Exception as e:
+        logger.error(f"Failed to delete user {user_id}: {str(e)}")
+        raise
 
 
 @router.put("/update/{user_id}")
@@ -241,8 +267,37 @@ async def export_user_data(
 
     service = UserService(db)
 
-    # Get user from database
-    db_user = await service.get_user_by_id(user_id)
+        if export_request.include_roles:
+            roles = []
+            for user_role in db_user.user_roles:
+                roles.append({
+                    "role_name": user_role.role.name if user_role.role else None,
+                    "role_display_name": user_role.role.display_name if user_role.role else None,
+                    "is_primary": user_role.is_primary,
+                    "workspace_id": str(user_role.workspace_id) if user_role.workspace_id else None,
+                    "assigned_at": user_role.assigned_at.isoformat() if user_role.assigned_at else None
+                })
+            export_data["roles"] = roles
+
+        if export_request.include_workspaces:
+            workspaces = []
+            for membership in db_user.workspace_memberships:
+                workspaces.append({
+                    "workspace_id": str(membership.workspace_id),
+                    "workspace_name": membership.workspace.name if membership.workspace else None,
+                    "role": membership.role,
+                    "status": membership.status,
+                    "joined_at": membership.joined_at.isoformat() if membership.joined_at else None
+                })
+            export_data["workspaces"] = workspaces
+
+        # Note: Activity logs would require audit_logs table access
+        if export_request.include_activity:
+            export_data["activity"] = {
+                "note": "Activity logs export will be available once audit log system is queried"
+            }
+        # Get frontend URL
+        frontend_url = settings.FRONTEND_URL
 
     # Generate export ID
     export_id = str(uuid.uuid4())
@@ -250,21 +305,35 @@ async def export_user_data(
     # Collect user data based on request
     export_data = {}
 
-    if export_request.include_profile:
-        export_data["profile"] = {
-            "id": str(db_user.id),
-            "email": db_user.email,
-            "full_name": db_user.full_name,
-            "display_name": db_user.display_name,
-            "language": db_user.language,
-            "timezone": db_user.timezone,
-            "status": db_user.status,
-            "email_verified": db_user.email_verified,
-            "email_verified_at": db_user.email_verified_at.isoformat() if db_user.email_verified_at else None,
-            "created_at": db_user.created_at.isoformat() if db_user.created_at else None,
-            "last_login_at": db_user.last_login_at.isoformat() if db_user.last_login_at else None,
-            "login_count": db_user.login_count
-        }
+        # NEW: Export usage metrics
+        if export_request.include_usage:
+            # Basic usage stats - can be expanded based on your usage tracking
+            export_data["usage"] = {
+                "workspaces_count": len(db_user.workspace_memberships) if hasattr(db_user, 'workspace_memberships') else 0,
+                "roles_count": len(db_user.user_roles) if hasattr(db_user, 'user_roles') else 0,
+                "login_count": db_user.login_count if hasattr(db_user, 'login_count') else 0,
+                "last_login": db_user.last_login_at.isoformat() if hasattr(db_user, 'last_login_at') and db_user.last_login_at else None,
+                "account_age_days": (datetime.now(timezone.utc) - db_user.created_at).days if db_user.created_at else 0,
+                "note": "Detailed usage metrics available upon request"
+            }
+
+        # Convert to JSON for email
+        import json
+        export_json = json.dumps(export_data, indent=2)
+
+        
+
+        # Send email with data export in background using EmailService
+        background_tasks.add_task(
+            send_data_export_email_task,
+            email=db_user.email,
+            name=db_user.full_name or "User",
+            export_id=export_id,
+            export_json=export_json,
+            export_request=export_request,
+            frontend_url=frontend_url,
+            user_id=str(user_id)
+        )
 
     if export_request.include_roles:
         roles = []
@@ -296,9 +365,13 @@ async def export_user_data(
             "note": "Activity logs export will be available once audit log system is queried"
         }
 
-    # NEW: Export billing/subscription data
-    if export_request.include_billing:
-        from src.api.models.subscription_models.subscriptions import UserSubscription
+        response_data = DataExportResponse(
+            export_id=export_id,
+            user_id=str(user_id),
+            status="completed",
+            requested_at=datetime.now(timezone.utc).isoformat(),
+            message="Data export has been sent to your email address"
+        )
 
         # Get all user subscriptions
         subscriptions = []

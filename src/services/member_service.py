@@ -18,7 +18,7 @@ Does NOT:
 
 from typing import Optional, List, Dict, Any
 from uuid import UUID
-from datetime import datetime, timezone
+from datetime import datetime,timezone
 
 from sqlalchemy import select, and_, func
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -571,7 +571,7 @@ class MemberService(InvitationService):
             old_role = old_role_result.scalar_one_or_none()
 
         # Update or create user role
-        # Use timezone-aware datetime
+        # Use utcnow() for timezone-naive datetime to match TIMESTAMP WITHOUT TIME ZONE column
         timestamp = datetime.now(timezone.utc)
         if user_role:
             user_role.role_id = new_role_id

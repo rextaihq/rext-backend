@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, Request, UploadFile, File, HTTPException, status, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
 
+
 from src.utils.logger import logger
 from src.api.security.dependencies import get_current_user
 from src.utils.route_decorators import require_permissions, db_transaction_handler
@@ -11,7 +12,8 @@ from src.api.database.async_database import get_async_db
 from src.api.middleware.exceptions import ResourceNotFoundException, RextValidationException
 from src.services.user_service import UserService
 from src.services.notification_helper import schedule_if_allowed
-from datetime import datetime
+from datetime import datetime,timezone 
+
 from pathlib import Path
 from sqlalchemy import select
 import time
@@ -76,67 +78,96 @@ async def update_profile(
     Update current authenticated user's profile.
     Uses UserService for business logic.
     """
-    user_id = current_user.get("identity")
-    service = UserService(db)
+    try:
+        user_id = current_user.get("identity")
+        service = UserService(db)
 
-    # Track what was updated for response
-    updated_fields = []
-    update_kwargs = {}
+        # Track what was updated for response
+        updated_fields = []
+        update_kwargs = {}
 
-    if profile_data.full_name is not None:
-        update_kwargs["full_name"] = profile_data.full_name
-        updated_fields.append("full_name")
-    if profile_data.display_name is not None:
-        update_kwargs["display_name"] = profile_data.display_name
-        updated_fields.append("display_name")
-    if profile_data.bio is not None:
-        update_kwargs["bio"] = profile_data.bio
-        updated_fields.append("bio")
-    if profile_data.language is not None:
-        update_kwargs["language"] = profile_data.language
-        updated_fields.append("language")
-    if profile_data.timezone is not None:
-        update_kwargs["timezone"] = profile_data.timezone
-        updated_fields.append("timezone")
+        if profile_data.full_name is not None:
+            update_kwargs["full_name"] = profile_data.full_name
+            updated_fields.append("full_name")
+        if profile_data.display_name is not None:
+            update_kwargs["display_name"] = profile_data.display_name
+            updated_fields.append("display_name")
+        if profile_data.bio is not None:
+            update_kwargs["bio"] = profile_data.bio
+            updated_fields.append("bio")
+        if profile_data.language is not None:
+            update_kwargs["language"] = profile_data.language
+            updated_fields.append("language")
+        if profile_data.timezone is not None:
+            update_kwargs["timezone"] = profile_data.timezone
+            updated_fields.append("timezone")
 
-    if not updated_fields:
-        raise RextValidationException(message="No fields provided for update")
+        # Update via service
+        user = await service.update_profile(user_id=user_id, **update_kwargs)
 
-    # Update via service
-    user = await service.update_profile(user_id=user_id, **update_kwargs)
+        # Commit changes to database
+        await db.commit()
 
-    # Build response
-    profile_response = {
-        "id": str(user.id),
-        "email": user.email,
-        "full_name": user.full_name,
-        "display_name": user.display_name,
-        "bio": user.bio,
-        "language": user.language,
-        "timezone": user.timezone,
-        "status": user.status,
-        "email_verified": user.email_verified,
-        "avatar_url": user.avatar_url,
-        "updated_at": user.updated_at.isoformat()
-    }
+        # Build response
+        profile_response = {
+            "id": str(user.id),
+            "email": user.email,
+            "full_name": user.full_name,
+            "display_name": user.display_name,
+            "bio": user.bio,
+            "language": user.language,
+            "timezone": user.timezone,
+            "status": user.status,
+            "email_verified": user.email_verified,
+            "avatar_url": user.avatar_url,
+            "updated_at": user.updated_at.isoformat()
+        }
 
-    logger.info(f"Profile updated for user {user_id}. Fields: {', '.join(updated_fields)}")
+        logger.info(f"Profile updated for user {user_id}. Fields: {', '.join(updated_fields)}")
 
-    # Schedule notification
-    await schedule_if_allowed(
-        db=db,
-        user_id=str(user_id),
-        background_tasks=background_tasks,
-        pref_flag="in_app_notifications",
-        message="Your profile has been successfully updated.",
-        payload={"user_id": str(user_id), "updated_fields": updated_fields},
-        workspace_id=None
-    )
+        # Schedule notification
+        await schedule_if_allowed(
+            db=db,
+            user_id=str(user_id),
+            background_tasks=background_tasks,
+            pref_flag="in_app_notifications",
+            message="Your profile has been successfully updated.",
+            payload={"user_id": str(user_id), "updated_fields": updated_fields},
+            workspace_id=None
+        )
 
-    return {
-        "profile": profile_response,
-        "updated_fields": updated_fields
-    }
+        return success(
+            data={
+                "profile": profile_response,
+                "updated_fields": updated_fields
+            },
+            request=request,
+            message="Profile updated successfully"
+        )
+
+    except ResourceNotFoundException:
+        return error(
+            message="User not found",
+            code=ErrorCode.RESOURCE_NOT_FOUND,
+            status_code=404,
+            severity=ErrorSeverity.MEDIUM,
+            request=request
+        )
+    except Exception as e:
+        logger.error(f"Error updating profile: {str(e)}")
+        # Schedule failure notification
+        await schedule_if_allowed(
+            db=db,
+            user_id=str(user_id),
+            background_tasks=background_tasks,
+            pref_flag="in_app_notifications",
+            message="Failed to update profile due to an internal error",
+            payload={"user_id": str(user_id), "error": "An internal error occurred"},
+            workspace_id=None,
+            title="Profile Update Failed",
+            status="error"
+        )
+        raise
 
 
 @router.post("/avatar/upload")
@@ -153,23 +184,65 @@ async def upload_avatar(
     Upload user avatar image.
     Avatar management could be extracted to UserService in future.
     """
-    user_id = current_user.get("identity")
-    service = UserService(db)
+    try:
+        user_id = current_user.get("identity")
+        service = UserService(db)
+
+        # Get user via service
+        user = await service.get_user_by_id(user_id)
+
+        # Validate file type
+        allowed_types = ["image/jpeg", "image/png", "image/gif", "image/webp"]
+        if file.content_type not in allowed_types:
+            return error(
+                message=f"Invalid file type. Allowed: {', '.join(allowed_types)}",
+                code=ErrorCode.INVALID_VALUE,
+                status_code=400,
+                severity=ErrorSeverity.LOW,
+                request=request
+            )
+
+        # Read and validate file
+        file_content = await file.read()
+        file_size = len(file_content)
+        max_size = 5 * 1024 * 1024  # 5MB
+
+        if file_size > max_size:
+            return error(
+                message=f"File too large. Max: 5MB, Yours: {file_size / (1024 * 1024):.2f}MB",
+                code=ErrorCode.INVALID_VALUE,
+                status_code=400,
+                severity=ErrorSeverity.LOW,
+                request=request
+            )
 
     # Get user via service
     user = await service.get_user_by_id(user_id)
 
-    # Validate file type
-    allowed_types = ["image/jpeg", "image/png", "image/gif", "image/webp"]
-    if file.content_type not in allowed_types:
-        raise RextValidationException(
-            message=f"Invalid file type. Allowed: {', '.join(allowed_types)}"
-        )
+        if image_type not in allowed_image_types:
+            logger.warning(
+                f"Invalid image file uploaded by user {user_id}. " +
+                f"Content-Type: {file.content_type}, Actual type: {image_type}",
+                extra={"user_id": str(user_id)}
+            )
+            return error(
+                message="Invalid image file. File content does not match an allowed image format (JPEG, PNG, GIF, WebP).",
+                code=ErrorCode.INVALID_VALUE,
+                status_code=400,
+                severity=ErrorSeverity.MEDIUM,
+                request=request
+            )
 
-    # Read and validate file
-    file_content = await file.read()
-    file_size = len(file_content)
-    max_size = 5 * 1024 * 1024  # 5MB
+        # Security: Block SVG files to prevent XSS
+        if file.filename and file.filename.lower().endswith('.svg'):
+            logger.warning(f"SVG upload attempt blocked for user {user_id}")
+            return error(
+                message="SVG files are not supported for security reasons.",
+                code=ErrorCode.INVALID_VALUE,
+                status_code=400,
+                severity=ErrorSeverity.MEDIUM,
+                request=request
+            )
 
     if file_size > max_size:
         raise RextValidationException(
@@ -191,15 +264,35 @@ async def upload_avatar(
             message="Invalid image file. File content does not match an allowed image format (JPEG, PNG, GIF, WebP)."
         )
 
-    # Structural validation: verify the file is a parseable image, not just valid magic bytes
-    try:
-        img = Image.open(io.BytesIO(file_content))
-        img.verify()
-    except Exception:
-        logger.warning(
-            f"Corrupted or malformed image uploaded by user {user_id}. "
-            f"Content-Type: {file.content_type}, Detected MIME: {detected_mime}",
-            extra={"user_id": str(user_id)}
+    except ResourceNotFoundException as e:
+        # Schedule notification
+        await schedule_if_allowed(
+            db=db,
+            user_id=str(user_id),
+            background_tasks=background_tasks,
+            pref_flag="in_app_notifications",
+            message="failed to upload avatar",
+            payload={"user_id": str(user_id), "error": "User not found"},
+            workspace_id=None
+        )
+        return error(
+            message="User not found",
+            code=ErrorCode.RESOURCE_NOT_FOUND,
+            status_code=404,
+            severity=ErrorSeverity.MEDIUM,
+            request=request
+        )
+    except Exception as e:
+        logger.error(f"Error uploading avatar: {str(e)}")
+        # Schedule notification
+        await schedule_if_allowed(
+            db=db,
+            user_id=str(user_id),
+            background_tasks=background_tasks,
+            pref_flag="in_app_notifications",
+            message="failed to upload avatar",
+            payload={"user_id": str(user_id), "error": "An internal error occurred"},
+            workspace_id=None
         )
         raise RextValidationException(
             message="Image file appears to be corrupted or malformed."
@@ -292,45 +385,43 @@ async def delete_avatar(
     if not user.avatar_url:
         raise ResourceNotFoundException(message="No avatar to delete")
 
-    # Delete file from storage with path traversal protection
-    avatar_path = Path(user.avatar_url.lstrip('/')).resolve()
-    try:
-        avatar_path.relative_to(AVATAR_UPLOAD_DIR.resolve())
-        if avatar_path.exists():
-            avatar_path.unlink()
-    except (ValueError, Exception) as e:
-        if isinstance(e, ValueError):
-            logger.warning(
-                f"Path traversal attempt detected for user {user_id}: {user.avatar_url}",
-                extra={"user_id": str(user_id), "attempted_path": user.avatar_url}
-            )
-        else:
-            logger.warning(f"Could not delete avatar file: {str(e)}")
-
-    # Update user via service
-    old_avatar_url = user.avatar_url
-    updated_user = await service.update_profile(
-        user_id=user_id,
-        avatar_url=None
-    )
-
-    logger.info(f"Avatar deleted for user {user_id}")
-
-    # Schedule notification
-    await schedule_if_allowed(
-        db=db,
-        user_id=str(user_id),
-        background_tasks=background_tasks,
-        pref_flag="in_app_notifications",
-        message="Your profile picture has been successfully deleted.",
-        payload={"user_id": str(user_id)},
-        workspace_id=None
-    )
-
-    return {
-        "deleted_avatar_url": old_avatar_url,
-        "deleted_at": updated_user.updated_at.isoformat()
-    }
+    except ResourceNotFoundException as e:
+        # Schedule notification
+        await schedule_if_allowed(
+            db=db,
+            user_id=str(user_id),
+            background_tasks=background_tasks,
+            pref_flag="in_app_notifications",
+            message="failed to delete avatar",
+            payload={"user_id": str(user_id), "error": "User not found"},
+            workspace_id=None
+        )
+        return error(
+            message="User not found",
+            code=ErrorCode.RESOURCE_NOT_FOUND,
+            status_code=404,
+            severity=ErrorSeverity.MEDIUM,
+            request=request
+        )
+    except Exception as e:
+        logger.error(f"Error deleting avatar: {str(e)}")
+        # Schedule notification
+        await schedule_if_allowed(
+            db=db,
+            user_id=str(user_id),
+            background_tasks=background_tasks,
+            pref_flag="in_app_notifications",
+            message="failed to delete avatar",
+            payload={"user_id": str(user_id), "error": "An internal error occurred"},
+            workspace_id=None
+        )
+        return error(
+            message="Failed to delete avatar",
+            code=ErrorCode.INTERNAL_SERVER_ERROR,
+            status_code=500,
+            severity=ErrorSeverity.HIGH,
+            request=request
+        )
 
 
 @router.get("/preferences/notifications", response_model=None)
@@ -416,12 +507,81 @@ async def update_notification_preferences(
             "product_updates": ["email_product_updates", "in_app_product_updates"],
         }
 
-        for cat, value in categories.items():
-            if cat in mapping:
-                for db_field in mapping[cat]:
-                    if hasattr(preferences, db_field):
-                        setattr(preferences, db_field, value)
-                        logger.debug(f"Updated category preference '{cat}' -> '{db_field}' to {value}")
+    except Exception as e:
+        logger.error(f"Failed to update notification preferences: {str(e)}")
+        # Schedule notification
+        await schedule_if_allowed(
+            db=db,
+            user_id=str(user_id),
+            background_tasks=background_tasks,
+            pref_flag="in_app_notifications",
+            message="failed to update notification preferences",
+            payload={"user_id": str(user_id), "error": "An internal error occurred"},
+            workspace_id=None
+        )
+        raise
+
+
+@router.post("/deactivate")
+@require_permissions("user.update", workspace_scoped=False)
+async def deactivate_account(
+    request: Request,
+    deactivate_request: DeactivateAccountRequest,
+    current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_async_db)
+):
+    """
+    Deactivate current user's account.
+
+    This will:
+    1. Set the account status to 'deactivated'
+    2. Set deactivated_at timestamp
+    3. Optionally cancel active subscriptions
+    4. Schedule account for deletion in 14 days
+
+    The user can reactivate their account within 14 days by logging in.
+    After 14 days, the account will be permanently deleted.
+    """
+    try:
+        from datetime import timedelta
+        from src.api.models.subscription_models.subscriptions import UserSubscription
+
+        user_id = current_user.get("identity")
+        service = UserService(db)
+
+        # Validate confirmation
+        if not deactivate_request.confirm:
+            return error(
+                message="You must confirm account deactivation",
+                code=ErrorCode.INVALID_VALUE,
+                status_code=400,
+                severity=ErrorSeverity.LOW,
+                request=request
+            )
+
+        # Verify password before allowing deactivation
+        if not await service.verify_user_password(user_id, deactivate_request.password):
+            logger.warning(f"Failed deactivation attempt for user {user_id}: invalid password")
+            return error(
+                message="Invalid password. Please enter your current password to deactivate your account.",
+                code=ErrorCode.UNAUTHORIZED,
+                status_code=401,
+                severity=ErrorSeverity.HIGH,
+                request=request
+            )
+
+        # Get user
+        user = await service.get_user_by_id(user_id)
+
+        # Check if already deactivated
+        if user.status == "inactive":
+            return error(
+                message="Account is already deactivated",
+                code=ErrorCode.INVALID_VALUE,
+                status_code=400,
+                severity=ErrorSeverity.LOW,
+                request=request
+            )
 
     # Handle all other fields directly
     for field, value in update_data.items():
@@ -429,18 +589,14 @@ async def update_notification_preferences(
             setattr(preferences, field, value)
             logger.debug(f"Updated notification preference '{field}' for user {user_id}")
 
-    logger.info(f"Updated notification preferences for user {user_id}")
+            for subscription in active_subscriptions:
+                subscription.status = "canceled"
+                subscription.canceled_at = datetime.now(timezone.utc)
+                logger.info(f"Canceled subscription {subscription.id} for user {user_id}")
 
-    # Schedule notification
-    await schedule_if_allowed(
-        db=db,
-        user_id=str(user_id),
-        background_tasks=background_tasks,
-        pref_flag="in_app_notifications",
-        message="Your notification preferences have been successfully updated.",
-        payload={"user_id": str(user_id)},
-        workspace_id=None
-    )
+        # Deactivate user account
+        now = datetime.now(timezone.utc)
+        scheduled_deletion = now + timedelta(days=14)
 
     return preferences.to_dict()
 

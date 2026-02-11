@@ -119,7 +119,7 @@ class UserPreferencesService:
 
         if updates:
             preferences.updated_at = datetime.now(timezone.utc)
-            await self.db.flush() 
+            await self.db.commit() 
             logger.info(f"Updated preferences for user {user_id}: {', '.join(updates)}")
         else:
             logger.debug(f"No preferences updated for user {user_id}")

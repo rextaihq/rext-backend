@@ -384,7 +384,7 @@ class TestUserServiceDeactivateAccount:
         # Arrange
         user = await setup_factories["user"].create(
             status="inactive",
-            deactivated_at=datetime.utcnow() - timedelta(days=1)
+            deactivated_at=datetime.now(timezone.utc) - timedelta(days=1)
         )
         original_deactivated_at = user.deactivated_at
         service = UserService(db_session)
@@ -429,7 +429,7 @@ class TestUserServiceReactivateAccount:
         # Arrange
         user = await setup_factories["user"].create(
             status="inactive",
-            deactivated_at=datetime.utcnow()
+            deactivated_at=datetime.now(timezone.utc)
         )
         service = UserService(db_session)
 

@@ -1,3 +1,7 @@
+# NOTE: This seed migration is superseded by scripts/seeds/.
+# It remains in the migration chain for backward compatibility with existing databases.
+# For new environments, use: python -m scripts.seeds.run_all
+
 """Seed license permissions
 
 Revision ID: seed007

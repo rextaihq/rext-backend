@@ -11,6 +11,7 @@ from uuid import UUID
 
 from sqlalchemy import delete, select, func
 from sqlalchemy.ext.asyncio import AsyncSession
+from src.api.models.user_models.token_blacklist import TokenBlacklist
 
 from src.api.models.audit_models.audit_logs import AuditLog
 from src.api.models.email_models.email_log import EmailLog
@@ -341,7 +342,7 @@ class DataCleanupService:
             select(func.count(WebhookEvent.id))
             .where(
                 WebhookEvent.created_at < cutoff_date,
-                WebhookEvent.processed == True
+                WebhookEvent.processed.is_(True)
             )
         )
         record_count = count_result.scalar()
@@ -359,7 +360,7 @@ class DataCleanupService:
                     delete(WebhookEvent)
                     .where(
                         WebhookEvent.created_at < cutoff_date,
-                        WebhookEvent.processed == True
+                        WebhookEvent.processed.is_(True)
                     )
                     .execution_options(synchronize_session=False)
                     .returning(WebhookEvent.id)
@@ -472,6 +473,7 @@ class DataCleanupService:
             "user_sessions": await self.cleanup_inactive_sessions(),
             "webhook_events": await self.cleanup_webhook_events(),
             "cancelled_subscriptions_anonymized": await self.anonymize_cancelled_subscriptions(),
+            "cleanup_expired_tokens": await self.cleanup_expired_tokens()
         }
 
         total_deleted = sum(results.values())
@@ -482,3 +484,34 @@ class DataCleanupService:
         )
 
         return results
+    
+    async def cleanup_expired_tokens(self) -> int:
+        """
+        Clean up expired tokens from the blacklist.
+
+        Expired tokens can be safely removed since they would be
+        rejected anyway due to expiration.
+
+        Returns:
+            Number of records deleted (or would be deleted in dry-run mode)
+        """
+        cutoff_date = datetime.now(timezone.utc)
+
+        if self.dry_run:
+            count_stmt = select(func.count()).select_from(TokenBlacklist).where(
+                TokenBlacklist.expires_at < cutoff_date
+            )
+            result = await self.db.execute(count_stmt)
+            count = result.scalar() or 0
+            logger.info(f"[DRY RUN] Would delete {count} expired tokens from blacklist")
+            return count
+
+        stmt = delete(TokenBlacklist).where(
+            TokenBlacklist.expires_at < cutoff_date
+        )
+        result = await self.db.execute(stmt)
+        deleted = result.rowcount
+        await self.db.commit()
+
+        logger.info(f"Cleaned up {deleted} expired tokens from blacklist")
+        return deleted

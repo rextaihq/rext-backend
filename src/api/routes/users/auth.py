@@ -1,7 +1,16 @@
 from fastapi import APIRouter, Depends, Request, BackgroundTasks, Header
 from src.utils.logger import logger
 from src.api.security.dependencies import get_current_user
-from src.api.schema.user_schema import LoginUser, RegisterUser, RegisterWithInvitation, LoginWithInvitation
+from src.api.schema.user_schema import (
+    LoginUser, 
+    RegisterUser, 
+    RegisterWithInvitation, 
+    LoginWithInvitation,
+    RefreshTokenRequest,  # Added
+    ResendVerificationRequest,  # Added
+    OAuthLoginRequest,  # Added
+    OAuthLinkRequest  # Added
+)
 from src.api.security.token_utils import decode_and_verify_token
 from src.api.config import get_settings
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -22,7 +31,8 @@ from src.api.models.user_models.notification_preferences import NotificationPref
 import os
 from src.api.middleware.rate_limiter import (
     login_rate_limit,
-    registration_rate_limit
+    registration_rate_limit,
+    oauth_rate_limit
 )
 from src.services.auth_service import AuthService
 from src.services.invitation_service import InvitationService
@@ -422,15 +432,29 @@ async def login_user(
 @router.post("/refresh")
 @db_transaction_handler("token refresh", auto_commit=True)
 async def refresh_access_token(
-    request: Request,
+    token_data: RefreshTokenRequest,  # CHANGED: Added Pydantic schema
+    request: Request,  # CHANGED: Moved to second position
     db: AsyncSession = Depends(get_async_db)
 ):
     """
     Refresh access token using refresh token.
     """
-    # Extract refresh token from request body
-    body = await request.json()
-    refresh_token = body.get("refresh_token")
+    try:
+        # CHANGED: Access refresh_token from Pydantic model
+        refresh_token = token_data.refresh_token
+
+        if not refresh_token:
+            return error(
+                message="Refresh token is required",
+                code=ErrorCode.INVALID_VALUE,
+                status_code=400,
+                severity=ErrorSeverity.LOW,
+                request=request
+            )
+
+        # Use auth service
+        auth_service = AuthService(db)
+        tokens = await auth_service.refresh_token(refresh_token)
 
     if not refresh_token:
         raise RextValidationException(
@@ -507,7 +531,8 @@ async def verify_email(
 @router.post("/resend-verification")
 @db_transaction_handler("resend verification", auto_commit=True)
 async def resend_verification(
-    request: Request,
+    email_data: ResendVerificationRequest,  # CHANGED: Added Pydantic schema
+    request: Request,  # CHANGED: Moved to second position
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_async_db),
     _rate_limit: None = Depends(registration_rate_limit())
@@ -515,42 +540,62 @@ async def resend_verification(
     """
     Resend email verification link.
     """
-    body = await request.json()
-    email = body.get("email")
+    try:
+        # CHANGED: Access email from Pydantic model
+        email = email_data.email
 
-    if not email:
-        raise RextValidationException(
-            message="Email is required"
+        if not email:
+            return error(
+                message="Email is required",
+                code=ErrorCode.INVALID_VALUE,
+                status_code=400,
+                severity=ErrorSeverity.LOW,
+                request=request
+            )
+
+        # Use auth service
+        auth_service = AuthService(db)
+        user, verification_token = await auth_service.resend_verification_email(email)
+
+        # Get frontend URL
+        frontend_url = settings.FRONTEND_URL
+
+        # Send verification email in background
+        background_tasks.add_task(
+            send_verification_email_task,
+            email=user.email,
+            first_name=user.full_name or user.display_name,
+            verification_token=verification_token,
+            user_id=str(user.id),
+            frontend_url=frontend_url
         )
 
-    # Use auth service
-    auth_service = AuthService(db)
-    user, verification_token = await auth_service.resend_verification_email(email)
+        logger.info(f"Verification email resent to: {user.email}")
+        return success(
+            data={"message": "Verification email has been resent"},
+            request=request,
+            message="Verification email sent successfully"
+        )
 
-    # Get frontend URL
-    frontend_url = settings.FRONTEND_URL
-
-    # Send verification email in background
-    background_tasks.add_task(
-        send_verification_email_task,
-        email=user.email,
-        first_name=user.full_name or user.display_name,
-        verification_token=verification_token,
-        user_id=str(user.id),
-        frontend_url=frontend_url
-    )
-
-    logger.info(f"Verification email resent to: {user.email}")
-    return {
-        "message": "Verification email has been resent"
-    }
+    except (RextAuthenticationException, ResourceNotFoundException):
+        raise
+    except Exception as e:
+        logger.error(f"Resend verification error: {str(e)}")
+        return error(
+            message="Failed to resend verification email",
+            code=ErrorCode.INTERNAL_SERVER_ERROR,
+            status_code=500,
+            severity=ErrorSeverity.HIGH,
+            request=request
+        )
 
 
 @router.post("/oauth/login")
 @db_transaction_handler("oauth login", auto_commit=True)
 async def oauth_login(
     request: Request,
-    db: AsyncSession = Depends(get_async_db)
+    db: AsyncSession = Depends(get_async_db),
+    _rate_limit: None = Depends(oauth_rate_limit())
 ):
     """
     Login or register user via OAuth provider.
@@ -558,67 +603,113 @@ async def oauth_login(
     from src.services.oauth_service import OAuthService
     from datetime import datetime
 
-    body = await request.json()
+    try:
+        # CHANGED: Access data from Pydantic model instead of request.json()
+        # Parse token_expires_at from ISO string to datetime (if provided)
+        # Database uses TIMESTAMP WITHOUT TIME ZONE, so we need timezone-naive datetimes
+        token_expires_at = None
+        if oauth_data.token_expires_at:
+            try:
+                expires_str = oauth_data.token_expires_at
+                # Handle ISO format with 'Z' suffix (e.g., '2025-01-01T00:00:00Z')
+                if expires_str.endswith('Z'):
+                    expires_str = expires_str[:-1]  # Remove 'Z' to get naive datetime
+                parsed_dt = datetime.fromisoformat(expires_str)
+                # If parsed datetime has timezone info, convert to naive UTC
+                if parsed_dt.tzinfo is not None:
+                    parsed_dt = parsed_dt.replace(tzinfo=None)
+                token_expires_at = parsed_dt
+            except (ValueError, AttributeError) as e:
+                logger.warning(f"Failed to parse token_expires_at: {oauth_data.token_expires_at}, error: {e}")
 
-    # Parse token_expires_at
-    token_expires_at = None
-    if body.get("token_expires_at"):
-        try:
-            expires_str = body.get("token_expires_at")
-            if expires_str.endswith('Z'):
-                expires_str = expires_str[:-1]
-            parsed_dt = datetime.fromisoformat(expires_str)
-            if parsed_dt.tzinfo is not None:
-                parsed_dt = parsed_dt.replace(tzinfo=None)
-            token_expires_at = parsed_dt
-        except (ValueError, AttributeError) as e:
-            logger.warning(f"Failed to parse token_expires_at: {body.get('token_expires_at')}, error: {e}")
+        oauth_service = OAuthService(db)
+        new_user, tokens = await oauth_service.oauth_login_or_register(
+            provider=oauth_data.provider,
+            provider_account_id=oauth_data.provider_account_id,
+            provider_email=oauth_data.provider_email,
+            provider_name=oauth_data.provider_name,
+            provider_avatar_url=oauth_data.provider_avatar_url,
+            provider_username=oauth_data.provider_username,
+            access_token=oauth_data.access_token,
+            refresh_token=oauth_data.refresh_token,
+            token_expires_at=token_expires_at
+        )
 
-    oauth_service = OAuthService(db)
-    new_user, tokens = await oauth_service.oauth_login_or_register(
-        provider=body.get("provider"),
-        provider_account_id=body.get("provider_account_id"),
-        provider_email=body.get("provider_email"),
-        provider_name=body.get("provider_name", ""),
-        provider_avatar_url=body.get("provider_avatar_url"),
-        provider_username=body.get("provider_username"),
-        access_token=body.get("access_token"),
-        refresh_token=body.get("refresh_token"),
-        token_expires_at=token_expires_at
-    )
+        # Check if notification preferences already exist for this user
+        # (OAuth can return existing users, so we should only create prefs for new users)
+        from sqlalchemy import select
+        existing_prefs_result = await db.execute(
+            select(NotificationPreferences).where(NotificationPreferences.user_id == new_user.id)
+        )
+        existing_prefs = existing_prefs_result.scalar_one_or_none()
+        
+        if not existing_prefs:
+            # Create notification preferences only for new users
+            notification_preference = NotificationPreferences(
+                user_id=new_user.id,
+                email_notifications=True,
+                in_app_notifications=True,
+                ws_invite_received=True,
+                ws_invite_accepted=True,
+                ws_role_changed=True,
+                ws_member_removed=True,
+                gen_started=True,
+                gen_completed=True,
+                gen_failed=True,
+                gen_published=True,
+                billing_payment_success=True,
+                billing_payment_failed=True,
+                billing_subscription_cancelled=True,
+                billing_subscription_expiring=True,
+                billing_trial_ending=True,
+                billing_usage_limit_warning=True,
+                billing_usage_limit_exceeded=True,
+                kb_processing_completed=True,
+                kb_processing_failed=True,
+                digest_enabled=True,
+                digest_frequency="daily",
+                marketing_updates=False
+            )
+            db.add(notification_preference)
+            await db.commit()
+            logger.info(f"Created notification preferences for new OAuth user: {new_user.id}")
+        
+        await db.refresh(new_user)
+        # Extract roles and permissions from service response (same pattern as login)
+        role_names = tokens.get("roles", [])
+        permissions = tokens.get("permissions", [])
 
-    # Check notification preferences
-    from sqlalchemy import select
-    existing_prefs_result = await db.execute(
-        select(NotificationPreferences).where(NotificationPreferences.user_id == new_user.id)
-    )
-    existing_prefs = existing_prefs_result.scalar_one_or_none()
-    
-    if not existing_prefs:
-        notification_preference = NotificationPreferences(
-            user_id=new_user.id,
-            email_notifications=True,
-            in_app_notifications=True,
-            ws_invite_received=True,
-            ws_invite_accepted=True,
-            ws_role_changed=True,
-            ws_member_removed=True,
-            gen_started=True,
-            gen_completed=True,
-            gen_failed=True,
-            gen_published=True,
-            billing_payment_success=True,
-            billing_payment_failed=True,
-            billing_subscription_cancelled=True,
-            billing_subscription_expiring=True,
-            billing_trial_ending=True,
-            billing_usage_limit_warning=True,
-            billing_usage_limit_exceeded=True,
-            kb_processing_completed=True,
-            kb_processing_failed=True,
-            digest_enabled=True,
-            digest_frequency="daily",
-            marketing_updates=False
+        return success(
+            data={
+                **tokens,
+                "user": {
+                    "id": str(new_user.id),
+                    "email": new_user.email,
+                    "full_name": new_user.full_name,
+                    "display_name": new_user.display_name,
+                    "avatar_url": new_user.avatar_url,
+                    "last_login_at": new_user.last_login_at,
+                    "login_count": new_user.login_count,
+                    "roles": role_names,
+                    "permissions": permissions
+                }
+            },
+            request=request,
+            message="OAuth login successful"
+        )
+
+    except RextAuthenticationException:
+        raise
+    except DuplicateResourceException:
+        raise
+    except Exception as e:
+        logger.error(f"OAuth login failed: {str(e)}", exc_info=True)
+        return error(
+            message="OAuth login failed",
+            code=ErrorCode.INTERNAL_SERVER_ERROR,
+            status_code=500,
+            severity=ErrorSeverity.HIGH,
+            request=request
         )
         db.add(notification_preference)
         await db.flush()
@@ -645,9 +736,12 @@ async def oauth_login(
 @router.post("/oauth/link")
 @db_transaction_handler("link oauth", auto_commit=True)
 async def link_oauth(
-    request: Request,
+    oauth_data: OAuthLinkRequest,  # CHANGED: Added Pydantic schema
+    request: Request,  # CHANGED: Moved to second position
     current_user: dict = Depends(get_current_user),
-    db: AsyncSession = Depends(get_async_db)
+    db: AsyncSession = Depends(get_async_db),
+    _rate_limit: None = Depends(oauth_rate_limit())
+
 ):
     """
     Link an OAuth account to the current user.
@@ -655,37 +749,57 @@ async def link_oauth(
     from src.services.oauth_service import OAuthService
     from datetime import datetime
 
-    body = await request.json()
-    user_id = UUID(current_user.get("identity"))
+    try:
+        # CHANGED: Access data from Pydantic model instead of request.json()
+        user_id = UUID(current_user.get("identity"))
 
-    # Parse token_expires_at
-    token_expires_at = None
-    if body.get("token_expires_at"):
-        try:
-            expires_str = body.get("token_expires_at")
-            if expires_str.endswith('Z'):
-                expires_str = expires_str[:-1]
-            parsed_dt = datetime.fromisoformat(expires_str)
-            if parsed_dt.tzinfo is not None:
-                parsed_dt = parsed_dt.replace(tzinfo=None)
-            token_expires_at = parsed_dt
-        except (ValueError, AttributeError) as e:
-            logger.warning(f"Failed to parse token_expires_at: {body.get('token_expires_at')}, error: {e}")
+        # Parse token_expires_at from ISO string to datetime (if provided)
+        # Database uses TIMESTAMP WITHOUT TIME ZONE, so we need timezone-naive datetimes
+        token_expires_at = None
+        if oauth_data.token_expires_at:
+            try:
+                expires_str = oauth_data.token_expires_at
+                # Handle ISO format with 'Z' suffix (e.g., '2025-01-01T00:00:00Z')
+                if expires_str.endswith('Z'):
+                    expires_str = expires_str[:-1]  # Remove 'Z' to get naive datetime
+                parsed_dt = datetime.fromisoformat(expires_str)
+                # If parsed datetime has timezone info, convert to naive UTC
+                if parsed_dt.tzinfo is not None:
+                    parsed_dt = parsed_dt.replace(tzinfo=None)
+                token_expires_at = parsed_dt
+            except (ValueError, AttributeError) as e:
+                logger.warning(f"Failed to parse token_expires_at: {oauth_data.token_expires_at}, error: {e}")
 
-    oauth_service = OAuthService(db)
-    oauth_account = await oauth_service.link_oauth_account(
-        user_id=user_id,
-        provider=body.get("provider"),
-        provider_account_id=body.get("provider_account_id"),
-        provider_email=body.get("provider_email"),
-        provider_username=body.get("provider_username"),
-        provider_avatar_url=body.get("provider_avatar_url"),
-        access_token=body.get("access_token"),
-        refresh_token=body.get("refresh_token"),
-        token_expires_at=token_expires_at
-    )
+        oauth_service = OAuthService(db)
+        oauth_account = await oauth_service.link_oauth_account(
+            user_id=user_id,
+            provider=oauth_data.provider,
+            provider_account_id=oauth_data.provider_account_id,
+            provider_email=oauth_data.provider_email,
+            provider_username=oauth_data.provider_username,
+            provider_avatar_url=oauth_data.provider_avatar_url,
+            access_token=oauth_data.access_token,
+            refresh_token=oauth_data.refresh_token,
+            token_expires_at=token_expires_at
+        )
 
-    return oauth_account.to_dict()
+        return success(
+            data=oauth_account.to_dict(),
+            request=request,
+            message=f"{oauth_data.provider.capitalize()} account linked successfully"
+        )
+
+    except (DuplicateResourceException, ResourceNotFoundException):
+        raise
+    except Exception as e:
+        logger.error(f"OAuth link failed: {str(e)}", exc_info=True)
+        return error(
+            message="Failed to link OAuth account",
+            code=ErrorCode.INTERNAL_SERVER_ERROR,
+            status_code=500,
+            severity=ErrorSeverity.HIGH,
+            request=request
+        )
 
 
 @router.delete("/oauth/{provider}")
@@ -694,7 +808,9 @@ async def unlink_oauth(
     provider: str,
     request: Request,
     current_user: dict = Depends(get_current_user),
-    db: AsyncSession = Depends(get_async_db)
+    db: AsyncSession = Depends(get_async_db),
+    _rate_limit: None = Depends(oauth_rate_limit())
+
 ):
     """
     Unlink an OAuth account from the current user.

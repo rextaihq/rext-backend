@@ -12,7 +12,7 @@ from sqlalchemy import select
 from fastapi import BackgroundTasks
 
 from src.api.models.user_models.users import Users
-from src.api.models.user_models.email_preferences import EmailPreferences
+from src.api.models.user_models.notification_preferences import NotificationPreferences
 from src.providers.email.factory import get_email_provider
 from src.utils.logger import logger
 
@@ -222,7 +222,7 @@ class BillingEmailService:
         html_content = render_subscription_expiring_soon_email(
             user_name=user.full_name or user.display_name or user.email,
             plan_name=plan_name,
-            expiry_date=datetime.utcnow().strftime("%B %d, %Y"),
+            expiry_date=datetime.now(timezone.utc).strftime("%B %d, %Y"),
             days_remaining=0
         )
 
@@ -273,16 +273,31 @@ class BillingEmailService:
 
     async def _check_preferences(self, user_id: UUID, preference_key: str) -> bool:
         """Check if user has billing notifications enabled."""
-        query = select(EmailPreferences).where(EmailPreferences.user_id == user_id)
+        query = select(NotificationPreferences).where(
+            NotificationPreferences.user_id == user_id
+        )
         result = await self.db.execute(query)
         prefs = result.scalar_one_or_none()
 
         if not prefs:
-            return True  # Default to enabled
+            return True  # Default to enabled if no preferences set
 
-        # Check billing_notifications preference
-        return getattr(prefs, preference_key, True)
+        # Check master email toggle first
+        if not prefs.email_notifications:
+            return False
 
+        # Map billing preference keys to NotificationPreferences columns
+        billing_pref_mapping = {
+            "billing_notifications": "email_billing_updates",
+            "payment_succeeded": "billing_payment_success",
+            "payment_failed": "billing_payment_failed",
+            "subscription_cancelled": "billing_subscription_cancelled",
+            "trial_ending": "billing_trial_ending",
+        }
+        mapped_key = billing_pref_mapping.get(preference_key, preference_key)
+        return getattr(prefs, mapped_key, True)
+    
+    
     async def _send_email(
         self,
         to_email: str,

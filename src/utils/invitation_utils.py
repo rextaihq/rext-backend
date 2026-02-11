@@ -1,27 +1,25 @@
-"""Utility functions for invitation management."""
+"""Utility functions for invitation management (Async version)."""
+
 from datetime import datetime, timezone
 from typing import Optional
-from sqlalchemy.orm import Session
+
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from src.api.models.user_models.invitations import UserInvitations
 from src.utils.logger import logger
 
 
+# ------------------------------------------------------------------
+# CHECK EXPIRY (NO DB → stays sync)
+# ------------------------------------------------------------------
 def is_invitation_expired(invitation: UserInvitations) -> bool:
-    """
-    Check if an invitation has expired.
-
-    Args:
-        invitation: UserInvitations model instance
-
-    Returns:
-        bool: True if expired, False otherwise
-    """
+    """Check if an invitation has expired."""
     if not invitation.expires_at:
         return False
 
     now = datetime.now(timezone.utc)
 
-    # Handle both timezone-aware and naive datetimes
     expires_at = invitation.expires_at
     if expires_at.tzinfo is None:
         expires_at = expires_at.replace(tzinfo=timezone.utc)
@@ -29,77 +27,82 @@ def is_invitation_expired(invitation: UserInvitations) -> bool:
     return now > expires_at
 
 
-def cleanup_expired_invitations(db: Session) -> int:
+# ------------------------------------------------------------------
+# CLEANUP EXPIRED INVITATIONS
+# ------------------------------------------------------------------
+async def cleanup_expired_invitations(db: AsyncSession) -> int:
     """
     Mark all expired pending invitations as 'expired'.
-
-    Args:
-        db: Database session
-
-    Returns:
-        int: Number of invitations marked as expired
     """
     try:
         now = datetime.now(timezone.utc)
 
-        # Find all pending invitations that have expired
-        expired_invitations = db.query(UserInvitations).filter(
-            UserInvitations.status == "pending",
-            UserInvitations.expires_at < now
-        ).all()
+        # Async SELECT
+        result = await db.execute(
+            select(UserInvitations).where(
+                UserInvitations.status == "pending",
+                UserInvitations.expires_at < now,
+            )
+        )
+
+        expired_invitations = result.scalars().all()
 
         count = 0
         for invitation in expired_invitations:
             invitation.status = "expired"
             count += 1
 
-        db.commit()
-
         if count > 0:
+            await db.commit()
             logger.info(f"Marked {count} expired invitations as 'expired'")
+        else:
+            logger.info("No expired invitations found")
 
         return count
 
     except Exception as e:
         logger.error(f"Error cleaning up expired invitations: {str(e)}")
-        db.rollback()
+        await db.rollback()
         return 0
 
 
-def get_invitation_with_details(db: Session, invitation_id: str) -> Optional[dict]:
+# ------------------------------------------------------------------
+# GET INVITATION WITH DETAILS
+# ------------------------------------------------------------------
+async def get_invitation_with_details(
+    db: AsyncSession, invitation_id: str
+) -> Optional[dict]:
     """
     Get invitation with workspace and role details.
-
-    Args:
-        db: Database session
-        invitation_id: Invitation ID
-
-    Returns:
-        dict: Invitation details with related entities, or None if not found
     """
     from src.api.models.workspace_models.workspace_model import WorkspaceModel
     from src.api.models.user_models.roles import Role
     from src.api.models.user_models.users import Users
 
-    invitation = db.query(UserInvitations).filter(
-        UserInvitations.id == invitation_id
-    ).first()
+    # Get invitation
+    result = await db.execute(
+        select(UserInvitations).where(UserInvitations.id == invitation_id)
+    )
+    invitation = result.scalar_one_or_none()
 
     if not invitation:
         return None
 
-    # Get related entities
-    workspace = db.query(WorkspaceModel).filter(
-        WorkspaceModel.id == invitation.workspace_id
-    ).first()
+    # Fetch related entities (async)
+    workspace_result = await db.execute(
+        select(WorkspaceModel).where(WorkspaceModel.id == invitation.workspace_id)
+    )
+    workspace = workspace_result.scalar_one_or_none()
 
-    role = db.query(Role).filter(
-        Role.id == invitation.role_id
-    ).first()
+    role_result = await db.execute(
+        select(Role).where(Role.id == invitation.role_id)
+    )
+    role = role_result.scalar_one_or_none()
 
-    invited_by = db.query(Users).filter(
-        Users.id == invitation.invited_by_user_id
-    ).first()
+    invited_by_result = await db.execute(
+        select(Users).where(Users.id == invitation.invited_by_user_id)
+    )
+    invited_by = invited_by_result.scalar_one_or_none()
 
     return {
         "id": str(invitation.id),
@@ -113,5 +116,5 @@ def get_invitation_with_details(db: Session, invitation_id: str) -> Optional[dic
         "status": invitation.status,
         "created_at": invitation.created_at.isoformat() if invitation.created_at else None,
         "expires_at": invitation.expires_at.isoformat() if invitation.expires_at else None,
-        "is_expired": is_invitation_expired(invitation)
+        "is_expired": is_invitation_expired(invitation),
     }

@@ -55,13 +55,13 @@ async def get_notifications(
         # Build base query - exclude deleted and archived by default
         base_conditions = [
             Notification.user_id == user_id,
-            Notification.is_deleted == False,
-            Notification.is_archived == False,
+            Notification.is_deleted.is_(False),
+            Notification.is_archived.is_(False),
         ]
         
         # Add optional filters
         if unread_only:
-            base_conditions.append(Notification.is_read == False)
+            base_conditions.append(Notification.is_read.is_(False))
         
         if type:
             base_conditions.append(Notification.type == type)
@@ -76,7 +76,7 @@ async def get_notifications(
             except ValueError:
                 return error(
                     message="Invalid workspace_id format",
-                    code=ErrorCode.INVALID_INPUT,
+                    code=ErrorCode.INVALID_VALUE,
                     status_code=400,
                     severity=ErrorSeverity.LOW,
                     request=request
@@ -91,9 +91,9 @@ async def get_notifications(
         unread_query = select(func.count(Notification.id)).where(
             and_(
                 Notification.user_id == user_id,
-                Notification.is_read == False,
-                Notification.is_deleted == False,
-                Notification.is_archived == False,
+                Notification.is_read.is_(False),
+                Notification.is_deleted.is_(False),
+                Notification.is_archived.is_(False),
             )
         )
         unread_result = await db.execute(unread_query)
@@ -173,7 +173,7 @@ async def mark_notifications_as_read(
         if not notification_ids and not mark_all:
             return error(
                 message="You must provide either notification_ids or set mark_all=true",
-                code=ErrorCode.INVALID_INPUT,
+                code=ErrorCode.INVALID_VALUE,
                 status_code=400,
                 severity=ErrorSeverity.LOW,
                 request=request
@@ -184,8 +184,8 @@ async def mark_notifications_as_read(
             query = select(Notification).where(
                 and_(
                     Notification.user_id == user_id,
-                    Notification.is_read == False,
-                    Notification.is_deleted == False,
+                    Notification.is_read.is_(False),
+                    Notification.is_deleted.is_(False),
                 )
             )
             result = await db.execute(query)
@@ -216,7 +216,7 @@ async def mark_notifications_as_read(
                 except ValueError:
                     return error(
                         message=f"Invalid notification ID format: {nid}",
-                        code=ErrorCode.INVALID_INPUT,
+                        code=ErrorCode.INVALID_VALUE,
                         status_code=400,
                         severity=ErrorSeverity.LOW,
                         request=request
@@ -227,7 +227,7 @@ async def mark_notifications_as_read(
                 and_(
                     Notification.id.in_(notification_uuids),
                     Notification.user_id == user_id,
-                    Notification.is_deleted == False,
+                    Notification.is_deleted.is_(False),
                 )
             )
             result = await db.execute(query)
@@ -296,7 +296,7 @@ async def clear_notifications(
         if not notification_ids and not clear_all_read:
             return error(
                 message="You must provide either notification_ids or set clear_all_read=true",
-                code=ErrorCode.INVALID_INPUT,
+                code=ErrorCode.INVALID_VALUE,
                 status_code=400,
                 severity=ErrorSeverity.LOW,
                 request=request
@@ -307,8 +307,8 @@ async def clear_notifications(
             query = select(Notification).where(
                 and_(
                     Notification.user_id == user_id,
-                    Notification.is_read == True,
-                    Notification.is_deleted == False,
+                    Notification.is_read.is_(True),
+                    Notification.is_deleted.is_(False),
                 )
             )
             result = await db.execute(query)
@@ -339,7 +339,7 @@ async def clear_notifications(
                 except ValueError:
                     return error(
                         message=f"Invalid notification ID format: {nid}",
-                        code=ErrorCode.INVALID_INPUT,
+                        code=ErrorCode.INVALID_VALUE,
                         status_code=400,
                         severity=ErrorSeverity.LOW,
                         request=request
@@ -350,7 +350,7 @@ async def clear_notifications(
                 and_(
                     Notification.id.in_(notification_uuids),
                     Notification.user_id == user_id,
-                    Notification.is_deleted == False,
+                    Notification.is_deleted.is_(False),
                 )
             )
             result = await db.execute(query)
@@ -406,9 +406,9 @@ async def get_unread_count(
         query = select(func.count(Notification.id)).where(
             and_(
                 Notification.user_id == user_id,
-                Notification.is_read == False,
-                Notification.is_deleted == False,
-                Notification.is_archived == False,
+                Notification.is_read.is_(False),
+                Notification.is_deleted.is_(False),
+                Notification.is_archived.is_(False),
             )
         )
         result = await db.execute(query)
@@ -449,7 +449,7 @@ async def get_notification_by_id(
         except ValueError:
             return error(
                 message="Invalid notification ID format",
-                code=ErrorCode.INVALID_INPUT,
+                code=ErrorCode.INVALID_VALUE,
                 status_code=400,
                 severity=ErrorSeverity.LOW,
                 request=request
@@ -460,7 +460,7 @@ async def get_notification_by_id(
             and_(
                 Notification.id == notification_uuid,
                 Notification.user_id == user_id,
-                Notification.is_deleted == False,
+                Notification.is_deleted.is_(False),
             )
         )
         result = await db.execute(query)

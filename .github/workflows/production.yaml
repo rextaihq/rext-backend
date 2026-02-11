@@ -96,7 +96,7 @@ jobs:
         run: pip install langgraph-cli
 
       - name: Build Docker image with LangGraph
-        run: langgraph build -t ${{ secrets.DOCKER_USERNAME }}/wrext:latest
+        run: langgraph build -t ${{ secrets.DOCKER_USERNAME }}/wrext:dev
 
       - name: Push Docker image
-        run: docker push ${{ secrets.DOCKER_USERNAME }}/wrext:latest
+        run: docker push ${{ secrets.DOCKER_USERNAME }}/wrext:dev
