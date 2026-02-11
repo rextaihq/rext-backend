@@ -318,10 +318,11 @@ async def create_refund(
 
     except Exception as e:
         logger.error(
-            f"Failed to create refund for order {lemonsqueezy_order_id}: {str(e)}",
-            extra={"admin_user_id": str(admin_user_id), "error": str(e)}
+            f"Failed to create refund for order {lemonsqueezy_order_id}",
+            exc_info=True,
+            extra={"admin_user_id": str(admin_user_id)}
         )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to create refund: {str(e)}"
+            detail="Failed to create refund. Please try again later."
         )

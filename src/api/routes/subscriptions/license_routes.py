@@ -130,15 +130,15 @@ async def validate_license(
 
     except Exception as e:
         logger.error(
-            f"License validation failed: {str(e)}",
+            "License validation failed",
+            exc_info=True,
             extra={
-                "license_key_prefix": license_data.license_key[:8],
-                "error": str(e)
+                "license_key_prefix": license_data.license_key[:8]
             }
         )
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"License validation failed: {str(e)}"
+            detail="License validation failed. Please check your key and try again."
         )
 
 

@@ -47,7 +47,7 @@ def db_transaction_handler(
     auto_commit: bool = True,
     error_severity: ErrorSeverity = ErrorSeverity.HIGH,
     error_code: ErrorCode = ErrorCode.INTERNAL_SERVER_ERROR,
-    include_error_details: bool = True
+    include_error_details: bool = False
 ):
     """
     Decorator for automatic database transaction and error handling.

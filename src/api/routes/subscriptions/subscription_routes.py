@@ -434,63 +434,49 @@ async def cancel_subscription(
     user_id = current_user.get("identity")
     service = SubscriptionService(db)
 
-    try:
-        # Cancel subscription
-        subscription = await service.cancel(
-            user_id=user_id,
-            reason=cancel_data.reason,
-            cancel_immediately=cancel_data.cancel_immediately,
-            background_tasks=background_tasks
-        )
+    # Cancel subscription
+    subscription = await service.cancel(
+        user_id=user_id,
+        reason=cancel_data.reason,
+        cancel_immediately=cancel_data.cancel_immediately,
+        background_tasks=background_tasks
+    )
 
-        if not subscription:
-            return {
-                "success": False,
-                "meta": {"request_id": request.headers.get("X-Request-ID")},
-                "data": None,
-                "error": {
-                    "code": "not_found",
-                    "message": "No active subscription found to cancel",
-                    "severity": "high",
-                    "status_code": 404
-                }
-            }
-
-        message = (
-            "Subscription cancelled immediately"
-            if cancel_data.cancel_immediately
-            else f"Subscription will end on {subscription.end_date.strftime('%Y-%m-%d') if subscription.end_date else 'N/A'}"
-        )
-
-        # Schedule cancellation notification
-        await schedule_if_allowed(
-            db=db,
-            user_id=str(user_id),
-            background_tasks=background_tasks,
-            pref_flag="subscription_cancelled",
-            message="Your subscription has been cancelled.",
-            payload={"subscription_id": str(subscription.id), "type": "cancelled"},
-        )
-
-        return {
-            "success": True,
-            "meta": {"request_id": request.headers.get("X-Request-ID")},
-            "data": subscription.to_dict(),
-            "message": message
-        }
-
-    except Exception as e:
+    if not subscription:
         return {
             "success": False,
             "meta": {"request_id": request.headers.get("X-Request-ID")},
             "data": None,
             "error": {
-                "code": "internal_server_error",
-                "message": str(e),
+                "code": "not_found",
+                "message": "No active subscription found to cancel",
                 "severity": "high",
-                "status_code": 500
+                "status_code": 404
             }
         }
+
+    message = (
+        "Subscription cancelled immediately"
+        if cancel_data.cancel_immediately
+        else f"Subscription will end on {subscription.end_date.strftime('%Y-%m-%d') if subscription.end_date else 'N/A'}"
+    )
+
+    # Schedule cancellation notification
+    await schedule_if_allowed(
+        db=db,
+        user_id=str(user_id),
+        background_tasks=background_tasks,
+        pref_flag="subscription_cancelled",
+        message="Your subscription has been cancelled.",
+        payload={"subscription_id": str(subscription.id), "type": "cancelled"},
+    )
+
+    return {
+        "success": True,
+        "meta": {"request_id": request.headers.get("X-Request-ID")},
+        "data": subscription.to_dict(),
+        "message": message
+    }
 
 @router.get("/usage", response_model=dict)
 @require_permissions("usage.read", workspace_scoped=False)
@@ -704,8 +690,9 @@ async def get_invoices(
 
     except Exception as e:
         logger.error(
-            f"Failed to retrieve invoices: {str(e)}",
-            extra={"user_id": str(user_id), "error": str(e)}
+            "Failed to retrieve invoices",
+            exc_info=True,
+            extra={"user_id": str(user_id)}
         )
         # Return empty list on error rather than failing
         return success(
