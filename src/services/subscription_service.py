@@ -595,6 +595,7 @@ class SubscriptionService:
 
         # Update local subscription
         subscription.cancelled_at = datetime.now(timezone.utc)
+        subscription.cancellation_reason = reason
         subscription.cancel_at_period_end = not cancel_immediately
 
         if cancel_immediately:

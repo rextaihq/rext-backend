@@ -6,6 +6,7 @@ enabling analytics and fraud prevention.
 """
 
 from datetime import datetime, timezone
+from decimal import Decimal
 from typing import Optional
 from uuid import UUID
 
@@ -57,7 +58,7 @@ class DiscountUsage(Base, SerializableMixin):
         index=True
     )
 
-    discount_amount: Mapped[Optional[float]] = mapped_column(
+    discount_amount: Mapped[Optional[Decimal]] = mapped_column(
         Numeric(10, 2),
         nullable=True,
         comment="Amount saved (in currency or percentage)"
@@ -120,6 +121,8 @@ class DiscountUsage(Base, SerializableMixin):
         data = super().to_dict(**kwargs)
         if 'usage_metadata' in data:
             data['metadata'] = data.pop('usage_metadata')
+        if 'discount_amount' in data and isinstance(data['discount_amount'], Decimal):
+            data['discount_amount'] = str(data['discount_amount'])
         return data
 
 

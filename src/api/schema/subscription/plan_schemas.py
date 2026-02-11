@@ -4,7 +4,7 @@ Subscription plan schemas for admin management.
 This module defines Pydantic models for subscription plan operations.
 """
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 from typing import Optional, Dict, Any
 from decimal import Decimal
 
@@ -93,8 +93,8 @@ class SubscriptionPlanCreate(BaseModel):
         description="LemonSqueezy variant ID for yearly billing"
     )
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "name": "startup",
                 "display_name": "Startup Plan",
@@ -115,6 +115,7 @@ class SubscriptionPlanCreate(BaseModel):
                 "is_public": True
             }
         }
+    )
 
 
 class SubscriptionPlanUpdate(BaseModel):
@@ -213,8 +214,8 @@ class SubscriptionPlanResponse(BaseModel):
     is_public: bool = Field(..., description="Whether the plan is public")
     created_at: str = Field(..., description="Creation timestamp")
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "id": "123e4567-e89b-12d3-a456-426614174000",
                 "name": "pro",
@@ -236,3 +237,4 @@ class SubscriptionPlanResponse(BaseModel):
                 "created_at": "2025-10-02T18:00:00Z"
             }
         }
+    )
