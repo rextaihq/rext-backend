@@ -26,9 +26,9 @@ class KnowledgeBase(Base, SerializableMixin):
 
     # Relationships
     workspace = relationship("WorkspaceModel", back_populates="knowledge_bases")
-    websites = relationship("Website", back_populates="knowledge_base", cascade="all, delete-orphan")
-    knowledge_files = relationship("KnowledgeFiles", back_populates="knowledge_base", cascade="all, delete-orphan")
-    text_knowledge = relationship("TextKnowledge", back_populates="knowledge_base", cascade="all, delete-orphan")
+    websites = relationship("Website", back_populates="knowledge_base", cascade="all, delete-orphan", passive_deletes=True)
+    knowledge_files = relationship("KnowledgeFiles", back_populates="knowledge_base", cascade="all, delete-orphan", passive_deletes=True)
+    text_knowledge = relationship("TextKnowledge", back_populates="knowledge_base", cascade="all, delete-orphan", passive_deletes=True)
 
     def to_dict(self, **kwargs) -> dict:
         """
