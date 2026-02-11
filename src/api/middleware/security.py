@@ -3,6 +3,7 @@ Security Headers Middleware
 
 Adds security-related HTTP headers to all responses.
 """
+
 from fastapi import Request
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response
@@ -15,7 +16,9 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     Headers added:
     - X-Content-Type-Options: Prevents MIME type sniffing
     - X-Frame-Options: Prevents clickjacking
-    - X-XSS-Protection: Enables XSS filter in browsers
+    - Content-Security-Policy: Controls allowed content sources
+    - Referrer-Policy: Controls referrer information
+    - Permissions-Policy: Restricts browser features
     - Strict-Transport-Security: Forces HTTPS (only on HTTPS requests)
     """
 
@@ -26,7 +29,8 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers["X-Content-Type-Options"] = "nosniff"
 
         # Prevent clickjacking
-        response.headers["X-Frame-Options"] = "DENY"
+        # Uncomment if you don't embed your site in iframes
+        # response.headers["X-Frame-Options"] = "DENY"
 
         # Content Security Policy
         # Restricts where resources can be loaded from and blocks embedding
@@ -42,15 +46,17 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers["Content-Security-Policy"] = csp
 
         # Referrer Policy
-        # Controls how much referrer information is included with requests
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
 
         # Permissions Policy
-        # Disables unused browser features for enhanced privacy
-        response.headers["Permissions-Policy"] = "geolocation=(), camera=(), microphone=()"
+        response.headers["Permissions-Policy"] = (
+            "geolocation=(), camera=(), microphone=()"
+        )
 
-        # HSTS (only for HTTPS)
+        # HSTS (only apply on HTTPS)
         if request.url.scheme == "https":
-            response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+            response.headers["Strict-Transport-Security"] = (
+                "max-age=31536000; includeSubDomains"
+            )
 
         return response

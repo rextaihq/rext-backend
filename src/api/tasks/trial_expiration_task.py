@@ -5,7 +5,7 @@ This task should be scheduled to run daily (recommended at midnight UTC).
 It checks for expiring trials and sends reminder emails.
 """
 import asyncio
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List
 from sqlalchemy.ext.asyncio import AsyncSession
 

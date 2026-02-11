@@ -26,7 +26,7 @@ Security:
 
 from typing import Optional, List
 from uuid import UUID
-from datetime import datetime, timedelta
+from datetime import datetime, timezone, timedelta
 import secrets
 import hashlib
 

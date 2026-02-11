@@ -7,7 +7,7 @@ https://resend.com/docs/api-reference/webhooks/event-types
 """
 from pydantic import BaseModel, Field, EmailStr
 from typing import Literal, Optional, Dict, Any
-from datetime import datetime
+from datetime import datetime, timezone
 
 
 class WebhookEmailData(BaseModel):

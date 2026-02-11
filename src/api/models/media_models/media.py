@@ -103,7 +103,7 @@ class Media(Base, SerializableMixin, SoftDeleteMixin):
     # Relationships
     workspace = relationship("WorkspaceModel", back_populates="media")
     user = relationship("Users", back_populates="media")
-    used_in_content = relationship("ContentMedia", back_populates="media")
+    used_in_content = relationship("ContentMedia", back_populates="media", cascade="all, delete-orphan", passive_deletes=True)
     def __repr__(self) -> str:
         return f"<Media(id={self.id}, filename={self.filename}, type={self.file_type})>"
 

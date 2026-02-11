@@ -18,7 +18,7 @@ Does NOT:
 
 from typing import Dict, Any, Optional
 from uuid import UUID
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -34,7 +34,7 @@ from src.api.middleware.exceptions import (
     RextValidationException,
     RextAuthenticationException
 )
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlalchemy import select
 from src.api.models.user_models.impersonation_session import ImpersonationSession
 

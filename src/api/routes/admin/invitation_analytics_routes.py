@@ -3,7 +3,7 @@ Invitation Analytics Routes
 
 Admin endpoints for tracking and analyzing invitation metrics.
 """
-from datetime import datetime, timedelta
+from datetime import datetime, timezone, timedelta
 from typing import Optional
 from uuid import UUID
 

@@ -8,7 +8,7 @@ Provides CSV export functionality for:
 """
 import csv
 import io
-from datetime import datetime, timedelta
+from datetime import datetime, timezone, timedelta
 from typing import List, Dict, Any, Optional
 from sqlalchemy import and_, or_, desc, func
 from sqlalchemy.ext.asyncio import AsyncSession

@@ -4,7 +4,7 @@ Email Analytics Service
 Service for calculating email analytics and performance metrics.
 Supports workspace-scoped filtering for multi-tenancy.
 """
-from datetime import datetime, timedelta
+from datetime import datetime, timezone, timedelta
 from typing import Optional, Dict, List, Any
 from uuid import UUID
 

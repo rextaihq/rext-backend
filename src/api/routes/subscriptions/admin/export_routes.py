@@ -9,7 +9,7 @@ All endpoints require super admin permissions.
 
 import csv
 import io
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Request, Query

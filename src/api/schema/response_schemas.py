@@ -30,7 +30,7 @@ Usage:
     )
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Dict, List, Optional, Union
 from uuid import uuid4
@@ -419,7 +419,7 @@ def create_error_response(
     if details:
         # Details might already be dicts (from exceptions) or Pydantic models
         error_data["details"] = [
-            detail.dict() if hasattr(detail, 'dict') else detail
+            detail.model_dump() if hasattr(detail, 'model_dump') else detail
             for detail in details
         ]
 

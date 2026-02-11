@@ -108,6 +108,7 @@ class PlatformAdminInvitations(Base, SerializableMixin):
         UUID(as_uuid=True),
         ForeignKey("users.id", ondelete="SET NULL"),
         nullable=True,
+        index=True,
         comment="Admin who sent the invitation"
     )
 
@@ -136,6 +137,7 @@ class PlatformAdminInvitations(Base, SerializableMixin):
         UUID(as_uuid=True),
         ForeignKey("users.id", ondelete="SET NULL"),
         nullable=True,
+        index=True,
         comment="User who accepted the invitation"
     )
 
@@ -163,6 +165,7 @@ class PlatformAdminInvitations(Base, SerializableMixin):
         UUID(as_uuid=True),
         ForeignKey("users.id", ondelete="SET NULL"),
         nullable=True,
+        index=True,
         comment="Admin who revoked the invitation"
     )
 

@@ -7,7 +7,7 @@ Implements provider abstraction pattern for easy switching between email service
 from abc import ABC, abstractmethod
 from typing import List, Optional, Dict, Any
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 
 
 @dataclass

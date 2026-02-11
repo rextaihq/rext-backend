@@ -17,7 +17,7 @@ Features:
 import functools
 import json
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Union, Callable, TypeVar, Generic
 from uuid import uuid4, UUID
 

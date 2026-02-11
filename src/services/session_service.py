@@ -54,7 +54,7 @@ class SessionService:
         result = await self.db.execute(
             select(UserSession).where(
                 UserSession.user_id == user_id,
-                UserSession.is_active == True
+                UserSession.is_active.is_(True)
             ).order_by(UserSession.created_at.desc())
         )
         sessions = result.scalars().all()
@@ -167,7 +167,7 @@ class SessionService:
         # Get all active sessions
         query = select(UserSession).where(
             UserSession.user_id == user_id,
-            UserSession.is_active == True
+            UserSession.is_active.is_(True)
         )
 
         if exclude_session_id:

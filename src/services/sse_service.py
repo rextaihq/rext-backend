@@ -4,7 +4,7 @@ import asyncio
 from asyncio import Queue
 from collections import deque
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone, timedelta, timezone
 from typing import Any, AsyncIterator, Deque, Dict, List, Optional
 from uuid import UUID, uuid4
 
@@ -52,7 +52,7 @@ class OperationEvent(BaseModel):
     message: str
     progress: Optional[int] = None
     payload: Optional[Dict[str, object]] = None
-    timestamp: str = Field(default_factory=lambda: _utcnow().isoformat())
+    timestamp: str = Field(default_factory=lambda: _now(timezone.utc).isoformat())
 
 
 class EventStreamManager:
@@ -161,7 +161,7 @@ class EventStreamManager:
                 state = _OperationState()
                 self._operations[operation_id] = state
 
-            state.last_event_at = _utcnow()
+            state.last_event_at = _now(timezone.utc)
             state.pending_events.append(formatted)
             while len(state.pending_events) > self._pending_event_limit:
                 state.pending_events.popleft()
@@ -216,7 +216,7 @@ class EventStreamManager:
 
     async def cleanup_stale_operations(self) -> None:
         """Remove operations that have no subscribers and are stale or completed."""
-        now = _utcnow()
+        now = _now(timezone.utc)
         async with self._lock:
             stale_ids = [
                 op_id
@@ -333,7 +333,7 @@ class EventStreamManager:
     async def _enqueue_event(self, subscription: _Subscription, event_text: str) -> None:
         try:
             await subscription.queue.put(event_text)
-            subscription.last_activity = _utcnow()
+            subscription.last_activity = _now(timezone.utc)
         except asyncio.CancelledError:
             raise
         except Exception as exc:  # pragma: no cover - defensive logging

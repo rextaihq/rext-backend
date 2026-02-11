@@ -16,7 +16,7 @@ Features:
 
 import json
 import traceback
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Callable, Dict, Any, Optional
 
 from fastapi import FastAPI, Request, HTTPException

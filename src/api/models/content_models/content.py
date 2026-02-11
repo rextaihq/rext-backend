@@ -41,7 +41,5 @@ class Content(Base, SerializableMixin, UUIDPrimaryKeyMixin, TimestampMixin, Work
     # Relationships
     workspace = relationship("WorkspaceModel", back_populates="content_items")
     created_by = relationship("Users", foreign_keys=[created_by_user_id])
-    seo_data = relationship("ContentSEOData", back_populates="content", uselist=False, cascade="all, delete-orphan")
-    media_items = relationship("ContentMedia", back_populates="content", cascade="all, delete-orphan")
-    def to_dict(self, **kwargs):
-        return super().to_dict(**kwargs)
+    seo_data = relationship("ContentSEOData", back_populates="content", uselist=False, cascade="all, delete-orphan", passive_deletes=True)
+    media_items = relationship("ContentMedia", back_populates="content", cascade="all, delete-orphan", passive_deletes=True)

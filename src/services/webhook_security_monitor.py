@@ -24,7 +24,7 @@ Usage:
         # Send alert to security team
 """
 
-from datetime import datetime, timedelta
+from datetime import datetime, timezone, timedelta
 from typing import Dict, List, Optional
 from collections import defaultdict, deque
 from dataclasses import dataclass

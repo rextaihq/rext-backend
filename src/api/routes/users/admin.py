@@ -7,7 +7,6 @@ from src.api.middleware.permissions import is_admin
 from src.api.security.dependencies import get_current_user
 from src.services.user_service import UserService
 from src.utils.logger import logger
-from src.utils.response_utils import success
 from src.utils.route_decorators import db_transaction_handler
 
 router = APIRouter()
@@ -30,14 +29,10 @@ async def cleanup_deactivated_accounts_endpoint(
         extra={"admin_user_id": current_user.get("identity"), "deleted_count": deleted_count},
     )
 
-    return success(
-        data={
-            "deleted_count": deleted_count,
-            "message": f"Successfully deleted {deleted_count} deactivated account(s)",
-        },
-        request=request,
-        message=f"Cleaned up {deleted_count} deactivated account(s)",
-    )
+    return {
+        "deleted_count": deleted_count,
+        "message": f"Successfully deleted {deleted_count} deactivated account(s)"
+    }
 
 
 @router.get("/admin/pending-deletions")
@@ -57,11 +52,10 @@ async def get_pending_deletions_endpoint(
         extra={"admin_user_id": current_user.get("identity"), "count": len(pending)},
     )
 
-    return success(
-        data={"pending_deletions": pending, "count": len(pending)},
-        request=request,
-        message=f"Retrieved {len(pending)} account(s) pending deletion",
-    )
+    return {
+        "pending_deletions": pending,
+        "count": len(pending)
+    }
 
 
 @router.post("/admin/cleanup-tokens")
@@ -81,11 +75,7 @@ async def cleanup_tokens_endpoint(
         extra={"admin_user_id": current_user.get("identity"), "deleted_count": deleted_count},
     )
 
-    return success(
-        data={
-            "deleted_count": deleted_count,
-            "message": f"Successfully cleaned up {deleted_count} expired tokens",
-        },
-        request=request,
-        message=f"Cleaned up {deleted_count} expired tokens",
-    )
+    return {
+        "deleted_count": deleted_count,
+        "message": f"Successfully cleaned up {deleted_count} expired tokens"
+    }
