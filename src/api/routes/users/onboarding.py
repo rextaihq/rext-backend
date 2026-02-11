@@ -5,7 +5,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from langgraph_sdk import Auth
+
 
 from src.api.database.async_database import get_async_db
 from src.api.security.dependencies import get_current_user, get_current_user_optional
@@ -25,7 +25,7 @@ router = APIRouter(prefix="/onboarding", tags=["onboarding"])
 @router.get("", response_model=OnboardingResponse, status_code=status.HTTP_200_OK)
 async def get_onboarding_status(
     db: Annotated[AsyncSession, Depends(get_async_db)],
-    current_user: Annotated[Auth.types.MinimalUserDict | None, Depends(get_current_user_optional)],
+    current_user: Annotated[dict | None, Depends(get_current_user_optional)],
 ):
     """
     Get current user's onboarding status.
@@ -63,7 +63,7 @@ async def get_onboarding_status(
 async def update_onboarding_step(
     step_update: OnboardingStepUpdate,
     db: Annotated[AsyncSession, Depends(get_async_db)],
-    current_user: Annotated[Auth.types.MinimalUserDict, Depends(get_current_user)],
+    current_user: Annotated[dict, Depends(get_current_user)],
 ):
     """
     Update onboarding step.
@@ -105,7 +105,7 @@ async def update_onboarding_step(
 @router.post("/complete", response_model=OnboardingResponse, status_code=status.HTTP_200_OK)
 async def complete_onboarding(
     db: Annotated[AsyncSession, Depends(get_async_db)],
-    current_user: Annotated[Auth.types.MinimalUserDict, Depends(get_current_user)],
+    current_user: Annotated[dict, Depends(get_current_user)],
 ):
     """
     Mark onboarding as fully completed.
@@ -130,7 +130,7 @@ async def complete_onboarding(
 async def reset_onboarding(
     reset_data: OnboardingReset,
     db: Annotated[AsyncSession, Depends(get_async_db)],
-    current_user: Annotated[Auth.types.MinimalUserDict, Depends(get_current_user)],
+    current_user: Annotated[dict, Depends(get_current_user)],
 ):
     """
     Reset onboarding to start from beginning.
@@ -160,7 +160,7 @@ async def reset_onboarding(
 @router.get("/should-show", status_code=status.HTTP_200_OK)
 async def should_show_onboarding(
     db: Annotated[AsyncSession, Depends(get_async_db)],
-    current_user: Annotated[Auth.types.MinimalUserDict | None, Depends(get_current_user_optional)],
+    current_user: Annotated[dict | None, Depends(get_current_user_optional)],
 ):
     """
     Check if onboarding should be shown to the current user.
@@ -189,7 +189,7 @@ async def should_show_onboarding(
 async def update_marketing_data(
     marketing_data: OnboardingMarketingData,
     db: Annotated[AsyncSession, Depends(get_async_db)],
-    current_user: Annotated[Auth.types.MinimalUserDict, Depends(get_current_user)],
+    current_user: Annotated[dict, Depends(get_current_user)],
 ):
     """
     Update marketing data collected during onboarding.

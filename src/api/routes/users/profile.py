@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.utils.logger import logger
 from src.api.security.dependencies import get_current_user
 from src.utils.route_decorators import require_permissions
-from src.api.schema.user_schema import UpdateProfileRequest, DeactivateAccountRequest
+from src.api.schema.user_schema import UpdateProfileRequest, DeactivateAccountRequest, ProfileResponse
 from src.api.schema.notification_schema import NotificationPreferencesResponse, UpdateNotificationPreferencesRequest
 from src.api.database.async_database import get_async_db
 from src.utils.response_utils import success, error
@@ -45,21 +45,21 @@ async def get_profile(
         # Get user via service
         user = await service.get_user_by_id(user_id)
 
-        # Build profile response
-        profile_data = {
-            "id": str(user.id),
-            "email": user.email,
-            "full_name": user.full_name,
-            "display_name": user.display_name,
-            "bio": user.bio,
-            "language": user.language or "en",
-            "timezone": user.timezone or "UTC",
-            "status": user.status,
-            "email_verified": user.email_verified,
-            "avatar_url": user.avatar_url,
-            "created_at": user.created_at.isoformat() if user.created_at else None,
-            "updated_at": user.updated_at.isoformat() if user.updated_at else None
-        }
+        # Build profile response using schema
+        profile_data = ProfileResponse(
+            id=str(user.id),
+            email=user.email,
+            full_name=user.full_name,
+            display_name=user.display_name,
+            bio=user.bio,
+            language=user.language or "en",
+            timezone=user.timezone or "UTC",
+            status=user.status,
+            email_verified=user.email_verified,
+            avatar_url=user.avatar_url,
+            created_at=user.created_at.isoformat() if user.created_at else None,
+            updated_at=user.updated_at.isoformat() if user.updated_at else None
+        ).model_dump()
 
         return success(
             data={"profile": profile_data},

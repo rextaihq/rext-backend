@@ -131,14 +131,16 @@ class ProfileResponse(BaseModel):
     """Schema for profile response"""
     id: str
     email: str
-    full_name: Optional[str]
-    display_name: Optional[str]
-    language: str
-    timezone: str
+    full_name: Optional[str] = None
+    display_name: Optional[str] = None
+    bio: Optional[str] = None
+    language: str = "en"
+    timezone: str = "UTC"
     status: str
     email_verified: bool
-    created_at: str
-    updated_at: Optional[str]
+    avatar_url: Optional[str] = None
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
 
 
 class UserStatusRequest(BaseModel):

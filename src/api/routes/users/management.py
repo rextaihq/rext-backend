@@ -2,7 +2,6 @@ from fastapi import APIRouter, Depends, Request, BackgroundTasks, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from uuid import UUID
 import uuid
-import os
 from datetime import datetime
 
 from src.utils.logger import logger
