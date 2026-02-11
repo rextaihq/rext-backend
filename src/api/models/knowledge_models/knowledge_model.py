@@ -20,6 +20,7 @@ class KnowledgeBase(Base, SerializableMixin):
     name = Column(String(255), nullable=False)
     description = Column(Text, nullable=True)
     type = Column(String(50), nullable=False, default="custom")  # 'default' or 'custom'
+    created_by_user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
     updated_at = Column(DateTime(timezone=True), onupdate=lambda: datetime.now(timezone.utc), nullable=True)
 
@@ -95,9 +96,13 @@ class Website(Base, SerializableMixin):
     knowledge_base_id = Column(UUID(as_uuid=True), ForeignKey("knowledge_base.id", ondelete="CASCADE"), nullable=False, index=True)
 
     url = Column(String, nullable=False)
+    title = Column(String(255), nullable=True)
     status = Column(String, nullable=False, default="process")
     char_count = Column(Integer, nullable=True)
     word_count = Column(Integer, nullable=True)
+
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
+    updated_at = Column(DateTime(timezone=True), onupdate=lambda: datetime.now(timezone.utc), nullable=True)
 
     workspace = relationship("WorkspaceModel", back_populates="websites")
     knowledge_base = relationship("KnowledgeBase", back_populates="websites")
@@ -130,6 +135,7 @@ class KnowledgeFiles(Base, SerializableMixin):
     char_count = Column(Integer, nullable=True)
     word_count = Column(Integer, nullable=True)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
+    updated_at = Column(DateTime(timezone=True), onupdate=lambda: datetime.now(timezone.utc), nullable=True)
 
     # Security fields
     file_hash = Column(String(64), nullable=True, index=True)  # SHA-256 hash for duplicate detection

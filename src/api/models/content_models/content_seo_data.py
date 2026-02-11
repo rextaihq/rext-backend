@@ -20,7 +20,7 @@ class ContentSEOData(Base, SerializableMixin):
     keyphrase_density = Column(Float, nullable=True, comment="Keyphrase density percentage")
     secondary_keywords = Column(ARRAY(Text), nullable=True, comment="Secondary keywords")
     search_intent = Column(ARRAY(Text), nullable=True, comment="informational, navigational, etc.")
-    
+    trust_score = Column(Float, nullable=True, comment="Trust score of the content")
     # Scores
     seo_score = Column(Float, nullable=True)
     readability_score = Column(Float, nullable=True)

@@ -11,7 +11,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from dotenv import load_dotenv
-
+from src.api.tool.routes import router as tool_router
 # Local application imports
 from src.api.database.async_database import async_engine
 from src.api.middleware.request_tracker import RequestTrackerMiddleware
@@ -25,7 +25,7 @@ from src.api.config import settings
 from src.utils.response_utils import success
 from src.api.database.base import Base
 from src.utils.logger import logger
-
+from src.api.tool.routes import router as tool_router
 # Structured logging
 from src.api.lib.logging_config import configure_logging, RequestIDMiddleware
 
@@ -235,7 +235,7 @@ async def health_check(request: Request):
         "service": "rext-api",
         "version": "1.0.0",
         "environment": settings.ENVIRONMENT,
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
         "checks": {}
     }
 
@@ -294,7 +294,7 @@ async def liveness_check(request: Request):
     return {
         "status": "alive",
         "service": "rext-api",
-        "timestamp": datetime.utcnow().isoformat()
+        "timestamp": datetime.now(timezone.utc).isoformat()
     }
 
 
@@ -314,7 +314,7 @@ async def readiness_check(request: Request):
     status = {
         "status": "ready",
         "service": "rext-api",
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
         "checks": {}
     }
 

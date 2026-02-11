@@ -1,8 +1,17 @@
 from fastapi import APIRouter, Depends, Request, BackgroundTasks, Header
 from src.utils.logger import logger
 from src.api.security.dependencies import get_current_user
-from src.api.schema.user_schema import LoginUser, RegisterUser, RegisterWithInvitation, LoginWithInvitation
-from src.api.security.token_utils import verify_token
+from src.api.schema.user_schema import (
+    LoginUser, 
+    RegisterUser, 
+    RegisterWithInvitation, 
+    LoginWithInvitation,
+    RefreshTokenRequest,  # Added
+    ResendVerificationRequest,  # Added
+    OAuthLoginRequest,  # Added
+    OAuthLinkRequest  # Added
+)
+from src.api.security.token_utils import decode_and_verify_token
 from src.api.config import get_settings
 from sqlalchemy.ext.asyncio import AsyncSession
 from src.services.email_service import EmailService
@@ -22,7 +31,8 @@ from src.api.models.user_models.notification_preferences import NotificationPref
 import os
 from src.api.middleware.rate_limiter import (
     login_rate_limit,
-    registration_rate_limit
+    registration_rate_limit,
+    oauth_rate_limit
 )
 from src.services.auth_service import AuthService
 from src.services.invitation_service import InvitationService
@@ -125,26 +135,7 @@ async def create_user(
             full_name=user.full_name
         )
 
-        # IMPORTANT: Commit transaction before background task
-        # Background tasks run immediately and need the user to exist in the database
-        await db.commit()
-
-        # Get frontend URL from environment
-        frontend_url = settings.FRONTEND_URL
-
-        # Send verification email in background using professional template
-        background_tasks.add_task(
-            send_verification_email_task,
-            email=new_user.email,
-            first_name=new_user.full_name or new_user.display_name,
-            verification_token=verification_token,
-            user_id=str(new_user.id),
-            frontend_url=frontend_url
-        )
-
-        # Return user data (excluding password)
-        # Note: Transaction will be committed by transaction decorator (Task 2.2)
-        # set the notification preferences
+        # notification preference for the user
         notification_preference = NotificationPreferences(
             user_id=new_user.id,
             email_notifications=True,
@@ -171,8 +162,23 @@ async def create_user(
             marketing_updates=False
         )
         db.add(notification_preference)
+        
+        # IMPORTANT: Commit all database changes (user + preferences) before adding background tasks
         await db.commit()
-        await db.refresh(notification_preference)
+        await db.refresh(new_user)
+
+        # Get frontend URL from environment
+        frontend_url = settings.FRONTEND_URL
+
+        # Send verification email in background using professional template
+        background_tasks.add_task(
+            send_verification_email_task,
+            email=new_user.email,
+            first_name=new_user.full_name or new_user.display_name,
+            verification_token=verification_token,
+            user_id=str(new_user.id),
+            frontend_url=frontend_url
+        )
         user_data = {
             "id": str(new_user.id),
             "email": new_user.email,
@@ -327,7 +333,7 @@ async def register_with_invitation(
             # Skip email verification for invited users
             # Rationale: Email was already validated by invitation system
             new_user.email_verified = True
-            new_user.email_verified_at = datetime.utcnow()
+            new_user.email_verified_at = datetime.now(timezone.utc)
             await db.flush()
 
             current_user = new_user
@@ -345,21 +351,8 @@ async def register_with_invitation(
             user_id=current_user.id
         )
 
-        # Commit transaction before background tasks
-        await db.commit()
-
-        # Step 6: Send welcome email for new users only
+        # Handle notification preferences for new users
         if not user_exists:
-            frontend_url = settings.FRONTEND_URL
-            background_tasks.add_task(
-                send_welcome_email_task,
-                email=current_user.email,
-                first_name=current_user.full_name or current_user.display_name,
-                user_id=str(current_user.id),
-                frontend_url=frontend_url
-            )
-
-            #  add a notification preference for the user
             logger.info("Adding notification preference for user")
             notification_preference = NotificationPreferences(
                 user_id=current_user.id,
@@ -387,8 +380,22 @@ async def register_with_invitation(
                 marketing_updates=False
             )
             db.add(notification_preference)
-            await db.commit()
-            await db.refresh(notification_preference)
+
+        # Commit all changes (user creation if new, membership, preferences, invitation status)
+        # before starting background tasks
+        await db.commit()
+        await db.refresh(current_user)
+
+        # Step 6: Send welcome email for new users only
+        if not user_exists:
+            frontend_url = settings.FRONTEND_URL
+            background_tasks.add_task(
+                send_welcome_email_task,
+                email=current_user.email,
+                first_name=current_user.full_name or current_user.display_name,
+                user_id=str(current_user.id),
+                frontend_url=frontend_url
+            )
 
         # Step 7: Get workspace details for response
         from src.services.workspace_service import WorkspaceService
@@ -431,8 +438,7 @@ async def register_with_invitation(
             extra={
                 "user_id": str(current_user.id),
                 "workspace_id": str(workspace.id),
-                "invitation_id": str(invitation.id),
-                "user_existed": user_exists
+                "invitation_id": str(invitation.id)
             }
         )
         #  send the notification to user
@@ -445,8 +451,7 @@ async def register_with_invitation(
             payload = {
                 "user_id": str(current_user.id),
                 "workspace_id": str(workspace.id),
-                "invitation_id": str(invitation.id),
-                "user_existed": user_exists
+                "invitation_id": str(invitation.id)
             }
         )
 
@@ -455,7 +460,6 @@ async def register_with_invitation(
                 "user": user_data_response,
                 "workspace": workspace_data,
                 "invitation_accepted": True,
-                "user_existed": user_exists,
                 "message": f"Welcome! You've joined {workspace.name}"
             },
             request=request,
@@ -557,14 +561,14 @@ async def login_user(
             code=ErrorCode.INTERNAL_SERVER_ERROR,
             status_code=500,
             severity=ErrorSeverity.HIGH,
-            context={"error_details": str(e)},
             request=request
         )
 
 
 @router.post("/refresh")
 async def refresh_access_token(
-    request: Request,
+    token_data: RefreshTokenRequest,  # CHANGED: Added Pydantic schema
+    request: Request,  # CHANGED: Moved to second position
     db: AsyncSession = Depends(get_async_db)
 ):
     """
@@ -584,14 +588,13 @@ async def refresh_access_token(
     to prevent token exposure in server logs and browser history.
     """
     try:
-        # Extract refresh token from request body
-        body = await request.json()
-        refresh_token = body.get("refresh_token")
+        # CHANGED: Access refresh_token from Pydantic model
+        refresh_token = token_data.refresh_token
 
         if not refresh_token:
             return error(
                 message="Refresh token is required",
-                code=ErrorCode.INVALID_INPUT,
+                code=ErrorCode.INVALID_VALUE,
                 status_code=400,
                 severity=ErrorSeverity.LOW,
                 request=request
@@ -617,7 +620,6 @@ async def refresh_access_token(
             code=ErrorCode.INTERNAL_SERVER_ERROR,
             status_code=500,
             severity=ErrorSeverity.HIGH,
-            context={"error_details": str(e)},
             request=request
         )
 
@@ -640,7 +642,7 @@ async def logout_user(
         scheme, token = authorization.split()
 
         # Decode token to get JTI and expiration
-        payload = verify_token(token)
+        payload = decode_and_verify_token(token, expected_type="access")
         jti = payload.get("jti")
         exp = payload.get("exp")
         user_id = current_user.get("identity")
@@ -665,7 +667,6 @@ async def logout_user(
             code=ErrorCode.INTERNAL_SERVER_ERROR,
             status_code=500,
             severity=ErrorSeverity.HIGH,
-            context={"error_details": str(e)},
             request=request
         )
 
@@ -712,14 +713,14 @@ async def verify_email(
             code=ErrorCode.INTERNAL_SERVER_ERROR,
             status_code=500,
             severity=ErrorSeverity.HIGH,
-            context={"error_details": str(e)},
             request=request
         )
 
 
 @router.post("/resend-verification")
 async def resend_verification(
-    request: Request,
+    email_data: ResendVerificationRequest,  # CHANGED: Added Pydantic schema
+    request: Request,  # CHANGED: Moved to second position
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_async_db),
     _rate_limit: None = Depends(registration_rate_limit())
@@ -733,13 +734,13 @@ async def resend_verification(
     }
     """
     try:
-        body = await request.json()
-        email = body.get("email")
+        # CHANGED: Access email from Pydantic model
+        email = email_data.email
 
         if not email:
             return error(
                 message="Email is required",
-                code=ErrorCode.INVALID_INPUT,
+                code=ErrorCode.INVALID_VALUE,
                 status_code=400,
                 severity=ErrorSeverity.LOW,
                 request=request
@@ -778,7 +779,6 @@ async def resend_verification(
             code=ErrorCode.INTERNAL_SERVER_ERROR,
             status_code=500,
             severity=ErrorSeverity.HIGH,
-            context={"error_details": str(e)},
             request=request
         )
 
@@ -786,7 +786,8 @@ async def resend_verification(
 @router.post("/oauth/login")
 async def oauth_login(
     request: Request,
-    db: AsyncSession = Depends(get_async_db)
+    db: AsyncSession = Depends(get_async_db),
+    _rate_limit: None = Depends(oauth_rate_limit())
 ):
     """
     Login or register user via OAuth provider.
@@ -812,14 +813,13 @@ async def oauth_login(
     from datetime import datetime
 
     try:
-        body = await request.json()
-
+        # CHANGED: Access data from Pydantic model instead of request.json()
         # Parse token_expires_at from ISO string to datetime (if provided)
         # Database uses TIMESTAMP WITHOUT TIME ZONE, so we need timezone-naive datetimes
         token_expires_at = None
-        if body.get("token_expires_at"):
+        if oauth_data.token_expires_at:
             try:
-                expires_str = body.get("token_expires_at")
+                expires_str = oauth_data.token_expires_at
                 # Handle ISO format with 'Z' suffix (e.g., '2025-01-01T00:00:00Z')
                 if expires_str.endswith('Z'):
                     expires_str = expires_str[:-1]  # Remove 'Z' to get naive datetime
@@ -829,18 +829,18 @@ async def oauth_login(
                     parsed_dt = parsed_dt.replace(tzinfo=None)
                 token_expires_at = parsed_dt
             except (ValueError, AttributeError) as e:
-                logger.warning(f"Failed to parse token_expires_at: {body.get('token_expires_at')}, error: {e}")
+                logger.warning(f"Failed to parse token_expires_at: {oauth_data.token_expires_at}, error: {e}")
 
         oauth_service = OAuthService(db)
         new_user, tokens = await oauth_service.oauth_login_or_register(
-            provider=body.get("provider"),
-            provider_account_id=body.get("provider_account_id"),
-            provider_email=body.get("provider_email"),
-            provider_name=body.get("provider_name", ""),
-            provider_avatar_url=body.get("provider_avatar_url"),
-            provider_username=body.get("provider_username"),
-            access_token=body.get("access_token"),
-            refresh_token=body.get("refresh_token"),
+            provider=oauth_data.provider,
+            provider_account_id=oauth_data.provider_account_id,
+            provider_email=oauth_data.provider_email,
+            provider_name=oauth_data.provider_name,
+            provider_avatar_url=oauth_data.provider_avatar_url,
+            provider_username=oauth_data.provider_username,
+            access_token=oauth_data.access_token,
+            refresh_token=oauth_data.refresh_token,
             token_expires_at=token_expires_at
         )
 
@@ -918,16 +918,18 @@ async def oauth_login(
             code=ErrorCode.INTERNAL_SERVER_ERROR,
             status_code=500,
             severity=ErrorSeverity.HIGH,
-            context={"error_details": str(e)},
             request=request
         )
 
 
 @router.post("/oauth/link")
 async def link_oauth(
-    request: Request,
+    oauth_data: OAuthLinkRequest,  # CHANGED: Added Pydantic schema
+    request: Request,  # CHANGED: Moved to second position
     current_user: dict = Depends(get_current_user),
-    db: AsyncSession = Depends(get_async_db)
+    db: AsyncSession = Depends(get_async_db),
+    _rate_limit: None = Depends(oauth_rate_limit())
+
 ):
     """
     Link an OAuth account to the current user.
@@ -951,15 +953,15 @@ async def link_oauth(
     from datetime import datetime
 
     try:
-        body = await request.json()
+        # CHANGED: Access data from Pydantic model instead of request.json()
         user_id = UUID(current_user.get("identity"))
 
         # Parse token_expires_at from ISO string to datetime (if provided)
         # Database uses TIMESTAMP WITHOUT TIME ZONE, so we need timezone-naive datetimes
         token_expires_at = None
-        if body.get("token_expires_at"):
+        if oauth_data.token_expires_at:
             try:
-                expires_str = body.get("token_expires_at")
+                expires_str = oauth_data.token_expires_at
                 # Handle ISO format with 'Z' suffix (e.g., '2025-01-01T00:00:00Z')
                 if expires_str.endswith('Z'):
                     expires_str = expires_str[:-1]  # Remove 'Z' to get naive datetime
@@ -969,25 +971,25 @@ async def link_oauth(
                     parsed_dt = parsed_dt.replace(tzinfo=None)
                 token_expires_at = parsed_dt
             except (ValueError, AttributeError) as e:
-                logger.warning(f"Failed to parse token_expires_at: {body.get('token_expires_at')}, error: {e}")
+                logger.warning(f"Failed to parse token_expires_at: {oauth_data.token_expires_at}, error: {e}")
 
         oauth_service = OAuthService(db)
         oauth_account = await oauth_service.link_oauth_account(
             user_id=user_id,
-            provider=body.get("provider"),
-            provider_account_id=body.get("provider_account_id"),
-            provider_email=body.get("provider_email"),
-            provider_username=body.get("provider_username"),
-            provider_avatar_url=body.get("provider_avatar_url"),
-            access_token=body.get("access_token"),
-            refresh_token=body.get("refresh_token"),
+            provider=oauth_data.provider,
+            provider_account_id=oauth_data.provider_account_id,
+            provider_email=oauth_data.provider_email,
+            provider_username=oauth_data.provider_username,
+            provider_avatar_url=oauth_data.provider_avatar_url,
+            access_token=oauth_data.access_token,
+            refresh_token=oauth_data.refresh_token,
             token_expires_at=token_expires_at
         )
 
         return success(
             data=oauth_account.to_dict(),
             request=request,
-            message=f"{body.get('provider').capitalize()} account linked successfully"
+            message=f"{oauth_data.provider.capitalize()} account linked successfully"
         )
 
     except (DuplicateResourceException, ResourceNotFoundException):
@@ -999,7 +1001,6 @@ async def link_oauth(
             code=ErrorCode.INTERNAL_SERVER_ERROR,
             status_code=500,
             severity=ErrorSeverity.HIGH,
-            context={"error_details": str(e)},
             request=request
         )
 
@@ -1009,7 +1010,9 @@ async def unlink_oauth(
     provider: str,
     request: Request,
     current_user: dict = Depends(get_current_user),
-    db: AsyncSession = Depends(get_async_db)
+    db: AsyncSession = Depends(get_async_db),
+    _rate_limit: None = Depends(oauth_rate_limit())
+
 ):
     """
     Unlink an OAuth account from the current user.
@@ -1035,11 +1038,10 @@ async def unlink_oauth(
         raise
     except Exception as e:
         logger.error(f"OAuth unlink failed: {str(e)}", exc_info=True)
-        return error(
+    return error(
             message="Failed to unlink OAuth account",
             code=ErrorCode.INTERNAL_SERVER_ERROR,
             status_code=500,
             severity=ErrorSeverity.HIGH,
-            context={"error_details": str(e)},
             request=request
-        )
+        )  

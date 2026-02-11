@@ -2,7 +2,7 @@
 General API rate limiting middleware.
 
 This module provides IP-based and user-based rate limiting to prevent API abuse.
-Uses in-memory storage with sliding window algorithm.
+Uses Redis sliding window (sorted sets) with in-memory fallback.
 
 Note: This is different from usage_limiter.py which enforces subscription-based
 resource limits. This middleware protects against API abuse and DDoS attacks.
@@ -17,6 +17,7 @@ Usage:
     )
 """
 
+import time
 from typing import Dict, Tuple, Optional
 from fastapi import Request, HTTPException, status, Depends
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -27,6 +28,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from src.utils.logger import logger
 from src.api.security.dependencies import get_current_user
+from src.api.cache.redis_client import cache
 
 
 class RateLimiter:
@@ -70,17 +72,19 @@ class RateLimiter:
             timestamps: Deque of request timestamps
             window_seconds: Time window in seconds
         """
-        cutoff = datetime.utcnow() - timedelta(seconds=window_seconds)
+        cutoff = datetime.now(timezone.utc) - timedelta(seconds=window_seconds)
 
         while timestamps and timestamps[0] < cutoff:
             timestamps.popleft()
 
-    def check_rate_limit(
+    async def check_rate_limit(
         self,
         client_key: str
     ) -> Tuple[bool, Optional[int], Optional[str]]:
         """
         Check if request is within rate limits.
+
+        Tries Redis sliding window first, falls back to in-memory.
 
         Args:
             client_key: Unique identifier for the client (IP or user ID)
@@ -88,7 +92,13 @@ class RateLimiter:
         Returns:
             Tuple of (is_allowed, retry_after_seconds, limit_type)
         """
-        now = datetime.utcnow()
+        # Try Redis first
+        redis_result = await self._check_redis(client_key)
+        if redis_result is not None:
+            return redis_result
+
+        # Fallback: in-memory sliding window
+        now = datetime.now(timezone.utc)
         timestamps = self.requests[client_key]
 
         # Check minute limit
@@ -116,6 +126,57 @@ class RateLimiter:
         timestamps.append(now)
 
         return True, None, None
+
+    async def _check_redis(
+        self,
+        client_key: str
+    ) -> Optional[Tuple[bool, Optional[int], Optional[str]]]:
+        """
+        Redis sliding window rate limit using sorted sets.
+
+        Returns None if Redis is unavailable (triggers in-memory fallback).
+        """
+        try:
+            redis = cache.redis
+            if redis is None:
+                return None
+
+            now_ts = time.time()
+            key = f"ratelimit:{client_key}"
+
+            # Clean old entries + count per window in one pipeline
+            pipe = redis.pipeline()
+            pipe.zremrangebyscore(key, 0, now_ts - 86400)
+            pipe.zcount(key, now_ts - 60, "+inf")
+            pipe.zcount(key, now_ts - 3600, "+inf")
+            pipe.zcount(key, now_ts - 86400, "+inf")
+            results = await pipe.execute()
+
+            minute_count = results[1]
+            hour_count = results[2]
+            day_count = results[3]
+
+            limits = [
+                (minute_count, self.requests_per_minute, 60, "minute"),
+                (hour_count, self.requests_per_hour, 3600, "hour"),
+                (day_count, self.requests_per_day, 86400, "day"),
+            ]
+
+            for count, limit, window, label in limits:
+                if count >= limit:
+                    return False, window, label
+
+            # Allowed — record request
+            pipe2 = redis.pipeline()
+            pipe2.zadd(key, {str(now_ts): now_ts})
+            pipe2.expire(key, 86400 + 60)
+            await pipe2.execute()
+
+            return True, None, None
+
+        except Exception as e:
+            logger.debug(f"Redis rate limit unavailable, using in-memory: {e}")
+            return None
 
     def get_client_key(self, request: Request) -> str:
         """
@@ -153,7 +214,7 @@ class RateLimiter:
         Returns:
             Number of entries removed
         """
-        cutoff = datetime.utcnow() - timedelta(hours=24)
+        cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
         keys_to_remove = []
 
         for key, timestamps in self.requests.items():
@@ -247,7 +308,7 @@ class RateLimiterMiddleware(BaseHTTPMiddleware):
         client_key = self.limiter.get_client_key(request)
 
         # Check rate limit
-        is_allowed, retry_after, limit_type = self.limiter.check_rate_limit(client_key)
+        is_allowed, retry_after, limit_type = await self.limiter.check_rate_limit(client_key)
 
         if not is_allowed:
             logger.warning(
@@ -327,6 +388,8 @@ class EndpointRateLimiter:
         """
         Check rate limit for this endpoint.
 
+        Tries Redis first, falls back to in-memory.
+
         Args:
             request: FastAPI request
 
@@ -336,19 +399,54 @@ class EndpointRateLimiter:
         # Get client identifier
         user_id = getattr(request.state, "user_id", None)
         client_ip = request.client.host if request.client else "unknown"
-
-        # Use IP for unauthenticated, user_id for authenticated
         client_key = f"user:{user_id}" if user_id else f"ip:{client_ip}"
 
-        now = datetime.utcnow()
+        # Try Redis sliding window
+        redis_checked = False
+        try:
+            redis = cache.redis
+            if redis is not None:
+                now_ts = time.time()
+                key = f"ratelimit:{self.description}:{client_key}"
+
+                pipe = redis.pipeline()
+                pipe.zremrangebyscore(key, 0, now_ts - self.window_seconds)
+                pipe.zcount(key, now_ts - self.window_seconds, "+inf")
+                results = await pipe.execute()
+                count = results[1]
+
+                if count >= self.requests:
+                    logger.warning(
+                        f"Rate limit exceeded for {client_key} on {self.description}: "
+                        f"{count}/{self.requests} in {self.window_seconds}s"
+                    )
+                    raise HTTPException(
+                        status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                        detail=f"Too many {self.description} requests. Try again later.",
+                        headers={"Retry-After": str(self.window_seconds)}
+                    )
+
+                pipe2 = redis.pipeline()
+                pipe2.zadd(key, {str(now_ts): now_ts})
+                pipe2.expire(key, self.window_seconds + 60)
+                await pipe2.execute()
+                redis_checked = True
+        except HTTPException:
+            raise
+        except Exception:
+            pass  # Fall through to in-memory
+
+        if redis_checked:
+            return
+
+        # Fallback: in-memory
+        now = datetime.now(timezone.utc)
         timestamps = self.storage[client_key]
 
-        # Remove old timestamps
         cutoff = now - timedelta(seconds=self.window_seconds)
         while timestamps and timestamps[0] < cutoff:
             timestamps.popleft()
 
-        # Check limit
         if len(timestamps) >= self.requests:
             oldest = timestamps[0]
             retry_after = int((oldest + timedelta(seconds=self.window_seconds) - now).total_seconds()) + 1
@@ -364,7 +462,6 @@ class EndpointRateLimiter:
                 headers={"Retry-After": str(retry_after)}
             )
 
-        # Record request
         timestamps.append(now)
 
 
@@ -410,6 +507,20 @@ def registration_rate_limit():
         description="registration"
     )
 
+
+def oauth_rate_limit():
+    """
+    Rate limiter for OAuth login/link endpoints.
+
+    Limit: 10 attempts per 5 minutes per IP.
+    Slightly more generous than login (5/min) because OAuth flows
+    may involve legitimate retries from frontend callback handling.
+    """
+    return EndpointRateLimiter(
+        requests=10,
+        window_minutes=5,
+        description="OAuth"
+    )
 
 def email_verification_rate_limit():
     """
@@ -525,6 +636,8 @@ class AIEndpointRateLimiter:
         """
         Check AI operation rate limit based on user's subscription tier.
 
+        Tries Redis first, falls back to in-memory.
+
         Args:
             request: FastAPI request
             current_user: Authenticated user
@@ -537,23 +650,64 @@ class AIEndpointRateLimiter:
 
         user_id = current_user.get("identity")
 
-        # Get user's subscription tier (using async database session)
+        # Get user's subscription tier
         async with get_async_db_context() as db:
             tier = await self._get_user_tier(db, user_id)
             max_requests = self.limits.get(tier, self.limits["default"])
 
-        # Generate client key
         client_key = f"ai:{user_id}:{tier}"
 
-        now = datetime.utcnow()
+        # Try Redis sliding window
+        redis_checked = False
+        try:
+            redis = cache.redis
+            if redis is not None:
+                now_ts = time.time()
+                key = f"ratelimit:ai:{self.description}:{client_key}"
+
+                pipe = redis.pipeline()
+                pipe.zremrangebyscore(key, 0, now_ts - self.window_seconds)
+                pipe.zcount(key, now_ts - self.window_seconds, "+inf")
+                results = await pipe.execute()
+                count = results[1]
+
+                if count >= max_requests:
+                    logger.warning(
+                        f"AI rate limit exceeded for user {user_id} (tier: {tier}): "
+                        f"{count}/{max_requests} in {self.window_seconds}s"
+                    )
+                    raise HTTPException(
+                        status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                        detail=f"AI {self.description} rate limit exceeded ({count}/{max_requests} per hour for {tier} tier). Upgrade your plan for higher limits.",
+                        headers={
+                            "Retry-After": str(self.window_seconds),
+                            "X-RateLimit-Limit": str(max_requests),
+                            "X-RateLimit-Remaining": "0",
+                            "X-RateLimit-Tier": tier
+                        }
+                    )
+
+                pipe2 = redis.pipeline()
+                pipe2.zadd(key, {str(now_ts): now_ts})
+                pipe2.expire(key, self.window_seconds + 60)
+                await pipe2.execute()
+                redis_checked = True
+        except HTTPException:
+            raise
+        except Exception:
+            pass  # Fall through to in-memory
+
+        if redis_checked:
+            return
+
+        # Fallback: in-memory
+        now = datetime.now(timezone.utc)
         timestamps = self.storage[client_key]
 
-        # Remove old timestamps
         cutoff = now - timedelta(seconds=self.window_seconds)
         while timestamps and timestamps[0] < cutoff:
             timestamps.popleft()
 
-        # Check limit
         if len(timestamps) >= max_requests:
             oldest = timestamps[0]
             retry_after = int((oldest + timedelta(seconds=self.window_seconds) - now).total_seconds()) + 1
@@ -565,23 +719,16 @@ class AIEndpointRateLimiter:
 
             raise HTTPException(
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                detail=f"AI {self.description} rate limit exceeded ({len(timestamps)}/{max_requests} per hour for {tier} tier). Try again in {retry_after} seconds. Upgrade your plan for higher limits.",
+                detail=f"AI {self.description} rate limit exceeded ({len(timestamps)}/{max_requests} per hour for {tier} tier). Upgrade your plan for higher limits.",
                 headers={
                     "Retry-After": str(retry_after),
                     "X-RateLimit-Limit": str(max_requests),
                     "X-RateLimit-Remaining": "0",
-                    "X-RateLimit-Reset": str(retry_after),
                     "X-RateLimit-Tier": tier
                 }
             )
 
-        # Record request
         timestamps.append(now)
-
-        logger.info(
-            f"AI rate limit check passed for user {user_id} (tier: {tier}): "
-            f"{len(timestamps)}/{max_requests} used"
-        )
 
 
 def ai_content_generation_rate_limit():

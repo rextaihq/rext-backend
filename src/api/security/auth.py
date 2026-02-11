@@ -1,3 +1,4 @@
+import hmac
 from langgraph_sdk import Auth
 from fastapi import Security
 from fastapi.security.api_key import APIKeyHeader
@@ -31,7 +32,7 @@ def get_api_key(api_key_header: str = Security(api_key_header)):
             message="API key is required"
         )
 
-    if api_key_header != API_KEY:
+    if not API_KEY or not hmac.compare_digest(api_key_header, API_KEY):
         raise InvalidAPIKeyException(
             message="Invalid API key provided"
         )

@@ -13,6 +13,7 @@ from langchain_core.documents import Document
 from langchain_classic.retrievers.multi_query import MultiQueryRetriever
 from langchain_cohere.rerank import CohereRerank
 from pydantic import HttpUrl
+from src.utils.url_validator import validate_url_for_ssrf, SSRFValidationError
 
 # === Project-specific imports ===
 from src.flow.model.llm_manager import load_model
@@ -190,25 +191,31 @@ async def web_page_scraper(urls: List[HttpUrl]) -> Tuple[List[Document], list]:
 
     Returns:
         Tuple[List[Document], list]: (Chunked Documents, Raw crawl results)
-    """
 
-    logger.info("Scrapping States")
+    Raises:
+        SSRFValidationError: If any URL fails SSRF validation.
+    """
+    logger.info("Scraping started")
     browser_config = GetBrowserConfig()
     run_config = GetCrawlerRunConfig()
 
-    # if len(url)
-    urls = [str(url) for url in urls]
+    # Validate all URLs for SSRF before scraping
+    validated_urls = []
+    for url in urls:
+        url_str = str(url)
+        validate_url_for_ssrf(url_str)
+        validated_urls.append(url_str)
+
     async with AsyncWebCrawler(config=browser_config) as crawler:
-        results = await crawler.arun(url=urls[0], config=run_config)
-    logger.info("DOne")
+        results = await crawler.arun(url=validated_urls[0], config=run_config)
+    logger.info("Scraping completed")
+
     documents = []
     for result in results:
         if result.success:
-            # Crawl4AI already gives some metadata
             doc = Document(
                 page_content=result.markdown,
                 metadata={
-
                     "id": str(uuid.uuid4()),
                     "url": result.url,
                     "title": result.metadata.get("title", "No title found"),
@@ -219,9 +226,8 @@ async def web_page_scraper(urls: List[HttpUrl]) -> Tuple[List[Document], list]:
             )
             documents.append(doc)
         else:
-            logger.info(f"Scraping failed for {result.url}: {result.error_message}")
+            logger.warning(f"Scraping failed for {result.url}: {result.error_message}")
 
-    # Split into chunks
     chunks_data = split_data(documents)
 
     return chunks_data, results

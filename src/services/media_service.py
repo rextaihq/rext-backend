@@ -465,7 +465,7 @@ class MediaService:
             media.is_public = is_public
             media.access_level = "public" if is_public else "private"
 
-        media.updated_at = datetime.utcnow()
+        media.updated_at = datetime.now(timezone.utc)
 
         await self.db.commit()
         await self.db.refresh(media)
@@ -507,7 +507,7 @@ class MediaService:
             await self.db.delete(media)
         else:
             # Soft delete
-            media.deleted_at = datetime.utcnow()
+            media.deleted_at = datetime.now(timezone.utc)
 
         await self.db.commit()
 

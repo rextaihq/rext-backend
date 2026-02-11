@@ -22,6 +22,7 @@ Does NOT:
 from typing import Tuple, Dict, Any, Optional
 from uuid import UUID
 from datetime import datetime, timedelta, timezone
+from src.utils.password_utils import validate_password_strength
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, or_
@@ -45,7 +46,7 @@ from src.api.security.token_utils import (
     create_access_token,
     create_refresh_token,
     create_verification_token,
-    verify_token,
+    decode_and_verify_token,
     verify_refresh_token,
     is_token_blacklisted
 )
@@ -112,9 +113,11 @@ class AuthService:
             raise DuplicateResourceException(
                 message="A user with this email already exists",
                 resource_type="user",
-                conflicting_field="email",
-                conflicting_value=email
+                conflicting_field="email"
             )
+        
+        # Validate password strength
+        validate_password_strength(password)
 
         # Hash password
         hashed_pwd = hash_password(password)
@@ -302,7 +305,7 @@ class AuthService:
             .join(UserRole, UserRole.role_id == Role.id)
             .where(UserRole.user_id == db_user.id)
             .where(UserRole.workspace_id.is_(None))
-            .where(UserRole.is_primary == True)
+            .where(UserRole.is_primary.is_(True))
         )
         global_role_names = list(global_roles_result.scalars().all())
         
@@ -314,7 +317,7 @@ class AuthService:
             .join(UserRole, UserRole.role_id == Role.id)
             .where(UserRole.user_id == db_user.id)
             .where(UserRole.workspace_id.is_(None))  # global roles only
-            .where(UserRole.is_primary == True)
+            .where(UserRole.is_primary.is_(True))
             .distinct()
         )
         global_permissions = list(result.scalars().all())
@@ -336,7 +339,7 @@ class AuthService:
         refresh_token = create_refresh_token(data=token_data)
 
         # Create session
-        access_payload = verify_token(access_token)
+        access_payload = decode_and_verify_token(access_token)
         jti = access_payload.get("jti")
         exp_timestamp = access_payload.get("exp")
         expires_at = datetime.fromtimestamp(exp_timestamp, tz=timezone.utc) if exp_timestamp else datetime.now(timezone.utc) + timedelta(hours=24)
@@ -384,7 +387,7 @@ class AuthService:
         Raises:
             RextAuthenticationException: If token invalid or user not found
         """
-        payload = verify_token(token)
+        payload = decode_and_verify_token(token)
         user_id = payload.get("user_id")
 
         if not user_id:
@@ -535,7 +538,7 @@ class AuthService:
             .join(UserRole, UserRole.role_id == RolePermission.role_id)
             .where(UserRole.user_id == db_user.id)
             .where(UserRole.workspace_id == None)  # Only global role assignments
-            .where(UserRole.is_primary == True)     # Only primary roles
+            .where(UserRole.is_primary.is_(True))     # Only primary roles
             .distinct()
         )
         global_permissions = [row[0] for row in result.all()]
@@ -611,7 +614,7 @@ class AuthService:
         result = await self.db.execute(
             select(UserSession).where(
                 UserSession.jti == jti,
-                UserSession.is_active == True
+                UserSession.is_active.is_(True)
             )
         )
         session = result.scalar_one_or_none()
@@ -649,8 +652,8 @@ class AuthService:
                 resource_id=email
             )
 
-        # Generate reset token (valid 1 hour)
-        reset_token = create_verification_token({"user_id": str(user.id)})
+        # Generate reset token (valid 30 minutes)
+        reset_token = create_reset_token({"user_id": str(user.id), "email": user.email})
 
         logger.info(
             f"Password reset initiated for user: {user.id}",
@@ -674,7 +677,7 @@ class AuthService:
             RextAuthenticationException: If token invalid
             ResourceNotFoundException: If user not found
         """
-        payload = verify_token(token)
+        payload = decode_and_verify_token(token)
         user_id = payload.get("user_id")
 
         if not user_id:
@@ -693,6 +696,9 @@ class AuthService:
                 resource_type="User",
                 resource_id=user_id
             )
+
+        # Validate password strength
+        validate_password_strength(new_password)
 
         # Hash and update password
         hashed_pwd = hash_password(new_password)
@@ -785,7 +791,7 @@ class AuthService:
         result = await self.db.execute(
             select(SubscriptionPlan).where(
                 SubscriptionPlan.name == "trial",
-                SubscriptionPlan.is_active == True
+                SubscriptionPlan.is_active.is_(True)
             )
         )
         trial_plan = result.scalar_one_or_none()
@@ -892,7 +898,7 @@ class AuthService:
                         payload = {
                             "user_id": str(user.id),
                             "invitation_id": str(invitation.id),
-                            "user_existed": user_exists
+                            "user_existed": True
                         },
                         workspace_id=str(invitation.workspace_id),
                     )

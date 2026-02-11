@@ -232,7 +232,7 @@ async def test_get_user_workspaces_excludes_soft_deleted(async_db):
         title="Deleted Workspace",
         timezone="UTC",
         user_id=user.id,
-        deleted_at=datetime.utcnow()  # Soft-deleted
+        deleted_at=datetime.now(timezone.utc)  # Soft-deleted
     )
     async_db.add(deleted_workspace)
     await async_db.flush()
@@ -358,9 +358,9 @@ async def test_workspace_ordering(async_db):
     from datetime import datetime, timedelta
 
     workspaces_to_create = [
-        ("workspace-1", "Workspace One", datetime.utcnow() - timedelta(days=3)),
-        ("workspace-2", "Workspace Two", datetime.utcnow() - timedelta(days=2)),
-        ("workspace-3", "Workspace Three", datetime.utcnow() - timedelta(days=1)),
+        ("workspace-1", "Workspace One", datetime.now(timezone.utc) - timedelta(days=3)),
+        ("workspace-2", "Workspace Two", datetime.now(timezone.utc) - timedelta(days=2)),
+        ("workspace-3", "Workspace Three", datetime.now(timezone.utc) - timedelta(days=1)),
     ]
 
     for slug, title, created_at in workspaces_to_create:

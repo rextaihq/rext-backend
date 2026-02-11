@@ -3,7 +3,8 @@ Slug generation utilities for creating URL-safe identifiers
 """
 import re
 from typing import Optional
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 
 
 def slugify(text: str) -> str:
@@ -38,8 +39,8 @@ def slugify(text: str) -> str:
     return text
 
 
-def generate_unique_slug(
-    db: Session,
+async def generate_unique_slug(
+    db: AsyncSession,
     base_slug: str,
     model_class,
     slug_field: str = 'slug',
@@ -49,7 +50,7 @@ def generate_unique_slug(
     Generate unique slug by appending number if needed
 
     Args:
-        db: Database session
+        db: Async database session
         base_slug: Base slug to make unique
         model_class: SQLAlchemy model class to check against
         slug_field: Name of the slug field in the model
@@ -63,16 +64,19 @@ def generate_unique_slug(
 
     while True:
         # Build query to check if slug exists
-        query = db.query(model_class).filter(
+        query = select(model_class).where(
             getattr(model_class, slug_field) == slug,
             model_class.deleted_at == None
         )
 
         # Exclude current record if updating
         if exclude_id:
-            query = query.filter(model_class.id != exclude_id)
+            query = query.where(model_class.id != exclude_id)
 
-        if not query.first():
+        result = await db.execute(query)
+        exists = result.scalar_one_or_none()
+
+        if not exists:
             break
 
         # Append counter to make unique

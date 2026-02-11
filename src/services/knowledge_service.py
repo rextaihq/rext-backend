@@ -276,7 +276,7 @@ class KnowledgeService:
             name: New display name
         """
         knowledge = await self._get_file_knowledge_or_404(file_id, workspace_id)
-        knowledge.name = name
+        knowledge.file_name = name
         await self.db.flush()
         await self.db.refresh(knowledge)
 
@@ -296,7 +296,8 @@ class KnowledgeService:
         workspace_id: UUID,
         title: str,
         content: str,
-        knowledge_base_id: Optional[UUID] = None
+        knowledge_base_id: Optional[UUID] = None,
+        tags: Optional[List[str]] = None,
     ) -> TextKnowledge:
         """
         Add text knowledge to workspace.
@@ -306,9 +307,7 @@ class KnowledgeService:
             title: Knowledge title
             content: Knowledge content
             knowledge_base_id: Optional knowledge base UUID (uses default if None)
-
-        Returns:
-            Created TextKnowledge object
+            tags: Optional list of tags
         """
         # Get or use default knowledge base
         if knowledge_base_id is None:
@@ -316,8 +315,7 @@ class KnowledgeService:
             kb = await kb_service.get_default_knowledge_base(workspace_id)
             knowledge_base_id = kb.id
 
-        # Split content into chunks using proper text splitter
-        # This creates Document objects with page_content and metadata
+        # Split content into chunks
         chunks = split_data(
             documents=content,
             chunk_size=1000,
@@ -329,13 +327,14 @@ class KnowledgeService:
             workspace_id=workspace_id,
             knowledge_base_id=knowledge_base_id,
             title=title,
-            content=content
+            content=content,
+            tags=tags,
         )
         self.db.add(new_knowledge)
         await self.db.flush()
         await self.db.refresh(new_knowledge)
 
-        # Add to vector store with knowledge item metadata
+        # Add to vector store
         add_to_vector_store(
             blog_context=chunks,
             workspace_id=str(workspace_id),
@@ -383,6 +382,7 @@ class KnowledgeService:
         *,
         title: Optional[str] = None,
         content: Optional[str] = None,
+        tags: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
         """
         Update metadata for a text knowledge entry.
@@ -392,6 +392,7 @@ class KnowledgeService:
             workspace_id: Workspace UUID
             title: Optional new title
             content: Optional new content
+            tags: Optional new tags list (replaces existing tags)
         """
         result = await self.db.execute(
             select(TextKnowledge).where(
@@ -412,6 +413,9 @@ class KnowledgeService:
 
         if content:
             knowledge.content = content
+
+        if tags is not None:
+            knowledge.tags = tags
 
         await self.db.flush()
         await self.db.refresh(knowledge)
@@ -682,13 +686,25 @@ class KnowledgeService:
                 logger.warning(f"Workspace {workspace_id} not found, skipping email")
                 return
 
-            # Fetch user who created the KB (owner)
+            # Fetch workspace owner to send email notification
+            from src.api.models.workspace_models.workspace_member import WorkspaceMembers
             result = await self.db.execute(
-                select(Users).where(Users.id == kb.created_by_user_id)
+                select(WorkspaceMembers).where(
+                    WorkspaceMembers.workspace_id == workspace_id,
+                    WorkspaceMembers.is_default == True,
+                )
+            )
+            owner_member = result.scalar_one_or_none()
+            if not owner_member:
+                logger.warning(f"No owner found for workspace {workspace_id}, skipping email")
+                return
+
+            result = await self.db.execute(
+                select(Users).where(Users.id == owner_member.user_id)
             )
             user = result.scalar_one_or_none()
             if not user:
-                logger.warning(f"User {kb.created_by_user_id} not found, skipping email")
+                logger.warning(f"User {owner_member.user_id} not found, skipping email")
                 return
 
             # Build URLs

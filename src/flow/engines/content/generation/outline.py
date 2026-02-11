@@ -7,7 +7,7 @@ from src.flow.prompts.human.outline import get_outline_prompt
 logger = logging.getLogger(__name__)
 
 
-def generate_outline(state: REXT):
+async def generate_outline(state: REXT):
     """
     Generates a content outline using an LLM.
     """
@@ -76,7 +76,7 @@ def generate_outline(state: REXT):
 
         logger.info("Outline prompt formatted successfully")
 
-        generated_outline = outline_model.invoke(messages)
+        generated_outline = await outline_model.ainvoke(messages)
         outline_dict = generated_outline.model_dump()
 
         logger.info("Outline generated successfully")

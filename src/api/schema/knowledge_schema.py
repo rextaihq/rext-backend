@@ -84,11 +84,12 @@ class BrandSchema(BaseModel):
         description="List of competitors",
         example=["Patagonia", "Everlane"]
     )
-    content_pillar: List[str] = Field(
+    content_strategy: List[str] = Field(
         default_factory=list,
-        description="Main content themes or pillars",
+        description="Main content strategy themes or pillars",
         example=["Sustainability", "Fashion Trends", "Eco-lifestyle"]
     )
+    
     personas: List[PersonaExtract] = Field(
         default_factory=list,
         description="Author/Expert personas - REAL PEOPLE from the website (founders, authors, team members, experts). NOT customer personas.",

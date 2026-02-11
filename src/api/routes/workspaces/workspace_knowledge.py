@@ -1,12 +1,13 @@
 from typing import Annotated, Any, Optional
 from uuid import UUID
-
+from src.utils.url_validator import SSRFValidationError
 from fastapi import APIRouter, BackgroundTasks, Body, Depends, File, Request, UploadFile
 from pydantic import BaseModel, HttpUrl, constr
 from sqlalchemy.ext.asyncio import AsyncSession
 from src.api.database.async_database import get_async_db
 from src.api.middleware.exceptions import RextValidationException
 from src.api.middleware.usage_limiter import check_knowledge_item_limit
+from src.api.middleware.usage_limiter import check_embedding_rate_limit
 from src.api.security.dependencies import get_current_user
 from src.services.knowledge_service import KnowledgeService
 from src.utils.auth_utils import verify_current_user
@@ -145,6 +146,8 @@ async def list_web_knowledge(
 
 @router.post("/web")
 @db_transaction_handler("create web knowledge", "Web knowledge created successfully")
+@router.post("/web")
+@db_transaction_handler("create web knowledge", "Web knowledge created successfully")
 @require_permissions("knowledge.create", workspace_scoped=True)
 async def create_web_knowledge(
     workspace_id: str,
@@ -154,6 +157,7 @@ async def create_web_knowledge(
     db: AsyncSession = Depends(get_async_db),
     user: dict = Depends(get_current_user),
     _: None = Depends(check_knowledge_item_limit()),
+    _rate: None = Depends(check_embedding_rate_limit()),  # ADD THIS
 ):
     """Create a new web knowledge entry by scraping a URL."""
     workspace, _ = await _resolve_workspace(
@@ -194,14 +198,18 @@ async def create_web_knowledge(
             request=request,
             message="Web knowledge added and processed successfully",
         )
-    except Exception as e:
+    except SSRFValidationError as e:
+        raise RextValidationException(
+            message="The provided URL is not allowed",
+            field_errors={"url": [str(e)]}
+        )
         # Schedule failure notification
         await schedule_if_allowed(
             db=db,
             user_id=str(user["identity"]),
             background_tasks=background_tasks,
             pref_flag="kb_processing_failed",
-            message=f"Failed to create web knowledge for URL '{raw_url}': {str(e)}",
+            message=f"Failed to create web knowledge for URL '{raw_url}'",
             payload={"url": raw_url, "type": "web"},
             workspace_id=str(workspace.id),
         )
@@ -390,7 +398,7 @@ async def create_file_knowledge(
             user_id=str(user["identity"]),
             background_tasks=background_tasks,
             pref_flag="kb_processing_failed",
-            message=f"Failed to upload file knowledge: {str(e)}",
+            message=f"Failed to upload file knowledge",
             payload={"file_name": knowledge.file_name if 'knowledge' in locals() else None, "type": "file"},
             workspace_id=str(workspace.id),
         )
@@ -538,10 +546,9 @@ async def create_text_knowledge(
         payload.title,
         payload.content,
         knowledge_base_id=payload.knowledge_base_id,
+        tags=payload.tags,
     )
 
-    if payload.tags:
-        logger.warning("Tags provided for text knowledge are currently ignored", extra={"tags": payload.tags})
 
     try:
         # Schedule success notification
@@ -572,7 +579,7 @@ async def create_text_knowledge(
             user_id=str(user["identity"]),
             background_tasks=background_tasks,
             pref_flag="kb_processing_failed",
-            message=f"Failed to create text knowledge: {str(e)}",
+            message=f"Failed to create text knowledge",
             payload={"title": payload.title if payload else None, "type": "text"},
             workspace_id=str(workspace.id),
         )
@@ -636,10 +643,8 @@ async def update_text_knowledge(
         workspace.id,
         title=payload.title,
         content=payload.content,
+        tags=payload.tags,
     )
-
-    if payload.tags:
-        logger.warning("Tags update for text knowledge is not yet supported", extra={"tags": payload.tags})
 
     return success(
         data={"text_knowledge": knowledge},

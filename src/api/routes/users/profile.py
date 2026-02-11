@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, Request, UploadFile, File, HTTPException, status, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
 
+
 from src.utils.logger import logger
 from src.api.security.dependencies import get_current_user
 from src.utils.route_decorators import require_permissions
@@ -13,7 +14,8 @@ from src.api.schema.response_schemas import ErrorCode, ErrorSeverity
 from src.api.middleware.exceptions import ResourceNotFoundException
 from src.services.user_service import UserService
 from src.services.notification_helper import schedule_if_allowed
-from datetime import datetime
+from datetime import datetime,timezone 
+
 from pathlib import Path
 from sqlalchemy import select
 import time
@@ -174,8 +176,8 @@ async def update_profile(
             user_id=str(user_id),
             background_tasks=background_tasks,
             pref_flag="in_app_notifications",
-            message=f"Failed to update profile: {str(e)}",
-            payload={"user_id": str(user_id), "error": str(e)},
+            message="Failed to update profile due to an internal error",
+            payload={"user_id": str(user_id), "error": "An internal error occurred"},
             workspace_id=None,
             title="Profile Update Failed",
             status="error"
@@ -208,7 +210,7 @@ async def upload_avatar(
         if file.content_type not in allowed_types:
             return error(
                 message=f"Invalid file type. Allowed: {', '.join(allowed_types)}",
-                code=ErrorCode.INVALID_INPUT,
+                code=ErrorCode.INVALID_VALUE,
                 status_code=400,
                 severity=ErrorSeverity.LOW,
                 request=request
@@ -222,7 +224,7 @@ async def upload_avatar(
         if file_size > max_size:
             return error(
                 message=f"File too large. Max: 5MB, Yours: {file_size / (1024 * 1024):.2f}MB",
-                code=ErrorCode.INVALID_INPUT,
+                code=ErrorCode.INVALID_VALUE,
                 status_code=400,
                 severity=ErrorSeverity.LOW,
                 request=request
@@ -240,7 +242,7 @@ async def upload_avatar(
             )
             return error(
                 message="Invalid image file. File content does not match an allowed image format (JPEG, PNG, GIF, WebP).",
-                code=ErrorCode.INVALID_INPUT,
+                code=ErrorCode.INVALID_VALUE,
                 status_code=400,
                 severity=ErrorSeverity.MEDIUM,
                 request=request
@@ -251,7 +253,7 @@ async def upload_avatar(
             logger.warning(f"SVG upload attempt blocked for user {user_id}")
             return error(
                 message="SVG files are not supported for security reasons.",
-                code=ErrorCode.INVALID_INPUT,
+                code=ErrorCode.INVALID_VALUE,
                 status_code=400,
                 severity=ErrorSeverity.MEDIUM,
                 request=request
@@ -323,7 +325,7 @@ async def upload_avatar(
             message="Avatar uploaded successfully"
         )
 
-    except ResourceNotFoundException:
+    except ResourceNotFoundException as e:
         # Schedule notification
         await schedule_if_allowed(
             db=db,
@@ -331,7 +333,7 @@ async def upload_avatar(
             background_tasks=background_tasks,
             pref_flag="in_app_notifications",
             message="failed to upload avatar",
-            payload={"user_id": str(user_id), "error": str(e)},
+            payload={"user_id": str(user_id), "error": "User not found"},
             workspace_id=None
         )
         return error(
@@ -350,7 +352,7 @@ async def upload_avatar(
             background_tasks=background_tasks,
             pref_flag="in_app_notifications",
             message="failed to upload avatar",
-            payload={"user_id": str(user_id), "error": str(e)},
+            payload={"user_id": str(user_id), "error": "An internal error occurred"},
             workspace_id=None
         )
         raise HTTPException(
@@ -446,7 +448,7 @@ async def delete_avatar(
             background_tasks=background_tasks,
             pref_flag="in_app_notifications",
             message="failed to delete avatar",
-            payload={"user_id": str(user_id), "error": str(e)},
+            payload={"user_id": str(user_id), "error": "User not found"},
             workspace_id=None
         )
         return error(
@@ -465,12 +467,15 @@ async def delete_avatar(
             background_tasks=background_tasks,
             pref_flag="in_app_notifications",
             message="failed to delete avatar",
-            payload={"user_id": str(user_id), "error": str(e)},
+            payload={"user_id": str(user_id), "error": "An internal error occurred"},
             workspace_id=None
         )
-        return HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to delete avatar"
+        return error(
+            message="Failed to delete avatar",
+            code=ErrorCode.INTERNAL_SERVER_ERROR,
+            status_code=500,
+            severity=ErrorSeverity.HIGH,
+            request=request
         )
 
 
@@ -549,64 +554,36 @@ async def update_notification_preferences(
             db.add(preferences)
             logger.info(f"Creating notification preferences for user {user_id}")
 
-        # Update global toggles
-        if preferences_update.email_notifications is not None:
-            preferences.email_notifications = preferences_update.email_notifications
+        # Update preferences dynamically from the request
+        update_data = preferences_update.model_dump(exclude_unset=True)
 
-        if preferences_update.in_app_notifications is not None:
-            preferences.in_app_notifications = preferences_update.in_app_notifications
+        # Handle simplified categories if provided
+        if "categories" in update_data:
+            categories = update_data.pop("categories")
+            # Mapping of categories to DB fields (applies to both email and in-app)
+            mapping = {
+                "mentions": ["email_mentions", "in_app_mentions"],
+                "workspace_invites": ["ws_invite_received"],
+                "content_updates": ["email_content_updates", "in_app_content_updates"],
+                "comments": ["email_comments", "in_app_comments"],
+                "team_activity": ["email_team_activity", "in_app_team_activity"],
+                "security_alerts": ["email_security_alerts", "in_app_security_alerts"],
+                "billing_updates": ["email_billing_updates", "in_app_billing_updates"],
+                "product_updates": ["email_product_updates", "in_app_product_updates"],
+            }
 
-        # Update workspace notifications
-        if preferences_update.ws_invite_received is not None:
-            preferences.ws_invite_received = preferences_update.ws_invite_received
-        if preferences_update.ws_invite_accepted is not None:
-            preferences.ws_invite_accepted = preferences_update.ws_invite_accepted
-        if preferences_update.ws_role_changed is not None:
-            preferences.ws_role_changed = preferences_update.ws_role_changed
-        if preferences_update.ws_member_removed is not None:
-            preferences.ws_member_removed = preferences_update.ws_member_removed
+            for cat, value in categories.items():
+                if cat in mapping:
+                    for db_field in mapping[cat]:
+                        if hasattr(preferences, db_field):
+                            setattr(preferences, db_field, value)
+                            logger.debug(f"Updated category preference '{cat}' -> '{db_field}' to {value}")
 
-        # Update content generation notifications
-        if preferences_update.gen_started is not None:
-            preferences.gen_started = preferences_update.gen_started
-        if preferences_update.gen_completed is not None:
-            preferences.gen_completed = preferences_update.gen_completed
-        if preferences_update.gen_failed is not None:
-            preferences.gen_failed = preferences_update.gen_failed
-        if preferences_update.gen_published is not None:
-            preferences.gen_published = preferences_update.gen_published
-
-        # Update billing notifications
-        if preferences_update.billing_payment_success is not None:
-            preferences.billing_payment_success = preferences_update.billing_payment_success
-        if preferences_update.billing_payment_failed is not None:
-            preferences.billing_payment_failed = preferences_update.billing_payment_failed
-        if preferences_update.billing_subscription_cancelled is not None:
-            preferences.billing_subscription_cancelled = preferences_update.billing_subscription_cancelled
-        if preferences_update.billing_subscription_expiring is not None:
-            preferences.billing_subscription_expiring = preferences_update.billing_subscription_expiring
-        if preferences_update.billing_trial_ending is not None:
-            preferences.billing_trial_ending = preferences_update.billing_trial_ending
-        if preferences_update.billing_usage_limit_warning is not None:
-            preferences.billing_usage_limit_warning = preferences_update.billing_usage_limit_warning
-        if preferences_update.billing_usage_limit_exceeded is not None:
-            preferences.billing_usage_limit_exceeded = preferences_update.billing_usage_limit_exceeded
-
-        # Update knowledge base notifications
-        if preferences_update.kb_processing_completed is not None:
-            preferences.kb_processing_completed = preferences_update.kb_processing_completed
-        if preferences_update.kb_processing_failed is not None:
-            preferences.kb_processing_failed = preferences_update.kb_processing_failed
-
-        # Update digest settings
-        if preferences_update.digest_enabled is not None:
-            preferences.digest_enabled = preferences_update.digest_enabled
-        if preferences_update.digest_frequency is not None:
-            preferences.digest_frequency = preferences_update.digest_frequency
-
-        # Update marketing settings
-        if preferences_update.marketing_updates is not None:
-            preferences.marketing_updates = preferences_update.marketing_updates
+        # Handle all other fields directly
+        for field, value in update_data.items():
+            if hasattr(preferences, field):
+                setattr(preferences, field, value)
+                logger.debug(f"Updated notification preference '{field}' for user {user_id}")
 
         # Commit changes to database
         await db.commit()
@@ -638,7 +615,7 @@ async def update_notification_preferences(
             background_tasks=background_tasks,
             pref_flag="in_app_notifications",
             message="failed to update notification preferences",
-            payload={"user_id": str(user_id), "error": str(e)},
+            payload={"user_id": str(user_id), "error": "An internal error occurred"},
             workspace_id=None
         )
         raise
@@ -675,7 +652,7 @@ async def deactivate_account(
         if not deactivate_request.confirm:
             return error(
                 message="You must confirm account deactivation",
-                code=ErrorCode.INVALID_INPUT,
+                code=ErrorCode.INVALID_VALUE,
                 status_code=400,
                 severity=ErrorSeverity.LOW,
                 request=request
@@ -686,7 +663,7 @@ async def deactivate_account(
             logger.warning(f"Failed deactivation attempt for user {user_id}: invalid password")
             return error(
                 message="Invalid password. Please enter your current password to deactivate your account.",
-                code=ErrorCode.AUTHENTICATION_ERROR,
+                code=ErrorCode.UNAUTHORIZED,
                 status_code=401,
                 severity=ErrorSeverity.HIGH,
                 request=request
@@ -699,7 +676,7 @@ async def deactivate_account(
         if user.status == "inactive":
             return error(
                 message="Account is already deactivated",
-                code=ErrorCode.INVALID_INPUT,
+                code=ErrorCode.INVALID_VALUE,
                 status_code=400,
                 severity=ErrorSeverity.LOW,
                 request=request
@@ -717,11 +694,11 @@ async def deactivate_account(
 
             for subscription in active_subscriptions:
                 subscription.status = "canceled"
-                subscription.canceled_at = datetime.utcnow()
+                subscription.canceled_at = datetime.now(timezone.utc)
                 logger.info(f"Canceled subscription {subscription.id} for user {user_id}")
 
         # Deactivate user account
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         scheduled_deletion = now + timedelta(days=14)
 
         user.status = "inactive"

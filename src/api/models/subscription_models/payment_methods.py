@@ -1,7 +1,7 @@
 """Payment method model."""
 import uuid
-from datetime import datetime
-from sqlalchemy import Column, String, Integer, Boolean, TIMESTAMP, ForeignKey, UniqueConstraint
+from datetime import datetime, timezone
+from sqlalchemy import Column, String, Integer, Boolean, DateTime, ForeignKey, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import relationship
 from src.api.database.base import Base
@@ -36,11 +36,11 @@ class PaymentMethod(Base, SerializableMixin):
     # Metadata (renamed to avoid SQLAlchemy reserved word)
     payment_metadata = Column(JSONB, default=dict)
 
-    created_at = Column(TIMESTAMP, default=datetime.utcnow, nullable=False)
-    updated_at = Column(TIMESTAMP, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
+    updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
     # Relationships
-    user = relationship("Users", backref="payment_methods")
+    user = relationship("Users", back_populates="payment_methods")
 
     # to_dict() inherited from SerializableMixin
 
