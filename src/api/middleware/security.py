@@ -30,7 +30,16 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
 
         # Content Security Policy
         # Restricts where resources can be loaded from and blocks embedding
-        response.headers["Content-Security-Policy"] = "default-src 'self'; frame-ancestors 'none';"
+        # Updated to allow API docs (Swagger/Redoc) external resources
+        csp = (
+            "default-src 'self'; "
+            "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net; "
+            "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net; "
+            "img-src 'self' data: https://fastapi.tiangolo.com; "
+            "font-src 'self' https://fonts.gstatic.com; "
+            "frame-ancestors 'none';"
+        )
+        response.headers["Content-Security-Policy"] = csp
 
         # Referrer Policy
         # Controls how much referrer information is included with requests
@@ -42,6 +51,8 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
 
         # HSTS (only for HTTPS)
         if request.url.scheme == "https":
-            response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+            response.headers["Strict-Transport-Security"] = (
+                "max-age=31536000; includeSubDomains"
+            )
 
         return response

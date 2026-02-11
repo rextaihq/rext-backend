@@ -36,13 +36,13 @@ class UserSession(Base, SerializableMixin):
     is_active = Column(Boolean, default=True, nullable=False, index=True)
 
     # Timestamps
-    created_at = Column(TIMESTAMP, default=lambda: datetime.now(timezone.utc), nullable=False)
-    last_activity_at = Column(TIMESTAMP, default=lambda: datetime.now(timezone.utc), nullable=False, index=True)
+    created_at = Column(TIMESTAMP(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
+    last_activity_at = Column(TIMESTAMP(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False, index=True)
     
     
     
-    expires_at = Column(TIMESTAMP, nullable=False)  # When access token expires
-    revoked_at = Column(TIMESTAMP)     # When session was manually revoked
+    expires_at = Column(TIMESTAMP(timezone=True), nullable=False)  # When access token expires
+    revoked_at = Column(TIMESTAMP(timezone=True))     # When session was manually revoked
 
     # Additional metadata (flexible JSONB field)
     session_metadata = Column(JSONB, default=dict)  # For future extensibility

@@ -561,3 +561,45 @@ class TestUserServiceUpdateLastLogin:
         # Act & Assert
         with pytest.raises(ResourceNotFoundException):
             await service.update_last_login(non_existent_id)
+
+
+@pytest.mark.unit
+class TestUserServiceChangeUserStatus:
+    """Test change_user_status method"""
+
+    async def test_change_user_status_success(self, db_session, setup_factories):
+        """Should successfully change status and return old status"""
+        # Arrange
+        user = await setup_factories["user"].create(status="active")
+        service = UserService(db_session)
+        new_status = "suspended"
+
+        # Act
+        updated_user, old_status = await service.change_user_status(user.id, new_status)
+
+        # Assert
+        assert old_status == "active"
+        assert updated_user.status == new_status
+        assert updated_user.updated_at is not None
+
+    async def test_change_user_status_invalid(self, db_session, setup_factories):
+        """Should raise RextValidationException for invalid status"""
+        # Arrange
+        user = await setup_factories["user"].create()
+        service = UserService(db_session)
+
+        # Act & Assert
+        with pytest.raises(RextValidationException) as exc_info:
+            await service.change_user_status(user.id, "invalid_status")
+        
+        assert "Invalid status" in str(exc_info.value)
+
+    async def test_change_user_status_not_found(self, db_session):
+        """Should raise ResourceNotFoundException when user not found"""
+        # Arrange
+        service = UserService(db_session)
+        non_existent_id = uuid4()
+
+        # Act & Assert
+        with pytest.raises(ResourceNotFoundException):
+            await service.change_user_status(non_existent_id, "suspended")
