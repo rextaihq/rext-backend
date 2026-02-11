@@ -88,8 +88,13 @@ class KeywordExtractor:
             documents.append(titles)
         
         # Document 2: All snippets (medium weight - context and variations)
-        snippets = ' '.join([
-            result.get('snippet', '') 
+        # snippets = ' '.join([
+        #     result.get('snippet', '') 
+        #     for result in (normalize_results or [])
+        # ])
+
+        snippets = ' '.join([  
+            (result.get('snippet') or '')
             for result in (normalize_results or [])
         ])
         if snippets.strip():

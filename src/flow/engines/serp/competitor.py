@@ -68,7 +68,7 @@ def extract_competitors_from_serp(state: REXT) -> Dict[str, Any]:
 
         # Snippet length
         snippet = item.get("snippet", "")
-        group["avg_snippet_length"] += len(snippet)
+        group["avg_snippet_length"] += len(snippet) if snippet else 0
 
         # Freshness
         date = item.get("date")
