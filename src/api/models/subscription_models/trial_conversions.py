@@ -3,7 +3,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Optional
 
-from sqlalchemy import Column, String, Integer, ForeignKey, TIMESTAMP, Numeric
+from sqlalchemy import Column, String, Integer, ForeignKey, DateTime, Numeric
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import relationship
 
@@ -31,19 +31,19 @@ class TrialConversion(Base, SerializableMixin, UUIDPrimaryKeyMixin, TimestampMix
     )
 
     trial_started_at = Column(
-        TIMESTAMP(timezone=True),
+        DateTime(timezone=True),
         nullable=False,
         comment="When the trial started"
     )
 
     trial_ended_at = Column(
-        TIMESTAMP(timezone=True),
+        DateTime(timezone=True),
         nullable=False,
         comment="When the trial ended"
     )
 
     converted_at = Column(
-        TIMESTAMP(timezone=True),
+        DateTime(timezone=True),
         default=datetime.utcnow,
         nullable=False,
         index=True,

@@ -43,18 +43,18 @@ class LicenseActivation(Base, SerializableMixin, UUIDPrimaryKeyMixin):
     )
 
     activated_at = Column(
-        TIMESTAMP(timezone=True),
+        DateTime(timezone=True),
         nullable=False,
         server_default=func.current_timestamp()
     )
 
     deactivated_at = Column(
-        TIMESTAMP(timezone=True),
+        DateTime(timezone=True),
         nullable=True
     )
 
     last_checked_at = Column(
-        TIMESTAMP(timezone=True),
+        DateTime(timezone=True),
         nullable=True,
         comment="Last time this activation was validated/checked"
     )
@@ -69,6 +69,7 @@ class LicenseActivation(Base, SerializableMixin, UUIDPrimaryKeyMixin):
     license = relationship("License", back_populates="activations", lazy="joined")
 
     def deactivate(self):
+        from datetime import timezone
         self.is_active = False
         self.deactivated_at = datetime.now(timezone.utc)
 

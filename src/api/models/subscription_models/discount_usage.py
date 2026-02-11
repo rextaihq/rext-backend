@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Optional
 from uuid import UUID, uuid4
 
-from sqlalchemy import Column, String, Numeric, TIMESTAMP, ForeignKey, Index
+from sqlalchemy import Column, String, Numeric, DateTime, ForeignKey, Index
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID, JSONB
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -62,7 +62,7 @@ class DiscountUsage(Base, SerializableMixin, UUIDPrimaryKeyMixin):
     )
 
     applied_at = Column(
-        TIMESTAMP(timezone=True),
+        DateTime(timezone=True),
         nullable=False,
         server_default=func.current_timestamp(),
         index=True

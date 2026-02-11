@@ -1,7 +1,8 @@
-from sqlalchemy import Column, Boolean, TIMESTAMP, ForeignKey, UniqueConstraint
+from sqlalchemy import Column, Boolean, DateTime, ForeignKey, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 from datetime import datetime, timezone
+
 from src.api.database.base import Base
 from src.api.models.base import SerializableMixin
 from src.api.models.mixins import UUIDPrimaryKeyMixin
@@ -20,8 +21,13 @@ class UserRole(Base, SerializableMixin, UUIDPrimaryKeyMixin):
     assigned_by_user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
 
     is_primary = Column(Boolean, default=True)
-    assigned_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
-    
+
+    assigned_at = Column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False
+    )
+
     __table_args__ = (
         UniqueConstraint('user_id', 'role_id', 'workspace_id', name='uq_user_role_workspace'),
     )

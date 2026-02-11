@@ -7,6 +7,7 @@ from enum import Enum
 from sqlalchemy import (
     Boolean,
     Column,
+    DateTime,
     ForeignKey,
     Integer,
     String,
@@ -81,10 +82,10 @@ class Refund(Base, SerializableMixin):
     # ==============================
     # TIMESTAMPS
     # ==============================
-    processed_at = Column(TIMESTAMP, nullable=True)
-    created_at = Column(TIMESTAMP, nullable=False, default=datetime.utcnow)
+    processed_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=datetime.utcnow)
     updated_at = Column(
-        TIMESTAMP,
+        DateTime(timezone=True),
         nullable=False,
         default=datetime.utcnow,
         onupdate=datetime.utcnow,

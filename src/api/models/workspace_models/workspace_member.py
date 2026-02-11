@@ -1,10 +1,14 @@
 import uuid
+from datetime import datetime, timezone
+
+
 from sqlalchemy import Column, String, Boolean, DateTime, ForeignKey, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
-from datetime import datetime, timezone
+
 from src.api.database.base import Base
 from src.api.models.base import SerializableMixin
+
 
 # -------------------------
 # Workspace Members
@@ -16,10 +20,22 @@ class WorkspaceMembers(Base, SerializableMixin):
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     workspace_id = Column(UUID(as_uuid=True), ForeignKey("workspace.id", ondelete="CASCADE"), nullable=False)
     invitation_id = Column(UUID(as_uuid=True), ForeignKey("user_invitations.id", ondelete="SET NULL"), nullable=True)
+
     status = Column(String(50), default="pending")  # active, inactive, pending
     is_default = Column(Boolean, default=False)
-    joined_at = Column(TIMESTAMP, default=lambda: datetime.now(timezone.utc), nullable=False)
-    last_activity_at = Column(TIMESTAMP, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+
+    # Fixed timestamps (Recommended)
+    joined_at = Column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False
+    )
+
+    last_activity_at = Column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc)
+    )
 
     __table_args__ = (
         UniqueConstraint('user_id', 'workspace_id', name='uq_user_workspace'),
