@@ -12,6 +12,7 @@ from src.api.middleware.exceptions import (
     ResourceNotFoundException,
 )
 from src.services.workspace_service import WorkspaceService
+from datetime import datetime, timezone
 
 router = APIRouter()
 
@@ -65,17 +66,28 @@ async def get_status(request: Request):
 @db_transaction_handler("get workspaces", auto_commit=False)
 async def get_workspaces(
     request: Request,
+    skip: int = 0,
+    limit: int = 50,
     db: AsyncSession = Depends(get_async_db),
-    user: dict = Depends(get_current_user)):
+    user: dict = Depends(get_current_user),
+):
     user_id = user.get("identity")
     db_user = await verify_current_user(db, user_id)
 
     # Use workspace service
     workspace_service = WorkspaceService(db)
-    workspace_data = await workspace_service.get_user_workspaces(UUID(user_id))
+    workspace_data = await workspace_service.get_user_workspaces(
+        UUID(user_id), skip=skip, limit=limit
+    )
+    total_count = await workspace_service.count_user_workspaces(UUID(user_id))
 
     # Return raw data - decorator handles success response
-    return {"workspaces": workspace_data, "total_count": len(workspace_data)}
+    return {
+        "workspaces": workspace_data,
+        "total_count": total_count,
+        "skip": skip,
+        "limit": limit,
+    }
 
 # -------------------------
 # Get workspace by ID

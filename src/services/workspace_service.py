@@ -296,7 +296,7 @@ class WorkspaceService:
         await self.db.refresh(updated)
         return self._serialize_workspace(updated)
 
-    async def get_user_workspaces(self, user_id: UUID) -> List[Dict[str, Any]]:
+    async def get_user_workspaces(self, user_id: UUID, skip: int = 0, limit: int = 50) -> List[Dict[str, Any]]:
         """
         Get all workspaces for a user with counts.
 
@@ -332,6 +332,8 @@ class WorkspaceService:
                 ),  # Filter out soft-deleted workspaces
             )
             .group_by(WorkspaceModel.id, Users.id)
+            .offset(skip)
+            .limit(limit)
         )
 
         result = await self.db.execute(workspaces_query)

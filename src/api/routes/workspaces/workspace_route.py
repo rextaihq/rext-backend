@@ -2,6 +2,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
+from sympy import limit
 
 from src.api.database.async_database import get_async_db
 from src.api.middleware.exceptions import RextValidationException
@@ -37,13 +38,27 @@ def get_status(request: Request):
 @db_transaction_handler("list workspaces", auto_commit=False)
 async def get_workspaces(
     request: Request,
+    skip : int = 0,
+    limit: int = 50,
     db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user),
 ):
     """Return all workspaces available to the current user."""
     user_id = UUID(str(current_user.get("identity")))
     service = WorkspaceService(db)
-    payload = await service.list_workspaces_for_user(user_id)
+    workspaces = await service.get_user_workspaces(
+    user_id,
+    skip=skip,
+    limit=limit,
+)
+    total_count = await service.count_user_workspaces(user_id)
+
+    payload = {
+        "workspaces": workspaces,
+        "total_count": total_count,
+        "skip": skip,
+        "limit": limit
+    }
 
     return success(
         data=payload,

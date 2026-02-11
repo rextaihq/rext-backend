@@ -30,7 +30,7 @@ Usage:
     )
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Dict, List, Optional, Union
 from uuid import uuid4

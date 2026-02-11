@@ -15,7 +15,7 @@ from src.api.middleware.exceptions import (
     ResourceNotFoundException,
     BusinessRuleViolationException
 )
-from datetime import datetime
+from datetime import datetime, timezone
 from src.services.notification_helper import schedule_if_allowed
 from user_agents import parse as parse_user_agent
 from src.api.models.user_models.notification_preferences import NotificationPreferences

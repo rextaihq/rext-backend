@@ -17,6 +17,7 @@ Does NOT:
 """
 
 from typing import Optional, List, Dict, Any
+from unittest import result
 from uuid import UUID
 from datetime import datetime,timezone
 
@@ -628,6 +629,8 @@ class MemberService(InvitationService):
     async def get_workspace_members_with_users(
         self,
         workspace_id: UUID,
+        skip: int = 0,
+        limit: int = 50,
         status: Optional[str] = None
     ) -> List[tuple[WorkspaceMembers, "Users", Optional["Role"]]]:
         """
@@ -657,6 +660,8 @@ class MemberService(InvitationService):
             .outerjoin(Role, Role.id == UserRole.role_id)
             .where(WorkspaceMembers.workspace_id == workspace_id)
             .order_by(WorkspaceMembers.joined_at.asc())
+            .offset(skip)
+            .limit(limit)
         )
 
         if status:
@@ -667,6 +672,16 @@ class MemberService(InvitationService):
 
         logger.debug(f"Retrieved {len(rows)} members with user details for workspace {workspace_id}")
         return rows
+
+
+    async def count_workspace_members(self, workspace_id: UUID) -> int:
+        query = (
+        select(func.count())
+        .select_from(WorkspaceMembers)
+        .where(WorkspaceMembers.workspace_id == workspace_id)
+    )
+        result = await self.db.execute(query)
+        return result.scalar_one()
 
     async def get_admin_members_with_users(
         self,

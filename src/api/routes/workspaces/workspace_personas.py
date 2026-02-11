@@ -23,6 +23,8 @@ router = APIRouter(tags=["workspace-personas"])
 async def get_workspace_personas(
     workspace_id: str,
     request: Request,
+    skip: int = 0,
+    limit: int = 50,
     db: AsyncSession = Depends(get_async_db),
     user: dict = Depends(get_current_user),
 ):

@@ -153,6 +153,8 @@ def _serialize_member(member: WorkspaceMembers, user: Users, role: Role = None) 
 async def list_workspace_members(
     workspace_id: str,
     request: Request,
+    skip: int = 0,
+    limit: int = 50,
     db: AsyncSession = Depends(get_async_db),
     user: dict = Depends(get_current_user),
 ):
@@ -165,12 +167,20 @@ async def list_workspace_members(
 
     # Get members with user details via service
     member_service = MemberService(db)
-    rows = await member_service.get_workspace_members_with_users(workspace.id)
+    rows = await member_service.get_workspace_members_with_users(
+        workspace.id, skip=skip, limit=limit
+    )
+    total_count = await member_service.count_workspace_members(workspace.id)
 
-    members = [_serialize_member(member, user, role) for member, user, role in rows]
+    members = [_serialize_member(member, usr, role) for member, usr, role in rows]
 
     return success(
-        data={"members": members, "total_count": len(members)},
+        data={
+            "members": members,
+            "total_count": total_count,
+            "skip": skip,
+            "limit": limit,
+        },
         request=request,
         message=f"Retrieved {len(members)} member(s)",
     )
