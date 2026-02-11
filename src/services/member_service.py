@@ -18,7 +18,7 @@ Does NOT:
 
 from typing import Optional, List, Dict, Any
 from uuid import UUID
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import select, and_, func
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -44,7 +44,7 @@ class MemberService(InvitationService):
         Args:
             db: Async database session
         """
-        self.db = db
+        super().__init__(db)
 
     async def add_member(
         self,
@@ -109,8 +109,8 @@ class MemberService(InvitationService):
             user_id=user_id,
             invitation_id=invitation_id,
             status=status,
-            joined_at=datetime.utcnow(),
-            last_activity_at=datetime.utcnow()
+            joined_at=datetime.now(timezone.utc),
+            last_activity_at=datetime.now(timezone.utc)
         )
         self.db.add(new_member)
         await self.db.flush()
@@ -174,7 +174,7 @@ class MemberService(InvitationService):
         return {
             "user_id": str(user_id),
             "workspace_id": str(workspace_id),
-            "removed_at": datetime.utcnow()
+            "removed_at": datetime.now(timezone.utc)
         }
 
     async def get_workspace_members(
@@ -290,7 +290,7 @@ class MemberService(InvitationService):
             )
 
         member.status = status
-        member.last_activity_at = datetime.utcnow()
+        member.last_activity_at = datetime.now(timezone.utc)
 
         logger.info(
             f"Member status updated: user={user_id}, workspace={workspace_id}, status={status}",
@@ -420,7 +420,7 @@ class MemberService(InvitationService):
                 context={"workspace_id": str(workspace_id)}
             )
 
-        member.last_activity_at = datetime.utcnow()
+        member.last_activity_at = datetime.now(timezone.utc)
 
         logger.debug(
             f"Member activity updated: user={user_id}, workspace={workspace_id}",
@@ -571,8 +571,8 @@ class MemberService(InvitationService):
             old_role = old_role_result.scalar_one_or_none()
 
         # Update or create user role
-        # Use utcnow() for timezone-naive datetime to match TIMESTAMP WITHOUT TIME ZONE column
-        timestamp = datetime.utcnow()
+        # Use timezone-aware datetime
+        timestamp = datetime.now(timezone.utc)
         if user_role:
             user_role.role_id = new_role_id
             user_role.assigned_by_user_id = assigned_by_user_id
@@ -622,8 +622,8 @@ class MemberService(InvitationService):
         for user_role in user_roles:
             await self.db.delete(user_role)
 
-        # ✅ Commit the changes
-        await self.db.commit()
+        # Flush to execute deletes within current transaction
+        await self.db.flush()
 
     async def get_workspace_members_with_users(
         self,

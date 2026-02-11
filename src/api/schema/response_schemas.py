@@ -30,7 +30,7 @@ Usage:
     )
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Dict, List, Optional, Union
 from uuid import uuid4
@@ -163,7 +163,7 @@ class ResponseMeta(BaseModel):
         example="req_1234567890_abc123"
     )
     timestamp: datetime = Field(
-        default_factory=lambda: datetime.utcnow(),
+        default_factory=lambda: datetime.now(timezone.utc),
         description="ISO timestamp when the response was generated",
         example="2024-01-15T10:30:00.123456Z"
     )
@@ -329,7 +329,7 @@ StandardResponse = Union[SuccessResponse, ErrorResponse]
 
 def generate_request_id() -> str:
     """Generate a unique request ID"""
-    timestamp = int(datetime.utcnow().timestamp())
+    timestamp = int(datetime.now(timezone.utc).timestamp())
     uuid_part = str(uuid4()).replace('-', '')[:8]
     return f"req_{timestamp}_{uuid_part}"
 
@@ -419,7 +419,7 @@ def create_error_response(
     if details:
         # Details might already be dicts (from exceptions) or Pydantic models
         error_data["details"] = [
-            detail.dict() if hasattr(detail, 'dict') else detail
+            detail.model_dump() if hasattr(detail, 'model_dump') else detail
             for detail in details
         ]
 

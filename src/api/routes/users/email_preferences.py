@@ -11,8 +11,8 @@ from typing import List, Optional
 from src.api.database.async_database import get_async_db
 from src.api.security.dependencies import get_current_user
 from src.services.email_preferences_service import EmailPreferencesService
-from src.utils.response_utils import success, error
-from src.api.schema.response_schemas import ErrorCode, ErrorSeverity
+from src.utils.route_decorators import db_transaction_handler, require_permissions
+from src.api.middleware.exceptions import ResourceNotFoundException
 from src.utils.logger import logger
 from uuid import UUID
 
@@ -65,6 +65,7 @@ class UnsubscribeRequest(BaseModel):
 
 
 @router.get("/")
+@db_transaction_handler("get email preferences", auto_commit=False)
 async def get_preferences(
     request: Request,
     current_user: dict = Depends(get_current_user),
@@ -75,28 +76,15 @@ async def get_preferences(
 
     Returns the current email notification settings for the authenticated user.
     """
-    try:
-        user_id = UUID(current_user["identity"])
-        service = EmailPreferencesService(db)
-        prefs = await service.get_or_create_preferences(user_id, db)
+    user_id = UUID(current_user["identity"])
+    service = EmailPreferencesService(db)
+    prefs = await service.get_or_create_preferences(user_id, db)
 
-        return success(
-            data=prefs.to_dict(),
-            request=request,
-            message="Email preferences retrieved successfully"
-        )
-    except Exception as e:
-        logger.error(f"Failed to get email preferences: {str(e)}", exc_info=True)
-        return error(
-            message="Failed to retrieve email preferences",
-            code=ErrorCode.INTERNAL_SERVER_ERROR,
-            status_code=500,
-            severity=ErrorSeverity.HIGH,
-            request=request
-        )
+    return {"preferences": prefs.to_dict()}
 
 
 @router.put("/")
+@db_transaction_handler("update email preferences", auto_commit=True)
 async def update_preferences(
     request: Request,
     preferences_update: UpdatePreferencesRequest,
@@ -109,39 +97,22 @@ async def update_preferences(
     Allows users to control which email notifications they receive.
     Only provided fields will be updated.
     """
-    try:
-        user_id = UUID(current_user["identity"])
-        service = EmailPreferencesService(db)
+    user_id = UUID(current_user["identity"])
+    service = EmailPreferencesService(db)
 
-        # Build update dict from non-None fields
-        updates = {k: v for k, v in preferences_update.dict().items() if v is not None}
+    # Get only the fields that were provided (non-None)
+    updates = preferences_update.model_dump(exclude_none=True)
 
-        if not updates:
-            return success(
-                data={},
-                request=request,
-                message="No preferences to update"
-            )
+    if not updates:
+        return {"message": "No preferences to update"}
 
-        prefs = await service.update_preferences(user_id, updates, db)
+    prefs = await service.update_preferences(user_id, updates, db)
 
-        return success(
-            data=prefs.to_dict(),
-            request=request,
-            message="Email preferences updated successfully"
-        )
-    except Exception as e:
-        logger.error(f"Failed to update email preferences: {str(e)}", exc_info=True)
-        return error(
-            message="Failed to update email preferences",
-            code=ErrorCode.INTERNAL_SERVER_ERROR,
-            status_code=500,
-            severity=ErrorSeverity.HIGH,
-            request=request
-        )
+    return {"preferences": prefs.to_dict()}
 
 
 @router.post("/unsubscribe")
+@db_transaction_handler("unsubscribe from emails", auto_commit=True)
 async def unsubscribe(
     request: Request,
     unsubscribe_data: UnsubscribeRequest,
@@ -155,36 +126,23 @@ async def unsubscribe(
 
     If email_types is empty, unsubscribes from all emails.
     """
-    try:
-        service = EmailPreferencesService(db)
-        success_result = await service.unsubscribe(
-            unsubscribe_data.token,
-            unsubscribe_data.email_types or [],
-            db
+    service = EmailPreferencesService(db)
+    success_result = await service.unsubscribe(
+        unsubscribe_data.token,
+        unsubscribe_data.email_types or [],
+        db
+    )
+
+    if not success_result:
+        raise ResourceNotFoundException(
+            resource_type="unsubscribe token",
+            resource_id=unsubscribe_data.token[:8] + "...",
+            message="Invalid unsubscribe token"
         )
 
-        if not success_result:
-            return error(
-                message="Invalid unsubscribe token",
-                code=ErrorCode.RESOURCE_NOT_FOUND,
-                status_code=404,
-                severity=ErrorSeverity.MEDIUM,
-                request=request
-            )
+    email_types_str = ", ".join(unsubscribe_data.email_types) if unsubscribe_data.email_types else "all emails"
 
-        email_types_str = ", ".join(unsubscribe_data.email_types) if unsubscribe_data.email_types else "all emails"
-
-        return success(
-            data={"unsubscribed_from": email_types_str},
-            request=request,
-            message=f"Successfully unsubscribed from {email_types_str}"
-        )
-    except Exception as e:
-        logger.error(f"Failed to unsubscribe: {str(e)}", exc_info=True)
-        return error(
-            message="Failed to process unsubscribe request",
-            code=ErrorCode.INTERNAL_SERVER_ERROR,
-            status_code=500,
-            severity=ErrorSeverity.HIGH,
-            request=request
-        )
+    return {
+        "unsubscribed_from": email_types_str,
+        "message": f"Successfully unsubscribed from {email_types_str}"
+    }

@@ -12,8 +12,9 @@ Public endpoints:
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_
+from sqlalchemy.orm import selectinload
 from uuid import UUID
-from datetime import datetime
+from datetime import datetime, timezone
 
 from src.api.database.async_database import get_async_db
 from src.api.security.dependencies import get_current_user
@@ -28,7 +29,7 @@ from src.api.middleware.exceptions import (
 from src.services.invitation_service import InvitationService
 from src.services.user_service import UserService
 from src.services.email_service import EmailService
-from src.utils.response_utils import success
+from src.utils.logger import logger
 from src.utils.route_decorators import db_transaction_handler, require_permissions
 from src.utils.audit_helper import create_audit_log_async
 from src.utils.invitation_utils import is_invitation_expired
@@ -113,9 +114,14 @@ async def get_pending_invitations(
 
     user_email = user.email.lower()
 
-    # Query pending invitations for this email
+    # Query pending invitations for this email with eager loading
     query = (
         select(UserInvitations)
+        .options(
+            selectinload(UserInvitations.workspace),
+            selectinload(UserInvitations.role),
+            selectinload(UserInvitations.invited_by),
+        )
         .where(
             and_(
                 UserInvitations.email == user_email,
@@ -138,32 +144,13 @@ async def get_pending_invitations(
             await db.flush()
             continue
 
-        # Get workspace details
-        workspace_result = await db.execute(
-            select(WorkspaceModel).where(
-                and_(
-                    WorkspaceModel.id == invitation.workspace_id,
-                    WorkspaceModel.deleted_at.is_(None)
-                )
-            )
-        )
-        workspace = workspace_result.scalar_one_or_none()
-
-        # Skip if workspace is deleted
-        if not workspace:
+        # Workspace is already loaded - check for soft delete
+        workspace = invitation.workspace
+        if not workspace or workspace.deleted_at is not None:
             continue
 
-        # Get role details
-        role_result = await db.execute(
-            select(Role).where(Role.id == invitation.role_id)
-        )
-        role = role_result.scalar_one_or_none()
-
-        # Get inviter details
-        inviter_result = await db.execute(
-            select(Users).where(Users.id == invitation.invited_by_user_id)
-        )
-        inviter = inviter_result.scalar_one_or_none()
+        role = invitation.role
+        inviter = invitation.invited_by
 
         # Build invitation data
         invitation_data = {
@@ -180,7 +167,7 @@ async def get_pending_invitations(
             } if role else None,
             "invited_by": {
                 "id": str(inviter.id),
-                "name": f"{inviter.first_name} {inviter.last_name}".strip() or inviter.username,
+                "name": inviter.full_name or inviter.display_name or inviter.email,
                 "email": inviter.email
             } if inviter else None,
             "token": invitation.invitation_token,
@@ -199,14 +186,10 @@ async def get_pending_invitations(
         }
     )
 
-    return success(
-        data={
-            "invitations": invitation_list,
-            "count": len(invitation_list)
-        },
-        request=request,
-        message="Pending invitations retrieved successfully"
-    )
+    return {
+        "invitations": invitation_list,
+        "count": len(invitation_list)
+    }
 
 
 @router.post("/{invitation_id}/decline")
@@ -308,7 +291,7 @@ async def decline_invitation(
             "workspace_id": str(invitation.workspace_id),
             "invitation_email": invitation.email,
             "decline_reason": decline_reason,
-            "declined_at": datetime.utcnow().isoformat()
+            "declined_at": datetime.now(timezone.utc).isoformat()
         }
     )
 
@@ -377,12 +360,8 @@ async def decline_invitation(
                 }
             )
 
-    return success(
-        data={
-            "invitation_id": str(invitation_id),
-            "status": "declined",
-            "declined_at": datetime.utcnow().isoformat()
-        },
-        request=request,
-        message="Invitation declined successfully"
-    )
+    return {
+        "invitation_id": str(invitation_id),
+        "status": "declined",
+        "declined_at": datetime.now(timezone.utc).isoformat()
+    }
