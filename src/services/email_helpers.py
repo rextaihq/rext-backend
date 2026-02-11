@@ -47,7 +47,7 @@ async def send_auth_email(
         from src.services.email_preferences_service import EmailPreferencesService
 
         prefs_service = EmailPreferencesService(db)
-        prefs = await prefs_service.get_or_create_preferences(user_id, db)
+        prefs = await prefs_service.get_or_create_preferences(user_id)
         unsubscribe_token = prefs.unsubscribe_token
 
         # Import templates
@@ -172,7 +172,7 @@ async def send_workspace_email(
             prefs_service = EmailPreferencesService(db)
 
             # Check email preferences
-            can_send = await prefs_service.check_can_send(user_id, email_type, db)
+            can_send = await prefs_service.check_can_send(user_id, email_type)
             if not can_send:
                 logger.info(f"Email blocked by user preferences", extra={
                     "user_id": str(user_id),
@@ -181,7 +181,7 @@ async def send_workspace_email(
                 return False
 
             # Get unsubscribe token
-            prefs = await prefs_service.get_or_create_preferences(user_id, db)
+            prefs = await prefs_service.get_or_create_preferences(user_id)
             unsubscribe_token = prefs.unsubscribe_token
 
         # Add unsubscribe token to context for templates
