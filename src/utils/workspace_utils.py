@@ -31,46 +31,6 @@ def is_valid_uuid(value) -> bool:
         return False
 
 
-async def resolve_workspace(db: AsyncSession, identifier: str) -> Optional[WorkspaceModel]:
-    """
-    Resolve a workspace by either UUID or slug
-
-    Args:
-        db: Async database session
-        identifier: Either a workspace UUID or slug
-
-    Returns:
-        WorkspaceModel if found, None otherwise
-
-    Note: WorkspaceModel doesn't have soft delete (deleted_at), so all workspaces are returned.
-    """
-    if is_valid_uuid(identifier):
-        # It's a UUID, query by ID
-        result = await db.execute(
-            select(WorkspaceModel).where(WorkspaceModel.id == UUID(identifier))
-        )
-        return result.scalar_one_or_none()
-    else:
-        # It's a slug, query by slug
-        result = await db.execute(
-            select(WorkspaceModel).where(WorkspaceModel.slug == identifier)
-        )
-        return result.scalar_one_or_none()
-
-
-async def get_workspace_id_from_identifier(db: AsyncSession, identifier: str) -> Optional[UUID]:
-    """
-    Get workspace UUID from either a UUID string or slug
-
-    Args:
-        db: Async database session
-        identifier: Either a workspace UUID or slug
-
-    Returns:
-        UUID of the workspace if found, None otherwise
-    """
-    workspace = await resolve_workspace(db, identifier)
-    return workspace.id if workspace else None
 
 
 async def verify_workspace_membership(
@@ -119,6 +79,28 @@ async def verify_workspace_membership(
         )
 
     return row[0], row[1]
+
+async def get_workspace_id_from_identifier(
+    db: AsyncSession,
+    identifier: str
+) -> Optional[UUID]:
+    """
+    Resolve workspace UUID from either a UUID string or slug.
+    """
+
+    if is_valid_uuid(identifier):
+        stmt = select(WorkspaceModel.id).where(
+            WorkspaceModel.id == UUID(str(identifier))
+        )
+    else:
+        stmt = select(WorkspaceModel.id).where(
+            WorkspaceModel.slug == identifier
+        )
+
+    result = await db.execute(stmt)
+    workspace_id = result.scalar_one_or_none()
+
+    return workspace_id
 
 
 async def resolve_and_verify_workspace(
