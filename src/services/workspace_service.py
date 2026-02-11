@@ -162,7 +162,7 @@ class WorkspaceService:
         task = create_task(run_pipeline())
 
         def handle_completion(pipeline_task) -> None:
-            with trace(name="Worksapce Completion"):
+            with trace(name="Workspace Completion"):
                 try:
                     pipeline_task.result()
                 except Exception as exc:
@@ -353,8 +353,8 @@ class WorkspaceService:
                     "id": str(ws.id),
                     "user_id": str(ws.user_id),
                     "name": ws.name,
-                    "slug": ws.slug if hasattr(ws, "slug") else None,
-                    "timezone": ws.timezone if hasattr(ws, "timezone") else None,
+                    "slug": ws.slug,
+                    "timezone": ws.timezone,
                     "url": ws.url,
                     "created_at": ws.created_at.isoformat() if ws.created_at else None,
                     "updated_at": ws.updated_at.isoformat() if ws.updated_at else None,
@@ -371,7 +371,7 @@ class WorkspaceService:
             )
 
         logger.info(
-            f"Retrieved {len(workspace_data)} workspaces for user",
+            "Retrieved workspaces for user",
             extra={"user_id": str(user_id), "count": len(workspace_data)},
         )
 
@@ -474,7 +474,7 @@ class WorkspaceService:
             }
 
         logger.info(
-            f"Retrieved analytics for workspace",
+            "Retrieved analytics for workspace",
             extra={
                 "workspace_id": str(workspace_id),
                 "total_knowledge": analytics["knowledge_stats"]["total"],
@@ -515,8 +515,8 @@ class WorkspaceService:
             "id": str(workspace.id),
             "user_id": str(workspace.user_id),
             "name": workspace.name,
-            "slug": workspace.slug if hasattr(workspace, "slug") else None,
-            "timezone": workspace.timezone if hasattr(workspace, "timezone") else None,
+            "slug": workspace.slug,
+            "timezone": workspace.timezone,
             "url": workspace.url,
             "created_at": (
                 workspace.created_at.isoformat() if workspace.created_at else None
@@ -769,8 +769,8 @@ class WorkspaceService:
         await self.db.flush()
 
         logger.info(
-            f"Workspace created: {workspace.id}",
-            extra={"user_id": str(user_id), "name": name},
+            "Workspace created",
+            extra={"workspace_id": str(workspace.id), "user_id": str(user_id), "name": name},
         )
 
         return workspace
@@ -806,7 +806,7 @@ class WorkspaceService:
         await self.db.flush()
 
         logger.info(
-            f"Added member to workspace",
+            "Added member to workspace",
             extra={"workspace_id": str(workspace_id), "user_id": str(user_id)},
         )
 
@@ -853,7 +853,7 @@ class WorkspaceService:
         workspace.updated_at = datetime.now(timezone.utc)
 
         logger.info(
-            f"Workspace updated: {workspace_id}",
+            "Workspace updated",
             extra={"workspace_id": str(workspace_id)},
         )
 
@@ -888,7 +888,7 @@ class WorkspaceService:
         workspace.deleted_by = user_id
 
         logger.info(
-            f"Workspace soft deleted: {workspace_id} by user {user_id}",
+            "Workspace soft deleted",
             extra={"workspace_id": str(workspace_id), "user_id": str(user_id)},
         )
 
@@ -1114,8 +1114,8 @@ class WorkspaceService:
             "id": str(workspace.id),
             "user_id": str(workspace.user_id),
             "name": workspace.name,
-            "slug": workspace.slug if hasattr(workspace, "slug") else None,
-            "timezone": workspace.timezone if hasattr(workspace, "timezone") else None,
+            "slug": workspace.slug,
+            "timezone": workspace.timezone,
             "url": workspace.url,
             "created_at": (
                 workspace.created_at.isoformat() if workspace.created_at else None

@@ -112,8 +112,12 @@ class WorkspacePipeline:
     async def _scrape_website(self) -> _ScrapeResult:
         """Scrape the target URL and emit relevant SSE events."""
         logger.info(
-            f"🌐 Starting to scrape URL: {self.url}",
-            extra={"workspace_id": str(self.workspace_id), "operation_id": self.operation_id},
+            "Starting to scrape URL",
+            extra={
+                "workspace_id": str(self.workspace_id),
+                "operation_id": self.operation_id,
+                "url": self.url,
+            },
         )
         
         await emit_step_start(
@@ -178,8 +182,12 @@ class WorkspacePipeline:
         # ============================================================================
         
         logger.info(
-            f"⚠️ VECTOR STORE DISABLED - Skipping {len(chunks)} chunks",
-            extra={"workspace_id": str(self.workspace_id), "operation_id": self.operation_id},
+            "Vector store disabled, skipping chunks",
+            extra={
+                "workspace_id": str(self.workspace_id),
+                "operation_id": self.operation_id,
+                "chunk_count": len(chunks),
+            },
         )
         
         # Original code commented out below:
@@ -250,35 +258,25 @@ class WorkspacePipeline:
 
         trimmed_content = content[: self._MAX_BRAND_VOICE_CHARS]
         
-        # Log scraped content for debugging
         logger.info(
-            "=" * 80,
-            extra={"workspace_id": str(self.workspace_id), "operation_id": self.operation_id}
+            "Scraped content prepared for brand voice extraction",
+            extra={
+                "workspace_id": str(self.workspace_id),
+                "operation_id": self.operation_id,
+                "original_length": len(content),
+                "trimmed_length": len(trimmed_content),
+            },
         )
-        logger.info(
-            "📄 SCRAPED CONTENT (for LLM analysis)",
-            extra={"workspace_id": str(self.workspace_id), "operation_id": self.operation_id}
+        logger.debug(
+            "Scraped content for LLM analysis",
+            extra={
+                "workspace_id": str(self.workspace_id),
+                "operation_id": self.operation_id,
+                "content_preview": trimmed_content[:500],
+                "content_length": len(trimmed_content),
+            },
         )
-        logger.info(
-            "=" * 80,
-            extra={"workspace_id": str(self.workspace_id), "operation_id": self.operation_id}
-        )
-        logger.info(
-            f"Content length: {len(trimmed_content)} characters (trimmed from {len(content)})",
-            extra={"workspace_id": str(self.workspace_id), "operation_id": self.operation_id}
-        )
-        logger.info(
-            "-" * 80,
-            extra={"workspace_id": str(self.workspace_id), "operation_id": self.operation_id}
-        )
-        logger.info(
-            trimmed_content,
-            extra={"workspace_id": str(self.workspace_id), "operation_id": self.operation_id}
-        )
-        logger.info(
-            "=" * 80,
-            extra={"workspace_id": str(self.workspace_id), "operation_id": self.operation_id}
-        )
+
 
         try:
             brand_voice_schema = await self._brand_voice_generator(trimmed_content)
@@ -392,86 +390,32 @@ class WorkspacePipeline:
             f"📊 EXTRACTED PERSONAS ({len(personas_data)} total)",
             extra={"workspace_id": str(self.workspace_id), "operation_id": self.operation_id}
         )
+
         logger.info(
-            "=" * 80,
-            extra={"workspace_id": str(self.workspace_id), "operation_id": self.operation_id}
+            "Extracted personas ready for persistence",
+            extra={
+                "workspace_id": str(self.workspace_id),
+                "operation_id": self.operation_id,
+                "persona_count": len(personas_data),
+                "persona_names": [p.get("name", "Unnamed") for p in personas_data],
+            },
         )
-        
-        for idx, persona_data in enumerate(personas_data, 1):
-            logger.info(
-                f"\n👤 PERSONA #{idx}: {persona_data.get('name', 'Unnamed')}",
-                extra={"workspace_id": str(self.workspace_id), "operation_id": self.operation_id}
-            )
-            logger.info(
-                f"  📝 Description: {persona_data.get('description', 'N/A')}",
-                extra={"workspace_id": str(self.workspace_id), "operation_id": self.operation_id}
-            )
-            
-            # E-E-A-T Professional Fields
-            if persona_data.get('full_name'):
-                logger.info(
-                    f"  👔 Full Name: {persona_data.get('full_name')}",
-                    extra={"workspace_id": str(self.workspace_id), "operation_id": self.operation_id}
-                )
-            if persona_data.get('professional_title'):
-                logger.info(
-                    f"  💼 Title: {persona_data.get('professional_title')}",
-                    extra={"workspace_id": str(self.workspace_id), "operation_id": self.operation_id}
-                )
-            if persona_data.get('areas_of_expertise'):
-                logger.info(
-                    f"  🎓 Expertise: {persona_data.get('areas_of_expertise')}",
-                    extra={"workspace_id": str(self.workspace_id), "operation_id": self.operation_id}
-                )
-            if persona_data.get('tone_of_voice'):
-                logger.info(
-                    f"  🗣️  Tone: {persona_data.get('tone_of_voice')}",
-                    extra={"workspace_id": str(self.workspace_id), "operation_id": self.operation_id}
-                )
-            if persona_data.get('bio'):
-                logger.info(
-                    f"  📖 Bio: {persona_data.get('bio')[:100]}...",
-                    extra={"workspace_id": str(self.workspace_id), "operation_id": self.operation_id}
-                )
-            if persona_data.get('linkedin_url'):
-                logger.info(
-                    f"  🔗 LinkedIn: {persona_data.get('linkedin_url')}",
-                    extra={"workspace_id": str(self.workspace_id), "operation_id": self.operation_id}
-                )
-            
-            # User Persona Fields (if any)
-            if persona_data.get('demographics'):
-                logger.info(
-                    f"  👥 Demographics: {persona_data.get('demographics')}",
-                    extra={"workspace_id": str(self.workspace_id), "operation_id": self.operation_id}
-                )
-            if persona_data.get('pain_points'):
-                logger.info(
-                    f"  ⚠️  Pain Points: {persona_data.get('pain_points')}",
-                    extra={"workspace_id": str(self.workspace_id), "operation_id": self.operation_id}
-                )
-            if persona_data.get('goals'):
-                logger.info(
-                    f"  🎯 Goals: {persona_data.get('goals')}",
-                    extra={"workspace_id": str(self.workspace_id), "operation_id": self.operation_id}
-                )
-            if persona_data.get('behaviors'):
-                logger.info(
-                    f"  🔄 Behaviors: {persona_data.get('behaviors')}",
-                    extra={"workspace_id": str(self.workspace_id), "operation_id": self.operation_id}
-                )
-            
-            logger.info(
-                "-" * 80,
-                extra={"workspace_id": str(self.workspace_id), "operation_id": self.operation_id}
-            )
-        
-        from sqlalchemy import delete
-        from src.api.models.knowledge_models.persona_model import Persona
-        
-        # Delete existing personas for this workspace
-        await self.db.execute(
-            delete(Persona).where(Persona.workspace_id == self.workspace_id)
+        logger.debug(
+            "Extracted persona details",
+            extra={
+                "workspace_id": str(self.workspace_id),
+                "operation_id": self.operation_id,
+                "personas": [
+                    {
+                        "name": p.get("name"),
+                        "description": p.get("description"),
+                        "professional_title": p.get("professional_title"),
+                        "has_bio": bool(p.get("bio")),
+                        "has_linkedin": bool(p.get("linkedin_url")),
+                    }
+                    for p in personas_data
+                ],
+            },
         )
         
         # Insert new personas with ALL fields

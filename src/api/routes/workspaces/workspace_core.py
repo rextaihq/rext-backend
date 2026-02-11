@@ -246,8 +246,8 @@ async def update_workspace(
     )
 
     logger.info(
-        f"Workspace updated: {workspace.id}",
-        extra={"workspace_id": str(workspace.id), "user_id": user_id}
+        "Workspace updated",
+        extra={"workspace_id": str(workspace.id), "user_id": user_id},
     )
 
     # Return raw data - decorator handles success response
@@ -296,8 +296,8 @@ async def delete_workspace_endpoint(
     await workspace_service.delete_workspace(workspace.id, UUID(user_id))
 
     logger.info(
-        f"Workspace soft deleted: {workspace.id}",
-        extra={"workspace_id": str(workspace.id), "user_id": user_id}
+        "Workspace soft deleted",
+        extra={"workspace_id": str(workspace.id), "user_id": user_id},
     )
 
     # Send confirmation email
@@ -321,10 +321,17 @@ async def delete_workspace_endpoint(
                 "is_last_workspace": remaining_after_delete == 0
             }
         )
-        logger.info(f"Deletion confirmation email sent to {db_user.email}")
+        logger.info(
+            "Deletion confirmation email sent",
+            extra={"recipient_email": db_user.email},
+        )
     except Exception as e:
         # Don't fail the deletion if email fails
-        logger.error(f"Failed to send deletion confirmation email: {str(e)}")
+        logger.error(
+            "Failed to send deletion confirmation email",
+            extra={"error": str(e)},
+            exc_info=True,
+        )
 
     # Return success message with workspace count
     return {
