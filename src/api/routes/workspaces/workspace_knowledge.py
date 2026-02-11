@@ -546,6 +546,7 @@ async def create_text_knowledge(
         payload.title,
         payload.content,
         knowledge_base_id=payload.knowledge_base_id,
+        tags=payload.tags,
     )
 
     if payload.tags:
@@ -644,10 +645,8 @@ async def update_text_knowledge(
         workspace.id,
         title=payload.title,
         content=payload.content,
+        tags=payload.tags,
     )
-
-    if payload.tags:
-        logger.warning("Tags update for text knowledge is not yet supported", extra={"tags": payload.tags})
 
     return success(
         data={"text_knowledge": knowledge},
