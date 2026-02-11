@@ -1,7 +1,16 @@
 from fastapi import APIRouter, Depends, Request, BackgroundTasks, Header
 from src.utils.logger import logger
 from src.api.security.dependencies import get_current_user
-from src.api.schema.user_schema import LoginUser, RegisterUser, RegisterWithInvitation, LoginWithInvitation
+from src.api.schema.user_schema import (
+    LoginUser, 
+    RegisterUser, 
+    RegisterWithInvitation, 
+    LoginWithInvitation,
+    RefreshTokenRequest,  # Added
+    ResendVerificationRequest,  # Added
+    OAuthLoginRequest,  # Added
+    OAuthLinkRequest  # Added
+)
 from src.api.security.token_utils import decode_and_verify_token
 from src.api.config import get_settings
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -324,7 +333,7 @@ async def register_with_invitation(
             # Skip email verification for invited users
             # Rationale: Email was already validated by invitation system
             new_user.email_verified = True
-            new_user.email_verified_at = datetime.utcnow()
+            new_user.email_verified_at = datetime.now(timezone.utc)
             await db.flush()
 
             current_user = new_user
@@ -558,7 +567,8 @@ async def login_user(
 
 @router.post("/refresh")
 async def refresh_access_token(
-    request: Request,
+    token_data: RefreshTokenRequest,  # CHANGED: Added Pydantic schema
+    request: Request,  # CHANGED: Moved to second position
     db: AsyncSession = Depends(get_async_db)
 ):
     """
@@ -578,9 +588,8 @@ async def refresh_access_token(
     to prevent token exposure in server logs and browser history.
     """
     try:
-        # Extract refresh token from request body
-        body = await request.json()
-        refresh_token = body.get("refresh_token")
+        # CHANGED: Access refresh_token from Pydantic model
+        refresh_token = token_data.refresh_token
 
         if not refresh_token:
             return error(
@@ -710,7 +719,8 @@ async def verify_email(
 
 @router.post("/resend-verification")
 async def resend_verification(
-    request: Request,
+    email_data: ResendVerificationRequest,  # CHANGED: Added Pydantic schema
+    request: Request,  # CHANGED: Moved to second position
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_async_db),
     _rate_limit: None = Depends(registration_rate_limit())
@@ -724,8 +734,8 @@ async def resend_verification(
     }
     """
     try:
-        body = await request.json()
-        email = body.get("email")
+        # CHANGED: Access email from Pydantic model
+        email = email_data.email
 
         if not email:
             return error(
@@ -803,14 +813,13 @@ async def oauth_login(
     from datetime import datetime
 
     try:
-        body = await request.json()
-
+        # CHANGED: Access data from Pydantic model instead of request.json()
         # Parse token_expires_at from ISO string to datetime (if provided)
         # Database uses TIMESTAMP WITHOUT TIME ZONE, so we need timezone-naive datetimes
         token_expires_at = None
-        if body.get("token_expires_at"):
+        if oauth_data.token_expires_at:
             try:
-                expires_str = body.get("token_expires_at")
+                expires_str = oauth_data.token_expires_at
                 # Handle ISO format with 'Z' suffix (e.g., '2025-01-01T00:00:00Z')
                 if expires_str.endswith('Z'):
                     expires_str = expires_str[:-1]  # Remove 'Z' to get naive datetime
@@ -820,18 +829,18 @@ async def oauth_login(
                     parsed_dt = parsed_dt.replace(tzinfo=None)
                 token_expires_at = parsed_dt
             except (ValueError, AttributeError) as e:
-                logger.warning(f"Failed to parse token_expires_at: {body.get('token_expires_at')}, error: {e}")
+                logger.warning(f"Failed to parse token_expires_at: {oauth_data.token_expires_at}, error: {e}")
 
         oauth_service = OAuthService(db)
         new_user, tokens = await oauth_service.oauth_login_or_register(
-            provider=body.get("provider"),
-            provider_account_id=body.get("provider_account_id"),
-            provider_email=body.get("provider_email"),
-            provider_name=body.get("provider_name", ""),
-            provider_avatar_url=body.get("provider_avatar_url"),
-            provider_username=body.get("provider_username"),
-            access_token=body.get("access_token"),
-            refresh_token=body.get("refresh_token"),
+            provider=oauth_data.provider,
+            provider_account_id=oauth_data.provider_account_id,
+            provider_email=oauth_data.provider_email,
+            provider_name=oauth_data.provider_name,
+            provider_avatar_url=oauth_data.provider_avatar_url,
+            provider_username=oauth_data.provider_username,
+            access_token=oauth_data.access_token,
+            refresh_token=oauth_data.refresh_token,
             token_expires_at=token_expires_at
         )
 
@@ -915,7 +924,8 @@ async def oauth_login(
 
 @router.post("/oauth/link")
 async def link_oauth(
-    request: Request,
+    oauth_data: OAuthLinkRequest,  # CHANGED: Added Pydantic schema
+    request: Request,  # CHANGED: Moved to second position
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_async_db),
     _rate_limit: None = Depends(oauth_rate_limit())
@@ -943,15 +953,15 @@ async def link_oauth(
     from datetime import datetime
 
     try:
-        body = await request.json()
+        # CHANGED: Access data from Pydantic model instead of request.json()
         user_id = UUID(current_user.get("identity"))
 
         # Parse token_expires_at from ISO string to datetime (if provided)
         # Database uses TIMESTAMP WITHOUT TIME ZONE, so we need timezone-naive datetimes
         token_expires_at = None
-        if body.get("token_expires_at"):
+        if oauth_data.token_expires_at:
             try:
-                expires_str = body.get("token_expires_at")
+                expires_str = oauth_data.token_expires_at
                 # Handle ISO format with 'Z' suffix (e.g., '2025-01-01T00:00:00Z')
                 if expires_str.endswith('Z'):
                     expires_str = expires_str[:-1]  # Remove 'Z' to get naive datetime
@@ -961,25 +971,25 @@ async def link_oauth(
                     parsed_dt = parsed_dt.replace(tzinfo=None)
                 token_expires_at = parsed_dt
             except (ValueError, AttributeError) as e:
-                logger.warning(f"Failed to parse token_expires_at: {body.get('token_expires_at')}, error: {e}")
+                logger.warning(f"Failed to parse token_expires_at: {oauth_data.token_expires_at}, error: {e}")
 
         oauth_service = OAuthService(db)
         oauth_account = await oauth_service.link_oauth_account(
             user_id=user_id,
-            provider=body.get("provider"),
-            provider_account_id=body.get("provider_account_id"),
-            provider_email=body.get("provider_email"),
-            provider_username=body.get("provider_username"),
-            provider_avatar_url=body.get("provider_avatar_url"),
-            access_token=body.get("access_token"),
-            refresh_token=body.get("refresh_token"),
+            provider=oauth_data.provider,
+            provider_account_id=oauth_data.provider_account_id,
+            provider_email=oauth_data.provider_email,
+            provider_username=oauth_data.provider_username,
+            provider_avatar_url=oauth_data.provider_avatar_url,
+            access_token=oauth_data.access_token,
+            refresh_token=oauth_data.refresh_token,
             token_expires_at=token_expires_at
         )
 
         return success(
             data=oauth_account.to_dict(),
             request=request,
-            message=f"{body.get('provider').capitalize()} account linked successfully"
+            message=f"{oauth_data.provider.capitalize()} account linked successfully"
         )
 
     except (DuplicateResourceException, ResourceNotFoundException):

@@ -25,7 +25,7 @@ from src.api.security.dependencies import get_current_user
 from src.api.models.user_models.user_roles import UserRole
 from src.api.models.user_models.roles import Role
 from src.utils.logger import logger
-from src.utils.rbac_utils import get_user_permissions
+from src.utils.rbac_utils import get_user_permissions, get_user_role_names
 
 
 class PermissionChecker:
@@ -237,32 +237,13 @@ class PermissionChecker:
 
     @staticmethod
     async def _is_super_admin(db: AsyncSession, user_id: str) -> bool:
-        """
-        Check if user has super_admin role.
-
-        Super admins bypass ALL permission checks as per RBAC implementation plan.
-        This is a security feature for platform administrators.
-
-        Args:
-            db: Database session
-            user_id: User ID (UUID as string)
-
-        Returns:
-            True if user has super_admin role, False otherwise
-        """
-        from sqlalchemy import select
-
-        query = (
-            select(UserRole)
-            .join(Role, UserRole.role_id == Role.id)
-            .where(
-                UserRole.user_id == user_id,
-                Role.name == "super_admin"
-            )
-        )
-        result = await db.execute(query)
-        super_admin_role = result.scalars().first()
-        return super_admin_role is not None
+        """Check if user has super_admin role (cached)."""
+        # Convert string ID to UUID object as expected by rbac_utils
+        user_uuid = UUID(user_id) if isinstance(user_id, str) else user_id
+        
+        # Get user roles (cached)
+        role_names = await get_user_role_names(db, user_uuid)
+        return "super_admin" in role_names
 
     @staticmethod
     async def _validate_workspace_membership(
@@ -359,30 +340,8 @@ async def is_admin(
     Check if current user is an admin.
 
     This is a convenience dependency that checks if the user has either
-    the 'admin' or 'super_admin' role.
-
-    Args:
-        current_user: Current authenticated user (from get_current_user dependency)
-        db: Database session
-
-    Raises:
-        HTTPException: 403 if user is not an admin
-
-    Returns:
-        True if user is an admin
-
-    Usage:
-        @router.delete("/users/{user_id}")
-        def delete_user(
-            user_id: str,
-            _: bool = Depends(is_admin),
-            db: Session = Depends(get_db)
-        ):
-            # Only admins can delete users
-            return {"message": "User deleted"}
+    the 'admin' or 'super_admin' role (cached via rbac_utils).
     """
-    from sqlalchemy import select
-
     user_id = current_user.get("identity")
 
     if not user_id:
@@ -395,19 +354,14 @@ async def is_admin(
             detail="Authentication required"
         )
 
-    # Check if user has admin or super_admin role
-    query = (
-        select(UserRole)
-        .join(Role, UserRole.role_id == Role.id)
-        .where(
-            UserRole.user_id == user_id,
-            Role.name.in_(["admin", "super_admin"])
-        )
-    )
-    result = await db.execute(query)
-    admin_role = result.scalars().first()
+    # Convert string ID to UUID object as expected by rbac_utils
+    user_uuid = UUID(user_id) if isinstance(user_id, str) else user_id
 
-    if not admin_role:
+    # Check if user has admin or super_admin role (cached)
+    role_names = await get_user_role_names(db, user_uuid)
+    is_authorized = any(role in ["admin", "super_admin"] for role in role_names)
+
+    if not is_authorized:
         logger.warning(
             f"Admin access denied for user {user_id}",
             extra={

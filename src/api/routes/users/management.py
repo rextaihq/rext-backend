@@ -57,7 +57,7 @@ async def send_data_export_email_task(
             <p>Hello {name},</p>
             <p>Your requested data export has been generated.</p>
             <p><strong>Export ID:</strong> {export_id}</p>
-            <p><strong>Generated at:</strong> {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}</p>
+            <p><strong>Generated at:</strong> {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}</p>
 
             <h3>Export Contents:</h3>
             <ul>
@@ -399,7 +399,7 @@ async def export_user_data(
                 "roles_count": len(db_user.user_roles) if hasattr(db_user, 'user_roles') else 0,
                 "login_count": db_user.login_count if hasattr(db_user, 'login_count') else 0,
                 "last_login": db_user.last_login_at.isoformat() if hasattr(db_user, 'last_login_at') and db_user.last_login_at else None,
-                "account_age_days": (datetime.utcnow() - db_user.created_at).days if db_user.created_at else 0,
+                "account_age_days": (datetime.now(timezone.utc) - db_user.created_at).days if db_user.created_at else 0,
                 "note": "Detailed usage metrics available upon request"
             }
 
@@ -427,7 +427,7 @@ async def export_user_data(
             export_id=export_id,
             user_id=str(user_id),
             status="completed",
-            requested_at=datetime.utcnow().isoformat(),
+            requested_at=datetime.now(timezone.utc).isoformat(),
             message="Data export has been sent to your email address"
         )
 

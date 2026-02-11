@@ -540,10 +540,10 @@ class LemonSqueezyProvider(PaymentProvider):
             customer_id=subscription.get("customer_id", ""),
             plan_id=subscription.get("variant_id", ""),
             current_period_start=datetime.fromisoformat(
-                subscription.get("renews_at", datetime.utcnow().isoformat())
+                subscription.get("renews_at", datetime.now(timezone.utc).isoformat())
             ),
             current_period_end=datetime.fromisoformat(
-                subscription.get("ends_at", datetime.utcnow().isoformat())
+                subscription.get("ends_at", datetime.now(timezone.utc).isoformat())
             ),
             cancel_at_period_end=subscription.get("cancelled", False),
             cancelled_at=(
@@ -794,7 +794,7 @@ class LemonSqueezyProvider(PaymentProvider):
             "event_id": meta.get("webhook_id", ""),
             "data": data,
             "timestamp": datetime.fromisoformat(
-                meta.get("created_at", datetime.utcnow().isoformat())
+                meta.get("created_at", datetime.now(timezone.utc).isoformat())
             )
         }
 

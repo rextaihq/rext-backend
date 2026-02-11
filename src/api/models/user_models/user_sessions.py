@@ -6,8 +6,8 @@ Stores session metadata like device info, IP address, and activity timestamps.
 """
 
 import uuid
-from datetime import datetime,timezone
-from sqlalchemy import Column, String, Boolean, TIMESTAMP, Text, Index, ForeignKey
+from datetime import datetime, timezone
+from sqlalchemy import Column, String, Boolean, DateTime, Text, Index, ForeignKey
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import relationship
 from src.api.database.base import Base
@@ -20,7 +20,7 @@ class UserSession(Base, SerializableMixin):
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
-    jti = Column(String(255), unique=True, nullable=False, index=True)  # JWT ID from access token
+    jti = Column(String(255), unique=True, nullable=False)  # JWT ID from access token
 
     # Device/Client Information
     device_name = Column(String(255))  # e.g., "Chrome on Windows"

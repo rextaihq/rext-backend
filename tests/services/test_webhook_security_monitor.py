@@ -67,7 +67,7 @@ class TestTimeWindowCleanup:
         monitor.record_verification_failure(ip_address="192.168.1.100")
 
         # Manually set timestamp to old value (simulate time passing)
-        old_time = datetime.utcnow() - timedelta(minutes=10)  # Older than 5min window
+        old_time = datetime.now(timezone.utc) - timedelta(minutes=10)  # Older than 5min window
         monitor._failures["192.168.1.100"][0] = WebhookFailureRecord(
             timestamp=old_time,
             ip_address="192.168.1.100",
@@ -89,7 +89,7 @@ class TestTimeWindowCleanup:
         monitor.record_verification_failure(ip_address="192.168.1.100")
 
         # Set to old timestamp
-        old_time = datetime.utcnow() - timedelta(minutes=10)
+        old_time = datetime.now(timezone.utc) - timedelta(minutes=10)
         monitor._failures["192.168.1.100"][0] = WebhookFailureRecord(
             timestamp=old_time,
             ip_address="192.168.1.100",
@@ -159,7 +159,7 @@ class TestAlertThreshold:
             monitor.record_verification_failure(ip_address="192.168.1.100")
 
         # Manually set last alert time to past (simulate cooldown expiry)
-        old_time = datetime.utcnow() - timedelta(minutes=20)  # Beyond 15min cooldown
+        old_time = datetime.now(timezone.utc) - timedelta(minutes=20)  # Beyond 15min cooldown
         monitor._last_alert["192.168.1.100"] = old_time
 
         # Should be able to alert again

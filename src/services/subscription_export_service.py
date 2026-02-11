@@ -274,7 +274,7 @@ class SubscriptionExportService:
                 # Calculate days active
                 days_active = 0
                 if subscription.created_at:
-                    end_date_calc = subscription.cancelled_at or datetime.utcnow()
+                    end_date_calc = subscription.cancelled_at or datetime.now(timezone.utc)
                     days_active = (end_date_calc - subscription.created_at).days
 
                 writer.writerow([
@@ -339,7 +339,7 @@ class SubscriptionExportService:
             ])
 
             # Calculate for each month
-            current_date = datetime.utcnow()
+            current_date = datetime.now(timezone.utc)
 
             for i in range(months - 1, -1, -1):
                 month_date = current_date - timedelta(days=30 * i)
