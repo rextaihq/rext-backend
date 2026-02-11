@@ -144,6 +144,15 @@ GLOBAL_PERMISSIONS = [
     # Support Staff Permissions
     ("support.view_workspace", "View Any Workspace", "support", "view_workspace", "View any workspace (read-only)"),
     ("support.view_billing", "View Billing Info", "support", "view_billing", "View billing information for support"),
+
+    # Billing & Subscription (Owner Only!)
+    ("subscription.read", "View Subscription", "subscription", "read", "View subscription details and status"),
+    ("subscription.manage", "Manage Subscription", "subscription", "manage", "Change plans, update billing, cancel subscription"),
+
+    # Billing & Usage
+    ("billing.read", "View Billing", "billing", "read", "View billing information and invoices"),
+    ("billing.manage", "Manage Billing", "billing", "manage", "Update payment methods, view invoices"),
+    ("usage.read", "View Usage", "usage", "read", "View usage metrics and limits"),
 ]
 
 
@@ -415,6 +424,10 @@ ROLE_PERMISSION_ASSIGNMENTS = {
         # License (can view/activate own licenses)
         "license.read",
         "license.view",  # Backward compatibility (deprecated) "license.activate", "license.deactivate",
+
+        # Subscription
+        "subscription.read",
+        "subscription.manage",
     ],
 }
 
