@@ -35,7 +35,7 @@ async def test_owner_can_delete_workspace(db_session):
         name="Owner Workspace", # Providing name as well since model has it
         timezone="UTC",
         user_id=user.id,
-        created_at=datetime.utcnow()
+        created_at=datetime.now(timezone.utc)
     )
     db_session.add(workspace)
     await db_session.flush()
@@ -98,7 +98,7 @@ async def test_non_owner_cannot_delete_workspace(db_session):
         name="Shared Workspace",
         timezone="UTC",
         user_id=owner.id,
-        created_at=datetime.utcnow()
+        created_at=datetime.now(timezone.utc)
     )
     db_session.add(workspace)
     await db_session.flush()
@@ -162,7 +162,7 @@ async def test_non_member_cannot_delete_workspace(db_session):
         name="Target Workspace",
         timezone="UTC",
         user_id=owner.id,
-        created_at=datetime.utcnow()
+        created_at=datetime.now(timezone.utc)
     )
     db_session.add(workspace)
     await db_session.commit()

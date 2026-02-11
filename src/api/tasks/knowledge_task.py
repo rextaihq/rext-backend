@@ -29,9 +29,63 @@ def _truncate_field(value, field_name: str, max_len: int = MAX_FIELD_LENGTH):
     return value
 
 
+async def _persist_personas_with_savepoint(
+    db: AsyncSession,
+    workspace_id,
+    personas_data,
+):
+    """
+    TASK-096 compliant persona replacement.
+
+    Uses SAVEPOINT so that:
+    - If any persona insert fails → deletion is rolled back
+    - Original personas remain intact
+    """
+
+    if not personas_data:
+        return
+
+    async with db.begin_nested():
+        # Delete existing personas
+        await db.execute(
+            delete(Persona).where(Persona.workspace_id == workspace_id)
+        )
+
+        # Insert new personas
+        for persona_data in personas_data:
+            persona = Persona(
+                workspace_id=workspace_id,
+                name=persona_data.name,
+                description=persona_data.description,
+                # E-E-A-T professional fields
+                full_name=persona_data.full_name,
+                professional_title=persona_data.professional_title,
+                areas_of_expertise=persona_data.areas_of_expertise,
+                tone_of_voice=persona_data.tone_of_voice,
+                bio=persona_data.bio,
+                linkedin_url=persona_data.linkedin_url,
+                # User persona fields
+                demographics=persona_data.demographics,
+                pain_points=persona_data.pain_points,
+                goals=persona_data.goals,
+                behaviors=persona_data.behaviors,
+            )
+            db.add(persona)
+
+        # Force DB validation inside SAVEPOINT
+        await db.flush()
+
+    logger.info(f"Persisted {len(personas_data)} persona(s) atomically")
+
+
 async def scrape_web_content(url: HttpUrl, website_id: str):
     """
-    Scrape a single web page using crawling and store results in Website + vector store.
+    Refactored knowledge task fulfilling TASK-096:
+
+    ✔ Single atomic transaction
+    ✔ Persona replacement protected by SAVEPOINT
+    ✔ Proper AsyncSession usage
+    ✔ No partial commits
     """
 
     logger.info(f"Scraping web content from {url}...")

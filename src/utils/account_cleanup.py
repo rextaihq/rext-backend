@@ -19,6 +19,7 @@ async def delete_deactivated_accounts(db: AsyncSession) -> int:
     Permanently delete accounts that have been deactivated for 14 days or more.
     """
     try:
+        # Calculate cutoff date (14 days ago)
         cutoff_date = datetime.now(timezone.utc) - timedelta(days=14)
 
         logger.info(
@@ -41,8 +42,8 @@ async def delete_deactivated_accounts(db: AsyncSession) -> int:
 
         for user in deactivated_users:
             try:
+                # Soft delete the user
                 user.deleted_at = datetime.now(timezone.utc)
-
                 logger.info(
                     f"Deleting deactivated account: {user.email} (ID: {user.id}), "
                     f"deactivated on {user.deactivated_at.isoformat()}"

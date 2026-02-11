@@ -284,7 +284,7 @@ async def accept_invitation(
 
     # Update invitation status
     invitation.status = "accepted"
-    invitation.accepted_at = datetime.utcnow()
+    invitation.accepted_at = datetime.now(timezone.utc)
     invitation.accepted_by_user_id = user_id
     await db.flush()
 

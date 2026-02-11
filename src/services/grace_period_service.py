@@ -46,7 +46,7 @@ class GracePeriodService:
         Returns:
             List of subscriptions past grace period
         """
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
 
         # Query for SUSPENDED subscriptions with expired grace period
         stmt = select(UserSubscription).where(
@@ -105,7 +105,7 @@ class GracePeriodService:
             plan = result.scalar_one_or_none()
 
             # Update subscription status
-            now = datetime.utcnow()
+            now = datetime.now(timezone.utc)
             subscription.status = SubscriptionStatus.EXPIRED
             subscription.end_date = now
             subscription.updated_at = now

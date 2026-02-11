@@ -59,7 +59,7 @@ async def verify_webhook_events(db: AsyncSession):
     failed = failed_result.scalar()
 
     # Get recent webhooks (last hour)
-    one_hour_ago = datetime.utcnow() - timedelta(hours=1)
+    one_hour_ago = datetime.now(timezone.utc) - timedelta(hours=1)
     recent_result = await db.execute(
         select(WebhookEvent)
         .where(WebhookEvent.created_at >= one_hour_ago)
@@ -145,7 +145,7 @@ async def main():
     print("\n" + "="*70)
     print("LemonSqueezy Webhook Processing Verification")
     print("="*70)
-    print(f"Timestamp: {datetime.utcnow().isoformat()}Z")
+    print(f"Timestamp: {datetime.now(timezone.utc).isoformat()}Z")
 
     # Create database connection
     database_url = os.getenv("POSTGRES_URI_CUSTOM") or os.getenv("DATABASE_URL", "postgresql+asyncpg://postgres:postgres@localhost:5433/rext_db")
