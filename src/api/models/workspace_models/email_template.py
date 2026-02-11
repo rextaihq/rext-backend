@@ -27,7 +27,7 @@ class EmailTemplate(Base, SerializableMixin):
     __tablename__ = "email_templates"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, unique=True, nullable=False)
-    workspace_id = Column(UUID(as_uuid=True), ForeignKey("workspace.id"), nullable=True)
+    workspace_id = Column(UUID(as_uuid=True), ForeignKey("workspace.id"), nullable=True, index=True)
     template_type = Column(SQLEnum(TemplateType), nullable=False)
 
     # Template content
@@ -37,7 +37,7 @@ class EmailTemplate(Base, SerializableMixin):
     # Metadata
     is_active = Column(Boolean, default=True)
     is_default = Column(Boolean, default=False)  # System default templates
-    created_by_user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+    created_by_user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True, index=True)
     created_at = Column(TIMESTAMP, default=datetime.utcnow, nullable=False)
     updated_at = Column(TIMESTAMP, default=datetime.utcnow, onupdate=datetime.utcnow)
 

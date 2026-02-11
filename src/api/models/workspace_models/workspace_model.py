@@ -13,7 +13,7 @@ class WorkspaceModel(Base, SerializableMixin):
     __tablename__ = "workspace"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, unique=True, nullable=False)
-    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True)
     name = Column(String, nullable=False)
     slug = Column(String, unique=True, nullable=False, index=True)
     timezone = Column(String(50), nullable=True)  # IANA timezone identifier (e.g., America/New_York, UTC)
@@ -21,7 +21,7 @@ class WorkspaceModel(Base, SerializableMixin):
     created_at = Column(DateTime(timezone=True), nullable=False, default=datetime.utcnow)
     updated_at = Column(DateTime(timezone=True), nullable=True, default=datetime.utcnow, onupdate=datetime.utcnow)
     deleted_at = Column(DateTime(timezone=True), nullable=True)  # Soft delete timestamp
-    deleted_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)  # User who deleted
+    deleted_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True, index=True)  # User who deleted
 
     # Relationships
     owner = relationship("Users", foreign_keys=[user_id], back_populates="workspaces")

@@ -13,9 +13,9 @@ class WorkspaceMembers(Base, SerializableMixin):
     __tablename__ = "workspace_members"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, unique=True, nullable=False)
-    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
-    workspace_id = Column(UUID(as_uuid=True), ForeignKey("workspace.id"), nullable=False)
-    invitation_id = Column(UUID(as_uuid=True), ForeignKey("user_invitations.id"), nullable=True)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True)
+    workspace_id = Column(UUID(as_uuid=True), ForeignKey("workspace.id"), nullable=False, index=True)
+    invitation_id = Column(UUID(as_uuid=True), ForeignKey("user_invitations.id"), nullable=True, index=True)
     status = Column(String(50), default="pending")  # active, inactive, pending
     is_default = Column(Boolean, default=False)
     joined_at = Column(TIMESTAMP, default=datetime.utcnow, nullable=False)

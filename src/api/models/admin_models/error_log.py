@@ -26,7 +26,8 @@ class ErrorLog(Base):
     user_id = Column(
         PostgresUUID(as_uuid=True),
         ForeignKey("users.id"),
-        nullable=True
+        nullable=True,
+        index=True
     )
     request_id = Column(String(100))
     stack_trace = Column(Text)
@@ -36,7 +37,8 @@ class ErrorLog(Base):
     resolved_by = Column(
         PostgresUUID(as_uuid=True),
         ForeignKey("users.id"),
-        nullable=True
+        nullable=True,
+        index=True
     )
 
     def to_dict(self) -> dict:
