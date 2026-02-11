@@ -20,7 +20,7 @@ Public Endpoints (no auth):
 
 from typing import Optional
 from uuid import UUID
-from datetime import datetime
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, Query, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -64,7 +64,7 @@ public_router = APIRouter(
 
 def _invitation_to_response(invitation) -> AdminInvitationResponse:
     """Convert invitation model to response schema."""
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     days_until_expiry = None
 
     if invitation.status == 'pending' and not invitation.is_expired():
@@ -354,7 +354,7 @@ async def validate_admin_invitation_token(
             valid=False,
             email="",
             admin_role="",
-            expires_at=datetime.utcnow().isoformat(),
+            expires_at=datetime.now(timezone.utc).isoformat(),
             is_expired=True,
             status="invalid",
             error_message=str(e),

@@ -9,7 +9,7 @@ Handles incoming webhook events from Resend:
 """
 from typing import Optional, Dict, Any
 from uuid import UUID
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
@@ -138,7 +138,7 @@ class EmailEventService:
                     f"Invalid timestamp format: {created_at_str}",
                     extra={"event_type": event_type}
                 )
-                event_timestamp = datetime.utcnow()
+                event_timestamp = datetime.now(timezone.utc)
 
             # Create event record
             email_event = EmailEvent(
@@ -148,7 +148,7 @@ class EmailEventService:
                 provider_message_id=email_id,
                 event_type=event_type,
                 event_data=event_data,
-                received_at=datetime.utcnow(),
+                received_at=datetime.now(timezone.utc),
                 created_at=event_timestamp
             )
 
@@ -168,7 +168,7 @@ class EmailEventService:
             if email_log:
                 await self._update_email_log_status(email_log, event_type, event_timestamp)
 
-            await self.db.commit()
+            await self.db.flush()
 
             return WebhookProcessingResult(
                 success=True,
@@ -313,7 +313,7 @@ class EmailEventService:
             )
 
         # Update timestamp
-        email_log.updated_at = datetime.utcnow()
+        email_log.updated_at = datetime.now(timezone.utc)
 
         if email_log.status != original_status:
             logger.info(
@@ -366,7 +366,7 @@ class EmailEventService:
         """
         from datetime import timedelta
 
-        cutoff_time = datetime.utcnow() - timedelta(hours=hours)
+        cutoff_time = datetime.now(timezone.utc) - timedelta(hours=hours)
 
         result = await self.db.execute(
             select(EmailEvent)

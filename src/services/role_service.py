@@ -19,7 +19,7 @@ Does NOT:
 
 from typing import List, Optional, Dict, Any
 from uuid import UUID
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_
@@ -132,7 +132,7 @@ class RoleService:
             hierarchy_level=hierarchy_level,
             is_system_role=is_system_role,
             is_workspace_role=is_workspace_role,
-            created_at=datetime.utcnow()
+            created_at=datetime.now(timezone.utc)
         )
 
         self.db.add(new_role)
@@ -239,7 +239,7 @@ class RoleService:
                 )
             role.hierarchy_level = hierarchy_level
 
-        role.updated_at = datetime.utcnow()
+        role.updated_at = datetime.now(timezone.utc)
 
         await self.db.flush()
         await self.db.refresh(role)
@@ -302,7 +302,7 @@ class RoleService:
             # Reassign all users
             for user_role in user_roles:
                 user_role.role_id = reassign_to
-                user_role.assigned_at = datetime.utcnow()
+                user_role.assigned_at = datetime.now(timezone.utc)
 
             await self.db.flush()
 
@@ -410,7 +410,7 @@ class RoleService:
             workspace_id=workspace_id,
             assigned_by_user_id=assigned_by_user_id or user_id,
             is_primary=is_primary,
-            assigned_at=datetime.utcnow()
+            assigned_at=datetime.now(timezone.utc)
         )
 
         self.db.add(user_role)

@@ -225,7 +225,7 @@ async def health_check(request: Request):
     Returns overall system health with detailed dependency checks.
     Returns 200 if healthy, 503 if degraded.
     """
-    from datetime import datetime
+    from datetime import datetime, timezone
     from fastapi.responses import JSONResponse
     from sqlalchemy import text
     import shutil
@@ -235,7 +235,7 @@ async def health_check(request: Request):
         "service": "rext-api",
         "version": "1.0.0",
         "environment": settings.ENVIRONMENT,
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
         "checks": {}
     }
 
@@ -290,11 +290,11 @@ async def liveness_check(request: Request):
     This endpoint should only fail if the application has crashed or is deadlocked.
     Kubernetes will restart the pod if this returns non-200.
     """
-    from datetime import datetime
+    from datetime import datetime, timezone
     return {
         "status": "alive",
         "service": "rext-api",
-        "timestamp": datetime.utcnow().isoformat()
+        "timestamp": datetime.now(timezone.utc).isoformat()
     }
 
 
@@ -307,14 +307,14 @@ async def readiness_check(request: Request):
     Returns 503 if dependencies are unavailable.
     Kubernetes will remove pod from load balancer if this returns non-200.
     """
-    from datetime import datetime
+    from datetime import datetime, timezone
     from fastapi.responses import JSONResponse
     from sqlalchemy import text
 
     status = {
         "status": "ready",
         "service": "rext-api",
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
         "checks": {}
     }
 

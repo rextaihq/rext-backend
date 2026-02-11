@@ -64,7 +64,7 @@ async def super_admin_user(async_session):
         workspace_id=None,  # Platform-level
         assigned_by_user_id=user.id,
         is_primary=True,
-        assigned_at=datetime.utcnow()
+        assigned_at=datetime.now(timezone.utc)
     )
     async_session.add(user_role)
     await async_session.commit()
@@ -235,7 +235,7 @@ async def test_accept_admin_invitation_expired(async_session, super_admin_user, 
     )
 
     # Manually expire invitation
-    invitation.expires_at = datetime.utcnow() - timedelta(days=1)
+    invitation.expires_at = datetime.now(timezone.utc) - timedelta(days=1)
     await async_session.commit()
 
     # Try to accept

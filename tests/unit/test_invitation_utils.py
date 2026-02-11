@@ -51,7 +51,7 @@ class TestIsInvitationExpired:
         """Test that invitation with future expiry is not expired (naive datetime)."""
         invitation = MagicMock(spec=UserInvitations)
         # Create naive datetime (no timezone)
-        invitation.expires_at = datetime.utcnow() + timedelta(days=7)
+        invitation.expires_at = datetime.now(timezone.utc) + timedelta(days=7)
         
         result = is_invitation_expired(invitation)
         
@@ -61,7 +61,7 @@ class TestIsInvitationExpired:
         """Test that invitation with past expiry is expired (naive datetime)."""
         invitation = MagicMock(spec=UserInvitations)
         # Create naive datetime (no timezone)
-        invitation.expires_at = datetime.utcnow() - timedelta(days=1)
+        invitation.expires_at = datetime.now(timezone.utc) - timedelta(days=1)
         
         result = is_invitation_expired(invitation)
         

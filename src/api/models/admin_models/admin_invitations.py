@@ -17,10 +17,10 @@ Related Models:
 """
 
 import uuid
-from sqlalchemy import Column, String, TIMESTAMP, ForeignKey, UniqueConstraint, Text
+from sqlalchemy import Column, String, DateTime, ForeignKey, UniqueConstraint, Text
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import relationship
-from datetime import datetime
+from datetime import datetime, timezone
 
 from src.api.database.base import Base
 from src.api.models.base import SerializableMixin
@@ -108,25 +108,26 @@ class PlatformAdminInvitations(Base, SerializableMixin):
         UUID(as_uuid=True),
         ForeignKey("users.id", ondelete="SET NULL"),
         nullable=True,
+        index=True,
         comment="Admin who sent the invitation"
     )
 
     # Timestamps
     created_at = Column(
-        TIMESTAMP,
-        default=datetime.utcnow,
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
         nullable=False,
         comment="When invitation was created"
     )
 
     expires_at = Column(
-        TIMESTAMP,
+        DateTime(timezone=True),
         nullable=False,
         comment="When invitation expires"
     )
 
     accepted_at = Column(
-        TIMESTAMP,
+        DateTime(timezone=True),
         nullable=True,
         comment="When invitation was accepted"
     )
@@ -136,12 +137,13 @@ class PlatformAdminInvitations(Base, SerializableMixin):
         UUID(as_uuid=True),
         ForeignKey("users.id", ondelete="SET NULL"),
         nullable=True,
+        index=True,
         comment="User who accepted the invitation"
     )
 
     # Declined tracking
     declined_at = Column(
-        TIMESTAMP,
+        DateTime(timezone=True),
         nullable=True,
         comment="When invitation was declined (if declined)"
     )
@@ -154,7 +156,7 @@ class PlatformAdminInvitations(Base, SerializableMixin):
 
     # Revoked tracking
     revoked_at = Column(
-        TIMESTAMP,
+        DateTime(timezone=True),
         nullable=True,
         comment="When invitation was revoked"
     )
@@ -163,6 +165,7 @@ class PlatformAdminInvitations(Base, SerializableMixin):
         UUID(as_uuid=True),
         ForeignKey("users.id", ondelete="SET NULL"),
         nullable=True,
+        index=True,
         comment="Admin who revoked the invitation"
     )
 
@@ -203,7 +206,7 @@ class PlatformAdminInvitations(Base, SerializableMixin):
 
     def is_expired(self) -> bool:
         """Check if invitation has expired."""
-        return datetime.utcnow() > self.expires_at
+        return datetime.now(timezone.utc) > self.expires_at
 
     def is_pending(self) -> bool:
         """Check if invitation is pending."""

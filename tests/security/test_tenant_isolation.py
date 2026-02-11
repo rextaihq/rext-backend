@@ -33,12 +33,10 @@ from src.api.models.knowledge_models.knowledge_model import (
     Website,
 )
 from src.api.models.user_models.users import Users
- as Topics
 from src.services.content_service import ContentService
 from src.services.workspace_service import WorkspaceService
 from src.services.knowledge_service import KnowledgeService
 from src.services.member_service import MemberService
-from src.services.topic_service import TopicService
 from src.api.middleware.exceptions import ResourceNotFoundException
 
 
@@ -149,24 +147,6 @@ async def content_in_workspace_b(
     await db.refresh(content)
     return content
 
-
-@pytest.fixture
-async def topic_in_workspace_b(
-    db: AsyncSession, workspace_b: WorkspaceModel
-) -> Topics:
-    """Create topic in workspace B"""
-    topic = Topics(
-        id=uuid4(),
-        workspace_id=workspace_b.id,
-        title="Secret Topic B",
-        angle="A secret topic",
-        description="This topic should not be accessible from workspace A",
-        approved=True,
-    )
-    db.add(topic)
-    await db.flush()
-    await db.refresh(topic)
-    return topic
 
 
 @pytest.fixture
@@ -562,34 +542,6 @@ class TestWorkspaceSettingsIsolation:
 # Topic Isolation Tests
 # ============================================================================
 
-
-@pytest.mark.asyncio
-class TestTopicIsolation:
-    """Test that topics are properly isolated between workspaces"""
-
-    async def test_cannot_update_topic_from_other_workspace(
-        self,
-        db: AsyncSession,
-        workspace_a: WorkspaceModel,
-        topic_in_workspace_b: Topics,
-    ):
-        """User from workspace A cannot update topics in workspace B"""
-        from src.api.schema.topic_schema import UpdateTopicRequest
-
-        service = TopicService(db)
-
-        update_data = UpdateTopicRequest(title="Hacked Topic Title")
-
-        with pytest.raises(ResourceNotFoundException):
-            await service.update_topic(
-                topic_id=topic_in_workspace_b.id,
-                workspace_id=workspace_a.id,  # Wrong workspace!
-                data=update_data,
-            )
-
-        # Verify topic was NOT modified
-        await db.refresh(topic_in_workspace_b)
-        assert topic_in_workspace_b.title == "Secret Topic B"
 
 
 # ============================================================================

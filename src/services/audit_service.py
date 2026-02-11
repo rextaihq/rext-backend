@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, Iterable, Optional
 
 from sqlalchemy import func, select
@@ -83,7 +83,7 @@ class AuditService:
         formatted_logs = [format_audit_log(log, include_details=True) for log in logs]
 
         return {
-            "export_date": datetime.utcnow().isoformat(),
+            "export_date": datetime.now(timezone.utc).isoformat(),
             "exported_by": requested_by,
             "total_records": len(formatted_logs),
             "logs": formatted_logs,
@@ -100,7 +100,7 @@ class AuditService:
                 field_errors={"days": ["Value out of allowed range"]},
             )
 
-        cutoff = datetime.utcnow() - timedelta(days=days)
+        cutoff = datetime.now(timezone.utc) - timedelta(days=days)
 
         total_logs_result = await self.db.execute(
             select(func.count(AuditLog.id)).where(AuditLog.created_at >= cutoff)

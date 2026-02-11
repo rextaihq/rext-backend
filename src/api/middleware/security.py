@@ -33,7 +33,8 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         # response.headers["X-Frame-Options"] = "DENY"
 
         # Content Security Policy
-        # Allows Swagger / Redoc assets while staying restrictive
+        # Restricts where resources can be loaded from and blocks embedding
+        # Updated to allow API docs (Swagger/Redoc) external resources
         csp = (
             "default-src 'self'; "
             "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net; "

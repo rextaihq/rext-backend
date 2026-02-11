@@ -8,7 +8,7 @@ Handles refund operations including:
 - Sending refund notifications
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, Dict, Any, List
 from uuid import UUID
 
@@ -115,10 +115,10 @@ class RefundService:
             raise ValueError(f"Refund {refund_id} not found")
 
         refund.status = RefundStatus.COMPLETED
-        refund.processed_at = datetime.utcnow()
+        refund.processed_at = datetime.now(timezone.utc)
         if lemonsqueezy_refund_id:
             refund.lemonsqueezy_refund_id = lemonsqueezy_refund_id
-        refund.updated_at = datetime.utcnow()
+        refund.updated_at = datetime.now(timezone.utc)
 
         await self.db.flush()
 
@@ -154,7 +154,7 @@ class RefundService:
         refund.status = RefundStatus.FAILED
         if reason:
             refund.reason = f"{refund.reason or ''}\nFailure: {reason}".strip()
-        refund.updated_at = datetime.utcnow()
+        refund.updated_at = datetime.now(timezone.utc)
 
         await self.db.flush()
 

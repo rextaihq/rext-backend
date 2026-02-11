@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, Optional
 from uuid import UUID
 
@@ -64,8 +64,8 @@ class SubscriptionPlanService:
             is_public=payload.is_public,
             stripe_price_id_monthly=payload.stripe_price_id_monthly,
             stripe_price_id_yearly=payload.stripe_price_id_yearly,
-            created_at=datetime.utcnow(),
-            updated_at=datetime.utcnow(),
+            created_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(timezone.utc),
         )
 
         self.db.add(plan)
@@ -145,7 +145,7 @@ class SubscriptionPlanService:
         for field, value in update_data.items():
             setattr(plan, field, value)
 
-        plan.updated_at = datetime.utcnow()
+        plan.updated_at = datetime.now(timezone.utc)
         await self.db.flush()
         await self.db.refresh(plan)
 

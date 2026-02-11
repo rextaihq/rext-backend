@@ -13,7 +13,7 @@ Each email becomes progressively more urgent to encourage payment.
 """
 
 from typing import List, Dict, Any
-from datetime import datetime, timedelta
+from datetime import datetime, timezone, timedelta
 from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_
@@ -55,7 +55,7 @@ class DunningService:
             List of subscriptions needing reminder
         """
         # Calculate the target date (N days ago)
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         target_date_start = now - timedelta(days=days_since_failure, hours=1)
         target_date_end = now - timedelta(days=days_since_failure) + timedelta(hours=1)
 
@@ -207,7 +207,7 @@ class DunningService:
 
             # Calculate days until suspension
             if subscription.grace_period_end:
-                days_until_suspension = (subscription.grace_period_end - datetime.utcnow()).days
+                days_until_suspension = (subscription.grace_period_end - datetime.now(timezone.utc)).days
             else:
                 days_until_suspension = 4  # Default
 

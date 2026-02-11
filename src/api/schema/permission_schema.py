@@ -6,7 +6,7 @@ This module defines Pydantic models for permission-related API operations.
 
 from pydantic import BaseModel, Field, field_validator
 from typing import Optional, List
-from datetime import datetime
+from datetime import datetime, timezone
 
 
 class PermissionCreate(BaseModel):

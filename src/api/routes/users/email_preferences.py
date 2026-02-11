@@ -7,14 +7,14 @@ from fastapi import APIRouter, Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel
 from typing import List, Optional
+from uuid import UUID
 
 from src.api.database.async_database import get_async_db
 from src.api.security.dependencies import get_current_user
 from src.services.email_preferences_service import EmailPreferencesService
-from src.utils.route_decorators import db_transaction_handler, require_permissions
+from src.utils.route_decorators import db_transaction_handler
 from src.api.middleware.exceptions import ResourceNotFoundException
 from src.utils.logger import logger
-from uuid import UUID
 
 
 router = APIRouter(
@@ -78,7 +78,7 @@ async def get_preferences(
     """
     user_id = UUID(current_user["identity"])
     service = EmailPreferencesService(db)
-    prefs = await service.get_or_create_preferences(user_id, db)
+    prefs = await service.get_or_create_preferences(user_id)
 
     return {"preferences": prefs.to_dict()}
 
@@ -100,13 +100,13 @@ async def update_preferences(
     user_id = UUID(current_user["identity"])
     service = EmailPreferencesService(db)
 
-    # Get only the fields that were provided (non-None)
+    # Task 080: Use .model_dump() instead of .model_dump()
     updates = preferences_update.model_dump(exclude_none=True)
 
     if not updates:
         return {"message": "No preferences to update"}
 
-    prefs = await service.update_preferences(user_id, updates, db)
+    prefs = await service.update_preferences(user_id, updates)
 
     return {"preferences": prefs.to_dict()}
 
@@ -129,14 +129,11 @@ async def unsubscribe(
     service = EmailPreferencesService(db)
     success_result = await service.unsubscribe(
         unsubscribe_data.token,
-        unsubscribe_data.email_types or [],
-        db
+        unsubscribe_data.email_types or []
     )
 
     if not success_result:
         raise ResourceNotFoundException(
-            resource_type="unsubscribe token",
-            resource_id=unsubscribe_data.token[:8] + "...",
             message="Invalid unsubscribe token"
         )
 

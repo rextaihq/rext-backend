@@ -168,7 +168,7 @@ async def create_invitation(
     logger.info(f"Invitation created: {invitation.id} for {invitation_data.email} to workspace {workspace.name}")
 
     # Create audit log (audit concern - stays in route)
-    create_audit_log(
+    await create_audit_log(
         db=db,
         user_id=user_id,
         action="invitation.create",
@@ -265,7 +265,7 @@ async def create_bulk_invitations(
             )
 
             # Audit log for each invitation (audit concern - stays in route)
-            create_audit_log(
+            await create_audit_log(
                 db=db,
                 user_id=user_id,
                 action="invitation.created",
@@ -302,7 +302,7 @@ async def create_bulk_invitations(
             "total_requested": len(invitation_data.emails),
             "successful": successful,
             "failed": failed,
-            "results": [r.dict() for r in results]
+            "results": [r.model_dump() for r in results]
         },
         "message": f"Bulk invitation completed: {successful} sent, {failed} failed"
     }

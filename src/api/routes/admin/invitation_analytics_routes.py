@@ -3,7 +3,7 @@ Invitation Analytics Routes
 
 Admin endpoints for tracking and analyzing invitation metrics.
 """
-from datetime import datetime, timedelta
+from datetime import datetime, timezone, timedelta
 from typing import Optional
 from uuid import UUID
 
@@ -62,7 +62,7 @@ async def get_invitation_analytics(
     await verify_current_user(db, str(user_uuid))
 
     # Calculate date range
-    end_date = datetime.utcnow()
+    end_date = datetime.now(timezone.utc)
     start_date = end_date - timedelta(days=days)
 
     # Build base query

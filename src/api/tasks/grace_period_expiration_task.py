@@ -19,7 +19,7 @@ Usage:
 """
 
 import asyncio
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, Any
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -51,14 +51,14 @@ class GracePeriodExpirationTask:
             Dict with processing statistics
         """
         logger.info("=== Grace Period Expiration Task Started ===")
-        logger.info(f"Execution time: {datetime.utcnow().isoformat()}")
+        logger.info(f"Execution time: {datetime.now(timezone.utc).isoformat()}")
 
         try:
             # Process all grace period expirations
             stats = await self.grace_period_service.process_grace_period_expirations()
 
             # Add execution time
-            stats["execution_time"] = datetime.utcnow().isoformat()
+            stats["execution_time"] = datetime.now(timezone.utc).isoformat()
 
             # Commit all changes
             await self.db.commit()

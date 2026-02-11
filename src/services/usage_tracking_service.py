@@ -7,7 +7,7 @@ It calculates current usage against plan limits and provides real-time usage dat
 
 from typing import Dict, Any, Tuple, Optional
 from uuid import UUID
-from datetime import datetime, timedelta
+from datetime import datetime, timezone, timedelta
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_
 from sqlalchemy.orm import selectinload
@@ -162,7 +162,7 @@ class UsageTrackingService:
 
         if subscription:
             subscription.current_api_calls = (subscription.current_api_calls or 0) + 1
-            await self.db.commit()
+            await self.db.flush()
             logger.debug(f"Incremented API calls for user {user_id}: {subscription.current_api_calls}")
 
     async def reset_monthly_usage(self, user_id: UUID) -> None:
@@ -180,8 +180,8 @@ class UsageTrackingService:
 
         if subscription:
             subscription.current_api_calls = 0
-            subscription.usage_reset_date = datetime.utcnow() + timedelta(days=30)
-            await self.db.commit()
+            subscription.usage_reset_date = datetime.now(timezone.utc) + timedelta(days=30)
+            await self.db.flush()
             logger.info(f"Reset monthly usage for user {user_id}")
 
     async def _count_knowledge_items(self, user_id: UUID) -> int:

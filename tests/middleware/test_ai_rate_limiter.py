@@ -282,7 +282,7 @@ class TestAIRateLimitingBehavior:
         # Simulate time passing (move all timestamps back 1 hour + 1 second)
         client_key = f"ai:user-123-uuid:free"
         old_timestamps = limiter.storage[client_key]
-        cutoff_time = datetime.utcnow() - timedelta(seconds=3601)
+        cutoff_time = datetime.now(timezone.utc) - timedelta(seconds=3601)
         limiter.storage[client_key] = deque([cutoff_time] * 10)
 
         # Now a new request should succeed (old requests expired)

@@ -6,7 +6,7 @@ Pydantic schemas for session-related API requests and responses.
 
 from pydantic import BaseModel, Field
 from typing import Optional
-from datetime import datetime
+from datetime import datetime, timezone
 
 
 class SessionResponse(BaseModel):

@@ -17,7 +17,7 @@ Does NOT:
 - Check authentication (that's decorators)
 """
 
-from datetime import datetime, timedelta
+from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, List, Optional
 from uuid import UUID
 
@@ -281,7 +281,7 @@ class CustomerAdminService:
                 raise RextValidationException("User is already deactivated")
             audit_details["previous_status"] = user.status
             user.status = "deactivated"
-            user.deactivated_at = datetime.utcnow()
+            user.deactivated_at = datetime.now(timezone.utc)
             result = {"status": "deactivated"}
 
         elif action == "activate":
@@ -298,7 +298,7 @@ class CustomerAdminService:
                 raise ResourceNotFoundException("No active subscription found", "subscription", str(user_id))
             audit_details["previous_api_calls"] = sub.current_api_calls
             sub.current_api_calls = 0
-            sub.usage_reset_date = datetime.utcnow()
+            sub.usage_reset_date = datetime.now(timezone.utc)
             result = {"status": "usage_reset", "new_api_calls": 0}
 
         elif action == "extend_trial":
@@ -326,7 +326,7 @@ class CustomerAdminService:
 
             audit_details["previous_status"] = sub.status.value
             sub.status = "cancelled"
-            sub.cancelled_at = datetime.utcnow()
+            sub.cancelled_at = datetime.now(timezone.utc)
             result = {"status": "subscription_cancelled"}
 
         else:
