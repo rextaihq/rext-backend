@@ -20,7 +20,7 @@ class KnowledgeBase(Base, SerializableMixin):
     name = Column(String(255), nullable=False)
     description = Column(Text, nullable=True)
     type = Column(String(50), nullable=False, default="custom")  # 'default' or 'custom'
-    created_by_user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_by_user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
     updated_at = Column(DateTime(timezone=True), onupdate=lambda: datetime.now(timezone.utc), nullable=True)
 
