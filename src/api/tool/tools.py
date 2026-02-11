@@ -24,6 +24,7 @@ from src.api.tool.prompts.hreflang_prompt import hreflang_system_prompt, hreflan
 from src.api.tool.prompts.hook_prompt import hook_prompt
 from src.api.tool.prompts.seo_blog_title_prompt import seo_blog_title_prompt
 from src.api.tool.prompts.question_prompt import question_prompt
+from src.utils.constants import WORDS_PER_MINUTE
 
 def _get_model():
     """Internal helper to consistently load the model."""
@@ -56,7 +57,7 @@ def count_text_metrics(text: str):
 
     # 5. Estimate reading time (average 200 words/min)
     
-    min_read = max(1, round(word_count / 200)) if word_count > 0 else 0
+    min_read = max(1, round(word_count / WORDS_PER_MINUTE)) if word_count > 0 else 0
 
     return {
         "words": word_count,

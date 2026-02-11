@@ -50,6 +50,7 @@ from src.api.schema.knowledge_schema import BrandSchema
 from src.flow.model.llm_manager import load_model
 from src.utils.helper import web_page_scraper
 from src.utils.vector_store import add_to_vector_store, delete_vectors
+from src.utils.constants import WORDS_PER_MINUTE
 from src.api.cache.decorators import cached
 from src.utils.logger import logger
 from src.api.database.async_database import get_async_db
@@ -467,7 +468,7 @@ class WorkspaceService:
             avg_file_words = int(file_word_stats.avg_words or 0)
 
             total_words = total_web_words + total_file_words
-            estimated_reading_time = total_words // 200
+            estimated_reading_time = total_words // WORDS_PER_MINUTE
 
             analytics["content_metrics"] = {
                 "total_words": total_words,

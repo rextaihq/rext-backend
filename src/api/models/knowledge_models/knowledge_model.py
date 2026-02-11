@@ -5,6 +5,7 @@ from sqlalchemy import inspect as sa_inspect
 from sqlalchemy.orm.base import NO_VALUE
 from src.api.database.base import Base
 from src.api.models.base import SerializableMixin
+from src.utils.constants import WORDS_PER_MINUTE
 import uuid
 from datetime import datetime, timezone
 
@@ -113,7 +114,7 @@ class Website(Base, SerializableMixin):
         data['content_metrics'] = {
             'char_count': self.char_count or 0,
             'word_count': self.word_count or 0,
-            'estimated_reading_time': (self.word_count or 0) // 200  # ~200 WPM
+            'estimated_reading_time': (self.word_count or 0) // WORDS_PER_MINUTE  # ~200 WPM
         }
         return data
 

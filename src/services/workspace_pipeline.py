@@ -21,6 +21,8 @@ from src.services.sse_service import (
 from src.utils.helper import web_page_scraper
 from src.utils.logger import logger
 from src.utils.vector_store import add_to_vector_store
+from src.utils.constants import MAX_BRAND_VOICE_CONTENT_CHARS
+
 
         
 
@@ -41,7 +43,7 @@ class _ScrapeResult:
 class WorkspacePipeline:
     """Background pipeline responsible for workspace onboarding tasks."""
 
-    _MAX_BRAND_VOICE_CHARS = 5_000
+    _MAX_BRAND_VOICE_CHARS = MAX_BRAND_VOICE_CONTENT_CHARS
 
     def __init__(
         self,
