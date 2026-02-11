@@ -13,7 +13,7 @@ from pydantic import BaseModel, Field
 from src.utils.logger import logger
 
 
-def _now(timezone.utc) -> datetime:
+def _utcnow() -> datetime:
     """Return the current UTC time."""
     return datetime.now(timezone.utc)
 

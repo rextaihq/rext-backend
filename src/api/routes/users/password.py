@@ -22,6 +22,7 @@ from src.api.middleware.exceptions import (
 )
 from src.services.user_service import UserService
 from src.api.middleware.rate_limiter import password_reset_rate_limit
+from src.api.schema.user_schema import ForgotPasswordRequest, ResetPassword,ChangePasswordRequest
 
 router = APIRouter()
 
