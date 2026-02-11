@@ -4,7 +4,7 @@ User subscription schemas for subscription operations.
 This module defines Pydantic models for user subscription management.
 """
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 from typing import Optional
 from .enums import BillingPeriod
 
@@ -20,13 +20,14 @@ class SubscriptionCreateRequest(BaseModel):
         description="Billing period (monthly or yearly)"
     )
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "plan_id": "123e4567-e89b-12d3-a456-426614174000",
                 "billing_period": "monthly"
             }
         }
+    )
 
 
 class SubscriptionUpgradeRequest(BaseModel):
@@ -40,13 +41,14 @@ class SubscriptionUpgradeRequest(BaseModel):
         description="Change billing period (optional)"
     )
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "new_plan_id": "123e4567-e89b-12d3-a456-426614174001",
                 "billing_period": "yearly"
             }
         }
+    )
 
 
 class SubscriptionCancelRequest(BaseModel):
@@ -61,13 +63,14 @@ class SubscriptionCancelRequest(BaseModel):
         description="Cancel immediately or at end of billing period"
     )
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "reason": "Switching to another platform",
                 "cancel_immediately": False
             }
         }
+    )
 
 
 class UserSubscriptionResponse(BaseModel):
@@ -94,8 +97,8 @@ class UserSubscriptionResponse(BaseModel):
     ends_at: Optional[str] = Field(None, description="Subscription end date")
     current_period_end: Optional[str] = Field(None, description="Current billing period end date (alias for renews_at)")
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "id": "123e4567-e89b-12d3-a456-426614174002",
                 "user_id": "123e4567-e89b-12d3-a456-426614174003",
@@ -117,3 +120,4 @@ class UserSubscriptionResponse(BaseModel):
                 "current_period_end": "2025-11-01T00:00:00Z"
             }
         }
+    )

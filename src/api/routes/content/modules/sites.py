@@ -3,18 +3,20 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from uuid import UUID
 from typing import List
+from datetime import datetime, timezone
 
 from src.utils.logger import logger
 from src.utils.route_decorators import db_transaction_handler, require_permissions
 from src.api.database.async_database import get_async_db
 from src.api.security.dependencies import get_current_user
-from src.api.middleware.exceptions import RextValidationException
+from src.api.middleware.exceptions import RextValidationException, ResourceNotFoundException
 from src.api.schema.content_schema import (
     WorkspaceIntegrationCreate, 
     WorkspaceIntegrationUpdate, 
     WorkspaceIntegrationResponse,
     WorkspaceIntegrationListResponse,
-    PublishToSiteRequest
+    PublishToSiteRequest,
+    ContentCreate
 )
 from src.api.models import WorkspaceIntegration, Content
 from src.web.wordpress import WordPressPublisher
@@ -22,7 +24,25 @@ from src.utils.workspace_utils import resolve_and_verify_workspace
 
 router = APIRouter()
 
-#list of connected sites
+
+async def _get_site_or_404(
+    db: AsyncSession, site_id: UUID, workspace_id: UUID
+) -> WorkspaceIntegration:
+    """Fetch a WorkspaceIntegration by ID within a workspace, or raise 404."""
+    query = select(WorkspaceIntegration).where(
+        WorkspaceIntegration.id == site_id,
+        WorkspaceIntegration.workspace_id == workspace_id,
+    )
+    result = await db.execute(query)
+    site = result.scalar_one_or_none()
+    if not site:
+        raise ResourceNotFoundException(
+            resource_type="Site",
+            resource_id=str(site_id),
+        )
+    return site
+
+
 @router.get("/list")
 @require_permissions("content.read", workspace_scoped=True)
 @db_transaction_handler("list connected sites")
@@ -45,7 +65,6 @@ async def list_connected_sites(
         "workspace_id": str(workspace.id)
     }
 
-#coonect new site
 @router.post("/connect")
 @db_transaction_handler("connect site", "Site connected successfully")
 @require_permissions("content.create", workspace_scoped=True)
@@ -93,7 +112,6 @@ async def connect_site(
     await db.flush()
     
     return {"site": new_site.to_dict()}
-#details of site
 @router.get("/{site_id}")
 @require_permissions("content.read", workspace_scoped=True)
 @db_transaction_handler("get site details")
@@ -107,19 +125,10 @@ async def get_site_details(
     user_id = user.get("identity")
     workspace, _ = await resolve_and_verify_workspace(db, workspace_id, UUID(user_id))
     
-    query = select(WorkspaceIntegration).where(
-        WorkspaceIntegration.id == site_id,
-        WorkspaceIntegration.workspace_id == workspace.id
-    )
-    result = await db.execute(query)
-    site = result.scalar_one_or_none()
-    
-    if not site:
-        raise RextValidationException(message="Site not found", context={"site_id": str(site_id)})
+    site = await _get_site_or_404(db, site_id, workspace.id)
         
     return {"site": site.to_dict()}
 
-#update the details of connected site
 @router.patch("/{site_id}")
 @db_transaction_handler("update site", "Site connection updated successfully")
 @require_permissions("content.update", workspace_scoped=True)
@@ -134,15 +143,7 @@ async def update_site(
     user_id = user.get("identity")
     workspace, _ = await resolve_and_verify_workspace(db, workspace_id, UUID(user_id))
     
-    query = select(WorkspaceIntegration).where(
-        WorkspaceIntegration.id == site_id,
-        WorkspaceIntegration.workspace_id == workspace.id
-    )
-    result = await db.execute(query)
-    site = result.scalar_one_or_none()
-    
-    if not site:
-        raise RextValidationException(message="Site not found", context={"site_id": str(site_id)})
+    site = await _get_site_or_404(db, site_id, workspace.id)
     
     if data.integration_type is not None: site.integration_type = data.integration_type
     if data.is_active is not None: site.is_active = data.is_active
@@ -154,7 +155,6 @@ async def update_site(
     if data.config_json is not None: site.config_json = data.config_json
     
     return {"site": site.to_dict()}
-#delete a site
 @router.delete("/{site_id}")
 @db_transaction_handler("disconnect site", "Site disconnected successfully")
 @require_permissions("content.delete", workspace_scoped=True)
@@ -168,15 +168,7 @@ async def delete_site(
     user_id = user.get("identity")
     workspace, _ = await resolve_and_verify_workspace(db, workspace_id, UUID(user_id))
     
-    query = select(WorkspaceIntegration).where(
-        WorkspaceIntegration.id == site_id,
-        WorkspaceIntegration.workspace_id == workspace.id
-    )
-    result = await db.execute(query)
-    site = result.scalar_one_or_none()
-    
-    if not site:
-        raise RextValidationException(message="Site not found", context={"site_id": str(site_id)})
+    site = await _get_site_or_404(db, site_id, workspace.id)
     
     await db.delete(site)
     
@@ -195,15 +187,7 @@ async def activate_site(
     user_id = user.get("identity")
     workspace, _ = await resolve_and_verify_workspace(db, workspace_id, UUID(user_id))
     
-    query = select(WorkspaceIntegration).where(
-        WorkspaceIntegration.id == site_id,
-        WorkspaceIntegration.workspace_id == workspace.id
-    )
-    result = await db.execute(query)
-    site = result.scalar_one_or_none()
-    
-    if not site:
-        raise RextValidationException(message="Site not found", context={"site_id": str(site_id)})
+    site = await _get_site_or_404(db, site_id, workspace.id)
     
     site.is_active = True
     return {"site": site.to_dict()}
@@ -221,15 +205,7 @@ async def deactivate_site(
     user_id = user.get("identity")
     workspace, _ = await resolve_and_verify_workspace(db, workspace_id, UUID(user_id))
     
-    query = select(WorkspaceIntegration).where(
-        WorkspaceIntegration.id == site_id,
-        WorkspaceIntegration.workspace_id == workspace.id
-    )
-    result = await db.execute(query)
-    site = result.scalar_one_or_none()
-    
-    if not site:
-        raise RextValidationException(message="Site not found", context={"site_id": str(site_id)})
+    site = await _get_site_or_404(db, site_id, workspace.id)
     
     site.is_active = False
     return {"site": site.to_dict()}
@@ -250,15 +226,7 @@ async def publish_to_site(
     workspace, _ = await resolve_and_verify_workspace(db, workspace_id, UUID(user_id))
     
     # Fetch site
-    site_query = select(WorkspaceIntegration).where(
-        WorkspaceIntegration.id == site_id,
-        WorkspaceIntegration.workspace_id == workspace.id
-    )
-    site_result = await db.execute(site_query)
-    site = site_result.scalar_one_or_none()
-    
-    if not site:
-        raise RextValidationException(message="Site not found", context={"site_id": str(site_id)})
+    site = await _get_site_or_404(db, site_id, workspace.id)
     
     # Fetch content
     content_query = select(Content).where(
@@ -273,9 +241,6 @@ async def publish_to_site(
     
     if site.integration_type.lower() == "wordpress":
         try:
-            from datetime import timezone
-            from src.api.schema.content_schema import ContentCreate
-            
             # Create a ContentCreate object for the publisher
             content_data = ContentCreate(
                 title=content.title,
@@ -297,7 +262,7 @@ async def publish_to_site(
             
             # Update content status
             content.status = "published"
-            content.published_at = datetime.now(timezone.utc)
+            content.wordpress_published_at = datetime.now(timezone.utc)
             
             return {
                 "wordpress_result": result,
