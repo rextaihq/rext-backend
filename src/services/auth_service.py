@@ -282,8 +282,12 @@ class AuthService:
             subscription = sub_result.scalar_one_or_none()
             
             if subscription and subscription.trial_end_date:
-                if subscription.trial_end_date < datetime.now(timezone.utc):
-                     await schedule_if_allowed(
+                trial_end = subscription.trial_end_date
+                if trial_end.tzinfo is None:
+                    trial_end = trial_end.replace(tzinfo=timezone.utc)
+                    
+                if trial_end < datetime.now(timezone.utc):
+                    await schedule_if_allowed(
                         db=self.db,
                         user_id=str(db_user.id),
                         background_tasks=background_tasks,

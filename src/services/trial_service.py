@@ -3,12 +3,13 @@ Trial management service.
 
 Handles trial expiration, reminders, conversions, and extensions.
 """
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import List, Optional, Dict, Any
 from uuid import UUID
 from decimal import Decimal
 from sqlalchemy import select, and_, or_
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from src.api.models.subscription_models.subscriptions import (
     UserSubscription,
@@ -23,6 +24,7 @@ from src.api.middleware.exceptions import (
     RextAuthorizationException as UnauthorizedException
 )
 from src.utils.logger import logger
+
 
 
 class TrialService:
@@ -49,11 +51,18 @@ class TrialService:
         start_of_day = target_date.replace(hour=0, minute=0, second=0, microsecond=0)
         end_of_day = start_of_day + timedelta(days=1)
 
-        query = select(UserSubscription).where(
-            and_(
-                UserSubscription.status == SubscriptionStatus.TRIAL,
-                UserSubscription.trial_end_date >= start_of_day,
-                UserSubscription.trial_end_date < end_of_day
+        query = (
+            select(UserSubscription)
+            .options(
+                selectinload(UserSubscription.user).selectinload(Users.notification_preferences),
+                selectinload(UserSubscription.plan)
+            )
+            .where(
+                and_(
+                    UserSubscription.status == SubscriptionStatus.TRIAL,
+                    UserSubscription.trial_end_date >= start_of_day,
+                    UserSubscription.trial_end_date < end_of_day
+                )
             )
         )
 
@@ -69,12 +78,20 @@ class TrialService:
         """
         now = datetime.now(timezone.utc)
 
-        query = select(UserSubscription).where(
-            and_(
-                UserSubscription.status == SubscriptionStatus.TRIAL,
-                UserSubscription.trial_end_date < now
+        query = (
+            select(UserSubscription)
+            .options(
+                selectinload(UserSubscription.user).selectinload(Users.notification_preferences),
+                selectinload(UserSubscription.plan)
+            )
+            .where(
+                and_(
+                    UserSubscription.status == SubscriptionStatus.TRIAL,
+                    UserSubscription.trial_end_date < now
+                )
             )
         )
+
 
         result = await self.db.execute(query)
         return list(result.scalars().all())

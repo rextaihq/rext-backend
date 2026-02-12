@@ -6,7 +6,7 @@ Acts as the main interface between application code and email providers.
 """
 from typing import Optional, Dict, Any, List
 from uuid import UUID
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from tenacity import (

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List
 
 from sqlalchemy import and_, case, func, or_, select
@@ -96,6 +96,7 @@ class SubscriptionAnalyticsService:
         total_active_start = await self._count_active_at_start(period_start)
         new_subscriptions = await self._count_new_subscriptions(period_start, period_end)
         cancellations = await self._count_cancellations(period_start, period_end)
+        reason_breakdown = await self._get_cancellation_reason_breakdown(period_start, period_end)
         total_active_end = await self._count_active_now()
 
         churn_rate = self._safe_percentage(cancellations, total_active_start)
@@ -110,6 +111,7 @@ class SubscriptionAnalyticsService:
                 "total_active_end": total_active_end,
                 "churn_rate": round(churn_rate, 2),
                 "retention_rate": retention_rate,
+                "cancellation_reasons": reason_breakdown,
             },
             "message": "Churn analysis retrieved successfully",
         }
@@ -649,6 +651,39 @@ class SubscriptionAnalyticsService:
             )
         )
         return result.scalar() or 0
+    
+        async def _get_cancellation_reason_breakdown(
+        self,
+        start: datetime,
+        end: datetime,
+    ) -> Dict[str, int]: 
+            """Return breakdown of cancellation reasons for a period."""
+
+        query = select(UserSubscription.cancellation_reason).where(
+            UserSubscription.cancelled_at >= start,
+            UserSubscription.cancelled_at <= end,
+            UserSubscription.cancellation_reason.isnot(None),
+        )
+
+        result = await self.db.execute(query)
+        rows = result.scalars().all()
+
+        breakdown: Dict[str, int] = {}
+
+        for reason_text in rows:
+            if not reason_text:
+                continue
+
+            parts = [p.strip() for p in reason_text.split(";")]
+
+            for part in parts:
+                if part.startswith("Additional feedback"):
+                    continue
+
+                breakdown[part] = breakdown.get(part, 0) + 1
+
+        return breakdown
+
 
     @staticmethod
     def _safe_percentage(numerator: float, denominator: float) -> float:

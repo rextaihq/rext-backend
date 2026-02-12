@@ -8,13 +8,13 @@ Provides CSV export functionality for:
 """
 import csv
 import io
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import List, Dict, Any, Optional
-from sqlalchemy import and_, or_, desc, func
+from sqlalchemy import and_, or_, desc, func, case
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
-from src.api.models.subscription_models.subscriptions import UserSubscription
+from src.api.models.subscription_models.subscriptions import UserSubscription, BillingPeriod
 from src.api.models.subscription_models.plans import SubscriptionPlan
 # Note: Invoice model does not exist - invoice export functionality is not implemented
 # from src.api.models.subscription_models.invoices import Invoice
@@ -379,10 +379,50 @@ class SubscriptionExportService:
                 active_subs = result_active.scalar() or 0
 
                 # Calculate new revenue (simplified - would need plan price joins)
-                new_revenue = new_subs * 29.0  # Placeholder average
+                stmt_new_revenue = (
+                    select(
+                        func.coalesce(
+                            func.sum(
+                                case(
+                                    (UserSubscription.billing_period == BillingPeriod.MONTHLY, SubscriptionPlan.price_monthly),
+                                    (UserSubscription.billing_period == BillingPeriod.YEARLY, SubscriptionPlan.price_yearly / 12),
+                                    else_=0,
+                                )
+                            ),
+                            0,
+                        )
+                    )
+                    .join(SubscriptionPlan, UserSubscription.plan_id == SubscriptionPlan.id)
+                    .where(
+                        UserSubscription.created_at >= month_start,
+                        UserSubscription.created_at < next_month,
+                    )
+                )
+                result_new_rev = await self.db.execute(stmt_new_revenue)
+                new_revenue = float(result_new_rev.scalar() or 0)
 
                 # Calculate churned revenue (simplified)
-                churned_revenue = cancelled_subs * 29.0  # Placeholder average
+                stmt_churned_revenue = (
+                    select(
+                        func.coalesce(
+                            func.sum(
+                                case(
+                                    (UserSubscription.billing_period == BillingPeriod.MONTHLY, SubscriptionPlan.price_monthly),
+                                    (UserSubscription.billing_period == BillingPeriod.YEARLY, SubscriptionPlan.price_yearly / 12),
+                                    else_=0,
+                                )
+                            ),
+                            0,
+                        )
+                    )
+                    .join(SubscriptionPlan, UserSubscription.plan_id == SubscriptionPlan.id)
+                    .where(
+                        UserSubscription.cancelled_at >= month_start,
+                        UserSubscription.cancelled_at < next_month,
+                    )
+                )
+                result_churned_rev = await self.db.execute(stmt_churned_revenue)
+                churned_revenue = float(result_churned_rev.scalar() or 0)
 
                 # Net revenue change
                 net_change = new_revenue - churned_revenue
