@@ -90,7 +90,7 @@ async def send_data_export_email_task(
 
 
 @router.get("/users")
-@require_permissions("user.read")
+@require_permissions("user.read", workspace_scoped=False)
 async def get_users(
     request: Request,
     workspace_id: str = None,
@@ -132,7 +132,7 @@ async def get_users(
 
 
 @router.delete("/delete/{user_id}")
-@require_permissions("user.delete")
+@require_permissions("user.delete", workspace_scoped=False)
 @db_transaction_handler("delete user", auto_commit=True)
 async def delete_user(
     user_id: str,
@@ -211,7 +211,7 @@ async def delete_user(
 
 
 @router.put("/update/{user_id}")
-@require_permissions("user.update")
+@require_permissions("user.update", workspace_scoped=False)
 @db_transaction_handler("update user", auto_commit=True)
 async def update_user(
     user_id: str,
@@ -247,7 +247,7 @@ async def update_user(
 
 
 @router.post("/export-data", response_model=DataExportResponse)
-@require_permissions("user.read")
+@require_permissions("user.read", workspace_scoped=False)
 @db_transaction_handler("export user data", auto_commit=False) # Added transaction handler
 async def export_user_data(
     request: Request,

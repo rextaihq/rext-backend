@@ -183,7 +183,7 @@ async def reset_password(
 
 
 @router.post("/change-password")
-@require_permissions("user.update")
+@require_permissions("user.update", workspace_scoped=False)
 @db_transaction_handler("change password", auto_commit=True)
 async def change_password(
     request: Request,
@@ -265,7 +265,7 @@ async def change_password(
 # Verify Password
 # -------------------------
 @router.post("/verify-password")
-@require_permissions("user.read")
+@require_permissions("user.read", workspace_scoped=False)
 @db_transaction_handler("verify password", auto_commit=False)
 async def verify_password(
     password_data: VerifyPasswordRequest,  # CHANGED: Added Pydantic schema parameter
