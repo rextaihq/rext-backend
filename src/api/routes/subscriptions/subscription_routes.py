@@ -24,7 +24,7 @@ from src.api.schema.subscription import (
 from src.api.models.user_models.users import Users
 from src.services.subscription_service import SubscriptionService
 from src.providers.payment.provider_factory import get_payment_provider_singleton
-from src.utils.response_utils import success, created
+from src.utils.response_utils import success, created, not_found, error
 from src.utils.route_decorators import db_transaction_handler, require_permissions
 from src.api.middleware.rate_limiter import (
     checkout_rate_limit,
@@ -431,66 +431,60 @@ async def cancel_subscription(
     current_user: dict = Depends(get_current_user),
     _rate_limit: None = Depends(subscription_cancel_rate_limit())
 ):
+    """
+    Cancel a subscription.
+
+    Cancels the user's active subscription either immediately or at the end
+    of the billing period, depending on cancel_immediately flag.
+
+    Body:
+    - reason: Cancellation reason (optional)
+    - cancel_immediately: If true, cancel now; if false, cancel at period end
+
+    Returns:
+    - HTTP 200: Subscription cancelled successfully
+    - HTTP 404: No active subscription found
+    - HTTP 500: Server error (handled by decorator)
+    """
     user_id = current_user.get("identity")
     service = SubscriptionService(db)
 
-    try:
-        # Cancel subscription
-        subscription = await service.cancel(
-            user_id=user_id,
-            reason=cancel_data.reason,
-            cancel_immediately=cancel_data.cancel_immediately,
-            background_tasks=background_tasks
+    # Cancel subscription
+    subscription = await service.cancel(
+        user_id=user_id,
+        reason=cancel_data.reason,
+        cancel_immediately=cancel_data.cancel_immediately,
+        background_tasks=background_tasks
+    )
+
+    if not subscription:
+        return not_found(
+            resource_type="subscription",
+            request=request
         )
 
-        if not subscription:
-            return {
-                "success": False,
-                "meta": {"request_id": request.headers.get("X-Request-ID")},
-                "data": None,
-                "error": {
-                    "code": "not_found",
-                    "message": "No active subscription found to cancel",
-                    "severity": "high",
-                    "status_code": 404
-                }
-            }
+    message = (
+        "Subscription cancelled immediately"
+        if cancel_data.cancel_immediately
+        else f"Subscription will end on {subscription.end_date.strftime('%Y-%m-%d') if subscription.end_date else 'N/A'}"
+    )
 
-        message = (
-            "Subscription cancelled immediately"
-            if cancel_data.cancel_immediately
-            else f"Subscription will end on {subscription.end_date.strftime('%Y-%m-%d') if subscription.end_date else 'N/A'}"
-        )
+    # Schedule cancellation notification
+    await schedule_if_allowed(
+        db=db,
+        user_id=str(user_id),
+        background_tasks=background_tasks,
+        pref_flag="subscription_cancelled",
+        message="Your subscription has been cancelled.",
+        payload={"subscription_id": str(subscription.id), "type": "cancelled"},
+    )
 
-        # Schedule cancellation notification
-        await schedule_if_allowed(
-            db=db,
-            user_id=str(user_id),
-            background_tasks=background_tasks,
-            pref_flag="subscription_cancelled",
-            message="Your subscription has been cancelled.",
-            payload={"subscription_id": str(subscription.id), "type": "cancelled"},
-        )
-
-        return {
-            "success": True,
-            "meta": {"request_id": request.headers.get("X-Request-ID")},
-            "data": subscription.to_dict(),
-            "message": message
-        }
-
-    except Exception as e:
-        return {
-            "success": False,
-            "meta": {"request_id": request.headers.get("X-Request-ID")},
-            "data": None,
-            "error": {
-                "code": "internal_server_error",
-                "message": "Failed to cancel subscription due to server error",
-                "severity": "high",
-                "status_code": 500
-            }
-        }
+    return {
+        "success": True,
+        "meta": {"request_id": request.headers.get("X-Request-ID")},
+        "data": subscription.to_dict(),
+        "message": message
+    }
 
 @router.get("/usage", response_model=dict)
 @require_permissions("usage.read", workspace_scoped=False)
