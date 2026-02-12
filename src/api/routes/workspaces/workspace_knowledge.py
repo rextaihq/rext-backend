@@ -1,5 +1,6 @@
 from typing import Annotated, Any, Optional
 from uuid import UUID
+from src.utils.vector_store import search_vector_store
 from src.utils.url_validator import SSRFValidationError
 from fastapi import APIRouter, BackgroundTasks, Body, Depends, File, Request, UploadFile
 from pydantic import BaseModel, HttpUrl, constr
@@ -54,6 +55,13 @@ class FileKnowledgeUpdateRequest(BaseModel):
 
     name: constr(strip_whitespace=True, min_length=1, max_length=255)
 
+class KnowledgeSearchRequest(BaseModel):
+    """Payload for searching knowledge via vector similarity."""
+
+    query: constr(strip_whitespace=True, min_length=1, max_length=1000)
+    knowledge_base_id: Optional[UUID] = None
+    limit: int = 10
+    score_threshold: Optional[float] = None
 
 router = APIRouter(
     prefix="/workspaces/{workspace_id}/knowledge",
@@ -99,6 +107,42 @@ async def get_workspace_knowledge(
         message="Workspace knowledge retrieved successfully",
     )
 
+@router.post("/search")
+@require_permissions("knowledge.read", workspace_scoped=True)
+@db_transaction_handler("search knowledge", auto_commit=False)
+async def search_knowledge(
+    workspace_id: str,
+    request: Request,
+    payload: KnowledgeSearchRequest = Body(...),
+    db: AsyncSession = Depends(get_async_db),
+    user: dict = Depends(get_current_user),
+):
+    """Search knowledge base using vector similarity."""
+    workspace, _ = await _resolve_workspace(
+        db=db,
+        workspace_identifier=workspace_id,
+        user=user,
+    )
+
+    from src.utils.vector_store import search_vector_store
+
+    results = search_vector_store(
+        query=payload.query,
+        workspace_id=str(workspace.id),
+        knowledge_base_id=str(payload.knowledge_base_id) if payload.knowledge_base_id else None,
+        k=payload.limit,
+        score_threshold=payload.score_threshold,
+    )
+
+    return success(
+        data={
+            "results": results,
+            "query": payload.query,
+            "total_results": len(results),
+        },
+        request=request,
+        message="Knowledge search completed successfully",
+    )
 
 async def _resolve_workspace(
     *,
