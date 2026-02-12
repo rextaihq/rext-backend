@@ -555,16 +555,9 @@ async def update_notification_preferences(
         # Handle simplified categories if provided
         if "categories" in update_data:
             categories = update_data.pop("categories")
-            # Mapping of categories to DB fields (applies to both email and in-app)
+            # Mapping of categories to DB fields
             mapping = {
-                "mentions": ["email_mentions", "in_app_mentions"],
                 "workspace_invites": ["ws_invite_received"],
-                "content_updates": ["email_content_updates", "in_app_content_updates"],
-                "comments": ["email_comments", "in_app_comments"],
-                "team_activity": ["email_team_activity", "in_app_team_activity"],
-                "security_alerts": ["email_security_alerts", "in_app_security_alerts"],
-                "billing_updates": ["email_billing_updates", "in_app_billing_updates"],
-                "product_updates": ["email_product_updates", "in_app_product_updates"],
             }
 
             for cat, value in categories.items():

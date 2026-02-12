@@ -23,7 +23,7 @@ class SubscriptionPlan(Base, SerializableMixin):
 
     # Feature limits
     features = Column(JSONB, default=dict)  # Flexible JSON for features
-    max_workspaces = Column(Integer, default=1)
+    max_workspaces = Column(Integer, default=100)
     max_members_per_workspace = Column(Integer, default=5)
     max_topics = Column(Integer, default=100)
     max_knowledge_items = Column(Integer, default=1000)

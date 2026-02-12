@@ -78,7 +78,7 @@ def upgrade() -> None:
                 "advanced_analytics": False,
                 "priority_support": False
             },
-            "max_workspaces": 1,
+            "max_workspaces": 100,
             "max_members_per_workspace": 3,
             "max_topics": 50,
             "max_knowledge_items": 100,
@@ -105,7 +105,7 @@ def upgrade() -> None:
                 "advanced_analytics": True,
                 "priority_support": False
             },
-            "max_workspaces": 5,
+            "max_workspaces": 500,
             "max_members_per_workspace": 10,
             "max_topics": 500,
             "max_knowledge_items": 5000,
