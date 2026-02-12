@@ -10,11 +10,7 @@ Handles automated subscription management tasks:
 These tasks should be run by a scheduler (e.g., cron, APScheduler, Celery).
 """
 
-<<<<<<< HEAD
 from datetime import datetime, timedelta, timezone
-=======
-from datetime import datetime, timezone, timedelta
->>>>>>> origin/dev
 from typing import Dict, List
 from unittest import result
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -52,7 +48,6 @@ async def check_and_notify_expiring_trials():
 
             # Find trials expiring in 3 days
             query = select(UserSubscription).options(
-<<<<<<< HEAD
                 selectinload(UserSubscription.user),
                 selectinload(UserSubscription.plan)
                 ).where(
@@ -60,20 +55,12 @@ async def check_and_notify_expiring_trials():
                 UserSubscription.status == SubscriptionStatus.TRIAL,
                 UserSubscription.trial_end_date >= start_of_day,
                 UserSubscription.trial_end_date <= end_of_day
-=======
-                selectinload(UserSubscription.user).selectinload(Users.notification_preferences),
-                selectinload(UserSubscription.plan)
-            ).where(
-                and_(
-                    UserSubscription.status == SubscriptionStatus.TRIAL,
-                    UserSubscription.trial_end_date >= start_of_day,
-                    UserSubscription.trial_end_date <= end_of_day
->>>>>>> origin/dev
                 )
-            )      
+            )
 
             result = await db.execute(query)
             expiring_trials = result.scalars().all()
+
             logger.info(f"Found {len(expiring_trials)} trial(s) expiring in 3 days")
 
             # Send notifications
@@ -82,10 +69,6 @@ async def check_and_notify_expiring_trials():
 
             for subscription in expiring_trials:
                 try:
-<<<<<<< HEAD
-=======
-                    # User and plan already eagerly loaded
->>>>>>> origin/dev
                     user = subscription.user
                     plan = subscription.plan
 
@@ -94,21 +77,11 @@ async def check_and_notify_expiring_trials():
 
                     # Send trial ending email
                     success = await email_service.send_trial_ending_email(
-<<<<<<< HEAD
                     user_id=user.id,
                     plan_name=plan.display_name,
                     days_remaining=3,
                     trial_end_date=subscription.trial_end_date.strftime("%B %d, %Y")
-          )
-=======
-                        user_id=user.id,
-                        plan_name=plan.display_name,
-                        days_remaining=3,
-                        trial_end_date=subscription.trial_end_date.strftime("%B %d, %Y"),
-                        user=user,
-                        preferences=user.notification_preferences
-                    )
->>>>>>> origin/dev
+                )
 
                     if success:
                         success_count += 1
@@ -148,13 +121,13 @@ async def expire_ended_trials():
 
             # Find trials that have ended
             query = select(UserSubscription).options(
-                selectinload(UserSubscription.user).selectinload(Users.notification_preferences),
+                selectinload(UserSubscription.user),
                 selectinload(UserSubscription.plan)
             ).where(
                 and_(
                     UserSubscription.status == SubscriptionStatus.TRIAL,
                     UserSubscription.trial_end_date < now
-                )
+              )
             )
 
             result = await db.execute(query)
@@ -170,7 +143,6 @@ async def expire_ended_trials():
                     subscription.status = SubscriptionStatus.EXPIRED
                     subscription.end_date = subscription.trial_end_date
 
-                    # User and plan already eagerly loaded
                     user = subscription.user
                     plan = subscription.plan
 
@@ -179,9 +151,7 @@ async def expire_ended_trials():
                         email_service = BillingEmailService(db)
                         await email_service.send_trial_expired_email(
                             user_id=user.id,
-                            plan_name=plan.display_name,
-                            user=user,
-                            preferences=user.notification_preferences
+                            plan_name=plan.display_name
                         )
 
                     expired_count += 1

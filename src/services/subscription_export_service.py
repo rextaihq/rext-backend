@@ -8,11 +8,7 @@ Provides CSV export functionality for:
 """
 import csv
 import io
-<<<<<<< HEAD
-from datetime import datetime, timedelta, timezone
-=======
 from datetime import datetime, timezone, timedelta
->>>>>>> origin/dev
 from typing import List, Dict, Any, Optional
 from sqlalchemy import and_, or_, desc, func, case
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -382,7 +378,6 @@ class SubscriptionExportService:
                 result_active = await self.db.execute(stmt_active)
                 active_subs = result_active.scalar() or 0
 
-<<<<<<< HEAD
                 # Calculate new revenue (simplified - would need plan price joins)
                 stmt_new_revenue = (
                     select(
@@ -428,35 +423,6 @@ class SubscriptionExportService:
                 )
                 result_churned_rev = await self.db.execute(stmt_churned_revenue)
                 churned_revenue = float(result_churned_rev.scalar() or 0)
-=======
-                # Calculate new revenue (actual plan prices joining with SubscriptionPlan)
-                stmt_new_revenue = select(func.sum(
-                    case(
-                        (UserSubscription.billing_period == BillingPeriod.MONTHLY, SubscriptionPlan.price_monthly),
-                        (UserSubscription.billing_period == BillingPeriod.YEARLY, SubscriptionPlan.price_yearly / 12),
-                        else_=SubscriptionPlan.price_monthly
-                    )
-                )).select_from(UserSubscription).join(SubscriptionPlan).where(
-                    UserSubscription.created_at >= month_start,
-                    UserSubscription.created_at < next_month
-                )
-                result_new_revenue = await self.db.execute(stmt_new_revenue)
-                new_revenue = float(result_new_revenue.scalar() or 0.0)
-
-                # Calculate churned revenue (actual plan prices)
-                stmt_churned_revenue = select(func.sum(
-                    case(
-                        (UserSubscription.billing_period == BillingPeriod.MONTHLY, SubscriptionPlan.price_monthly),
-                        (UserSubscription.billing_period == BillingPeriod.YEARLY, SubscriptionPlan.price_yearly / 12),
-                        else_=SubscriptionPlan.price_monthly
-                    )
-                )).select_from(UserSubscription).join(SubscriptionPlan).where(
-                    UserSubscription.cancelled_at >= month_start,
-                    UserSubscription.cancelled_at < next_month
-                )
-                result_churned_revenue = await self.db.execute(stmt_churned_revenue)
-                churned_revenue = float(result_churned_revenue.scalar() or 0.0)
->>>>>>> origin/dev
 
                 # Net revenue change
                 net_change = new_revenue - churned_revenue
