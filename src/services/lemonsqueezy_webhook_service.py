@@ -9,6 +9,8 @@ This service handles all incoming webhooks from LemonSqueezy including:
 - Error handling and retry logic
 - Transaction management
 
+
+
 Architecture:
     1. Verify webhook signature (security)
     2. Check idempotency (prevent duplicates)

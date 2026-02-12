@@ -42,7 +42,7 @@ async def check_and_notify_expiring_trials():
     async with get_async_db_context() as db:
         try:
             # Get trials expiring in exactly 3 days
-            three_days_from_now = datetime.now(timezone.utc) + timedelta(days=3)
+            three_days_from_now = datetime.utcnow() + timedelta(days=3)
             start_of_day = three_days_from_now.replace(hour=0, minute=0, second=0, microsecond=0)
             end_of_day = three_days_from_now.replace(hour=23, minute=59, second=59, microsecond=999999)
 
@@ -63,9 +63,9 @@ async def check_and_notify_expiring_trials():
 
             logger.info(f"Found {len(expiring_trials)} trial(s) expiring in 3 days")
 
-            # Send notifications
+            # Collect email data first (read phase)
+            email_tasks = []
             email_service = BillingEmailService(db)
-            success_count = 0
 
             for subscription in expiring_trials:
                 try:
@@ -75,7 +75,21 @@ async def check_and_notify_expiring_trials():
                     if not user or not plan:
                         continue
 
-                    # Send trial ending email
+                    email_tasks.append({
+                        "user_id": user.id,
+                        "user_email": user.email,
+                        "plan_name": plan.display_name,
+                        "trial_end_date": subscription.trial_end_date.strftime("%B %d, %Y"),
+                    })
+
+                except Exception as e:
+                    logger.error(f"Error preparing trial notification for subscription {subscription.id}: {e}")
+                    continue
+
+            # Send emails (send phase — after all reads complete)
+            success_count = 0
+            for email_data in email_tasks:
+                try:
                     success = await email_service.send_trial_ending_email(
                     user_id=user.id,
                     plan_name=plan.display_name,
@@ -85,26 +99,25 @@ async def check_and_notify_expiring_trials():
 
                     if success:
                         success_count += 1
-                        logger.info(f"Sent trial ending email to {user.email}")
+                        logger.info(f"Sent trial ending email to {email_data['user_email']}")
                     else:
-                        logger.warning(f"Failed to send trial ending email to {user.email}")
+                        logger.warning(f"Failed to send trial ending email to {email_data['user_email']}")
 
                 except Exception as e:
-                    logger.error(f"Error sending trial notification for subscription {subscription.id}: {e}")
+                    logger.error(f"Error sending trial notification to {email_data['user_email']}: {e}")
                     continue
 
-            logger.info(f"Successfully sent {success_count}/{len(expiring_trials)} trial ending emails")
+            logger.info(f"Successfully sent {success_count}/{len(email_tasks)} trial ending emails")
 
             return {
                 "total_expiring": len(expiring_trials),
                 "emails_sent": success_count,
-                "timestamp": datetime.now(timezone.utc).isoformat()
+                "timestamp": datetime.utcnow().isoformat()
             }
 
         except Exception as e:
             logger.error(f"Error in check_and_notify_expiring_trials: {e}")
             raise
-
 
 async def expire_ended_trials():
     """
@@ -117,7 +130,7 @@ async def expire_ended_trials():
     """
     async with get_async_db_context() as db:
         try:
-            now = datetime.now(timezone.utc)
+            now = datetime.utcnow()
 
             # Find trials that have ended
             query = select(UserSubscription).options(
@@ -136,6 +149,10 @@ async def expire_ended_trials():
             logger.info(f"Found {len(expired_trials)} expired trial(s)")
 
             expired_count = 0
+            # Collect email tasks to send AFTER commit
+            pending_emails = []
+
+            email_service = BillingEmailService(db)
 
             for subscription in expired_trials:
                 try:
@@ -147,12 +164,11 @@ async def expire_ended_trials():
                     plan = subscription.plan
 
                     if user and plan:
-                        # Send trial expired email
-                        email_service = BillingEmailService(db)
-                        await email_service.send_trial_expired_email(
-                            user_id=user.id,
-                            plan_name=plan.display_name
-                        )
+                        # Queue email for sending after commit
+                        pending_emails.append({
+                            "user_id": user.id,
+                            "plan_name": plan.display_name,
+                        })
 
                     expired_count += 1
                     logger.info(f"Expired trial subscription {subscription.id}")
@@ -161,13 +177,33 @@ async def expire_ended_trials():
                     logger.error(f"Error expiring trial {subscription.id}: {e}")
                     continue
 
+            # Commit all status changes first
             await db.commit()
 
-            logger.info(f"Expired {expired_count} trial subscription(s)")
+            # Only send emails AFTER successful commit
+            email_success_count = 0
+            for email_data in pending_emails:
+                try:
+                    await email_service.send_trial_expired_email(
+                        user_id=email_data["user_id"],
+                        plan_name=email_data["plan_name"],
+                    )
+                    email_success_count += 1
+                except Exception as e:
+                    logger.error(
+                        f"Failed to send trial expired email to user {email_data['user_id']}: {e}"
+                    )
+
+            logger.info(
+                f"Expired {expired_count} trial subscription(s), "
+                f"sent {email_success_count}/{len(pending_emails)} notification emails"
+            )
 
             return {
                 "trials_expired": expired_count,
-                "timestamp": datetime.now(timezone.utc).isoformat()
+                "emails_sent": email_success_count,
+                "emails_failed": len(pending_emails) - email_success_count,
+                "timestamp": datetime.utcnow().isoformat()
             }
 
         except Exception as e:
