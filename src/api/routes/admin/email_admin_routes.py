@@ -8,7 +8,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_
-from datetime import datetime, timedelta
+from datetime import datetime, timezone, timedelta
 
 from src.api.database.async_database import get_async_db
 from src.api.models.email_models.email_log import EmailLog

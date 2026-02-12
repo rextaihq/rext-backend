@@ -22,7 +22,7 @@ import asyncio
 from fastapi import Depends, HTTPException, status, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import func, select
-from datetime import datetime, timedelta
+from datetime import datetime, timezone, timedelta
 
 from src.api.database.async_database import get_async_db as get_db
 from src.api.security.dependencies import get_current_user

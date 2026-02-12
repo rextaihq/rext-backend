@@ -14,7 +14,7 @@ from typing import BinaryIO, Optional, Tuple
 from abc import ABC, abstractmethod
 import aiofiles
 import hashlib
-from datetime import datetime
+from datetime import datetime, timezone
 from botocore.exceptions import ClientError
 import asyncio
 from functools import partial

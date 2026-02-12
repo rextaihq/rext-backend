@@ -18,7 +18,7 @@ Each handler:
 """
 
 from typing import Dict, Any
-from datetime import datetime, timedelta
+from datetime import datetime, timezone, timedelta
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession

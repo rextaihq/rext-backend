@@ -2,7 +2,7 @@ import re
 import logging
 from urllib.parse import urlparse
 from collections import Counter
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Dict, Any
 from src.flow.states.rext import REXT, NormalizedOrganicResult, SERPNORMALIZED
 

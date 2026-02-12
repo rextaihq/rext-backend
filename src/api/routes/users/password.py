@@ -6,24 +6,23 @@ import os
 
 from src.utils.logger import logger
 from src.api.security.dependencies import get_current_user
-from src.utils.route_decorators import require_permissions
+from src.utils.route_decorators import require_permissions, db_transaction_handler
 from src.api.config import get_settings
 from src.api.schema.user_schema import (
-    ResetPassword,
-    ForgotPasswordRequest,
-    ChangePasswordRequest,
-    VerifyPasswordRequest  # Added new import
+    VerifyPasswordRequest
 )
-from src.api.security.token_utils import create_reset_token, decode_and_verify_token
-from src.api.database.async_database import get_async_db
 from src.utils.response_utils import success, error
 from src.api.schema.response_schemas import ErrorCode, ErrorSeverity
+from src.api.security.token_utils import create_reset_token, decode_and_verify_token
+from src.api.database.async_database import get_async_db
 from src.api.middleware.exceptions import (
     ResourceNotFoundException,
-    RextValidationException
+    RextValidationException,
+    RextAuthenticationException
 )
 from src.services.user_service import UserService
 from src.api.middleware.rate_limiter import password_reset_rate_limit
+from src.api.schema.user_schema import ForgotPasswordRequest, ResetPassword,ChangePasswordRequest
 
 router = APIRouter()
 
@@ -68,6 +67,7 @@ async def send_password_reset_email_task(
 
 
 @router.post("/forgot-password")
+@db_transaction_handler("forgot password", auto_commit=True)
 async def forgot_password(
     request: Request,
     forgot_request: ForgotPasswordRequest,
@@ -82,57 +82,51 @@ async def forgot_password(
     SECURITY: Always returns the same response regardless of whether the email
     exists to prevent user enumeration attacks (OWASP A07:2025).
     """
-    try:
-        # Use a generic message for all responses
-        generic_message = "If an account with this email exists, a password reset link has been sent."
+    # Use a generic message for all responses
+    generic_message = "If an account with this email exists, a password reset link has been sent."
 
-        # Log at debug level only — do not log the email at info level
-        logger.debug(f"Forgot password request received")
+    # Log at debug level only — do not log the email at info level
+    logger.debug(f"Forgot password request received")
 
-        service = UserService(db)
-        user = await service.get_user_by_email(forgot_request.email)
+    service = UserService(db)
+    user = await service.get_user_by_email(forgot_request.email)
 
-        if user:
-            # Generate reset token
-            reset_data = {
-                "user_id": str(user.id),
-                "email": user.email,
-                "jti": str(uuid.uuid4())
-            }
-            reset_token = create_reset_token(data=reset_data)
+    if user:
+        # Generate reset token
+        reset_data = {
+            "user_id": str(user.id),
+            "email": user.email,
+            "jti": str(uuid.uuid4())
+        }
+        reset_token = create_reset_token(data=reset_data)
 
-            # Set reset token via service
-            await service.set_reset_token(user.id, reset_token)
+        # Set reset token via service
+        await service.set_reset_token(user.id, reset_token)
 
-            # Get frontend URL
-            frontend_url = settings.FRONTEND_URL
+        # Get frontend URL
+        frontend_url = settings.FRONTEND_URL
 
-            # Send email in background
-            background_tasks.add_task(
-                send_password_reset_email_task,
-                email=user.email,
-                user_name=user.full_name or user.display_name or user.email,
-                reset_token=reset_token,
-                user_id=str(user.id),
-                frontend_url=frontend_url
-            )
-            logger.info(f"Password reset initiated for user: {user.id}")
-
-        # Always return 200 with the same generic message
-        return success(
-            data={"message": generic_message},
-            request=request,
-            message=generic_message
+        # Send email in background
+        background_tasks.add_task(
+            send_password_reset_email_task,
+            email=user.email,
+            user_name=user.full_name or user.display_name or user.email,
+            reset_token=reset_token,
+            user_id=str(user.id),
+            frontend_url=frontend_url
         )
+        logger.info(f"Password reset initiated for user: {user.id}")
 
-    except Exception as e:
-        logger.error(f"Forgot password error: {str(e)}")
-        raise
+    # Always return the same generic message
+    return {
+        "message": generic_message
+    }
 
     
 
 
 @router.post("/reset-password")
+@db_transaction_handler("reset password", auto_commit=True)
 async def reset_password(
     payload: ResetPassword,
     request: Request,
@@ -142,43 +136,27 @@ async def reset_password(
     """
     Reset user password using token from email.
     """
+    # Verify token validity first
+    # Verify token validity first
     try:
-        # Verify token validity first
-        try:
-            decode_and_verify_token(payload.token)
-        except Exception as e:
-            logger.warning(f"Invalid reset token: {str(e)}")
-            return error(
-                message="Invalid or expired reset token",
-                code=ErrorCode.INVALID_VALUE,
-                status_code=400,
-                severity=ErrorSeverity.MEDIUM,
-                request=request
-            )
+        decode_and_verify_token(payload.token)
+    except Exception as e:
+        logger.warning(f"Invalid reset token: {str(e)}")
+        return error(
+            message="Invalid or expired reset token",
+            code=ErrorCode.INVALID_VALUE,
+            status_code=400,
+            severity=ErrorSeverity.MEDIUM,
+            request=request
+        )
 
-        # Reset password via service
-        service = UserService(db)
+    # Reset password via service
+    service = UserService(db)
+    try:
         user = await service.reset_password_with_token(
             reset_token=payload.token,
             new_password=payload.new_password
         )
-
-        # SECURITY: Revoke all sessions after password reset
-        # This prevents attackers from maintaining access if they had stolen sessions
-        from src.services.session_service import SessionService
-        session_service = SessionService(db)
-        await session_service.revoke_all_sessions(user.id)
-
-        logger.info(f"Password reset successfully for user: {user.id}, all sessions revoked")
-        return success(
-            data={
-                "user_id": str(user.id),
-                "sessions_revoked": True
-            },
-            request=request,
-            message="Password updated successfully. Please login with your new password."
-        )
-
     except ResourceNotFoundException:
         return error(
             message="Invalid or expired reset token",
@@ -187,13 +165,26 @@ async def reset_password(
             severity=ErrorSeverity.MEDIUM,
             request=request
         )
-    except Exception as e:
-        logger.error(f"Password reset error: {str(e)}")
-        raise
+
+    # SECURITY: Revoke all sessions after password reset
+    from src.services.session_service import SessionService
+    session_service = SessionService(db)
+    await session_service.revoke_all_sessions(user.id)
+
+    logger.info(f"Password reset successfully for user: {user.id}, all sessions revoked")
+    return success(
+        data={
+            "user_id": str(user.id),
+            "sessions_revoked": True
+        },
+        request=request,
+        message="Password updated successfully. Please login with your new password."
+    )
 
 
 @router.post("/change-password")
 @require_permissions("user.update")
+@db_transaction_handler("change password", auto_commit=True)
 async def change_password(
     request: Request,
     password_data: ChangePasswordRequest,
@@ -204,33 +195,25 @@ async def change_password(
 ):
     """
     Change user password (requires authentication).
-    Thin controller - uses UserService for all business logic.
-
-    - **current_password**: Current password for verification
-    - **new_password**: New password (min 8 characters)
-    - **confirm_password**: Confirmation of new password
     """
     try:
         user_id = UUID(current_user.get("identity"))
         service = UserService(db)
 
-        # Change password via service (handles all validation)
+        # Change password via service
         user = await service.change_password(
             user_id=user_id,
             current_password=password_data.current_password,
             new_password=password_data.new_password
         )
 
-        # SECURITY: Revoke all other sessions when password changes
-        # This forces users to re-login on all devices, preventing stolen sessions
+        # SECURITY: Revoke all other sessions
         from src.services.session_service import SessionService
         session_service = SessionService(db)
         await session_service.revoke_all_sessions(user_id)
 
-        # Send password changed confirmation email
+        # Send confirmation email
         from src.services.email_helpers import send_auth_email
-        from datetime import datetime
-
         try:
             await send_auth_email(
                 db=db,
@@ -245,15 +228,14 @@ async def change_password(
             )
             logger.info(f"Password changed email sent to {user.email}")
         except Exception as e:
-            # Don't fail the password change if email fails
-            logger.error(f"Failed to send password changed email: {str(e)}", exc_info=True)
+            logger.error(f"Failed to send password changed email: {str(e)}")
 
         logger.info(f"Password changed successfully for user: {user_id}, all sessions revoked")
         return success(
             data={
                 "user_id": str(user.id),
                 "password_changed_at": user.password_changed_at.isoformat(),
-                "sessions_revoked": True  # Inform frontend that re-login is needed
+                "sessions_revoked": True
             },
             request=request,
             message="Password changed successfully. Please login again on all devices."
@@ -268,7 +250,6 @@ async def change_password(
             request=request
         )
     except RextValidationException as e:
-        # Service returns validation errors for incorrect password
         logger.warning(f"Password change validation error for user {current_user.get('identity')}: {e.message}")
         return error(
             message=e.message,
@@ -278,9 +259,6 @@ async def change_password(
             context={"details": e.details} if e.details else None,
             request=request
         )
-    except Exception as e:
-        logger.error(f"Error changing password: {str(e)}")
-        raise
 
 
 # -------------------------
@@ -288,6 +266,7 @@ async def change_password(
 # -------------------------
 @router.post("/verify-password")
 @require_permissions("user.read")
+@db_transaction_handler("verify password", auto_commit=False)
 async def verify_password(
     password_data: VerifyPasswordRequest,  # CHANGED: Added Pydantic schema parameter
     request: Request,  # CHANGED: Moved to second position
@@ -298,25 +277,11 @@ async def verify_password(
 ):
     """
     Verify user's current password.
-    
-    Used for confirming sensitive operations like workspace deletion.
-    
-    Body:
-        {
-          "password": "user's current password"
-        }
-    
-    Returns:
-        200: Password is correct
-        400: Password is incorrect
     """
     try:
         user_id = UUID(current_user.get("identity"))
-        
-        # CHANGED: Access password from Pydantic model instead of request.json()
         password = password_data.password
 
-        # Validation is now handled by Pydantic, but we can add extra check
         if not password:
             return error(
                 message="Password is required",

@@ -10,7 +10,11 @@ Handles automated subscription management tasks:
 These tasks should be run by a scheduler (e.g., cron, APScheduler, Celery).
 """
 
+<<<<<<< HEAD
 from datetime import datetime, timedelta, timezone
+=======
+from datetime import datetime, timezone, timedelta
+>>>>>>> origin/dev
 from typing import Dict, List
 from unittest import result
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -48,6 +52,7 @@ async def check_and_notify_expiring_trials():
 
             # Find trials expiring in 3 days
             query = select(UserSubscription).options(
+<<<<<<< HEAD
                 selectinload(UserSubscription.user),
                 selectinload(UserSubscription.plan)
                 ).where(
@@ -55,6 +60,15 @@ async def check_and_notify_expiring_trials():
                 UserSubscription.status == SubscriptionStatus.TRIAL,
                 UserSubscription.trial_end_date >= start_of_day,
                 UserSubscription.trial_end_date <= end_of_day
+=======
+                selectinload(UserSubscription.user).selectinload(Users.notification_preferences),
+                selectinload(UserSubscription.plan)
+            ).where(
+                and_(
+                    UserSubscription.status == SubscriptionStatus.TRIAL,
+                    UserSubscription.trial_end_date >= start_of_day,
+                    UserSubscription.trial_end_date <= end_of_day
+>>>>>>> origin/dev
                 )
             )      
 
@@ -68,6 +82,10 @@ async def check_and_notify_expiring_trials():
 
             for subscription in expiring_trials:
                 try:
+<<<<<<< HEAD
+=======
+                    # User and plan already eagerly loaded
+>>>>>>> origin/dev
                     user = subscription.user
                     plan = subscription.plan
 
@@ -76,11 +94,21 @@ async def check_and_notify_expiring_trials():
 
                     # Send trial ending email
                     success = await email_service.send_trial_ending_email(
+<<<<<<< HEAD
                     user_id=user.id,
                     plan_name=plan.display_name,
                     days_remaining=3,
                     trial_end_date=subscription.trial_end_date.strftime("%B %d, %Y")
           )
+=======
+                        user_id=user.id,
+                        plan_name=plan.display_name,
+                        days_remaining=3,
+                        trial_end_date=subscription.trial_end_date.strftime("%B %d, %Y"),
+                        user=user,
+                        preferences=user.notification_preferences
+                    )
+>>>>>>> origin/dev
 
                     if success:
                         success_count += 1
@@ -119,7 +147,10 @@ async def expire_ended_trials():
             now = datetime.now(timezone.utc)
 
             # Find trials that have ended
-            query = select(UserSubscription).where(
+            query = select(UserSubscription).options(
+                selectinload(UserSubscription.user).selectinload(Users.notification_preferences),
+                selectinload(UserSubscription.plan)
+            ).where(
                 and_(
                     UserSubscription.status == SubscriptionStatus.TRIAL,
                     UserSubscription.trial_end_date < now
@@ -139,23 +170,18 @@ async def expire_ended_trials():
                     subscription.status = SubscriptionStatus.EXPIRED
                     subscription.end_date = subscription.trial_end_date
 
-                    # Get user for email
-                    user_result = await db.execute(
-                        select(Users).where(Users.id == subscription.user_id)
-                    )
-                    user = user_result.scalar_one_or_none()
-
-                    plan_result = await db.execute(
-                        select(SubscriptionPlan).where(SubscriptionPlan.id == subscription.plan_id)
-                    )
-                    plan = plan_result.scalar_one_or_none()
+                    # User and plan already eagerly loaded
+                    user = subscription.user
+                    plan = subscription.plan
 
                     if user and plan:
                         # Send trial expired email
                         email_service = BillingEmailService(db)
                         await email_service.send_trial_expired_email(
                             user_id=user.id,
-                            plan_name=plan.display_name
+                            plan_name=plan.display_name,
+                            user=user,
+                            preferences=user.notification_preferences
                         )
 
                     expired_count += 1

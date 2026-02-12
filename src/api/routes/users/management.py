@@ -3,18 +3,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from uuid import UUID
 import uuid
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 
 from src.utils.logger import logger
 from src.api.security.dependencies import get_current_user
-from src.utils.route_decorators import require_permissions
+from src.utils.route_decorators import require_permissions, db_transaction_handler
 from src.api.schema.user_schema import UpdateUser, DataExportRequest, DataExportResponse
 from src.services.email_service import EmailService
 from src.api.database.async_database import get_async_db
+from src.services.user_service import UserService
+from src.api.middleware.exceptions import ResourceNotFoundException, RextValidationException, RextAuthorizationException
 from src.utils.response_utils import success, error
 from src.api.schema.response_schemas import ErrorCode, ErrorSeverity
-from src.services.user_service import UserService
-from src.api.middleware.exceptions import ResourceNotFoundException, RextValidationException
 from src.api.models.workspace_models.workspace_member import WorkspaceMembers
 from src.api.config import get_settings, settings
 from sqlalchemy import select, delete
@@ -133,6 +133,7 @@ async def get_users(
 
 @router.delete("/delete/{user_id}")
 @require_permissions("user.delete")
+@db_transaction_handler("delete user", auto_commit=True)
 async def delete_user(
     user_id: str,
     request: Request,
@@ -145,6 +146,9 @@ async def delete_user(
 
     Requires user.delete permission (super_admin only).
     """
+    service = UserService(db)
+    current_user_id = UUID(current_user.get("identity"))
+
     try:
         service = UserService(db)
         current_user_id = UUID(current_user.get("identity"))
@@ -175,7 +179,7 @@ async def delete_user(
                 delete(WorkspaceMembers).where(WorkspaceMembers.user_id == UUID(user_id))
             )
             logger.info(f"Deleted {len(membership_list)} workspace memberships for user {user_id}")
-            await db.commit()
+            await db.flush()
 
         # Delete user via service (includes validation)
         db_user = await service.delete_user(UUID(user_id))
@@ -208,6 +212,7 @@ async def delete_user(
 
 @router.put("/update/{user_id}")
 @require_permissions("user.update")
+@db_transaction_handler("update user", auto_commit=True)
 async def update_user(
     user_id: str,
     user: UpdateUser,
@@ -218,21 +223,17 @@ async def update_user(
     Update user details.
     Thin controller - uses UserService for updates.
     """
-    try:
-        service = UserService(db)
+    service = UserService(db)
 
-        # Update user via service (handles all validation and updates)
-        db_user = await service.update_user(
-            user_id=UUID(user_id),
-            email=user.email,
-            full_name=user.full_name,
-            display_name=user.display_name,
-            language=user.language,
-            timezone=user.timezone
-        )
+    # Update user via service (handles all validation and updates)
+    db_user = await service.update_user(
+        user_id=UUID(user_id),
+        update_data=user
+    )
 
-        # Return updated user data (excluding password)
-        user_data = {
+    # Return updated user data (excluding password)
+    return {
+        "user": {
             "id": str(db_user.id),
             "email": db_user.email,
             "full_name": db_user.full_name,
@@ -242,36 +243,12 @@ async def update_user(
             "status": db_user.status,
             "updated_at": db_user.updated_at.isoformat() if db_user.updated_at else None
         }
-
-        return success(
-            data={"user": user_data},
-            request=request,
-            message="User updated successfully"
-        )
-
-    except ResourceNotFoundException:
-        return error(
-            message="User not found",
-            code=ErrorCode.RESOURCE_NOT_FOUND,
-            status_code=404,
-            severity=ErrorSeverity.MEDIUM,
-            request=request
-        )
-    except RextValidationException:
-        return error(
-            message="Validation failed",
-            code=ErrorCode.DUPLICATE_RESOURCE,
-            status_code=400,
-            severity=ErrorSeverity.MEDIUM,
-            request=request
-        )
-    except Exception as e:
-        logger.error(f"Failed to update user {user_id}: {str(e)}")
-        raise
+    }
 
 
 @router.post("/export-data", response_model=DataExportResponse)
 @require_permissions("user.read")
+@db_transaction_handler("export user data", auto_commit=False) # Added transaction handler
 async def export_user_data(
     request: Request,
     export_request: DataExportRequest,
@@ -353,6 +330,7 @@ async def export_user_data(
             export_data["activity"] = {
                 "note": "Activity logs export will be available once audit log system is queried"
             }
+        
         # Get frontend URL
         frontend_url = settings.FRONTEND_URL
 
@@ -406,8 +384,6 @@ async def export_user_data(
         # Convert to JSON for email
         import json
         export_json = json.dumps(export_data, indent=2)
-
-        
 
         # Send email with data export in background using EmailService
         background_tasks.add_task(

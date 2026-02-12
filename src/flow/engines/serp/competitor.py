@@ -4,7 +4,7 @@ from urllib.parse import urlparse
 from collections import Counter
 from typing import List, Dict, Any
 from src.flow.states.rext import REXT, Competitor
-from datetime import datetime
+from datetime import datetime, timezone
 from src.flow.model.llm_manager import load_model
 from src.flow.prompts.system.intent import SEO_INTENT_SYSTEM_PROMPT
 from src.flow.model.structure.intent import BatchSEOIntentOutput

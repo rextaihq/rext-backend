@@ -7,7 +7,7 @@ Provides webhook event tracking and monitoring capabilities:
 - Retry failed webhooks
 - Get webhook statistics
 """
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone, timedelta, timezone
 from typing import Dict, List, Optional, Any
 from sqlalchemy import func, Integer,and_, or_, desc
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -276,7 +276,7 @@ class WebhookMonitoringService:
                 event.processed_at = datetime.now(timezone.utc)
                 event.error_message = None
 
-                await self.db.commit()
+                await self.db.flush()
 
                 logger.info(f"Successfully retried webhook: {webhook_id}")
 
@@ -289,7 +289,7 @@ class WebhookMonitoringService:
             except Exception as process_error:
                 # Update error message
                 event.error_message = str(process_error)
-                await self.db.commit()
+                await self.db.flush()
 
                 logger.error(
                     f"Failed to retry webhook {webhook_id}: {str(process_error)}",

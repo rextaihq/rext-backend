@@ -362,7 +362,7 @@ class WorkspacePipeline:
             # Persist personas separately
             await self._persist_personas(personas_data)
             
-            await self.db.commit()
+            await self.db.flush()
             return brand_voice_record
 
         except Exception as exc:  # noqa: BLE001 - rollback and propagate

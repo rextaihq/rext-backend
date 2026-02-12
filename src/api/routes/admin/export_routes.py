@@ -9,7 +9,7 @@ This module provides CSV export functionality for:
 
 All endpoints require super admin permissions.
 """
-from datetime import datetime
+from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, Request, Query, Response
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession

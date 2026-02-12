@@ -16,7 +16,6 @@ from src.api.database.async_database import get_async_db
 from src.api.security.dependencies import get_current_user
 from src.services.workspace_service import WorkspaceService
 from src.services.member_service import MemberService
-from src.utils.response_utils import success
 from src.utils.route_decorators import db_transaction_handler
 from src.utils.logger import logger
 
@@ -158,13 +157,9 @@ async def get_user_workspaces(
         }
     )
 
-    return success(
-        data={
-            "workspaces": enhanced_workspaces,
-            "total_count": len(enhanced_workspaces),
-            "owned_count": owned_count,
-            "member_count": member_count
-        },
-        request=request,
-        message="Workspaces retrieved successfully"
-    )
+    return {
+        "workspaces": enhanced_workspaces,
+        "total_count": len(enhanced_workspaces),
+        "owned_count": owned_count,
+        "member_count": member_count
+    }

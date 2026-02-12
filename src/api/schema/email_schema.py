@@ -5,7 +5,7 @@ Provides Pydantic schemas for email sending, querying, and management.
 """
 from pydantic import BaseModel, EmailStr, Field, field_validator
 from typing import Optional, List, Dict
-from datetime import datetime
+from datetime import datetime, timezone
 
 
 # ============================================================================

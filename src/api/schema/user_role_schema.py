@@ -6,7 +6,7 @@ This module defines Pydantic models for user-role assignment operations.
 
 from pydantic import BaseModel, Field
 from typing import Optional
-from datetime import datetime
+from datetime import datetime, timezone
 
 
 class AssignUserRoleRequest(BaseModel):

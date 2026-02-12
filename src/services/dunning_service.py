@@ -13,7 +13,7 @@ Each email becomes progressively more urgent to encourage payment.
 """
 
 from typing import List, Dict, Any
-from datetime import datetime, timedelta
+from datetime import datetime, timezone, timedelta
 from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_
@@ -96,9 +96,7 @@ class DunningService:
             True if email sent successfully
         """
         try:
-            # Import here to avoid circular dependency
             from src.services.billing_email_service import BillingEmailService
-            from emails.templates.billing import render_payment_dunning_1_day_email
 
             # Get user
             stmt = select(Users).where(Users.id == subscription.user_id)
@@ -132,20 +130,14 @@ class DunningService:
             # Format grace period end date
             grace_period_end_date = subscription.grace_period_end.strftime("%B %d, %Y") if subscription.grace_period_end else "Unknown"
 
-            # Render email HTML
-            html_content = render_payment_dunning_1_day_email(
-                user_name=user_name,
-                plan_name=plan_name,
-                amount=amount,
-                grace_period_end_date=grace_period_end_date
-            )
-
             # Send email via billing service
             email_service = BillingEmailService(self.db)
-            success = await email_service._send_email(
-                to_email=user.email,
-                subject=f"Payment Issue - Action Needed for {plan_name}",
-                html_content=html_content
+            success = await email_service.send_payment_dunning_email(
+                user_id=user.id,
+                plan_name=plan_name,
+                amount=amount,
+                days_overdue=1,
+                grace_period_end_date=grace_period_end_date
             )
 
             if success:
@@ -188,7 +180,6 @@ class DunningService:
         """
         try:
             from src.services.billing_email_service import BillingEmailService
-            from emails.templates.billing import render_payment_dunning_3_days_email
 
             # Get user and plan
             stmt = select(Users).where(Users.id == subscription.user_id)
@@ -223,21 +214,15 @@ class DunningService:
 
             grace_period_end_date = subscription.grace_period_end.strftime("%B %d, %Y") if subscription.grace_period_end else "Unknown"
 
-            # Render email HTML
-            html_content = render_payment_dunning_3_days_email(
-                user_name=user_name,
-                plan_name=plan_name,
-                amount=amount,
-                days_until_suspension=days_until_suspension,
-                grace_period_end_date=grace_period_end_date
-            )
-
             # Send email
             email_service = BillingEmailService(self.db)
-            success = await email_service._send_email(
-                to_email=user.email,
-                subject=f"Urgent: Update Payment Method for {plan_name}",
-                html_content=html_content
+            success = await email_service.send_payment_dunning_email(
+                user_id=user.id,
+                plan_name=plan_name,
+                amount=amount,
+                days_overdue=3,
+                days_until_suspension=days_until_suspension,
+                grace_period_end_date=grace_period_end_date
             )
 
             if success:
@@ -281,7 +266,6 @@ class DunningService:
         """
         try:
             from src.services.billing_email_service import BillingEmailService
-            from emails.templates.billing import render_payment_dunning_6_days_email
 
             # Get user and plan
             stmt = select(Users).where(Users.id == subscription.user_id)
@@ -310,20 +294,14 @@ class DunningService:
 
             grace_period_end_date = subscription.grace_period_end.strftime("%B %d, %Y") if subscription.grace_period_end else "Tomorrow"
 
-            # Render email HTML
-            html_content = render_payment_dunning_6_days_email(
-                user_name=user_name,
-                plan_name=plan_name,
-                amount=amount,
-                grace_period_end_date=grace_period_end_date
-            )
-
             # Send email
             email_service = BillingEmailService(self.db)
-            success = await email_service._send_email(
-                to_email=user.email,
-                subject=f"FINAL NOTICE: {plan_name} Suspension Tomorrow",
-                html_content=html_content
+            success = await email_service.send_payment_dunning_email(
+                user_id=user.id,
+                plan_name=plan_name,
+                amount=amount,
+                days_overdue=6,
+                grace_period_end_date=grace_period_end_date
             )
 
             if success:

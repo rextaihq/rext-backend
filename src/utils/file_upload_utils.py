@@ -21,7 +21,7 @@ import os
 import hashlib
 from pathlib import Path
 from typing import Dict, List, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 from uuid import uuid4
 
 import filetype

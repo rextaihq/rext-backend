@@ -11,7 +11,7 @@ High-level service for media management that orchestrates:
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_, func, or_
 from typing import List, Optional, BinaryIO, Dict, Any
-from datetime import datetime
+from datetime import datetime, timezone
 from io import BytesIO
 import os
 import filetype
@@ -311,7 +311,7 @@ class MediaService:
         )
 
         self.db.add(media)
-        await self.db.commit()
+        await self.db.flush()
         await self.db.refresh(media)
 
         logger.info(f"Media uploaded: {media.id} ({media.original_filename})")
@@ -467,7 +467,7 @@ class MediaService:
 
         media.updated_at = datetime.now(timezone.utc)
 
-        await self.db.commit()
+        await self.db.flush()
         await self.db.refresh(media)
 
         logger.info(f"Media updated: {media.id}")
@@ -509,7 +509,7 @@ class MediaService:
             # Soft delete
             media.deleted_at = datetime.now(timezone.utc)
 
-        await self.db.commit()
+        await self.db.flush()
 
         logger.info(f"Media deleted: {media.id} (permanent={permanent})")
         return True

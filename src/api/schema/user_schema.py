@@ -1,5 +1,40 @@
 from pydantic import BaseModel, EmailStr, Field, field_validator
-from typing import Optional, Literal
+from typing import Optional, Literal, List, Dict, Any
+from datetime import datetime
+from uuid import UUID
+
+class UserResponse(BaseModel):
+    """Refined user response schema with ID and metadata"""
+    id: UUID = Field(..., description="User UUID")
+    email: EmailStr = Field(..., description="User email")
+    full_name: Optional[str] = Field(None, description="Full name")
+    display_name: Optional[str] = Field(None, description="Display name")
+    avatar_url: Optional[str] = Field(None, description="Profile avatar URL")
+    language: str = Field("en", description="Language preference")
+    timezone: str = Field("UTC", description="Timezone preference")
+    status: str = Field(..., description="Account status")
+    email_verified: bool = Field(..., description="Whether email is verified")
+    last_login_at: Optional[datetime] = Field(None, description="Last login timestamp")
+    login_count: int = Field(0, description="Total login count")
+    created_at: datetime = Field(..., description="Creation timestamp")
+    updated_at: Optional[datetime] = Field(None, description="Last update timestamp")
+
+    class Config:
+        from_attributes = True
+
+
+class LoginResponse(BaseModel):
+    """Schema for successful login response"""
+    access_token: str = Field(..., description="JWT access token")
+    refresh_token: str = Field(..., description="JWT refresh token")
+    token_type: str = Field("bearer", description="Token type")
+    expires_in: int = Field(..., description="Access token lifetime in seconds")
+    user: UserResponse = Field(..., description="User profile details")
+    roles: List[str] = Field(default=[], description="List of user roles")
+    permissions: List[str] = Field(default=[], description="List of user permissions")
+
+    class Config:
+        from_attributes = True
 
 class RegisterUser(BaseModel):
     full_name: str = Field(..., description="Full name of the user")

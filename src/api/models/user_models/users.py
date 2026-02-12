@@ -60,6 +60,7 @@ class Users(Base, SerializableMixin, SoftDeleteMixin):
     licenses = relationship("License", back_populates="user", passive_deletes=True)
     payment_methods = relationship("PaymentMethod", back_populates="user", cascade="all, delete-orphan", passive_deletes=True)
     notifications = relationship("Notification", back_populates="user", cascade="all, delete-orphan", passive_deletes=True)
+    notification_preferences = relationship("NotificationPreferences", back_populates="user", uselist=False, cascade="all, delete-orphan", passive_deletes=True)
 
     # Admin invitation relationships
     sent_admin_invitations = relationship(
