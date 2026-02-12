@@ -3,7 +3,6 @@ from fastapi import (
 )
 from uuid import UUID
 from src.utils.logger import logger
-from src.api.schema.workspace_schema import WorkspaceSchema
 from src.api.models.workspace_models.workspace_model import WorkspaceModel
 from src.api.models.workspace_models.workspace_member import WorkspaceMembers
 from src.api.models.user_models.users import Users

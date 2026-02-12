@@ -266,7 +266,7 @@ async def cancel_subscription(
         )
 
     except Exception as e:
-        logger.error(f"Failed to cancel subscription: {str(e)}")
+        logger.error("Failed to cancel subscription", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to cancel subscription. Please try again or contact support."

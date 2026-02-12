@@ -25,7 +25,7 @@ router = APIRouter()
 
 @router.get("/{workspace_id}/stats")
 @require_permissions("workspace.read", workspace_scoped=True)
-@db_transaction_handler("get workspace stats", auto_commit=False)
+@db_transaction_handler("get workspace stats", success_message="Workspace statistics retrieved successfully", auto_commit=False)
 async def get_workspace_stats(
     workspace_id: str,
     request: Request,

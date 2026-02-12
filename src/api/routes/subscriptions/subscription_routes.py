@@ -691,8 +691,9 @@ async def get_invoices(
 
     except Exception as e:
         logger.error(
-            f"Failed to retrieve invoices: {str(e)}",
-            extra={"user_id": str(user_id), "error": str(e)}
+            "Failed to retrieve invoices",
+            exc_info=True,
+            extra={"user_id": str(user_id)}
         )
         # Return empty list on error rather than failing
         return success(

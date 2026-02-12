@@ -864,3 +864,59 @@ def role_assignment_rate_limit():
         window_minutes=1,
         description="role assignment"
     )
+
+
+def license_validate_rate_limit():
+    """
+    Rate limiter for license validation endpoint.
+
+    Limit: 10 attempts per minute per user.
+    Prevents brute-force license key discovery.
+    """
+    return EndpointRateLimiter(
+        requests=10,
+        window_minutes=1,
+        description="license validation"
+    )
+
+
+def license_activate_rate_limit():
+    """
+    Rate limiter for license activation endpoint.
+
+    Limit: 5 attempts per minute per user.
+    Prevents activation slot exhaustion.
+    """
+    return EndpointRateLimiter(
+        requests=5,
+        window_minutes=1,
+        description="license activation"
+    )
+
+
+def license_deactivate_rate_limit():
+    """
+    Rate limiter for license deactivation endpoint.
+
+    Limit: 5 attempts per minute per user.
+    Prevents rapid deactivation abuse.
+    """
+    return EndpointRateLimiter(
+        requests=5,
+        window_minutes=1,
+        description="license deactivation"
+    )
+
+
+def license_revoke_rate_limit():
+    """
+    Rate limiter for license revocation endpoint (admin).
+
+    Limit: 10 attempts per minute per admin.
+    Prevents mass license revocation abuse.
+    """
+    return EndpointRateLimiter(
+        requests=10,
+        window_minutes=1,
+        description="license revocation"
+    )
