@@ -125,7 +125,13 @@ async def create_persona(
     await db.flush()
     await db.refresh(persona)
     
-    logger.info(f"Created persona {persona.id} for workspace {workspace.id}")
+    logger.info(
+        "Created persona",
+        extra={
+            "workspace_id": str(workspace.id),
+            "persona_id": str(persona.id),
+        },
+    )
     
     return persona.to_dict()
 
@@ -173,7 +179,13 @@ async def update_persona(
     await db.flush()
     await db.refresh(persona)
     
-    logger.info(f"Updated persona {persona.id}")
+    logger.info(
+        "Updated persona",
+        extra={
+            "workspace_id": str(workspace.id),
+            "persona_id": str(persona.id),
+        },
+    )
     
     return persona.to_dict()
 
@@ -211,7 +223,13 @@ async def delete_persona(
         )
     
     await db.delete(persona)
-    logger.info(f"Deleted persona {persona.id}")
+    logger.info(
+        "Deleted persona",
+        extra={
+            "workspace_id": str(workspace.id),
+            "persona_id": str(persona.id),
+        },
+    )
     
     return None
 

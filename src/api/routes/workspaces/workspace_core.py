@@ -246,7 +246,10 @@ async def delete_workspace_endpoint(
 
     await workspace_service.delete_workspace(workspace.id, UUID(user_id))
 
-    logger.info(f"Workspace soft deleted: {workspace.id}")
+    logger.info(
+        "Workspace soft deleted",
+        extra={"workspace_id": str(workspace.id), "user_id": user_id},
+    )
 
     # Send confirmation email
     try:
@@ -266,8 +269,17 @@ async def delete_workspace_endpoint(
                 "remaining_workspaces": remaining_after_delete
             }
         )
+        logger.info(
+            "Deletion confirmation email sent",
+            extra={"recipient_email": db_user.email},
+        )
     except Exception as e:
-        logger.error(f"Failed to send deletion email: {e}")
+        # Don't fail the deletion if email fails
+        logger.error(
+            "Failed to send deletion confirmation email",
+            extra={"error": str(e)},
+            exc_info=True,
+        )
 
     return {
         "message": "Workspace deleted successfully. 30-day recovery period active.",

@@ -115,8 +115,12 @@ class WorkspacePipeline:
     async def _scrape_website(self) -> _ScrapeResult:
         """Scrape the target URL and emit relevant SSE events."""
         logger.info(
-            f"🌐 Starting to scrape URL: {self.url}",
-            extra={"workspace_id": str(self.workspace_id), "operation_id": self.operation_id},
+            "Starting to scrape URL",
+            extra={
+                "workspace_id": str(self.workspace_id),
+                "operation_id": self.operation_id,
+                "url": self.url,
+            },
         )
         
         await emit_step_start(
@@ -181,8 +185,12 @@ class WorkspacePipeline:
         # ============================================================================
         
         logger.info(
-            f"⚠️ VECTOR STORE DISABLED - Skipping {len(chunks)} chunks",
-            extra={"workspace_id": str(self.workspace_id), "operation_id": self.operation_id},
+            "Vector store disabled, skipping chunks",
+            extra={
+                "workspace_id": str(self.workspace_id),
+                "operation_id": self.operation_id,
+                "chunk_count": len(chunks),
+            },
         )
         
         # Original code commented out below:
@@ -253,35 +261,25 @@ class WorkspacePipeline:
 
         trimmed_content = content[: self._MAX_BRAND_VOICE_CHARS]
         
-        # Log scraped content for debugging
         logger.info(
-            "=" * 80,
-            extra={"workspace_id": str(self.workspace_id), "operation_id": self.operation_id}
+            "Scraped content prepared for brand voice extraction",
+            extra={
+                "workspace_id": str(self.workspace_id),
+                "operation_id": self.operation_id,
+                "original_length": len(content),
+                "trimmed_length": len(trimmed_content),
+            },
         )
-        logger.info(
-            "📄 SCRAPED CONTENT (for LLM analysis)",
-            extra={"workspace_id": str(self.workspace_id), "operation_id": self.operation_id}
+        logger.debug(
+            "Scraped content for LLM analysis",
+            extra={
+                "workspace_id": str(self.workspace_id),
+                "operation_id": self.operation_id,
+                "content_preview": trimmed_content[:500],
+                "content_length": len(trimmed_content),
+            },
         )
-        logger.info(
-            "=" * 80,
-            extra={"workspace_id": str(self.workspace_id), "operation_id": self.operation_id}
-        )
-        logger.info(
-            f"Content length: {len(trimmed_content)} characters (trimmed from {len(content)})",
-            extra={"workspace_id": str(self.workspace_id), "operation_id": self.operation_id}
-        )
-        logger.info(
-            "-" * 80,
-            extra={"workspace_id": str(self.workspace_id), "operation_id": self.operation_id}
-        )
-        logger.info(
-            trimmed_content,
-            extra={"workspace_id": str(self.workspace_id), "operation_id": self.operation_id}
-        )
-        logger.info(
-            "=" * 80,
-            extra={"workspace_id": str(self.workspace_id), "operation_id": self.operation_id}
-        )
+
 
         try:
             brand_voice_schema = await self._brand_voice_generator(trimmed_content)
@@ -395,9 +393,15 @@ class WorkspacePipeline:
             f"📊 EXTRACTED PERSONAS ({len(personas_data)} total)",
             extra={"workspace_id": str(self.workspace_id), "operation_id": self.operation_id}
         )
+
         logger.info(
-            "=" * 80,
-            extra={"workspace_id": str(self.workspace_id), "operation_id": self.operation_id}
+            "Extracted personas ready for persistence",
+            extra={
+                "workspace_id": str(self.workspace_id),
+                "operation_id": self.operation_id,
+                "persona_count": len(personas_data),
+                "persona_names": [p.get("name", "Unnamed") for p in personas_data],
+            },
         )
         
         for idx, persona_data in enumerate(personas_data, 1):
