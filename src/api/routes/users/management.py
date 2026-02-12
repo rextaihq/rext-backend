@@ -413,12 +413,15 @@ async def export_user_data(
             message="Data export request completed successfully"
         )
 
-    return {
-        "message": "Data export requested. You will receive an email shortly with your data.",
-        "export_id": export_id,
-        "recipient_email": db_user.email,
-        "requested_at": datetime.now(timezone.utc).isoformat()
-    }
+    except Exception as e:
+        logger.error(f"Failed to export data for user {current_user.get('identity')}: {str(e)}", exc_info=True)
+        return error(
+            message="Failed to export user data",
+            code=ErrorCode.INTERNAL_SERVER_ERROR,
+            status_code=500,
+            severity=ErrorSeverity.HIGH,
+            request=request
+        )
 
 
 @router.get("/{user_id}")

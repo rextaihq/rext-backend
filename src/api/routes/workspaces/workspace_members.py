@@ -271,8 +271,6 @@ async def remove_workspace_member(
             field_errors={
                 "member_id": ["This member is the workspace owner and cannot be removed"]
             },
-            error_code=ErrorCode.VALIDATION_ERROR,
-            error_severity=ErrorSeverity.ERROR,
         )
 
 

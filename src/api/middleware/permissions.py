@@ -200,7 +200,7 @@ class PermissionChecker:
 
         Returns:
             Set of permission names (e.g., {"user.read", "user.write"})
-        """
+        """ 
         from uuid import UUID as UUIDType
         from src.utils.rbac_utils import get_user_permissions
 
