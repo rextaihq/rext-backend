@@ -256,7 +256,7 @@ async def remove_workspace_member(
     )
 
     # Validate member can be removed — check if they are the workspace owner by role
-    owner_check = await db.execute(
+    owner_role_check = await db.execute(
         select(UserRole)
         .join(Role, Role.id == UserRole.role_id)
         .where(
@@ -265,7 +265,7 @@ async def remove_workspace_member(
             Role.name == "workspace_owner",
         )
     )
-    if owner_check.scalar_one_or_none() is not None:
+    if owner_role_check.scalar_one_or_none() is not None:
         raise RextValidationException(
             message="Cannot remove workspace owner",
             field_errors={

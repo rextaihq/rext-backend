@@ -32,6 +32,9 @@ from src.api.lib.logging_config import configure_logging, RequestIDMiddleware
 # Sentry error monitoring
 from src.api.lib.sentry_config import init_sentry
 
+from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
+
+
 load_dotenv()
 
 # Configure structured logging at startup
@@ -121,6 +124,14 @@ app = FastAPI(
 # NOTE: In Starlette/FastAPI, middleware added LAST is the OUTERMOST (processes
 # requests first). CORS must be outermost so preflight OPTIONS requests get
 # proper headers even if inner middleware returns early.
+
+# Proxy headers middleware 
+app.add_middleware(
+    ProxyHeadersMiddleware,
+    trusted_hosts=settings.TRUSTED_PROXY_IPS.split(",")
+    if hasattr(settings, "TRUSTED_PROXY_IPS") and settings.TRUSTED_PROXY_IPS
+    else ["127.0.0.1", "::1"]
+)
 
 # Request tracking middleware
 app.add_middleware(

@@ -289,24 +289,8 @@ class RequestTrackerMiddleware(BaseHTTPMiddleware):
         """
         Extract client IP address from request.
 
-        Args:
-            request: Incoming request
-
-        Returns:
-            str: Client IP address
+        Uses request.client.host which is set correctly by ProxyHeadersMiddleware.
         """
-        # Check for forwarded headers (for load balancers/proxies)
-        forwarded_for = request.headers.get("X-Forwarded-For")
-        if forwarded_for:
-            # Take the first IP in case of multiple forwards
-            return forwarded_for.split(",")[0].strip()
-
-        # Check for real IP header
-        real_ip = request.headers.get("X-Real-IP")
-        if real_ip:
-            return real_ip
-
-        # Fallback to direct client
         return getattr(request.client, "host", "unknown") if request.client else "unknown"
 
 

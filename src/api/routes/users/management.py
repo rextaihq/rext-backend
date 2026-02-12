@@ -413,6 +413,55 @@ async def export_user_data(
             message="Data export request completed successfully"
         )
 
+    return {
+        "message": "Data export requested. You will receive an email shortly with your data.",
+        "export_id": export_id,
+        "recipient_email": db_user.email,
+        "requested_at": datetime.now(timezone.utc).isoformat()
+    }
+
+
+@router.get("/{user_id}")
+@require_permissions("user.read")
+async def get_user_by_id(
+    user_id: str,
+    request: Request,
+    current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_async_db)
+):
+    """
+    Get a single user by ID.
+
+    Returns user profile data including:
+    - Basic info (id, email, full_name, display_name)
+    - Status and verification state
+    - Preferences (language, timezone)
+    - Timestamps (created_at, updated_at)
+
+    Excludes sensitive fields (password_hash, reset_token).
+
+    Requires user.read permission.
+    """
+    from src.utils.response_utils import success, error
+    from src.api.schema.response_schemas import ErrorCode, ErrorSeverity
+    
+    try:
+        service = UserService(db)
+        user = await service.get_user_by_id(UUID(user_id))
+
+        return success(
+            data=user.to_dict(),
+            request=request,
+            message="User retrieved successfully"
+        )
+    except ValueError:
+        return error(
+            message="Invalid user ID format",
+            code=ErrorCode.VALIDATION_FAILED,
+            status_code=400,
+            severity=ErrorSeverity.LOW,
+            request=request
+        )
     except ResourceNotFoundException:
         return error(
             message="User not found",

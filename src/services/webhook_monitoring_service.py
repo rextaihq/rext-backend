@@ -9,7 +9,7 @@ Provides webhook event tracking and monitoring capabilities:
 """
 from datetime import datetime, timezone, timedelta, timezone
 from typing import Dict, List, Optional, Any
-from sqlalchemy import func, Integer,and_, or_, desc
+from sqlalchemy import func, and_, or_, desc, Integer
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
@@ -265,11 +265,8 @@ class WebhookMonitoringService:
                 event.updated_at = datetime.now(timezone.utc)
 
                 # Process the webhook using the webhook service
-                await self.webhook_service.process_webhook_event(
-                    event_id=event.event_id,
-                    event_name=event.event_name,
-                    payload=event.payload
-                )
+                # Use reprocess_event skipping signature verification
+                await self.webhook_service.reprocess_event(webhook_event=event)
 
                 # Mark as processed
                 event.processed = True

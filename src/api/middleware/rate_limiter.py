@@ -183,26 +183,13 @@ class RateLimiter:
         Generate a unique key for the client.
 
         Prefers user ID if authenticated, falls back to IP address.
-
-        Args:
-            request: FastAPI request object
-
-        Returns:
-            Unique client identifier
+        Uses request.client.host (set by ProxyHeadersMiddleware for proxied requests).
         """
-        # Try to get user ID from request state (set by auth middleware)
         user_id = getattr(request.state, "user_id", None)
         if user_id:
             return f"user:{user_id}"
 
-        # Fall back to IP address
         client_ip = request.client.host if request.client else "unknown"
-
-        # Handle proxied requests
-        forwarded_for = request.headers.get("X-Forwarded-For")
-        if forwarded_for:
-            client_ip = forwarded_for.split(",")[0].strip()
-
         return f"ip:{client_ip}"
 
     def cleanup_old_entries(self) -> int:

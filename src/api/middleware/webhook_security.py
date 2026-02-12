@@ -89,45 +89,26 @@ class WebhookIPWhitelist:
 
     @staticmethod
     def _get_client_ip(request: Request) -> str:
-        """
-        Extract client IP from request, handling proxies.
+            """
+            Extract client IP from request.
 
-        Checks headers in order of preference:
-        1. X-Forwarded-For (first IP in comma-separated list)
-        2. X-Real-IP
-        3. request.client.host (direct connection)
+            Uses request.client.host which is set correctly by ProxyHeadersMiddleware
+            when behind a trusted reverse proxy. Do NOT read X-Forwarded-For directly
+            as it is spoofable.
 
-        Args:
-            request: FastAPI request object
+            Args:
+                request: FastAPI request object
 
-        Returns:
-            Client IP address as string
-        """
-        # Check X-Forwarded-For header (set by proxies/load balancers)
-        forwarded_for = request.headers.get("X-Forwarded-For")
-        if forwarded_for:
-            # X-Forwarded-For can be comma-separated, take first IP (original client)
-            client_ip = forwarded_for.split(",")[0].strip()
+            Returns:
+                Client IP address as string
+            """
+            client_ip = request.client.host if request.client else "unknown"
             logger.debug(
-                f"Client IP from X-Forwarded-For: {client_ip}",
-                extra={"x_forwarded_for": forwarded_for}
+                f"Client IP resolved: {client_ip}",
+                extra={"client_ip": client_ip}
             )
             return client_ip
 
-        # Check X-Real-IP header (alternative proxy header)
-        real_ip = request.headers.get("X-Real-IP")
-        if real_ip:
-            client_ip = real_ip.strip()
-            logger.debug(
-                f"Client IP from X-Real-IP: {client_ip}",
-                extra={"x_real_ip": real_ip}
-            )
-            return client_ip
-
-        # Direct connection (no proxy)
-        client_ip = request.client.host if request.client else "unknown"
-        logger.debug(f"Client IP from direct connection: {client_ip}")
-        return client_ip
 
     @staticmethod
     def validate_lemonsqueezy_ip(request: Request) -> None:
