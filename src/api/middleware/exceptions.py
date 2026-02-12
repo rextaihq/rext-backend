@@ -118,9 +118,12 @@ class RextAuthenticationException(RextAPIException):
     """Exception for authentication errors."""
 
     def __init__(self, message: str = "Authentication failed", **kwargs):
+        # Allow overriding error_code from subclasses (like TokenExpiredException)
+        error_code = kwargs.pop('error_code', ErrorCode.UNAUTHORIZED)
+        
         super().__init__(
             message=message,
-            error_code=ErrorCode.UNAUTHORIZED,
+            error_code=error_code,
             status_code=401,
             severity=ErrorSeverity.MEDIUM,
             **kwargs
@@ -140,9 +143,12 @@ class RextAuthorizationException(RextAPIException):
         if required_permission:
             context['required_permission'] = required_permission
 
+        # Allow overriding error_code from subclasses (like WorkspaceAccessDeniedException)
+        error_code = kwargs.pop('error_code', ErrorCode.FORBIDDEN)
+
         super().__init__(
             message=message,
-            error_code=ErrorCode.FORBIDDEN,
+            error_code=error_code,
             status_code=403,
             severity=ErrorSeverity.MEDIUM,
             context=context,
@@ -341,9 +347,12 @@ class RextExternalServiceException(RextAPIException):
             "service_error": service_error
         })
 
+        # Allow overriding error_code from subclasses (like DatabaseConnectionException)
+        error_code = kwargs.pop('error_code', ErrorCode.EXTERNAL_SERVICE_ERROR)
+
         super().__init__(
             message=message,
-            error_code=ErrorCode.EXTERNAL_SERVICE_ERROR,
+            error_code=error_code,
             status_code=502,
             severity=ErrorSeverity.HIGH,
             context=context,

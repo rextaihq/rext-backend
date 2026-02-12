@@ -22,7 +22,7 @@ router = APIRouter()
 
 
 @router.get("/me/permissions", response_model=dict)
-@require_permissions("permission.read")
+@require_permissions("permission.read", workspace_scoped=False)
 @db_transaction_handler("get user permissions", auto_commit=False)
 async def get_current_user_permissions(
     request: Request,

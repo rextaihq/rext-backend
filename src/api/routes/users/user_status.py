@@ -27,7 +27,7 @@ router = APIRouter()
 
 
 @router.post("/{user_id}/suspend", response_model=UserStatusResponse)
-@require_permissions("user.update")
+@require_permissions("user.update", workspace_scoped=False)
 @db_transaction_handler("suspend user", auto_commit=True)
 async def suspend_user(
     user_id: str,
@@ -118,7 +118,7 @@ async def suspend_user(
 
 
 @router.post("/{user_id}/activate", response_model=UserStatusResponse)
-@require_permissions("user.update")
+@require_permissions("user.update", workspace_scoped=False)
 @db_transaction_handler("activate user", auto_commit=True)
 async def activate_user(
     user_id: str,
@@ -207,7 +207,7 @@ async def activate_user(
 
 
 @router.post("/{user_id}/ban", response_model=UserStatusResponse)
-@require_permissions("user.update")
+@require_permissions("user.update", workspace_scoped=False)
 @db_transaction_handler("ban user", auto_commit=True)
 async def ban_user(
     user_id: str,

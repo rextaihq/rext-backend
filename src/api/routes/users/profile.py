@@ -30,7 +30,7 @@ AVATAR_UPLOAD_DIR = Path("media/avatars")
 AVATAR_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 @router.get("/profile")
-@require_permissions("user.read")
+@require_permissions("user.read", workspace_scoped=False)
 @db_transaction_handler("get profile", auto_commit=False)
 async def get_profile(
     request: Request,
@@ -48,7 +48,7 @@ async def get_profile(
 
 
 @router.patch("/profile")
-@require_permissions("user.update")
+@require_permissions("user.update", workspace_scoped=False)
 @db_transaction_handler("update profile", auto_commit=True)
 async def update_profile(
     request: Request,
@@ -92,7 +92,7 @@ async def update_profile(
 
 
 @router.post("/avatar/upload")
-@require_permissions("user.update")
+@require_permissions("user.update", workspace_scoped=False)
 @db_transaction_handler("upload avatar", auto_commit=True)
 async def upload_avatar(
     request: Request,
@@ -246,7 +246,7 @@ async def upload_avatar(
 
 
 @router.delete("/avatar")
-@require_permissions("user.update")
+@require_permissions("user.update", workspace_scoped=False)
 @db_transaction_handler("delete avatar", auto_commit=True)
 async def delete_avatar(
     request: Request,

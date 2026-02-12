@@ -123,8 +123,44 @@ async def revoke_role_from_user(
     }
 
 
+@router.get("/me/roles")
+@require_permissions("role.read", workspace_scoped=False)
+@db_transaction_handler("get current user roles", auto_commit=False)
+async def get_current_user_roles(
+    request: Request,
+    workspace_id: str = Query(None, description="Optional workspace UUID filter"),
+    db: AsyncSession = Depends(get_async_db),
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Get roles for the current authenticated user.
+    
+    This is a convenience endpoint that doesn't require passing user_id.
+    
+    Query Parameters:
+    - workspace_id: Optional workspace UUID to filter roles
+    
+    Returns:
+    - List of current user's roles with details
+    """
+    user_id = current_user.get("identity")
+    service = RoleService(db)
+
+    roles_data = await service.get_user_roles(
+        user_id=UUID(user_id),
+        workspace_id=UUID(workspace_id) if workspace_id else None
+    )
+
+    return {
+        "user_id": user_id,
+        "roles": roles_data,
+        "count": len(roles_data)
+    }
+
+
+
 @router.get("/{user_id}/roles")
-@require_permissions("role.read")
+@require_permissions("role.read", workspace_scoped=False)
 @db_transaction_handler("list user roles", auto_commit=False)
 async def list_user_roles(
     request: Request,
