@@ -9,7 +9,7 @@ All endpoints require super admin permissions.
 
 import csv
 import io
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Request, Query
@@ -143,7 +143,7 @@ async def export_subscriptions_csv(
 
     # Prepare response
     output.seek(0)
-    timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     filename = f"subscriptions_export_{timestamp}.csv"
 
     return StreamingResponse(
@@ -311,7 +311,7 @@ async def export_revenue_summary_csv(
 
     # Prepare response
     output.seek(0)
-    timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     filename = f"revenue_summary_{timestamp}.csv"
 
     return StreamingResponse(
@@ -432,7 +432,7 @@ async def export_trial_conversions_csv(
 
     # Prepare response
     output.seek(0)
-    timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     filename = f"trial_conversions_{timestamp}.csv"
 
     return StreamingResponse(

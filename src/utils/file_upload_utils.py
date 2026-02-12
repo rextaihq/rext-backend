@@ -21,7 +21,7 @@ import os
 import hashlib
 from pathlib import Path
 from typing import Dict, List, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 from uuid import uuid4
 
 import filetype
@@ -145,7 +145,7 @@ async def validate_and_store_file(
 
     # Step 4: Generate unique filename (prevent collisions)
     unique_id = uuid4().hex[:12]
-    timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     unique_filename = f"{timestamp}_{unique_id}{file_ext}"
     file_path = workspace_dir / unique_filename
 
@@ -252,7 +252,7 @@ async def validate_and_store_file(
         logger.exception(f"Error storing file: {e}")
         raise RextValidationException(
             "Failed to process file upload",
-            context={"error": str(e)}
+            context={"error": "An internal error occured"}
         )
 
 

@@ -1,7 +1,7 @@
 """Invitation schemas for request/response validation."""
 from pydantic import BaseModel, EmailStr, Field
 from typing import Optional, List
-from datetime import datetime
+from datetime import datetime, timezone
 
 
 class AcceptInvitationRequest(BaseModel):

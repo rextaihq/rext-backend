@@ -26,7 +26,7 @@ Security:
 
 from typing import Optional, List
 from uuid import UUID
-from datetime import datetime, timedelta
+from datetime import datetime, timezone, timedelta
 import secrets
 import hashlib
 
@@ -71,7 +71,7 @@ class AdminInvitationService:
             Secure token string
         """
         random_part = secrets.token_urlsafe(48)  # Longer for admin invitations
-        combined = f"{email}:{random_part}:{datetime.utcnow().timestamp()}"
+        combined = f"{email}:{random_part}:{datetime.now(timezone.utc).timestamp()}"
         token_hash = hashlib.sha256(combined.encode()).hexdigest()
         return token_hash
 
@@ -235,7 +235,7 @@ class AdminInvitationService:
 
         # Generate token and expiry
         token = self._generate_invitation_token(email)
-        expires_at = datetime.utcnow() + timedelta(days=expiry_days)
+        expires_at = datetime.now(timezone.utc) + timedelta(days=expiry_days)
 
         # Create invitation
         invitation = PlatformAdminInvitations(
@@ -450,13 +450,13 @@ class AdminInvitationService:
             workspace_id=None,  # Platform-level
             assigned_by_user_id=invitation.invited_by_admin_id,
             is_primary=True,
-            assigned_at=datetime.utcnow()
+            assigned_at=datetime.now(timezone.utc)
         )
         self.db.add(user_role)
 
         # Update invitation
         invitation.status = 'accepted'
-        invitation.accepted_at = datetime.utcnow()
+        invitation.accepted_at = datetime.now(timezone.utc)
         invitation.accepted_by_user_id = user_id
 
         logger.info(
@@ -502,7 +502,7 @@ class AdminInvitationService:
 
         # Revoke invitation
         invitation.status = 'revoked'
-        invitation.revoked_at = datetime.utcnow()
+        invitation.revoked_at = datetime.now(timezone.utc)
         invitation.revoked_by_admin_id = revoked_by_admin_id
         invitation.revoked_reason = reason
 
@@ -543,7 +543,7 @@ class AdminInvitationService:
 
         # Decline invitation
         invitation.status = 'declined'
-        invitation.declined_at = datetime.utcnow()
+        invitation.declined_at = datetime.now(timezone.utc)
         invitation.declined_reason = reason
 
         logger.info(
@@ -596,7 +596,7 @@ class AdminInvitationService:
 
         # Generate new token and expiry
         invitation.invitation_token = self._generate_invitation_token(invitation.email)
-        invitation.expires_at = datetime.utcnow() + timedelta(days=expiry_days)
+        invitation.expires_at = datetime.now(timezone.utc) + timedelta(days=expiry_days)
         invitation.status = 'pending'
 
         logger.info(

@@ -2,7 +2,7 @@
 from sqlalchemy import Column, String, DateTime, ForeignKey, Text, Integer
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import relationship
-from datetime import datetime
+from datetime import datetime, timezone
 import uuid
 
 from src.api.database.base import Base
@@ -35,8 +35,8 @@ class EmailLog(Base, SerializableMixin):
     failed_at = Column(DateTime(timezone=True), nullable=True)
     provider_response = Column(JSONB, nullable=True)  # Full provider response
     tags = Column(JSONB, nullable=True)  # Custom tags for categorization
-    created_at = Column(DateTime(timezone=True), nullable=False, default=datetime.utcnow, index=True)
-    updated_at = Column(DateTime(timezone=True), nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc), index=True)
+    updated_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
     # Relationships
     events = relationship("EmailEvent", back_populates="email_log", cascade="all, delete-orphan")

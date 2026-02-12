@@ -5,11 +5,12 @@ This model records when users apply discount codes during checkout,
 enabling analytics and fraud prevention.
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
+from decimal import Decimal
 from typing import Optional
 from uuid import UUID
 
-from sqlalchemy import String, Numeric, TIMESTAMP, ForeignKey, Index
+from sqlalchemy import String, Numeric, DateTime, ForeignKey, Index
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID, JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
@@ -57,7 +58,7 @@ class DiscountUsage(Base, SerializableMixin):
         index=True
     )
 
-    discount_amount: Mapped[Optional[float]] = mapped_column(
+    discount_amount: Mapped[Optional[Decimal]] = mapped_column(
         Numeric(10, 2),
         nullable=True,
         comment="Amount saved (in currency or percentage)"
@@ -84,7 +85,7 @@ class DiscountUsage(Base, SerializableMixin):
 
     # Metadata
     applied_at: Mapped[datetime] = mapped_column(
-        TIMESTAMP(timezone=True),
+        DateTime(timezone=True),
         nullable=False,
         server_default=func.current_timestamp(),
         index=True
@@ -115,20 +116,14 @@ class DiscountUsage(Base, SerializableMixin):
             f"code={self.discount_code}, amount={self.discount_amount})>"
         )
 
-    def to_dict(self) -> dict:
-        """Convert model to dictionary."""
-        return {
-            "id": str(self.id),
-            "user_id": str(self.user_id),
-            "subscription_id": str(self.subscription_id) if self.subscription_id else None,
-            "discount_code": self.discount_code,
-            "discount_amount": float(self.discount_amount) if self.discount_amount else None,
-            "discount_amount_type": self.discount_amount_type,
-            "order_id": self.order_id,
-            "lemonsqueezy_discount_id": self.lemonsqueezy_discount_id,
-            "applied_at": self.applied_at.isoformat() if self.applied_at else None,
-            "metadata": self.usage_metadata
-        }
+    def to_dict(self, **kwargs):
+        """Serialize with 'metadata' key for backward compatibility."""
+        data = super().to_dict(**kwargs)
+        if 'usage_metadata' in data:
+            data['metadata'] = data.pop('usage_metadata')
+        if 'discount_amount' in data and isinstance(data['discount_amount'], Decimal):
+            data['discount_amount'] = str(data['discount_amount'])
+        return data
 
 
 # Indexes are created in the migration file

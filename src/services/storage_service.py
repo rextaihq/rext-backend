@@ -14,7 +14,7 @@ from typing import BinaryIO, Optional, Tuple
 from abc import ABC, abstractmethod
 import aiofiles
 import hashlib
-from datetime import datetime
+from datetime import datetime, timezone
 from botocore.exceptions import ClientError
 import asyncio
 from functools import partial
@@ -326,7 +326,7 @@ class StorageService:
         Returns:
             Generated filename path
         """
-        timestamp = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
+        timestamp = datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')
 
         # Create hash for uniqueness
         hash_input = f"{original_filename}{workspace_id}{user_id}{timestamp}"

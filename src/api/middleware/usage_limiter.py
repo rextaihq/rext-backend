@@ -22,7 +22,7 @@ import asyncio
 from fastapi import Depends, HTTPException, status, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import func, select
-from datetime import datetime, timedelta
+from datetime import datetime, timezone, timedelta
 
 from src.api.database.async_database import get_async_db as get_db
 from src.api.security.dependencies import get_current_user
@@ -38,6 +38,8 @@ from src.api.models.knowledge_models.knowledge_model import (
     KnowledgeFiles,
     TextKnowledge
 )
+from src.utils.embedding_rate_limiter import get_embedding_rate_limiter
+
 from src.utils.logger import logger
 
 
@@ -316,9 +318,9 @@ class APICallLimiter:
             return
 
         # Check if usage period needs reset
-        if subscription.usage_reset_date and subscription.usage_reset_date < datetime.utcnow():
+        if subscription.usage_reset_date and subscription.usage_reset_date < datetime.now(timezone.utc):
             subscription.current_api_calls = 0
-            subscription.usage_reset_date = datetime.utcnow() + timedelta(days=30)
+            subscription.usage_reset_date = datetime.now(timezone.utc) + timedelta(days=30)
             await db.commit()
 
         # Check limit (before incrementing)
@@ -386,6 +388,34 @@ def check_knowledge_item_limit():
     """Factory function to create knowledge item limit checker dependency."""
     return KnowledgeItemLimitChecker()
 
+def check_embedding_rate_limit():
+    """
+    FastAPI dependency that checks per-user embedding rate limits.
+
+    Usage:
+        @router.post("/knowledge/web")
+        async def create_web_knowledge(
+            ...,
+            _rate: None = Depends(check_embedding_rate_limit()),
+        ):
+    """
+    async def _check(
+        request: Request,
+        current_user: dict = Depends(get_current_user),
+    ) -> None:
+        user_id = str(current_user.get("identity", ""))
+        limiter = get_embedding_rate_limiter()
+
+        allowed = await limiter.check_rate_limit(user_id)
+        if not allowed:
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail="Embedding rate limit exceeded. Please wait before adding more knowledge items.",
+            )
+
+        await limiter.record_request(user_id)
+
+    return _check
 
 def check_api_limit(increment: bool = True):
     """Factory function to create API call limiter dependency."""

@@ -7,7 +7,7 @@ Implements provider abstraction pattern for easy switching between email service
 from abc import ABC, abstractmethod
 from typing import List, Optional, Dict, Any
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 
 
 @dataclass
@@ -63,7 +63,7 @@ class EmailResult:
     message_id: Optional[str] = None
     error: Optional[str] = None
     provider_response: Optional[Dict[str, Any]] = None
-    sent_at: Optional[datetime] = field(default_factory=datetime.utcnow)
+    sent_at: Optional[datetime] = field(default_factory=lambda: datetime.now(timezone.utc))
 
     def __repr__(self):
         status = "SUCCESS" if self.success else "FAILED"

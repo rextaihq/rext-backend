@@ -17,7 +17,7 @@ Does NOT:
 """
 
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, List, Optional
 from uuid import UUID
 
@@ -110,7 +110,7 @@ class MonitoringService:
             "cache": cache_health,
             "api": api_health,
             "workers": workers_health,
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat()
         }
 
     async def get_error_logs(
@@ -227,7 +227,7 @@ class MonitoringService:
 
         # Mark as resolved
         log.resolved = True
-        log.resolved_at = datetime.utcnow()
+        log.resolved_at = datetime.now(timezone.utc)
         log.resolved_by = admin_user_id
 
         logger.info(f"Error log {log_id} marked as resolved by admin {admin_user_id}")
@@ -256,7 +256,7 @@ class MonitoringService:
             "30_days": timedelta(days=30)
         }
         period_delta = period_map.get(period, timedelta(hours=24))
-        period_start = datetime.utcnow() - period_delta
+        period_start = datetime.now(timezone.utc) - period_delta
 
         # API calls (placeholder - would track via middleware in production)
         api_stats = {
@@ -337,7 +337,7 @@ class MonitoringService:
         trends = []
 
         for i in range(days, -1, -1):
-            day_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=i)
+            day_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=i)
             day_end = day_start + timedelta(days=1)
 
             # Content created

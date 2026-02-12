@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, Request, UploadFile, File, HTTPException, status, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
 
+
 from src.utils.logger import logger
 from src.api.security.dependencies import get_current_user
 from src.utils.route_decorators import require_permissions, db_transaction_handler
@@ -11,7 +12,10 @@ from src.api.database.async_database import get_async_db
 from src.api.middleware.exceptions import ResourceNotFoundException, RextValidationException
 from src.services.user_service import UserService
 from src.services.notification_helper import schedule_if_allowed
-from datetime import datetime
+from src.utils.response_utils import success, error
+from src.api.schema.response_schemas import ErrorCode, ErrorSeverity
+from datetime import datetime, timezone
+
 from pathlib import Path
 from sqlalchemy import select
 import time
@@ -25,45 +29,26 @@ router = APIRouter()
 AVATAR_UPLOAD_DIR = Path("media/avatars")
 AVATAR_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
+@router.get("/profile")
 @require_permissions("user.read")
-@router.get("/profile", response_model=dict)
 @db_transaction_handler("get profile", auto_commit=False)
 async def get_profile(
     request: Request,
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_async_db)
-):
+) -> dict:
     """
     Get current authenticated user's profile.
-    Uses UserService for business logic.
     """
     user_id = current_user.get("identity")
     service = UserService(db)
-
-    # Get user via service
     user = await service.get_user_by_id(user_id)
 
-    # Build profile response
-    return {
-        "profile": {
-            "id": str(user.id),
-            "email": user.email,
-            "full_name": user.full_name,
-            "display_name": user.display_name,
-            "bio": user.bio,
-            "language": user.language or "en",
-            "timezone": user.timezone or "UTC",
-            "status": user.status,
-            "email_verified": user.email_verified,
-            "avatar_url": user.avatar_url,
-            "created_at": user.created_at.isoformat() if user.created_at else None,
-            "updated_at": user.updated_at.isoformat() if user.updated_at else None
-        }
-    }
+    return UserResponse.model_validate(user).model_dump()
 
 
-@require_permissions("user.update")
 @router.patch("/profile")
+@require_permissions("user.update")
 @db_transaction_handler("update profile", auto_commit=True)
 async def update_profile(
     request: Request,
@@ -71,54 +56,21 @@ async def update_profile(
     profile_data: UpdateProfileRequest,
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_async_db)
-):
+) -> dict:
     """
     Update current authenticated user's profile.
-    Uses UserService for business logic.
     """
     user_id = current_user.get("identity")
     service = UserService(db)
 
-    # Track what was updated for response
-    updated_fields = []
-    update_kwargs = {}
-
-    if profile_data.full_name is not None:
-        update_kwargs["full_name"] = profile_data.full_name
-        updated_fields.append("full_name")
-    if profile_data.display_name is not None:
-        update_kwargs["display_name"] = profile_data.display_name
-        updated_fields.append("display_name")
-    if profile_data.bio is not None:
-        update_kwargs["bio"] = profile_data.bio
-        updated_fields.append("bio")
-    if profile_data.language is not None:
-        update_kwargs["language"] = profile_data.language
-        updated_fields.append("language")
-    if profile_data.timezone is not None:
-        update_kwargs["timezone"] = profile_data.timezone
-        updated_fields.append("timezone")
-
-    if not updated_fields:
+    # Prepare update data dynamically
+    update_data = profile_data.model_dump(exclude_unset=True)
+    if not update_data:
         raise RextValidationException(message="No fields provided for update")
 
     # Update via service
-    user = await service.update_profile(user_id=user_id, **update_kwargs)
-
-    # Build response
-    profile_response = {
-        "id": str(user.id),
-        "email": user.email,
-        "full_name": user.full_name,
-        "display_name": user.display_name,
-        "bio": user.bio,
-        "language": user.language,
-        "timezone": user.timezone,
-        "status": user.status,
-        "email_verified": user.email_verified,
-        "avatar_url": user.avatar_url,
-        "updated_at": user.updated_at.isoformat()
-    }
+    user = await service.update_profile(user_id=user_id, **update_data)
+    updated_fields = list(update_data.keys())
 
     logger.info(f"Profile updated for user {user_id}. Fields: {', '.join(updated_fields)}")
 
@@ -134,7 +86,7 @@ async def update_profile(
     )
 
     return {
-        "profile": profile_response,
+        "user": UserResponse.model_validate(user).model_dump(),
         "updated_fields": updated_fields
     }
 
@@ -162,8 +114,12 @@ async def upload_avatar(
     # Validate file type
     allowed_types = ["image/jpeg", "image/png", "image/gif", "image/webp"]
     if file.content_type not in allowed_types:
-        raise RextValidationException(
-            message=f"Invalid file type. Allowed: {', '.join(allowed_types)}"
+        return error(
+            message=f"Invalid file type. Allowed: {', '.join(allowed_types)}",
+            code=ErrorCode.INVALID_VALUE,
+            status_code=400,
+            severity=ErrorSeverity.LOW,
+            request=request
         )
 
     # Read and validate file
@@ -172,8 +128,12 @@ async def upload_avatar(
     max_size = 5 * 1024 * 1024  # 5MB
 
     if file_size > max_size:
-        raise RextValidationException(
-            message=f"File too large. Max: 5MB, Yours: {file_size / (1024 * 1024):.2f}MB"
+        return error(
+            message=f"File too large. Max: 5MB, Yours: {file_size / (1024 * 1024):.2f}MB",
+            code=ErrorCode.INVALID_VALUE,
+            status_code=400,
+            severity=ErrorSeverity.LOW,
+            request=request
         )
 
     # Validate actual file content using magic bytes (not just Content-Type header)
@@ -187,8 +147,12 @@ async def upload_avatar(
             f"Content-Type: {file.content_type}, Detected MIME: {detected_mime}",
             extra={"user_id": str(user_id)}
         )
-        raise RextValidationException(
-            message="Invalid image file. File content does not match an allowed image format (JPEG, PNG, GIF, WebP)."
+        return error(
+            message="Invalid image file. File content does not match an allowed image format (JPEG, PNG, GIF, WebP).",
+            code=ErrorCode.INVALID_VALUE,
+            status_code=400,
+            severity=ErrorSeverity.MEDIUM,
+            request=request
         )
 
     # Structural validation: verify the file is a parseable image, not just valid magic bytes
@@ -201,8 +165,12 @@ async def upload_avatar(
             f"Content-Type: {file.content_type}, Detected MIME: {detected_mime}",
             extra={"user_id": str(user_id)}
         )
-        raise RextValidationException(
-            message="Image file appears to be corrupted or malformed."
+        return error(
+            message="Image file appears to be corrupted or malformed.",
+            code=ErrorCode.INVALID_VALUE,
+            status_code=400,
+            severity=ErrorSeverity.MEDIUM,
+            request=request
         )
 
     # Security: Block SVG files to prevent XSS
@@ -216,49 +184,56 @@ async def upload_avatar(
     user_avatar_dir = AVATAR_UPLOAD_DIR / str(user_id)
     user_avatar_dir.mkdir(parents=True, exist_ok=True)
 
-    # Delete old avatar if exists
-    if user.avatar_url:
-        # Construct correct path: DB stores "/media/avatars/..." and files are in "media/avatars/..."
-        old_avatar_path = Path(user.avatar_url.lstrip('/')).resolve()
+    # Generate unique filename
+    file_extension = Path(file.filename).suffix
+    if not file_extension:
+        # Map detected mime to extension
+        mime_map = {
+            "image/jpeg": ".jpg",
+            "image/png": ".png",
+            "image/gif": ".gif",
+            "image/webp": ".webp"
+        }
+        file_extension = mime_map.get(detected_mime, ".jpg")
 
-        # Security: Validate path is within allowed directory to prevent path traversal
-        try:
-            old_avatar_path.relative_to(AVATAR_UPLOAD_DIR.resolve())
-            if old_avatar_path.exists():
-                old_avatar_path.unlink()
-        except (ValueError, Exception) as e:
-            if isinstance(e, ValueError):
-                logger.warning(
-                    f"Path traversal attempt detected for user {user_id}: {user.avatar_url}",
-                    extra={"user_id": str(user_id), "attempted_path": user.avatar_url}
-                )
-            else:
-                logger.warning(f"Could not delete old avatar: {str(e)}")
+    file_name = f"avatar_{int(time.time())}{file_extension}"
+    file_path = user_avatar_dir / file_name
 
-    # Save new avatar
-    file_extension = file.filename.split('.')[-1] if '.' in file.filename else 'jpg'
-    timestamp = int(time.time())
-    new_filename = f"{user_id}_{timestamp}.{file_extension}"
-    file_path = user_avatar_dir / new_filename
-
+    # Save file
     with open(file_path, "wb") as f:
         f.write(file_content)
 
-    # Update user avatar via service
-    relative_path = f"/media/avatars/{user_id}/{new_filename}"
+    relative_path = f"/media/avatars/{user_id}/{file_name}"
+
+    # Delete old avatar if it exists
+    if user.avatar_url:
+        old_avatar_url = user.avatar_url
+        # Remove leading slash for Path
+        old_avatar_path = Path(old_avatar_url.lstrip('/')).resolve()
+        
+        # Security: Validate path is within allowed directory to prevent path traversal
+        try:
+            # Resolve the upload dir to compare absolute paths
+            base_dir = AVATAR_UPLOAD_DIR.resolve()
+            if str(old_avatar_path).startswith(str(base_dir)) and old_avatar_path.exists():
+                old_avatar_path.unlink()
+        except Exception as e:
+            logger.warning(f"Could not delete old avatar: {str(e)}")
+
+    # Update user via service
     updated_user = await service.update_profile(
         user_id=user_id,
         avatar_url=relative_path
     )
 
-    logger.info(f"Avatar uploaded for user {user_id}: {relative_path}")
+    logger.info(f"Avatar updated for user {user_id}: {relative_path}")
 
     # Schedule notification
     await schedule_if_allowed(
         db=db,
         user_id=str(user_id),
         background_tasks=background_tasks,
-        pref_flag="in_app_notifications",
+        pref_flag="avatar_uploaded",
         message="Your profile picture has been successfully updated.",
         payload={"user_id": str(user_id), "avatar_url": relative_path},
         workspace_id=None
@@ -266,7 +241,7 @@ async def upload_avatar(
 
     return {
         "avatar_url": relative_path,
-        "updated_at": updated_user.updated_at.isoformat()
+        "user": UserResponse.model_validate(updated_user).model_dump()
     }
 
 
@@ -329,7 +304,7 @@ async def delete_avatar(
 
     return {
         "deleted_avatar_url": old_avatar_url,
-        "deleted_at": updated_user.updated_at.isoformat()
+        "user": UserResponse.model_validate(updated_user).model_dump()
     }
 
 
@@ -444,4 +419,101 @@ async def update_notification_preferences(
 
     return preferences.to_dict()
 
+from src.api.schema.user_schema import DeactivateAccountRequest
 
+@router.post("/deactivate")
+@require_permissions("user.update", workspace_scoped=False)
+@db_transaction_handler("deactivate account", auto_commit=True)
+async def deactivate_account(
+    request: Request,
+    deactivate_request: DeactivateAccountRequest,
+    current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_async_db)
+):
+    """
+    Deactivate current user's account.
+
+    This will:
+    1. Set the account status to 'deactivated'
+    2. Set deactivated_at timestamp
+    3. Optionally cancel active subscriptions
+    4. Schedule account for deletion in 14 days
+
+    The user can reactivate their account within 14 days by logging in.
+    After 14 days, the account will be permanently deleted.
+    """
+    from datetime import timedelta
+    from src.api.models.subscription_models.subscriptions import UserSubscription
+
+    user_id = current_user.get("identity")
+    service = UserService(db)
+
+    # Validate confirmation
+    if not deactivate_request.confirm:
+        return error(
+            message="You must confirm account deactivation",
+            code=ErrorCode.INVALID_VALUE,
+            status_code=400,
+            severity=ErrorSeverity.LOW,
+            request=request
+        )
+
+    # Verify password before allowing deactivation
+    if not await service.verify_user_password(user_id, deactivate_request.password):
+        logger.warning(f"Failed deactivation attempt for user {user_id}: invalid password")
+        return error(
+            message="Invalid password. Please enter your current password to deactivate your account.",
+            code=ErrorCode.UNAUTHORIZED,
+            status_code=401,
+            severity=ErrorSeverity.HIGH,
+            request=request
+        )
+
+    # Get user
+    user = await service.get_user_by_id(user_id)
+
+    # Check if already deactivated
+    if user.status == "inactive":
+        return error(
+            message="Account is already deactivated",
+            code=ErrorCode.INVALID_VALUE,
+            status_code=400,
+            severity=ErrorSeverity.LOW,
+            request=request
+        )
+
+    # Handle subscription cancellation if requested
+    if deactivate_request.cancel_subscriptions:
+        # Get active subscriptions
+        subscriptions_result = await db.execute(
+            select(UserSubscription)
+            .where(UserSubscription.user_id == user_id)
+            .where(UserSubscription.status.in_(["active", "trialing"]))
+        )
+        active_subscriptions = subscriptions_result.scalars().all()
+
+        for subscription in active_subscriptions:
+            subscription.status = "canceled"
+            subscription.canceled_at = datetime.now(timezone.utc)
+            logger.info(f"Canceled subscription {subscription.id} for user {user_id}")
+
+    # Soft delete user account (30-day recovery period)
+    now = datetime.now(timezone.utc)
+    scheduled_deletion = now + timedelta(days=14)
+
+    user.status = "inactive"
+    user.deactivated_at = now
+
+    # Log the deactivation reason if provided
+    if deactivate_request.reason:
+        logger.info(f"User {user_id} deactivated account. Reason: {deactivate_request.reason}")
+    else:
+        logger.info(f"User {user_id} deactivated account")
+
+    return {
+        "user_id": str(user.id),
+        "status": user.status,
+        "deactivated_at": user.deactivated_at.isoformat(),
+        "scheduled_deletion_at": scheduled_deletion.isoformat(),
+        "message": "Your account has been deactivated and will be deleted in 14 days."
+    }

@@ -167,8 +167,8 @@ async def main():
                 "activation_count": 0,
                 "activated_at": None,
                 "expires_at": None,
-                "created_at": datetime.utcnow(),
-                "updated_at": datetime.utcnow(),
+                "created_at": datetime.now(timezone.utc),
+                "updated_at": datetime.now(timezone.utc),
                 "license_metadata": "{}"
             }
         )

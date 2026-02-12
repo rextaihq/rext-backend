@@ -18,7 +18,7 @@ Does NOT:
 
 from typing import Dict, Any, Optional
 from uuid import UUID
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -34,7 +34,7 @@ from src.api.middleware.exceptions import (
     RextValidationException,
     RextAuthenticationException
 )
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlalchemy import select
 from src.api.models.user_models.impersonation_session import ImpersonationSession
 
@@ -137,7 +137,7 @@ class ImpersonationService:
             "target_display_name": target_context["display_name"],
             "impersonated_by": str(admin_user_id),
             "impersonated_by_email": admin_user.email,
-            "impersonation_started_at": datetime.utcnow().isoformat(),
+            "impersonation_started_at": datetime.now(timezone.utc).isoformat(),
             "roles": target_context["roles"],
             "permissions": target_context["permissions"],
         }
@@ -168,7 +168,7 @@ class ImpersonationService:
         return {
             "message": "Impersonation stopped",
             "admin_user_id": str(admin_user_id),
-            "impersonation_stopped_at": datetime.utcnow().isoformat()
+            "impersonation_stopped_at": datetime.now(timezone.utc).isoformat()
         }
 
     async def get_impersonation_status(
@@ -339,7 +339,7 @@ class ImpersonationService:
         try:
             invalidated_session = ImpersonationSession(
                 session_id=session_id,
-                invalidated_at=datetime.utcnow(),
+                invalidated_at=datetime.now(timezone.utc),
                 is_valid=False
             )
             self.db.add(invalidated_session)

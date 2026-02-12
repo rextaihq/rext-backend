@@ -18,7 +18,7 @@ Usage:
 """
 
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Dict, Optional
 from uuid import UUID
@@ -130,7 +130,7 @@ class AuditLogger:
         """
         audit_data = {
             "event_type": event_type.value,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "user_id": str(user_id) if user_id else None,
             "admin_id": str(admin_id) if admin_id else None,
             "resource_type": resource_type,

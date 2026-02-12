@@ -21,7 +21,7 @@ Does NOT:
 
 from typing import Tuple, Dict, Any, Optional
 from uuid import UUID
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone, timedelta, timezone
 from src.utils.password_utils import validate_password_strength
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -305,7 +305,7 @@ class AuthService:
             .join(UserRole, UserRole.role_id == Role.id)
             .where(UserRole.user_id == db_user.id)
             .where(UserRole.workspace_id.is_(None))
-            .where(UserRole.is_primary == True)
+            .where(UserRole.is_primary.is_(True))
         )
         global_role_names = list(global_roles_result.scalars().all())
         
@@ -317,7 +317,7 @@ class AuthService:
             .join(UserRole, UserRole.role_id == Role.id)
             .where(UserRole.user_id == db_user.id)
             .where(UserRole.workspace_id.is_(None))  # global roles only
-            .where(UserRole.is_primary == True)
+            .where(UserRole.is_primary.is_(True))
             .distinct()
         )
         global_permissions = list(result.scalars().all())
@@ -538,7 +538,7 @@ class AuthService:
             .join(UserRole, UserRole.role_id == RolePermission.role_id)
             .where(UserRole.user_id == db_user.id)
             .where(UserRole.workspace_id == None)  # Only global role assignments
-            .where(UserRole.is_primary == True)     # Only primary roles
+            .where(UserRole.is_primary.is_(True))     # Only primary roles
             .distinct()
         )
         global_permissions = [row[0] for row in result.all()]
@@ -614,7 +614,7 @@ class AuthService:
         result = await self.db.execute(
             select(UserSession).where(
                 UserSession.jti == jti,
-                UserSession.is_active == True
+                UserSession.is_active.is_(True)
             )
         )
         session = result.scalar_one_or_none()
@@ -791,7 +791,7 @@ class AuthService:
         result = await self.db.execute(
             select(SubscriptionPlan).where(
                 SubscriptionPlan.name == "trial",
-                SubscriptionPlan.is_active == True
+                SubscriptionPlan.is_active.is_(True)
             )
         )
         trial_plan = result.scalar_one_or_none()

@@ -1,5 +1,40 @@
 from pydantic import BaseModel, EmailStr, Field, field_validator
-from typing import Optional, Literal
+from typing import Optional, Literal, List, Dict, Any
+from datetime import datetime
+from uuid import UUID
+
+class UserResponse(BaseModel):
+    """Refined user response schema with ID and metadata"""
+    id: UUID = Field(..., description="User UUID")
+    email: EmailStr = Field(..., description="User email")
+    full_name: Optional[str] = Field(None, description="Full name")
+    display_name: Optional[str] = Field(None, description="Display name")
+    avatar_url: Optional[str] = Field(None, description="Profile avatar URL")
+    language: str = Field("en", description="Language preference")
+    timezone: str = Field("UTC", description="Timezone preference")
+    status: str = Field(..., description="Account status")
+    email_verified: bool = Field(..., description="Whether email is verified")
+    last_login_at: Optional[datetime] = Field(None, description="Last login timestamp")
+    login_count: int = Field(0, description="Total login count")
+    created_at: datetime = Field(..., description="Creation timestamp")
+    updated_at: Optional[datetime] = Field(None, description="Last update timestamp")
+
+    class Config:
+        from_attributes = True
+
+
+class LoginResponse(BaseModel):
+    """Schema for successful login response"""
+    access_token: str = Field(..., description="JWT access token")
+    refresh_token: str = Field(..., description="JWT refresh token")
+    token_type: str = Field("bearer", description="Token type")
+    expires_in: int = Field(..., description="Access token lifetime in seconds")
+    user: UserResponse = Field(..., description="User profile details")
+    roles: List[str] = Field(default=[], description="List of user roles")
+    permissions: List[str] = Field(default=[], description="List of user permissions")
+
+    class Config:
+        from_attributes = True
 
 class RegisterUser(BaseModel):
     full_name: str = Field(..., description="Full name of the user")
@@ -47,12 +82,15 @@ class UpdateUser(BaseModel):
     language: Optional[str] = Field(None, description="User language")
     timezone: Optional[str] = Field(None, description="User timezone")
 
+
 class ResetPassword(BaseModel):
     token: str
     new_password: str
 
+
 class ForgotPasswordRequest(BaseModel):
     email: EmailStr = Field(..., description="Email address to send password reset link")
+
 
 class ChangePasswordRequest(BaseModel):
     current_password: str = Field(..., min_length=1, description="Current password for verification")
@@ -66,6 +104,55 @@ class ChangePasswordRequest(BaseModel):
             raise ValueError('Passwords do not match')
         return v
 
+
+# NEW: For password.py
+class VerifyPasswordRequest(BaseModel):
+    """Schema for password verification request"""
+    password: str = Field(..., min_length=1, description="User's current password to verify")
+
+
+# NEW: For auth.py
+class RefreshTokenRequest(BaseModel):
+    """Schema for token refresh request"""
+    refresh_token: str = Field(..., description="Refresh token to exchange for new access token")
+
+
+class ResendVerificationRequest(BaseModel):
+    """Schema for resending verification email"""
+    email: EmailStr = Field(..., description="Email address to resend verification to")
+
+
+class OAuthLoginRequest(BaseModel):
+    """Schema for OAuth login/register request"""
+    provider: str = Field(..., description="OAuth provider (google, github, etc.)")
+    provider_account_id: str = Field(..., description="Provider's account ID")
+    provider_email: EmailStr = Field(..., description="Email from OAuth provider")
+    provider_name: str = Field(default="", description="User's name from provider")
+    provider_avatar_url: Optional[str] = Field(None, description="Avatar URL from provider")
+    provider_username: Optional[str] = Field(None, description="Username from provider")
+    access_token: Optional[str] = Field(None, description="OAuth access token")
+    refresh_token: Optional[str] = Field(None, description="OAuth refresh token")
+    token_expires_at: Optional[str] = Field(None, description="Token expiration timestamp (ISO format)")
+
+
+class OAuthLinkRequest(BaseModel):
+    """Schema for linking OAuth account"""
+    provider: str = Field(..., description="OAuth provider (google, github, etc.)")
+    provider_account_id: str = Field(..., description="Provider's account ID")
+    provider_email: EmailStr = Field(..., description="Email from OAuth provider")
+    provider_username: Optional[str] = Field(None, description="Username from provider")
+    provider_avatar_url: Optional[str] = Field(None, description="Avatar URL from provider")
+    access_token: Optional[str] = Field(None, description="OAuth access token")
+    refresh_token: Optional[str] = Field(None, description="OAuth refresh token")
+    token_expires_at: Optional[str] = Field(None, description="Token expiration timestamp (ISO format)")
+
+
+# NEW: For invitations.py
+class DeclineInvitationRequest(BaseModel):
+    """Schema for declining an invitation"""
+    reason: Optional[str] = Field(None, description="Optional reason for declining (e.g., 'Not interested', 'Wrong email', 'Other')")
+
+
 class UpdateProfileRequest(BaseModel):
     """Schema for users to update their own profile (self-service)"""
     full_name: Optional[str] = Field(None, min_length=1, max_length=200, description="Full name")
@@ -73,6 +160,7 @@ class UpdateProfileRequest(BaseModel):
     bio: Optional[str] = Field(None, max_length=500, description="User bio (max 500 characters)")
     language: Optional[str] = Field(None, min_length=2, max_length=10, description="Language preference (e.g., 'en', 'es')")
     timezone: Optional[str] = Field(None, min_length=1, max_length=50, description="Timezone (e.g., 'UTC', 'America/New_York')")
+
 
 class ProfileResponse(BaseModel):
     """Schema for profile response"""
@@ -87,9 +175,11 @@ class ProfileResponse(BaseModel):
     created_at: str
     updated_at: Optional[str]
 
+
 class UserStatusRequest(BaseModel):
     """Schema for changing user status (admin only)"""
     reason: Optional[str] = Field(None, max_length=500, description="Reason for status change")
+
 
 class UserStatusResponse(BaseModel):
     """Schema for user status response"""
@@ -101,6 +191,7 @@ class UserStatusResponse(BaseModel):
     changed_by: str
     reason: Optional[str]
     changed_at: str
+
 
 class DeactivateAccountRequest(BaseModel):
     """Schema for account deactivation request"""
@@ -116,6 +207,7 @@ class DeactivateAccountRequest(BaseModel):
             raise ValueError('You must confirm account deactivation')
         return v
 
+
 class DeactivateAccountResponse(BaseModel):
     """Schema for account deactivation response"""
     user_id: str
@@ -125,6 +217,7 @@ class DeactivateAccountResponse(BaseModel):
     scheduled_deletion_at: str
     message: str
 
+
 class DataExportRequest(BaseModel):
     """Schema for data export request"""
     include_profile: bool = Field(True, description="Include profile data")
@@ -133,6 +226,7 @@ class DataExportRequest(BaseModel):
     include_activity: bool = Field(True, description="Include activity logs")
     include_billing: bool = Field(True, description="Include subscription and billing data")
     include_usage: bool = Field(True, description="Include usage metrics and statistics")
+
 
 class DataExportResponse(BaseModel):
     """Schema for data export response"""

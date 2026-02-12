@@ -125,7 +125,7 @@ async def validate_license(
         )
 
         return success(
-            data=response_data.dict(),
+            data=response_data.model_dump(),
             request=request,
             message="License validated successfully"
         )

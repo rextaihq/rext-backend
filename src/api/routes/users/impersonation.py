@@ -22,6 +22,7 @@ from src.utils.route_decorators import db_transaction_handler, require_permissio
 router = APIRouter()
 
 
+
 @router.post("/impersonate/start", dependencies=[Depends(is_admin)])
 @require_permissions("user.update")
 @db_transaction_handler("start impersonation", auto_commit=False)

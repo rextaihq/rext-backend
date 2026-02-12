@@ -13,8 +13,10 @@ from src.services.email_service import EmailService
 from src.api.database.async_database import get_async_db
 from src.services.user_service import UserService
 from src.api.middleware.exceptions import ResourceNotFoundException, RextValidationException, RextAuthorizationException
+from src.utils.response_utils import success, error
+from src.api.schema.response_schemas import ErrorCode, ErrorSeverity
 from src.api.models.workspace_models.workspace_member import WorkspaceMembers
-from src.api.config import get_settings
+from src.api.config import get_settings, settings
 from sqlalchemy import select, delete
 
 router = APIRouter()
@@ -147,33 +149,65 @@ async def delete_user(
     service = UserService(db)
     current_user_id = UUID(current_user.get("identity"))
 
-    # Check permission via service
-    has_permission = await service.check_user_permission(
-        user_id=current_user_id,
-        permission_name="user.delete"
-    )
+    try:
+        service = UserService(db)
+        current_user_id = UUID(current_user.get("identity"))
 
-    if not has_permission:
-        raise RextAuthorizationException(
-            message="Missing required permission: user.delete",
-            required_permission="user.delete"
+        # Check permission via service
+        has_permission = await service.check_user_permission(
+            user_id=current_user_id,
+            permission_name="user.delete"
         )
 
-    # Delete workspace memberships if any
-    memberships = await db.execute(
-        select(WorkspaceMembers).where(WorkspaceMembers.user_id == UUID(user_id))
-    )
-    membership_list = memberships.scalars().all()
-    if membership_list:
-        await db.execute(
-            delete(WorkspaceMembers).where(WorkspaceMembers.user_id == UUID(user_id))
-        )
-        logger.info(f"Deleted {len(membership_list)} workspace memberships for user {user_id}")
-        await db.flush()
+        if not has_permission:
+            return error(
+                message="Missing required permission: user.delete",
+                code=ErrorCode.FORBIDDEN,
+                status_code=403,
+                severity=ErrorSeverity.HIGH,
+                context={"required_permission": "user.delete"},
+                request=request
+            )
 
-    # Delete user via service (includes validation)
-    db_user = await service.delete_user(UUID(user_id))
-    return {"id": str(db_user.id)}
+        # Delete workspace memberships if any
+        memberships = await db.execute(
+            select(WorkspaceMembers).where(WorkspaceMembers.user_id == UUID(user_id))
+        )
+        membership_list = memberships.scalars().all()
+        if membership_list:
+            await db.execute(
+                delete(WorkspaceMembers).where(WorkspaceMembers.user_id == UUID(user_id))
+            )
+            logger.info(f"Deleted {len(membership_list)} workspace memberships for user {user_id}")
+            await db.flush()
+
+        # Delete user via service (includes validation)
+        db_user = await service.delete_user(UUID(user_id))
+        return success(
+            data={"id": str(db_user.id)},
+            request=request,
+            message="User deleted successfully"
+        )
+
+    except ResourceNotFoundException:
+        return error(
+            message="User not found",
+            code=ErrorCode.RESOURCE_NOT_FOUND,
+            status_code=404,
+            severity=ErrorSeverity.MEDIUM,
+            request=request
+        )
+    except RextValidationException:
+        return error(
+            message="Validation failed",
+            code=ErrorCode.DEPENDENCY_ERROR,
+            status_code=400,
+            severity=ErrorSeverity.MEDIUM,
+            request=request
+        )
+    except Exception as e:
+        logger.error(f"Failed to delete user {user_id}: {str(e)}")
+        raise
 
 
 @router.put("/update/{user_id}")
@@ -236,109 +270,148 @@ async def export_user_data(
 
     Returns export request confirmation.
     """
-    user_id = UUID(current_user.get("identity"))
-    logger.info(f"Data export requested for user: {user_id}")
+    try:
+        user_id = UUID(current_user.get("identity"))
+        logger.info(f"Data export requested for user: {user_id}")
 
-    service = UserService(db)
+        service = UserService(db)
 
-    # Get user from database
-    db_user = await service.get_user_by_id(user_id)
+        # Get user from database
+        db_user = await service.get_user_by_id(user_id)
 
-    # Generate export ID
-    export_id = str(uuid.uuid4())
+        # Generate export ID
+        export_id = str(uuid.uuid4())
 
-    # Collect user data based on request
-    export_data = {}
+        # Collect user data based on request
+        export_data = {}
 
-    if export_request.include_profile:
-        export_data["profile"] = {
-            "id": str(db_user.id),
-            "email": db_user.email,
-            "full_name": db_user.full_name,
-            "display_name": db_user.display_name,
-            "language": db_user.language,
-            "timezone": db_user.timezone,
-            "status": db_user.status,
-            "email_verified": db_user.email_verified,
-            "email_verified_at": db_user.email_verified_at.isoformat() if db_user.email_verified_at else None,
-            "created_at": db_user.created_at.isoformat() if db_user.created_at else None,
-            "last_login_at": db_user.last_login_at.isoformat() if db_user.last_login_at else None,
-            "login_count": db_user.login_count
-        }
+        if export_request.include_profile:
+            export_data["profile"] = {
+                "id": str(db_user.id),
+                "email": db_user.email,
+                "full_name": db_user.full_name,
+                "display_name": db_user.display_name,
+                "language": db_user.language,
+                "timezone": db_user.timezone,
+                "status": db_user.status,
+                "email_verified": db_user.email_verified,
+                "email_verified_at": db_user.email_verified_at.isoformat() if db_user.email_verified_at else None,
+                "created_at": db_user.created_at.isoformat() if db_user.created_at else None,
+                "last_login_at": db_user.last_login_at.isoformat() if db_user.last_login_at else None,
+                "login_count": db_user.login_count
+            }
 
-    if export_request.include_roles:
-        roles = []
-        for user_role in db_user.user_roles:
-            roles.append({
-                "role_name": user_role.role.name if user_role.role else None,
-                "role_display_name": user_role.role.display_name if user_role.role else None,
-                "is_primary": user_role.is_primary,
-                "workspace_id": str(user_role.workspace_id) if user_role.workspace_id else None,
-                "assigned_at": user_role.assigned_at.isoformat() if user_role.assigned_at else None
-            })
-        export_data["roles"] = roles
+        if export_request.include_roles:
+            roles = []
+            for user_role in db_user.user_roles:
+                roles.append({
+                    "role_name": user_role.role.name if user_role.role else None,
+                    "role_display_name": user_role.role.display_name if user_role.role else None,
+                    "is_primary": user_role.is_primary,
+                    "workspace_id": str(user_role.workspace_id) if user_role.workspace_id else None,
+                    "assigned_at": user_role.assigned_at.isoformat() if user_role.assigned_at else None
+                })
+            export_data["roles"] = roles
 
-    if export_request.include_workspaces:
-        workspaces = []
-        for membership in db_user.workspace_memberships:
-            workspaces.append({
-                "workspace_id": str(membership.workspace_id),
-                "workspace_name": membership.workspace.name if membership.workspace else None,
-                "role": membership.role,
-                "status": membership.status,
-                "joined_at": membership.joined_at.isoformat() if membership.joined_at else None
-            })
-        export_data["workspaces"] = workspaces
+        if export_request.include_workspaces:
+            workspaces = []
+            for membership in db_user.workspace_memberships:
+                workspaces.append({
+                    "workspace_id": str(membership.workspace_id),
+                    "workspace_name": membership.workspace.name if membership.workspace else None,
+                    "role": membership.role,
+                    "status": membership.status,
+                    "joined_at": membership.joined_at.isoformat() if membership.joined_at else None
+                })
+            export_data["workspaces"] = workspaces
 
-    # Note: Activity logs would require audit_logs table access
-    if export_request.include_activity:
-        export_data["activity"] = {
-            "note": "Activity logs export will be available once audit log system is queried"
-        }
+        # Note: Activity logs would require audit_logs table access
+        if export_request.include_activity:
+            export_data["activity"] = {
+                "note": "Activity logs export will be available once audit log system is queried"
+            }
+        
+        # Get frontend URL
+        frontend_url = settings.FRONTEND_URL
 
-    # NEW: Export billing/subscription data
-    if export_request.include_billing:
-        from src.api.models.subscription_models.subscriptions import UserSubscription
+        # NEW: Export billing/subscription data
+        if export_request.include_billing:
+            from src.api.models.subscription_models.subscriptions import UserSubscription
 
-        # Get all user subscriptions
-        subscriptions = []
-        subscriptions_result = await db.execute(
-            select(UserSubscription)
-            .where(UserSubscription.user_id == user_id)
-            .order_by(UserSubscription.created_at.desc())
+            # Get all user subscriptions
+            subscriptions = []
+            subscriptions_result = await db.execute(
+                select(UserSubscription)
+                .where(UserSubscription.user_id == user_id)
+                .order_by(UserSubscription.created_at.desc())
+            )
+
+            for sub in subscriptions_result.scalars():
+                subscription_data = {
+                    "subscription_id": str(sub.id),
+                    "plan_id": str(sub.plan_id),
+                    "plan_name": sub.plan.name if sub.plan else None,
+                    "status": sub.status,
+                    "billing_period": sub.billing_period,
+                    "current_period_start": sub.current_period_start.isoformat() if sub.current_period_start else None,
+                    "current_period_end": sub.current_period_end.isoformat() if sub.current_period_end else None,
+                    "trial_ends_at": sub.trial_ends_at.isoformat() if sub.trial_ends_at else None,
+                    "canceled_at": sub.canceled_at.isoformat() if sub.canceled_at else None,
+                    "created_at": sub.created_at.isoformat() if sub.created_at else None,
+                    "lemonsqueezy_id": sub.lemonsqueezy_id
+                }
+                subscriptions.append(subscription_data)
+
+            export_data["subscriptions"] = subscriptions
+            export_data["billing_info"] = {
+                "total_subscriptions": len(subscriptions),
+                "note": "Complete invoice history can be accessed via the LemonSqueezy customer portal",
+                "customer_portal": f"{frontend_url}/settings/subscription"
+            }
+
+        # NEW: Export usage metrics
+        if export_request.include_usage:
+            # Basic usage stats - can be expanded based on your usage tracking
+            export_data["usage"] = {
+                "workspaces_count": len(db_user.workspace_memberships) if hasattr(db_user, 'workspace_memberships') else 0,
+                "roles_count": len(db_user.user_roles) if hasattr(db_user, 'user_roles') else 0,
+                "login_count": db_user.login_count if hasattr(db_user, 'login_count') else 0,
+                "last_login": db_user.last_login_at.isoformat() if hasattr(db_user, 'last_login_at') and db_user.last_login_at else None,
+                "account_age_days": (datetime.now(timezone.utc) - db_user.created_at).days if db_user.created_at else 0,
+                "note": "Detailed usage metrics available upon request"
+            }
+
+        # Convert to JSON for email
+        import json
+        export_json = json.dumps(export_data, indent=2)
+
+        # Send email with data export in background using EmailService
+        background_tasks.add_task(
+            send_data_export_email_task,
+            email=db_user.email,
+            name=db_user.full_name or "User",
+            export_id=export_id,
+            export_json=export_json,
+            export_request=export_request,
+            frontend_url=frontend_url,
+            user_id=str(user_id)
         )
 
-        for sub in subscriptions_result.scalars():
-            subscription_data = {
-                "subscription_id": str(sub.id),
-                "plan_id": str(sub.plan_id),
-                "plan_name": sub.plan.name if sub.plan else None,
-                "status": sub.status,
-                "billing_period": sub.billing_period,
-                "current_period_start": sub.current_period_start.isoformat() if sub.current_period_start else None,
-                "current_period_end": sub.current_period_end.isoformat() if sub.current_period_end else None,
-                "trial_ends_at": sub.trial_ends_at.isoformat() if sub.trial_ends_at else None,
-                "canceled_at": sub.canceled_at.isoformat() if sub.canceled_at else None,
-                "created_at": sub.created_at.isoformat() if sub.created_at else None,
-                "lemonsqueezy_id": sub.lemonsqueezy_id
-            }
-            subscriptions.append(subscription_data)
+        logger.info(f"Data export {export_id} generated for user {user_id}")
 
-    # Prepare JSON for email
-    import json
-    export_json = json.dumps(export_data, indent=2)
+        response_data = DataExportResponse(
+            export_id=export_id,
+            user_id=str(user_id),
+            status="completed",
+            requested_at=datetime.now(timezone.utc).isoformat(),
+            message="Data export has been sent to your email address"
+        )
 
-    # Queue email task
-    background_tasks.add_task(
-        send_data_export_email_task,
-        email=db_user.email,
-        name=db_user.full_name or db_user.display_name or "User",
-        export_id=export_id,
-        export_json=export_json,
-        export_request=export_request,
-        frontend_url=str(request.base_url),
-        user_id=str(user_id)
-    )
+        return success(
+            data=response_data.model_dump(),
+            request=request,
+            message="Data export request completed successfully"
+        )
 
     return {
         "message": "Data export requested. You will receive an email shortly with your data.",
@@ -390,5 +463,19 @@ async def get_user_by_id(
             request=request
         )
     except ResourceNotFoundException:
-        # Let the global exception handler handle 404s
-        raise
+        return error(
+            message="User not found",
+            code=ErrorCode.RESOURCE_NOT_FOUND,
+            status_code=404,
+            severity=ErrorSeverity.MEDIUM,
+            request=request
+        )
+    except Exception as e:
+        logger.error(f"Error exporting data for user {current_user.get('identity')}: {str(e)}")
+        return error(
+            message="Failed to export user data",
+            code=ErrorCode.INTERNAL_SERVER_ERROR,
+            status_code=500,
+            severity=ErrorSeverity.HIGH,
+            request=request
+        )

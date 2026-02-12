@@ -5,7 +5,7 @@ Testing and development email provider that doesn't send real emails.
 Implements the IEmailProvider interface for provider abstraction.
 """
 from typing import List, Dict, Any
-from datetime import datetime
+from datetime import datetime, timezone
 from src.providers.email.base import IEmailProvider, EmailMessage, EmailResult
 from src.api.lib.logger import auto_logger
 
@@ -87,7 +87,7 @@ class MockEmailProvider(IEmailProvider):
 
             # Generate mock message ID
             self._email_counter += 1
-            message_id = f"mock-{self._email_counter}-{datetime.utcnow().timestamp()}"
+            message_id = f"mock-{self._email_counter}-{datetime.now(timezone.utc).timestamp()}"
 
             # Store email in memory for verification
             email_record = {
@@ -101,7 +101,7 @@ class MockEmailProvider(IEmailProvider):
                 "bcc": [r.email for r in message.bcc] if message.bcc else None,
                 "reply_to": message.reply_to,
                 "tags": message.tags,
-                "sent_at": datetime.utcnow().isoformat(),
+                "sent_at": datetime.now(timezone.utc).isoformat(),
             }
             self.sent_emails.append(email_record)
 

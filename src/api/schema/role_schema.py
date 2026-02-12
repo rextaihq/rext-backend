@@ -6,7 +6,7 @@ This module defines Pydantic models for role-related API operations.
 
 from pydantic import BaseModel, Field
 from typing import Optional, List
-from datetime import datetime
+from datetime import datetime, timezone
 
 
 class RoleCreate(BaseModel):

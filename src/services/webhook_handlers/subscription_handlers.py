@@ -21,7 +21,7 @@ Each handler:
 """
 
 from typing import Dict, Any
-from datetime import datetime, timedelta,timezone
+from datetime import datetime, timezone, timedelta,timezone
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -1100,24 +1100,14 @@ async def handle_subscription_payment_recovered(
         recovery_date = now.strftime("%B %d, %Y")
         next_billing_date = subscription.renews_at.strftime("%B %d, %Y") if subscription.renews_at else "N/A"
 
-        # Render email
-        user_name = user.full_name or user.display_name or user.email
-        plan_name = plan.name if plan else "Your Plan"
-
-        html_content = render_payment_recovered_email(
-            user_name=user_name,
+        # Send email
+        email_service = BillingEmailService(db)
+        await email_service.send_payment_recovered_email(
+            user_id=user.id,
             plan_name=plan_name,
             amount=amount,
             recovery_date=recovery_date,
             next_billing_date=next_billing_date
-        )
-
-        # Send email
-        email_service = BillingEmailService(db)
-        await email_service._send_email(
-            to_email=user.email,
-            subject=f"Payment Successful - {plan_name} Reactivated!",
-            html_content=html_content
         )
 
         logger.info(

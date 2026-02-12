@@ -53,7 +53,7 @@ async def test_get_failed_logins_returns_paginated_data():
     """Should return formatted failed login data with pagination metadata."""
     # Arrange
     mock_db = AsyncMock()
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     user_one = Users(
         id=uuid4(),
         email="one@example.com",
@@ -104,7 +104,7 @@ async def test_unlock_account_resets_lock_state():
         password_hash="hash",
         failed_login_attempts=5,
     )
-    locked_user.locked_until = datetime.utcnow() + timedelta(minutes=15)
+    locked_user.locked_until = datetime.now(timezone.utc) + timedelta(minutes=15)
 
     mock_db.execute.return_value = FakeResult(scalar=locked_user)
 
@@ -213,7 +213,7 @@ async def test_get_user_login_history_returns_events():
         action="auth.login",
         status="success",
     )
-    audit_event.created_at = datetime.utcnow()
+    audit_event.created_at = datetime.now(timezone.utc)
     audit_event.ip_address = "127.0.0.1"
     audit_event.user_agent = "pytest"
 

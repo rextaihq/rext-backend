@@ -9,10 +9,10 @@ from src.api.security.dependencies import get_current_user
 from src.utils.route_decorators import require_permissions, db_transaction_handler
 from src.api.config import get_settings
 from src.api.schema.user_schema import (
-    ResetPassword,
-    ForgotPasswordRequest,
-    ChangePasswordRequest
+    VerifyPasswordRequest
 )
+from src.utils.response_utils import success, error
+from src.api.schema.response_schemas import ErrorCode, ErrorSeverity
 from src.api.security.token_utils import create_reset_token, decode_and_verify_token
 from src.api.database.async_database import get_async_db
 from src.api.middleware.exceptions import (
@@ -22,6 +22,7 @@ from src.api.middleware.exceptions import (
 )
 from src.services.user_service import UserService
 from src.api.middleware.rate_limiter import password_reset_rate_limit
+from src.api.schema.user_schema import ForgotPasswordRequest, ResetPassword,ChangePasswordRequest
 
 router = APIRouter()
 
@@ -136,20 +137,34 @@ async def reset_password(
     Reset user password using token from email.
     """
     # Verify token validity first
+    # Verify token validity first
     try:
         decode_and_verify_token(payload.token)
     except Exception as e:
         logger.warning(f"Invalid reset token: {str(e)}")
-        raise RextValidationException(
-            message="Invalid or expired reset token"
+        return error(
+            message="Invalid or expired reset token",
+            code=ErrorCode.INVALID_VALUE,
+            status_code=400,
+            severity=ErrorSeverity.MEDIUM,
+            request=request
         )
 
     # Reset password via service
     service = UserService(db)
-    user = await service.reset_password_with_token(
-        reset_token=payload.token,
-        new_password=payload.new_password
-    )
+    try:
+        user = await service.reset_password_with_token(
+            reset_token=payload.token,
+            new_password=payload.new_password
+        )
+    except ResourceNotFoundException:
+        return error(
+            message="Invalid or expired reset token",
+            code=ErrorCode.INVALID_VALUE,
+            status_code=400,
+            severity=ErrorSeverity.MEDIUM,
+            request=request
+        )
 
     # SECURITY: Revoke all sessions after password reset
     from src.services.session_service import SessionService
@@ -157,11 +172,14 @@ async def reset_password(
     await session_service.revoke_all_sessions(user.id)
 
     logger.info(f"Password reset successfully for user: {user.id}, all sessions revoked")
-    return {
-        "user_id": str(user.id),
-        "sessions_revoked": True,
-        "message": "Password updated successfully. Please login with your new password."
-    }
+    return success(
+        data={
+            "user_id": str(user.id),
+            "sessions_revoked": True
+        },
+        request=request,
+        message="Password updated successfully. Please login with your new password."
+    )
 
 
 @router.post("/change-password")
@@ -171,51 +189,76 @@ async def change_password(
     request: Request,
     password_data: ChangePasswordRequest,
     current_user: dict = Depends(get_current_user),
-    db: AsyncSession = Depends(get_async_db)
+    db: AsyncSession = Depends(get_async_db),
+    _rate_limit: None = Depends(password_reset_rate_limit())
+
 ):
     """
     Change user password (requires authentication).
     """
-    user_id = UUID(current_user.get("identity"))
-    service = UserService(db)
-
-    # Change password via service
-    user = await service.change_password(
-        user_id=user_id,
-        current_password=password_data.current_password,
-        new_password=password_data.new_password
-    )
-
-    # SECURITY: Revoke all other sessions
-    from src.services.session_service import SessionService
-    session_service = SessionService(db)
-    await session_service.revoke_all_sessions(user_id)
-
-    # Send confirmation email
-    from src.services.email_helpers import send_auth_email
     try:
-        await send_auth_email(
-            db=db,
-            email_type="password_changed",
-            recipient_email=user.email,
-            user_name=user.full_name or user.display_name or user.email.split('@')[0],
-            user_id=user_id,
-            frontend_url=settings.FRONTEND_URL,
-            changed_at=user.password_changed_at.strftime("%b %d, %Y %I:%M %p UTC"),
-            ip_address=request.client.host if request.client else None,
-            user_agent=request.headers.get("user-agent")
-        )
-        logger.info(f"Password changed email sent to {user.email}")
-    except Exception as e:
-        logger.error(f"Failed to send password changed email: {str(e)}")
+        user_id = UUID(current_user.get("identity"))
+        service = UserService(db)
 
-    logger.info(f"Password changed successfully for user: {user_id}, all sessions revoked")
-    return {
-        "user_id": str(user.id),
-        "password_changed_at": user.password_changed_at.isoformat(),
-        "sessions_revoked": True,
-        "message": "Password changed successfully. Please login again on all devices."
-    }
+        # Change password via service
+        user = await service.change_password(
+            user_id=user_id,
+            current_password=password_data.current_password,
+            new_password=password_data.new_password
+        )
+
+        # SECURITY: Revoke all other sessions
+        from src.services.session_service import SessionService
+        session_service = SessionService(db)
+        await session_service.revoke_all_sessions(user_id)
+
+        # Send confirmation email
+        from src.services.email_helpers import send_auth_email
+        try:
+            await send_auth_email(
+                db=db,
+                email_type="password_changed",
+                recipient_email=user.email,
+                user_name=user.full_name or user.display_name or user.email.split('@')[0],
+                user_id=user_id,
+                frontend_url=settings.FRONTEND_URL,
+                changed_at=user.password_changed_at.strftime("%b %d, %Y %I:%M %p UTC"),
+                ip_address=request.client.host if request.client else None,
+                user_agent=request.headers.get("user-agent")
+            )
+            logger.info(f"Password changed email sent to {user.email}")
+        except Exception as e:
+            logger.error(f"Failed to send password changed email: {str(e)}")
+
+        logger.info(f"Password changed successfully for user: {user_id}, all sessions revoked")
+        return success(
+            data={
+                "user_id": str(user.id),
+                "password_changed_at": user.password_changed_at.isoformat(),
+                "sessions_revoked": True
+            },
+            request=request,
+            message="Password changed successfully. Please login again on all devices."
+        )
+
+    except ResourceNotFoundException:
+        return error(
+            message="User not found",
+            code=ErrorCode.RESOURCE_NOT_FOUND,
+            status_code=404,
+            severity=ErrorSeverity.MEDIUM,
+            request=request
+        )
+    except RextValidationException as e:
+        logger.warning(f"Password change validation error for user {current_user.get('identity')}: {e.message}")
+        return error(
+            message=e.message,
+            code=ErrorCode.INVALID_VALUE,
+            status_code=400,
+            severity=ErrorSeverity.LOW,
+            context={"details": e.details} if e.details else None,
+            request=request
+        )
 
 
 # -------------------------
@@ -225,32 +268,56 @@ async def change_password(
 @require_permissions("user.read")
 @db_transaction_handler("verify password", auto_commit=False)
 async def verify_password(
-    request: Request,
+    password_data: VerifyPasswordRequest,  # CHANGED: Added Pydantic schema parameter
+    request: Request,  # CHANGED: Moved to second position
     db: AsyncSession = Depends(get_async_db),
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
+    _rate_limit: None = Depends(password_reset_rate_limit())
+
 ):
     """
     Verify user's current password.
     """
-    user_id = UUID(current_user.get("identity"))
-    body = await request.json()
-    password = body.get("password")
+    try:
+        user_id = UUID(current_user.get("identity"))
+        password = password_data.password
 
-    if not password:
-        raise RextValidationException(
-            message="Password is required"
+        if not password:
+            return error(
+                message="Password is required",
+                request=request,
+                code=ErrorCode.VALIDATION_FAILED,
+                status_code=400,
+                severity=ErrorSeverity.MEDIUM
+            )
+
+        # Verify password via service
+        service = UserService(db)
+        is_valid = await service.verify_user_password(user_id, password)
+
+        if not is_valid:
+            return error(
+                message="Invalid password",
+                request=request,
+                code=ErrorCode.UNAUTHORIZED,
+                status_code=401,
+                severity=ErrorSeverity.MEDIUM
+            )
+
+        return success(
+            data={"verified": True},
+            request=request,
+            message="Password verified successfully"
         )
 
-    # Verify password via service
-    service = UserService(db)
-    is_valid = await service.verify_user_password(user_id, password)
-
-    if not is_valid:
-        raise RextAuthenticationException(
-            message="Invalid password"
+    except ResourceNotFoundException:
+        return error(
+            message="User not found",
+            request=request,
+            code=ErrorCode.RESOURCE_NOT_FOUND,
+            status_code=404,
+            severity=ErrorSeverity.HIGH
         )
-
-    return {
-        "verified": True,
-        "message": "Password verified successfully"
-    }
+    except Exception as e:
+        logger.error(f"Error verifying password: {str(e)}")
+        raise
