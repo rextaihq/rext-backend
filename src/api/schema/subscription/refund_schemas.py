@@ -8,6 +8,8 @@ from datetime import datetime
 from typing import Optional
 from uuid import UUID
 
+from src.api.models.subscription_models.refunds import RefundStatus
+
 from pydantic import BaseModel, Field, field_validator
 
 
@@ -60,7 +62,7 @@ class RefundListFilters(BaseModel):
 
     user_id: Optional[UUID] = None
     subscription_id: Optional[UUID] = None
-    status: Optional[str] = Field(None, pattern="^(pending|completed|failed)$")
+    status: Optional[RefundStatus] = None
     is_partial: Optional[bool] = None
     start_date: Optional[datetime] = None
     end_date: Optional[datetime] = None
@@ -84,7 +86,7 @@ class RefundResponse(BaseModel):
     original_amount: int
     currency: str
     reason: Optional[str]
-    status: str
+    status: RefundStatus
     is_partial: bool
     processed_at: Optional[datetime]
     created_at: datetime

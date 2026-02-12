@@ -219,6 +219,11 @@ class RefundService:
         if subscription_id:
             filters.append(Refund.subscription_id == subscription_id)
         if status:
+            if isinstance(status, str):
+                try:
+                    status = RefundStatus(status)
+                except ValueError:
+                    pass  # Let it fail at query time if invalid
             filters.append(Refund.status == status)
         if is_partial is not None:
             filters.append(Refund.is_partial == is_partial)

@@ -21,6 +21,7 @@ from src.api.database.async_database import get_async_db
 from src.api.security.dependencies import get_current_user
 from src.api.models.subscription_models.subscriptions import UserSubscription
 from src.api.models.subscription_models.licenses import License
+from src.api.models.subscription_models.refunds import RefundStatus
 from src.api.schema.subscription.refund_schemas import (
     RefundCreateRequest,
     RefundCreateResponse,
@@ -64,7 +65,7 @@ async def list_refunds(
     request: Request,
     user_id: Optional[UUID] = Query(None, description="Filter by user ID"),
     subscription_id: Optional[UUID] = Query(None, description="Filter by subscription ID"),
-    status: Optional[str] = Query(None, description="Filter by status (pending/completed/failed)"),
+    status: Optional[RefundStatus] = Query(None, description="Filter by status (pending/completed/failed)"),
     is_partial: Optional[bool] = Query(None, description="Filter by partial refund status"),
     start_date: Optional[datetime] = Query(None, description="Start date filter (ISO format)"),
     end_date: Optional[datetime] = Query(None, description="End date filter (ISO format)"),
