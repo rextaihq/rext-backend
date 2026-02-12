@@ -384,16 +384,6 @@ class WorkspacePipeline:
             )
             return
         
-        # Log extracted personas for review
-        logger.info(
-            "=" * 80,
-            extra={"workspace_id": str(self.workspace_id), "operation_id": self.operation_id}
-        )
-        logger.info(
-            f"📊 EXTRACTED PERSONAS ({len(personas_data)} total)",
-            extra={"workspace_id": str(self.workspace_id), "operation_id": self.operation_id}
-        )
-
         logger.info(
             "Extracted personas ready for persistence",
             extra={
@@ -403,76 +393,23 @@ class WorkspacePipeline:
                 "persona_names": [p.get("name", "Unnamed") for p in personas_data],
             },
         )
-        
-        for idx, persona_data in enumerate(personas_data, 1):
-            logger.info(
-                f"\n👤 PERSONA #{idx}: {persona_data.get('name', 'Unnamed')}",
-                extra={"workspace_id": str(self.workspace_id), "operation_id": self.operation_id}
-            )
-            logger.info(
-                f"  📝 Description: {persona_data.get('description', 'N/A')}",
-                extra={"workspace_id": str(self.workspace_id), "operation_id": self.operation_id}
-            )
-            
-            # E-E-A-T Professional Fields
-            if persona_data.get('full_name'):
-                logger.info(
-                    f"  👔 Full Name: {persona_data.get('full_name')}",
-                    extra={"workspace_id": str(self.workspace_id), "operation_id": self.operation_id}
-                )
-            if persona_data.get('professional_title'):
-                logger.info(
-                    f"  💼 Title: {persona_data.get('professional_title')}",
-                    extra={"workspace_id": str(self.workspace_id), "operation_id": self.operation_id}
-                )
-            if persona_data.get('areas_of_expertise'):
-                logger.info(
-                    f"  🎓 Expertise: {persona_data.get('areas_of_expertise')}",
-                    extra={"workspace_id": str(self.workspace_id), "operation_id": self.operation_id}
-                )
-            if persona_data.get('tone_of_voice'):
-                logger.info(
-                    f"  🗣️  Tone: {persona_data.get('tone_of_voice')}",
-                    extra={"workspace_id": str(self.workspace_id), "operation_id": self.operation_id}
-                )
-            if persona_data.get('bio'):
-                logger.info(
-                    f"  📖 Bio: {persona_data.get('bio')[:100]}...",
-                    extra={"workspace_id": str(self.workspace_id), "operation_id": self.operation_id}
-                )
-            if persona_data.get('linkedin_url'):
-                logger.info(
-                    f"  🔗 LinkedIn: {persona_data.get('linkedin_url')}",
-                    extra={"workspace_id": str(self.workspace_id), "operation_id": self.operation_id}
-                )
-            
-            # User Persona Fields (if any)
-            if persona_data.get('demographics'):
-                logger.info(
-                    f"  👥 Demographics: {persona_data.get('demographics')}",
-                    extra={"workspace_id": str(self.workspace_id), "operation_id": self.operation_id}
-                )
-            if persona_data.get('pain_points'):
-                logger.info(
-                    f"  ⚠️  Pain Points: {persona_data.get('pain_points')}",
-                    extra={"workspace_id": str(self.workspace_id), "operation_id": self.operation_id}
-                )
-            if persona_data.get('goals'):
-                logger.info(
-                    f"  🎯 Goals: {persona_data.get('goals')}",
-                    extra={"workspace_id": str(self.workspace_id), "operation_id": self.operation_id}
-                )
-            if persona_data.get('behaviors'):
-                logger.info(
-                    f"  🔄 Behaviors: {persona_data.get('behaviors')}",
-                    extra={"workspace_id": str(self.workspace_id), "operation_id": self.operation_id}
-                )
-            
-            logger.info(
-                "-" * 80,
-                extra={"workspace_id": str(self.workspace_id), "operation_id": self.operation_id}
-            )
-        
+        logger.debug(
+            "Extracted persona details",
+            extra={
+                "workspace_id": str(self.workspace_id),
+                "operation_id": self.operation_id,
+                "personas": [
+                    {
+                        "name": p.get("name"),
+                        "description": p.get("description"),
+                        "professional_title": p.get("professional_title"),
+                        "has_bio": bool(p.get("bio")),
+                        "has_linkedin": bool(p.get("linkedin_url")),
+                    }
+                    for p in personas_data
+                ],
+            },
+        )
 
         # Use a savepoint to make the delete-then-insert atomic.
         # If insertion fails, the savepoint rollback also undoes the deletion,
@@ -509,8 +446,12 @@ class WorkspacePipeline:
             await self.db.flush()
 
         logger.info(
-            f"Persisted {len(personas_data)} persona(s)",
-            extra={"workspace_id": str(self.workspace_id), "operation_id": self.operation_id}
+            "Persisted personas",
+            extra={
+                "workspace_id": str(self.workspace_id),
+                "operation_id": self.operation_id,
+                "persona_count": len(personas_data),
+            },
         )
 
     @staticmethod
