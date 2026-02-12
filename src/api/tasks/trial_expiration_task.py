@@ -5,14 +5,15 @@ This task should be scheduled to run daily (recommended at midnight UTC).
 It checks for expiring trials and sends reminder emails.
 """
 import asyncio
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.database.async_database import get_async_db_context
-from src.api.models.subscription_models.subscriptions import UserSubscription
+from src.api.models import *
+from src.api.models.subscription_models import *
 from src.services.trial_service import TrialService
-from src.services.email_service import EmailService
+from src.services.billing_email_service import BillingEmailService
 from src.utils.logger import logger
 
 
@@ -23,7 +24,7 @@ class TrialExpirationTask:
         """Initialize task with database session."""
         self.db = db
         self.trial_service = TrialService(db)
-        self.email_service = EmailService()
+        self.email_service = BillingEmailService(db)
 
     async def send_trial_reminder_email(
         self,
@@ -31,7 +32,7 @@ class TrialExpirationTask:
         days_remaining: int
     ) -> bool:
         """
-        Send trial reminder email to user.
+        Send trial reminder email to user via BillingEmailService.
 
         Args:
             subscription: User subscription
@@ -49,45 +50,32 @@ class TrialExpirationTask:
                 )
                 return False
 
-            # Prepare email context
-            context = {
-                "user_name": user.name or user.email,
-                "plan_name": subscription.plan.name if subscription.plan else "Unknown Plan",
-                "days_remaining": days_remaining,
-                "trial_end_date": subscription.trial_end_date.strftime("%B %d, %Y") if subscription.trial_end_date else "Unknown",
-                "upgrade_url": f"{self._get_app_url()}/pricing",
-                "manage_url": f"{self._get_app_url()}/subscription"
-            }
-
-            # Select email template based on days remaining
-            if days_remaining == 3:
-                subject = f"Your trial ends in 3 days"
-                template = "trial_reminder_3_days"
-            elif days_remaining == 1:
-                subject = f"Your trial ends tomorrow"
-                template = "trial_reminder_1_day"
-            else:  # 0 days
-                subject = f"Your trial ends today"
-                template = "trial_reminder_expiring_today"
-
-            # Send email
-            await self.email_service.send_email(
-                to_email=user.email,
-                subject=subject,
-                template_name=template,
-                context=context
+            plan_name = subscription.plan.name if subscription.plan else "Unknown Plan"
+            trial_end_date = (
+                subscription.trial_end_date.strftime("%B %d, %Y")
+                if subscription.trial_end_date
+                else "Unknown"
             )
 
-            logger.info(
-                f"Trial reminder email sent to {user.email}",
-                extra={
-                    "user_id": str(user.id),
-                    "subscription_id": str(subscription.id),
-                    "days_remaining": days_remaining
-                }
+            # Send email via BillingEmailService
+            success = await self.email_service.send_trial_ending_email(
+                user_id=user.id,
+                plan_name=plan_name,
+                trial_end_date=trial_end_date,
+                days_remaining=days_remaining,
             )
 
-            return True
+            if success:
+                logger.info(
+                    f"Trial reminder email sent to {user.email}",
+                    extra={
+                        "user_id": str(user.id),
+                        "subscription_id": str(subscription.id),
+                        "days_remaining": days_remaining
+                    }
+                )
+
+            return success
 
         except Exception as e:
             logger.error(
@@ -105,7 +93,7 @@ class TrialExpirationTask:
         subscription: UserSubscription
     ) -> bool:
         """
-        Send trial expired email to user.
+        Send trial expired email to user via BillingEmailService.
 
         Args:
             subscription: Expired subscription
@@ -118,29 +106,24 @@ class TrialExpirationTask:
             if not user or not user.email:
                 return False
 
-            context = {
-                "user_name": user.name or user.email,
-                "plan_name": subscription.plan.name if subscription.plan else "Unknown Plan",
-                "upgrade_url": f"{self._get_app_url()}/pricing",
-                "support_url": f"{self._get_app_url()}/support"
-            }
+            plan_name = subscription.plan.name if subscription.plan else "Unknown Plan"
 
-            await self.email_service.send_email(
-                to_email=user.email,
-                subject="Your trial has expired",
-                template_name="trial_expired",
-                context=context
+            # Send email via BillingEmailService
+            success = await self.email_service.send_trial_expired_email(
+                user_id=user.id,
+                plan_name=plan_name,
             )
 
-            logger.info(
-                f"Trial expired email sent to {user.email}",
-                extra={
-                    "user_id": str(user.id),
-                    "subscription_id": str(subscription.id)
-                }
-            )
+            if success:
+                logger.info(
+                    f"Trial expired email sent to {user.email}",
+                    extra={
+                        "user_id": str(user.id),
+                        "subscription_id": str(subscription.id)
+                    }
+                )
 
-            return True
+            return success
 
         except Exception as e:
             logger.error(
@@ -248,10 +231,9 @@ class TrialExpirationTask:
             )
             raise
 
-    def _get_app_url(self) -> str:
-        """Get the application base URL from environment."""
-        import os
-        return os.getenv("FRONTEND_URL", "http://localhost:3000")
+    def run_trial_expiration_task_sync(self):
+        """No-op for compatibility if needed."""
+        pass
 
 
 async def run_trial_expiration_task():
