@@ -2,214 +2,23 @@
 Subscription Background Tasks
 
 Handles automated subscription management tasks:
-- Trial expiry checking and notifications
-- Subscription renewals
 - Usage reset
-- Billing reminders
 
-These tasks should be run by a scheduler (e.g., cron, APScheduler, Celery).
+Note: Trial expiration and notifications are handled by
+src/api/tasks/trial_expiration_task.py (runs at midnight).
+Do NOT add trial logic here to avoid duplication.
 """
 
 from datetime import datetime, timedelta, timezone
-from typing import Dict, List
-from unittest import result
-from sqlalchemy.ext.asyncio import AsyncSession
+from typing import Dict
 from sqlalchemy import select, and_
-from sqlalchemy.orm import selectinload
 
-from scripts import db
 from src.api.database.async_database import get_async_db_context
 from src.api.models.subscription_models.subscriptions import (
     UserSubscription,
     SubscriptionStatus
 )
-from src.api.models.subscription_models.plans import SubscriptionPlan
-from src.api.models.user_models.users import Users
-from src.services.billing_email_service import BillingEmailService
 from src.utils.logger import logger
-from src.utils.response_utils import success
-
-
-async def check_and_notify_expiring_trials():
-    """
-    Check for trials expiring in 3 days and send notification emails.
-
-    Should be run daily.
-
-    Returns:
-        Dict with notification counts
-    """
-    async with get_async_db_context() as db:
-        try:
-            # Get trials expiring in exactly 3 days
-            three_days_from_now = datetime.utcnow() + timedelta(days=3)
-            start_of_day = three_days_from_now.replace(hour=0, minute=0, second=0, microsecond=0)
-            end_of_day = three_days_from_now.replace(hour=23, minute=59, second=59, microsecond=999999)
-
-            # Find trials expiring in 3 days
-            query = select(UserSubscription).options(
-                selectinload(UserSubscription.user),
-                selectinload(UserSubscription.plan)
-                ).where(
-            and_(
-                UserSubscription.status == SubscriptionStatus.TRIAL,
-                UserSubscription.trial_end_date >= start_of_day,
-                UserSubscription.trial_end_date <= end_of_day
-                )
-            )
-
-            result = await db.execute(query)
-            expiring_trials = result.scalars().all()
-
-            logger.info(f"Found {len(expiring_trials)} trial(s) expiring in 3 days")
-
-            # Collect email data first (read phase)
-            email_tasks = []
-            email_service = BillingEmailService(db)
-
-            for subscription in expiring_trials:
-                try:
-                    user = subscription.user
-                    plan = subscription.plan
-
-                    if not user or not plan:
-                        continue
-
-                    email_tasks.append({
-                        "user_id": user.id,
-                        "user_email": user.email,
-                        "plan_name": plan.display_name,
-                        "trial_end_date": subscription.trial_end_date.strftime("%B %d, %Y"),
-                    })
-
-                except Exception as e:
-                    logger.error(f"Error preparing trial notification for subscription {subscription.id}: {e}")
-                    continue
-
-            # Send emails (send phase — after all reads complete)
-            success_count = 0
-            for email_data in email_tasks:
-                try:
-                    success = await email_service.send_trial_ending_email(
-                    user_id=user.id,
-                    plan_name=plan.display_name,
-                    days_remaining=3,
-                    trial_end_date=subscription.trial_end_date.strftime("%B %d, %Y")
-                )
-
-                    if success:
-                        success_count += 1
-                        logger.info(f"Sent trial ending email to {email_data['user_email']}")
-                    else:
-                        logger.warning(f"Failed to send trial ending email to {email_data['user_email']}")
-
-                except Exception as e:
-                    logger.error(f"Error sending trial notification to {email_data['user_email']}: {e}")
-                    continue
-
-            logger.info(f"Successfully sent {success_count}/{len(email_tasks)} trial ending emails")
-
-            return {
-                "total_expiring": len(expiring_trials),
-                "emails_sent": success_count,
-                "timestamp": datetime.utcnow().isoformat()
-            }
-
-        except Exception as e:
-            logger.error(f"Error in check_and_notify_expiring_trials: {e}")
-            raise
-
-async def expire_ended_trials():
-    """
-    Find trials that have ended and convert them to free plan or expired status.
-
-    Should be run daily.
-
-    Returns:
-        Dict with conversion counts
-    """
-    async with get_async_db_context() as db:
-        try:
-            now = datetime.utcnow()
-
-            # Find trials that have ended
-            query = select(UserSubscription).options(
-                selectinload(UserSubscription.user),
-                selectinload(UserSubscription.plan)
-            ).where(
-                and_(
-                    UserSubscription.status == SubscriptionStatus.TRIAL,
-                    UserSubscription.trial_end_date < now
-              )
-            )
-
-            result = await db.execute(query)
-            expired_trials = result.scalars().all()
-
-            logger.info(f"Found {len(expired_trials)} expired trial(s)")
-
-            expired_count = 0
-            # Collect email tasks to send AFTER commit
-            pending_emails = []
-
-            email_service = BillingEmailService(db)
-
-            for subscription in expired_trials:
-                try:
-                    # Mark as expired
-                    subscription.status = SubscriptionStatus.EXPIRED
-                    subscription.end_date = subscription.trial_end_date
-
-                    user = subscription.user
-                    plan = subscription.plan
-
-                    if user and plan:
-                        # Queue email for sending after commit
-                        pending_emails.append({
-                            "user_id": user.id,
-                            "plan_name": plan.display_name,
-                        })
-
-                    expired_count += 1
-                    logger.info(f"Expired trial subscription {subscription.id}")
-
-                except Exception as e:
-                    logger.error(f"Error expiring trial {subscription.id}: {e}")
-                    continue
-
-            # Commit all status changes first
-            await db.commit()
-
-            # Only send emails AFTER successful commit
-            email_success_count = 0
-            for email_data in pending_emails:
-                try:
-                    await email_service.send_trial_expired_email(
-                        user_id=email_data["user_id"],
-                        plan_name=email_data["plan_name"],
-                    )
-                    email_success_count += 1
-                except Exception as e:
-                    logger.error(
-                        f"Failed to send trial expired email to user {email_data['user_id']}: {e}"
-                    )
-
-            logger.info(
-                f"Expired {expired_count} trial subscription(s), "
-                f"sent {email_success_count}/{len(pending_emails)} notification emails"
-            )
-
-            return {
-                "trials_expired": expired_count,
-                "emails_sent": email_success_count,
-                "emails_failed": len(pending_emails) - email_success_count,
-                "timestamp": datetime.utcnow().isoformat()
-            }
-
-        except Exception as e:
-            logger.error(f"Error in expire_ended_trials: {e}")
-            await db.rollback()
-            raise
 
 
 async def reset_monthly_usage():
@@ -270,21 +79,19 @@ async def reset_monthly_usage():
             raise
 
 
-# Convenience function to run all daily tasks
 async def run_daily_subscription_tasks():
     """
-    Run all daily subscription maintenance tasks.
+    Run daily subscription maintenance tasks (excluding trial management).
 
-    Call this from your scheduler (cron, APScheduler, etc.).
+    Trial expiration and notifications are handled separately by
+    TrialExpirationTask (scheduled at midnight).
     """
-    logger.info("Starting daily subscription tasks")
+    logger.info("Starting daily subscription maintenance tasks")
 
     results = {
-        "trial_notifications": await check_and_notify_expiring_trials(),
-        "trial_expirations": await expire_ended_trials(),
         "usage_resets": await reset_monthly_usage(),
     }
 
-    logger.info(f"Daily subscription tasks completed: {results}")
+    logger.info(f"Daily subscription maintenance completed: {results}")
 
     return results

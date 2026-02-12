@@ -2,9 +2,15 @@
 Scheduled Tasks
 
 Background scheduled tasks using APScheduler.
-Handles data cleanup, maintenance, and other periodic operations.
+Handles data cleanup, billing automation, trial management, and other periodic operations.
 
-To enable scheduled tasks, set CLEANUP_ENABLED=true in environment variables.
+Environment variables:
+- SCHEDULER_ENABLED: Master switch for all scheduled tasks (default: true)
+- CLEANUP_ENABLED: Toggle data cleanup task (default: true)
+- BILLING_TASKS_ENABLED: Toggle subscription maintenance tasks (default: true)
+- TRIAL_TASKS_ENABLED: Toggle trial expiration tasks (default: true)
+- DUNNING_TASKS_ENABLED: Toggle payment dunning reminders (default: true)
+- GRACE_PERIOD_TASKS_ENABLED: Toggle grace period expiration (default: true)
 """
 
 import asyncio
@@ -39,8 +45,8 @@ class ScheduledTaskManager:
 
     def start(self):
         """Start the scheduler and register tasks."""
-        if not cleanup_config.CLEANUP_ENABLED:
-            logger.info("Scheduled tasks disabled (CLEANUP_ENABLED=false)")
+        if not cleanup_config.SCHEDULER_ENABLED:
+            logger.info("Scheduler disabled (SCHEDULER_ENABLED=false). No scheduled tasks will run.")
             return
 
         if not APSCHEDULER_AVAILABLE:
@@ -60,69 +66,92 @@ class ScheduledTaskManager:
         self.scheduler = AsyncIOScheduler()
 
         # Schedule daily cleanup at configured time (default 2 AM)
-        self.scheduler.add_job(
-            self._run_data_cleanup,
-            trigger=CronTrigger(
-                hour=cleanup_config.CLEANUP_HOUR,
-                minute=cleanup_config.CLEANUP_MINUTE
-            ),
-            id="data_cleanup",
-            name="Daily data cleanup",
-            replace_existing=True,
-            max_instances=1,
-        )
+        if cleanup_config.CLEANUP_ENABLED:
+            self.scheduler.add_job(
+                self._run_data_cleanup,
+                trigger=CronTrigger(
+                    hour=cleanup_config.CLEANUP_HOUR,
+                    minute=cleanup_config.CLEANUP_MINUTE
+                ),
+                id="data_cleanup",
+                name="Daily data cleanup",
+                replace_existing=True,
+                max_instances=1,
+            )
+            logger.info("Registered task: data_cleanup")
+        else:
+            logger.info("Data cleanup task disabled (CLEANUP_ENABLED=false)")
 
         # Trial expiration check — daily at midnight
-        self.scheduler.add_job(
-            run_trial_expiration_task,
-            trigger=CronTrigger(hour=0, minute=0),
-            id="trial_expiration",
-            name="Daily trial expiration check",
-            replace_existing=True,
-            max_instances=1,
-        )
+        if cleanup_config.TRIAL_TASKS_ENABLED:
+            self.scheduler.add_job(
+                run_trial_expiration_task,
+                trigger=CronTrigger(hour=0, minute=0),
+                id="trial_expiration",
+                name="Daily trial expiration check",
+                replace_existing=True,
+                max_instances=1,
+            )
+            logger.info("Registered task: trial_expiration")
+        else:
+            logger.info("Trial expiration task disabled (TRIAL_TASKS_ENABLED=false)")
 
         # Payment dunning reminders — daily at 1 AM
-        self.scheduler.add_job(
-            run_payment_dunning_task,
-            trigger=CronTrigger(hour=1, minute=0),
-            id="payment_dunning",
-            name="Daily payment dunning",
-            replace_existing=True,
-            max_instances=1,
-        )
+        if cleanup_config.DUNNING_TASKS_ENABLED:
+            self.scheduler.add_job(
+                run_payment_dunning_task,
+                trigger=CronTrigger(hour=1, minute=0),
+                id="payment_dunning",
+                name="Daily payment dunning",
+                replace_existing=True,
+                max_instances=1,
+            )
+            logger.info("Registered task: payment_dunning")
+        else:
+            logger.info("Payment dunning task disabled (DUNNING_TASKS_ENABLED=false)")
 
         # Grace period expiration — daily at 1:30 AM
-        self.scheduler.add_job(
-            run_grace_period_expiration_task,
-            trigger=CronTrigger(hour=1, minute=30),
-            id="grace_period_expiration",
-            name="Daily grace period expiration",
-            replace_existing=True,
-            max_instances=1,
-        )
+        if cleanup_config.GRACE_PERIOD_TASKS_ENABLED:
+            self.scheduler.add_job(
+                run_grace_period_expiration_task,
+                trigger=CronTrigger(hour=1, minute=30),
+                id="grace_period_expiration",
+                name="Daily grace period expiration",
+                replace_existing=True,
+                max_instances=1,
+            )
+            logger.info("Registered task: grace_period_expiration")
+        else:
+            logger.info("Grace period expiration task disabled (GRACE_PERIOD_TASKS_ENABLED=false)")
 
         # Subscription maintenance — daily at 3 AM
-        self.scheduler.add_job(
-            run_daily_subscription_tasks,
-            trigger=CronTrigger(hour=3, minute=0),
-            id="subscription_maintenance",
-            name="Daily subscription maintenance",
-            replace_existing=True,
-            max_instances=1,
-        )
+        if cleanup_config.BILLING_TASKS_ENABLED:
+            self.scheduler.add_job(
+                run_daily_subscription_tasks,
+                trigger=CronTrigger(hour=3, minute=0),
+                id="subscription_maintenance",
+                name="Daily subscription maintenance",
+                replace_existing=True,
+                max_instances=1,
+            )
+            logger.info("Registered task: subscription_maintenance")
+        else:
+            logger.info("Subscription maintenance task disabled (BILLING_TASKS_ENABLED=false)")
 
-        self.scheduler.start()
-        self._running = True
-
-        logger.info(
-            f"Scheduled tasks started. Data cleanup will run daily at {cleanup_config.CLEANUP_HOUR:02d}:{cleanup_config.CLEANUP_MINUTE:02d}",
-            extra={
-                "cleanup_hour": cleanup_config.CLEANUP_HOUR,
-                "cleanup_minute": cleanup_config.CLEANUP_MINUTE,
-                "retention_periods": cleanup_config.get_retention_summary()
-            }
-        )
+        # Only start the scheduler if at least one job was registered
+        if self.scheduler.get_jobs():
+            self.scheduler.start()
+            self._running = True
+            logger.info(
+                f"Scheduled tasks started with {len(self.scheduler.get_jobs())} job(s).",
+                extra={
+                    "cleanup_hour": cleanup_config.CLEANUP_HOUR,
+                    "cleanup_minute": cleanup_config.CLEANUP_MINUTE,
+                    "jobs": [job.id for job in self.scheduler.get_jobs()]
+                }
+            )
+        else:
+            logger.warning("No scheduled tasks registered. Scheduler not started.")
 
     def shutdown(self):
         """Shutdown the scheduler gracefully."""
@@ -138,7 +167,7 @@ class ScheduledTaskManager:
             return {
                 "running": False,
                 "jobs": [],
-                "reason": "Scheduler not started" if not APSCHEDULER_AVAILABLE else "CLEANUP_ENABLED is False"
+                "reason": "Scheduler not started" if not APSCHEDULER_AVAILABLE else "SCHEDULER_ENABLED is False"
             }
 
         jobs = []
