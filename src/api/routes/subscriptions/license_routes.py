@@ -27,6 +27,12 @@ from src.utils.response_utils import success
 from src.utils.route_decorators import db_transaction_handler
 from src.utils.logger import logger
 from src.api.routes.subscriptions.admin.shared.auth import require_super_admin
+from src.api.middleware.rate_limiter import (
+    license_validate_rate_limit,
+    license_activate_rate_limit,
+    license_deactivate_rate_limit,
+    license_revoke_rate_limit
+)
 
 
 router = APIRouter(
@@ -41,7 +47,8 @@ router = APIRouter(
 async def validate_license(
     request: Request,
     license_data: LicenseValidateRequest,
-    db: AsyncSession = Depends(get_async_db)
+    db: AsyncSession = Depends(get_async_db),
+    _rate_limit: None = Depends(license_validate_rate_limit())
 ):
     """
     Validate a LemonSqueezy license key.
@@ -153,7 +160,8 @@ async def activate_license_endpoint(
     request: Request,
     activation_data: LicenseActivateRequest,
     db: AsyncSession = Depends(get_async_db),
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
+    _rate_limit: None = Depends(license_activate_rate_limit())
 ):
     """
     Activate a license key for a specific device/instance.
@@ -241,7 +249,8 @@ async def deactivate_license_endpoint(
     license_id: str,
     deactivation_data: LicenseDeactivateRequest,
     db: AsyncSession = Depends(get_async_db),
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
+    _rate_limit: None = Depends(license_deactivate_rate_limit())
 ):
     """
     Deactivate a license activation for a specific instance.
@@ -460,7 +469,8 @@ async def revoke_license_endpoint(
     license_id: str,
     revoke_data: LicenseRevokeRequest,
     db: AsyncSession = Depends(get_async_db),
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
+    _rate_limit: None = Depends(license_revoke_rate_limit())
 ):
     """
     Revoke a license (admin only).
