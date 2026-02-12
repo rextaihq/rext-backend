@@ -40,7 +40,8 @@ router = APIRouter(
 async def validate_license(
     request: Request,
     license_data: LicenseValidateRequest,
-    db: AsyncSession = Depends(get_async_db)
+    db: AsyncSession = Depends(get_async_db),
+    current_user: dict = Depends(get_current_user)
 ):
     """
     Validate a LemonSqueezy license key.
@@ -79,9 +80,11 @@ async def validate_license(
     }
     ```
     """
+    user_id = current_user.get("identity")
     logger.info(
         f"License validation request for key: {license_data.license_key[:8]}...",
         extra={
+            "user_id": user_id,
             "license_key_prefix": license_data.license_key[:8],
             "has_instance_id": bool(license_data.instance_id)
         }

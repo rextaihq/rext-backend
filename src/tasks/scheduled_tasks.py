@@ -44,9 +44,10 @@ class ScheduledTaskManager:
             return
 
         if not APSCHEDULER_AVAILABLE:
-            logger.warning(
-                "APScheduler not installed. Scheduled tasks disabled. "
-                "Install with: pip install apscheduler"
+            logger.error(
+                "CRITICAL: APScheduler not installed — ALL billing automation is disabled! "
+                "Trial expiration, payment dunning, grace period enforcement, usage resets, "
+                "and data cleanup will NOT run. Install with: pip install 'apscheduler>=3.10.0,<4.0.0'"
             )
             return
 
@@ -130,6 +131,29 @@ class ScheduledTaskManager:
             self.scheduler.shutdown(wait=True)
             self._running = False
             logger.info("Scheduled task manager shut down")
+
+    def get_status(self) -> dict:
+        """Get scheduler status for health checks."""
+        if not self._running or not self.scheduler:
+            return {
+                "running": False,
+                "jobs": [],
+                "reason": "Scheduler not started" if not APSCHEDULER_AVAILABLE else "CLEANUP_ENABLED is False"
+            }
+
+        jobs = []
+        for job in self.scheduler.get_jobs():
+            jobs.append({
+                "id": job.id,
+                "name": job.name,
+                "next_run": job.next_run_time.isoformat() if job.next_run_time else None
+            })
+
+        return {
+            "running": True,
+            "job_count": len(jobs),
+            "jobs": jobs
+        }
 
     async def _run_data_cleanup(self):
         """Run data cleanup task."""
