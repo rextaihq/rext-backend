@@ -171,10 +171,6 @@ async def get_pending_invitations(
             "invited_by": {
                 "id": str(inviter.id),
                 "name": inviter.full_name or inviter.display_name or inviter.email,
-<<<<<<< HEAD
-=======
-                
->>>>>>> origin/task-71-to-task-80
                 "email": inviter.email
             } if inviter else None,
             "token": invitation.invitation_token,
