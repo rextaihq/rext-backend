@@ -16,12 +16,22 @@ from src.api.schema.notification_schema import (
     UpdateNotificationPreferencesRequest
 )
 from src.api.models.user_models.notification_preferences import NotificationPreferences
+from src.utils.route_decorators import require_permissions
+from src.api.schema.user_schema import UpdateProfileRequest, DeactivateAccountRequest, ProfileResponse
+from src.api.schema.notification_schema import NotificationPreferencesResponse, UpdateNotificationPreferencesRequest
 from src.api.database.async_database import get_async_db
-from src.api.middleware.exceptions import ResourceNotFoundException, RextValidationException
-from src.services.user_service import UserService
-from src.services.notification_helper import schedule_if_allowed
 from src.utils.response_utils import success, error
 from src.api.schema.response_schemas import ErrorCode, ErrorSeverity
+from src.api.middleware.exceptions import ResourceNotFoundException
+from src.services.user_service import UserService
+from src.services.notification_preferences_service import NotificationPreferencesService
+from src.services.notification_helper import schedule_if_allowed
+from datetime import datetime,timezone 
+
+from pathlib import Path
+from sqlalchemy import select
+import time
+import imghdr
 
 router = APIRouter()
 
@@ -40,13 +50,49 @@ async def get_profile(
     """
     Get current authenticated user's profile.
     """
-    user_id = current_user.get("identity")
-    service = UserService(db)
-    user = await service.get_user_by_id(user_id)
+    try:
+        user_id = current_user.get("identity")
+        service = UserService(db)
 
-    return UserResponse.model_validate(user).model_dump()
+        # Get user via service
+        user = await service.get_user_by_id(user_id)
+
+        # Build profile response using schema
+        profile_data = ProfileResponse(
+            id=str(user.id),
+            email=user.email,
+            full_name=user.full_name,
+            display_name=user.display_name,
+            bio=user.bio,
+            language=user.language or "en",
+            timezone=user.timezone or "UTC",
+            status=user.status,
+            email_verified=user.email_verified,
+            avatar_url=user.avatar_url,
+            created_at=user.created_at.isoformat() if user.created_at else None,
+            updated_at=user.updated_at.isoformat() if user.updated_at else None
+        ).model_dump()
+
+        return success(
+            data={"profile": profile_data},
+            request=request,
+            message="Profile retrieved successfully"
+        )
+
+    except ResourceNotFoundException:
+        return error(
+            message="User not found",
+            code=ErrorCode.RESOURCE_NOT_FOUND,
+            status_code=404,
+            severity=ErrorSeverity.MEDIUM,
+            request=request
+        )
+    except Exception as e:
+        logger.error(f"Error fetching profile: {str(e)}")
+        raise
 
 
+@require_permissions("user.update")
 @router.patch("/profile")
 @require_permissions("user.update", workspace_scoped=False)
 @db_transaction_handler("update profile", auto_commit=True)
@@ -288,6 +334,7 @@ async def get_notification_preferences(
 ):
     """
     Get current user's notification preferences.
+    Creates default preferences if none exist.
     """
     user_id = current_user.get("identity")
 
@@ -305,6 +352,9 @@ async def get_notification_preferences(
         db.add(preferences)
         await db.flush()
         logger.info(f"Created default notification preferences for user {user_id}")
+        service = NotificationPreferencesService(db)
+        preferences = await service.get_or_create(user_id)
+        await db.commit()
 
     return success(
         data=preferences.to_dict(),
@@ -340,6 +390,8 @@ async def update_notification_preferences(
         preferences = NotificationPreferences(user_id=user_id)
         db.add(preferences)
         await db.flush()
+        notification_service = NotificationPreferencesService(db)
+        preferences = await notification_service.get_or_create(user_id)
 
     # Update preferences
     update_data = preferences_update.model_dump(exclude_unset=True)

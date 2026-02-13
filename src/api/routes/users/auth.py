@@ -30,7 +30,6 @@ from datetime import datetime, timezone
 from src.services.notification_helper import schedule_if_allowed
 from user_agents import parse as parse_user_agent
 from src.api.models.user_models.notification_preferences import NotificationPreferences
-import os
 from src.api.middleware.rate_limiter import (
     login_rate_limit,
     registration_rate_limit,

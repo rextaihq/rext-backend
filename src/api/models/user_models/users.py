@@ -38,6 +38,7 @@ class Users(Base, SerializableMixin, SoftDeleteMixin):
     created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
     deactivated_at = Column(DateTime(timezone=True))
+    deleted_at = Column(DateTime(timezone=True))
 
     # Relationships
     user_roles = relationship("UserRole", back_populates="user", foreign_keys="UserRole.user_id", passive_deletes=True)

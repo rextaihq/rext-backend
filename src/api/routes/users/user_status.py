@@ -25,6 +25,83 @@ from src.services.subscription_service import SubscriptionService
 
 router = APIRouter()
 
+
+async def _handle_status_change(
+    user_id: str,
+    new_status: str,
+    action_name: str,
+    request: Request,
+    status_data: UserStatusRequest,
+    current_user: dict,
+    db: AsyncSession,
+):
+    """
+    Shared logic for admin-initiated user status changes (suspend, ban, etc.).
+
+    Delegates the actual status mutation to UserService.change_user_status(),
+    then handles audit logging, response building, and success messaging.
+
+    Args:
+        user_id: Target user ID string
+        new_status: Status to set (e.g., "suspended", "banned")
+        action_name: Audit action name (e.g., "user.suspend", "user.ban")
+        request: FastAPI Request object for audit/response context
+        status_data: Request body with optional reason
+        current_user: Authenticated admin user dict from JWT
+        db: Async database session
+
+    Returns:
+        Success response dict via success() utility
+    """
+    service = UserService(db)
+
+    # Delegate status change to service layer
+    target_user, old_status = await service.change_user_status(
+        UUID(user_id), new_status
+    )
+
+    # Get admin user details for audit log
+    admin_user_id = UUID(current_user.get("identity"))
+    admin_user = await service.get_user_by_id(admin_user_id)
+
+    # Create audit log
+    await create_audit_log_async(
+        db=db,
+        user_id=str(admin_user_id),
+        action=action_name,
+        resource_type="user",
+        resource_id=str(user_id),
+        old_values={"status": old_status},
+        new_values={"status": new_status, "reason": status_data.reason},
+        request=request,
+        full_name=admin_user.full_name if admin_user else None,
+        user_email=admin_user.email if admin_user else None,
+    )
+
+    logger.info(f"User {user_id} {new_status} by admin {admin_user_id}")
+
+    # Build response
+    response_data = UserStatusResponse(
+        user_id=str(target_user.id),
+        full_name=target_user.full_name or target_user.display_name or target_user.email,
+        email=target_user.email,
+        old_status=old_status,
+        new_status=new_status,
+        changed_by=(
+            admin_user.full_name or admin_user.display_name or admin_user.email
+            if admin_user else "unknown"
+        ),
+        reason=status_data.reason,
+        changed_at=target_user.updated_at.isoformat(),
+    )
+
+    return success(
+        data=response_data.model_dump(),
+        request=request,
+        message=f"User {target_user.full_name or target_user.email} {new_status} successfully",
+    )
+
+
 @router.post("/{user_id}/suspend", response_model=UserStatusResponse)
 @require_permissions("user.update", workspace_scoped=False)
 @db_transaction_handler("suspend user", auto_commit=True)
@@ -33,7 +110,7 @@ async def suspend_user(
     request: Request,
     status_data: UserStatusRequest,
     current_user: dict = Depends(get_current_user),
-    db: AsyncSession = Depends(get_async_db)
+    db: AsyncSession = Depends(get_async_db),
 ):
     """
     Suspend a user account (admin only).
@@ -161,7 +238,7 @@ async def ban_user(
     request: Request,
     status_data: UserStatusRequest,
     current_user: dict = Depends(get_current_user),
-    db: AsyncSession = Depends(get_async_db)
+    db: AsyncSession = Depends(get_async_db),
 ):
     """
     Ban a user account (admin only).
