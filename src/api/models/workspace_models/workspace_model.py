@@ -2,14 +2,14 @@ from sqlalchemy import Column, String, DateTime, func, ForeignKey
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 from src.api.database.base import Base
-from src.api.models.base import SerializableMixin, SoftDeleteMixin
-from datetime import datetime, timezone
+from src.api.models.base import SerializableMixin
+from datetime import datetime
 import uuid
 
 # -------------------------
 # Workspace
 # -------------------------
-class WorkspaceModel(Base, SerializableMixin, SoftDeleteMixin):
+class WorkspaceModel(Base, SerializableMixin):
     __tablename__ = "workspace"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, unique=True, nullable=False)

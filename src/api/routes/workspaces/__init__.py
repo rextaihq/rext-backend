@@ -20,18 +20,11 @@ from .workspace_invitations import router as invitations_router
 from .workspace_permissions import router as permissions_router
 from .workspace_stats import router as stats_router
 from src.api.database.async_database import get_async_db
-from src.api.models.user_models.roles import Role
-from src.api.schema.workspace_schema import WorkspaceSchema
 from src.api.security.dependencies import get_current_user
-from src.services.workspace_service import WorkspaceService
-from src.utils.response_utils import created, success
 from src.utils.route_decorators import db_transaction_handler, require_permissions
-from src.api.middleware.exceptions import RextValidationException
-from src.api.middleware.usage_limiter import check_workspace_limit
 
-router = APIRouter(prefix="/workspace", tags=["workspace"])
+from fastapi import APIRouter
 
-router.include_router(core_router)
 # Add alias routes for frontend compatibility (plural "workspaces" vs singular "workspace")
 # This allows the frontend to call either endpoint with RESTful conventions
 workspaces_router = APIRouter(prefix="/workspaces", tags=["workspace"])
@@ -46,6 +39,8 @@ workspaces_router.include_router(stats_router)
 workspaces_router.add_api_route("", get_workspaces, methods=["GET"], name="get_workspaces_alias")
 workspaces_router.add_api_route("/slug/{workspace_slug}", get_workspace_by_slug, methods=["GET"], name="get_workspace_by_slug_alias")
 # Note: /{workspace_id} must be added AFTER all other specific routes to avoid capturing them
+
+
 
 
 # POST/PUT/DELETE endpoints - RESTful wrappers
@@ -191,4 +186,4 @@ async def get_available_roles(
 # Add parameterized routes LAST to avoid capturing specific routes
 workspaces_router.add_api_route("/{workspace_id}", get_workspace_by_id_path, methods=["GET"], name="get_workspace_by_id_restful")
 
-__all__ = ["router", "workspaces_router"]
+__all__ = ["workspaces_router"]

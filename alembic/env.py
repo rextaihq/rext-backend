@@ -2,6 +2,7 @@ from logging.config import fileConfig
 
 from sqlalchemy import engine_from_config
 from sqlalchemy import pool
+from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from alembic import context
@@ -20,14 +21,7 @@ load_dotenv()
 
 # Import SQLAlchemy Base and all models
 from src.api.database.base import Base
-from src.api.models.user_models.users import Users
-from src.api.models.user_models.roles import Role
-from src.api.models.user_models.permissions import Permission
-from src.api.models.user_models.user_roles import UserRole
-from src.api.models.user_models.role_permissions import RolePermission
-from src.api.models.user_models.invitations import UserInvitations
-from src.api.models.user_models.token_blacklist import TokenBlacklist
-from src.api.models.user_models.notification_preferences import NotificationPreferences
+
 from src.api.models.workspace_models.workspace_model import WorkspaceModel
 from src.api.models.workspace_models.workspace_member import WorkspaceMembers
 from src.api.models.workspace_models.workspace_integration import WorkspaceIntegration
@@ -114,8 +108,19 @@ def run_migrations_offline() -> None:
 
 async def run_async_migrations() -> None:
     """Run migrations in 'online' mode with async engine."""
+    # Parse and clean URL for asyncpg
+    url_obj = make_url(get_url())
+    query_dict = dict(url_obj.query)
+
+    # Remove unsupported params like sslmode
+    query_dict.pop("sslmode", None)
+    query_dict.pop("channel_binding", None)
+
+    # Rebuild URL safely
+    clean_url = url_obj._replace(query=query_dict)
+
     connectable = create_async_engine(
-        get_url(),
+        clean_url,
         poolclass=pool.NullPool,
     )
 

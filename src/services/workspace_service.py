@@ -925,7 +925,6 @@ class WorkspaceService:
         Raises:
             ResourceNotFoundException: If workspace not found
         """
-        from datetime import datetime
 
         # Verify ownership first
         await self.verify_user_is_workspace_owner(workspace_id, user_id )

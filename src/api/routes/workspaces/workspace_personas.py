@@ -1,8 +1,6 @@
 from uuid import UUID
-from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, Request, HTTPException, status
-from sqlalchemy import select
+from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.database.async_database import get_async_db
@@ -11,18 +9,20 @@ from src.api.models.knowledge_models.persona_model import Persona
 from src.api.schema.persona_schema import PersonaCreate, PersonaUpdate, PersonaResponse
 from src.utils.route_decorators import db_transaction_handler, require_permissions
 from src.utils.workspace_utils import resolve_workspace_for_route
+from src.services.workspace_permission_service import WorkspacePermissionService
+from src.utils.rbac_utils import get_user_permissions, get_user_roles
+from src.utils.response_utils import success
+from src.utils.workspace_utils import async_get_workspace_id_from_identifier
 from src.utils.logger import logger
+from src.utils.route_decorators import require_permissions
 
-router = APIRouter(tags=["workspace-personas"])
+router = APIRouter(tags=["Workspace Permissions"])
 
 
-@router.get("/{workspace_id}/personas")
-@db_transaction_handler("get workspace personas", auto_commit=False)
-@require_permissions("workspace.read", workspace_scoped=True)
-async def get_workspace_personas(
+@router.get("/{workspace_id}/permissions/me")
+@require_permissions("member.read", workspace_scoped=True)
+async def get_my_workspace_permissions(
     workspace_id: str,
-    request: Request,
-    db: AsyncSession = Depends(get_async_db),
     user: dict = Depends(get_current_user),
 ):
     """
@@ -83,9 +83,7 @@ async def get_persona(
 @require_permissions("workspace.create", workspace_scoped=True)
 async def create_persona(
     workspace_id: str,
-    persona_data: PersonaCreate,
-    request: Request,
-    db: AsyncSession = Depends(get_async_db),
+    permission: str,
     user: dict = Depends(get_current_user),
 ):
     """Create a new persona manually."""
@@ -173,13 +171,11 @@ async def update_persona(
     return persona.to_dict()
 
 
-@router.delete("/{workspace_id}/personas/{persona_id}", status_code=status.HTTP_204_NO_CONTENT)
-@db_transaction_handler("delete persona", auto_commit=True)
-@require_permissions("workspace.delete", workspace_scoped=True)
-async def delete_persona(
+@router.post("/{workspace_id}/permissions/refresh")
+@require_permissions("member.read", workspace_scoped=True)
+async def refresh_workspace_permissions(
     workspace_id: str,
-    persona_id: str,
-    request: Request,
+    user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_async_db),
     user: dict = Depends(get_current_user),
 ):

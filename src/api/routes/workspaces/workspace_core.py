@@ -1,17 +1,24 @@
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
+from src.api.models.user_models.roles import Role
 from uuid import UUID
 
 from src.utils.logger import logger
-from src.utils.response_utils import success
+from src.utils.response_utils import success, error, created
 from src.utils.route_decorators import db_transaction_handler, require_permissions
 from src.utils.auth_utils import verify_current_user
 from src.api.database.async_database import get_async_db
 from src.api.security.dependencies import get_current_user
 from src.api.middleware.exceptions import (
     ResourceNotFoundException,
+    RextValidationException,
 )
+from src.api.schema.workspace_schema import WorkspaceSchema,WorkspaceUpdateSchema
+from src.api.middleware.usage_limiter import check_workspace_limit
 from src.services.workspace_service import WorkspaceService
+
+
 
 router = APIRouter()
 
@@ -24,6 +31,54 @@ router = APIRouter()
 async def get_status(request: Request) -> dict:
     """Health check for workspace service"""
     return {"status": "operational", "service": "workspace_service"}
+
+
+# -------------------------
+# Create workspace
+# -------------------------
+@router.post("/")
+@require_permissions("workspace.create", workspace_scoped=False)
+@db_transaction_handler("create workspace", auto_commit=True)
+async def create_workspace(
+    data: WorkspaceSchema,
+    request: Request,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: dict = Depends(get_current_user),
+    _: None = Depends(check_workspace_limit()),
+):
+    """
+    Create a new workspace for the current user.
+
+    Returns immediately with workspace metadata and an operation identifier for
+    tracking background processing via SSE.
+    """
+    if not data.name:
+        raise RextValidationException(
+            message="Workspace name is required",
+            field_errors={"name": ["Name must be provided"]},
+        )
+
+    if not data.url:
+        raise RextValidationException(
+            message="Workspace URL is required",
+            field_errors={"url": ["URL must be provided and valid"]},
+        )
+
+    user_id = UUID(str(current_user.get("identity")))
+    service = WorkspaceService(db)
+    result = await service.create_workspace_for_user(
+        user_id=user_id,
+        name=data.name,
+        timezone=data.timezone,
+        url=str(data.url),
+    )
+
+    return created(
+        data=result,
+        request=request,
+        message="Workspace created successfully. Background processing initiated.",
+    )
+
 
 
 # -------------------------
@@ -251,8 +306,8 @@ async def delete_workspace_endpoint(
 
     # Send confirmation email
     try:
-        from src.services.email_service import EmailService
-        from datetime import timezone, timedelta
+        from datetime import datetime, timedelta, timezone
+
         email_service = EmailService(db)
         recovery_date = (datetime.now(timezone.utc) + timedelta(days=30)).strftime("%B %d, %Y")
 
@@ -280,6 +335,56 @@ async def delete_workspace_endpoint(
         )
 
     return {
-        "message": "Workspace deleted successfully. 30-day recovery period active.",
-        "remaining_workspaces": remaining_after_delete
+        "message": "Workspace deleted successfully. You have 30 days to recover it if needed.",
+        "recovery_period_days": 30,
+        "remaining_workspaces": remaining_after_delete,
+        "is_last_workspace": remaining_after_delete == 0
     }
+
+
+# -------------------------
+# Get available roles
+# -------------------------
+@router.get("/available-roles")
+@db_transaction_handler("get available roles", auto_commit=False)
+async def get_available_roles(
+    request: Request,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Get available roles for workspace member invitations.
+
+    Returns workspace roles that can be assigned to workspace members.
+    Uses is_workspace_role flag for proper role classification.
+    """
+    # Fetch all workspace roles ordered by hierarchy
+    query = (
+        select(Role)
+        .where(Role.is_workspace_role == True)
+        .order_by(Role.hierarchy_level.desc())
+    )
+    result = await db.execute(query)
+    roles = result.scalars().all()
+
+    roles_data = [
+        {
+            "id": str(role.id),
+            "name": role.name,
+            "display_name": role.display_name,
+            "description": role.description,
+            "is_system_role": role.is_system_role,
+            "is_workspace_role": role.is_workspace_role,
+            "hierarchy_level": role.hierarchy_level,
+            "created_at": role.created_at.isoformat() if role.created_at else None,
+            "updated_at": role.updated_at.isoformat() if role.updated_at else None,
+        }
+        for role in roles
+    ]
+
+    return success(
+        data={"roles": roles_data, "total_count": len(roles_data)},
+        request=request,
+        message=f"Retrieved {len(roles_data)} available role(s)",
+    )
+

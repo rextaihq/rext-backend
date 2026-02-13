@@ -1,92 +1,65 @@
-"""
-License Activation model for tracking individual device/instance activations.
-
-This model records each activation of a license key to a specific device or instance,
-enabling activation limit enforcement and management.
-"""
-
-import uuid
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Optional
 
 from sqlalchemy import Column, String, ForeignKey, DateTime, Boolean, Index
 from sqlalchemy.dialects.postgresql import UUID, JSONB
-from sqlalchemy.orm import relationship, Mapped, mapped_column
+from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
 from src.api.database.base import Base
 from src.api.models.base import SerializableMixin
+from src.api.models.mixins import UUIDPrimaryKeyMixin
 
 
-class LicenseActivation(Base, SerializableMixin):
-    """
-    Track individual license activations to devices/instances.
-
-    Each record represents one activation of a license key to a specific
-    device, domain, or instance identifier.
-    """
-
+class LicenseActivation(Base, SerializableMixin, UUIDPrimaryKeyMixin):
     __tablename__ = "license_activations"
 
-    # Primary key
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
-        primary_key=True,
-        default=uuid.uuid4,
-        unique=True,
-        nullable=False
-    )
-
-    # Foreign keys
-    license_id: Mapped[uuid.UUID] = mapped_column(
+    # id provided by mixin
+    license_id = Column(
         UUID(as_uuid=True),
         ForeignKey("licenses.id", ondelete="CASCADE"),
         nullable=False,
         index=True
     )
 
-    # Activation details
-    instance_id: Mapped[str] = mapped_column(
+    instance_id = Column(
         String(255),
         nullable=False,
         index=True,
         comment="Device ID, domain, or unique instance identifier"
     )
 
-    instance_name: Mapped[Optional[str]] = mapped_column(
+    instance_name = Column(
         String(255),
         nullable=True,
         comment="Human-readable name for the instance"
     )
 
-    # Status
-    is_active: Mapped[bool] = mapped_column(
+    is_active = Column(
         Boolean,
         default=True,
         nullable=False,
         index=True
     )
 
-    # Timestamps
-    activated_at: Mapped[datetime] = mapped_column(
+    activated_at = Column(
         DateTime(timezone=True),
         nullable=False,
         server_default=func.current_timestamp()
     )
 
-    deactivated_at: Mapped[Optional[datetime]] = mapped_column(
+    deactivated_at = Column(
         DateTime(timezone=True),
         nullable=True
     )
 
-    last_checked_at: Mapped[Optional[datetime]] = mapped_column(
+    last_checked_at = Column(
         DateTime(timezone=True),
         nullable=True,
         comment="Last time this activation was validated/checked"
     )
 
-    # Metadata
-    activation_metadata: Mapped[dict] = mapped_column(
+    activation_metadata = Column(
         JSONB,
         default=dict,
         nullable=False,
@@ -125,7 +98,7 @@ class LicenseActivation(Base, SerializableMixin):
         return data
 
     def deactivate(self):
-        """Mark this activation as inactive."""
+        from datetime import timezone
         self.is_active = False
         self.deactivated_at = datetime.now(timezone.utc)
 
