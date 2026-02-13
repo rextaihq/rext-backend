@@ -5,7 +5,7 @@ from src.flow.model.structure.topics import SEOTopics
 from src.flow.model.llm_manager import load_model
 from langgraph.types import interrupt
 from langchain_core.messages import SystemMessage, HumanMessage
-from src.flow.model.structure.intent_suggession import INTENT_TO_CONTENT_TYPES
+from src.flow.model.structure.intent_suggestion import INTENT_TO_CONTENT_TYPES
 
 logger = logging.getLogger(__name__)
 

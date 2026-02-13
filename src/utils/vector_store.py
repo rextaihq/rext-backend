@@ -40,7 +40,7 @@ def load_yaml(file_path: str = "config/config.yaml") -> dict:
 
     with open(abs_path, "r") as f:
         content = yaml.safe_load(f) or {}
-        logger.info("✅ Loaded config from", path=abs_path)
+        logger.info("Loaded config from", path=abs_path)
         return content
 
 
@@ -153,7 +153,7 @@ def add_to_vector_store(
     # Convert blog_context into LangChain Document objects
     uuids = [str(uuid4()) for _ in documents_with_metadata]
 
-    logger.info(f"\n📦 Preparing to insert {len(documents_with_metadata)} documents into FAISS...\n")
+    logger.info(f"\nPreparing to insert {len(documents_with_metadata)} documents into FAISS...\n")
 
     for i in tqdm(range(0, len(documents_with_metadata), batch_size), desc="Embedding & Inserting", unit="batch"):
         try:
@@ -164,11 +164,11 @@ def add_to_vector_store(
             logger.error(f"Error during batch insertion after retries: {str(e)}", exc_info=True)
             return False
 
-    logger.info("✅ Documents successfully inserted into FAISS")
+    logger.info("Documents successfully inserted into FAISS")
 
     # Save index
     vector_store.save_local(vector_store_path)
-    logger.info(f"💾 Vector store saved at {vector_store_path}")
+    logger.info(f"Vector store saved at {vector_store_path}")
     return True
 
 @retry(

@@ -160,3 +160,4 @@ class SEORESULT(TypedDict, total=False):
     serp_features: SERPFeatureImpactState
     seo_strategy: SEOStrategyState
     seo_opportunity: SEOOpportunityState 
+    keyword_iteration_count: int  # Tracks keyword router loop iterations

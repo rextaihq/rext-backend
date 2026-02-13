@@ -8,7 +8,13 @@ from datetime import datetime, timezone
 
 
 class Persona(Base, SerializableMixin):
-    """Persona model - Stores extracted user personas for workspaces...."""
+    """Persona model — stores extracted user personas for workspaces.
+
+    Each persona belongs to a workspace and captures either an expert persona
+    (with E-E-A-T professional fields) or a user/audience persona (with
+    demographics, pain points, goals, and behaviors).  Personas are used
+    during content generation to tailor tone, style, and subject-matter depth.
+    """
     __tablename__ = "persona"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, unique=True, nullable=False)

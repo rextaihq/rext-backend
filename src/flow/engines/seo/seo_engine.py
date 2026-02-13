@@ -11,7 +11,7 @@ def create_seo_engine():
     Flow:
     Parallel SEO analysis --> keyword_recommendation --> ROUTER --> Loop/Restart or END
     """
-    from src.flow.engines.router.keywword_router import keyword_router
+    from src.flow.engines.router.keyword_router import keyword_router
     from src.flow.engines.seo.seo_difficulty_engine.keyword_difficulty.keyword_difficulty import compute_keyword_difficulty
     from src.flow.engines.seo.competitors_gap import competitors_gap_node
     from src.flow.engines.seo.seo_opportunity import seo_opportunity_node

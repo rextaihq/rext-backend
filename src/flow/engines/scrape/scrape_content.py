@@ -10,6 +10,9 @@ from src.flow.engines.scrape.config.crawler_config import CrawlerConfiguration
 from src.flow.states.rext import REXT
 
 logger = logging.getLogger(__name__)
+import os
+
+MAX_SCRAPE_URLS = int(os.getenv("MAX_SCRAPE_URLS", "5"))  # Max URLs to scrape per workflow
 
 
 def _extract_headings(markdown_text: str) -> List[str]:
@@ -41,8 +44,18 @@ async def scrape_serp_content(state: REXT) -> Dict[str, Any]:
     query = serp_payload.get("query")
     crawler_config = CrawlerConfiguration(query=query)
 
-    urls = [item["link"] for item in organic_results if item.get("link")]
-    logger.info("Queued %d URLs for crawling", len(urls))
+    all_urls = [item["link"] for item in organic_results if item.get("link")]
+    urls = all_urls[:MAX_SCRAPE_URLS]
+    if len(all_urls) > MAX_SCRAPE_URLS:
+        logger.info(
+            "Limited scraping to %d of %d available URLs",
+            MAX_SCRAPE_URLS,
+            len(all_urls),
+            )
+    else:
+        logger.info("Queued %d URLs for crawling", len(urls))
+    # urls = [item["link"] for item in organic_results if item.get("link")]
+    # logger.info("Queued %d URLs for crawling", len(urls))
 
     browser_config = crawler_config.get_browser_config()
     run_config = crawler_config.get_run_config()
