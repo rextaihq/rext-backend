@@ -73,7 +73,7 @@ class CrawlerConfiguration(MarkdownGeneratorFactory):
             word_count_threshold=200,
             markdown_generator=self.get_markdown_generator(),
             remove_forms=True, # Optimization: remove forms
-            prettiify=True,
+            prettiify=True,  # NOTE: Intentional spelling — matches crawl4ai's parameter name
             parser_type="lxml",
             excluded_tags=[ # Scripts & styles
             "script",

@@ -37,7 +37,3 @@ class Persona(Base, SerializableMixin):
 
     # Relationships
     workspace = relationship("WorkspaceModel", back_populates="personas")
-
-    def to_dict(self, **kwargs):
-        """Serialize persona using mixin."""
-        return super().to_dict(**kwargs)
