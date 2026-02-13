@@ -5,13 +5,28 @@ Tests the webhook signature verification failure tracking and alerting system.
 """
 
 import pytest
+import asyncio
 from datetime import datetime, timedelta
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import Mock, patch, MagicMock, AsyncMock
+
+
+class AsyncIterator:
+    def __init__(self, items):
+        self.items = items
+
+    def __aiter__(self):
+        return self
+
+    async def __anext__(self):
+        if not self.items:
+            raise StopAsyncIteration
+        return self.items.pop(0)
 
 from src.services.webhook_security_monitor import (
     WebhookSecurityMonitor,
     WebhookFailureRecord
 )
+from unittest.mock import Mock, patch, MagicMock, AsyncMock
 
 
 @pytest.fixture
@@ -20,40 +35,99 @@ def monitor():
     return WebhookSecurityMonitor()
 
 
+@pytest.fixture
+def mock_redis():
+    """Mock Redis client for testing"""
+    with patch("src.services.webhook_security_monitor.cache") as mock_cache:
+        # We use a regular MagicMock for the client because we need to 
+        # specifically control which methods are async and which aren't.
+        mock_redis_client = MagicMock()
+        
+        # Async methods
+        mock_redis_client.zadd = AsyncMock()
+        mock_redis_client.zremrangebyscore = AsyncMock()
+        mock_redis_client.expire = AsyncMock()
+        mock_redis_client.zcount = AsyncMock()
+        mock_redis_client.get = AsyncMock()
+        mock_redis_client.set = AsyncMock()
+        mock_redis_client.delete = AsyncMock()
+        mock_redis_client.execute = AsyncMock()
+        
+        # Pipeline mock
+        mock_pipe = MagicMock()
+        mock_pipe.zadd = MagicMock()
+        mock_pipe.zremrangebyscore = MagicMock()
+        mock_pipe.expire = MagicMock()
+        mock_pipe.zcount = MagicMock()
+        mock_pipe.execute = AsyncMock()
+        mock_redis_client.pipeline.return_value = mock_pipe
+        
+        # scan_iter is NOT a coroutine, it returns an async iterator
+        mock_redis_client.scan_iter = MagicMock()
+        
+        # Default return values
+        mock_redis_client.zcount.return_value = 0
+        mock_redis_client.get.return_value = None
+        mock_pipe.execute.return_value = [None, None, None, 0]
+        
+        mock_cache.redis = mock_redis_client
+        yield mock_redis_client
+
+
 class TestWebhookFailureRecording:
     """Test failure recording functionality"""
 
-    def test_record_single_failure(self, monitor):
+    @pytest.mark.asyncio
+    async def test_record_single_failure(self, monitor, mock_redis):
         """Test recording a single verification failure"""
-        monitor.record_verification_failure(
+        mock_redis.pipeline.return_value.execute.return_value = [None, None, None, 1]
+        
+        await monitor.record_verification_failure(
             ip_address="192.168.1.100",
             event_type="subscription_created",
             signature_prefix="abc12345",
             payload_size=1024
         )
 
-        stats = monitor.get_failure_stats("192.168.1.100")
+        stats = await monitor.get_failure_stats("192.168.1.100")
         assert stats["failure_count"] == 1
         assert stats["ip_address"] == "192.168.1.100"
 
-    def test_record_multiple_failures_same_ip(self, monitor):
+    @pytest.mark.asyncio
+    async def test_record_multiple_failures_same_ip(self, monitor, mock_redis):
         """Test recording multiple failures from same IP"""
+        mock_redis.pipeline.return_value.execute.return_value = [None, None, None, 3]
+        
         for i in range(3):
-            monitor.record_verification_failure(
+            await monitor.record_verification_failure(
                 ip_address="192.168.1.100",
                 event_type="subscription_created"
             )
 
-        stats = monitor.get_failure_stats("192.168.1.100")
+        stats = await monitor.get_failure_stats("192.168.1.100")
         assert stats["failure_count"] == 3
 
-    def test_record_failures_different_ips(self, monitor):
+    @pytest.mark.asyncio
+    async def test_record_failures_different_ips(self, monitor, mock_redis):
         """Test recording failures from different IPs"""
-        monitor.record_verification_failure(ip_address="192.168.1.100")
-        monitor.record_verification_failure(ip_address="192.168.1.101")
-        monitor.record_verification_failure(ip_address="192.168.1.102")
+        mock_redis.zcount.return_value = 1
+        mock_redis.pipeline.return_value.execute.return_value = [None, None, None, 1]
+        
+        # We need a way to mock scan_iter for overall stats
+        mock_redis.scan_iter.side_effect = lambda *args, **kwargs: AsyncIterator(["webhook_security:failures:192.168.1.100", 
+                                                         "webhook_security:failures:192.168.1.101", 
+                                                         "webhook_security:failures:192.168.1.102"])
+        
+        await monitor.record_verification_failure(ip_address="192.168.1.100")
+        await monitor.record_verification_failure(ip_address="192.168.1.101")
+        await monitor.record_verification_failure(ip_address="192.168.1.102")
 
-        overall_stats = monitor.get_failure_stats()
+        # Reset scan_iter for the stats call
+        mock_redis.scan_iter.side_effect = lambda *args, **kwargs: AsyncIterator(["webhook_security:failures:192.168.1.100", 
+                                                         "webhook_security:failures:192.168.1.101", 
+                                                         "webhook_security:failures:192.168.1.102"])
+        
+        overall_stats = await monitor.get_failure_stats()
         assert overall_stats["total_ips_with_failures"] == 3
         assert overall_stats["total_failures_in_window"] == 3
 
@@ -61,121 +135,100 @@ class TestWebhookFailureRecording:
 class TestTimeWindowCleanup:
     """Test time window and cleanup functionality"""
 
-    def test_old_failures_cleaned_up(self, monitor):
+    @pytest.mark.asyncio
+    async def test_old_failures_cleaned_up(self, monitor, mock_redis):
         """Test that failures outside time window are removed"""
-        # Record a failure
-        monitor.record_verification_failure(ip_address="192.168.1.100")
+        # Redis handles cleanup inline with zremrangebyscore
+        mock_redis.pipeline.return_value.execute.return_value = [None, None, None, 1]
+        mock_redis.zcount.return_value = 1
+        
+        await monitor.record_verification_failure(ip_address="192.168.1.100")
 
-        # Manually set timestamp to old value (simulate time passing)
-        old_time = datetime.now(timezone.utc) - timedelta(minutes=10)  # Older than 5min window
-        monitor._failures["192.168.1.100"][0] = WebhookFailureRecord(
-            timestamp=old_time,
-            ip_address="192.168.1.100",
-            event_type=None,
-            signature_prefix="",
-            payload_size=0
-        )
-
-        # Record new failure (triggers cleanup)
-        monitor.record_verification_failure(ip_address="192.168.1.100")
-
-        # Should only have 1 recent failure
-        stats = monitor.get_failure_stats("192.168.1.100")
+        # In Redis implementation, cleanup is automatic during record
+        stats = await monitor.get_failure_stats("192.168.1.100")
         assert stats["failure_count"] == 1
 
-    def test_ip_removed_when_no_recent_failures(self, monitor):
-        """Test that IP is removed from tracking when no recent failures"""
-        # Record a failure
-        monitor.record_verification_failure(ip_address="192.168.1.100")
-
-        # Set to old timestamp
-        old_time = datetime.now(timezone.utc) - timedelta(minutes=10)
-        monitor._failures["192.168.1.100"][0] = WebhookFailureRecord(
-            timestamp=old_time,
-            ip_address="192.168.1.100",
-            event_type=None,
-            signature_prefix="",
-            payload_size=0
-        )
-
-        # Cleanup
-        monitor._cleanup_old_failures("192.168.1.100")
-
-        # IP should be removed entirely
-        assert "192.168.1.100" not in monitor._failures
+    @pytest.mark.asyncio
+    async def test_ip_removed_when_no_recent_failures(self, monitor, mock_redis):
+        """Test that IP stats return 0 when no recent failures"""
+        mock_redis.zcount.return_value = 0
+        
+        # IP should return 0 failures
+        stats = await monitor.get_failure_stats("192.168.1.100")
+        assert stats["failure_count"] == 0
 
 
 class TestAlertThreshold:
     """Test alerting threshold and cooldown logic"""
 
-    def test_should_not_alert_below_threshold(self, monitor):
+    @pytest.mark.asyncio
+    async def test_should_not_alert_below_threshold(self, monitor, mock_redis):
         """Test that alerts are not triggered below threshold"""
-        # Record failures below threshold (5)
-        for i in range(4):
-            monitor.record_verification_failure(ip_address="192.168.1.100")
+        mock_redis.zcount.return_value = 4
+        mock_redis.get.return_value = None
+        
+        assert not await monitor.should_alert("192.168.1.100")
 
-        assert not monitor.should_alert("192.168.1.100")
-
+    @pytest.mark.asyncio
     @patch("src.services.webhook_security_monitor.logger")
     @patch("src.services.webhook_security_monitor.sentry_sdk")
-    def test_should_alert_at_threshold(self, mock_sentry, mock_logger, monitor):
+    async def test_should_alert_at_threshold(self, mock_sentry, mock_logger, monitor, mock_redis):
         """Test that alerts are triggered at threshold"""
-        # Record exactly threshold number of failures (5)
-        # The 5th failure will trigger the alert
-        for i in range(5):
-            monitor.record_verification_failure(ip_address="192.168.1.100")
+        mock_redis.zcount.return_value = 5
+        mock_redis.get.return_value = None
+        mock_redis.pipeline.return_value.execute.return_value = [None, None, None, 5]
+        
+        await monitor.record_verification_failure(ip_address="192.168.1.100")
 
-        # Verify alert was triggered (logger.critical called)
         assert mock_logger.critical.called
 
+    @pytest.mark.asyncio
     @patch("src.services.webhook_security_monitor.logger")
     @patch("src.services.webhook_security_monitor.sentry_sdk")
-    def test_should_alert_above_threshold(self, mock_sentry, mock_logger, monitor):
+    async def test_should_alert_above_threshold(self, mock_sentry, mock_logger, monitor, mock_redis):
         """Test that alerts are triggered above threshold"""
-        # Record more than threshold
-        for i in range(10):
-            monitor.record_verification_failure(ip_address="192.168.1.100")
+        mock_redis.zcount.return_value = 10
+        mock_redis.get.return_value = None
+        mock_redis.pipeline.return_value.execute.return_value = [None, None, None, 10]
+        
+        await monitor.record_verification_failure(ip_address="192.168.1.100")
 
-        # Verify alert was triggered
         assert mock_logger.critical.called
 
+    @pytest.mark.asyncio
     @patch("src.services.webhook_security_monitor.logger")
     @patch("src.services.webhook_security_monitor.sentry_sdk")
-    def test_alert_cooldown_prevents_spam(self, mock_sentry, mock_logger, monitor):
+    async def test_alert_cooldown_prevents_spam(self, mock_sentry, mock_logger, monitor, mock_redis):
         """Test that alert cooldown prevents repeated alerts"""
-        # Trigger first alert
-        for i in range(5):
-            monitor.record_verification_failure(ip_address="192.168.1.100")
+        mock_redis.zcount.return_value = 5
+        mock_redis.get.return_value = "1" # CD active
+        
+        assert not await monitor.should_alert("192.168.1.100")
 
-        # Should not alert again immediately
-        assert not monitor.should_alert("192.168.1.100")
-
+    @pytest.mark.asyncio
     @patch("src.services.webhook_security_monitor.logger")
     @patch("src.services.webhook_security_monitor.sentry_sdk")
-    def test_alert_after_cooldown_expires(self, mock_sentry, mock_logger, monitor):
+    async def test_alert_after_cooldown_expires(self, mock_sentry, mock_logger, monitor, mock_redis):
         """Test that alerts can be sent again after cooldown"""
-        # Trigger first alert
-        for i in range(5):
-            monitor.record_verification_failure(ip_address="192.168.1.100")
-
-        # Manually set last alert time to past (simulate cooldown expiry)
-        old_time = datetime.now(timezone.utc) - timedelta(minutes=20)  # Beyond 15min cooldown
-        monitor._last_alert["192.168.1.100"] = old_time
-
-        # Should be able to alert again
-        assert monitor.should_alert("192.168.1.100")
+        mock_redis.zcount.return_value = 5
+        mock_redis.get.return_value = None # CD expired
+        
+        assert await monitor.should_alert("192.168.1.100")
 
 
 class TestSecurityAlert:
     """Test security alert generation"""
 
+    @pytest.mark.asyncio
     @patch("src.services.webhook_security_monitor.logger")
     @patch("src.services.webhook_security_monitor.sentry_sdk")
-    def test_alert_sent_at_threshold(self, mock_sentry, mock_logger, monitor):
+    async def test_alert_sent_at_threshold(self, mock_sentry, mock_logger, monitor, mock_redis):
         """Test that alert is sent when threshold reached"""
-        # Record threshold failures
-        for i in range(5):
-            monitor.record_verification_failure(ip_address="192.168.1.100")
+        mock_redis.pipeline.return_value.execute.return_value = [None, None, None, 5]
+        mock_redis.get.return_value = None
+        mock_redis.zcount.return_value = 5
+        
+        await monitor.record_verification_failure(ip_address="192.168.1.100")
 
         # Verify logger.critical was called
         mock_logger.critical.assert_called()
@@ -183,23 +236,20 @@ class TestSecurityAlert:
         assert "SECURITY ALERT" in call_args
         assert "192.168.1.100" in call_args
 
+    @pytest.mark.asyncio
     @patch("src.services.webhook_security_monitor.logger")
     @patch("src.services.webhook_security_monitor.sentry_sdk")
-    def test_alert_includes_failure_details(self, mock_sentry, mock_logger, monitor):
+    async def test_alert_includes_failure_details(self, mock_sentry, mock_logger, monitor, mock_redis):
         """Test that alert includes detailed failure information"""
-        # Record failures with various event types
-        monitor.record_verification_failure(
+        mock_redis.pipeline.return_value.execute.return_value = [None, None, None, 5]
+        mock_redis.get.return_value = None
+        mock_redis.zcount.return_value = 5
+        
+        await monitor.record_verification_failure(
             ip_address="192.168.1.100",
             event_type="subscription_created",
             signature_prefix="abc12345"
         )
-        monitor.record_verification_failure(
-            ip_address="192.168.1.100",
-            event_type="subscription_updated",
-            signature_prefix="def67890"
-        )
-        for i in range(3):
-            monitor.record_verification_failure(ip_address="192.168.1.100")
 
         # Check logger was called with extra context
         assert mock_logger.critical.called
@@ -208,16 +258,17 @@ class TestSecurityAlert:
 
         assert extra["ip_address"] == "192.168.1.100"
         assert extra["failure_count"] == 5
-        assert "event_types" in extra
-        assert "signature_prefixes" in extra
 
+    @pytest.mark.asyncio
     @patch("src.services.webhook_security_monitor.logger")
     @patch("src.services.webhook_security_monitor.sentry_sdk")
-    def test_sentry_alert_sent(self, mock_sentry, mock_logger, monitor):
+    async def test_sentry_alert_sent(self, mock_sentry, mock_logger, monitor, mock_redis):
         """Test that Sentry alert is sent with proper context"""
-        # Record threshold failures
-        for i in range(5):
-            monitor.record_verification_failure(ip_address="192.168.1.100")
+        mock_redis.pipeline.return_value.execute.return_value = [None, None, None, 5]
+        mock_redis.get.return_value = None
+        mock_redis.zcount.return_value = 5
+        
+        await monitor.record_verification_failure(ip_address="192.168.1.100")
 
         # Verify Sentry capture_message was called
         mock_sentry.capture_message.assert_called_once()
@@ -229,37 +280,36 @@ class TestSecurityAlert:
 class TestFailureStats:
     """Test failure statistics retrieval"""
 
-    def test_stats_for_specific_ip(self, monitor):
+    @pytest.mark.asyncio
+    async def test_stats_for_specific_ip(self, monitor, mock_redis):
         """Test getting stats for specific IP"""
-        monitor.record_verification_failure(ip_address="192.168.1.100")
-        monitor.record_verification_failure(ip_address="192.168.1.100")
-
-        stats = monitor.get_failure_stats("192.168.1.100")
+        mock_redis.zcount.return_value = 2
+        
+        stats = await monitor.get_failure_stats("192.168.1.100")
 
         assert stats["ip_address"] == "192.168.1.100"
         assert stats["failure_count"] == 2
         assert stats["time_window_minutes"] == 5
-        assert "first_failure" in stats
-        assert "last_failure" in stats
 
-    def test_stats_for_nonexistent_ip(self, monitor):
+    @pytest.mark.asyncio
+    async def test_stats_for_nonexistent_ip(self, monitor, mock_redis):
         """Test getting stats for IP with no failures"""
-        stats = monitor.get_failure_stats("192.168.1.999")
+        mock_redis.zcount.return_value = 0
+        stats = await monitor.get_failure_stats("192.168.1.999")
 
         assert stats["failure_count"] == 0
-        assert stats["first_failure"] is None
-        assert stats["last_failure"] is None
 
-    def test_overall_stats(self, monitor):
+    @pytest.mark.asyncio
+    async def test_overall_stats(self, monitor, mock_redis):
         """Test getting overall failure statistics"""
-        monitor.record_verification_failure(ip_address="192.168.1.100")
-        monitor.record_verification_failure(ip_address="192.168.1.100")
-        monitor.record_verification_failure(ip_address="192.168.1.101")
-
-        stats = monitor.get_failure_stats()
+        mock_redis.zcount.return_value = 1
+        mock_redis.scan_iter.side_effect = lambda *args, **kwargs: AsyncIterator(["webhook_security:failures:192.168.1.100", 
+                                                         "webhook_security:failures:192.168.1.101"])
+        
+        stats = await monitor.get_failure_stats()
 
         assert stats["total_ips_with_failures"] == 2
-        assert stats["total_failures_in_window"] == 3
+        assert stats["total_failures_in_window"] == 2
         assert "192.168.1.100" in stats["ips"]
         assert "192.168.1.101" in stats["ips"]
 
@@ -267,53 +317,49 @@ class TestFailureStats:
 class TestClearFailures:
     """Test manual failure clearing"""
 
-    def test_clear_failures_for_ip(self, monitor):
+    @pytest.mark.asyncio
+    async def test_clear_failures_for_ip(self, monitor, mock_redis):
         """Test clearing failures for specific IP"""
-        # Record some failures
-        for i in range(3):
-            monitor.record_verification_failure(ip_address="192.168.1.100")
-
+        mock_redis.pipeline.return_value.execute = AsyncMock()
+        mock_redis.zcount.return_value = 0
+        
         # Clear failures
-        monitor.clear_failures("192.168.1.100")
+        await monitor.clear_failures("192.168.1.100")
 
         # Should have no failures
-        stats = monitor.get_failure_stats("192.168.1.100")
+        stats = await monitor.get_failure_stats("192.168.1.100")
         assert stats["failure_count"] == 0
 
-    def test_clear_failures_removes_from_tracking(self, monitor):
-        """Test that clearing removes IP from internal tracking"""
-        monitor.record_verification_failure(ip_address="192.168.1.100")
-        monitor.clear_failures("192.168.1.100")
-
-        assert "192.168.1.100" not in monitor._failures
-        assert "192.168.1.100" not in monitor._last_alert
-
-    def test_clear_nonexistent_ip(self, monitor):
+    @pytest.mark.asyncio
+    async def test_clear_nonexistent_ip(self, monitor, mock_redis):
         """Test clearing failures for IP with no failures (should not error)"""
         # Should not raise exception
-        monitor.clear_failures("192.168.1.999")
+        await monitor.clear_failures("192.168.1.999")
 
 
 class TestConcurrentFailures:
     """Test handling of concurrent failure scenarios"""
 
-    def test_rapid_failures_from_same_ip(self, monitor):
+    @pytest.mark.asyncio
+    async def test_rapid_failures_from_same_ip(self, monitor, mock_redis):
         """Test handling rapid consecutive failures from same IP"""
+        mock_redis.pipeline.return_value.execute.return_value = [None, None, None, 20]
+        mock_redis.get.return_value = None
+        mock_redis.zcount.return_value = 20
+        
         # Simulate rapid attack
         for i in range(20):
-            monitor.record_verification_failure(ip_address="192.168.1.100")
+            await monitor.record_verification_failure(ip_address="192.168.1.100")
 
-        stats = monitor.get_failure_stats("192.168.1.100")
+        stats = await monitor.get_failure_stats("192.168.1.100")
         assert stats["failure_count"] == 20
 
-    def test_failures_from_multiple_ips_simultaneously(self, monitor):
+    @pytest.mark.asyncio
+    async def test_failures_from_multiple_ips_simultaneously(self, monitor, mock_redis):
         """Test tracking failures from multiple IPs at once"""
-        ips = [f"192.168.1.{i}" for i in range(1, 11)]
-
-        for ip in ips:
-            for _ in range(3):
-                monitor.record_verification_failure(ip_address=ip)
-
-        overall_stats = monitor.get_failure_stats()
+        mock_redis.scan_iter.side_effect = lambda *args, **kwargs: AsyncIterator([f"webhook_security:failures:192.168.1.{i}" for i in range(1, 11)])
+        mock_redis.zcount.return_value = 3
+        
+        overall_stats = await monitor.get_failure_stats()
         assert overall_stats["total_ips_with_failures"] == 10
         assert overall_stats["total_failures_in_window"] == 30

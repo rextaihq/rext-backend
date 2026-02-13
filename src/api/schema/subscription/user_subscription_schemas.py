@@ -6,7 +6,7 @@ This module defines Pydantic models for user subscription management.
 
 from pydantic import BaseModel, Field, ConfigDict
 from typing import Optional
-from .enums import BillingPeriod
+from .enums import BillingPeriod, SubscriptionStatus
 
 
 class SubscriptionCreateRequest(BaseModel):
@@ -80,7 +80,7 @@ class UserSubscriptionResponse(BaseModel):
     plan_id: str = Field(..., description="Plan UUID")
     plan_name: Optional[str] = Field(None, description="Plan name")
     plan_display_name: Optional[str] = Field(None, description="Plan display name")
-    status: str = Field(..., description="Subscription status")
+    status: SubscriptionStatus = Field(..., description="Subscription status")
     billing_period: str = Field(..., description="Billing period")
     start_date: str = Field(..., description="Subscription start date")
     end_date: Optional[str] = Field(None, description="Subscription end date")

@@ -47,7 +47,7 @@ def db_transaction_handler(
     auto_commit: bool = True,
     error_severity: ErrorSeverity = ErrorSeverity.HIGH,
     error_code: ErrorCode = ErrorCode.INTERNAL_SERVER_ERROR,
-    include_error_details: bool = True
+    include_error_details: bool = False
 ):
     """
     Decorator for automatic database transaction and error handling.
@@ -394,19 +394,7 @@ def require_permissions(
 
             # Check permissions using appropriate logic (AND or OR)
             check_func = check_all_permissions if require_all else check_any_permission
-            try:
-                has_permission = await check_func(db, user_id, list(permissions), workspace_uuid)
-            except Exception as e:
-                logger.error(
-                    f"Error checking permissions for {func.__name__}: {str(e)}",
-                    extra={
-                        "operation": func.__name__,
-                        "user_id": str(user_id),
-                        "workspace_id": str(workspace_uuid) if workspace_uuid else None,
-                        "permissions": list(permissions),
-                    }
-                )
-                has_permission = False
+            has_permission = await check_func(db, user_id, list(permissions), workspace_uuid)
 
             if not has_permission:
                 # Build permission requirement string for error message

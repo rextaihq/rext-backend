@@ -156,24 +156,26 @@ class DeclineInvitationRequest(BaseModel):
 class UpdateProfileRequest(BaseModel):
     """Schema for users to update their own profile (self-service)"""
     full_name: Optional[str] = Field(None, min_length=1, max_length=200, description="Full name")
-    display_name: Optional[str] = Field(None, min_length=1, max_length=200, description="Display name")
+    display_name: Optional[str] = Field(None, description="Display name")
     bio: Optional[str] = Field(None, max_length=500, description="User bio (max 500 characters)")
-    language: Optional[str] = Field(None, min_length=2, max_length=10, description="Language preference (e.g., 'en', 'es')")
-    timezone: Optional[str] = Field(None, min_length=1, max_length=50, description="Timezone (e.g., 'UTC', 'America/New_York')")
+    language: Optional[str] = Field(None, description="Language preference (e.g., 'en', 'es')")
+    timezone: Optional[str] = Field(None, description="Timezone (e.g., 'UTC', 'America/New_York')")
 
 
 class ProfileResponse(BaseModel):
     """Schema for profile response"""
     id: str
     email: str
-    full_name: Optional[str]
-    display_name: Optional[str]
-    language: str
-    timezone: str
+    full_name: Optional[str] = None
+    display_name: Optional[str] = None
+    bio: Optional[str] = None
+    language: str = "en"
+    timezone: str = "UTC"
     status: str
     email_verified: bool
-    created_at: str
-    updated_at: Optional[str]
+    avatar_url: Optional[str] = None
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
 
 
 class UserStatusRequest(BaseModel):

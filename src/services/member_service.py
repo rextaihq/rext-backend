@@ -18,7 +18,7 @@ Does NOT:
 
 from typing import Optional, List, Dict, Any
 from uuid import UUID
-from datetime import datetime, timezone
+from datetime import datetime,timezone
 
 from sqlalchemy import select, and_, func
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -176,6 +176,82 @@ class MemberService(InvitationService):
             "workspace_id": str(workspace_id),
             "removed_at": datetime.now(timezone.utc)
         }
+
+    async def get_workspace_member(
+        self,
+        workspace_id: UUID,
+        user_id: UUID
+    ) -> Dict[str, Any]:
+        """
+        Get a single workspace member with their role information.
+
+        Args:
+            workspace_id: Workspace UUID
+            user_id: User UUID
+
+        Returns:
+            Dict containing member data and workspace_role
+
+        Raises:
+            ResourceNotFoundException: If member not found in workspace
+        """
+        from src.api.models.user_models.user_roles import UserRole
+        from src.api.models.user_models.roles import Role
+
+        # Query the membership
+        result = await self.db.execute(
+            select(WorkspaceMembers).where(
+                and_(
+                    WorkspaceMembers.workspace_id == workspace_id,
+                    WorkspaceMembers.user_id == user_id
+                )
+            )
+        )
+        member = result.scalar_one_or_none()
+
+        if not member:
+            raise ResourceNotFoundException(
+                resource_type="WorkspaceMember",
+                resource_id=str(user_id),
+                context={"workspace_id": str(workspace_id)}
+            )
+
+        # Get the user's role in this workspace via UserRole join table
+        role_result = await self.db.execute(
+            select(Role)
+            .join(UserRole, UserRole.role_id == Role.id)
+            .where(
+                and_(
+                    UserRole.user_id == user_id,
+                    UserRole.workspace_id == workspace_id
+                )
+            )
+        )
+        role = role_result.scalar_one_or_none()
+
+        # Build the response dict matching the expected format
+        member_dict = member.to_dict()
+        
+        # Ensure role data is consistently structured
+        if role:
+            member_dict["workspace_role"] = {
+                "id": str(role.id),
+                "name": role.name,
+                "display_name": role.display_name
+            }
+        else:
+            member_dict["workspace_role"] = None
+
+        logger.debug(
+            f"Retrieved workspace member: user={user_id}, workspace={workspace_id}, role={role.name if role else 'none'}",
+            extra={
+                "user_id": str(user_id),
+                "workspace_id": str(workspace_id),
+                "has_role": role is not None
+            }
+        )
+
+        return member_dict
 
     async def get_workspace_members(
         self,

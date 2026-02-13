@@ -1,7 +1,7 @@
 """User subscription model."""
 import uuid
 from datetime import datetime, timezone
-from sqlalchemy import Column, String, Integer, Boolean, DateTime, ForeignKey, Enum as SQLEnum
+from sqlalchemy import Column, String, Integer, Boolean, DateTime, ForeignKey, Enum as SQLEnum, Text
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import relationship
 import enum
@@ -44,7 +44,7 @@ class UserSubscription(Base, SerializableMixin):
     end_date = Column(DateTime(timezone=True), nullable=True)  # Null for active subscriptions
     trial_end_date = Column(DateTime(timezone=True), nullable=True)
     cancelled_at = Column(DateTime(timezone=True), nullable=True)
-    cancellation_reason = Column(String(500), nullable=True, comment="User-provided reason for cancellation")
+    cancellation_reason = Column(Text, nullable=True) 
 
     # Payment Provider Integration (provider-agnostic)
     provider_subscription_id = Column(String(255), unique=True)

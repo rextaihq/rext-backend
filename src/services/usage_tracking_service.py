@@ -7,7 +7,7 @@ It calculates current usage against plan limits and provides real-time usage dat
 
 from typing import Dict, Any, Tuple, Optional
 from uuid import UUID
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_
 from sqlalchemy.orm import selectinload
@@ -35,17 +35,16 @@ class UsageTrackingService:
         """
         Get current usage metrics for a user.
 
-        Args:
-            user_id: User UUID
-
         Returns:
             Dictionary with usage metrics for each resource type:
             {
-                "workspaces": {"used": 3, "limit": 10, "percentage": 30},
-                "members": {"used": 15, "limit": 50, "percentage": 30},
-                "topics": {"used": 45, "limit": 100, "percentage": 45},
-                "knowledge_items": {"used": 230, "limit": 1000, "percentage": 23},
-                "api_calls": {"used": 450, "limit": 10000, "percentage": 4.5, "reset_date": "2025-11-12"}
+                "current_workspaces": 3,
+                "current_knowledge_items": 230,
+                "current_api_calls": 450,
+                "max_workspaces": 10,
+                "max_knowledge_items": 1000,
+                "max_api_calls_per_month": 10000,
+                ...
             }
         """
         # Get user's active subscription with plan eagerly loaded
@@ -116,7 +115,6 @@ class UsageTrackingService:
 
         return usage_data
 
-
     async def check_limit(
         self,
         user_id: UUID,
@@ -127,7 +125,8 @@ class UsageTrackingService:
 
         Args:
             user_id: User UUID
-            limit_type: Type of limit to check (workspaces, members, topics, knowledge_items, api_calls)
+            limit_type: Type of limit to check
+                        Valid values: "workspaces", "knowledge_items", "api_calls"
 
         Returns:
             Tuple of (within_limit, used, limit)
@@ -136,23 +135,28 @@ class UsageTrackingService:
             - limit: Limit value (None if unlimited)
         """
         usage = await self.get_usage_metrics(user_id)
-        limit_data = usage.get(limit_type)
 
-        if not limit_data:
+        # Map flat keys to check_limit keys
+        mapping = {
+            "workspaces": ("current_workspaces", "max_workspaces"),
+            "knowledge_items": ("current_knowledge_items", "max_knowledge_items"),
+            "api_calls": ("current_api_calls", "max_api_calls_per_month"),
+        }
+
+        if limit_type not in mapping:
             logger.warning(f"Unknown limit type: {limit_type}")
-            return (True, 0, None)
+            return True, 0, None
 
-        # Check if unlimited
-        if limit_data.get("unlimited", False):
-            return (True, limit_data["used"], None)
+        current_key, max_key = mapping[limit_type]
+        used = usage.get(current_key, 0) or 0
+        limit = usage.get(max_key)
 
-        used = limit_data["used"]
-        limit = limit_data["limit"]
+        # Unlimited if limit is None or <= 0
+        if limit is None or limit <= 0:
+            return True, used, None
 
-        # Within limit if usage is less than limit
-        within_limit = used < limit if limit is not None else True
-
-        return (within_limit, used, limit)
+        within_limit = used < limit
+        return within_limit, used, limit
 
     async def increment_api_calls(self, user_id: UUID) -> None:
         """

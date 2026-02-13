@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, Request, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
 from uuid import UUID
 import uuid
-import os
+
 
 from src.utils.logger import logger
 from src.api.security.dependencies import get_current_user
@@ -157,6 +157,14 @@ async def reset_password(
             reset_token=payload.token,
             new_password=payload.new_password
         )
+
+    # Reset password via service
+    service = UserService(db)
+    user = await service.reset_password_with_token(
+        reset_token=payload.token,
+        new_password=payload.new_password
+    )
+
     except ResourceNotFoundException:
         return error(
             message="Invalid or expired reset token",

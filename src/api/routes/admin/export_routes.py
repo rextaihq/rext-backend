@@ -108,12 +108,16 @@ async def export_invoices(
     await require_super_admin(db, admin_user_id)
 
     service = SubscriptionExportService(db)
-    csv_content = await service.export_invoices_csv(
-        status=status,
-        start_date=start_date,
-        end_date=end_date,
-        min_amount=min_amount
-    )
+    try:
+        csv_content = await service.export_invoices_csv(
+            status=status,
+            start_date=start_date,
+            end_date=end_date,
+            min_amount=min_amount
+        )
+    except NotImplementedError as e:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=501, detail=str(e))
 
     # Create streaming response
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")

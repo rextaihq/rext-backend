@@ -2,6 +2,9 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List
 from uuid import UUID
 import os
+from src.api.models.user_models.user_roles import UserRole
+from src.api.models.user_models.roles import Role
+from sqlalchemy import select
 
 from fastapi import APIRouter, Depends, Request, status, BackgroundTasks
 from sqlalchemy import select
@@ -71,9 +74,16 @@ async def send_role_changed_notification(
                 frontend_url=frontend_url
             )
 
-            logger.info(f"Sent role changed notification to {member_email}")
+            logger.info(
+                "Sent role changed notification",
+                extra={"recipient_email": member_email},
+            )
     except Exception as e:
-        logger.error(f"Failed to send role changed notification: {str(e)}", exc_info=True)
+        logger.error(
+            "Failed to send role changed notification",
+            extra={"error": str(e)},
+            exc_info=True,
+        )
 
 
 async def send_member_removed_notification(
@@ -106,9 +116,16 @@ async def send_member_removed_notification(
                 frontend_url=frontend_url
             )
 
-            logger.info(f"Sent member removed notification to {member_email}")
+            logger.info(
+                "Sent member removed notification",
+                extra={"recipient_email": member_email},
+            )
     except Exception as e:
-        logger.error(f"Failed to send member removed notification: {str(e)}", exc_info=True)
+        logger.error(
+            "Failed to send member removed notification",
+            extra={"error": str(e)},
+            exc_info=True,
+        )
 
 
 def _serialize_member(member: WorkspaceMembers, user: Users, role: Role = None) -> Dict[str, Any]:
@@ -252,16 +269,24 @@ async def remove_workspace_member(
         UUID(member_id), workspace.id
     )
 
-    # Validate member can be removed
-    if member.is_default:
+    # Validate member can be removed — check if they are the workspace owner by role
+    owner_role_check = await db.execute(
+        select(UserRole)
+        .join(Role, Role.id == UserRole.role_id)
+        .where(
+            UserRole.user_id == member.user_id,
+            UserRole.workspace_id == workspace.id,
+            Role.name == "workspace_owner",
+        )
+    )
+    if owner_role_check.scalar_one_or_none() is not None:
         raise RextValidationException(
             message="Cannot remove workspace owner",
             field_errors={
                 "member_id": ["This member is the workspace owner and cannot be removed"]
             },
-            error_code=ErrorCode.VALIDATION_FAILED,
-            error_severity=ErrorSeverity.ERROR,
         )
+
 
     # Get current user details for notification
     user_service = UserService(db)

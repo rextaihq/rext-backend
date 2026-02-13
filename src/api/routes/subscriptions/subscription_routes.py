@@ -24,7 +24,7 @@ from src.api.schema.subscription import (
 from src.api.models.user_models.users import Users
 from src.services.subscription_service import SubscriptionService
 from src.providers.payment.provider_factory import get_payment_provider_singleton
-from src.utils.response_utils import success, created
+from src.utils.response_utils import success, created, not_found, error
 from src.utils.route_decorators import db_transaction_handler, require_permissions
 from src.api.middleware.rate_limiter import (
     checkout_rate_limit,
@@ -424,6 +424,21 @@ async def cancel_subscription(
     current_user: dict = Depends(get_current_user),
     _rate_limit: None = Depends(subscription_cancel_rate_limit())
 ):
+    """
+    Cancel a subscription.
+
+    Cancels the user's active subscription either immediately or at the end
+    of the billing period, depending on cancel_immediately flag.
+
+    Body:
+    - reason: Cancellation reason (optional)
+    - cancel_immediately: If true, cancel now; if false, cancel at period end
+
+    Returns:
+    - HTTP 200: Subscription cancelled successfully
+    - HTTP 404: No active subscription found
+    - HTTP 500: Server error (handled by decorator)
+    """
     user_id = current_user.get("identity")
     service = SubscriptionService(db)
 
@@ -458,8 +473,6 @@ async def cancel_subscription(
     )
 
     # Return raw data - decorator handles success response formatting
-    # The developer-provided message will be used if success() is called by the decorator
-    # but since we want a specific dynamic message, we can call success() manually
     return success(
         data=subscription.to_dict(),
         request=request,
@@ -678,8 +691,9 @@ async def get_invoices(
 
     except Exception as e:
         logger.error(
-            f"Failed to retrieve invoices: {str(e)}",
-            extra={"user_id": str(user_id), "error": str(e)}
+            "Failed to retrieve invoices",
+            exc_info=True,
+            extra={"user_id": str(user_id)}
         )
         # Return empty list on error rather than failing
         return success(
