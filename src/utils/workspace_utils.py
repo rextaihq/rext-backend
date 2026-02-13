@@ -33,27 +33,32 @@ def is_valid_uuid(value) -> bool:
 
 async def resolve_workspace(db: AsyncSession, identifier: str) -> Optional[WorkspaceModel]:
     """
-    Resolve a workspace by either UUID or slug
+    Resolve a workspace by either UUID or slug.
+    Excludes soft-deleted workspaces (where deleted_at is not NULL).
 
     Args:
         db: Async database session
         identifier: Either a workspace UUID or slug
 
     Returns:
-        WorkspaceModel if found, None otherwise
-
-    Note: WorkspaceModel doesn't have soft delete (deleted_at), so all workspaces are returned.
+        WorkspaceModel if found and not deleted, None otherwise
     """
     if is_valid_uuid(identifier):
         # It's a UUID, query by ID
         result = await db.execute(
-            select(WorkspaceModel).where(WorkspaceModel.id == UUID(identifier))
+            select(WorkspaceModel).where(
+                WorkspaceModel.id == UUID(identifier),
+                WorkspaceModel.deleted_at.is_(None)
+            )
         )
         return result.scalar_one_or_none()
     else:
         # It's a slug, query by slug
         result = await db.execute(
-            select(WorkspaceModel).where(WorkspaceModel.slug == identifier)
+            select(WorkspaceModel).where(
+                WorkspaceModel.slug == identifier,
+                WorkspaceModel.deleted_at.is_(None)
+            )
         )
         return result.scalar_one_or_none()
 
@@ -101,6 +106,7 @@ async def verify_workspace_membership(
         .join(WorkspaceMembers, WorkspaceMembers.workspace_id == WorkspaceModel.id)
         .where(
             WorkspaceModel.id == workspace_id,
+            WorkspaceModel.deleted_at.is_(None),
             WorkspaceMembers.user_id == user_id
         )
     )
