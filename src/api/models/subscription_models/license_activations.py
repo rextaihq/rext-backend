@@ -87,16 +87,6 @@ class LicenseActivation(Base, SerializableMixin, UUIDPrimaryKeyMixin):
             f"instance={self.instance_id}, active={self.is_active})>"
         )
 
-    def to_dict(self, **kwargs):
-        """Custom serialization."""
-        data = super().to_dict(**kwargs)
-        # Convert UUIDs to strings
-        if 'id' in data and isinstance(data['id'], uuid.UUID):
-            data['id'] = str(data['id'])
-        if 'license_id' in data and isinstance(data['license_id'], uuid.UUID):
-            data['license_id'] = str(data['license_id'])
-        return data
-
     def deactivate(self):
         from datetime import timezone
         self.is_active = False

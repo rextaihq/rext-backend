@@ -86,4 +86,11 @@ class DiscountUsage(Base, SerializableMixin, UUIDPrimaryKeyMixin):
     user = relationship("Users", back_populates="discount_usages", lazy="joined")
     subscription = relationship("UserSubscription", back_populates="discount_usages", lazy="select")
 
+    def to_dict(self, **kwargs):
+        """Convert model to dictionary, renaming metadata for API compatibility."""
+        data = super().to_dict(**kwargs)
+        if 'usage_metadata' in data:
+            data['metadata'] = data.pop('usage_metadata')
+        return data
+
 

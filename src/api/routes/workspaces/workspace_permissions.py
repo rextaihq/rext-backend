@@ -7,7 +7,7 @@ These endpoints are critical for frontend permission checks in a multi-tenant en
 
 from uuid import UUID
 
-from fastapi import APIRouter, Depends,HTTPException,status
+from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.database.async_database import get_async_db

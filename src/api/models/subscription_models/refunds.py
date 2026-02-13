@@ -84,12 +84,12 @@ class Refund(Base, SerializableMixin):
     # TIMESTAMPS
     # ==============================
     processed_at = Column(DateTime(timezone=True), nullable=True)
-    created_at = Column(DateTime(timezone=True), nullable=False, default=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
     updated_at = Column(
         DateTime(timezone=True),
         nullable=False,
-        default=datetime.utcnow,
-        onupdate=datetime.utcnow,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
     )
 
     # ==============================
@@ -105,22 +105,3 @@ class Refund(Base, SerializableMixin):
             f"amount={self.refund_amount}, "
             f"status={self.status})>"
         )
-
-    def to_dict(self) -> dict:
-        """Convert refund to dictionary."""
-        return {
-            "id": str(self.id),
-            "user_id": str(self.user_id),
-            "subscription_id": str(self.subscription_id) if self.subscription_id else None,
-            "lemonsqueezy_order_id": self.lemonsqueezy_order_id,
-            "lemonsqueezy_refund_id": self.lemonsqueezy_refund_id,
-            "refund_amount": self.refund_amount,
-            "original_amount": self.original_amount,
-            "currency": self.currency,
-            "reason": self.reason,
-            "status": self.status.value if isinstance(self.status, RefundStatus) else self.status,
-            "is_partial": self.is_partial,
-            "processed_at": self.processed_at.isoformat() if self.processed_at else None,
-            "created_at": self.created_at.isoformat() if self.created_at else None,
-            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
-        }

@@ -1,5 +1,5 @@
 """Trial conversion tracking model."""
-from datetime import datetime
+from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Optional
 
@@ -44,7 +44,7 @@ class TrialConversion(Base, SerializableMixin, UUIDPrimaryKeyMixin, TimestampMix
 
     converted_at = Column(
         DateTime(timezone=True),
-        default=datetime.utcnow,
+        default=lambda: datetime.now(timezone.utc),
         nullable=False,
         index=True,
         comment="When trial converted to paid"

@@ -1,26 +1,26 @@
-from sqlalchemy import Column, String, DateTime, func, ForeignKey
-from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.orm import relationship
+from datetime import datetime, timezone
+import uuid
+from typing import Optional, List
+from sqlalchemy import String, ForeignKey
+from sqlalchemy.orm import relationship, Mapped, mapped_column
 from src.api.database.base import Base
 from src.api.models.base import SerializableMixin
-from datetime import datetime
-import uuid
+from src.api.models.mixins import UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin
+
 
 # -------------------------
 # Workspace
 # -------------------------
-class WorkspaceModel(Base, SerializableMixin):
+class WorkspaceModel(Base, SerializableMixin, UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
     __tablename__ = "workspace"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, unique=True, nullable=False)
-    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
-    name = Column(String, nullable=False)
-    slug = Column(String, unique=True, nullable=False, index=True)
-    timezone = Column(String(50), nullable=True)  # IANA timezone identifier (e.g., America/New_York, UTC)
-    url = Column(String, nullable=True)
-    created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
-    updated_at = Column(DateTime(timezone=True), nullable=True, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
-    deleted_by = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)  # User who deleted
+    # id, created_at, updated_at, deleted_at provided by mixins
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String, nullable=False)
+    slug: Mapped[str] = mapped_column(String, unique=True, nullable=False, index=True)
+    timezone: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)  # IANA timezone identifier
+    url: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    deleted_by: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
 
     # Relationships
     owner = relationship("Users", foreign_keys=[user_id], back_populates="workspaces")

@@ -1,14 +1,16 @@
-from sqlalchemy import Column, String, Boolean, DateTime, ForeignKey, Text
-from sqlalchemy.dialects.postgresql import UUID, JSONB
-from sqlalchemy.orm import relationship
-from src.api.database.base import Base
-from src.api.models.base import SerializableMixin, SoftDeleteMixin
-from src.utils.encryption import EncryptedText
 from datetime import datetime, timezone
 import uuid
+from typing import Optional, Any, Dict, List
+from sqlalchemy import String, Boolean, DateTime, ForeignKey, Text
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.orm import relationship, Mapped, mapped_column
+from src.api.database.base import Base
+from src.api.models.base import SerializableMixin
+from src.api.models.mixins import UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin
+from src.utils.encryption import EncryptedText
 
 
-class WorkspaceIntegration(Base, SerializableMixin, SoftDeleteMixin):
+class WorkspaceIntegration(Base, SerializableMixin, UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
     """
     Connected Site Model
 
@@ -17,25 +19,20 @@ class WorkspaceIntegration(Base, SerializableMixin, SoftDeleteMixin):
     """
     __tablename__ = "integrations"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, unique=True, nullable=False)
-    workspace_id = Column(UUID(as_uuid=True), ForeignKey("workspace.id", ondelete="CASCADE"), nullable=False, index=True)
-    integration_type = Column(String(50), nullable=False, default="wordpress", index=True)
-    is_active = Column(Boolean, default=True, nullable=False)
+    # id, created_at, updated_at, deleted_at provided by mixins
+    workspace_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("workspace.id", ondelete="CASCADE"), nullable=False, index=True)
+    integration_type: Mapped[str] = mapped_column(String(50), nullable=False, default="wordpress", index=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
     # WordPress specific fields
-    site_url = Column(String(500), nullable=True, comment="WordPress site URL")
-    api_endpoint = Column(String(500), nullable=True, comment="Rext-AI Plugin Base Endpoint")
-    username = Column(String(255), nullable=True, comment="WordPress username")
-    app_password = Column(EncryptedText, nullable=True, comment="WordPress application password (encrypted)")
-    api_key = Column(EncryptedText, nullable=True, comment="WordPress Rext-AI API Key (encrypted)")
+    site_url: Mapped[Optional[str]] = mapped_column(String(500), nullable=True, comment="WordPress site URL")
+    api_endpoint: Mapped[Optional[str]] = mapped_column(String(500), nullable=True, comment="Rext-AI Plugin Base Endpoint")
+    username: Mapped[Optional[str]] = mapped_column(String(255), nullable=True, comment="WordPress username")
+    app_password: Mapped[Optional[str]] = mapped_column(EncryptedText, nullable=True, comment="WordPress application password (encrypted)")
+    api_key: Mapped[Optional[str]] = mapped_column(EncryptedText, nullable=True, comment="WordPress Rext-AI API Key (encrypted)")
 
     # Additional configuration (JSON)
-    config_json = Column(JSONB, nullable=True, comment="Additional integration configuration and settings")
-
-    # Timestamps
-    created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
-    updated_at = Column(DateTime(timezone=True), nullable=True, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
-    deleted_at = Column(DateTime(timezone=True), nullable=True)
+    config_json: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSONB, nullable=True, comment="Additional integration configuration and settings")
 
     # Relationships
     workspace = relationship("WorkspaceModel", back_populates="integrations")
@@ -55,12 +52,19 @@ class WorkspaceIntegration(Base, SerializableMixin, SoftDeleteMixin):
             Dictionary representation with UUIDs and datetimes converted to strings.
         """
         # Build exclude list - always exclude credentials unless explicitly requested
-        exclude = kwargs.pop('exclude', []) or []
+        exclude = kwargs.get('exclude', []) or []
+        if isinstance(exclude, str):
+            exclude = [exclude]
+        else:
+            exclude = list(exclude)
+
         if not include_credentials:
             exclude.extend(['app_password', 'api_key'])
 
+        kwargs['exclude'] = exclude
+
         # Use parent's to_dict which handles UUID/datetime conversion
-        data = super().to_dict(exclude=exclude, **kwargs)
+        data = super().to_dict(**kwargs)
 
         # Add status flags for UI (indicates if secrets are present without exposing them)
         data["has_app_password"] = self.app_password is not None and len(self.app_password) > 0

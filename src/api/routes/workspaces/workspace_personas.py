@@ -1,29 +1,33 @@
-from uuid import UUID
+"""Workspace personas management routes."""
 
-from fastapi import APIRouter, Depends
+from uuid import UUID
+from datetime import datetime, timezone
+
+from fastapi import APIRouter, Depends, Request, status
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.database.async_database import get_async_db
 from src.api.security.dependencies import get_current_user
 from src.api.models.knowledge_models.persona_model import Persona
-from src.api.schema.persona_schema import PersonaCreate, PersonaUpdate, PersonaResponse
+from src.api.schema.persona_schema import PersonaCreate, PersonaUpdate
+from src.api.middleware.exceptions import ResourceNotFoundException
 from src.utils.route_decorators import db_transaction_handler, require_permissions
 from src.utils.workspace_utils import resolve_workspace_for_route
-from src.services.workspace_permission_service import WorkspacePermissionService
-from src.utils.rbac_utils import get_user_permissions, get_user_roles
-from src.utils.response_utils import success
-from src.utils.workspace_utils import async_get_workspace_id_from_identifier
+from src.utils.response_utils import created, no_content
 from src.utils.logger import logger
-from src.utils.route_decorators import require_permissions
 
-router = APIRouter(tags=["Workspace Permissions"])
+router = APIRouter(tags=["workspace-personas"])
 
 
-@router.get("/{workspace_id}/permissions/me")
-@require_permissions("member.read", workspace_scoped=True)
-async def get_my_workspace_permissions(
+@router.get("/{workspace_id}/personas")
+@require_permissions("workspace.read", workspace_scoped=True)
+@db_transaction_handler("get all workspace personas", auto_commit=False)
+async def list_workspace_personas(
     workspace_id: str,
+    db: AsyncSession = Depends(get_async_db),
     user: dict = Depends(get_current_user),
+    request: Request = None,
 ):
     """
     Get all personas for a workspace.
@@ -48,14 +52,14 @@ async def get_my_workspace_permissions(
 
 
 @router.get("/{workspace_id}/personas/{persona_id}")
-@db_transaction_handler("get single persona", auto_commit=False)
 @require_permissions("workspace.read", workspace_scoped=True)
+@db_transaction_handler("get single persona", auto_commit=False)
 async def get_persona(
     workspace_id: str,
     persona_id: str,
-    request: Request,
     db: AsyncSession = Depends(get_async_db),
     user: dict = Depends(get_current_user),
+    request: Request = None,
 ):
     """Get a single persona by ID."""
     workspace, _ = await resolve_workspace_for_route(db=db, workspace_identifier=workspace_id, user=user)
@@ -70,20 +74,22 @@ async def get_persona(
     persona = result.scalar_one_or_none()
     
     if not persona:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Persona not found"
+        raise ResourceNotFoundException(
+            resource_type="persona",
+            resource_id=persona_id,
         )
     
     return persona.to_dict()
 
 
 @router.post("/{workspace_id}/personas", status_code=status.HTTP_201_CREATED)
-@db_transaction_handler("create persona", auto_commit=True)
 @require_permissions("workspace.create", workspace_scoped=True)
+@db_transaction_handler("create persona", auto_commit=True)
 async def create_persona(
     workspace_id: str,
-    permission: str,
+    persona_data: PersonaCreate,
+    request: Request,
+    db: AsyncSession = Depends(get_async_db),
     user: dict = Depends(get_current_user),
 ):
     """Create a new persona manually."""
@@ -118,19 +124,23 @@ async def create_persona(
         },
     )
     
-    return persona.to_dict()
+    return created(
+        data=persona.to_dict(),
+        request=request,
+        message="Persona created successfully"
+    )
 
 
 @router.put("/{workspace_id}/personas/{persona_id}")
-@db_transaction_handler("update persona", auto_commit=True)
 @require_permissions("workspace.update", workspace_scoped=True)
+@db_transaction_handler("update persona", auto_commit=True)
 async def update_persona(
     workspace_id: str,
     persona_id: str,
     persona_data: PersonaUpdate,
-    request: Request,
     db: AsyncSession = Depends(get_async_db),
     user: dict = Depends(get_current_user),
+    request: Request = None,
 ):
     """Update an existing persona."""
     workspace, _ = await resolve_workspace_for_route(db=db, workspace_identifier=workspace_id, user=user)
@@ -145,9 +155,9 @@ async def update_persona(
     persona = result.scalar_one_or_none()
     
     if not persona:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Persona not found"
+        raise ResourceNotFoundException(
+            resource_type="persona",
+            resource_id=persona_id,
         )
     
     # Update fields
@@ -155,7 +165,6 @@ async def update_persona(
     for field, value in update_data.items():
         setattr(persona, field, value)
     
-    from datetime import timezone
     persona.updated_at = datetime.now(timezone.utc)
     await db.flush()
     await db.refresh(persona)
@@ -171,11 +180,13 @@ async def update_persona(
     return persona.to_dict()
 
 
-@router.post("/{workspace_id}/permissions/refresh")
-@require_permissions("member.read", workspace_scoped=True)
-async def refresh_workspace_permissions(
+@router.delete("/{workspace_id}/personas/{persona_id}", status_code=status.HTTP_204_NO_CONTENT)
+@require_permissions("workspace.delete", workspace_scoped=True)
+@db_transaction_handler("delete persona", auto_commit=True)
+async def delete_persona(
     workspace_id: str,
-    user: dict = Depends(get_current_user),
+    persona_id: str,
+    request: Request,
     db: AsyncSession = Depends(get_async_db),
     user: dict = Depends(get_current_user),
 ):
@@ -192,9 +203,9 @@ async def refresh_workspace_permissions(
     persona = result.scalar_one_or_none()
     
     if not persona:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Persona not found"
+        raise ResourceNotFoundException(
+            resource_type="persona",
+            resource_id=persona_id,
         )
     
     await db.delete(persona)
@@ -206,7 +217,7 @@ async def refresh_workspace_permissions(
         },
     )
     
-    return None
+    return no_content(request)
 
 
 __all__ = ["router"]
