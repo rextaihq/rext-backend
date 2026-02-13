@@ -5,7 +5,6 @@ from src.api.schema.user_schema import (
     LoginUser, 
     RegisterUser, 
     RegisterWithInvitation, 
-    LoginWithInvitation,
     RefreshTokenRequest,
     ResendVerificationRequest,
     OAuthLoginRequest,

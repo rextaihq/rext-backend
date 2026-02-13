@@ -162,8 +162,6 @@ async def get_workspace_by_id_path(
     return {"workspace": workspace_data}
 
 
-# File: src/api/routes/workspaces/workspace_core.py
-# Replace lines 200-254 with:
 
 # -------------------------
 # Update workspace
@@ -256,7 +254,7 @@ async def delete_workspace_endpoint(
         from src.services.email_service import EmailService
         from datetime import timezone, timedelta
         email_service = EmailService(db)
-        recovery_date = (datetime.utcnow() + timedelta(days=30)).strftime("%B %d, %Y")
+        recovery_date = (datetime.now(timezone.utc) + timedelta(days=30)).strftime("%B %d, %Y")
 
         await email_service.send_email(
             to_email=db_user.email,
@@ -265,7 +263,7 @@ async def delete_workspace_endpoint(
             template_data={
                 "user_name": db_user.display_name or db_user.email,
                 "workspace_name": workspace.name,
-                "recovery_deadline": recovery_deadline,
+                "recovery_deadline": recovery_date,
                 "remaining_workspaces": remaining_after_delete
             }
         )

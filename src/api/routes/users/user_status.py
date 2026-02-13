@@ -16,7 +16,6 @@ from src.api.schema.user_schema import (
 from src.api.models.user_models.users import Users
 from src.api.database.async_database import get_async_db
 from src.utils.audit_helper import create_audit_log_async
-from src.api.middleware.permissions import is_admin
 from src.utils.response_utils import success, error
 from src.api.schema.response_schemas import ErrorCode, ErrorSeverity
 from src.api.middleware.exceptions import ResourceNotFoundException, RextAuthenticationException, RextValidationException
@@ -115,57 +114,14 @@ async def suspend_user(
     """
     Suspend a user account (admin only).
     """
-    if not is_admin(current_user):
-        return error(
-            message="Insufficient permissions. Admin role required.",
-            code=ErrorCode.FORBIDDEN,
-            status_code=403,
-            severity=ErrorSeverity.HIGH,
-            request=request
-        )
-
-    service = UserService(db)
-    target_uuid = UUID(user_id)
-    target_user = await service.get_user_by_id(target_uuid)
-    old_status = target_user.status
-
-    # Update status
-    target_user.status = "suspended"
-    target_user.updated_at = datetime.now(timezone.utc)
-    await db.flush()
-
-    # Log action
-    admin_id = UUID(current_user.get("identity"))
-    admin_user = await service.get_user_by_id(admin_id)
-
-    await create_audit_log_async(
-        db=db,
-        user_id=str(admin_id),
-        action="user.suspend",
-        resource_type="user",
-        resource_id=user_id,
-        old_values={"status": old_status},
-        new_values={"status": "suspended", "reason": status_data.reason},
+    return await _handle_status_change(
+        user_id=user_id,
+        new_status="suspended",
+        action_name="user.suspend",
         request=request,
-        full_name=admin_user.full_name if admin_user else None,
-        user_email=admin_user.email if admin_user else None
-    )
-
-    logger.info(f"User {user_id} suspended by admin {admin_id}")
-
-    return success(
-        data=UserStatusResponse(
-            user_id=str(target_user.id),
-            full_name=target_user.full_name or target_user.display_name or target_user.email,
-            email=target_user.email,
-            old_status=old_status,
-            new_status="suspended",
-            changed_by=admin_user.full_name or "Admin",
-            reason=status_data.reason,
-            changed_at=target_user.updated_at.isoformat()
-        ).model_dump(),
-        request=request,
-        message="User suspended successfully"
+        status_data=status_data,
+        current_user=current_user,
+        db=db
     )
 
 @router.post("/{user_id}/activate", response_model=UserStatusResponse)
@@ -181,53 +137,14 @@ async def activate_user(
     """
     Activate a suspended or banned user account (admin only).
     """
-    if not is_admin(current_user):
-        return error(
-            message="Insufficient permissions. Admin role required.",
-            code=ErrorCode.FORBIDDEN,
-            status_code=403,
-            severity=ErrorSeverity.HIGH,
-            request=request
-        )
-
-    service = UserService(db)
-    target_uuid = UUID(user_id)
-    target_user = await service.get_user_by_id(target_uuid)
-    old_status = target_user.status
-
-    # Activate via service
-    target_user = await service.reactivate_account(target_uuid)
-
-    # Log action
-    admin_id = UUID(current_user.get("identity"))
-    admin_user = await service.get_user_by_id(admin_id)
-
-    await create_audit_log_async(
-        db=db,
-        user_id=str(admin_id),
-        action="user.activate",
-        resource_type="user",
-        resource_id=user_id,
-        old_values={"status": old_status},
-        new_values={"status": "active", "reason": status_data.reason},
+    return await _handle_status_change(
+        user_id=user_id,
+        new_status="active",
+        action_name="user.activate",
         request=request,
-        full_name=admin_user.full_name if admin_user else None,
-        user_email=admin_user.email if admin_user else None
-    )
-
-    return success(
-        data=UserStatusResponse(
-            user_id=str(target_user.id),
-            full_name=target_user.full_name or target_user.display_name or target_user.email,
-            email=target_user.email,
-            old_status=old_status,
-            new_status="active",
-            changed_by=admin_user.full_name or "Admin",
-            reason=status_data.reason,
-            changed_at=target_user.updated_at.isoformat()
-        ).model_dump(),
-        request=request,
-        message="User activated successfully"
+        status_data=status_data,
+        current_user=current_user,
+        db=db
     )
 
 @router.post("/{user_id}/ban", response_model=UserStatusResponse)
@@ -243,54 +160,14 @@ async def ban_user(
     """
     Ban a user account (admin only).
     """
-    if not is_admin(current_user):
-        return error(
-            message="Insufficient permissions. Admin role required.",
-            code=ErrorCode.FORBIDDEN,
-            status_code=403,
-            severity=ErrorSeverity.HIGH,
-            request=request
-        )
-
-    service = UserService(db)
-    target_uuid = UUID(user_id)
-    target_user = await service.get_user_by_id(target_uuid)
-    old_status = target_user.status
-
-    target_user.status = "banned"
-    target_user.updated_at = datetime.now(timezone.utc)
-    await db.flush()
-
-    # Log action
-    admin_id = UUID(current_user.get("identity"))
-    admin_user = await service.get_user_by_id(admin_id)
-
-    await create_audit_log_async(
-        db=db,
-        user_id=str(admin_id),
-        action="user.ban",
-        resource_type="user",
-        resource_id=user_id,
-        old_values={"status": old_status},
-        new_values={"status": "banned", "reason": status_data.reason},
+    return await _handle_status_change(
+        user_id=user_id,
+        new_status="banned",
+        action_name="user.ban",
         request=request,
-        full_name=admin_user.full_name if admin_user else None,
-        user_email=admin_user.email if admin_user else None
-    )
-
-    return success(
-        data=UserStatusResponse(
-            user_id=str(target_user.id),
-            full_name=target_user.full_name or target_user.display_name or target_user.email,
-            email=target_user.email,
-            old_status=old_status,
-            new_status="banned",
-            changed_by=admin_user.full_name or "Admin",
-            reason=status_data.reason,
-            changed_at=target_user.updated_at.isoformat()
-        ).model_dump(),
-        request=request,
-        message="User banned successfully"
+        status_data=status_data,
+        current_user=current_user,
+        db=db
     )
 
 @router.post("/deactivate", response_model=DeactivateAccountResponse)

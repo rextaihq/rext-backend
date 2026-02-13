@@ -10,14 +10,7 @@ from datetime import datetime, timezone
 from src.utils.logger import logger
 from src.api.security.dependencies import get_current_user
 from src.utils.route_decorators import require_permissions, db_transaction_handler
-from src.api.schema.user_schema import UpdateProfileRequest, UserResponse
-from src.api.schema.notification_schema import (
-    NotificationPreferencesResponse, 
-    UpdateNotificationPreferencesRequest
-)
-from src.api.models.user_models.notification_preferences import NotificationPreferences
-from src.utils.route_decorators import require_permissions
-from src.api.schema.user_schema import UpdateProfileRequest, DeactivateAccountRequest, ProfileResponse
+from src.api.schema.user_schema import UpdateProfileRequest, DeactivateAccountRequest, UserResponse, ProfileResponse
 from src.api.schema.notification_schema import NotificationPreferencesResponse, UpdateNotificationPreferencesRequest
 from src.api.database.async_database import get_async_db
 from src.utils.response_utils import success, error
@@ -338,23 +331,9 @@ async def get_notification_preferences(
     """
     user_id = current_user.get("identity")
 
-    # Get existing preferences
-    result = await db.execute(
-        select(NotificationPreferences).where(
-            NotificationPreferences.user_id == user_id
-        )
-    )
-    preferences = result.scalar_one_or_none()
-
-    # Create defaults if needed
-    if not preferences:
-        preferences = NotificationPreferences(user_id=user_id)
-        db.add(preferences)
-        await db.flush()
-        logger.info(f"Created default notification preferences for user {user_id}")
-        service = NotificationPreferencesService(db)
-        preferences = await service.get_or_create(user_id)
-        await db.commit()
+    # Get or create preferences via service
+    service = NotificationPreferencesService(db)
+    preferences = await service.get_or_create(user_id)
 
     return success(
         data=preferences.to_dict(),
@@ -378,20 +357,9 @@ async def update_notification_preferences(
     """
     user_id = current_user.get("identity")
 
-    # Get or create preferences
-    result = await db.execute(
-        select(NotificationPreferences).where(
-            NotificationPreferences.user_id == user_id
-        )
-    )
-    preferences = result.scalar_one_or_none()
-
-    if not preferences:
-        preferences = NotificationPreferences(user_id=user_id)
-        db.add(preferences)
-        await db.flush()
-        notification_service = NotificationPreferencesService(db)
-        preferences = await notification_service.get_or_create(user_id)
+    # Get or create preferences via service
+    notification_service = NotificationPreferencesService(db)
+    preferences = await notification_service.get_or_create(user_id)
 
     # Update preferences
     update_data = preferences_update.model_dump(exclude_unset=True)
