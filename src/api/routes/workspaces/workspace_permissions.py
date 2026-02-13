@@ -83,7 +83,6 @@ async def get_my_workspace_permissions(
             workspace_uuid = UUID(workspace_id)
         except ValueError:
             workspace_uuid = await async_get_workspace_id_from_identifier(db, workspace_id)
-
         # Use new WorkspacePermissionService for consistent permission loading
         result = await WorkspacePermissionService.get_user_workspace_permissions(
             db, user_id, workspace_uuid
@@ -240,7 +239,7 @@ async def refresh_workspace_permissions(
     """
     # This is essentially the same as get_my_workspace_permissions
     # but with POST method to indicate it's a refresh action
-    return await get_my_workspace_permissions(workspace_id, user, db)
+    return await get_my_workspace_permissions(workspace_id=workspace_id, user=user, db=db)
 
 
 @router.get("/{workspace_id}/members/{user_id}/permissions")
