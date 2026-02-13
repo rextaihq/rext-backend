@@ -106,8 +106,5 @@ def split_data(
         # Re-raise validation errors (e.g., invalid input type) as-is
         raise
     except Exception as e:
-        logger.error(
-            f"Failed to split documents into chunks: {e}",
-            exc_info=True,
-        )
-        raise ValueError(f"Text splitting failed: {e}") from e
+        logger.error(f"Failed to split documents into chunks: {e}", exc_info=True)
+        return []
