@@ -23,7 +23,10 @@ def upgrade() -> None:
     # Step 1: Create the PostgreSQL ENUM type if it doesn't exist
     refundstatus_enum.create(op.get_bind(), checkfirst=True)
 
-    # Step 2: Alter the column from VARCHAR to ENUM
+    # Step 2: Drop the existing default so PostgreSQL doesn't choke during type conversion
+    op.alter_column('refunds', 'status', server_default=None)
+
+    # Step 3: Alter the column from VARCHAR to ENUM
     # PostgreSQL requires an explicit USING clause to cast existing values
     op.execute(
         "ALTER TABLE refunds "
@@ -31,7 +34,7 @@ def upgrade() -> None:
         "USING status::refundstatus"
     )
 
-    # Step 3: Set the default
+    # Step 4: Set the new default
     op.alter_column(
         'refunds',
         'status',
