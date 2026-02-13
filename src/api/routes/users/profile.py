@@ -360,10 +360,56 @@ async def update_notification_preferences(
     """
     user_id = current_user.get("identity")
 
-    # Get or create preferences
-    result = await db.execute(
-        select(NotificationPreferences).where(
-            NotificationPreferences.user_id == user_id
+        # Get or create preferences
+        result = await db.execute(
+            select(NotificationPreferences).where(
+                NotificationPreferences.user_id == user_id
+            )
+        )
+        preferences = result.scalar_one_or_none()
+
+        if not preferences:
+            preferences = NotificationPreferences(user_id=user_id)
+            db.add(preferences)
+            logger.info(f"Creating notification preferences for user {user_id}")
+
+        # Update preferences dynamically from the request
+        update_data = preferences_update.model_dump(exclude_unset=True)
+
+        # Handle simplified categories if provided
+        if "categories" in update_data:
+            categories = update_data.pop("categories")
+            # Mapping of categories to DB fields
+            mapping = {
+                "workspace_invites": ["ws_invite_received"],
+            }
+
+            for cat, value in categories.items():
+                if cat in mapping:
+                    for db_field in mapping[cat]:
+                        if hasattr(preferences, db_field):
+                            setattr(preferences, db_field, value)
+                            logger.debug(f"Updated category preference '{cat}' -> '{db_field}' to {value}")
+
+        # Handle all other fields directly
+        for field, value in update_data.items():
+            if hasattr(preferences, field):
+                setattr(preferences, field, value)
+                logger.debug(f"Updated notification preference '{field}' for user {user_id}")
+
+        # Commit changes to database
+        await db.commit()
+
+        logger.info(f"Updated notification preferences for user {user_id}")
+         # Schedule notification
+        await schedule_if_allowed(
+            db=db,
+            user_id=str(user_id),
+            background_tasks=background_tasks,
+            pref_flag="in_app_notifications",
+            message="Your notification preferences have been successfully updated.",
+            payload={"user_id": str(user_id)},
+            workspace_id=None
         )
     )
     preferences = result.scalar_one_or_none()
