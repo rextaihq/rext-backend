@@ -53,7 +53,7 @@ def register_routes(app: FastAPI) -> None:
     # ---- System & Security ----
     from src.api.routes.audit.modules import router as audit_router
     from src.api.routes.security.security_routes import router as security_router
-    from src.api.routes.security.auth_test_routes import router as auth_test_router
+    # from src.api.routes.security.auth_test_routes import router as auth_test_router
     
     # ---- User & Communications ----
     from src.api.routes.email import preview_router, webhook_router as email_webhook_router
@@ -67,7 +67,6 @@ def register_routes(app: FastAPI) -> None:
     # ---- Misc & Tools ----
     from src.api.routes.media import router as media_router
     from src.api.tool.routes import router as tools_router
-    from src.api.routes.test_api_key_auth import router as test_api_key_router
 
     # ============================================================================
     # ROUTER REGISTRATION
@@ -107,7 +106,7 @@ def register_routes(app: FastAPI) -> None:
 
     app.include_router(audit_router, prefix="/api/v1", tags=["Audit Logs"])
     app.include_router(security_router, prefix="/api/v1", tags=["Security Monitoring"])
-    app.include_router(auth_test_router, prefix="/api/v1", tags=["Auth Testing"])
+    # app.include_router(auth_test_router, prefix="/api/v1", tags=["Auth Testing"])
     
     app.include_router(preview_router, prefix="/api/v1/email", tags=["Email Preview"])
     app.include_router(email_webhook_router, prefix="/api/v1/email", tags=["Email Webhooks"])

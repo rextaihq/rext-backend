@@ -158,14 +158,8 @@ async def reset_password(
             new_password=payload.new_password
         )
 
-    # Reset password via service
-    service = UserService(db)
-    user = await service.reset_password_with_token(
-        reset_token=payload.token,
-        new_password=payload.new_password
-    )
-
     except ResourceNotFoundException:
+
         return error(
             message="Invalid or expired reset token",
             code=ErrorCode.INVALID_VALUE,

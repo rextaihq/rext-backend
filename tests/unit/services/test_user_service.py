@@ -13,7 +13,7 @@ Tests cover:
 
 import pytest
 from uuid import uuid4
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import bcrypt
 
 from src.services.user_service import UserService
@@ -39,7 +39,7 @@ class TestUserServiceGetUserById:
         # Assert
         assert result.id == user.id
         assert result.email == user.email
-        assert result.username == user.username
+        assert result.display_name == user.display_name
 
     async def test_get_user_by_id_not_found(self, db_session):
         """Should raise ResourceNotFoundException when user doesn't exist"""
@@ -102,11 +102,11 @@ class TestUserServiceUpdateProfile:
         # Act
         result = await service.update_profile(
             user_id=user.id,
-            first_name="John"
+            full_name="John Doe"
         )
 
         # Assert
-        assert result.first_name == "John"
+        assert result.full_name == "John Doe"
         assert result.display_name == "Original Name"  # Unchanged
 
     async def test_update_profile_last_name(self, db_session, setup_factories):
@@ -118,11 +118,11 @@ class TestUserServiceUpdateProfile:
         # Act
         result = await service.update_profile(
             user_id=user.id,
-            last_name="Doe"
+            full_name="Jane Doe"
         )
 
         # Assert
-        assert result.last_name == "Doe"
+        assert result.full_name == "Jane Doe"
 
     async def test_update_profile_display_name(self, db_session, setup_factories):
         """Should update display_name"""
@@ -193,16 +193,14 @@ class TestUserServiceUpdateProfile:
         # Act
         result = await service.update_profile(
             user_id=user.id,
-            first_name="Jane",
-            last_name="Smith",
+            full_name="Jane Smith",
             display_name="Jane S.",
             language="fr",
             timezone="Europe/Paris"
         )
 
         # Assert
-        assert result.first_name == "Jane"
-        assert result.last_name == "Smith"
+        assert result.full_name == "Jane Smith"
         assert result.display_name == "Jane S."
         assert result.language == "fr"
         assert result.timezone == "Europe/Paris"
@@ -217,7 +215,7 @@ class TestUserServiceUpdateProfile:
         # Act
         result = await service.update_profile(
             user_id=user.id,
-            first_name="Updated"
+            full_name="Updated"
         )
 
         # Assert
@@ -233,7 +231,7 @@ class TestUserServiceUpdateProfile:
         with pytest.raises(ResourceNotFoundException):
             await service.update_profile(
                 user_id=non_existent_id,
-                first_name="Test"
+                full_name="Test"
             )
 
     async def test_update_profile_no_fields_provided(self, db_session, setup_factories):
@@ -257,8 +255,8 @@ class TestUserServiceChangePassword:
     async def test_change_password_success(self, db_session, setup_factories):
         """Should successfully change password when current password is correct"""
         # Arrange
-        current_password = "oldpassword123"
-        new_password = "newpassword456"
+        current_password = "Oldpassword123"
+        new_password = "Newpassword456"
         password_hash = bcrypt.hashpw(current_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
 
         user = await setup_factories["user"].create(
@@ -281,7 +279,7 @@ class TestUserServiceChangePassword:
     async def test_change_password_wrong_current_password(self, db_session, setup_factories):
         """Should raise RextValidationException when current password is incorrect"""
         # Arrange
-        correct_password = "correctpassword"
+        correct_password = "Correctpassword1"
         password_hash = bcrypt.hashpw(correct_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
 
         user = await setup_factories["user"].create(
@@ -293,8 +291,8 @@ class TestUserServiceChangePassword:
         with pytest.raises(RextValidationException) as exc_info:
             await service.change_password(
                 user_id=user.id,
-                current_password="wrongpassword",
-                new_password="newpassword123"
+                current_password="Wrongpassword1",
+                new_password="Newpassword123"
             )
 
         assert "Current password is incorrect" in exc_info.value.message
@@ -303,7 +301,7 @@ class TestUserServiceChangePassword:
     async def test_change_password_same_as_current(self, db_session, setup_factories):
         """Should raise RextValidationException when new password is same as current"""
         # Arrange
-        password = "samepassword123"
+        password = "Samepassword123"
         password_hash = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
 
         user = await setup_factories["user"].create(
@@ -325,7 +323,7 @@ class TestUserServiceChangePassword:
     async def test_change_password_updates_password_changed_at(self, db_session, setup_factories):
         """Should update password_changed_at timestamp"""
         # Arrange
-        current_password = "oldpass"
+        current_password = "Oldpassword1"
         password_hash = bcrypt.hashpw(current_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
 
         user = await setup_factories["user"].create(
@@ -338,7 +336,7 @@ class TestUserServiceChangePassword:
         result = await service.change_password(
             user_id=user.id,
             current_password=current_password,
-            new_password="newpass123"
+            new_password="Newpassword123"
         )
 
         # Assert
