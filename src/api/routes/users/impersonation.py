@@ -186,17 +186,19 @@ async def stop_impersonation(
     }
 
 @router.get("/impersonate/status", response_model=ImpersonationStatusResponse)
+@require_permissions("user.read", workspace_scoped=False)
 async def get_impersonation_status(
+    request: Request,
     db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user)
 ) -> dict:
     """
     Get the current impersonation status.
 
-    Returns impersonation details if the current user is impersonating someone,
+    Return impersonation details if the current user is impersonating someone,
     or a simple status response if not impersonating.
 
-    This endpoint reads from the JWT token and does not require database access or permissions.
+    Requires user.read permission for consistency with other user-related endpoints.
     """
     is_impersonating = current_user.get("is_impersonating", False)
     session_id = current_user.get("session_id")
