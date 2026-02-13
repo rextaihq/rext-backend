@@ -126,10 +126,3 @@ class DiscountUsage(Base, SerializableMixin):
         return data
 
 
-# Indexes are created in the migration file
-__table_args__ = (
-    Index('idx_discount_usage_user_id', 'user_id'),
-    Index('idx_discount_usage_code', 'discount_code'),
-    Index('idx_discount_usage_applied_at', 'applied_at'),
-    Index('idx_discount_usage_subscription_id', 'subscription_id'),
-)

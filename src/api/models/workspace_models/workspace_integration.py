@@ -60,7 +60,13 @@ class WorkspaceIntegration(Base, SerializableMixin, SoftDeleteMixin):
             exclude.extend(['app_password', 'api_key'])
 
         # Use parent's to_dict which handles UUID/datetime conversion
-        return super().to_dict(exclude=exclude, **kwargs)
+        data = super().to_dict(exclude=exclude, **kwargs)
+
+        # Add status flags for UI (indicates if secrets are present without exposing them)
+        data["has_app_password"] = self.app_password is not None and len(self.app_password) > 0
+        data["has_api_key"] = self.api_key is not None and len(self.api_key) > 0
+
+        return data
 
     def to_dict_with_credentials(self, **kwargs) -> dict:
         """
