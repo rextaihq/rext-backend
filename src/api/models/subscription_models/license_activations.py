@@ -100,6 +100,14 @@ class LicenseActivation(Base, SerializableMixin):
         lazy="joined"
     )
 
+    # Table arguments - composite indexes for query optimization
+    __table_args__ = (
+        # Composite index for finding activations by license and instance
+        Index('idx_license_activations_license_instance', 'license_id', 'instance_id'),
+        # Index for finding active activations
+        Index('idx_license_activations_active', 'license_id', 'is_active'),
+    )
+
     def __repr__(self) -> str:
         return (
             f"<LicenseActivation(id={self.id}, license_id={self.license_id}, "

@@ -40,28 +40,33 @@ class WorkspaceIntegration(Base, SerializableMixin, SoftDeleteMixin):
     # Relationships
     workspace = relationship("WorkspaceModel", back_populates="integrations")
 
-    def to_dict(self, include_credentials: bool = False, **kwargs):
+    def to_dict(self, include_credentials: bool = False, **kwargs) -> dict:
         """
-        Serialize integration to dictionary.
-        Credentials are excluded by default for safety.
+        Convert model to dictionary for JSON serialization.
+
+        By default, sensitive credentials (app_password, api_key) are excluded.
+        Only include credentials when explicitly needed (e.g., admin credential management).
 
         Args:
-            include_credentials: If True, include has_password/has_api_key flags
-                                 (never returns actual credential values).
+            include_credentials: If True, include app_password and api_key. Default: False.
+            **kwargs: Additional arguments passed to SerializableMixin.to_dict()
+
+        Returns:
+            Dictionary representation with UUIDs and datetimes converted to strings.
         """
-        data = {
-            "id": self.id,
-            "workspace_id": self.workspace_id,
-            "integration_type": self.integration_type,
-            "is_active": self.is_active,
-            "site_url": self.site_url,
-            "api_endpoint": self.api_endpoint,
-            "username": self.username,
-            "config_json": self.config_json,
-            "created_at": self.created_at,
-            "updated_at": self.updated_at,
-            "deleted_at": self.deleted_at,
-            "has_app_password": self.app_password is not None and len(self.app_password) > 0,
-            "has_api_key": self.api_key is not None and len(self.api_key) > 0,
-        }
-        return data
+        # Build exclude list - always exclude credentials unless explicitly requested
+        exclude = kwargs.pop('exclude', []) or []
+        if not include_credentials:
+            exclude.extend(['app_password', 'api_key'])
+
+        # Use parent's to_dict which handles UUID/datetime conversion
+        return super().to_dict(exclude=exclude, **kwargs)
+
+    def to_dict_with_credentials(self, **kwargs) -> dict:
+        """
+        Return full model data including sensitive credentials.
+
+        WARNING: Only use this in admin/credential management contexts where
+        the requester has explicit authorization to view credentials.
+        """
+        return self.to_dict(include_credentials=True, **kwargs)
