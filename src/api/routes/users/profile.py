@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.utils.logger import logger
 from src.api.security.dependencies import get_current_user
 from src.utils.route_decorators import require_permissions, db_transaction_handler
-from src.api.schema.user_schema import UpdateProfileRequest
+from src.api.schema.user_schema import UpdateProfileRequest, UserResponse
 from src.api.schema.notification_schema import NotificationPreferencesResponse, UpdateNotificationPreferencesRequest
 from src.api.models.user_models.notification_preferences import NotificationPreferences
 from src.api.database.async_database import get_async_db

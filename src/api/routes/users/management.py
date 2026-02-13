@@ -211,11 +211,10 @@ async def delete_user(
 
 
 @router.put("/update/{user_id}")
-@require_permissions("user.update", workspace_scoped=False)
 @db_transaction_handler("update user", auto_commit=True)
 async def update_user(
-    user_id: str,
-    user: UpdateUser,
+    user_id: UUID,  # Changed from str to UUID for auto-validation (returns 422 on bad ID)
+    update_data: UpdateUser,
     request: Request,
     db: AsyncSession = Depends(get_async_db)
 ):
@@ -227,8 +226,8 @@ async def update_user(
 
     # Update user via service (handles all validation and updates)
     db_user = await service.update_user(
-        user_id=UUID(user_id),
-        update_data=user
+        user_id=user_id,
+        **update_data.model_dump(exclude_unset=True)
     )
 
     # Return updated user data (excluding password)
