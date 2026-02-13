@@ -102,6 +102,9 @@ def split_data(
         logger.info(f"Data split successfully! Total chunks: {len(chunked_docs)}")
         return chunked_docs
 
+    except ValueError:
+        # Re-raise validation errors (e.g., invalid input type) as-is
+        raise
     except Exception as e:
-        logger.info("Error:", str(e))
+        logger.error(f"Failed to split documents into chunks: {e}", exc_info=True)
         return []

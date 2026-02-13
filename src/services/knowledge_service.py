@@ -249,12 +249,44 @@ class KnowledgeService:
             extra={"workspace_id": str(workspace_id)}
         )
 
-    async def list_file_knowledge(self, workspace_id: UUID) -> List[Dict[str, Any]]:
-        """Return all file knowledge entries for a workspace."""
-        result = await self.db.execute(
-            select(KnowledgeFiles).where(KnowledgeFiles.workspace_id == workspace_id)
+    async def list_file_knowledge(
+        self,
+        workspace_id: UUID,
+        limit: int = 20,
+        offset: int = 0,
+    ) -> tuple[List[Dict[str, Any]], int]:
+        """
+        Return paginated file knowledge entries for a workspace.
+
+        Args:
+            workspace_id: Workspace UUID
+            limit: Maximum number of items to return (default 20)
+            offset: Number of items to skip (default 0)
+
+        Returns:
+            Tuple of (list of file knowledge dicts, total count)
+        """
+        from sqlalchemy import func
+
+        # Get total count
+        count_result = await self.db.execute(
+            select(func.count()).select_from(KnowledgeFiles).where(
+                KnowledgeFiles.workspace_id == workspace_id
+            )
         )
-        return [knowledge.to_dict() for knowledge in result.scalars().all()]
+        total_count = count_result.scalar()
+
+        # Get paginated results
+        result = await self.db.execute(
+            select(KnowledgeFiles)
+            .where(KnowledgeFiles.workspace_id == workspace_id)
+            .order_by(KnowledgeFiles.created_at.desc())
+            .limit(limit)
+            .offset(offset)
+        )
+        items = [knowledge.to_dict() for knowledge in result.scalars().all()]
+
+        return items, total_count
 
     async def get_file_knowledge(self, workspace_id: UUID, file_id: UUID) -> Dict[str, Any]:
         """Return a single file knowledge entry."""
@@ -350,12 +382,34 @@ class KnowledgeService:
 
         return new_knowledge
 
-    async def list_text_knowledge(self, workspace_id: UUID) -> List[Dict[str, Any]]:
-        """Return all text knowledge entries for a workspace."""
-        result = await self.db.execute(
-            select(TextKnowledge).where(TextKnowledge.workspace_id == workspace_id)
+    async def list_text_knowledge(
+        self,
+        workspace_id: UUID,
+        limit: int = 20,
+        offset: int = 0,
+    ) -> tuple[List[Dict[str, Any]], int]:
+        """Return paginated text knowledge entries for a workspace."""
+        from sqlalchemy import func
+
+        # Get total count
+        count_result = await self.db.execute(
+            select(func.count()).select_from(TextKnowledge).where(
+                TextKnowledge.workspace_id == workspace_id
+            )
         )
-        return [knowledge.to_dict() for knowledge in result.scalars().all()]
+        total_count = count_result.scalar()
+
+        # Get paginated results
+        result = await self.db.execute(
+            select(TextKnowledge)
+            .where(TextKnowledge.workspace_id == workspace_id)
+            .order_by(TextKnowledge.created_at.desc())
+            .limit(limit)
+            .offset(offset)
+        )
+        items = [knowledge.to_dict() for knowledge in result.scalars().all()]
+
+        return items, total_count
 
     async def get_text_knowledge(self, workspace_id: UUID, knowledge_id: UUID) -> Dict[str, Any]:
         """Return a single text knowledge entry."""
@@ -473,12 +527,34 @@ class KnowledgeService:
             extra={"workspace_id": str(workspace_id)}
         )
 
-    async def list_web_knowledge(self, workspace_id: UUID) -> List[Dict[str, Any]]:
-        """Return all web knowledge entries for the workspace."""
-        result = await self.db.execute(
-            select(Website).where(Website.workspace_id == workspace_id)
+    async def list_web_knowledge(
+        self,
+        workspace_id: UUID,
+        limit: int = 20,
+        offset: int = 0,
+    ) -> tuple[List[Dict[str, Any]], int]:
+        """Return paginated web knowledge entries for the workspace."""
+        from sqlalchemy import func
+
+        # Get total count
+        count_result = await self.db.execute(
+            select(func.count()).select_from(Website).where(
+                Website.workspace_id == workspace_id
+            )
         )
-        return [knowledge.to_dict() for knowledge in result.scalars().all()]
+        total_count = count_result.scalar()
+
+        # Get paginated results
+        result = await self.db.execute(
+            select(Website)
+            .where(Website.workspace_id == workspace_id)
+            .order_by(Website.created_at.desc())
+            .limit(limit)
+            .offset(offset)
+        )
+        items = [knowledge.to_dict() for knowledge in result.scalars().all()]
+
+        return items, total_count
 
     async def get_web_knowledge(self, workspace_id: UUID, web_id: UUID) -> Dict[str, Any]:
         """Return a single web knowledge entry."""

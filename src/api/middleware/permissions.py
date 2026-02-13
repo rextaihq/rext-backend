@@ -25,7 +25,7 @@ from src.api.security.dependencies import get_current_user
 from src.api.models.user_models.user_roles import UserRole
 from src.api.models.user_models.roles import Role
 from src.utils.logger import logger
-from src.utils.rbac_utils import get_user_permissions, get_user_role_names
+from src.utils.rbac_utils import get_user_role_names
 
 
 class PermissionChecker:
@@ -200,40 +200,16 @@ class PermissionChecker:
 
         Returns:
             Set of permission names (e.g., {"user.read", "user.write"})
-        """
+        """ 
+        from uuid import UUID as UUIDType
+        from src.utils.rbac_utils import get_user_permissions
+
         # Convert string IDs to UUID objects as expected by rbac_utils
-        user_uuid = UUID(user_id) if isinstance(user_id, str) else user_id
-        workspace_uuid = (
-            UUID(workspace_id) if workspace_id and isinstance(workspace_id, str)
-            else workspace_id
-        )
+        user_uuid = UUIDType(user_id) if isinstance(user_id, str) else user_id
+        workspace_uuid = UUIDType(workspace_id) if workspace_id and isinstance(workspace_id, str) else workspace_id
 
         permissions_list = await get_user_permissions(db, user_uuid, workspace_uuid)
         return set(permissions_list)
-
-    @staticmethod
-    def _check_permissions(
-        user_permissions: set,
-        required_permissions: List[str],
-        require_all: bool
-    ) -> bool:
-        """
-        Check if user has required permissions.
-
-        Args:
-            user_permissions: Set of user's permission names
-            required_permissions: List of required permission names
-            require_all: If True, must have ALL. If False, must have at least ONE.
-
-        Returns:
-            True if user has sufficient permissions, False otherwise
-        """
-        if require_all:
-            # User must have ALL required permissions
-            return all(perm in user_permissions for perm in required_permissions)
-        else:
-            # User must have at least ONE of the required permissions
-            return any(perm in user_permissions for perm in required_permissions)
 
     @staticmethod
     async def _is_super_admin(db: AsyncSession, user_id: str) -> bool:

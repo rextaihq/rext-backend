@@ -9,9 +9,8 @@ from src.api.database.async_database import get_async_db
 from src.api.security.dependencies import get_current_user
 from src.api.models.knowledge_models.persona_model import Persona
 from src.api.schema.persona_schema import PersonaCreate, PersonaUpdate, PersonaResponse
-from src.utils.auth_utils import verify_current_user
 from src.utils.route_decorators import db_transaction_handler, require_permissions
-from src.utils.workspace_utils import resolve_and_verify_workspace
+from src.utils.workspace_utils import resolve_workspace_for_route
 from src.utils.logger import logger
 
 router = APIRouter(tags=["workspace-personas"])
@@ -32,11 +31,7 @@ async def get_workspace_personas(
     Personas are extracted from website content during workspace creation
     or can be created manually.
     """
-    user_id = UUID(str(user.get("identity")))
-    await verify_current_user(db, str(user_id))
-    
-    # Verify workspace access
-    workspace, _ = await resolve_and_verify_workspace(db, workspace_id, user_id)
+    workspace, _ = await resolve_workspace_for_route(db=db, workspace_identifier=workspace_id, user=user)
     
     # Fetch personas
     result = await db.execute(
@@ -63,11 +58,7 @@ async def get_persona(
     user: dict = Depends(get_current_user),
 ):
     """Get a single persona by ID."""
-    user_id = UUID(str(user.get("identity") ))
-    await verify_current_user(db, str(user_id))
-    
-    # Verify workspace access
-    workspace, _ = await resolve_and_verify_workspace(db, workspace_id, user_id)
+    workspace, _ = await resolve_workspace_for_route(db=db, workspace_identifier=workspace_id, user=user)
     
     # Fetch persona
     result = await db.execute(
@@ -98,11 +89,7 @@ async def create_persona(
     user: dict = Depends(get_current_user),
 ):
     """Create a new persona manually."""
-    user_id = UUID(str(user.get("identity")))
-    await verify_current_user(db, str(user_id))
-    
-    # Verify workspace access
-    workspace, _ = await resolve_and_verify_workspace(db, workspace_id, user_id)
+    workspace, _ = await resolve_workspace_for_route(db=db, workspace_identifier=workspace_id, user=user)
     
     # Create persona
     persona = Persona(
@@ -125,7 +112,13 @@ async def create_persona(
     await db.flush()
     await db.refresh(persona)
     
-    logger.info(f"Created persona {persona.id} for workspace {workspace.id}")
+    logger.info(
+        "Created persona",
+        extra={
+            "workspace_id": str(workspace.id),
+            "persona_id": str(persona.id),
+        },
+    )
     
     return persona.to_dict()
 
@@ -142,11 +135,7 @@ async def update_persona(
     user: dict = Depends(get_current_user),
 ):
     """Update an existing persona."""
-    user_id = UUID(str(user.get("identity")))
-    await verify_current_user(db, str(user_id))
-    
-    # Verify workspace access
-    workspace, _ = await resolve_and_verify_workspace(db, workspace_id, user_id)
+    workspace, _ = await resolve_workspace_for_route(db=db, workspace_identifier=workspace_id, user=user)
     
     # Fetch persona
     result = await db.execute(
@@ -173,7 +162,13 @@ async def update_persona(
     await db.flush()
     await db.refresh(persona)
     
-    logger.info(f"Updated persona {persona.id}")
+    logger.info(
+        "Updated persona",
+        extra={
+            "workspace_id": str(workspace.id),
+            "persona_id": str(persona.id),
+        },
+    )
     
     return persona.to_dict()
 
@@ -189,11 +184,7 @@ async def delete_persona(
     user: dict = Depends(get_current_user),
 ):
     """Delete a persona."""
-    user_id = UUID(str(user.get("identity")))
-    await verify_current_user(db, str(user_id))
-    
-    # Verify workspace access
-    workspace, _ = await resolve_and_verify_workspace(db, workspace_id, user_id)
+    workspace, _ = await resolve_workspace_for_route(db=db, workspace_identifier=workspace_id, user=user)
     
     # Fetch persona
     result = await db.execute(
@@ -211,7 +202,13 @@ async def delete_persona(
         )
     
     await db.delete(persona)
-    logger.info(f"Deleted persona {persona.id}")
+    logger.info(
+        "Deleted persona",
+        extra={
+            "workspace_id": str(workspace.id),
+            "persona_id": str(persona.id),
+        },
+    )
     
     return None
 

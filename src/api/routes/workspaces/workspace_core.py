@@ -3,7 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from uuid import UUID
 
 from src.utils.logger import logger
-from src.utils.response_utils import success, error
+from src.utils.response_utils import success
 from src.utils.route_decorators import db_transaction_handler, require_permissions
 from src.utils.auth_utils import verify_current_user
 from src.api.database.async_database import get_async_db
@@ -11,44 +11,9 @@ from src.api.security.dependencies import get_current_user
 from src.api.middleware.exceptions import (
     ResourceNotFoundException,
 )
-from src.api.schema.workspace_schema import (
-    WorkspaceUpdateSchema,
-    WorkspaceResponseSchema,
-    SidebarWorkspaceSchema
-)
-from src.utils.response_utils import success, error
+from src.services.workspace_service import WorkspaceService
 
 router = APIRouter()
-
-
-def _merge_analytics_into_workspace(workspace_data: dict, analytics: dict) -> dict:
-    """
-    Merge analytics data into workspace response dict.
-
-    Transforms the flat analytics dict from WorkspaceService.get_workspace_analytics()
-    into the nested structure expected by the frontend.
-
-    Args:
-        workspace_data: Workspace dict from get_workspace_with_brand_voice()
-        analytics: Analytics dict from get_workspace_analytics()
-
-    Returns:
-        The workspace_data dict with analytics merged in.
-    """
-    workspace_data["knowledge_stats"] = analytics["knowledge_stats"]
-    workspace_data["analytics"] = {
-        "knowledge_counts": {
-            "web_knowledge": analytics["knowledge_stats"]["web_knowledge"],
-            "files": analytics["knowledge_stats"]["files"],
-            "text_knowledge": analytics["knowledge_stats"]["text_knowledge"],
-            "total_knowledge_items": analytics["knowledge_stats"]["total"],
-        },
-        "content_metrics": analytics.get("content_metrics", {}),
-        "team_metrics": {
-            "total_members": analytics["members_count"],
-        },
-    }
-    return workspace_data
 
 
 # -------------------------
@@ -80,11 +45,7 @@ async def get_workspaces(
     workspace_data = await workspace_service.get_user_workspaces(UUID(user_id))
 
     # Return raw data - decorator handles success response
-    return {
-        "workspaces": workspace_data,
-        "total_count": len(workspace_data)
-    }
-
+    return {"workspaces": workspace_data, "total_count": len(workspace_data)}
 
 # -------------------------
 # Get workspace by ID
@@ -104,8 +65,21 @@ async def get_workspace_by_id(
     workspace_service = WorkspaceService(db)
     workspace_data = await workspace_service.get_workspace_with_brand_voice(UUID(workspace_id))
     analytics = await workspace_service.get_workspace_analytics(UUID(workspace_id), include_word_counts=True)
-    
-    _merge_analytics_into_workspace(workspace_data, analytics)
+
+    # Merge analytics into workspace data
+    workspace_data["knowledge_stats"] = analytics["knowledge_stats"]
+    workspace_data["analytics"] = {
+        "knowledge_counts": {
+            "web_knowledge": analytics["knowledge_stats"]["web_knowledge"],
+            "files": analytics["knowledge_stats"]["files"],
+            "text_knowledge": analytics["knowledge_stats"]["text_knowledge"],
+            "total_knowledge_items": analytics["knowledge_stats"]["total"]
+        },
+        "content_metrics": analytics.get("content_metrics", {}),
+        "team_metrics": {
+            "total_members": analytics["members_count"]
+        }
+    }
 
     return {"workspace": workspace_data}
 
@@ -130,7 +104,21 @@ async def get_workspace_by_slug(
     workspace_data = await workspace_service.get_workspace_with_brand_voice(workspace.id)
 
     analytics = await workspace_service.get_workspace_analytics(workspace.id, include_word_counts=True)
-    _merge_analytics_into_workspace(workspace_data, analytics)
+
+    # Merge analytics into workspace data
+    workspace_data["knowledge_stats"] = analytics["knowledge_stats"]
+    workspace_data["analytics"] = {
+        "knowledge_counts": {
+            "web_knowledge": analytics["knowledge_stats"]["web_knowledge"],
+            "files": analytics["knowledge_stats"]["files"],
+            "text_knowledge": analytics["knowledge_stats"]["text_knowledge"],
+            "total_knowledge_items": analytics["knowledge_stats"]["total"]
+        },
+        "content_metrics": analytics.get("content_metrics", {}),
+        "team_metrics": {
+            "total_members": analytics["members_count"]
+        }
+    }
 
     return {"workspace": workspace_data}
 
@@ -155,41 +143,84 @@ async def get_workspace_by_id_path(
     workspace_data = await workspace_service.get_workspace_with_brand_voice(workspace.id)
 
     analytics = await workspace_service.get_workspace_analytics(workspace.id, include_word_counts=True)
-    _merge_analytics_into_workspace(workspace_data, analytics)
+
+    # Merge analytics into workspace data
+    workspace_data["knowledge_stats"] = analytics["knowledge_stats"]
+    workspace_data["analytics"] = {
+        "knowledge_counts": {
+            "web_knowledge": analytics["knowledge_stats"]["web_knowledge"],
+            "files": analytics["knowledge_stats"]["files"],
+            "text_knowledge": analytics["knowledge_stats"]["text_knowledge"],
+            "total_knowledge_items": analytics["knowledge_stats"]["total"]
+        },
+        "content_metrics": analytics.get("content_metrics", {}),
+        "team_metrics": {
+            "total_members": analytics["members_count"]
+        }
+    }
 
     return {"workspace": workspace_data}
 
+
+# File: src/api/routes/workspaces/workspace_core.py
+# Replace lines 200-254 with:
 
 # -------------------------
 # Update workspace
 # -------------------------
 @router.put("/{workspace_id}")
 @require_permissions("workspace.update", workspace_scoped=True)
-@db_transaction_handler("update workspace", success_message="Workspace updated successfully")
-async def update_workspace_endpoint(
+@db_transaction_handler("update workspace", auto_commit=True)
+async def update_workspace(
     workspace_id: str,
-    body: WorkspaceUpdateSchema,
     request: Request,
     db: AsyncSession = Depends(get_async_db),
-    user: dict = Depends(get_current_user),
-) -> dict:
+    user: dict = Depends(get_current_user)
+):
+    """
+    Update workspace details (name, timezone, url).
+
+    Args:
+        workspace_id: Workspace UUID or slug
+
+    Body:
+        {
+          "name": "New Workspace Name",
+          "timezone": "America/New_York",
+          "url": "https://example.com"
+        }
+    """
+    from src.api.schema.workspace_schema import WorkspaceUpdateSchema
+
     user_id = user.get("identity")
     await verify_current_user(db, user_id)
 
+    # Parse and validate request body using Pydantic
+    body = await request.json()
+    update_data = WorkspaceUpdateSchema(**body)
+
+    # Use workspace service — call the user-facing method with correct parameter names
     workspace_service = WorkspaceService(db)
     from src.utils.workspace_utils import resolve_and_verify_workspace
     workspace, _ = await resolve_and_verify_workspace(db, workspace_id, UUID(user_id))
 
-    updated_workspace = await workspace_service.update_workspace(
-        workspace.id,
-        name=body.name,
-        tz=body.timezone,
-        url=str(body.url) if body.url else None,
+    # Map frontend field names: frontend sends "title", backend uses "name"
+    name = update_data.name or body.get("title")
+
+    updated_workspace = await workspace_service.update_workspace_for_user(
+        workspace_id=workspace.id,
+        user_id=UUID(user_id),
+        name=name,
+        timezone=update_data.timezone,
+        url=update_data.url,
     )
 
-    logger.info(f"Workspace updated: {workspace.id} by user {user_id}")
-    return {"workspace": updated_workspace}
+    logger.info(
+        "Workspace updated",
+        extra={"workspace_id": str(workspace.id), "user_id": user_id}
+    )
 
+    return {"workspace": updated_workspace}
 
 # -------------------------
 # Delete workspace
@@ -215,14 +246,17 @@ async def delete_workspace_endpoint(
 
     await workspace_service.delete_workspace(workspace.id, UUID(user_id))
 
-    logger.info(f"Workspace soft deleted: {workspace.id}")
+    logger.info(
+        "Workspace soft deleted",
+        extra={"workspace_id": str(workspace.id), "user_id": user_id},
+    )
 
     # Send confirmation email
     try:
         from src.services.email_service import EmailService
         from datetime import timezone, timedelta
         email_service = EmailService(db)
-        recovery_deadline = (datetime.now(timezone.utc) + timedelta(days=30)).strftime("%B %d, %Y")
+        recovery_date = (datetime.utcnow() + timedelta(days=30)).strftime("%B %d, %Y")
 
         await email_service.send_email(
             to_email=db_user.email,
@@ -235,8 +269,17 @@ async def delete_workspace_endpoint(
                 "remaining_workspaces": remaining_after_delete
             }
         )
+        logger.info(
+            "Deletion confirmation email sent",
+            extra={"recipient_email": db_user.email},
+        )
     except Exception as e:
-        logger.error(f"Failed to send deletion email: {e}")
+        # Don't fail the deletion if email fails
+        logger.error(
+            "Failed to send deletion confirmation email",
+            extra={"error": str(e)},
+            exc_info=True,
+        )
 
     return {
         "message": "Workspace deleted successfully. 30-day recovery period active.",

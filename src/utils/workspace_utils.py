@@ -168,3 +168,35 @@ async def resolve_and_verify_workspace(
 
 # Alias for backward compatibility with older route implementations
 async_get_workspace_id_from_identifier = get_workspace_id_from_identifier
+
+
+async def resolve_workspace_for_route(
+    *,
+    db: AsyncSession,
+    workspace_identifier: str,
+    user: dict,
+) -> tuple[WorkspaceModel, any]:
+    """
+    Resolve workspace and verify the current user for route handlers.
+
+    Combines user verification with workspace resolution — the common pattern
+    used by knowledge base route handlers. Extracts user_id from the user dict,
+    verifies the user exists and is active, then resolves the workspace and
+    verifies membership.
+
+    Args:
+        db: Async database session
+        workspace_identifier: Workspace UUID string or slug
+        user: User dict from get_current_user dependency (must contain "identity" key)
+
+    Returns:
+        Tuple of (WorkspaceModel, WorkspaceMembers)
+
+    Raises:
+        ResourceNotFoundException: If user not found, workspace not found, or user not a member
+    """
+    from src.utils.auth_utils import verify_current_user
+
+    user_id = user.get("identity")
+    await verify_current_user(db, user_id)
+    return await resolve_and_verify_workspace(db, workspace_identifier, UUID(str(user_id)))

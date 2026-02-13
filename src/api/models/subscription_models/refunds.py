@@ -8,6 +8,7 @@ from sqlalchemy import (
     Boolean,
     Column,
     DateTime,
+    Enum as SQLEnum,
     ForeignKey,
     Integer,
     String,
@@ -82,7 +83,7 @@ class Refund(Base, SerializableMixin):
 
     # Status
     status = Column(
-        String(20),
+        SQLEnum(RefundStatus, name="refundstatus", create_constraint=True),
         nullable=False,
         default=RefundStatus.PENDING,
         index=True
@@ -118,7 +119,7 @@ class Refund(Base, SerializableMixin):
             "original_amount": self.original_amount,
             "currency": self.currency,
             "reason": self.reason,
-            "status": self.status,
+            "status": self.status.value if isinstance(self.status, RefundStatus) else self.status,
             "is_partial": self.is_partial,
             "processed_at": self.processed_at.isoformat() if self.processed_at else None,
             "created_at": self.created_at.isoformat() if self.created_at else None,

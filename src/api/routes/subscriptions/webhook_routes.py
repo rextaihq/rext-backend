@@ -137,7 +137,8 @@ async def handle_lemonsqueezy_webhook(
         except Exception:
             pass
 
-        webhook_security_monitor.record_verification_failure(
+        # Record failure in security monitor
+        await webhook_security_monitor.record_verification_failure(
             ip_address=client_ip,
             event_type=event_type,
             signature_prefix=signature[:8] if len(signature) >= 8 else signature,

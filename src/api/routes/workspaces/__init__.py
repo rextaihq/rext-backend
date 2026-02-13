@@ -3,6 +3,15 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from uuid import UUID
 
+# CONVENTION: Route handlers decorated with @db_transaction_handler should
+# return raw dicts. The decorator automatically wraps them in a standardized
+# success response via success(). Do NOT explicitly call success() or created()
+# in route handlers that use @db_transaction_handler — this double-wraps the
+# response. Exception: use created() only for POST endpoints that need a 201
+# status code, since the decorator defaults to 200.
+#
+# See: src/utils/route_decorators.py (db_transaction_handler docstring) for details.
+
 from .workspace_core import router as core_router, get_workspaces, get_workspace_by_slug, get_workspace_by_id_path
 from .workspace_brand_voice import router as brand_voice_router
 from .workspace_personas import router as personas_router
@@ -41,7 +50,7 @@ workspaces_router.add_api_route("/slug/{workspace_slug}", get_workspace_by_slug,
 
 # POST/PUT/DELETE endpoints - RESTful wrappers
 @workspaces_router.post("")
-@require_permissions("workspace.create")
+@require_permissions("workspace.create",  workspace_scoped=False)
 @db_transaction_handler("create workspace", auto_commit=True)
 async def create_workspace_restful(
     data: WorkspaceSchema,

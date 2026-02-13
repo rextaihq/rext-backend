@@ -14,6 +14,8 @@ class SubscriptionStatus(str, Enum):
     EXPIRED = "expired"
     TRIAL = "trial"
     SUSPENDED = "suspended"
+    PAST_DUE = "past_due"
+    PAUSED = "paused"
 
 
 class BillingPeriod(str, Enum):

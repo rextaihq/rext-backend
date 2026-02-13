@@ -20,7 +20,16 @@ class CleanupConfig:
     USER_SESSION_INACTIVE_DAYS: int = int(os.getenv("USER_SESSION_INACTIVE_DAYS", "7"))
 
     # Cleanup schedule configuration
+    # Master scheduler switch
+    SCHEDULER_ENABLED: bool = os.getenv("SCHEDULER_ENABLED", "true").lower() == "true"
+    
+    # Individual task category switches (all default to True)
     CLEANUP_ENABLED: bool = os.getenv("CLEANUP_ENABLED", "true").lower() == "true"
+    BILLING_TASKS_ENABLED: bool = os.getenv("BILLING_TASKS_ENABLED", "true").lower() == "true"
+    TRIAL_TASKS_ENABLED: bool = os.getenv("TRIAL_TASKS_ENABLED", "true").lower() == "true"
+    DUNNING_TASKS_ENABLED: bool = os.getenv("DUNNING_TASKS_ENABLED", "true").lower() == "true"
+    GRACE_PERIOD_TASKS_ENABLED: bool = os.getenv("GRACE_PERIOD_TASKS_ENABLED", "true").lower() == "true"
+    
     CLEANUP_HOUR: int = int(os.getenv("CLEANUP_HOUR", "2"))  # 2 AM by default
     CLEANUP_MINUTE: int = int(os.getenv("CLEANUP_MINUTE", "0"))
 

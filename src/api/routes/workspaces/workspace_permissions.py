@@ -10,7 +10,6 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from langgraph_sdk import Auth
 
 from src.api.database.async_database import get_async_db
 from src.api.security.dependencies import get_current_user

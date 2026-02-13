@@ -13,6 +13,8 @@ from src.utils.logger import logger
 from src.utils.response_utils import created, success
 from src.utils.route_decorators import db_transaction_handler, require_permissions
 from langsmith import traceable, trace
+from src.api.dependencies.feature_gate import RequireFeature
+
 
 router = APIRouter(
     prefix="/workspace",
@@ -80,7 +82,10 @@ async def get_workspace_by_id(
     )
 
 
-@router.post("/create")
+@router.post(
+    "/create",
+    dependencies=[Depends(RequireFeature("workspaces"))],
+)
 @require_permissions("workspace.create")
 @db_transaction_handler("create workspace", auto_commit=True)
 @traceable(
@@ -94,8 +99,9 @@ async def create_workspace(
     request: Request,
     db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user),
-    _: None = Depends(check_workspace_limit()),
 ):
+
+
     """
     Create a new workspace for the current user.
 
@@ -193,3 +199,5 @@ async def update_workspace(
         request=request,
         message="Workspace updated successfully",
     )
+
+

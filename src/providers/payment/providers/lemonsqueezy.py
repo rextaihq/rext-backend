@@ -15,6 +15,14 @@ import hmac
 import hashlib
 from urllib.parse import urljoin
 
+from tenacity import (
+    retry,
+    stop_after_attempt,
+    wait_exponential,
+    retry_if_exception_type,
+    before_sleep_log,
+)
+
 from src.providers.payment.base_provider import (
     PaymentProvider,
     CheckoutSession,
@@ -47,6 +55,13 @@ class LemonSqueezyAPIError(LemonSqueezyError):
         self.message = message
         self.details = details or {}
         super().__init__(f"LemonSqueezy API Error ({status_code}): {message}")
+
+
+class LemonSqueezyTransientError(LemonSqueezyError):
+    """Transient error that should be retried (5xx, timeout, network)."""
+    def __init__(self, message: str, status_code: Optional[int] = None):
+        self.status_code = status_code
+        super().__init__(message)
 
 
 class LemonSqueezyProvider(PaymentProvider):
@@ -91,6 +106,13 @@ class LemonSqueezyProvider(PaymentProvider):
             f"(store_id={store_id}, sandbox_mode={sandbox_mode})"
         )
 
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=1, max=10),
+        retry=retry_if_exception_type(LemonSqueezyTransientError),
+        before_sleep=before_sleep_log(logger, 20),  # INFO level
+        reraise=True,
+    )
     async def _make_request(
         self,
         method: str,
@@ -99,7 +121,12 @@ class LemonSqueezyProvider(PaymentProvider):
         params: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """
-        Make HTTP request to LemonSqueezy API.
+        Make HTTP request to LemonSqueezy API with automatic retry on transient errors.
+
+        Retries up to 3 times with exponential backoff (1s, 2s, 4s) for:
+        - Network errors (timeout, connection reset, DNS failure)
+        - Server errors (500, 502, 503, 504)
+        - Rate limit errors (429) with Retry-After header awareness
 
         Args:
             method: HTTP method (GET, POST, PATCH, DELETE)
@@ -111,7 +138,8 @@ class LemonSqueezyProvider(PaymentProvider):
             Dict containing response data
 
         Raises:
-            LemonSqueezyAPIError: If request fails
+            LemonSqueezyAPIError: If request fails with a non-retryable error (4xx)
+            LemonSqueezyTransientError: If all retries are exhausted for transient errors
         """
         # Add breadcrumb for API request (Phase 4, Task 4.2.1)
         add_payment_breadcrumb(
@@ -152,73 +180,110 @@ class LemonSqueezyProvider(PaymentProvider):
                         endpoint=endpoint,
                         status_code=response.status_code
                     )
+                    return response.json()
 
-                # Check for errors
-                if response.status_code >= 400:
-                    try:
-                        error_data = response.json()
-                        # Log full error response for debugging
-                        logger.error(
-                            f"🔍 LemonSqueezy full error response: {error_data}",
-                            method=method,
-                            endpoint=endpoint
-                        )
-                        error_message = error_data.get("errors", [{}])[0].get(
-                            "detail",
-                            "Unknown error"
-                        )
-                    except Exception:
-                        error_message = response.text or "Unknown error"
-
+                # Parse error details
+                try:
+                    error_data = response.json()
+                    # Log full error response for debugging
                     logger.error(
-                        f"LemonSqueezy API error: {response.status_code}",
+                        f"🔍 LemonSqueezy full error response: {error_data}",
+                        method=method,
+                        endpoint=endpoint
+                    )
+                    error_message = error_data.get("errors", [{}])[0].get(
+                        "detail",
+                        "Unknown error"
+                    )
+                except Exception:
+                    error_message = response.text or "Unknown error"
+
+                logger.error(
+                    f"LemonSqueezy API error: {response.status_code}",
+                    method=method,
+                    endpoint=endpoint,
+                    status_code=response.status_code,
+                    error_message=error_message
+                )
+
+                # Handle rate limiting (429) — raise transient for retry
+                if response.status_code == 429:
+                    retry_after = response.headers.get("Retry-After", "5")
+                    logger.warning(
+                        f"LemonSqueezy rate limited. Retry-After: {retry_after}s",
+                        method=method,
+                        endpoint=endpoint,
+                    )
+                    alert_api_error(
+                        method=method,
+                        endpoint=endpoint,
+                        status_code=429,
+                        error_message="Rate limit exceeded",
+                        operation="api_request"
+                    )
+                    raise LemonSqueezyTransientError(
+                        f"Rate limited: {error_message}",
+                        status_code=429
+                    )
+
+                # Handle server errors (5xx) — raise transient for retry
+                if response.status_code >= 500:
+                    alert_api_error(
                         method=method,
                         endpoint=endpoint,
                         status_code=response.status_code,
-                        error_message=error_message
+                        error_message=error_message,
+                        operation="api_request"
+                    )
+                    raise LemonSqueezyTransientError(
+                        f"Server error ({response.status_code}): {error_message}",
+                        status_code=response.status_code
                     )
 
-                    api_error = LemonSqueezyAPIError(
-                        status_code=response.status_code,
-                        message=error_message,
-                        details={"endpoint": endpoint, "method": method}
-                    )
+                # Client errors (4xx except 429) are NOT retryable
+                api_error = LemonSqueezyAPIError(
+                    status_code=response.status_code,
+                    message=error_message,
+                    details={"endpoint": endpoint, "method": method}
+                )
 
-                    # Capture to Sentry (Phase 4, Task 4.2.1)
-                    capture_payment_exception(
-                        api_error,
-                        operation="api_request",
-                        context={
-                            "method": method,
-                            "endpoint": endpoint,
-                            "status_code": response.status_code,
-                            "error_message": error_message,
-                        }
-                    )
+                # Capture to Sentry (Phase 4, Task 4.2.1)
+                capture_payment_exception(
+                    api_error,
+                    operation="api_request",
+                    context={
+                        "method": method,
+                        "endpoint": endpoint,
+                        "status_code": response.status_code,
+                        "error_message": error_message,
+                    }
+                )
 
-                    # Trigger alert for API errors (Phase 4, Task 4.2.3)
-                    if response.status_code >= 500:
-                        # 5xx errors are critical - LemonSqueezy service issues
-                        alert_api_error(
-                            method=method,
-                            endpoint=endpoint,
-                            status_code=response.status_code,
-                            error_message=error_message,
-                            operation="api_request"
-                        )
-                    elif response.status_code == 429:
-                        # Rate limiting - also critical
-                        alert_api_error(
-                            method=method,
-                            endpoint=endpoint,
-                            status_code=response.status_code,
-                            error_message="Rate limit exceeded",
-                            operation="api_request"
-                        )
+                raise api_error
 
-                    raise api_error
+            except httpx.TimeoutException as e:
+                logger.error(
+                    f"LemonSqueezy timeout: {str(e)}",
+                    method=method,
+                    endpoint=endpoint,
+                )
+                capture_payment_exception(
+                    e, operation="api_request",
+                    context={"method": method, "endpoint": endpoint, "error_type": "timeout"}
+                )
+                raise LemonSqueezyTransientError(f"Request timeout: {str(e)}") from e
 
-                return response.json()
+            except httpx.NetworkError as e:
+                logger.error(
+                    f"LemonSqueezy network error: {str(e)}",
+                    method=method,
+                    endpoint=endpoint,
+                )
+                capture_payment_exception(
+                    e, operation="api_request",
+                    context={"method": method, "endpoint": endpoint, "error_type": "network"}
+                )
+                raise LemonSqueezyTransientError(f"Network error: {str(e)}") from e
 
             except httpx.HTTPError as e:
                 logger.error(
@@ -227,18 +292,10 @@ class LemonSqueezyProvider(PaymentProvider):
                     endpoint=endpoint,
                     error_type=type(e).__name__
                 )
-
-                # Capture HTTP errors to Sentry (Phase 4, Task 4.2.1)
                 capture_payment_exception(
-                    e,
-                    operation="api_request",
-                    context={
-                        "method": method,
-                        "endpoint": endpoint,
-                        "error_type": "http_error",
-                    }
+                    e, operation="api_request",
+                    context={"method": method, "endpoint": endpoint, "error_type": "http_error"}
                 )
-
                 raise LemonSqueezyError(f"HTTP request failed: {str(e)}") from e
 
     def _parse_jsonapi_data(self, response: Dict[str, Any]) -> Dict[str, Any]:

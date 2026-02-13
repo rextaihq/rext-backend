@@ -50,7 +50,7 @@ async def test_payment_failure_sets_grace_period(db_session):
         lemonsqueezy_product_id="123456",
         lemonsqueezy_variant_id_monthly="var_monthly",
         lemonsqueezy_variant_id_yearly="var_yearly",
-        api_calls_limit=10000,
+        max_api_calls_per_month=10000,
         features={"feature1": True}
     )
     db_session.add(plan)
@@ -167,7 +167,7 @@ async def test_payment_failure_preserves_first_failure_timestamp(db_session):
         lemonsqueezy_product_id="123456",
         lemonsqueezy_variant_id_monthly="var_monthly",
         lemonsqueezy_variant_id_yearly="var_yearly",
-        api_calls_limit=10000,
+        max_api_calls_per_month=10000,
         features={}
     )
     db_session.add(plan)
@@ -246,7 +246,7 @@ async def test_payment_failure_handles_missing_user_gracefully(db_session):
         lemonsqueezy_product_id="123456",
         lemonsqueezy_variant_id_monthly="var_monthly",
         lemonsqueezy_variant_id_yearly="var_yearly",
-        api_calls_limit=10000,
+        max_api_calls_per_month=10000,
         features={}
     )
     db_session.add(plan)
