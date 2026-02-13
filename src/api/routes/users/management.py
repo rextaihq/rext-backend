@@ -146,9 +146,6 @@ async def delete_user(
 
     Requires user.delete permission (super_admin only).
     """
-    service = UserService(db)
-    current_user_id = UUID(current_user.get("identity"))
-
     try:
         service = UserService(db)
         current_user_id = UUID(current_user.get("identity"))
@@ -168,6 +165,11 @@ async def delete_user(
                 context={"required_permission": "user.delete"},
                 request=request
             )
+
+        # Delete workspace memberships if any
+        memberships = await db.execute(
+            select(WorkspaceMembers).where(WorkspaceMembers.user_id == UUID(user_id))
+        )
 
         # Delete workspace memberships if any
         memberships = await db.execute(
@@ -276,31 +278,6 @@ async def export_user_data(
 
         service = UserService(db)
 
-        # Get user from database
-        db_user = await service.get_user_by_id(user_id)
-
-        # Generate export ID
-        export_id = str(uuid.uuid4())
-
-        # Collect user data based on request
-        export_data = {}
-
-        if export_request.include_profile:
-            export_data["profile"] = {
-                "id": str(db_user.id),
-                "email": db_user.email,
-                "full_name": db_user.full_name,
-                "display_name": db_user.display_name,
-                "language": db_user.language,
-                "timezone": db_user.timezone,
-                "status": db_user.status,
-                "email_verified": db_user.email_verified,
-                "email_verified_at": db_user.email_verified_at.isoformat() if db_user.email_verified_at else None,
-                "created_at": db_user.created_at.isoformat() if db_user.created_at else None,
-                "last_login_at": db_user.last_login_at.isoformat() if db_user.last_login_at else None,
-                "login_count": db_user.login_count
-            }
-
         if export_request.include_roles:
             roles = []
             for user_role in db_user.user_roles:
@@ -330,44 +307,14 @@ async def export_user_data(
             export_data["activity"] = {
                 "note": "Activity logs export will be available once audit log system is queried"
             }
-        
         # Get frontend URL
         frontend_url = settings.FRONTEND_URL
 
-        # NEW: Export billing/subscription data
-        if export_request.include_billing:
-            from src.api.models.subscription_models.subscriptions import UserSubscription
+        # Generate export ID
+        export_id = str(uuid.uuid4())
 
-            # Get all user subscriptions
-            subscriptions = []
-            subscriptions_result = await db.execute(
-                select(UserSubscription)
-                .where(UserSubscription.user_id == user_id)
-                .order_by(UserSubscription.created_at.desc())
-            )
-
-            for sub in subscriptions_result.scalars():
-                subscription_data = {
-                    "subscription_id": str(sub.id),
-                    "plan_id": str(sub.plan_id),
-                    "plan_name": sub.plan.name if sub.plan else None,
-                    "status": sub.status,
-                    "billing_period": sub.billing_period,
-                    "current_period_start": sub.current_period_start.isoformat() if sub.current_period_start else None,
-                    "current_period_end": sub.current_period_end.isoformat() if sub.current_period_end else None,
-                    "trial_ends_at": sub.trial_ends_at.isoformat() if sub.trial_ends_at else None,
-                    "canceled_at": sub.canceled_at.isoformat() if sub.canceled_at else None,
-                    "created_at": sub.created_at.isoformat() if sub.created_at else None,
-                    "lemonsqueezy_id": sub.lemonsqueezy_id
-                }
-                subscriptions.append(subscription_data)
-
-            export_data["subscriptions"] = subscriptions
-            export_data["billing_info"] = {
-                "total_subscriptions": len(subscriptions),
-                "note": "Complete invoice history can be accessed via the LemonSqueezy customer portal",
-                "customer_portal": f"{frontend_url}/settings/subscription"
-            }
+        # Collect user data based on request
+        export_data = {}
 
         # NEW: Export usage metrics
         if export_request.include_usage:
@@ -385,6 +332,8 @@ async def export_user_data(
         import json
         export_json = json.dumps(export_data, indent=2)
 
+        
+
         # Send email with data export in background using EmailService
         background_tasks.add_task(
             send_data_export_email_task,
@@ -397,7 +346,35 @@ async def export_user_data(
             user_id=str(user_id)
         )
 
-        logger.info(f"Data export {export_id} generated for user {user_id}")
+        if export_request.include_roles:
+            roles = []
+            for user_role in db_user.user_roles:
+                roles.append({
+                    "role_name": user_role.role.name if user_role.role else None,
+                    "role_display_name": user_role.role.display_name if user_role.role else None,
+                    "is_primary": user_role.is_primary,
+                    "workspace_id": str(user_role.workspace_id) if user_role.workspace_id else None,
+                    "assigned_at": user_role.assigned_at.isoformat() if user_role.assigned_at else None
+                })
+            export_data["roles"] = roles
+
+        if export_request.include_workspaces:
+            workspaces = []
+            for membership in db_user.workspace_memberships:
+                workspaces.append({
+                    "workspace_id": str(membership.workspace_id),
+                    "workspace_name": membership.workspace.name if membership.workspace else None,
+                    "role": membership.role,
+                    "status": membership.status,
+                    "joined_at": membership.joined_at.isoformat() if membership.joined_at else None
+                })
+            export_data["workspaces"] = workspaces
+
+    # Note: Activity logs would require audit_logs table access
+    if export_request.include_activity:
+        export_data["activity"] = {
+            "note": "Activity logs export will be available once audit log system is queried"
+        }
 
         response_data = DataExportResponse(
             export_id=export_id,
@@ -407,78 +384,49 @@ async def export_user_data(
             message="Data export has been sent to your email address"
         )
 
-        return success(
-            data=response_data.model_dump(),
-            request=request,
-            message="Data export request completed successfully"
+        # Get all user subscriptions
+        subscriptions = []
+        subscriptions_result = await db.execute(
+            select(UserSubscription)
+            .where(UserSubscription.user_id == user_id)
+            .order_by(UserSubscription.created_at.desc())
         )
 
-    except Exception as e:
-        logger.error(f"Failed to export data for user {current_user.get('identity')}: {str(e)}", exc_info=True)
-        return error(
-            message="Failed to export user data",
-            code=ErrorCode.INTERNAL_SERVER_ERROR,
-            status_code=500,
-            severity=ErrorSeverity.HIGH,
-            request=request
-        )
+        for sub in subscriptions_result.scalars():
+            subscription_data = {
+                "subscription_id": str(sub.id),
+                "plan_id": str(sub.plan_id),
+                "plan_name": sub.plan.name if sub.plan else None,
+                "status": sub.status,
+                "billing_period": sub.billing_period,
+                "current_period_start": sub.current_period_start.isoformat() if sub.current_period_start else None,
+                "current_period_end": sub.current_period_end.isoformat() if sub.current_period_end else None,
+                "trial_ends_at": sub.trial_ends_at.isoformat() if sub.trial_ends_at else None,
+                "canceled_at": sub.canceled_at.isoformat() if sub.canceled_at else None,
+                "created_at": sub.created_at.isoformat() if sub.created_at else None,
+                "lemonsqueezy_id": sub.lemonsqueezy_id
+            }
+            subscriptions.append(subscription_data)
 
+    # Prepare JSON for email
+    import json
+    export_json = json.dumps(export_data, indent=2)
 
-@router.get("/{user_id}")
-@require_permissions("user.read")
-async def get_user_by_id(
-    user_id: str,
-    request: Request,
-    current_user: dict = Depends(get_current_user),
-    db: AsyncSession = Depends(get_async_db)
-):
-    """
-    Get a single user by ID.
+    # Queue email task
+    background_tasks.add_task(
+        send_data_export_email_task,
+        email=db_user.email,
+        name=db_user.full_name or db_user.display_name or "User",
+        export_id=export_id,
+        export_json=export_json,
+        export_request=export_request,
+        frontend_url=str(request.base_url),
+        user_id=str(user_id)
+    )
 
-    Returns user profile data including:
-    - Basic info (id, email, full_name, display_name)
-    - Status and verification state
-    - Preferences (language, timezone)
-    - Timestamps (created_at, updated_at)
-
-    Excludes sensitive fields (password_hash, reset_token).
-
-    Requires user.read permission.
-    """
-    from src.utils.response_utils import success, error
-    from src.api.schema.response_schemas import ErrorCode, ErrorSeverity
-    
-    try:
-        service = UserService(db)
-        user = await service.get_user_by_id(UUID(user_id))
-
-        return success(
-            data=user.to_dict(),
-            request=request,
-            message="User retrieved successfully"
-        )
-    except ValueError:
-        return error(
-            message="Invalid user ID format",
-            code=ErrorCode.VALIDATION_FAILED,
-            status_code=400,
-            severity=ErrorSeverity.LOW,
-            request=request
-        )
-    except ResourceNotFoundException:
-        return error(
-            message="User not found",
-            code=ErrorCode.RESOURCE_NOT_FOUND,
-            status_code=404,
-            severity=ErrorSeverity.MEDIUM,
-            request=request
-        )
-    except Exception as e:
-        logger.error(f"Error exporting data for user {current_user.get('identity')}: {str(e)}")
-        return error(
-            message="Failed to export user data",
-            code=ErrorCode.INTERNAL_SERVER_ERROR,
-            status_code=500,
-            severity=ErrorSeverity.HIGH,
-            request=request
-        )
+    return {
+        "message": "Data export requested. You will receive an email shortly with your data.",
+        "export_id": export_id,
+        "recipient_email": db_user.email,
+        "requested_at": datetime.now(timezone.utc).isoformat()
+    }

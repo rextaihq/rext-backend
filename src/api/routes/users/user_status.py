@@ -62,10 +62,39 @@ async def suspend_user(
         target_user = await service.get_user_by_id(UUID(user_id))
         old_status = target_user.status
 
-        # Update status directly
+        # Update status directly (could be extracted to service method)
         target_user.status = "suspended"
         target_user.updated_at = datetime.now(timezone.utc)
         await db.flush()
+
+        # Get admin user for audit log
+        admin_user_id = UUID(current_user.get("identity"))
+        admin_user = await service.get_user_by_id(admin_user_id)
+
+        # Create audit log
+        await create_audit_log_async(
+            db=db,
+            user_id=str(admin_user_id),
+            action="user.suspend",
+            resource_type="user",
+            resource_id=str(user_id),
+            old_values={"status": old_status},
+            new_values={"status": "suspended", "reason": status_data.reason},
+            request=request,
+            full_name=admin_user.full_name if admin_user else None,
+            user_email=admin_user.email if admin_user else None
+        )
+
+    service = UserService(db)
+
+    # Get target user
+    target_user = await service.get_user_by_id(UUID(user_id))
+    old_status = target_user.status
+
+    # Update status directly (could be extracted to service method)
+    target_user.status = "suspended"
+    target_user.updated_at = datetime.now(timezone.utc)
+    await db.flush()
 
         # Get admin user for audit log
         admin_user_id = UUID(current_user.get("identity"))
@@ -174,6 +203,33 @@ async def activate_user(
             user_email=admin_user.email if admin_user else None
         )
 
+        service = UserService(db)
+
+        # Get target user to record old status
+        target_user = await service.get_user_by_id(UUID(user_id))
+        old_status = target_user.status
+
+        # Reactivate via service
+        target_user = await service.reactivate_account(UUID(user_id))
+
+        # Get admin user for audit log
+        admin_user_id = UUID(current_user.get("identity"))
+        admin_user = await service.get_user_by_id(admin_user_id)
+
+        # Create audit log
+        await create_audit_log_async(
+            db=db,
+            user_id=str(admin_user_id),
+            action="user.activate",
+            resource_type="user",
+            resource_id=str(user_id),
+            old_values={"status": old_status},
+            new_values={"status": "active", "reason": status_data.reason},
+            request=request,
+            full_name=admin_user.full_name if admin_user else None,
+            user_email=admin_user.email if admin_user else None
+        )
+
         logger.info(f"User {user_id} activated by admin {admin_user_id}")
 
         response_data = UserStatusResponse(
@@ -242,10 +298,39 @@ async def ban_user(
         target_user = await service.get_user_by_id(UUID(user_id))
         old_status = target_user.status
 
-        # Update status directly
+        # Update status directly (could be extracted to service method)
         target_user.status = "banned"
         target_user.updated_at = datetime.now(timezone.utc)
         await db.flush()
+
+        # Get admin user for audit log
+        admin_user_id = UUID(current_user.get("identity"))
+        admin_user = await service.get_user_by_id(admin_user_id)
+
+        # Create audit log
+        await create_audit_log_async(
+            db=db,
+            user_id=str(admin_user_id),
+            action="user.ban",
+            resource_type="user",
+            resource_id=str(user_id),
+            old_values={"status": old_status},
+            new_values={"status": "banned", "reason": status_data.reason},
+            request=request,
+            full_name=admin_user.full_name if admin_user else None,
+            user_email=admin_user.email if admin_user else None
+        )
+
+    service = UserService(db)
+
+    # Get target user
+    target_user = await service.get_user_by_id(UUID(user_id))
+    old_status = target_user.status
+
+    # Update status directly (could be extracted to service method)
+    target_user.status = "banned"
+    target_user.updated_at = datetime.now(timezone.utc)
+    await db.flush()
 
         # Get admin user for audit log
         admin_user_id = UUID(current_user.get("identity"))
@@ -278,10 +363,144 @@ async def ban_user(
             changed_at=target_user.updated_at.isoformat()
         )
 
-        return success(
-            data=response_data.model_dump(),
+    return response_data.model_dump()
+
+
+@router.post("/deactivate", response_model=DeactivateAccountResponse)
+@require_permissions("user.update")
+@db_transaction_handler("deactivate account", auto_commit=True)
+async def deactivate_account(
+    request: Request,
+    deactivation_data: DeactivateAccountRequest,
+    current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_async_db)
+):
+    """
+    Deactivate user's own account.
+    Thin controller - uses UserService.deactivate_account().
+
+    Account will be marked as inactive and scheduled for permanent deletion after 14 days.
+    User will be logged out immediately.
+
+    If the user has active subscriptions, they must either:
+    1. Cancel them manually first, OR
+    2. Set cancel_subscriptions=true to auto-cancel them
+
+    Requires user.update permission (user can only deactivate their own account).
+    """
+    try:
+        user_id = UUID(current_user.get("identity"))
+        logger.info(f"Account deactivation requested for user: {user_id}")
+
+        service = UserService(db)
+
+        # Get user and check status
+        db_user = await service.get_user_by_id(user_id)
+
+        # Check if already deactivated
+        if db_user.status == "inactive":
+            return error(
+                message="Account is already deactivated",
+                code=ErrorCode.INVALID_VALUE,
+                status_code=400,
+                severity=ErrorSeverity.LOW,
+                request=request
+            )
+
+        # Store old status for audit
+        old_status = db_user.status
+
+        # Check for active subscriptions
+        from src.api.models.subscription_models.subscriptions import UserSubscription
+        from src.services.subscription_service import SubscriptionService
+
+        subscriptions_result = await db.execute(
+            select(UserSubscription)
+            .where(
+                UserSubscription.user_id == user_id,
+                UserSubscription.status.in_(["active", "trialing"])
+            )
+        )
+        active_subs = subscriptions_result.scalars().all()
+
+        if active_subs and not deactivation_data.cancel_subscriptions:
+            # Return error with subscription details
+            subscription_details = [
+                {
+                    "subscription_id": str(sub.id),
+                    "plan_name": sub.plan.name if sub.plan else "Unknown",
+                    "status": sub.status,
+                    "current_period_end": sub.current_period_end.isoformat() if sub.current_period_end else None
+                }
+                for sub in active_subs
+            ]
+
+            return error(
+                message="You have active subscriptions. Please cancel them first or enable automatic cancellation.",
+                code=ErrorCode.VALIDATION_FAILED,
+                status_code=400,
+                severity=ErrorSeverity.MEDIUM,
+                request=request
+            )
+
+        # Auto-cancel subscriptions if requested
+        if active_subs and deactivation_data.cancel_subscriptions:
+            subscription_service = SubscriptionService(db)
+            canceled_count = 0
+            for sub in active_subs:
+                try:
+                    await subscription_service.cancel(
+                        user_id=user_id,
+                        reason="Account deactivation"
+                    )
+                    canceled_count += 1
+                    logger.info(f"Canceled subscription {sub.id} for user {user_id} during account deactivation")
+                except Exception as e:
+                    logger.error(f"Failed to cancel subscription {sub.id}: {e}")
+                    # Continue with other subscriptions
+
+            logger.info(f"Canceled {canceled_count} subscriptions for user {user_id} during deactivation")
+
+        # Deactivate via service
+        db_user = await service.deactivate_account(user_id)
+
+        # Calculate scheduled deletion date (14 days from now)
+        scheduled_deletion = db_user.deactivated_at + timedelta(days=14)
+
+        # Create audit log
+        await create_audit_log_async(
+            db=db,
+            user_id=str(user_id),
+            action="user.deactivate",
+            resource_type="user",
+            resource_id=str(user_id),
+            old_values={"status": old_status},
+            new_values={
+                "status": "inactive",
+                "deactivated_at": db_user.deactivated_at.isoformat(),
+                "scheduled_deletion": scheduled_deletion.isoformat(),
+                "reason": deactivation_data.reason
+            },
             request=request,
-            message="User banned successfully"
+            full_name=db_user.full_name,
+            user_email=db_user.email
+        )
+
+        logger.info(f"User {user_id} deactivated successfully. Scheduled deletion: {scheduled_deletion}")
+
+    # Verify password before allowing deactivation
+    if not await service.verify_user_password(user_id, deactivation_data.password):
+        logger.warning(f"Failed deactivation attempt for user {user_id}: invalid password")
+        raise RextAuthenticationException(
+            message="Invalid password. Please enter your current password to deactivate your account."
+        )
+
+    # Check for active subscriptions
+    subscriptions_result = await db.execute(
+        select(UserSubscription)
+        .where(
+            UserSubscription.user_id == user_id,
+            UserSubscription.status.in_(["active", "trialing"])
         )
 
     except ResourceNotFoundException:
@@ -293,7 +512,11 @@ async def ban_user(
             request=request
         )
     except Exception as e:
-        logger.error(f"Error banning user {user_id}: {str(e)}")
-        raise
-
-
+        logger.error(f"Error deactivating account for user {current_user.get('identity')}: {str(e)}")
+        return error(
+            message="Failed to deactivate account",
+            code=ErrorCode.INTERNAL_SERVER_ERROR,
+            status_code=500,
+            severity=ErrorSeverity.HIGH,
+            request=request
+        )
