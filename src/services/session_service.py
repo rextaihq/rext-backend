@@ -114,7 +114,7 @@ class SessionService:
                 message="Session not found or does not belong to user"
             )
 
-        # Blacklist token
+        # Blacklist token 
         if session.jti:
             blacklist_entry = TokenBlacklist(
                 jti=session.jti,
