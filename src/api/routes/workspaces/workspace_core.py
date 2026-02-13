@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from uuid import UUID
-
+from src.services.workspace_service import WorkspaceService
 from src.utils.logger import logger
 from src.utils.response_utils import success, error
 from src.utils.route_decorators import db_transaction_handler, require_permissions

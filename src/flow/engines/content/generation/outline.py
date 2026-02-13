@@ -11,21 +11,22 @@ async def generate_outline(state: REXT):
     """
     Generates a content outline using an LLM.
     """
-
-    # 1. Get topic and content type from state
+# File: src/flow/engines/content/generation/outline.py
+# Replace lines 15-28 with:
     content_state = state.get("content", {})
     topic = content_state.get("selected_topic", "")
-    content_type = content_state.get("content_type", "article")  # Default to article
-    
+    content_type = content_state.get("content_type", "article")
 
-    # if not topic:
-    #     logger.error("No topic found in state")
-    #     return {
-    #         "content": {
-    #             **state.get("content", {}),
-    #             "error": "No topic found in state",
-    #         }
-    #     }
+    if not topic:
+        logger.error("No topic found in state")
+        return {
+            "content": {
+                **content_state,
+                "error": "No topic found in state",
+            }
+        }
+    logger.info("Generating outline for: %s (content type: %s)", topic, content_type)
+
 
     logger.info(f"Generating outline for: {topic} (content type: {content_type})")
 

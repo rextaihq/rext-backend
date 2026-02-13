@@ -33,19 +33,16 @@ def create_seo_engine():
     graph.add_node("relevance_keyword_finder", relevance_keyword_finder)
     graph.add_node("keyword_recommendation", keyword_recommendation)
 
-    # ✅ FIX 1: Proper parallel fan-out (single START path)
     graph.add_edge(START, "seo_entry")
     graph.add_edge("seo_entry", "compute_keyword_difficulty")
     graph.add_edge("seo_entry", "competitors_gap")
     graph.add_edge("seo_entry", "seo_opportunity")
     graph.add_edge("seo_entry", "relevance_keyword_finder")
 
-    # ✅ FIX 2: All paths converge to keyword_recommendation
     graph.add_edge("compute_keyword_difficulty", "keyword_recommendation")
     graph.add_edge("competitors_gap", "keyword_recommendation")
     graph.add_edge("seo_opportunity", "keyword_recommendation")
     graph.add_edge("relevance_keyword_finder", "keyword_recommendation")
-    # graph.add_edge("keyword_recommendation", END)
 
     graph.add_conditional_edges(
         "keyword_recommendation",
