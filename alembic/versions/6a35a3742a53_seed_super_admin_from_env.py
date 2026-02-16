@@ -24,7 +24,7 @@ from sqlalchemy import orm
 from sqlalchemy.ext.declarative import declarative_base
 import sqlalchemy as sa
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from decimal import Decimal
 import bcrypt
 import os
@@ -102,7 +102,7 @@ def upgrade() -> None:
     session = orm.Session(bind=bind)
 
     try:
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
 
         print("\n" + "="*80)
         print("SEEDING SUPER ADMIN & TRIAL PLAN")

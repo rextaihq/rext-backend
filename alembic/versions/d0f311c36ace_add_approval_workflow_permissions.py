@@ -15,7 +15,7 @@ from alembic import op
 import sqlalchemy as sa
 from sqlalchemy import orm
 from sqlalchemy.ext.declarative import declarative_base
-from datetime import datetime
+from datetime import datetime, timezone
 import uuid
 
 # revision identifiers, used by Alembic.
@@ -149,7 +149,7 @@ def upgrade() -> None:
                 description=perm_data["description"],
                 resource=perm_data["resource"],
                 action=perm_data["action"],
-                created_at=datetime.utcnow()
+                created_at=datetime.now(timezone.utc)
             )
             session.add(perm)
             created_count += 1

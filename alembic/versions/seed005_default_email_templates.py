@@ -10,7 +10,7 @@ Create Date: 2025-10-05 00:02:00.000000
 
 """
 from typing import Sequence, Union
-from datetime import datetime
+from datetime import datetime, timezone
 
 from alembic import op
 import sqlalchemy as sa
@@ -168,8 +168,8 @@ The Rext Team''',
                 'template_type': template['template_type'],
                 'subject': template['subject'],
                 'body': template['body'],
-                'created_at': datetime.utcnow(),
-                'updated_at': datetime.utcnow(),
+                'created_at': datetime.now(timezone.utc),
+                'updated_at': datetime.now(timezone.utc),
             }
         )
 
