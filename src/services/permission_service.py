@@ -207,7 +207,6 @@ class PermissionService:
             "data": {"permission_id": str(permission_id)},
             "message": f"Permission '{permission_name}' deleted successfully",
         }
-
     async def assign_permissions_to_role(
         self,
         *,
@@ -240,6 +239,8 @@ class PermissionService:
 
         if added:
             await self.db.flush()
+            # Invalidate permission cache for all users with this role
+            await self._invalidate_role_users_cache(role_id)
 
         logger.info(
             "Assigned permissions to role",
@@ -258,7 +259,6 @@ class PermissionService:
             "skipped_count": skipped,
             "invalid_count": invalid,
         }
-
     async def revoke_permission_from_role(
         self,
         *,
@@ -282,6 +282,9 @@ class PermissionService:
         permission = await self._get_permission_or_404(permission_id)
 
         await self.db.delete(assignment)
+
+        # Invalidate permission cache for all users with this role
+        await self._invalidate_role_users_cache(role_id)
 
         logger.info(
             "Revoked permission from role",
@@ -399,3 +402,44 @@ class PermissionService:
                 message="Permission with this name already exists",
                 context={"name": name},
             )
+    async def _invalidate_role_users_cache(self, role_id: UUID) -> None:
+        """
+        Invalidate permission cache for all users assigned to a specific role.
+
+        When permissions on a role change (added or revoked), all users holding
+        that role may have stale cached permissions. This method queries all
+        user_role assignments for the given role and invalidates each user's
+        permission cache in Redis.
+
+        Args:
+            role_id: UUID of the role whose users' caches should be invalidated
+        """
+        from src.api.cache.decorators import invalidate_cache
+
+        # Find all users assigned to this role
+        result = await self.db.execute(
+            select(UserRole.user_id).where(UserRole.role_id == role_id)
+        )
+        user_ids = [row[0] for row in result.all()]
+
+        if not user_ids:
+            logger.debug(
+                "No users assigned to role, skipping cache invalidation",
+                extra={"role_id": str(role_id)}
+            )
+            return
+
+        # Invalidate cache for each affected user
+        invalidated_count = 0
+        for user_id in user_ids:
+            deleted = await invalidate_cache(f"user:permissions:{user_id}:*")
+            invalidated_count += deleted
+
+        logger.info(
+            "Invalidated permission cache for role users",
+            extra={
+                "role_id": str(role_id),
+                "affected_users": len(user_ids),
+                "cache_keys_deleted": invalidated_count
+            }
+        )

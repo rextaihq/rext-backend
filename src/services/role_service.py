@@ -541,11 +541,21 @@ class RoleService:
 
         await self.db.flush()
 
+        await self.db.flush()
+
+        # Invalidate permission cache for all users with this role
+        from src.api.cache.decorators import invalidate_cache
+        result = await self.db.execute(
+            select(UserRole.user_id).where(UserRole.role_id == role_id)
+        )
+        user_ids = [row[0] for row in result.all()]
+        for user_id in user_ids:
+            await invalidate_cache(f"user:permissions:{user_id}:*")
+
         logger.info(
             f"Permissions updated for role {role.name}: {len(permission_ids)} permissions",
             extra={"role_id": str(role_id), "permission_count": len(permission_ids)}
         )
-
         return role
 
     async def get_role_hierarchy(
