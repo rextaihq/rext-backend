@@ -186,8 +186,8 @@ async def list_user_roles(
 
     # If not own user, check permissions
     if not is_own_user:
-        from src.api.routes.roles.modules.helpers import check_role_permission
-        await check_role_permission(db, UUID(requester_id), "user.read")
+        from src.utils.rbac_utils import check_permission_or_admin
+        await check_permission_or_admin(db, UUID(requester_id), "user.read")
 
     service = RoleService(db)
 

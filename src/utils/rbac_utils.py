@@ -375,3 +375,72 @@ async def get_user_role_names(
         await cache.set(cache_key, role_names, ttl=300)
 
     return role_names
+from fastapi import HTTPException, status as http_status
+
+
+async def check_permission_or_admin(
+    db: AsyncSession,
+    user_id: UUID,
+    permission_name: str,
+    raise_on_deny: bool = True,
+    use_http_exception: bool = True,
+) -> bool:
+    """
+    Check if user has a specific permission or is an admin/super_admin.
+
+    This is the single source of truth for the "check permission or admin bypass"
+    pattern used across route helpers and services.
+
+    Args:
+        db: AsyncSession database session
+        user_id: User UUID
+        permission_name: Required permission name (e.g., "role.read", "permission.create")
+        raise_on_deny: If True, raises an exception when the user lacks permission.
+            If False, returns False silently.
+        use_http_exception: If True and raise_on_deny is True, raises HTTPException(403).
+            If False and raise_on_deny is True, raises RextAuthorizationException.
+            This parameter is ignored when raise_on_deny is False.
+
+    Returns:
+        True if user has the permission or is admin.
+
+    Raises:
+        HTTPException(403): If raise_on_deny=True and use_http_exception=True and user lacks permission.
+        RextAuthorizationException: If raise_on_deny=True and use_http_exception=False and user lacks permission.
+    """
+    # Check if user has admin or super_admin role
+    admin_result = await db.execute(
+        select(UserRole).join(Role).where(
+            UserRole.user_id == user_id,
+            Role.name.in_(["admin", "super_admin"])
+        )
+    )
+    if admin_result.scalar_one_or_none() is not None:
+        return True
+
+    # Check for specific permission
+    perm_result = await db.execute(
+        select(Permission.name)
+        .join(RolePermission, RolePermission.permission_id == Permission.id)
+        .join(UserRole, UserRole.role_id == RolePermission.role_id)
+        .where(
+            UserRole.user_id == user_id,
+            Permission.name == permission_name,
+        )
+    )
+    if perm_result.scalar_one_or_none() is not None:
+        return True
+
+    if not raise_on_deny:
+        return False
+
+    if use_http_exception:
+        raise HTTPException(
+            status_code=http_status.HTTP_403_FORBIDDEN,
+            detail=f"Insufficient permissions. Required: {permission_name} or admin role",
+        )
+    else:
+        raise RextAuthorizationException(
+            message="You do not have permission to perform this action",
+            context={"required_permission": permission_name, "user_id": str(user_id)},
+        )

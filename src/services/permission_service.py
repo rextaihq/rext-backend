@@ -303,26 +303,13 @@ class PermissionService:
     # ------------------------------------------------------------------
 
     async def _ensure_user_can(self, user_id: UUID, permission_name: str) -> None:
-        admin_check = await self.db.execute(
-            select(UserRole)
-            .join(Role)
-            .where(UserRole.user_id == user_id, Role.name.in_(["admin", "super_admin"]))
-        )
-        if admin_check.scalar_one_or_none():
-            return
-
-        permission_check = await self.db.execute(
-            select(Permission.name)
-            .join(RolePermission, RolePermission.permission_id == Permission.id)
-            .join(UserRole, UserRole.role_id == RolePermission.role_id)
-            .where(UserRole.user_id == user_id, Permission.name == permission_name)
+        """Check if user has permission or is admin. Raises RextAuthorizationException on denial."""
+        from src.utils.rbac_utils import check_permission_or_admin
+        await check_permission_or_admin(
+            self.db, user_id, permission_name,
+            raise_on_deny=True, use_http_exception=False
         )
 
-        if not permission_check.scalar_one_or_none():
-            raise RextAuthorizationException(
-                message="You do not have permission to perform this action",
-                context={"required_permission": permission_name, "user_id": str(user_id)},
-            )
 
     async def _get_permission_or_404(self, permission_id: UUID) -> Permission:
         result = await self.db.execute(
