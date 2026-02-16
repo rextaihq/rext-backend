@@ -47,7 +47,7 @@ router = APIRouter(
 
 
 @router.post("/subscribe", response_model=dict, status_code=status.HTTP_201_CREATED)
-@require_permissions("subscription.manage")
+@require_permissions("subscription.manage", workspace_scoped=False)
 @db_transaction_handler("subscribe to plan")
 async def subscribe_to_plan(
     request: Request,
@@ -92,7 +92,7 @@ async def subscribe_to_plan(
 
 
 @router.post("/checkout", response_model=dict, status_code=status.HTTP_200_OK)
-@require_permissions("subscription.manage")
+@require_permissions("subscription.manage", workspace_scoped=False)
 @db_transaction_handler("create checkout session")
 async def create_checkout_session(
     request: Request,
@@ -244,7 +244,7 @@ async def get_my_subscription(
 # NOTE: /status endpoint is in checkout_routes.py (includes portal URL and free tier usage)
 
 @router.get("/history", response_model=dict)
-@require_permissions("subscription.read")
+@require_permissions("subscription.read", workspace_scoped=False)
 @db_transaction_handler("get subscription history", auto_commit=False)
 async def get_subscription_history(
     request: Request,
@@ -278,7 +278,7 @@ async def get_subscription_history(
 
 
 @router.post("/upgrade", response_model=dict)
-@require_permissions("subscription.manage")
+@require_permissions("subscription.manage", workspace_scoped=False)
 @db_transaction_handler("upgrade subscription")
 async def upgrade_subscription(
     request: Request,
@@ -353,7 +353,7 @@ async def upgrade_subscription(
     
 #downgrade route
 @router.post("/downgrade", response_model=dict)
-@require_permissions("subscription.manage")
+@require_permissions("subscription.manage", workspace_scoped=False)
 @db_transaction_handler("downgrade subscription")
 async def downgrade_subscription(
     request: Request,
@@ -414,7 +414,7 @@ async def downgrade_subscription(
     return response_data
 
 @router.post("/cancel", response_model=dict)
-@require_permissions("subscription.manage")
+@require_permissions("subscription.manage", workspace_scoped=False)
 @db_transaction_handler("cancel subscription")
 async def cancel_subscription(
     request: Request,
@@ -552,7 +552,7 @@ async def get_usage_stats(
 
 
 @router.get("/trial-status", response_model=dict)
-@require_permissions("subscription.read")
+@require_permissions("subscription.read", workspace_scoped=False)
 @db_transaction_handler("get trial status", "Trial status retrieved successfully", auto_commit=False)
 async def get_trial_status(
     background_tasks: BackgroundTasks,
@@ -600,7 +600,7 @@ async def get_trial_status(
 
 
 @router.get("/invoices", response_model=dict)
-@require_permissions("subscription.read")
+@require_permissions("subscription.read", workspace_scoped=False)
 @db_transaction_handler("get invoices", "Invoices retrieved successfully", auto_commit=False)
 async def get_invoices(
     request: Request,
@@ -706,7 +706,7 @@ async def get_invoices(
         )
 
 @router.get("/portal", response_model=dict, status_code=status.HTTP_200_OK)
-@require_permissions("subscription.read")
+@require_permissions("subscription.read", workspace_scoped=False)
 @db_transaction_handler("create portal session", auto_commit=False)
 async def create_portal_session(
     request: Request,

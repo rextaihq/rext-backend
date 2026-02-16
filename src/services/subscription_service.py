@@ -1090,7 +1090,6 @@ class SubscriptionService:
         # Usage-based check
         is_usage_downgrade = (
             (new_plan.max_workspaces != -1 and new_plan.max_workspaces < current_usage["workspaces"]) or
-            (new_plan.max_topics != -1 and new_plan.max_topics < current_usage["topics"]) or
             (new_plan.max_knowledge_items != -1 and new_plan.max_knowledge_items < current_usage["knowledge_items"])
         )
 
