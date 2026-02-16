@@ -24,8 +24,6 @@ async def generate_outline(state: REXT) -> dict:
         dict: State update with ``content.outline`` and ``content.status``
         set to ``"planning"``, or error state on failure.
     """
-# File: src/flow/engines/content/generation/outline.py
-# Replace lines 15-28 with:
     content_state = state.get("content", {})
     topic = content_state.get("selected_topic", "")
     content_type = content_state.get("content_type", "article")
