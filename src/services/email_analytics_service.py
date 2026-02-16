@@ -5,6 +5,7 @@ Service for calculating email analytics and performance metrics.
 Supports workspace-scoped filtering for multi-tenancy.
 """
 from datetime import datetime, timezone, timedelta
+from src.utils.datetime_utils import utc_now
 from typing import Optional, Dict, List, Any
 from uuid import UUID
 
@@ -26,7 +27,7 @@ class EmailAnalyticsService:
 
     def _parse_date_range(self, date_range: str) -> datetime:
         """Parse date range string to start date"""
-        now = datetime.now(timezone.utc)
+        now = utc_now()
 
         if date_range.endswith('d'):
             days = int(date_range[:-1])

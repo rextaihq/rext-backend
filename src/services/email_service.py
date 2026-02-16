@@ -7,6 +7,7 @@ Acts as the main interface between application code and email providers.
 from typing import Optional, Dict, Any, List
 from uuid import UUID
 from datetime import datetime, timezone
+from src.utils.datetime_utils import utc_now
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from tenacity import (
@@ -164,8 +165,8 @@ class EmailService:
             subject=subject,
             status="queued",
             tags=tags,
-            created_at=datetime.now(timezone.utc),
-            updated_at=datetime.now(timezone.utc)
+            created_at=utc_now(),
+            updated_at=utc_now()
         )
 
         self.db.add(email_log)
@@ -322,15 +323,15 @@ class EmailService:
         if result.success:
             email_log.status = "sent"
             email_log.provider_message_id = result.message_id
-            email_log.sent_at = datetime.now(timezone.utc)
+            email_log.sent_at = utc_now()
             email_log.error_message = None
         else:
             email_log.status = "failed"
             email_log.error_message = result.error
-            email_log.failed_at = datetime.now(timezone.utc)
+            email_log.failed_at = utc_now()
 
         email_log.provider_response = result.provider_response
-        email_log.updated_at = datetime.now(timezone.utc)
+        email_log.updated_at = utc_now()
 
     async def get_email_log(self, email_log_id: UUID) -> Optional[EmailLog]:
         """
@@ -416,7 +417,7 @@ class EmailService:
         """
         from datetime import timedelta
 
-        cutoff_time = datetime.now(timezone.utc) - timedelta(hours=hours)
+        cutoff_time = utc_now() - timedelta(hours=hours)
 
         result = await self.db.execute(
             select(EmailLog)
@@ -475,7 +476,7 @@ class EmailService:
         email_log.status = "queued"
         email_log.error_message = None
         email_log.failed_at = None
-        email_log.updated_at = datetime.now(timezone.utc)
+        email_log.updated_at = utc_now()
 
         # Try sending with current provider
         provider = get_email_provider()
