@@ -3,6 +3,7 @@ from src.flow.states.rext import REXT
 from src.flow.model.structure.outline import Outline
 from src.flow.model.llm_manager import load_model
 from src.flow.prompts.human.outline import get_outline_prompt
+DEFAULT_MAX_TOKENS = 4096
 
 logger = logging.getLogger(__name__)
 
@@ -68,7 +69,7 @@ async def generate_outline(state: REXT) -> dict:
 
     # 3. Generate outline
     try:
-        outline_model = load_model().with_structured_output(Outline)
+        outline_model = load_model(max_tokens=DEFAULT_MAX_TOKENS).with_structured_output(Outline)
         prompt_template = get_outline_prompt()
 
         messages = prompt_template.format_messages(

@@ -8,7 +8,7 @@ E-E-A-T injection and humanization are handled in separate nodes.
 import logging
 import json
 from src.flow.states.rext import REXT
-from src.flow.model.llm_manager import load_model
+from src.flow.model.llm_manager import load_content_model
 from src.flow.model.structure.content import GeneratedContent
 from src.flow.prompts.human.content import get_content_prompt
 
@@ -140,8 +140,8 @@ async def generate_content(state: REXT) -> dict:
             "tone": tone,
         }
 
-        # Load model and prepare messages
-        content_model = load_model().with_structured_output(GeneratedContent)
+        # 6️⃣ Load model and prepare messages
+        content_model = load_content_model().with_structured_output(GeneratedContent)
         messages = get_content_prompt().format_messages(**prompt_data)
         logger.info(f"Number of messages sent to LLM: {len(messages)}")
 
