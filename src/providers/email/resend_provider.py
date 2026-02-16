@@ -5,6 +5,7 @@ Integrates with Resend API for reliable email delivery.
 Implements the IEmailProvider interface for provider abstraction.
 """
 import resend
+import asyncio
 from typing import Dict, Any, Optional
 from src.providers.email.base import IEmailProvider, EmailMessage, EmailResult, EmailRecipient
 from src.config.email_config import email_config
@@ -59,7 +60,8 @@ class ResendEmailProvider(IEmailProvider):
             EmailResult with success status, message_id, and provider response
 
         Note:
-            - Resend SDK is synchronous, so we wrap it in async for interface consistency
+            - Resend SDK is synchronous; the call is offloaded to a thread pool via
+              asyncio.to_thread() to avoid blocking the FastAPI event loop
             - Errors are caught and returned as EmailResult with success=False
             - All operations are logged for debugging and monitoring
         """
@@ -79,7 +81,9 @@ class ResendEmailProvider(IEmailProvider):
             )
 
             # Send via Resend SDK (synchronous call)
-            response = resend.Emails.send(params)
+            # Offload synchronous Resend SDK call to thread pool
+            # to avoid blocking the FastAPI event loop
+            response = await asyncio.to_thread(resend.Emails.send, params)
 
             # Extract message ID from response
             message_id = response.get("id") if isinstance(response, dict) else None
