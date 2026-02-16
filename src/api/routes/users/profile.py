@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 from src.utils.logger import logger
 from src.api.security.dependencies import get_current_user
 from src.utils.route_decorators import require_permissions, db_transaction_handler
-from src.api.schema.user_schema import UpdateProfileRequest, UserResponse
+from src.api.schema.user_schema import UpdateProfileRequest, UserResponse, ProfileResponse
 from src.api.schema.notification_schema import NotificationPreferencesResponse, UpdateNotificationPreferencesRequest
 from src.api.database.async_database import get_async_db
 from src.utils.response_utils import success, error

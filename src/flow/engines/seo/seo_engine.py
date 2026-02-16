@@ -1,10 +1,11 @@
 import logging
 from langgraph.graph import StateGraph, START, END
+from langgraph.graph.state import CompiledStateGraph
 from src.flow.states.rext import REXT
 
 logger = logging.getLogger(__name__)
 
-def create_seo_engine():
+def create_seo_engine() -> CompiledStateGraph:
     """Create the SEO analysis engine workflow.
 
     Builds a LangGraph subgraph with parallel SEO analysis nodes
@@ -37,14 +38,12 @@ def create_seo_engine():
     graph.add_node("relevance_keyword_finder", relevance_keyword_finder)
     graph.add_node("keyword_recommendation", keyword_recommendation)
 
-    # ✅ FIX 1: Proper parallel fan-out (single START path)
     graph.add_edge(START, "seo_entry")
     graph.add_edge("seo_entry", "compute_keyword_difficulty")
     graph.add_edge("seo_entry", "competitors_gap")
     graph.add_edge("seo_entry", "seo_opportunity")
     graph.add_edge("seo_entry", "relevance_keyword_finder")
 
-    # ✅ FIX 2: All paths converge to keyword_recommendation
     graph.add_edge("compute_keyword_difficulty", "keyword_recommendation")
     graph.add_edge("competitors_gap", "keyword_recommendation")
     graph.add_edge("seo_opportunity", "keyword_recommendation")

@@ -7,7 +7,7 @@ from src.flow.prompts.human.outline import get_outline_prompt
 logger = logging.getLogger(__name__)
 
 
-async def generate_outline(state: REXT):
+async def generate_outline(state: REXT) -> dict:
     """Generate a content outline using an LLM.
 
     Uses the selected topic, content type, SERP context, competitor

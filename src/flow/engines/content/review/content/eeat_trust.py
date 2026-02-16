@@ -5,7 +5,7 @@ from src.flow.states.rext import REXT
 logger = logging.getLogger(__name__)
 
 
-def calculate_eeat_trust(state: REXT):
+def calculate_eeat_trust(state: REXT) -> dict:
     """Calculate E-E-A-T trust score for generated content.
 
     Runs hybrid evaluation using regex-based signal extraction and
