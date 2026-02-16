@@ -1,53 +1,54 @@
 import logging
-import textstat
 from src.flow.states.rext import REXT
 
 logger = logging.getLogger(__name__)
 
 
-def calculate_eeat_trust(state: REXT):
-    # get the content state form rext state
+async def calculate_eeat_trust(state: REXT):
+    """Calculate E-E-A-T trust score for generated content.
+
+    Uses a hybrid approach combining regex signal extraction
+    and LLM qualitative analysis.
+    """
     content_state = state.get("content", {})
+    # Check for upstream errors — skip review if content generation failed
+    if content_state.get("error"):
+        logger.warning(
+            "Skipping E-E-A-T trust calculation due to upstream error: %s",
+            content_state["error"],
+        )
+        return {}
+
     final_content = content_state.get("final_content", {})
 
-    # get the full final content data
     title = final_content.get("title", "")
-    body_markdown = final_content.get("body_markdown", "")
-    # meta title
-    meta_title = final_content.get("meta_title", "")
-    # meta description
-    meta_description = final_content.get("meta_description", "")
-    # tags
-    tags = final_content.get("tags", [])
-    # primary keyword
     primary_keyword = final_content.get("primary_keyword", "")
-    # secondary keywords
     secondary_keywords = final_content.get("secondary_keywords", [])
+    html_content = final_content.get("html_content", "")
+
+    if not html_content:
+        logger.warning("No HTML content available for E-E-A-T evaluation, skipping")
+        return {}
 
     from src.flow.engines.content.utils.eeat import calculate_eeat_trust_score
 
-    # We need HTML content for better regex analysis
-    html_content = final_content.get("html_content", "")
-    
-    # Run hybrid evaluation
     try:
-        eeat_results = calculate_eeat_trust_score(
+        eeat_results = await calculate_eeat_trust_score(
             html_content=html_content,
             metadata={
                 "title": title,
                 "primary_keyword": primary_keyword,
-                "secondary_keywords": secondary_keywords
-            }
+                "secondary_keywords": secondary_keywords,
+            },
         )
-        
-        # Return only the update delta for deep merging
+
         return {
             "content": {
                 "review": {
-                    "trust_score": eeat_results
+                    "trust_score": eeat_results,
                 }
             }
         }
     except Exception as e:
-        logger.error(f"E-E-A-T calculation node failed: {e}")
+        logger.error("E-E-A-T calculation node failed: %s", e, exc_info=True)
         return {}

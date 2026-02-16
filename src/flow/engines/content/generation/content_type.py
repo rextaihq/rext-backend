@@ -24,6 +24,13 @@ def content_type(state: REXT) -> REXT:
     
     # get the selected topic from the state
     content_state = state.get("content", {})
+    # Check for upstream errors — skip processing if prior node failed
+    if content_state.get("error"):
+        logger.warning(
+            "Skipping content type selection due to upstream error: %s",
+            content_state["error"],
+        )
+        return {"content": content_state}
     selected_topic = content_state.get("selected_topic", "")
     
     # get the intent from the state - aggregate intent distribution across all competitors
