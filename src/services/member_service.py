@@ -759,13 +759,19 @@ class MemberService(InvitationService):
         """
         from src.api.models.user_models.users import Users
         from src.api.models.user_models.roles import Role
+        from src.api.models.user_models.user_roles import UserRole
+        from src.utils.rbac_utils import ADMIN_HIERARCHY_THRESHOLD
 
         query = (
             select(WorkspaceMembers, Users)
             .join(Users, Users.id == WorkspaceMembers.user_id)
-            .join(Role, WorkspaceMembers.role_id == Role.id)
+            .join(UserRole, and_(
+                UserRole.user_id == WorkspaceMembers.user_id,
+                UserRole.workspace_id == workspace_id
+            ))
+            .join(Role, Role.id == UserRole.role_id)
             .where(WorkspaceMembers.workspace_id == workspace_id)
-            .where(Role.name.in_(["owner", "admin"]))
+            .where(Role.hierarchy_level >= 80) # 80 is workspace_owner
             .order_by(WorkspaceMembers.joined_at.asc())
         )
 

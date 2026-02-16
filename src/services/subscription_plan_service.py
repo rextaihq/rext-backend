@@ -31,12 +31,8 @@ class SubscriptionPlanService:
         self.db = db
 
     async def is_admin(self, user_id: UUID) -> bool:
-        result = await self.db.execute(
-            select(UserRole)
-            .join(Role)
-            .where(UserRole.user_id == user_id, Role.name.in_(["admin", "super_admin"]))
-        )
-        return result.scalar_one_or_none() is not None
+        from src.utils.rbac_utils import is_user_admin
+        return await is_user_admin(self.db, user_id)
 
     async def require_admin(self, user_id: UUID) -> None:
         if not await self.is_admin(user_id):

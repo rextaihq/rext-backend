@@ -55,6 +55,17 @@ class WorkspacePermissionService:
         is_admin = await is_user_admin(db, user_id)
 
         if is_admin:
+            # Get actual highest role name for the response
+            role_query = (
+                select(Role.name)
+                .join(UserRole, Role.id == UserRole.role_id)
+                .where(UserRole.user_id == user_id)
+                .order_by(Role.hierarchy_level.desc())
+                .limit(1)
+            )
+            role_result = await db.execute(role_query)
+            highest_role_name = role_result.scalar() or "admin"
+
             # Admin gets all permissions
             all_permissions_result = await db.execute(
                 select(Permission.name)
@@ -67,7 +78,7 @@ class WorkspacePermissionService:
             return {
                 "workspace_id": str(workspace_id),
                 "workspace_slug": workspace.slug,
-                "user_role": "super_admin",
+                "user_role": highest_role_name,
                 "permissions": all_permissions,
             }
 

@@ -377,14 +377,6 @@ async def get_user_role_names(
 
     return role_names
 
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
-from uuid import UUID
-
-from src.api.models.user_models.user_roles import UserRole
-from src.api.models.user_models.roles import Role
-
-
 async def is_user_admin(
     db: AsyncSession,
     user_id: UUID,
@@ -402,9 +394,9 @@ async def is_user_admin(
     Args:
         db: Async database session
         user_id: UUID of the user to check
-        workspace_id: Optional workspace UUID. If provided, also checks
-                      workspace-scoped admin roles. If None, only checks
-                      global (non-workspace) roles.
+        workspace_id: Optional workspace UUID. If provided, checks for
+                      global admins OR admins specifically within that workspace.
+                      If None, only checks global (non-workspace) roles.
 
     Returns:
         True if the user has an admin-level role, False otherwise.
@@ -418,10 +410,40 @@ async def is_user_admin(
         )
     )
 
-    # If workspace_id is provided, include both global and workspace-scoped admin roles
-    # If not provided, only check global roles (workspace_id IS NULL)
     if workspace_id is None:
-        query = query.where(UserRole.workspace_id == None)
+        # Only check global roles
+        query = query.where(UserRole.workspace_id.is_(None))
+    else:
+        # Check global roles OR specifically this workspace
+        from sqlalchemy import or_
+        query = query.where(
+            or_(
+                UserRole.workspace_id.is_(None),
+                UserRole.workspace_id == workspace_id
+            )
+        )
+
+    result = await db.execute(query)
+    return result.scalar_one_or_none() is not None
+
+
+async def is_user_super_admin(
+    db: AsyncSession,
+    user_id: UUID
+) -> bool:
+    """
+    Check if a user has a super-admin level role (hierarchy_level >= 100).
+    Super admin roles are always global (workspace_id IS NULL).
+    """
+    query = (
+        select(UserRole)
+        .join(Role, Role.id == UserRole.role_id)
+        .where(
+            UserRole.user_id == user_id,
+            Role.hierarchy_level >= SUPER_ADMIN_HIERARCHY_THRESHOLD,
+            UserRole.workspace_id.is_(None)
+        )
+    )
 
     result = await db.execute(query)
     return result.scalar_one_or_none() is not None
