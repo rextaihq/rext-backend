@@ -28,11 +28,14 @@ EMAIL_TYPE_TO_COLUMN: Dict[str, str] = {
     "content_generation_failed": "gen_failed",
     "content_published": "gen_published",
     # Billing notifications
+    "subscription_created": "billing_payment_success",  # Using payment success as proxy
     "payment_succeeded": "billing_payment_success",
     "payment_failed": "billing_payment_failed",
     "subscription_cancelled": "billing_subscription_cancelled",
     "subscription_expiring_soon": "billing_subscription_expiring",
     "trial_ending_soon": "billing_trial_ending",
+    "trial_expired": "billing_subscription_expiring",  # Using expiring as proxy
+    "payment_recovered": "billing_payment_success",  # Using success as proxy
     "usage_limit_warning": "billing_usage_limit_warning",
     "usage_limit_exceeded": "billing_usage_limit_exceeded",
     # Knowledge base notifications

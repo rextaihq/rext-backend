@@ -47,8 +47,7 @@ class BillingEmailService:
         plan_name: str,
         plan_price: str,
         billing_period: str,
-        features: List[str],
-        background_tasks: Optional[BackgroundTasks] = None
+        features: List[str]
     ) -> bool:
         """
         Send subscription created email.
@@ -59,7 +58,6 @@ class BillingEmailService:
             plan_price: Formatted price (e.g., "$29.99")
             billing_period: "monthly" or "yearly"
             features: List of plan features
-            background_tasks: Optional background tasks
 
         Returns:
             bool: True if email sent/queued successfully
@@ -68,8 +66,8 @@ class BillingEmailService:
         if not user:
             return False
 
-        if not await self._check_preferences(user_id, 'billing_notifications'):
-            logger.info(f"User {user.email} has billing notifications disabled")
+        if not await self._check_preferences(user_id, "subscription_created"):
+            logger.info(f"User {user.email} has subscription_created notifications disabled")
             return False
 
         html_content = render_subscription_created_email(
@@ -95,15 +93,14 @@ class BillingEmailService:
         amount: str,
         payment_date: str,
         next_billing_date: str,
-        invoice_url: Optional[str] = None,
-        background_tasks: Optional[BackgroundTasks] = None
+        invoice_url: Optional[str] = None
     ) -> bool:
         """Send payment succeeded email (receipt)."""
         user = await self._get_user(user_id)
         if not user:
             return False
 
-        if not await self._check_preferences(user_id, 'billing_notifications'):
+        if not await self._check_preferences(user_id, "payment_succeeded"):
             return False
 
         html_content = render_payment_succeeded_email(
@@ -119,7 +116,8 @@ class BillingEmailService:
             to_email=user.email,
             subject="Payment Received - REXT",
             html_content=html_content,
-            background_tasks=background_tasks
+            user_id=user_id,
+            template_type="payment_succeeded",
         )
 
     async def send_payment_failed_email(
@@ -127,15 +125,14 @@ class BillingEmailService:
         user_id: UUID,
         plan_name: str,
         amount: str,
-        retry_date: str,
-        background_tasks: Optional[BackgroundTasks] = None
+        retry_date: str
     ) -> bool:
         """Send payment failed email."""
         user = await self._get_user(user_id)
         if not user:
             return False
 
-        if not await self._check_preferences(user_id, 'billing_notifications'):
+        if not await self._check_preferences(user_id, "payment_failed"):
             return False
 
         html_content = render_payment_failed_email(
@@ -149,22 +146,22 @@ class BillingEmailService:
             to_email=user.email,
             subject="Payment Failed - Action Required",
             html_content=html_content,
-            background_tasks=background_tasks
+            user_id=user_id,
+            template_type="payment_failed",
         )
 
     async def send_subscription_cancelled_email(
         self,
         user_id: UUID,
         plan_name: str,
-        end_date: str,
-        background_tasks: Optional[BackgroundTasks] = None
+        end_date: str
     ) -> bool:
         """Send subscription cancelled email."""
         user = await self._get_user(user_id)
         if not user:
             return False
 
-        if not await self._check_preferences(user_id, 'billing_notifications'):
+        if not await self._check_preferences(user_id, "subscription_cancelled"):
             return False
 
         html_content = render_subscription_cancelled_email(
@@ -177,7 +174,8 @@ class BillingEmailService:
             to_email=user.email,
             subject="Subscription Cancelled - REXT",
             html_content=html_content,
-            background_tasks=background_tasks
+            user_id=user_id,
+            template_type="subscription_cancelled",
         )
 
     async def send_trial_ending_email(
@@ -185,18 +183,14 @@ class BillingEmailService:
         user_id: UUID,
         plan_name: str,
         trial_end_date: str,
-        days_remaining: int,
-        background_tasks: Optional[BackgroundTasks] = None,
-        user: Optional[Users] = None,
-        preferences: Optional[NotificationPreferences] = None
+        days_remaining: int
     ) -> bool:
         """Send trial ending reminder email."""
-        if not user:
-            user = await self._get_user(user_id)
+        user = await self._get_user(user_id)
         if not user:
             return False
 
-        if not await self._check_preferences(user_id, 'billing_notifications', preferences):
+        if not await self._check_preferences(user_id, "trial_ending_soon"):
             return False
 
         html_content = render_trial_ending_email(
@@ -210,24 +204,22 @@ class BillingEmailService:
             to_email=user.email,
             subject=f"Your Trial Ends in {days_remaining} Days",
             html_content=html_content,
-            background_tasks=background_tasks
+            user_id=user_id,
+            template_type="trial_ending_soon",
         )
 
     async def send_trial_expired_email(
         self,
         user_id: UUID,
-        plan_name: str,
-        background_tasks: Optional[BackgroundTasks] = None,
-        user: Optional[Users] = None,
-        preferences: Optional[NotificationPreferences] = None
+        plan_name: str
     ) -> bool:
         """Send trial expired email (trial has ended)."""
-        if not user:
-            user = await self._get_user(user_id)
+        user = await self._get_user(user_id)
         if not user:
             return False
 
-        if not await self._check_preferences(user_id, 'billing_notifications', preferences):
+        # Use subscription_expiring_soon mapping as a proxy for trial expired if not specific
+        if not await self._check_preferences(user_id, "subscription_expiring_soon"):
             return False
 
         from emails.templates.billing.subscription_expiring_soon import render_subscription_expiring_soon_email
@@ -243,7 +235,8 @@ class BillingEmailService:
             to_email=user.email,
             subject="Your Trial Has Ended - REXT",
             html_content=html_content,
-            background_tasks=background_tasks
+            user_id=user_id,
+            template_type="trial_expired",
         )
 
     async def send_subscription_renewed_email(
@@ -252,15 +245,16 @@ class BillingEmailService:
         plan_name: str,
         amount: str,
         renewal_date: str,
-        next_billing_date: str,
-        background_tasks: Optional[BackgroundTasks] = None
+        next_billing_date: str
     ) -> bool:
         """Send subscription renewed email."""
         user = await self._get_user(user_id)
         if not user:
             return False
 
-        if not await self._check_preferences(user_id, 'billing_notifications'):
+        # This doesn't have a direct mapping in EMAIL_TYPE_TO_COLUMN, 
+        # using billing_payment_success column as proxy
+        if not await self._check_preferences(user_id, "payment_succeeded"):
             return False
 
         html_content = render_subscription_renewed_email(
@@ -275,7 +269,8 @@ class BillingEmailService:
             to_email=user.email,
             subject="Subscription Renewed - REXT",
             html_content=html_content,
-            background_tasks=background_tasks
+            user_id=user_id,
+            template_type="subscription_renewed",
         )
 
     async def send_payment_recovered_email(
@@ -285,15 +280,14 @@ class BillingEmailService:
         amount: str,
         recovery_date: str,
         next_billing_date: str,
-        customer_portal_url: Optional[str] = None,
-        background_tasks: Optional[BackgroundTasks] = None
+        customer_portal_url: Optional[str] = None
     ) -> bool:
         """Send payment recovered email (welcome back)."""
         user = await self._get_user(user_id)
         if not user:
             return False
 
-        if not await self._check_preferences(user_id, 'billing_notifications'):
+        if not await self._check_preferences(user_id, "payment_succeeded"):
             return False
 
         html_content = render_payment_recovered_email(
@@ -309,7 +303,8 @@ class BillingEmailService:
             to_email=user.email,
             subject=f"Payment Successful - {plan_name} Reactivated!",
             html_content=html_content,
-            background_tasks=background_tasks
+            user_id=user_id,
+            template_type="payment_recovered",
         )
 
     async def send_subscription_suspended_email(
@@ -319,7 +314,6 @@ class BillingEmailService:
         amount: str,
         suspension_date: str,
         customer_portal_url: Optional[str] = None,
-        background_tasks: Optional[BackgroundTasks] = None,
         **kwargs
     ) -> bool:
         """Send subscription suspended email."""
@@ -327,7 +321,8 @@ class BillingEmailService:
         if not user:
             return False
 
-        if not await self._check_preferences(user_id, 'billing_notifications'):
+        # Using payment_failed column as proxy for suspension notifications
+        if not await self._check_preferences(user_id, "payment_failed"):
             return False
 
         html_content = render_subscription_suspended_email(
@@ -343,7 +338,8 @@ class BillingEmailService:
             to_email=user.email,
             subject="Subscription Suspended - REXT",
             html_content=html_content,
-            background_tasks=background_tasks
+            user_id=user_id,
+            template_type="subscription_suspended",
         )
 
     async def send_payment_dunning_email(
@@ -353,7 +349,6 @@ class BillingEmailService:
         amount: str,
         days_overdue: int,
         customer_portal_url: Optional[str] = None,
-        background_tasks: Optional[BackgroundTasks] = None,
         **kwargs
     ) -> bool:
         """Send payment dunning reminder (1, 3, or 6 days)."""
@@ -361,7 +356,7 @@ class BillingEmailService:
         if not user:
             return False
 
-        if not await self._check_preferences(user_id, 'billing_notifications'):
+        if not await self._check_preferences(user_id, "payment_failed"):
             return False
 
         render_funcs = {
@@ -387,7 +382,8 @@ class BillingEmailService:
             to_email=user.email,
             subject=f"Payment Reminder: Your {plan_name} Subscription",
             html_content=html_content,
-            background_tasks=background_tasks
+            user_id=user_id,
+            template_type=f"payment_dunning_{days_overdue}_day",
         )
 
     async def _get_user(self, user_id: UUID) -> Optional[Users]:
@@ -396,18 +392,17 @@ class BillingEmailService:
         result = await self.db.execute(query)
         return result.scalar_one_or_none()
 
-    async def _check_preferences(self, user_id: UUID, preference_key: str, prefs: Optional[NotificationPreferences] = None) -> bool:
+    async def _check_preferences(self, user_id: UUID, email_type: str) -> bool:
         """Check if user has billing notifications enabled using centralized preferences service."""
-        return await self.preferences_service.check_can_send(user_id, preference_key)
-    
+        return await self.preferences_service.check_can_send(user_id, email_type)
+
     async def _send_email(
         self,
         to_email: str,
         subject: str,
         html_content: str,
         user_id: Optional[UUID] = None,
-        template_type: Optional[str] = None,
-        background_tasks: Optional[BackgroundTasks] = None
+        template_type: Optional[str] = None
     ) -> bool:
         """Send email via EmailService for consistent logging and retry."""
         try:
