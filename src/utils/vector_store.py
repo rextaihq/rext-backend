@@ -40,7 +40,7 @@ def load_yaml(file_path: str = "config/config.yaml") -> dict:
 
     with open(abs_path, "r") as f:
         content = yaml.safe_load(f) or {}
-        logger.info("✅ Loaded config from", path=abs_path)
+        logger.info("Loaded config from", path=abs_path)
         return content
 
 
@@ -223,6 +223,67 @@ def load_vector_store(file_path: str = None) -> FAISS:
         allow_dangerous_deserialization=True
     )
     return vector_store
+
+def search_vector_store(
+    query: str,
+    workspace_id: str,
+    knowledge_base_id: str = None,
+    k: int = 10,
+    score_threshold: float = None,
+) -> list[dict]:
+    """
+    Search the FAISS vector store for documents similar to the query.
+
+    Performs semantic similarity search with workspace-level isolation
+    via metadata filtering.
+
+    Args:
+        query: The search query text.
+        workspace_id: Workspace ID for multi-tenant isolation (required).
+        knowledge_base_id: Optional KB ID to narrow search scope.
+        k: Maximum number of results to return (default 10).
+        score_threshold: Optional maximum L2 distance score. Lower is more similar.
+                        Results with score above this threshold are excluded.
+
+    Returns:
+        List of dicts with keys: content, metadata, score.
+    """
+    vector_store = load_vector_store()
+
+    # Build metadata filter for workspace isolation
+    filter_dict = {"workspace_id": workspace_id}
+    if knowledge_base_id:
+        filter_dict["knowledge_base_id"] = knowledge_base_id
+
+    results_with_scores = vector_store.similarity_search_with_score(
+        query=query,
+        k=k,
+        filter=filter_dict,
+    )
+
+    search_results = []
+    for doc, score in results_with_scores:
+        # If score_threshold is set, skip results above the threshold
+        if score_threshold is not None and score > score_threshold:
+            continue
+
+        search_results.append({
+            "content": doc.page_content,
+            "metadata": doc.metadata,
+            "score": round(float(score), 4),
+        })
+
+    logger.info(
+        f"Search completed",
+        extra={
+            "workspace_id": workspace_id,
+            "query_length": len(query),
+            "results_returned": len(search_results),
+            "k": k,
+        },
+    )
+
+    return search_results
 
 def delete_vectors(
     vector_id: str = None,

@@ -8,8 +8,10 @@ import asyncio
 import httpx
 import os
 from pathlib import Path
+from dotenv import load_dotenv
 
 # Load .env file manually
+load_dotenv()
 env_file = Path(__file__).parent.parent / '.env'
 if env_file.exists():
     with open(env_file) as f:
@@ -52,9 +54,9 @@ async def main():
                     "custom_price": None,
                     "product_options": {
                         "enabled_variants": [1049956],
-                        "redirect_url": f"http://localhost:3000/checkout/success",
+                        "redirect_url": f"{os.getenv('FRONTEND_URL')}/checkout/success",
                         "receipt_button_text": "Go to Dashboard",
-                        "receipt_link_url": f"http://localhost:3000/",
+                        "receipt_link_url": f"{os.getenv('FRONTEND_URL')}/",
                     },
                     "checkout_options": {
                         "embed": False,

@@ -58,7 +58,7 @@ async def assign_role_to_user(
     )
 
     # Get role details for response
-    role = await service._get_role_or_404(assignment_data.role_id)
+    role = await service.get_role_by_id(assignment_data.role_id)
 
     # Get workspace name if applicable
     workspace_name = None
@@ -106,7 +106,7 @@ async def revoke_role_from_user(
     service = RoleService(db)
 
     # Get role for response before revoking
-    role = await service._get_role_or_404(UUID(role_id))
+    role = await service.get_role_by_id(UUID(role_id))
 
     # Revoke role
     await service.revoke_role(

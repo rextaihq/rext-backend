@@ -19,7 +19,7 @@ Does NOT:
 
 from typing import Dict, Any, Optional, List
 from uuid import UUID
-from datetime import datetime, timezone, timedelta,timezone
+from datetime import datetime, timedelta,timezone
 
 from fastapi import BackgroundTasks
 from src.services.notification_helper import schedule_if_allowed
@@ -595,7 +595,11 @@ class SubscriptionService:
 
         # Update local subscription
         subscription.cancelled_at = datetime.now(timezone.utc)
-        subscription.cancellation_reason = reason
+
+        # Store cancellation reason
+        if reason:
+            subscription.cancellation_reason = reason
+            logger.info(f"Cancellation reason stored for subscription {subscription.id}")
         subscription.cancel_at_period_end = not cancel_immediately
 
         if cancel_immediately:
@@ -1086,7 +1090,6 @@ class SubscriptionService:
         # Usage-based check
         is_usage_downgrade = (
             (new_plan.max_workspaces != -1 and new_plan.max_workspaces < current_usage["workspaces"]) or
-            (new_plan.max_topics != -1 and new_plan.max_topics < current_usage["topics"]) or
             (new_plan.max_knowledge_items != -1 and new_plan.max_knowledge_items < current_usage["knowledge_items"])
         )
 

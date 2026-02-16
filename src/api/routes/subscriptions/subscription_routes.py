@@ -24,7 +24,7 @@ from src.api.schema.subscription import (
 from src.api.models.user_models.users import Users
 from src.services.subscription_service import SubscriptionService
 from src.providers.payment.provider_factory import get_payment_provider_singleton
-from src.utils.response_utils import success, created
+from src.utils.response_utils import success, created, not_found, error
 from src.utils.route_decorators import db_transaction_handler, require_permissions
 from src.api.middleware.rate_limiter import (
     checkout_rate_limit,
@@ -47,7 +47,7 @@ router = APIRouter(
 
 
 @router.post("/subscribe", response_model=dict, status_code=status.HTTP_201_CREATED)
-@require_permissions("subscription.manage")
+@require_permissions("subscription.manage", workspace_scoped=False)
 @db_transaction_handler("subscribe to plan")
 async def subscribe_to_plan(
     request: Request,
@@ -92,7 +92,7 @@ async def subscribe_to_plan(
 
 
 @router.post("/checkout", response_model=dict, status_code=status.HTTP_200_OK)
-@require_permissions("subscription.manage")
+@require_permissions("subscription.manage", workspace_scoped=False)
 @db_transaction_handler("create checkout session")
 async def create_checkout_session(
     request: Request,
@@ -244,7 +244,7 @@ async def get_my_subscription(
 # NOTE: /status endpoint is in checkout_routes.py (includes portal URL and free tier usage)
 
 @router.get("/history", response_model=dict)
-@require_permissions("subscription.read")
+@require_permissions("subscription.read", workspace_scoped=False)
 @db_transaction_handler("get subscription history", auto_commit=False)
 async def get_subscription_history(
     request: Request,
@@ -278,7 +278,7 @@ async def get_subscription_history(
 
 
 @router.post("/upgrade", response_model=dict)
-@require_permissions("subscription.manage")
+@require_permissions("subscription.manage", workspace_scoped=False)
 @db_transaction_handler("upgrade subscription")
 async def upgrade_subscription(
     request: Request,
@@ -353,7 +353,7 @@ async def upgrade_subscription(
     
 #downgrade route
 @router.post("/downgrade", response_model=dict)
-@require_permissions("subscription.manage")
+@require_permissions("subscription.manage", workspace_scoped=False)
 @db_transaction_handler("downgrade subscription")
 async def downgrade_subscription(
     request: Request,
@@ -414,7 +414,7 @@ async def downgrade_subscription(
     return response_data
 
 @router.post("/cancel", response_model=dict)
-@require_permissions("subscription.manage")
+@require_permissions("subscription.manage", workspace_scoped=False)
 @db_transaction_handler("cancel subscription")
 async def cancel_subscription(
     request: Request,
@@ -424,6 +424,21 @@ async def cancel_subscription(
     current_user: dict = Depends(get_current_user),
     _rate_limit: None = Depends(subscription_cancel_rate_limit())
 ):
+    """
+    Cancel a subscription.
+
+    Cancels the user's active subscription either immediately or at the end
+    of the billing period, depending on cancel_immediately flag.
+
+    Body:
+    - reason: Cancellation reason (optional)
+    - cancel_immediately: If true, cancel now; if false, cancel at period end
+
+    Returns:
+    - HTTP 200: Subscription cancelled successfully
+    - HTTP 404: No active subscription found
+    - HTTP 500: Server error (handled by decorator)
+    """
     user_id = current_user.get("identity")
     service = SubscriptionService(db)
 
@@ -458,8 +473,6 @@ async def cancel_subscription(
     )
 
     # Return raw data - decorator handles success response formatting
-    # The developer-provided message will be used if success() is called by the decorator
-    # but since we want a specific dynamic message, we can call success() manually
     return success(
         data=subscription.to_dict(),
         request=request,
@@ -517,15 +530,12 @@ async def get_usage_stats(
         "plan_name": plan.name if plan else "Unknown",
         "billing_period": subscription.billing_period.value,
         "current_workspaces": current_usage["workspaces"],
-        "current_topics": current_usage["topics"],
         "current_knowledge_items": current_usage["knowledge_items"],
         "current_api_calls": subscription.current_api_calls,
         "max_workspaces": plan.max_workspaces if plan else 0,
-        "max_topics": plan.max_topics if plan else 0,
         "max_knowledge_items": plan.max_knowledge_items if plan else 0,
         "max_api_calls_per_month": plan.max_api_calls_per_month if plan else 0,
         "workspaces_usage_percent": calc_percentage(current_usage["workspaces"], plan.max_workspaces if plan else 0),
-        "topics_usage_percent": calc_percentage(current_usage["topics"], plan.max_topics if plan else 0),
         "knowledge_items_usage_percent": calc_percentage(current_usage["knowledge_items"], plan.max_knowledge_items if plan else 0),
         "api_calls_usage_percent": calc_percentage(subscription.current_api_calls, plan.max_api_calls_per_month if plan else 0),
         "usage_reset_date": subscription.usage_reset_date.isoformat() if subscription.usage_reset_date else None
@@ -539,7 +549,7 @@ async def get_usage_stats(
 
 
 @router.get("/trial-status", response_model=dict)
-@require_permissions("subscription.read")
+@require_permissions("subscription.read", workspace_scoped=False)
 @db_transaction_handler("get trial status", "Trial status retrieved successfully", auto_commit=False)
 async def get_trial_status(
     background_tasks: BackgroundTasks,
@@ -587,7 +597,7 @@ async def get_trial_status(
 
 
 @router.get("/invoices", response_model=dict)
-@require_permissions("subscription.read")
+@require_permissions("subscription.read", workspace_scoped=False)
 @db_transaction_handler("get invoices", "Invoices retrieved successfully", auto_commit=False)
 async def get_invoices(
     request: Request,
@@ -678,8 +688,9 @@ async def get_invoices(
 
     except Exception as e:
         logger.error(
-            f"Failed to retrieve invoices: {str(e)}",
-            extra={"user_id": str(user_id), "error": str(e)}
+            "Failed to retrieve invoices",
+            exc_info=True,
+            extra={"user_id": str(user_id)}
         )
         # Return empty list on error rather than failing
         return success(
@@ -692,7 +703,7 @@ async def get_invoices(
         )
 
 @router.get("/portal", response_model=dict, status_code=status.HTTP_200_OK)
-@require_permissions("subscription.read")
+@require_permissions("subscription.read", workspace_scoped=False)
 @db_transaction_handler("create portal session", auto_commit=False)
 async def create_portal_session(
     request: Request,

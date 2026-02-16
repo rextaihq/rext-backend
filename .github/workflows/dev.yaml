@@ -11,6 +11,7 @@ jobs:
     if: github.event.pull_request.merged == true
     runs-on: ubuntu-latest
 
+    # ... (rest of the build job remains the same)
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
@@ -86,8 +87,19 @@ jobs:
       - name: Install LangGraph CLI
         run: pip install langgraph-cli
           
+      - name: Cleanup Docker (Pre-build)
+        run: |
+          docker system prune -af --volumes
+          df -h
+
       - name: Build Docker image with LangGraph
         run: langgraph build -t  ${{ secrets.DOCKER_USERNAME }}/wrext:dev
 
       - name: Push Docker image
         run: docker push ${{ secrets.DOCKER_USERNAME }}/wrext:dev
+
+      - name: Cleanup Docker (Post-build)
+        if: always()
+        run: |
+          docker system prune -f
+          df -h
