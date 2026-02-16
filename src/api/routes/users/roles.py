@@ -179,7 +179,6 @@ async def list_user_roles(
     Returns:
     - List of user's roles with details
     """
-    from src.utils.rbac_utils import is_user_admin
 
     requester_id = current_user.get("identity")
     is_own_user = requester_id == user_id
