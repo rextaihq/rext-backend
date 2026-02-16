@@ -83,7 +83,7 @@ class WorkspaceService:
     async def get_workspace_for_user(
         self, workspace_id: UUID, user_id: UUID
     ) -> Dict[str, Any]:
-        """Fetch workspace details for a member including brand voice data."""
+        """Fetch workspace details for a member including brand voice data ."""
         await self._ensure_active_user(user_id)
         await self._ensure_membership(workspace_id, user_id)
         return await self.get_workspace_with_brand_voice(workspace_id)

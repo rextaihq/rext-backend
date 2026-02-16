@@ -38,13 +38,10 @@ class UsageTrackingService:
         Returns:
             Dictionary with usage metrics for each resource type:
             {
-                "current_workspaces": 3,
-                "current_knowledge_items": 230,
-                "current_api_calls": 450,
-                "max_workspaces": 10,
-                "max_knowledge_items": 1000,
-                "max_api_calls_per_month": 10000,
-                ...
+                "workspaces": {"used": 3, "limit": 10, ...},
+                "knowledge_items": {"used": 230, "limit": 1000, ...},
+                "api_calls": {"used": 450, "limit": 10000, ...},
+                "meta": {"plan_name": "Pro", ...}
             }
         """
         # Get user's active subscription with plan eagerly loaded
@@ -136,20 +133,13 @@ class UsageTrackingService:
         """
         usage = await self.get_usage_metrics(user_id)
 
-        # Map flat keys to check_limit keys
-        mapping = {
-            "workspaces": ("current_workspaces", "max_workspaces"),
-            "knowledge_items": ("current_knowledge_items", "max_knowledge_items"),
-            "api_calls": ("current_api_calls", "max_api_calls_per_month"),
-        }
-
-        if limit_type not in mapping:
+        if limit_type not in usage:
             logger.warning(f"Unknown limit type: {limit_type}")
             return True, 0, None
 
-        current_key, max_key = mapping[limit_type]
-        used = usage.get(current_key, 0) or 0
-        limit = usage.get(max_key)
+        metric = usage.get(limit_type, {})
+        used = metric.get("used", 0) or 0
+        limit = metric.get("limit")
 
         # Unlimited if limit is None or <= 0
         if limit is None or limit <= 0:
