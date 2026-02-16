@@ -132,12 +132,13 @@ class DunningService:
 
             # Send email via billing service
             email_service = BillingEmailService(self.db)
-            success = await email_service.send_payment_dunning_email(
-                user_id=user.id,
-                plan_name=plan_name,
-                amount=amount,
-                days_overdue=1,
-                grace_period_end_date=grace_period_end_date
+            await email_service.send_payment_dunning_email(
+                user_id=subscription.user_id,
+                plan_name=subscription.plan_name,
+                amount=str(subscription.amount),
+                days_overdue=days_overdue,
+                customer_portal_url=customer_portal_url,
+                # Remove: background_tasks=None
             )
 
             if success:
@@ -216,13 +217,13 @@ class DunningService:
 
             # Send email
             email_service = BillingEmailService(self.db)
-            success = await email_service.send_payment_dunning_email(
-                user_id=user.id,
-                plan_name=plan_name,
-                amount=amount,
-                days_overdue=3,
-                days_until_suspension=days_until_suspension,
-                grace_period_end_date=grace_period_end_date
+            await email_service.send_payment_dunning_email(
+                user_id=subscription.user_id,
+                plan_name=subscription.plan_name,
+                amount=str(subscription.amount),
+                days_overdue=days_overdue,
+                customer_portal_url=customer_portal_url,
+                # Remove: background_tasks=None
             )
 
             if success:
@@ -296,12 +297,13 @@ class DunningService:
 
             # Send email
             email_service = BillingEmailService(self.db)
-            success = await email_service.send_payment_dunning_email(
-                user_id=user.id,
-                plan_name=plan_name,
-                amount=amount,
-                days_overdue=6,
-                grace_period_end_date=grace_period_end_date
+            await email_service.send_payment_dunning_email(
+                user_id=subscription.user_id,
+                plan_name=subscription.plan_name,
+                amount=str(subscription.amount),
+                days_overdue=days_overdue,
+                customer_portal_url=customer_portal_url,
+                # Remove: background_tasks=None
             )
 
             if success:

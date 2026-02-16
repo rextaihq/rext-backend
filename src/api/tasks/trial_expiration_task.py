@@ -23,7 +23,7 @@ class TrialExpirationTask:
         """Initialize task with database session."""
         self.db = db
         self.trial_service = TrialService(db)
-        self.email_service = EmailService()
+        self.email_service = EmailService(db)
 
     async def send_trial_reminder_email(
         self,
