@@ -21,6 +21,7 @@ from src.api.database.async_database import get_async_db
 from src.api.security.dependencies import get_current_user
 from src.api.models.subscription_models.subscriptions import UserSubscription
 from src.api.models.subscription_models.licenses import License
+from src.api.models.subscription_models.refunds import RefundStatus
 from src.api.schema.subscription.refund_schemas import (
     RefundCreateRequest,
     RefundCreateResponse,
@@ -34,6 +35,7 @@ from src.utils.logger import logger
 from src.services.audit_logger import audit_logger
 from .shared.auth import require_super_admin
 from src.api.config import settings
+from src.config.payment_config import payment_settings
 
 
 router = APIRouter()
@@ -46,10 +48,10 @@ router = APIRouter()
 async def get_lemonsqueezy_provider() -> LemonSqueezyProvider:
     """Get LemonSqueezy provider instance."""
     return LemonSqueezyProvider(
-        api_key=settings.LEMONSQUEEZY_API_KEY,
-        store_id=settings.LEMONSQUEEZY_STORE_ID,
-        webhook_secret=settings.LEMONSQUEEZY_WEBHOOK_SECRET,
-        sandbox_mode=settings.LEMONSQUEEZY_SANDBOX_MODE
+        api_key=payment_settings.lemonsqueezy_api_key,
+        store_id=payment_settings.lemonsqueezy_store_id,
+        webhook_secret=payment_settings.lemonsqueezy_webhook_secret,
+        sandbox_mode=payment_settings.payment_sandbox_mode
     )
 
 
@@ -64,7 +66,7 @@ async def list_refunds(
     request: Request,
     user_id: Optional[UUID] = Query(None, description="Filter by user ID"),
     subscription_id: Optional[UUID] = Query(None, description="Filter by subscription ID"),
-    status: Optional[str] = Query(None, description="Filter by status (pending/completed/failed)"),
+    status: Optional[RefundStatus] = Query(None, description="Filter by status (pending/completed/failed)"),
     is_partial: Optional[bool] = Query(None, description="Filter by partial refund status"),
     start_date: Optional[datetime] = Query(None, description="Start date filter (ISO format)"),
     end_date: Optional[datetime] = Query(None, description="End date filter (ISO format)"),
@@ -318,10 +320,11 @@ async def create_refund(
 
     except Exception as e:
         logger.error(
-            f"Failed to create refund for order {lemonsqueezy_order_id}: {str(e)}",
-            extra={"admin_user_id": str(admin_user_id), "error": str(e)}
+            f"Failed to create refund for order {lemonsqueezy_order_id}",
+            exc_info=True,
+            extra={"admin_user_id": str(admin_user_id)}
         )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to create refund: {str(e)}"
+            detail="Failed to create refund. Please try again later."
         )

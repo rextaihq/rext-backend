@@ -59,14 +59,18 @@ from src.api.middleware.exceptions import (
     ResourceNotFoundException,
     BusinessRuleViolationException
 )
-default_permissions = [
-            "user.update",
-            "user.read",
-            "workspace.create",
-            "subscription.read"
-        ]
 class AuthService:
     """Service for authentication business logic"""
+
+    # Default permissions assigned to new users during registration
+    # Using tuple to prevent accidental mutation
+    DEFAULT_PERMISSIONS: tuple[str, ...] = (
+        "user.update",
+        "user.read",
+        "workspace.create",
+        "subscription.read",
+    )
+
     def __init__(self, db: AsyncSession):
         """
         Initialize AuthService.
@@ -216,7 +220,7 @@ class AuthService:
         """
         # Find user (eagerly load relationships to avoid lazy loading in async context)
         from sqlalchemy.orm import selectinload
-        global  default_permissions
+
         result = await self.db.execute(
             select(Users)
             .options(selectinload(Users.user_roles).selectinload(UserRole.role))
@@ -282,8 +286,12 @@ class AuthService:
             subscription = sub_result.scalar_one_or_none()
             
             if subscription and subscription.trial_end_date:
-                if subscription.trial_end_date < datetime.now(timezone.utc):
-                     await schedule_if_allowed(
+                trial_end = subscription.trial_end_date
+                if trial_end.tzinfo is None:
+                    trial_end = trial_end.replace(tzinfo=timezone.utc)
+                    
+                if trial_end < datetime.now(timezone.utc):
+                    await schedule_if_allowed(
                         db=self.db,
                         user_id=str(db_user.id),
                         background_tasks=background_tasks,
@@ -752,7 +760,7 @@ class AuthService:
         Args:
             role: Role object
         """
-        global default_permissions
+
 
         # Get existing permissions for the role to avoid adding duplicates
         existing_perms_result = await self.db.execute(
@@ -762,7 +770,7 @@ class AuthService:
         )
         existing_perms = {p_name for p_name, in existing_perms_result}
 
-        permissions_to_add_names = [p for p in default_permissions if p not in existing_perms]
+        permissions_to_add_names = [p for p in self.DEFAULT_PERMISSIONS if p not in existing_perms]
 
         if not permissions_to_add_names:
             logger.debug(f"Role '{role.name}' already has all default permissions.")

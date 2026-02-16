@@ -22,7 +22,7 @@ router = APIRouter()
 
 
 @router.get("/", response_model=dict)
-@require_permissions("role.read")
+@require_permissions("role.read", workspace_scoped=False)
 @db_transaction_handler("list roles", auto_commit=False)
 async def list_roles(
     request: Request,
@@ -71,7 +71,7 @@ async def list_roles(
 
 
 @router.get("/{role_id}", response_model=dict)
-@require_permissions("role.read")
+@require_permissions("role.read", workspace_scoped=False)
 @db_transaction_handler("get role", auto_commit=False)
 async def get_role(
     request: Request,
@@ -104,7 +104,7 @@ async def get_role(
         role_data = await service.get_role_with_permissions(role_id)
     else:
         from uuid import UUID
-        role = await service._get_role_or_404(UUID(role_id))
+        role = await service.get_role_by_id(UUID(role_id))
         role_data = role.to_dict()
 
     return {
@@ -248,7 +248,7 @@ async def update_role(
     from uuid import UUID
 
     # Get role details before update for audit log
-    role_before = await service._get_role_or_404(UUID(role_id))
+    role_before = await service.get_role_by_id(UUID(role_id))
     old_values = {
         "display_name": role_before.display_name,
         "description": role_before.description,
@@ -347,7 +347,7 @@ async def delete_role(
     from uuid import UUID
 
     # Get role details before deletion for audit log
-    role = await service._get_role_or_404(UUID(role_id))
+    role = await service.get_role_by_id(UUID(role_id))
     role_name = role.display_name
     role_details = {
         "name": role.name,

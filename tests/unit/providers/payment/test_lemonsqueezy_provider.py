@@ -15,6 +15,7 @@ from src.providers.payment.providers.lemonsqueezy import (
     LemonSqueezyProvider,
     LemonSqueezyError,
     LemonSqueezyAPIError,
+    LemonSqueezyTransientError,
 )
 from src.providers.payment.base_provider import (
     CheckoutSession,
@@ -537,6 +538,198 @@ class TestMakeRequest:
                 await provider._make_request("GET", "/test")
 
             assert "HTTP request failed" in str(exc_info.value)
+
+
+class TestRetryLogic:
+    """Test retry logic for transient errors."""
+
+    @pytest.mark.asyncio
+    async def test_retry_on_timeout(self, provider, mock_response):
+        """Verify that httpx.TimeoutException triggers retry and eventually succeeds."""
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"data": {"id": "1"}}
+
+        call_count = 0
+
+        async def mock_request(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count < 3:
+                raise httpx.TimeoutException("Simulated timeout")
+            return mock_response
+
+        with patch.object(provider.client, 'request', side_effect=mock_request):
+            result = await provider._make_request("GET", "/test")
+
+        assert call_count == 3  # 2 failures + 1 success
+        assert result == {"data": {"id": "1"}}
+
+    @pytest.mark.asyncio
+    async def test_retry_on_network_error(self, provider, mock_response):
+        """Verify that httpx.NetworkError triggers retry."""
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"success": True}
+
+        call_count = 0
+
+        async def mock_request(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count < 2:
+                raise httpx.NetworkError("Network unreachable")
+            return mock_response
+
+        with patch.object(provider.client, 'request', side_effect=mock_request):
+            result = await provider._make_request("GET", "/test")
+
+        assert call_count == 2  # 1 failure + 1 success
+        assert result == {"success": True}
+
+    @pytest.mark.asyncio
+    async def test_retry_on_500_error(self, provider):
+        """Verify that 500 server error triggers retry."""
+        error_response = MagicMock()
+        error_response.status_code = 500
+        error_response.json.return_value = {
+            "errors": [{"detail": "Internal server error"}]
+        }
+        error_response.headers.get.return_value = None
+
+        success_response = MagicMock()
+        success_response.status_code = 200
+        success_response.json.return_value = {"data": "success"}
+
+        call_count = 0
+
+        async def mock_request(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count < 2:
+                return error_response
+            return success_response
+
+        with patch.object(provider.client, 'request', side_effect=mock_request):
+            result = await provider._make_request("GET", "/test")
+
+        assert call_count == 2  # 1 failure + 1 success
+        assert result == {"data": "success"}
+
+    @pytest.mark.asyncio
+    async def test_retry_on_429_rate_limit(self, provider):
+        """Verify that 429 rate limit triggers retry."""
+        rate_limit_response = MagicMock()
+        rate_limit_response.status_code = 429
+        rate_limit_response.json.return_value = {
+            "errors": [{"detail": "Rate limit exceeded"}]
+        }
+        rate_limit_response.headers.get.return_value = "5"
+
+        success_response = MagicMock()
+        success_response.status_code = 200
+        success_response.json.return_value = {"data": "success"}
+
+        call_count = 0
+
+        async def mock_request(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count < 2:
+                return rate_limit_response
+            return success_response
+
+        with patch.object(provider.client, 'request', side_effect=mock_request):
+            result = await provider._make_request("GET", "/test")
+
+        assert call_count == 2  # 1 rate limit + 1 success
+        assert result == {"data": "success"}
+
+    @pytest.mark.asyncio
+    async def test_no_retry_on_400_error(self, provider):
+        """Verify that 4xx client errors do NOT retry."""
+        error_response = MagicMock()
+        error_response.status_code = 400
+        error_response.json.return_value = {
+            "errors": [{"detail": "Bad request"}]
+        }
+
+        call_count = 0
+
+        async def mock_request(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            return error_response
+
+        with patch.object(provider.client, 'request', side_effect=mock_request):
+            with pytest.raises(LemonSqueezyAPIError) as exc_info:
+                await provider._make_request("POST", "/test")
+
+        assert call_count == 1  # No retry for 4xx
+        assert exc_info.value.status_code == 400
+
+    @pytest.mark.asyncio
+    async def test_no_retry_on_404_error(self, provider):
+        """Verify that 404 not found does NOT retry."""
+        error_response = MagicMock()
+        error_response.status_code = 404
+        error_response.json.return_value = {
+            "errors": [{"detail": "Not found"}]
+        }
+
+        call_count = 0
+
+        async def mock_request(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            return error_response
+
+        with patch.object(provider.client, 'request', side_effect=mock_request):
+            with pytest.raises(LemonSqueezyAPIError) as exc_info:
+                await provider._make_request("GET", "/test")
+
+        assert call_count == 1  # No retry for 404
+        assert exc_info.value.status_code == 404
+
+    @pytest.mark.asyncio
+    async def test_retry_exhaustion(self, provider):
+        """Verify that after 3 failed attempts, the last exception is raised."""
+        call_count = 0
+
+        async def mock_request(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            raise httpx.TimeoutException("Persistent timeout")
+
+        with patch.object(provider.client, 'request', side_effect=mock_request):
+            with pytest.raises(LemonSqueezyTransientError) as exc_info:
+                await provider._make_request("GET", "/test")
+
+        assert call_count == 3  # 3 attempts before giving up
+        assert "timeout" in str(exc_info.value).lower()
+
+    @pytest.mark.asyncio
+    async def test_retry_exhaustion_on_500(self, provider):
+        """Verify that persistent 5xx errors exhaust retries."""
+        error_response = MagicMock()
+        error_response.status_code = 503
+        error_response.json.return_value = {
+            "errors": [{"detail": "Service unavailable"}]
+        }
+        error_response.headers.get.return_value = None
+
+        call_count = 0
+
+        async def mock_request(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            return error_response
+
+        with patch.object(provider.client, 'request', side_effect=mock_request):
+            with pytest.raises(LemonSqueezyTransientError) as exc_info:
+                await provider._make_request("GET", "/test")
+
+        assert call_count == 3  # 3 attempts before giving up
+        assert exc_info.value.status_code == 503
+
 
 
 class TestClose:

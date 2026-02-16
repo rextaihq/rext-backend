@@ -97,6 +97,7 @@ class ContentService:
                 trust_score=data.seo_data.trust_score,
                 seo_details=data.seo_data.seo_details
             )
+            content.seo_data = seo_record # Ensure relationship is loaded in memory
             self.db.add(seo_record)
 
         # Save Media links

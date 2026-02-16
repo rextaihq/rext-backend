@@ -35,33 +35,34 @@ def loadYamlConfig(file_path="config/config.yaml"):
     :return: Dictionary containing the YAML file contents.
     """
     try:
-        with open(file_path, 'r') as file:
-            config = yaml.safe_load(file)
+        with open(file_path, "r") as file:
+            return yaml.safe_load(file)
 
-        return config
-    except Exception as e:
-        return  str(e)
+    except Exception:
+        logger.exception(f"Failed to load YAML config from '{file_path}'")
+        raise
 
 
 def GetBrowserConfig():
-    """
-    Get the browser configuration for web scraping.
-
-    :return: A dictionary containing the browser configuration.
-    """
+    """Get the browser configuration for web scraping."""
     try:
         config = BrowserConfig(
             headless=True,
-            # use_managed_browser=True,
             verbose=False,
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                   "AppleWebKit/537.36 (KHTML, like Gecko) "
-                   "Chrome/115.0.0.0 Safari/537.36",
+            user_agent=(
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/115.0.0.0 Safari/537.36"
+            ),
             browser_type="chromium"
         )
         return config
+
     except Exception as e:
-        logger.info(f"[ERROR] Failed to load browser configuration: {e}")
+        logger.error(
+            f"Failed to load browser configuration: {e}",
+            exc_info=True
+        )
         return None
     
 def GetCrawlerRunConfig():
@@ -141,7 +142,7 @@ def GetCrawlerRunConfig():
         )
         return config
     except Exception as e:
-        logger.info(f"[ERROR] Failed to load crawler run configuration: {e}")
+        logger.error(f"Failed to load crawler run configuration: {e}", exc_info=True)
         return None
 
 # merge evulation

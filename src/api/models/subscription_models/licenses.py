@@ -16,6 +16,7 @@ class LicenseStatus(str, enum.Enum):
     INACTIVE = "inactive"
     EXPIRED = "expired"
     DISABLED = "disabled"
+    REVOKED = "revoked"
 
 
 class License(Base, SerializableMixin):
@@ -68,14 +69,13 @@ class License(Base, SerializableMixin):
     @property
     def is_valid(self) -> bool:
         """Check if license is currently valid."""
-        if self.status != LicenseStatus.ACTIVE:
+        if self.status not in (LicenseStatus.ACTIVE,):
             return False
         if self.expires_at and self.expires_at < datetime.now(timezone.utc):
             return False
         if self.activation_limit and self.activation_count >= self.activation_limit:
             return False
         return True
-
     @property
     def is_expired(self) -> bool:
         """Check if license has expired."""
