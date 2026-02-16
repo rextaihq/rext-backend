@@ -173,7 +173,7 @@ The Rext Team''',
             }
         )
 
-    print(f"✅ Created {len(templates)} system-wide email templates (global, not workspace-specific)")
+    print(f" Created {len(templates)} system-wide email templates (global, not workspace-specific)")
 
 
 def downgrade() -> None:

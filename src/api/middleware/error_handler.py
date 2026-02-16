@@ -6,7 +6,7 @@ converting all exceptions into standardized error responses that match the
 frontend expectations.
 
 Features:
-- Automatic exception to error response conversion
+- Automatic exception  to error response conversion
 - Request ID correlation for error tracking
 - Detailed error logging with context
 - Security-conscious error message filtering

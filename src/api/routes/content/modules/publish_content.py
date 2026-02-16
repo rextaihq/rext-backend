@@ -28,8 +28,34 @@ router = APIRouter()
 
 
 # -------------------------
-# Helper: Publish to All Active Sites
+# 1. Save Content (Save Only)
 # -------------------------
+@router.post("/save", response_model=ContentResponse)
+@db_transaction_handler("save content", "Content saved successfully")
+@require_permissions("content.create", workspace_scoped=True)
+async def save_content(
+    data: ContentCreate,
+    request: Request,
+    workspace_id: str,
+    db: AsyncSession = Depends(get_async_db),
+    user: dict = Depends(get_current_user)
+):
+    """
+    Save content without publishing to any sites.
+    """
+    user_id = user.get("identity")
+    workspace, _ = await resolve_and_verify_workspace(db, workspace_id, UUID(user_id))
+
+    service = ContentService(db)
+    content = await service.create_content(
+        workspace_id=workspace.id,
+        user_id=UUID(user_id),
+        data=data
+    )
+    
+    return content.to_dict(include_relationships=["seo_data"])
+
+
 # -------------------------
 # 2. Save & Publish (New Content)
 # -------------------------
