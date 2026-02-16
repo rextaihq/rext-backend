@@ -156,11 +156,7 @@ async def get_current_user_roles(
         "roles": roles_data,
         "count": len(roles_data)
     }
-
-
-
 @router.get("/{user_id}/roles")
-@require_permissions("role.read", workspace_scoped=False)
 @db_transaction_handler("list user roles", auto_commit=False)
 async def list_user_roles(
     request: Request,
@@ -172,22 +168,39 @@ async def list_user_roles(
     """
     List all roles assigned to a user.
 
-    Requires: user.read permission OR admin role OR requesting own roles
+    Authorization:
+    - Users can always view their own roles (no permission required).
+    - Viewing another user's roles requires 'user.read' permission or admin role.
 
     Parameters:
-    - user_id: UUID of the user
-    - workspace_id: Optional workspace UUID to filter roles
+    - user_id: UUID of the user whose roles to retrieve
+    - workspace_id: Optional workspace UUID to filter roles by workspace
 
     Returns:
     - List of user's roles with details
     """
+    from src.utils.rbac_utils import is_user_admin
+
     requester_id = current_user.get("identity")
     is_own_user = requester_id == user_id
 
-    # If not own user, check permissions
+    # Non-self requests require user.read permission or admin role
     if not is_own_user:
-        from src.api.routes.roles.modules.helpers import check_role_permission
-        await check_role_permission(db, UUID(requester_id), "user.read")
+        requester_uuid = UUID(requester_id)
+        is_admin = await is_user_admin(db, requester_uuid)
+
+        if not is_admin:
+            from src.utils.rbac_utils import check_permission
+            has_permission = await check_permission(db, requester_uuid, "user.read")
+            if not has_permission:
+                from src.api.middleware.exceptions import RextAuthorizationException
+                raise RextAuthorizationException(
+                    message="You do not have permission to view other users' roles",
+                    context={
+                        "required_permission": "user.read",
+                        "target_user_id": user_id
+                    }
+                )
 
     service = RoleService(db)
 
