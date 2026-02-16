@@ -2,6 +2,7 @@
 Billing Email Service
 
 Handles sending billing-related emails for subscriptions and payments.
+Uses EmailService for consistent logging, retry, and fallback behavior.
 """
 
 from typing import Dict, Any, Optional, List
@@ -9,11 +10,11 @@ from uuid import UUID
 from datetime import datetime, timezone
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-from fastapi import BackgroundTasks
 
 from src.api.models.user_models.users import Users
 from src.api.models.user_models.notification_preferences import NotificationPreferences
-from src.providers.email.factory import get_email_provider
+from src.services.email_service import EmailService
+from src.services.email_preferences_service import EmailPreferencesService
 from src.utils.logger import logger
 
 from emails.templates.billing import (
@@ -32,12 +33,13 @@ from emails.templates.billing import (
 
 
 class BillingEmailService:
-    """Service for sending billing-related emails"""
+    """Service for sending billing-related emails via EmailService."""
 
     def __init__(self, db: AsyncSession):
-        """Initialize billing email service"""
+        """Initialize billing email service with EmailService for consistent behavior."""
         self.db = db
-        self.email_provider = get_email_provider()
+        self.email_service = EmailService(db)
+        self.preferences_service = EmailPreferencesService(db)
 
     async def send_subscription_created_email(
         self,
@@ -82,7 +84,8 @@ class BillingEmailService:
             to_email=user.email,
             subject=f"Welcome to {plan_name}!",
             html_content=html_content,
-            background_tasks=background_tasks
+            user_id=user_id,
+            template_type="subscription_created",
         )
 
     async def send_payment_succeeded_email(
@@ -394,60 +397,36 @@ class BillingEmailService:
         return result.scalar_one_or_none()
 
     async def _check_preferences(self, user_id: UUID, preference_key: str, prefs: Optional[NotificationPreferences] = None) -> bool:
-        """Check if user has billing notifications enabled."""
-        if not prefs:
-            query = select(NotificationPreferences).where(
-                NotificationPreferences.user_id == user_id
-            )
-            result = await self.db.execute(query)
-            prefs = result.scalar_one_or_none()
-
-        if not prefs:
-            return True  # Default to enabled if no preferences set
-
-        # Check master email toggle first
-        if not prefs.email_notifications:
-            return False
-
-        # Map billing preference keys to NotificationPreferences columns
-        billing_pref_mapping = {
-            "billing_notifications": "email_billing_updates",
-            "payment_succeeded": "billing_payment_success",
-            "payment_failed": "billing_payment_failed",
-            "subscription_cancelled": "billing_subscription_cancelled",
-            "trial_ending": "billing_trial_ending",
-        }
-        mapped_key = billing_pref_mapping.get(preference_key, preference_key)
-        return getattr(prefs, mapped_key, True)
-    
+        """Check if user has billing notifications enabled using centralized preferences service."""
+        return await self.preferences_service.check_can_send(user_id, preference_key)
     
     async def _send_email(
         self,
         to_email: str,
         subject: str,
         html_content: str,
+        user_id: Optional[UUID] = None,
+        template_type: Optional[str] = None,
         background_tasks: Optional[BackgroundTasks] = None
     ) -> bool:
-        """Send email via email provider."""
+        """Send email via EmailService for consistent logging and retry."""
         try:
-            if background_tasks:
-                background_tasks.add_task(
-                    self.email_provider.send_email,
-                    to_email=to_email,
-                    subject=subject,
-                    html_content=html_content
-                )
-                logger.info(f"Billing email queued: {subject} to {to_email}")
-            else:
-                await self.email_provider.send_email(
-                    to_email=to_email,
-                    subject=subject,
-                    html_content=html_content
-                )
-                logger.info(f"Billing email sent: {subject} to {to_email}")
-
-            return True
-
+            email_log = await self.email_service.send_email(
+                to=to_email,
+                subject=subject,
+                html=html_content,
+                user_id=user_id,
+                template_type=template_type or "billing",
+                tags={"category": "billing"},
+            )
+            return email_log.status in ("sent", "queued")
         except Exception as e:
-            logger.error(f"Failed to send billing email to {to_email}: {str(e)}")
+            logger.error(
+                f"Failed to send billing email to {to_email}",
+                extra={
+                    "error": str(e),
+                    "subject": subject,
+                    "template_type": template_type,
+                }
+            )
             return False
