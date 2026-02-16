@@ -1,6 +1,8 @@
 import pytest
 from datetime import datetime, timezone
 from unittest.mock import Mock, AsyncMock, call, ANY
+from uuid import uuid4
+from src.services.email_analytics_service import EmailAnalyticsService
 
 class TestEmailAnalyticsService:
     @pytest.mark.asyncio
