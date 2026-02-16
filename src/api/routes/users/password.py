@@ -157,7 +157,9 @@ async def reset_password(
             reset_token=payload.token,
             new_password=payload.new_password
         )
+
     except ResourceNotFoundException:
+
         return error(
             message="Invalid or expired reset token",
             code=ErrorCode.INVALID_VALUE,

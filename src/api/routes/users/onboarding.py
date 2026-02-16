@@ -5,7 +5,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from langgraph_sdk import Auth
+
 
 from src.api.database.async_database import get_async_db
 from src.api.security.dependencies import get_current_user, get_current_user_optional
@@ -27,7 +27,7 @@ router = APIRouter(prefix="/onboarding", tags=["onboarding"])
 @db_transaction_handler("get onboarding status", auto_commit=False)
 async def get_onboarding_status(
     db: Annotated[AsyncSession, Depends(get_async_db)],
-    current_user: Annotated[Auth.types.MinimalUserDict | None, Depends(get_current_user_optional)],
+    current_user: Annotated[dict | None, Depends(get_current_user_optional)],
 ):
     """
     Get current user's onboarding status.
@@ -53,7 +53,7 @@ async def update_onboarding_step(
     step_update: OnboardingStepUpdate,
     request: Request,
     db: Annotated[AsyncSession, Depends(get_async_db)],
-    current_user: Annotated[Auth.types.MinimalUserDict, Depends(get_current_user)],
+    current_user: Annotated[dict, Depends(get_current_user)],
 ):
     """
     Update onboarding step.
@@ -86,7 +86,7 @@ async def update_onboarding_step(
 async def complete_onboarding(
     request: Request,
     db: Annotated[AsyncSession, Depends(get_async_db)],
-    current_user: Annotated[Auth.types.MinimalUserDict, Depends(get_current_user)],
+    current_user: Annotated[dict, Depends(get_current_user)],
 ):
     """
     Mark onboarding as fully completed.
@@ -107,7 +107,7 @@ async def reset_onboarding(
     reset_data: OnboardingReset,
     request: Request,
     db: Annotated[AsyncSession, Depends(get_async_db)],
-    current_user: Annotated[Auth.types.MinimalUserDict, Depends(get_current_user)],
+    current_user: Annotated[dict, Depends(get_current_user)],
 ):
     """
     Reset onboarding to start from beginning.
@@ -131,7 +131,7 @@ async def reset_onboarding(
 @db_transaction_handler("check should show onboarding", auto_commit=False)
 async def should_show_onboarding(
     db: Annotated[AsyncSession, Depends(get_async_db)],
-    current_user: Annotated[Auth.types.MinimalUserDict | None, Depends(get_current_user_optional)],
+    current_user: Annotated[dict | None, Depends(get_current_user_optional)],
 ):
     """
     Check if onboarding should be shown to the current user.
@@ -156,7 +156,7 @@ async def update_marketing_data(
     marketing_data: OnboardingMarketingData,
     request: Request,
     db: Annotated[AsyncSession, Depends(get_async_db)],
-    current_user: Annotated[Auth.types.MinimalUserDict, Depends(get_current_user)],
+    current_user: Annotated[dict, Depends(get_current_user)],
 ):
     """
     Update marketing data collected during onboarding.

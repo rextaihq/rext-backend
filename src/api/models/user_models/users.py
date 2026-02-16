@@ -38,6 +38,7 @@ class Users(Base, SerializableMixin, SoftDeleteMixin):
     created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
     deactivated_at = Column(DateTime(timezone=True))
+    deleted_at = Column(DateTime(timezone=True))
 
     # Relationships
     user_roles = relationship("UserRole", back_populates="user", foreign_keys="UserRole.user_id", passive_deletes=True)
@@ -46,7 +47,6 @@ class Users(Base, SerializableMixin, SoftDeleteMixin):
     sent_invitations = relationship("UserInvitations", back_populates="invited_by", passive_deletes=True)
     assigned_roles = relationship("UserRole", back_populates="assigned_by", foreign_keys="UserRole.assigned_by_user_id", passive_deletes=True)
     sessions = relationship("UserSession", back_populates="user", cascade="all, delete-orphan", passive_deletes=True)
-    notification_preferences = relationship("NotificationPreferences", back_populates="user", uselist=False, passive_deletes=True)
     blacklisted_tokens = relationship("TokenBlacklist", back_populates="user", cascade="all, delete-orphan", passive_deletes=True)
     email_preferences = relationship("EmailPreferences", back_populates="user", uselist=False, passive_deletes=True)
     preferences = relationship("UserPreferences", back_populates="user", uselist=False, cascade="all, delete-orphan", passive_deletes=True)
@@ -61,7 +61,6 @@ class Users(Base, SerializableMixin, SoftDeleteMixin):
     licenses = relationship("License", back_populates="user", passive_deletes=True)
     payment_methods = relationship("PaymentMethod", back_populates="user", cascade="all, delete-orphan", passive_deletes=True)
     notifications = relationship("Notification", back_populates="user", cascade="all, delete-orphan", passive_deletes=True)
-    notification_preferences = relationship("NotificationPreferences", back_populates="user", uselist=False, cascade="all, delete-orphan", passive_deletes=True)
 
     # Admin invitation relationships
     sent_admin_invitations = relationship(

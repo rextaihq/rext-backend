@@ -279,6 +279,53 @@ class UserService:
 
         return user
 
+    async def change_user_status(
+        self,
+        user_id: UUID,
+        new_status: str,
+    ) -> tuple[Users, str]:
+        """
+        Change a user's status to a specified value.
+
+        Validates that the new status is one of the allowed values,
+        fetches the user, records the old status, and updates.
+
+        Args:
+            user_id: User UUID
+            new_status: New status value (e.g., "suspended", "banned", "active", "inactive")
+
+        Returns:
+            Tuple of (updated Users object, old_status string)
+
+        Raises:
+            ResourceNotFoundException: If user not found
+            RextValidationException: If new_status is not a valid status
+        """
+        valid_statuses = {"active", "inactive", "suspended", "banned"}
+        if new_status not in valid_statuses:
+            raise RextValidationException(
+                message=f"Invalid status: {new_status}. Must be one of: {', '.join(sorted(valid_statuses))}"
+            )
+
+        user = await self.get_user_by_id(user_id)
+        old_status = user.status
+
+        user.status = new_status
+        if new_status == "active":
+            user.deactivated_at = None
+        user.updated_at = datetime.now(timezone.utc)
+
+        logger.info(
+            f"User status changed: {user_id} ({old_status} -> {new_status})",
+            extra={
+                "user_id": str(user_id),
+                "old_status": old_status,
+                "new_status": new_status,
+            }
+        )
+
+        return user, old_status
+
     async def cleanup_deactivated_accounts(self) -> int:
         """
         Permanently delete accounts deactivated for 14 or more days.

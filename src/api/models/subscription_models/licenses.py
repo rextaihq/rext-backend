@@ -71,7 +71,7 @@ class License(Base, SerializableMixin):
         """Check if license is currently valid."""
         if self.status not in (LicenseStatus.ACTIVE,):
             return False
-        if self.expires_at and self.expires_at < datetime.utcnow():
+        if self.expires_at and self.expires_at < datetime.now(timezone.utc):
             return False
         if self.activation_limit and self.activation_count >= self.activation_limit:
             return False
