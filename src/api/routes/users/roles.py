@@ -186,21 +186,8 @@ async def list_user_roles(
 
     # Non-self requests require user.read permission or admin role
     if not is_own_user:
-        requester_uuid = UUID(requester_id)
-        is_admin = await is_user_admin(db, requester_uuid)
-
-        if not is_admin:
-            from src.utils.rbac_utils import check_permission
-            has_permission = await check_permission(db, requester_uuid, "user.read")
-            if not has_permission:
-                from src.api.middleware.exceptions import RextAuthorizationException
-                raise RextAuthorizationException(
-                    message="You do not have permission to view other users' roles",
-                    context={
-                        "required_permission": "user.read",
-                        "target_user_id": user_id
-                    }
-                )
+        from src.utils.rbac_utils import check_permission_or_admin
+        await check_permission_or_admin(db, UUID(requester_id), "user.read")
 
     service = RoleService(db)
 
