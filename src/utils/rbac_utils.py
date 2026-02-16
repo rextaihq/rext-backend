@@ -48,6 +48,7 @@ from src.api.lib.logger import auto_logger
 
 logger = auto_logger()
 
+ADMIN_HIERARCHY_THRESHOLD = 90
 
 async def check_permission(
     db: AsyncSession,
@@ -375,3 +376,52 @@ async def get_user_role_names(
         await cache.set(cache_key, role_names, ttl=300)
 
     return role_names
+
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+from uuid import UUID
+
+from src.api.models.user_models.user_roles import UserRole
+from src.api.models.user_models.roles import Role
+
+
+async def is_user_admin(
+    db: AsyncSession,
+    user_id: UUID,
+    workspace_id: UUID | None = None
+) -> bool:
+    """
+    Check if a user has an admin-level role based on hierarchy_level.
+
+    A user is considered an admin if they have any role with
+    hierarchy_level >= ADMIN_HIERARCHY_THRESHOLD (90).
+
+    This replaces hardcoded Role.name.in_(["admin", "super_admin"]) checks
+    throughout the codebase.
+
+    Args:
+        db: Async database session
+        user_id: UUID of the user to check
+        workspace_id: Optional workspace UUID. If provided, also checks
+                      workspace-scoped admin roles. If None, only checks
+                      global (non-workspace) roles.
+
+    Returns:
+        True if the user has an admin-level role, False otherwise.
+    """
+    query = (
+        select(UserRole)
+        .join(Role, Role.id == UserRole.role_id)
+        .where(
+            UserRole.user_id == user_id,
+            Role.hierarchy_level >= ADMIN_HIERARCHY_THRESHOLD
+        )
+    )
+
+    # If workspace_id is provided, include both global and workspace-scoped admin roles
+    # If not provided, only check global roles (workspace_id IS NULL)
+    if workspace_id is None:
+        query = query.where(UserRole.workspace_id == None)
+
+    result = await db.execute(query)
+    return result.scalar_one_or_none() is not None

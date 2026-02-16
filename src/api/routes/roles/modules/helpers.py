@@ -3,10 +3,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from uuid import UUID
 
-from src.api.models.user_models.roles import Role
 from src.api.models.user_models.role_permissions import RolePermission
 from src.api.models.user_models.permissions import Permission
 from src.api.models.user_models.user_roles import UserRole
+from src.utils.rbac_utils import is_user_admin
 
 
 async def check_role_permission(
@@ -28,16 +28,8 @@ async def check_role_permission(
     Raises:
         HTTPException if user lacks permission
     """
-    # Check if admin
-    result = await db.execute(
-        select(UserRole).join(Role).where(
-            UserRole.user_id == user_id,
-            Role.name.in_(["admin", "super_admin"])
-        )
-    )
-    is_user_admin = result.scalar_one_or_none() is not None
-
-    if is_user_admin:
+    # Check if admin using hierarchy level
+    if await is_user_admin(db, user_id):
         return True
 
     # Check for specific permission

@@ -48,28 +48,27 @@ class WorkspacePermissionService:
                 resource_id=str(workspace_id),
             )
 
-        # Check super admin
-        super_admin_result = await db.execute(
-            select(UserRole)
-            .join(Role, Role.id == UserRole.role_id)
-            .where(
-                UserRole.user_id == user_id,
-                UserRole.workspace_id.is_(None),
-                Role.name == "super_admin",
-            )
-        )
+        from src.utils.rbac_utils import is_user_admin
 
-        if super_admin_result.first():
-            perms_result = await db.execute(
-                select(distinct(Permission.name))
+        # Check if user has admin-level role (hierarchy_level >= 90)
+        # This covers both admin and super_admin roles
+        is_admin = await is_user_admin(db, user_id)
+
+        if is_admin:
+            # Admin gets all permissions
+            all_permissions_result = await db.execute(
+                select(Permission.name)
+                .where(Permission.resource.in_([
+                    'workspace', 'content', 'topic', 'knowledge', 'member'
+                ]))
             )
-            permissions = [row[0] for row in perms_result.all()]
+            all_permissions = [row[0] for row in all_permissions_result.all()]
 
             return {
                 "workspace_id": str(workspace_id),
                 "workspace_slug": workspace.slug,
                 "user_role": "super_admin",
-                "permissions": permissions,
+                "permissions": all_permissions,
             }
 
         # Workspace role
