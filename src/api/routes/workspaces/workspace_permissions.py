@@ -120,7 +120,9 @@ async def refresh_workspace_permissions(
     """
     Refresh user's workspace permissions.
     """
-    return await get_my_workspace_permissions(workspace_id, user, db)
+    # This is essentially the same as get_my_workspace_permissions
+    # but with POST method to indicate it's a refresh action
+    return await get_my_workspace_permissions(workspace_id=workspace_id, user=user, db=db)
 
 
 @router.get("/{workspace_id}/members/{user_id}/permissions")
