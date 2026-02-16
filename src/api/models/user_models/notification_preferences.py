@@ -66,6 +66,24 @@ class NotificationPreferences(Base, SerializableMixin):
     # MARKETING COMMUNICATIONS
     # ==============================
     marketing_updates = Column(Boolean, default=False, nullable=False)
+    
+    # ==============================
+    # EXPANDED CATEGORIES (Matched with DB)
+    # ==============================
+    email_team_activity = Column(Boolean, default=True, nullable=False)
+    in_app_team_activity = Column(Boolean, default=True, nullable=False)
+    email_security_alerts = Column(Boolean, default=True, nullable=False)
+    in_app_security_alerts = Column(Boolean, default=True, nullable=False)
+    email_billing_updates = Column(Boolean, default=True, nullable=False)
+    in_app_billing_updates = Column(Boolean, default=True, nullable=False)
+    email_product_updates = Column(Boolean, default=False, nullable=False)
+    in_app_product_updates = Column(Boolean, default=False, nullable=False)
+    email_content_updates = Column(Boolean, default=True, nullable=False)
+    in_app_content_updates = Column(Boolean, default=True, nullable=False)
+    email_mentions = Column(Boolean, default=True, nullable=False)
+    in_app_mentions = Column(Boolean, default=True, nullable=False)
+    email_comments = Column(Boolean, default=True, nullable=False)
+    in_app_comments = Column(Boolean, default=True, nullable=False)
     unsubscribe_token = Column(
         String,
         unique=True,
