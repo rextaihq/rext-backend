@@ -300,12 +300,9 @@ class PermissionService:
     # ------------------------------------------------------------------
 
     async def _ensure_user_can(self, user_id: UUID, permission_name: str) -> None:
-        admin_check = await self.db.execute(
-            select(UserRole)
-            .join(Role)
-            .where(UserRole.user_id == user_id, Role.name.in_(["admin", "super_admin"]))
-        )
-        if admin_check.scalar_one_or_none():
+        from src.utils.rbac_utils import is_user_admin
+
+        if await is_user_admin(self.db, user_id):
             return
 
         permission_check = await self.db.execute(
