@@ -15,7 +15,7 @@ from sqlalchemy import orm, text
 from sqlalchemy.ext.declarative import declarative_base
 import sqlalchemy as sa
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from decimal import Decimal
 
 # revision identifiers, used by Alembic.
@@ -101,8 +101,8 @@ def upgrade() -> None:
             lemonsqueezy_store_id=LEMONSQUEEZY_STORE_ID,
             provider_price_id_monthly="1045158",  # Variant ID for generic provider field
             provider_price_id_yearly="1049347",
-            created_at=datetime.utcnow(),
-            updated_at=datetime.utcnow()
+            created_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(timezone.utc)
         )
         session.add(basic_plan)
         print("✅ Created 'basic' plan")
@@ -128,7 +128,7 @@ def upgrade() -> None:
         free_plan.lemonsqueezy_store_id = None
         free_plan.provider_price_id_monthly = None
         free_plan.provider_price_id_yearly = None
-        free_plan.updated_at = datetime.utcnow()
+        free_plan.updated_at = datetime.now(timezone.utc)
         print("✅ Updated 'free' plan")
 
     # Step 3: Update Pro plan with LemonSqueezy IDs and fix yearly price
@@ -150,7 +150,7 @@ def upgrade() -> None:
         pro_plan.lemonsqueezy_store_id = LEMONSQUEEZY_STORE_ID
         pro_plan.provider_price_id_monthly = "1049346"  # Variant ID for generic provider field
         pro_plan.provider_price_id_yearly = "1049351"
-        pro_plan.updated_at = datetime.utcnow()
+        pro_plan.updated_at = datetime.now(timezone.utc)
         print("✅ Updated 'pro' plan (fixed yearly price: $299.99 → $290.99)")
 
     # Step 4: Update Enterprise plan (no LemonSqueezy for now - custom pricing)
@@ -169,7 +169,7 @@ def upgrade() -> None:
         enterprise_plan.lemonsqueezy_store_id = None
         enterprise_plan.provider_price_id_monthly = None
         enterprise_plan.provider_price_id_yearly = None
-        enterprise_plan.updated_at = datetime.utcnow()
+        enterprise_plan.updated_at = datetime.now(timezone.utc)
         print("✅ Updated 'enterprise' plan (marked as not public - contact sales)")
 
     session.commit()
