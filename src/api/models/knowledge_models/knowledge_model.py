@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Integer, ForeignKey, Text, CheckConstraint, DateTime
+from sqlalchemy import Column, String, Integer, ForeignKey, Text, CheckConstraint, DateTime, Index
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import relationship
 from sqlalchemy import inspect as sa_inspect
@@ -23,6 +23,11 @@ class KnowledgeBase(Base, SerializableMixin):
     created_by_user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
     updated_at = Column(DateTime(timezone=True), onupdate=lambda: datetime.now(timezone.utc), nullable=True)
+
+    __table_args__ = (
+        Index('ix_knowledge_base_workspace_type', 'workspace_id', 'type'),
+        Index('ix_knowledge_base_workspace_name', 'workspace_id', 'name'),
+    )
 
     # Relationships
     workspace = relationship("WorkspaceModel", back_populates="knowledge_bases")
@@ -104,6 +109,11 @@ class Website(Base, SerializableMixin):
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
     updated_at = Column(DateTime(timezone=True), onupdate=lambda: datetime.now(timezone.utc), nullable=True)
 
+    __table_args__ = (
+        Index('ix_website_workspace_url', 'workspace_id', 'url'),
+        Index('ix_website_workspace_kb', 'workspace_id', 'knowledge_base_id'),
+    )
+
     workspace = relationship("WorkspaceModel", back_populates="websites")
     knowledge_base = relationship("KnowledgeBase", back_populates="websites")
 
@@ -141,6 +151,11 @@ class KnowledgeFiles(Base, SerializableMixin):
     file_hash = Column(String(64), nullable=True, index=True)  # SHA-256 hash for duplicate detection
     mime_type = Column(String(100), nullable=True)  # Detected MIME type (magic number)
     chunk_count = Column(Integer, nullable=True)  # Number of vector chunks
+
+    __table_args__ = (
+        Index('ix_knowledge_files_workspace_hash', 'workspace_id', 'file_hash'),
+        Index('ix_knowledge_files_workspace_kb', 'workspace_id', 'knowledge_base_id'),
+    )
 
     workspace = relationship("WorkspaceModel", back_populates="knowledge_files")
     knowledge_base = relationship("KnowledgeBase", back_populates="knowledge_files")
@@ -180,6 +195,10 @@ class TextKnowledge(Base, SerializableMixin):
     custom_metadata = Column(JSONB, nullable=True)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
     updated_at = Column(DateTime(timezone=True), onupdate=lambda: datetime.now(timezone.utc), nullable=True)
+
+    __table_args__ = (
+        Index('ix_text_knowledge_workspace_kb', 'workspace_id', 'knowledge_base_id'),
+    )
 
     workspace = relationship("WorkspaceModel", back_populates="text_knowledge")
     knowledge_base = relationship("KnowledgeBase", back_populates="text_knowledge")
