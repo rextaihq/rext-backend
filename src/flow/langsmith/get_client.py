@@ -3,6 +3,11 @@ from langchain_core.prompts import ChatPromptTemplate
 
 
 def get_client():
+    """Get the LangSmith client instance.
+
+    Returns:
+        Client: An initialized LangSmith client.
+    """
     client = Client()
 
     return client

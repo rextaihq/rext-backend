@@ -11,9 +11,19 @@ logger = logging.getLogger(__name__)
 
 
 def calculate_on_page_seo(state: REXT) -> Dict:
-    """
-    LangGraph node to calculate on-page SEO metrics using Seokar
-    and store them as SeokarSEOState.
+    """Calculate on-page SEO metrics using Seokar.
+
+    Analyzes HTML content against target keywords to compute an on-page
+    SEO score. Checks title, meta description, slug, headers, image alt text,
+    and keyword density.
+
+    Args:
+        state: REXT state containing ``content.final_content`` and
+            ``content.content_type``.
+
+    Returns:
+        Dict: State update with ``content.review.on_page_metrics`` populated
+        with Seokar analysis results.
     """
     logger.info("Starting on-page SEO scoring")
 

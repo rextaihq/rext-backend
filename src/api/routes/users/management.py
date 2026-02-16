@@ -149,11 +149,15 @@ async def delete_user(
 
 
 @router.put("/update/{user_id}")
-@require_permissions("user.update", workspace_scoped=False)
 @db_transaction_handler("update user", auto_commit=True)
 async def update_user(
+<<<<<<< HEAD
     user_id: str,
     user_update: UpdateUser,
+=======
+    user_id: UUID,  # Changed from str to UUID for auto-validation (returns 422 on bad ID)
+    update_data: UpdateUser,
+>>>>>>> origin/TASK-237-Fix-XSS-Email-Renderer
     request: Request,
     db: AsyncSession = Depends(get_async_db)
 ):
@@ -163,8 +167,13 @@ async def update_user(
     service = UserService(db)
 
     db_user = await service.update_user(
+<<<<<<< HEAD
         user_id=UUID(user_id),
         update_data=user_update
+=======
+        user_id=user_id,
+        **update_data.model_dump(exclude_unset=True)
+>>>>>>> origin/TASK-237-Fix-XSS-Email-Renderer
     )
 
     return success(

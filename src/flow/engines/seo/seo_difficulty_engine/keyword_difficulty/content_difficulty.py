@@ -7,11 +7,30 @@ import re
 from src.flow.engines.scrape.config.clean_content import clean_content
 
 def normalize_word_count(wc, max_wc=2000):
-    """Assume max deep content ~2000 words"""
+    """Normalize word count against a maximum threshold.
+
+    Args:
+        wc: Word count.
+        max_wc: Maximum word count (default 2000).
+
+    Returns:
+        float: Normalized score (0 to 1).
+    """
     return clamp(wc / max_wc)
 
 
 def normalize_structure(h2_count, h3_count, max_h2=10, max_h3=20):
+    """Calculate structure score based on H2 and H3 counts.
+
+    Args:
+        h2_count: Number of H2 headers.
+        h3_count: Number of H3 headers.
+        max_h2: Max H2 count for normalization (default 10).
+        max_h3: Max H3 count for normalization (default 20).
+
+    Returns:
+        float: Structure score (weighted combination of H2 and H3).
+    """
     if h2_count == 0:
         return 0.0
 
@@ -19,35 +38,34 @@ def normalize_structure(h2_count, h3_count, max_h2=10, max_h3=20):
 
 
 def intent_match(keyword_intent, page_intent):
-    """
-    keyword_intent: 'informational', 'commercial', etc.
-    page_intent: dict from competitor intent_distribution
-    """
+    """Calculate match score between keyword intent and page intent distribution.
 
-    """
-    page_intent
-    {
-    "informational": 7,
-    "commercial": 1,
-    "transactional": 0
-    }
+    Args:
+        keyword_intent: Target intent ('informational', 'commercial', etc.).
+        page_intent: Dictionary of intent distribution from competitor.
 
+    Returns:
+        float: Match score (0 to 1).
     """
-
     if not page_intent:
         return 0.5  # unknown
     total = sum(page_intent.values())
     if total == 0:
         return 0.5
     
-
     page_score = page_intent.get(keyword_intent, 0) / total
     return clamp(page_score)
 
 def clean_page_content(page_content: str) -> int:
-    """
-    Clean raw scraped page content and calculate character and word count.
-    Return cleaned word count.
+    """Clean raw scraped page content and calculate word count.
+
+    Removes markdown links, raw URLs, boilerplate text, and extra whitespace.
+
+    Args:
+        page_content: Raw page content string.
+
+    Returns:
+        tuple[str, int]: Tuple containing (cleaned_text, word_count).
     """
 
     # Step 1: Remove Markdown-style links [text](url) -> keep only 'text'
@@ -83,6 +101,19 @@ def clean_page_content(page_content: str) -> int:
 
 
 def content_strength(keyword_intent: str, competitor: Competitor, normalized_result: NormalizedOrganicResult, scrape_data: DocumentScrapeData) -> float:
+    """Calculate overall content strength score.
+
+    Combines word count, structure, freshness, and intent match scores.
+
+    Args:
+        keyword_intent: Target keyword intent.
+        competitor: Competitor data.
+        normalized_result: normalized result data.
+        scrape_data: Scraped document data.
+
+    Returns:
+        tuple[float, str]: Tuple containing (strength_score, cleaned_text).
+    """
     # Word count proxy
     page_content = getattr(scrape_data['document'], "page_content", "")
     # wc,clean_text = clean_page_content(page_content)
