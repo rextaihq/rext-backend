@@ -48,7 +48,6 @@ def create_seo_engine() -> CompiledStateGraph:
     graph.add_edge("competitors_gap", "keyword_recommendation")
     graph.add_edge("seo_opportunity", "keyword_recommendation")
     graph.add_edge("relevance_keyword_finder", "keyword_recommendation")
-    # graph.add_edge("keyword_recommendation", END)
 
     graph.add_conditional_edges(
         "keyword_recommendation",

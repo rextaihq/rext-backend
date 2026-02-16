@@ -3,7 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from src.api.models.user_models.roles import Role
 from uuid import UUID
-from typing import Optional
+from src.services.workspace_service import WorkspaceServicefrom typing import Optional
 from datetime import datetime, timezone, timedelta
 
 from src.utils.logger import logger

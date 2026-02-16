@@ -29,7 +29,6 @@ async def generate_content(state: REXT) -> dict:
         dict: Updated state with generated content
     """
     try:
-        # 1️⃣ Get content state, topic, and content type
         content_state = state.get("content", {})
         topic = content_state.get("selected_topic", "")
         content_type = content_state.get("content_type", "article")
@@ -43,7 +42,6 @@ async def generate_content(state: REXT) -> dict:
 
         logger.info(f"Outline extracted: {outline_str[:20]}...")
 
-        # 2️⃣ Get relevant context from RextStore
         serp_payload = state.get("serp_payload", {})
         user_id = str(serp_payload.get("user_id", ""))
         workspace_id = str(serp_payload.get("workspace_id", ""))

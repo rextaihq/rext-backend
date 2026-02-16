@@ -1,5 +1,5 @@
 import logging
-import textstat
+
 from src.flow.states.rext import REXT
 
 logger = logging.getLogger(__name__)
