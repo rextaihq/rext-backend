@@ -19,7 +19,6 @@ class Permission(Base, SerializableMixin, UUIDPrimaryKeyMixin, TimestampMixin):
     action = Column(String(50))
 
     # Relationships
-    role = relationship("Role", back_populates="permissions")
-    permission = relationship("Permission", back_populates="roles")
+    roles = relationship("RolePermission", back_populates="permission")
 
     # to_dict() inherited from SerializableMixin

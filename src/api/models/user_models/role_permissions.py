@@ -19,6 +19,6 @@ class RolePermission(Base, SerializableMixin):
         UniqueConstraint('role_id', 'permission_id', name='uq_role_permission'),
     )
 
-    # # Relationships
+    # Relationships
     role = relationship("Role", back_populates="permissions")
     permission = relationship("Permission", back_populates="roles")
