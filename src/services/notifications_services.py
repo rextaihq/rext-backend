@@ -7,6 +7,7 @@ from src.services.sse_service import (
     OperationEvent,
 )
 from src.api.lib.logger import auto_logger
+from src.utils.payload_sanitizer import sanitize_notification_payload
 
 logger = auto_logger()
 
@@ -40,7 +41,7 @@ class NotificationService:
             step=step,
             status=status,
             message=message,
-            payload=payload or {},
+            payload=sanitize_notification_payload(payload) or {},
         )
 
         # Ensure this user owns their notification channel (Security from TASK-274)

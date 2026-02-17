@@ -1,8 +1,10 @@
 from uuid import UUID
 from fastapi import BackgroundTasks
+from html import escape as html_escape
 from src.services.notifications_services import notification_service
 from src.services.notification_preferences_service import NotificationPreferencesService
 from src.api.models.user_models.notification_preferences import NotificationPreferences
+from src.utils.payload_sanitizer import sanitize_notification_payload
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError, OperationalError
@@ -219,6 +221,10 @@ async def schedule_if_allowed(
         )
         return
 
+    # 4.6 Sanitize message and payload to prevent stored XSS (TASK-280)
+    safe_message = html_escape(message[:2000]) if message else ""
+    safe_payload = sanitize_notification_payload(payload)
+
     # 5. Create notification record in database
     from src.api.models.notification.notification_model import Notification
     from datetime import datetime, timezone
@@ -227,12 +233,12 @@ async def schedule_if_allowed(
         user_id=user_uuid,
         workspace_id=workspace_uuid,
         title=notification_title,
-        message=message,
+        message=safe_message,
         type=notification_type,
         category=pref_flag,
         status=notification_status,
         priority="normal",
-        payload=payload,
+        payload=safe_payload,
         is_read=False,
         sent_via_sse=True,
         sse_sent_at=datetime.now(timezone.utc),
@@ -284,13 +290,13 @@ async def schedule_if_allowed(
 
     # 6. Schedule the SSE notification (always, even if DB persistence failed)
     logger.info(
-        f"Scheduling SSE notification for user {user_id} – flag {pref_flag} – message: {message}"
+        f"Scheduling SSE notification for user {user_id} – flag {pref_flag} – message: {safe_message}"
         + (" (DB record saved)" if db_persist_ok else " (DB record NOT saved)")
     )
     background_tasks.add_task(
         notification_service.send_success_notification,
         user_id=user_uuid,
-        message=message,
-        payload=payload,
+        message=safe_message,
+        payload=safe_payload,
     )
     logger.info("Notification task scheduled.")
