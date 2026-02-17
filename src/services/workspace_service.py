@@ -108,10 +108,14 @@ class WorkspaceService:
         """
         await self._ensure_active_user(user_id)
         with trace(name="Create Workspace Record"):
-            # check if the url for same workspace exists in the knowledge base file
+            # Check if this user already has a workspace with the same URL
             result = await self.db.execute(
-                select(Website).where(
-                    Website.workspace_id == user_id, Website.url == url
+                select(Website)
+                .join(WorkspaceModel, WorkspaceModel.id == Website.workspace_id)
+                .where(
+                    WorkspaceModel.user_id == user_id,
+                    WorkspaceModel.deleted_at.is_(None),
+                    Website.url == url,
                 )
             )
             if result.scalar_one_or_none():
