@@ -127,6 +127,7 @@ async def create_role(
     - description: Optional description
     - hierarchy_level: 0-100 (default: 1)
     - is_system_role: Boolean (default: false)
+    - is_workspace_role: Boolean (default: false)
 
     Returns:
     - Created role details

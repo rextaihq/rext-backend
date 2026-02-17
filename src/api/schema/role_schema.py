@@ -49,7 +49,8 @@ class RoleCreate(BaseModel):
                 "display_name": "Content Editor",
                 "description": "Can create and edit content",
                 "hierarchy_level": 5,
-                "is_system_role": False
+                "is_system_role": False,
+                "is_workspace_role": True
             }
         }
 
