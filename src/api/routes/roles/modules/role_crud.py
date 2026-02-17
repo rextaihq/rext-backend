@@ -4,6 +4,8 @@ Role CRUD operations module.
 Routes handle HTTP concerns and delegate business logic to RoleService.
 """
 
+from uuid import UUID
+
 from fastapi import APIRouter, Depends, status, Request, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -11,12 +13,12 @@ from src.api.database.async_database import get_async_db
 from src.api.security.dependencies import get_current_user
 from src.api.schema.role_schema import RoleCreate, RoleUpdate
 from src.services.role_service import RoleService
+from src.utils.audit_helper import create_audit_log_async
 from src.utils.response_utils import success, created
 from src.utils.route_decorators import db_transaction_handler, require_permissions
 from src.utils.logger import logger
 from src.api.middleware.rate_limiter import role_management_rate_limit
 from .helpers import check_role_permission
-
 
 router = APIRouter()
 
@@ -103,7 +105,6 @@ async def get_role(
     if include_permissions:
         role_data = await service.get_role_with_permissions(role_id)
     else:
-        from uuid import UUID
         role = await service.get_role_by_id(UUID(role_id))
         role_data = role.to_dict()
 
@@ -169,8 +170,6 @@ async def create_role(
     }
 
     # Create audit log (HIGH-3: Role Creation Audit Logging)
-    from src.utils.audit_helper import create_audit_log_async
-    from uuid import UUID
     await create_audit_log_async(
         db=db,
         user_id=UUID(user_id),
@@ -245,7 +244,6 @@ async def update_role(
     await check_role_permission(db, user_id, "role.update")
 
     service = RoleService(db)
-    from uuid import UUID
 
     # Get role details before update for audit log
     role_before = await service.get_role_by_id(UUID(role_id))
@@ -271,7 +269,6 @@ async def update_role(
     }
 
     # Create audit log (HIGH-3: Role Update Audit Logging)
-    from src.utils.audit_helper import create_audit_log_async
     await create_audit_log_async(
         db=db,
         user_id=UUID(user_id),
@@ -344,7 +341,6 @@ async def delete_role(
     await check_role_permission(db, user_id, "role.delete")
 
     service = RoleService(db)
-    from uuid import UUID
 
     # Get role details before deletion for audit log
     role = await service.get_role_by_id(UUID(role_id))
@@ -362,7 +358,6 @@ async def delete_role(
     await service.delete_role(role_id=UUID(role_id))
 
     # Create audit log (HIGH-3: Role Deletion Audit Logging)
-    from src.utils.audit_helper import create_audit_log_async
     await create_audit_log_async(
         db=db,
         user_id=UUID(user_id),

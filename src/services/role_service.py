@@ -20,16 +20,15 @@ Does NOT:
 from typing import List, Optional, Dict, Any
 from uuid import UUID
 from datetime import datetime, timezone
-
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, and_
-
 from src.api.models.user_models.roles import Role
 from src.api.models.user_models.permissions import Permission
 from src.api.models.user_models.role_permissions import RolePermission
 from src.api.models.user_models.user_roles import UserRole
 from src.api.models.workspace_models.workspace_model import WorkspaceModel
 from src.api.models.workspace_models.workspace_member import WorkspaceMembers
+from sqlalchemy import select, func, and_, delete
+from src.api.cache.decorators import invalidate_cache
 from src.utils.logger import logger
 from src.api.middleware.exceptions import (
     DuplicateResourceException,
@@ -312,7 +311,6 @@ class RoleService:
             )
 
         # Bulk-delete role permissions
-        from sqlalchemy import delete
         await self.db.execute(
             delete(RolePermission).where(RolePermission.role_id == role_id)
         )
@@ -526,7 +524,6 @@ class RoleService:
                 )
 
         # Bulk-delete existing permissions
-        from sqlalchemy import delete
         await self.db.execute(
             delete(RolePermission).where(RolePermission.role_id == role_id)
         )
