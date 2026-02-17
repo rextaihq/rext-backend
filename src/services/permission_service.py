@@ -19,6 +19,7 @@ from src.api.models.user_models.role_permissions import RolePermission
 from src.api.models.user_models.roles import Role
 from src.api.models.user_models.user_roles import UserRole
 from src.api.schema.permission_schema import PermissionCreate, PermissionUpdate
+from sqlalchemy.exc import IntegrityError
 from src.utils.logger import logger
 
 
@@ -123,7 +124,18 @@ class PermissionService:
         )
 
         self.db.add(permission)
-        await self.db.flush()
+        try:
+            await self.db.flush()
+        except IntegrityError as e:
+            await self.db.rollback()
+            if "uq_permissions_name" in str(e.orig):
+                raise DuplicateResourceException(
+                    message="Permission with this name already exists",
+                    resource_type="permission",
+                    conflicting_field="name",
+                    conflicting_value=payload.name,
+                )
+            raise
         await self.db.refresh(permission)
 
         logger.info(
