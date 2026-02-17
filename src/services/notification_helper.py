@@ -5,6 +5,7 @@ from src.services.notifications_services import notification_service
 from src.api.models.user_models.notification_preferences import NotificationPreferences
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError, OperationalError
 import logging
 
 logger = logging.getLogger(__name__)
@@ -146,18 +147,54 @@ async def schedule_if_allowed(
         sse_sent_at=datetime.now(timezone.utc),
     )
     
-    db.add(notification)
-    await db.flush()
-    await db.refresh(notification)
-    
-    logger.info(
-        f"Created notification record {notification.id} for user {user_id} – "
-        f"type: {notification_type}, category: {pref_flag}"
-    )
+    # 5️⃣a Attempt to persist notification record
+    db_persist_ok = False
+    try:
+        db.add(notification)
+        await db.flush()
+        await db.refresh(notification)
+        db_persist_ok = True
+        logger.info(
+            f"Created notification record {notification.id} for user {user_id} – "
+            f"type: {notification_type}, category: {pref_flag}"
+        )
+    except IntegrityError as exc:
+        # Constraint violation (duplicate, FK missing, etc.)
+        # Expunge the dirty object and rollback to restore session health
+        await db.rollback()
+        db.expunge(notification)
+        logger.warning(
+            f"IntegrityError persisting notification for user {user_id} "
+            f"(type={notification_type}, category={pref_flag}): {exc}. "
+            "Notification record skipped; SSE will still be sent."
+        )
+    except OperationalError as exc:
+        # Connection lost, deadlock, timeout, etc.
+        await db.rollback()
+        db.expunge(notification)
+        logger.warning(
+            f"OperationalError persisting notification for user {user_id} "
+            f"(type={notification_type}, category={pref_flag}): {exc}. "
+            "Notification record skipped; SSE will still be sent."
+        )
+    except Exception as exc:
+        # Catch-all for unexpected DB errors (e.g., ProgrammingError, DataError)
+        await db.rollback()
+        try:
+            db.expunge(notification)
+        except Exception:
+            pass  # Object may not be in session after certain errors
+        logger.error(
+            f"Unexpected error persisting notification for user {user_id} "
+            f"(type={notification_type}, category={pref_flag}): {exc}. "
+            "Notification record skipped; SSE will still be sent.",
+            exc_info=True,
+        )
 
-    # 6️⃣ Schedule the SSE notification
+    # 6️⃣ Schedule the SSE notification (always, even if DB persistence failed)
     logger.info(
         f"Scheduling SSE notification for user {user_id} – flag {pref_flag} – message: {message}"
+        + (" (DB record saved)" if db_persist_ok else " (DB record NOT saved)")
     )
     background_tasks.add_task(
         notification_service.send_success_notification,
