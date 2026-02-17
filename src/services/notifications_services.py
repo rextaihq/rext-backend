@@ -20,6 +20,10 @@ class NotificationService:
     ):
         """Helper method to construct and publish a notification event."""
         operation_id = f"user-notifications-{user_id}"
+
+        # Ensure this user owns their notification channel
+        await event_stream_manager.set_operation_owner(operation_id, user_id)
+
         event = OperationEvent(
             operation_id=operation_id,
             scope="notification",
@@ -29,8 +33,7 @@ class NotificationService:
             payload=payload or {},
         )
         logger.info(f"Publishing notification event for user {user_id}: {message}")
-        # Always use the global event_stream_manager instance
-        await event_stream_manager.publish(event)
+        await event_stream_manager.publish(event, publisher_user_id=user_id)
 
     @staticmethod
     async def send_notification_to_user(

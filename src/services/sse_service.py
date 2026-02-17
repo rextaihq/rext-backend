@@ -12,6 +12,15 @@ from pydantic import BaseModel, Field
 
 from src.utils.logger import logger
 
+class OperationOwnershipError(Exception):
+    """Raised when a user attempts to publish to an operation they do not own."""
+
+    def __init__(self, operation_id: str, user_id: UUID) -> None:
+        self.operation_id = operation_id
+        self.user_id = user_id
+        super().__init__(
+            f"User {user_id} is not authorized to publish to operation {operation_id}"
+        )
 
 def _utcnow() -> datetime:
     """Return the current UTC time."""
@@ -149,9 +158,31 @@ class EventStreamManager:
             # Check if user is the owner
             return state.owner_user_id == user_id
 
-    async def publish(self, event: OperationEvent) -> None:
-        """Publish an event to all subscribers and buffer it for future subscribers."""
+    async def publish(self, event: OperationEvent, *, publisher_user_id: Optional[UUID] = None) -> None:
+        """Publish an event to all subscribers and buffer it for future subscribers.
+
+        Args:
+            event: The SSE event to publish.
+            publisher_user_id: The user ID of the publisher. When provided,
+                ownership is verified before publishing. When ``None``,
+                the call is treated as a trusted internal publish (e.g.,
+                system-level notifications) and ownership checks are skipped.
+                Callers should always supply this parameter when the
+                ``operation_id`` originates from user input.
+        """
         operation_id = event.operation_id
+
+        # --- Authorization gate ---
+        if publisher_user_id is not None:
+            is_owner = await self.verify_operation_ownership(operation_id, publisher_user_id)
+            if not is_owner:
+                logger.warning(
+                    "Publish rejected: user %s is not the owner of operation %s",
+                    publisher_user_id,
+                    operation_id,
+                )
+                raise OperationOwnershipError(operation_id, publisher_user_id)
+
         formatted = self._format_event(event)
         subscribers: List[_Subscription] = []
 
@@ -360,6 +391,7 @@ async def emit_step_start(
     step: str,
     message: str,
     progress: Optional[int] = None,
+    user_id: Optional[UUID] = None,
 ) -> None:
     """Emit an event indicating that a pipeline step has started."""
     await event_stream_manager.publish(
@@ -370,7 +402,8 @@ async def emit_step_start(
             status="started",
             message=message,
             progress=progress,
-        )
+        ),
+        publisher_user_id=user_id,
     )
 
 
@@ -382,6 +415,7 @@ async def emit_step_progress(
     message: str,
     progress: Optional[int] = None,
     payload: Optional[Dict[str, object]] = None,
+    user_id: Optional[UUID] = None,
 ) -> None:
     """Emit an event describing progress within a pipeline step."""
     await event_stream_manager.publish(
@@ -393,7 +427,8 @@ async def emit_step_progress(
             message=message,
             progress=progress,
             payload=payload,
-        )
+        ),
+        publisher_user_id=user_id,
     )
 
 
@@ -405,6 +440,7 @@ async def emit_step_success(
     message: str,
     payload: Optional[Dict[str, object]] = None,
     progress: Optional[int] = None,
+    user_id: Optional[UUID] = None,
 ) -> None:
     """Emit an event when a pipeline step completes successfully."""
     await event_stream_manager.publish(
@@ -416,7 +452,8 @@ async def emit_step_success(
             message=message,
             payload=payload,
             progress=progress,
-        )
+        ),
+        publisher_user_id=user_id,
     )
 
 
@@ -427,6 +464,7 @@ async def emit_step_failure(
     step: str,
     message: str,
     error: Optional[str] = None,
+    user_id: Optional[UUID] = None,
 ) -> None:
     """Emit an event when a pipeline step fails."""
     payload = {"error": error} if error else None
@@ -438,7 +476,8 @@ async def emit_step_failure(
             status="failed",
             message=message,
             payload=payload,
-        )
+        ),
+        publisher_user_id=user_id,
     )
 
 
@@ -448,6 +487,7 @@ async def emit_pipeline_complete(
     scope: str,
     message: str,
     payload: Optional[Dict[str, object]] = None,
+    user_id: Optional[UUID] = None,
 ) -> None:
     """Emit a final event for a pipeline and close the subscriber streams."""
     await event_stream_manager.publish(
@@ -459,7 +499,7 @@ async def emit_pipeline_complete(
             message=message,
             payload=payload,
             progress=100,
-        )
+        ),
+        publisher_user_id=user_id,
     )
     await event_stream_manager.complete(operation_id)
-
