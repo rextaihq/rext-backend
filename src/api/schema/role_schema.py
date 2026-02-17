@@ -104,6 +104,7 @@ class RoleResponse(BaseModel):
     description: Optional[str]
     hierarchy_level: int
     is_system_role: bool
+    is_workspace_role: bool
     created_at: str
     updated_at: Optional[str]
 

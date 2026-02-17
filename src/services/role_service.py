@@ -638,6 +638,7 @@ class RoleService:
                 "role_name": role.name,
                 "role_display_name": role.display_name,
                 "hierarchy_level": role.hierarchy_level,
+                "is_workspace_role": role.is_workspace_role,
                 "workspace_id": str(user_role.workspace_id) if user_role.workspace_id else None,
                 "workspace_name": workspace.name if workspace else None,
                 "is_primary": user_role.is_primary,
