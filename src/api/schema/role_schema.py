@@ -38,7 +38,10 @@ class RoleCreate(BaseModel):
         default=False,
         description="Whether this is a system role (cannot be modified/deleted)"
     )
-
+    is_workspace_role: bool = Field(
+        default=False,
+        description="Whether this role can be assigned to workspace members"
+    )
     class Config:
         json_schema_extra = {
             "example": {
