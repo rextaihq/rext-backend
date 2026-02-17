@@ -1,4 +1,3 @@
-# src/api/services/notification_helper.py
 from uuid import UUID
 from fastapi import BackgroundTasks
 from src.services.notifications_services import notification_service
@@ -9,6 +8,20 @@ from sqlalchemy.exc import IntegrityError, OperationalError
 import logging
 
 logger = logging.getLogger(__name__)
+
+def _safe_to_uuid(value: str, param_name: str) -> UUID:
+    """
+    Convert a string to a UUID, raising a clear ValueError with context
+    if the string is not a valid UUID format.
+    """
+    try:
+        return UUID(value)
+    except (ValueError, AttributeError) as exc:
+        raise ValueError(
+            f"Invalid {param_name}: expected a valid UUID string, "
+            f"got {value!r}"
+        ) from exc
+
 
 # src/services/notification_helper.py
 async def schedule_if_allowed(
@@ -22,14 +35,37 @@ async def schedule_if_allowed(
     workspace_id: str = None,
 ) -> None:
     """
-    Load the user's NotificationPreferences, check the master in‑app toggle
+    Load the user's NotificationPreferences, check the master in-app toggle
     (in_app_notifications) and the specific Boolean column named ``pref_flag``.
     If both are True, schedule ``notification_service.send_success_notification``
     AND persist the notification to the database.
     """
-    # 1️⃣ Load preferences
+    # 0. Validate and convert UUIDs once at entry
+    try:
+        user_uuid = _safe_to_uuid(user_id, "user_id")
+    except ValueError:
+        logger.error(
+            f"schedule_if_allowed called with invalid user_id: {user_id!r} – "
+            f"skipping notification (pref_flag={pref_flag})"
+        )
+        return
+
+    workspace_uuid: UUID | None = None
+    if workspace_id:
+        try:
+            workspace_uuid = _safe_to_uuid(workspace_id, "workspace_id")
+        except ValueError:
+            logger.error(
+                f"schedule_if_allowed called with invalid workspace_id: "
+                f"{workspace_id!r} – skipping notification (pref_flag={pref_flag})"
+            )
+            return
+
+    # 1. Load preferences
     result = await db.execute(
-        select(NotificationPreferences).where(NotificationPreferences.user_id == UUID(user_id))
+        select(NotificationPreferences).where(
+            NotificationPreferences.user_id == user_uuid
+        )
     )
     pref = result.scalar_one_or_none()
     logger.info(f"preferences: ----------------------------------: {pref}")
@@ -38,17 +74,17 @@ async def schedule_if_allowed(
         logger.debug(f"No NotificationPreferences row for user {user_id}")
         return
 
-    # 2️⃣ Global master switch for in‑app notifications
+    # 2. Global master switch for in-app notifications
     if not pref.in_app_notifications:
-        logger.debug(f"User {user_id} disabled all in‑app notifications.")
+        logger.debug(f"User {user_id} disabled all in-app notifications.")
         return
 
-    # 3️⃣ Specific flag
+    # 3. Specific flag
     # Handle virtual flags mapping to real columns
     real_pref_column = pref_flag
     if pref_flag in ["profile_update_failed", "avatar_uploaded", "avatar_upload_failed"]:
         real_pref_column = "in_app_notifications"
-    
+
     flag_enabled = getattr(pref, real_pref_column, False)
     if not flag_enabled:
         logger.debug(
@@ -56,11 +92,11 @@ async def schedule_if_allowed(
         )
         return
 
-    # 4️⃣ Determine notification type and status based on pref_flag
+    # 4. Determine notification type and status based on pref_flag
     notification_type = "system"
     notification_status = "success"
     notification_title = "Notification"
-    
+
     # Map pref_flag to notification type and generate title
     if pref_flag.startswith("ws_"):
         notification_type = "workspace"
@@ -127,14 +163,14 @@ async def schedule_if_allowed(
         notification_type = "user"
         notification_title = "Avatar Upload Failed"
         notification_status = "error"
-    
-    # 5️⃣ Create notification record in database
+
+    # 5. Create notification record in database
     from src.api.models.notification.notification_model import Notification
     from datetime import datetime, timezone
-    
+
     notification = Notification(
-        user_id=UUID(user_id),
-        workspace_id=UUID(workspace_id) if workspace_id else None,
+        user_id=user_uuid,
+        workspace_id=workspace_uuid,
         title=notification_title,
         message=message,
         type=notification_type,
@@ -146,8 +182,8 @@ async def schedule_if_allowed(
         sent_via_sse=True,
         sse_sent_at=datetime.now(timezone.utc),
     )
-    
-    # 5️⃣a Attempt to persist notification record
+
+    # 5a. Attempt to persist notification record
     db_persist_ok = False
     try:
         db.add(notification)
@@ -191,58 +227,15 @@ async def schedule_if_allowed(
             exc_info=True,
         )
 
-    # 6️⃣ Schedule the SSE notification (always, even if DB persistence failed)
+    # 6. Schedule the SSE notification (always, even if DB persistence failed)
     logger.info(
         f"Scheduling SSE notification for user {user_id} – flag {pref_flag} – message: {message}"
         + (" (DB record saved)" if db_persist_ok else " (DB record NOT saved)")
     )
     background_tasks.add_task(
         notification_service.send_success_notification,
-        user_id=UUID(user_id),
+        user_id=user_uuid,
         message=message,
         payload=payload,
     )
     logger.info("Notification task scheduled.")
-
-
-
-# async def schedule_email_if_allowed(
-#     *,
-#     db: AsyncSession,
-#     user_id: str,
-#     background_tasks: BackgroundTasks,
-#     pref_flag: str,          # e.g. "email_workspace_invite"
-#     email_task_callable,    # e.g. send_workspace_invitation_email_task
-#     task_kwargs: dict,
-# ) -> None:
-#     """
-#     Load the user's NotificationPreferences, check the master email toggle
-#     (email_notifications) and the specific Boolean column ``pref_flag``.
-#     If both are True, schedule the provided email background task.
-#     """
-#     result = await db.execute(
-#         select(NotificationPreferences).where(NotificationPreferences.user_id == UUID(user_id))
-#     )
-#     pref: NotificationPreferences | None = result.scalar_one_or_none()
-#     if not pref:
-#         logger.debug(f"No NotificationPreferences row for user {user_id}")
-#         return
-
-#     # Global master switch for email
-#     if not pref.email_notifications:
-#         logger.debug(f"User {user_id} disabled all email notifications.")
-#         return
-
-#     # Specific flag
-#     flag_enabled = getattr(pref, pref_flag, False)
-#     if not flag_enabled:
-#         logger.debug(
-#             f"User {user_id} has preference {pref_flag}=False – skipping email."
-#         )
-#         return
-
-#     logger.info(
-#         f"Scheduling email task for user {user_id} – flag {pref_flag}"
-#     )
-#     background_tasks.add_task(email_task_callable, **task_kwargs)
-#     logger.info("Email background task scheduled.")
