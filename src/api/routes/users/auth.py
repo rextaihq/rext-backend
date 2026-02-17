@@ -236,9 +236,11 @@ async def login_user(
             "refresh_token": tokens["refresh_token"],
             "token_type": tokens.get("token_type", "bearer"),
             "expires_in": tokens.get("expires_in", 3600),
-            "user": UserResponse.model_validate(db_user).model_dump(),
-            "roles": tokens.get("roles", []),
-            "permissions": tokens.get("permissions", [])
+            "user": {
+                **UserResponse.model_validate(db_user).model_dump(),
+                "roles": tokens.get("roles", []),
+                "permissions": tokens.get("permissions", [])
+            }
         }
 
     except RextAuthenticationException as auth_error:
