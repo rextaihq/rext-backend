@@ -1,4 +1,3 @@
-from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from uuid import UUID
@@ -7,6 +6,7 @@ from src.api.models.user_models.roles import Role
 from src.api.models.user_models.role_permissions import RolePermission
 from src.api.models.user_models.permissions import Permission
 from src.api.models.user_models.user_roles import UserRole
+from src.api.middleware.exceptions import RextAuthorizationException
 
 
 async def check_permission_access(
@@ -26,7 +26,7 @@ async def check_permission_access(
         True if user has permission
 
     Raises:
-        HTTPException if user lacks permission
+        RextAuthorizationException if user lacks permission
     """
     # Check if admin
     result = await db.execute(
@@ -53,9 +53,10 @@ async def check_permission_access(
     has_permission = result.scalar_one_or_none()
 
     if not has_permission:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"Insufficient permissions. Required: {required_permission} or admin role"
+        raise RextAuthorizationException(
+            message=f"Insufficient permissions. Required: {required_permission} or admin role",
+            required_permission=required_permission,
+            context={"user_id": str(user_id)},
         )
 
     return True
