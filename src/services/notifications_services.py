@@ -1,3 +1,5 @@
+
+import asyncio
 from typing import Optional
 from uuid import UUID
 from src.services.sse_service import (
@@ -7,6 +9,13 @@ from src.services.sse_service import (
 from src.api.lib.logger import auto_logger
 
 logger = auto_logger()
+
+# Maximum number of publish attempts before giving up
+_MAX_PUBLISH_RETRIES = 2
+# Delay in seconds between retry attempts
+_RETRY_DELAY_SECONDS = 0.5
+
+
 class NotificationService:
     """A stateless service for sending user notifications via SSE."""
 
@@ -18,12 +27,13 @@ class NotificationService:
         status: str,
         payload: Optional[dict] = None,
     ):
-        """Helper method to construct and publish a notification event."""
+        """Helper method to construct and publish a notification event.
+
+        Wraps the SSE publish call with error handling and a single retry.
+        If all attempts fail, the error is logged but not re-raised so that
+        callers (especially BackgroundTasks) are not disrupted.
+        """
         operation_id = f"user-notifications-{user_id}"
-
-        # Ensure this user owns their notification channel
-        await event_stream_manager.set_operation_owner(operation_id, user_id)
-
         event = OperationEvent(
             operation_id=operation_id,
             scope="notification",
@@ -32,8 +42,49 @@ class NotificationService:
             message=message,
             payload=payload or {},
         )
-        logger.info(f"Publishing notification event for user {user_id}: {message}")
-        await event_stream_manager.publish(event, publisher_user_id=user_id)
+
+        # Ensure this user owns their notification channel (Security from TASK-274)
+        await event_stream_manager.set_operation_owner(operation_id, user_id)
+
+        last_exception: Optional[Exception] = None
+
+        for attempt in range(1, _MAX_PUBLISH_RETRIES + 1):
+            try:
+                logger.info(
+                    f"Publishing notification event for user {user_id}: "
+                    f"{message} (attempt {attempt}/{_MAX_PUBLISH_RETRIES})"
+                )
+                await event_stream_manager.publish(event, publisher_user_id=user_id)
+                # Success -- exit the retry loop
+                return
+            except asyncio.CancelledError:
+                # CancelledError must always be re-raised per Python async
+                # best practices to avoid breaking structured concurrency.
+                logger.warning(
+                    f"Notification publish cancelled for user {user_id}: "
+                    f"{message}"
+                )
+                raise
+            except Exception as exc:
+                last_exception = exc
+                logger.error(
+                    f"Failed to publish notification event for user "
+                    f"{user_id} (attempt {attempt}/{_MAX_PUBLISH_RETRIES}): "
+                    f"{type(exc).__name__}: {exc}",
+                    exc_info=True,
+                )
+                if attempt < _MAX_PUBLISH_RETRIES:
+                    await asyncio.sleep(_RETRY_DELAY_SECONDS)
+
+        # All retries exhausted -- log a final error but do NOT re-raise.
+        # Notifications are important but should not crash the calling flow.
+        logger.error(
+            f"All {_MAX_PUBLISH_RETRIES} attempts to publish notification "
+            f"for user {user_id} have failed. Last error: "
+            f"{type(last_exception).__name__}: {last_exception}. "
+            f"Notification lost: step={step}, status={status}, "
+            f"message={message}"
+        )
 
     @staticmethod
     async def send_notification_to_user(
