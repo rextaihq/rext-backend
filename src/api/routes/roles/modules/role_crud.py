@@ -156,7 +156,8 @@ async def create_role(
         display_name=role_data.display_name,
         description=role_data.description,
         hierarchy_level=role_data.hierarchy_level,
-        is_system_role=role_data.is_system_role
+        is_system_role=role_data.is_system_role,
+        is_workspace_role=role_data.is_workspace_role
     )
 
     # Prepare values for audit log
@@ -165,7 +166,8 @@ async def create_role(
         "display_name": new_role.display_name,
         "description": new_role.description,
         "hierarchy_level": new_role.hierarchy_level,
-        "is_system_role": new_role.is_system_role
+        "is_system_role": new_role.is_system_role,
+        "is_workspace_role": new_role.is_workspace_role
     }
 
     # Create audit log (HIGH-3: Role Creation Audit Logging)
