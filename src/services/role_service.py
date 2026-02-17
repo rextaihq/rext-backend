@@ -416,7 +416,6 @@ class RoleService:
         await self.db.refresh(user_role)
 
         # Invalidate permissions cache for this user
-        from src.api.cache.decorators import invalidate_cache
         await invalidate_cache(f"user:permissions:{user_id}:*")
 
         logger.info(
@@ -472,7 +471,6 @@ class RoleService:
         await self.db.delete(user_role)
 
         # Invalidate permissions cache for this user
-        from src.api.cache.decorators import invalidate_cache
         await invalidate_cache(f"user:permissions:{user_id}:*")
 
         logger.info(
@@ -540,8 +538,6 @@ class RoleService:
 
         await self.db.flush()
 
-        # Invalidate permission cache for all users with this role
-        from src.api.cache.decorators import invalidate_cache
         result = await self.db.execute(
             select(UserRole.user_id).where(UserRole.role_id == role_id)
         )
