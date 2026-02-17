@@ -9,6 +9,52 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+async def _recheck_preference_enabled(
+    db: AsyncSession,
+    user_id: UUID,  # Changed from str to UUID
+    pref_flag: str,
+) -> bool:
+    """
+    Re-read the user's notification preferences with a row-level lock
+    (SELECT ... FOR UPDATE) immediately before creating a notification.
+
+    This closes the TOCTOU race window by:
+    1. Acquiring an exclusive lock on the preferences row, preventing concurrent
+       updates from committing until this transaction completes.
+    2. Reading the latest committed state of the preference, not a stale snapshot.
+
+    Returns True if the notification should proceed, False otherwise.
+    """
+    result = await db.execute(
+        select(NotificationPreferences)
+        .where(NotificationPreferences.user_id == user_id)
+        .with_for_update()
+    )
+    pref = result.scalar_one_or_none()
+
+    if not pref:
+        logger.debug(f"[recheck] No NotificationPreferences row for user {user_id}")
+        return False
+
+    if not pref.in_app_notifications:
+        logger.debug(f"[recheck] User {user_id} has disabled all in-app notifications.")
+        return False
+
+    # Map virtual flags to real columns (same logic as main function)
+    real_pref_column = pref_flag
+    if pref_flag in ["profile_update_failed", "avatar_uploaded", "avatar_upload_failed"]:
+        real_pref_column = "in_app_notifications"
+
+    flag_enabled = getattr(pref, real_pref_column, False)
+    if not flag_enabled:
+        logger.debug(
+            f"[recheck] User {user_id} has {real_pref_column}=False – "
+            "notification suppressed after re-check."
+        )
+        return False
+
+    return True
+
 def _safe_to_uuid(value: str, param_name: str) -> UUID:
     """
     Convert a string to a UUID, raising a clear ValueError with context
@@ -163,6 +209,15 @@ async def schedule_if_allowed(
         notification_type = "user"
         notification_title = "Avatar Upload Failed"
         notification_status = "error"
+
+
+    # 4.5 Re-check preferences with row-level lock to prevent TOCTOU race
+    if not await _recheck_preference_enabled(db, user_uuid, pref_flag):
+        logger.info(
+            f"Notification suppressed for user {user_id} – preference {pref_flag} "
+            "was disabled between initial check and creation (TOCTOU prevented)."
+        )
+        return
 
     # 5. Create notification record in database
     from src.api.models.notification.notification_model import Notification
