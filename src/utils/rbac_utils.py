@@ -224,7 +224,7 @@ async def get_user_permissions(
         >>> permissions = await get_user_permissions(db, user_id, workspace_id)
         >>> # ["content.create", "content.read", "content.update", "content.delete", ...]
     """
-    # Try cache first
+    # Import inside function: cache client initializes after app startup
     from src.api.cache.redis_client import cache
     cache_key = f"user:permissions:{user_id}:{workspace_id or 'global'}"
 
