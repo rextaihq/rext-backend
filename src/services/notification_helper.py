@@ -1,6 +1,7 @@
 from uuid import UUID
 from fastapi import BackgroundTasks
 from src.services.notifications_services import notification_service
+from src.services.notification_preferences_service import NotificationPreferencesService
 from src.api.models.user_models.notification_preferences import NotificationPreferences
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -107,16 +108,15 @@ async def schedule_if_allowed(
             )
             return
 
-    # 1. Load preferences
-    result = await db.execute(
-        select(NotificationPreferences).where(
-            NotificationPreferences.user_id == user_uuid
-        )
-    )
-    pref = result.scalar_one_or_none()
-    logger.info(f"preferences: ----------------------------------: {pref}")
-    logger.info(f"Flag----------------------------------: {pref_flag}")
+    # 1. Load or create preferences (guarantees a record always exists)
+    pref_service = NotificationPreferencesService(db)
+    pref = await pref_service.get_or_create(user_uuid)
+
+    logger.debug(f"Notification preferences for user {user_id}: in_app={pref.in_app_notifications}")
+    logger.debug(f"Checking preference flag: {pref_flag}")
     if not pref:
+        # This branch is technicaly unreachable now because get_or_create guarantees a record,
+        # but we keep it for defensive stability.
         logger.debug(f"No NotificationPreferences row for user {user_id}")
         return
 
