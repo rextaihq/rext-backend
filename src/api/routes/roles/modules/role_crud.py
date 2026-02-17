@@ -15,8 +15,6 @@ from src.utils.response_utils import success, created
 from src.utils.route_decorators import db_transaction_handler, require_permissions
 from src.utils.logger import logger
 from src.api.middleware.rate_limiter import role_management_rate_limit
-from .helpers import check_role_permission
-
 
 router = APIRouter()
 
@@ -94,10 +92,6 @@ async def get_role(
     Returns:
     - Role details with optional permissions
     """
-    # Check permission
-    user_id = current_user.get("identity")
-    await check_role_permission(db, user_id, "role.read")
-
     service = RoleService(db)
 
     if include_permissions:
@@ -111,7 +105,6 @@ async def get_role(
         "data": {"role": role_data},
         "message": "Role retrieved successfully"
     }
-
 
 @router.post("/", response_model=dict, status_code=status.HTTP_201_CREATED)
 @db_transaction_handler("create role", auto_commit=True)
@@ -144,10 +137,7 @@ async def create_role(
     **Phase 3, Task HIGH-4: Rate Limiting**
     Rate limit: 20 requests per minute per user
     """
-    # Check permission
     user_id = current_user.get("identity")
-    await check_role_permission(db, user_id, "role.create")
-
     service = RoleService(db)
 
     # Create the role
@@ -240,9 +230,7 @@ async def update_role(
     **Phase 3, Task HIGH-4: Rate Limiting**
     Rate limit: 20 requests per minute per user
     """
-    # Check permission
     user_id = current_user.get("identity")
-    await check_role_permission(db, user_id, "role.update")
 
     service = RoleService(db)
     from uuid import UUID
@@ -339,9 +327,7 @@ async def delete_role(
     **Phase 3, Task HIGH-4: Rate Limiting**
     Rate limit: 20 requests per minute per user
     """
-    # Check permission
     user_id = current_user.get("identity")
-    await check_role_permission(db, user_id, "role.delete")
 
     service = RoleService(db)
     from uuid import UUID
