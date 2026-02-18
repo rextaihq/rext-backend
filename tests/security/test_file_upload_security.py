@@ -234,17 +234,43 @@ class TestVirusScanningValidation:
             assert result.error_code == "VIRUS_DETECTED"
 
     @pytest.mark.asyncio
-    async def test_scanner_error_fails_open(self, validator, mock_settings):
-        """Test that scanner errors fail open (allow upload)."""
+    async def test_scanner_error_fails_closed_by_default(self, validator, mock_settings):
+        """Test that scanner errors fail closed (reject upload) by default."""
         mock_settings.virus_scanning_enabled = True
         mock_settings.VIRUS_SCAN_METHOD = "clamav"
+        mock_settings.VIRUS_SCAN_FAIL_BEHAVIOR = "closed"
 
         with patch('subprocess.run') as mock_run:
-            # Simulate scanner error
             mock_run.side_effect = FileNotFoundError("clamdscan not found")
 
             result = await validator.scan_for_viruses(b"file content", "test.txt")
-            assert result.is_valid  # Fails open for better UX
+            assert not result.is_valid
+            assert result.error_code == "SCAN_UNAVAILABLE"
+
+    @pytest.mark.asyncio
+    async def test_scanner_error_fails_open_when_configured(self, validator, mock_settings):
+        """Test that scanner errors fail open when explicitly configured."""
+        mock_settings.virus_scanning_enabled = True
+        mock_settings.VIRUS_SCAN_METHOD = "clamav"
+        mock_settings.VIRUS_SCAN_FAIL_BEHAVIOR = "open"
+
+        with patch('subprocess.run') as mock_run:
+            mock_run.side_effect = FileNotFoundError("clamdscan not found")
+
+            result = await validator.scan_for_viruses(b"file content", "test.txt")
+            assert result.is_valid  # Fails open when explicitly configured
+
+    @pytest.mark.asyncio
+    async def test_virustotal_missing_key_fails_closed(self, validator, mock_settings):
+        """Test that missing VirusTotal API key fails closed by default."""
+        mock_settings.virus_scanning_enabled = True
+        mock_settings.VIRUS_SCAN_METHOD = "virustotal"
+        mock_settings.VIRUSTOTAL_API_KEY = None
+        mock_settings.VIRUS_SCAN_FAIL_BEHAVIOR = "closed"
+
+        result = await validator.scan_for_viruses(b"file content", "test.txt")
+        assert not result.is_valid
+        assert result.error_code == "SCAN_UNAVAILABLE"
 
 
 # Integration Tests
