@@ -113,9 +113,12 @@ class WorkspaceLimitChecker:
         subscription, plan = await _get_user_subscription_and_plan_async(db, user_id)
 
         if not subscription or not plan:
-            # No subscription = default free tier (allow 1 workspace)
+            # No subscription = default free tier (allow 100 workspace)
             result = await db.execute(
-                select(func.count(Workspace.id)).where(Workspace.user_id == user_id)
+                select(func.count(Workspace.id)).where(
+                    Workspace.user_id == user_id,
+                    Workspace.deleted_at.is_(None)
+                )
             )
             current_count = result.scalar() or 0
 
@@ -132,7 +135,10 @@ class WorkspaceLimitChecker:
             return
 
         result = await db.execute(
-            select(func.count(Workspace.id)).where(Workspace.user_id == user_id)
+            select(func.count(Workspace.id)).where(
+                Workspace.user_id == user_id,
+                Workspace.deleted_at.is_(None)
+            )
         )
         current_count = result.scalar() or 0
 
@@ -242,21 +248,30 @@ class KnowledgeItemLimitChecker:
         website_result = await db.execute(
             select(func.count(Website.id))
             .join(Workspace, Website.workspace_id == Workspace.id)
-            .where(Workspace.user_id == user_id)
+            .where(
+                Workspace.user_id == user_id,
+                Workspace.deleted_at.is_(None)
+            )
         )
         website_count = website_result.scalar() or 0
 
         files_result = await db.execute(
             select(func.count(KnowledgeFiles.id))
             .join(Workspace, KnowledgeFiles.workspace_id == Workspace.id)
-            .where(Workspace.user_id == user_id)
+            .where(
+                Workspace.user_id == user_id,
+                Workspace.deleted_at.is_(None)
+            )
         )
         files_count = files_result.scalar() or 0
 
         text_result = await db.execute(
             select(func.count(TextKnowledge.id))
             .join(Workspace, TextKnowledge.workspace_id == Workspace.id)
-            .where(Workspace.user_id == user_id)
+            .where(
+                Workspace.user_id == user_id,
+                Workspace.deleted_at.is_(None)
+            )
         )
         text_count = text_result.scalar() or 0
 
