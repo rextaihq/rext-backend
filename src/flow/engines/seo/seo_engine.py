@@ -5,11 +5,15 @@ from src.flow.states.rext import REXT
 logger = logging.getLogger(__name__)
 
 def create_seo_engine():
-    """
-    Creates the Hybrid SEO Engine Graph with keyword_router.
-    
-    Flow:
-    Parallel SEO analysis --> keyword_recommendation --> ROUTER --> Loop/Restart or END
+    """Create the SEO analysis engine workflow.
+
+    Builds a LangGraph subgraph with parallel SEO analysis nodes
+    (keyword difficulty, competitor gap, SEO opportunity, keyword
+    finder) followed by keyword recommendation with conditional
+    routing for user-driven keyword iteration.
+
+    Returns:
+        CompiledStateGraph: Compiled SEO engine subgraph.
     """
     from src.flow.engines.router.keywword_router import keyword_router
     # from src.flow.engines.seo.seo_difficulty_engine.keyword_difficulty.keyword_difficulty import compute_keyword_difficulty

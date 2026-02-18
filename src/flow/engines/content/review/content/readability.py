@@ -5,8 +5,18 @@ from src.flow.states.rext import REXT
 logger = logging.getLogger(__name__)
 
 def calculate_readability(state: REXT):
-    """
-    Calculates readability metrics for the generated content.
+    """Calculate readability metrics for generated content.
+
+    Uses the ``textstat`` library to compute Flesch Reading Ease,
+    Flesch-Kincaid Grade, Gunning Fog, SMOG, ARI, Coleman-Liau,
+    and Dale-Chall scores on the body markdown content.
+
+    Args:
+        state: REXT state containing ``content.final_content.body_markdown``.
+
+    Returns:
+        dict: State update with ``content.review.readability_metrics``
+        populated, or unchanged content state on failure.
     """
     content_state = state.get("content", {})
     final_content = content_state.get("final_content", {})

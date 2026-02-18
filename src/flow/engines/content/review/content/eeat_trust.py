@@ -6,6 +6,21 @@ logger = logging.getLogger(__name__)
 
 
 def calculate_eeat_trust(state: REXT):
+    """Calculate E-E-A-T trust score for generated content.
+
+    Runs hybrid evaluation using regex-based signal extraction and
+    metadata analysis on the final HTML content. Delegates to
+    ``calculate_eeat_trust_score`` for the actual computation.
+
+    Args:
+        state: REXT state containing ``content.final_content`` with
+            ``html_content``, ``title``, ``primary_keyword``, and
+            ``secondary_keywords``.
+
+    Returns:
+        dict: State update with ``content.review.trust_score`` populated,
+        or empty dict on failure.
+    """
     # get the content state form rext state
     content_state = state.get("content", {})
     final_content = content_state.get("final_content", {})

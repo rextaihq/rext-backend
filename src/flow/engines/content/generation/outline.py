@@ -8,8 +8,21 @@ logger = logging.getLogger(__name__)
 
 
 async def generate_outline(state: REXT):
-    """
-    Generates a content outline using an LLM.
+    """Generate a content outline using an LLM.
+
+    Uses the selected topic, content type, SERP context, competitor
+    insights, and SEO intent data to produce a structured outline via
+    LLM structured output. If the outline was previously rejected,
+    the rejection reason is included in the prompt for revision.
+
+    Args:
+        state: REXT state containing ``content.selected_topic``,
+            ``content.content_type``, ``serp_normalized``, ``seo_result``,
+            ``competitors``, and optionally ``content.outline.rejected_reason``.
+
+    Returns:
+        dict: State update with ``content.outline`` and ``content.status``
+        set to ``"planning"``, or error state on failure.
     """
 
     # 1. Get topic and content type from state
