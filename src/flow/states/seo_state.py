@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Literal, Optional, TypedDict
+from typing_extensions import Any, Literal, Optional, TypedDict
 
 
 # 1. Search Intent Analysis

@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import operator
 import uuid
-from typing import Annotated, Any, Optional, TypedDict
+from typing_extensions import Annotated, Any, Optional, TypedDict
 
 from langchain_core.documents import Document
 from langchain_core.messages import BaseMessage

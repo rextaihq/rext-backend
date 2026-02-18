@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import operator
-from typing import Annotated, Any, Literal, Optional, TypedDict
+from typing_extensions import Annotated, Any, Literal, Optional, TypedDict
 
 IssueLevel = Literal["CRITICAL", "ERROR", "WARNING", "INFO"]
 

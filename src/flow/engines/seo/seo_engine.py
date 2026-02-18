@@ -29,7 +29,7 @@ def create_seo_engine() -> CompiledStateGraph:
 
     graph.add_node(
     "keyword_difficulty_node",
-    keyword_difficulty_node
+    compute_keyword_difficulty
     )
 
     # Add Nodes
