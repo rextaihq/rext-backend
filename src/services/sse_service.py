@@ -197,9 +197,14 @@ class EventStreamManager:
             while len(state.pending_events) > self._pending_event_limit:
                 state.pending_events.popleft()
 
-            # Store completion payload if this is a terminal event
-            if event.step == "pipeline.completed":
+            # Store completion payload only on first completion (first-write-wins)
+            if event.step == "pipeline.completed" and state.completion_payload is None:
                 state.completion_payload = event.payload
+            elif event.step == "pipeline.completed" and state.completion_payload is not None:
+                logger.warning(
+                    "Duplicate completion event for operation %s — ignoring payload overwrite",
+                    operation_id,
+                )
 
             subscribers = list(state.subscribers)
 
@@ -224,12 +229,20 @@ class EventStreamManager:
         Mark an operation as complete and close subscriber streams.
 
         Queues receive a sentinel value that terminates the async generator.
+        Idempotent: calling complete() on an already-completed operation is a no-op.
         """
         subscribers: List[_Subscription] = []
 
         async with self._lock:
             state = self._operations.get(operation_id)
             if state is None:
+                return
+
+            if state.completed:
+                logger.debug(
+                    "Operation %s already completed — ignoring duplicate complete()",
+                    operation_id,
+                )
                 return
 
             state.completed = True
