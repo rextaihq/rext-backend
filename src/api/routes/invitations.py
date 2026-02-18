@@ -249,7 +249,7 @@ async def accept_invitation(
     role_service = RoleService(db)
     role = await role_service.get_role_by_id(invitation.role_id)
 
-    # Add member to workspace via service
+    # Add members to workspace via service
     member_service = MemberService(db)
     already_member = False
     try:
