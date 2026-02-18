@@ -15,13 +15,9 @@ from src.api.models.user_models.user_roles import UserRole
 
 async def check_super_admin(db: AsyncSession, user_id: str) -> bool:
     """Check if user is a super admin."""
-    result = await db.execute(
-        select(UserRole).join(Role).where(
-            UserRole.user_id == user_id,
-            Role.name == "super_admin"
-        )
-    )
-    return result.scalar_one_or_none() is not None
+    from uuid import UUID
+    from src.utils.rbac_utils import is_user_super_admin
+    return await is_user_super_admin(db, UUID(user_id))
 
 
 async def require_super_admin(db: AsyncSession, user_id: str):

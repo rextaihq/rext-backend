@@ -133,11 +133,11 @@ class DunningService:
             # Send email via billing service
             email_service = BillingEmailService(self.db)
             success = await email_service.send_payment_dunning_email(
-                user_id=user.id,
+                user_id=subscription.user_id,
                 plan_name=plan_name,
                 amount=amount,
                 days_overdue=1,
-                grace_period_end_date=grace_period_end_date
+                customer_portal_url=None  # Can be retrieved from settings if needed
             )
 
             if success:
@@ -202,27 +202,21 @@ class DunningService:
             else:
                 days_until_suspension = 4  # Default
 
-            # Prepare email data
-            user_name = user.full_name or user.display_name or user.email
-            plan_name = plan.name
-
+            # Calculate amount
             if subscription.billing_period.value == "monthly":
                 amount_cents = plan.price_monthly
             else:
                 amount_cents = plan.price_yearly
             amount = f"${amount_cents / 100:.2f}" if amount_cents else "N/A"
 
-            grace_period_end_date = subscription.grace_period_end.strftime("%B %d, %Y") if subscription.grace_period_end else "Unknown"
-
             # Send email
             email_service = BillingEmailService(self.db)
             success = await email_service.send_payment_dunning_email(
-                user_id=user.id,
-                plan_name=plan_name,
+                user_id=subscription.user_id,
+                plan_name=plan.name,
                 amount=amount,
                 days_overdue=3,
-                days_until_suspension=days_until_suspension,
-                grace_period_end_date=grace_period_end_date
+                customer_portal_url=None
             )
 
             if success:
@@ -282,26 +276,21 @@ class DunningService:
             if not plan:
                 return False
 
-            # Prepare email data
-            user_name = user.full_name or user.display_name or user.email
-            plan_name = plan.name
-
+            # Calculate amount
             if subscription.billing_period.value == "monthly":
                 amount_cents = plan.price_monthly
             else:
                 amount_cents = plan.price_yearly
             amount = f"${amount_cents / 100:.2f}" if amount_cents else "N/A"
 
-            grace_period_end_date = subscription.grace_period_end.strftime("%B %d, %Y") if subscription.grace_period_end else "Tomorrow"
-
             # Send email
             email_service = BillingEmailService(self.db)
             success = await email_service.send_payment_dunning_email(
-                user_id=user.id,
-                plan_name=plan_name,
+                user_id=subscription.user_id,
+                plan_name=plan.name,
                 amount=amount,
                 days_overdue=6,
-                grace_period_end_date=grace_period_end_date
+                customer_portal_url=None
             )
 
             if success:

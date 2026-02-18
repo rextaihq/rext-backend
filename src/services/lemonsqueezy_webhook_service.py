@@ -152,7 +152,7 @@ class LemonSqueezyWebhookService:
 
         # Step 5: Route to appropriate handler
         try:
-            await self._route_event(event_type, webhook_data, webhook_event)
+            handler_result = await self._route_event(event_type, webhook_data, webhook_event)
             await self._mark_processed(webhook_event)
 
             logger.info(
@@ -164,7 +164,8 @@ class LemonSqueezyWebhookService:
                 "success": True,
                 "event_id": event_id,
                 "event_type": event_type,
-                "message": "Event processed successfully"
+                "message": "Event processed successfully",
+                "handler_result": handler_result
             }
 
         except Exception as e:
@@ -384,7 +385,7 @@ class LemonSqueezyWebhookService:
 
         if handler:
             logger.debug(f"Routing event {event_type} to handler {handler.__name__}")
-            await handler(webhook_data, webhook_event, self.db)
+            return await handler(webhook_data, webhook_event, self.db)
         else:
             # No handler registered - log warning but don't fail
             logger.warning(

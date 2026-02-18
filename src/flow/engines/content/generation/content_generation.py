@@ -9,7 +9,7 @@ import logging
 import json
 import asyncio
 from src.flow.states.rext import REXT
-from src.flow.model.llm_manager import load_model
+from src.flow.model.llm_manager import load_content_model
 from src.flow.model.structure.content import GeneratedContent
 from src.flow.prompts.human.content import get_content_prompt
 from src.flow.store.rext_search import search_scraped_chunks
@@ -39,6 +39,15 @@ def generate_content(state: REXT) -> dict:
         content_state = state.get("content", {})
         topic = content_state.get("selected_topic", "")
         content_type = content_state.get("content_type", "article")
+
+        if not topic:
+            logger.error("No topic found in state")
+            return {
+                "content": {
+                    **content_state,
+                    "error": "No topic found in state",
+                }
+            }
 
         logger.info(f"Generating content for: {topic} (content type: {content_type})")
 
@@ -70,7 +79,7 @@ def generate_content(state: REXT) -> dict:
         # 3️⃣ Get primary keyword from outline
         primary_keyword = outline.get("keywords_to_include", [""])[0] if outline.get("keywords_to_include") else topic
 
-        # 4️⃣ Extract Competitor Insights
+        # Extract Competitor Insights
         competitors = state.get("competitors", [])
         competitor_insights = "No competitor data available."
         target_word_count = 1500  # Default fallback
@@ -93,7 +102,7 @@ def generate_content(state: REXT) -> dict:
         # get tone from outline
         tone = outline.get("tone", "Professional")
         logger.info(f"Tone: {tone}")
-        # 5️⃣ Prepare prompt data
+        # Prepare prompt data
         prompt_data = {
             "content_type": content_type,
             "topic": topic,
@@ -107,17 +116,17 @@ def generate_content(state: REXT) -> dict:
         }
 
         # 6️⃣ Load model and prepare messages
-        content_model = load_model().with_structured_output(GeneratedContent)
+        content_model = load_content_model().with_structured_output(GeneratedContent)
         messages = get_content_prompt().format_messages(**prompt_data)
         logger.info(f"Number of messages sent to LLM: {len(messages)}")
 
-        # 7️⃣ Invoke LLM
+        # Invoke LLM
         logger.info("Invoking LLM for content generation...")
         generated_content = content_model.invoke(messages)
         content_dict = generated_content.model_dump()
         logger.info(f"Content generated successfully. Word count: {content_dict.get('word_count', 0)}")
 
-        # 8️⃣ Return structured content
+        # Return structured content
         return {
             "content": {
                 "outline": outline,

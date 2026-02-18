@@ -2,6 +2,7 @@ import re
 import logging
 from typing import Dict, Any
 from src.flow.model.llm_manager import load_model
+DEFAULT_MAX_TOKENS = 4096
 from src.flow.model.structure.eeat import EEATTrustScore
 
 logger = logging.getLogger(__name__)
@@ -52,7 +53,7 @@ async def calculate_eeat_trust_score(html_content: str, metadata: Dict[str, Any]
     regex_signals = extract_regex_signals(html_content)
     
     # Phase 2: LLM Qualitative Analysis
-    llm = load_model().with_structured_output(EEATTrustScore)
+    llm = load_model(max_tokens=DEFAULT_MAX_TOKENS).with_structured_output(EEATTrustScore)
     
     # Build prompt
     prompt = f"""

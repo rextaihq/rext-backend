@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.api.database.async_database import get_async_db_context
 from src.api.models.subscription_models.subscriptions import UserSubscription
 from src.services.trial_service import TrialService
-from src.services.billing_email_service import BillingEmailService
+from src.services.email_service import EmailService
 from src.utils.logger import logger
 
 
@@ -23,7 +23,7 @@ class TrialExpirationTask:
         """Initialize task with database session."""
         self.db = db
         self.trial_service = TrialService(db)
-        self.email_service = BillingEmailService(db)
+        self.email_service = EmailService(db)
 
     async def send_trial_reminder_email(
         self,

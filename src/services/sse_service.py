@@ -12,6 +12,15 @@ from pydantic import BaseModel, Field
 
 from src.utils.logger import logger
 
+class OperationOwnershipError(Exception):
+    """Raised when a user attempts to publish to an operation they do not own."""
+
+    def __init__(self, operation_id: str, user_id: UUID) -> None:
+        self.operation_id = operation_id
+        self.user_id = user_id
+        super().__init__(
+            f"User {user_id} is not authorized to publish to operation {operation_id}"
+        )
 
 def _utcnow() -> datetime:
     """Return the current UTC time."""
@@ -80,11 +89,22 @@ class EventStreamManager:
         self._lock = asyncio.Lock()
         self._cleanup_task: Optional[asyncio.Task[None]] = None
 
-    async def subscribe(self, operation_id: str, user_id: UUID) -> AsyncIterator[str]:
+    async def subscribe(
+        self,
+        operation_id: str,
+        user_id: UUID,
+        max_duration_seconds: float = 7200.0,
+    ) -> AsyncIterator[str]:
         """
         Subscribe to an operation's event stream.
 
-        Yields formatted SSE strings until the stream completes or the client disconnects.
+        Yields formatted SSE strings until the stream completes, the client
+        disconnects, or the maximum connection duration is reached.
+
+        Args:
+            operation_id: The operation to subscribe to.
+            user_id: The authenticated user's ID.
+            max_duration_seconds: Maximum connection lifetime in seconds (default: 2 hours).
         """
         queue: Queue[Optional[str]] = asyncio.Queue()
         subscription = _Subscription(
@@ -116,9 +136,26 @@ class EventStreamManager:
         for event_text in pending_events:
             await queue.put(event_text)
 
+        connection_start = datetime.now(timezone.utc)
         try:
             while True:
-                item = await queue.get()
+                # Check connection TTL
+                elapsed = (datetime.now(timezone.utc) - connection_start).total_seconds()
+                if elapsed >= max_duration_seconds:
+                    logger.info(
+                        "SSE connection TTL reached for operation %s (%.0fs)",
+                        operation_id,
+                        elapsed,
+                    )
+                    break
+
+                try:
+                    # Use timeout on queue.get to periodically check TTL
+                    item = await asyncio.wait_for(queue.get(), timeout=30.0)
+                except asyncio.TimeoutError:
+                    # No event received in 30s — loop back to check TTL
+                    continue
+
                 if item is None:
                     break
                 yield item
@@ -149,9 +186,31 @@ class EventStreamManager:
             # Check if user is the owner
             return state.owner_user_id == user_id
 
-    async def publish(self, event: OperationEvent) -> None:
-        """Publish an event to all subscribers and buffer it for future subscribers."""
+    async def publish(self, event: OperationEvent, *, publisher_user_id: Optional[UUID] = None) -> None:
+        """Publish an event to all subscribers and buffer it for future subscribers.
+
+        Args:
+            event: The SSE event to publish.
+            publisher_user_id: The user ID of the publisher. When provided,
+                ownership is verified before publishing. When ``None``,
+                the call is treated as a trusted internal publish (e.g.,
+                system-level notifications) and ownership checks are skipped.
+                Callers should always supply this parameter when the
+                ``operation_id`` originates from user input.
+        """
         operation_id = event.operation_id
+
+        # --- Authorization gate ---
+        if publisher_user_id is not None:
+            is_owner = await self.verify_operation_ownership(operation_id, publisher_user_id)
+            if not is_owner:
+                logger.warning(
+                    "Publish rejected: user %s is not the owner of operation %s",
+                    publisher_user_id,
+                    operation_id,
+                )
+                raise OperationOwnershipError(operation_id, publisher_user_id)
+
         formatted = self._format_event(event)
         subscribers: List[_Subscription] = []
 
@@ -166,9 +225,14 @@ class EventStreamManager:
             while len(state.pending_events) > self._pending_event_limit:
                 state.pending_events.popleft()
 
-            # Store completion payload if this is a terminal event
-            if event.step == "pipeline.completed":
+            # Store completion payload only on first completion (first-write-wins)
+            if event.step == "pipeline.completed" and state.completion_payload is None:
                 state.completion_payload = event.payload
+            elif event.step == "pipeline.completed" and state.completion_payload is not None:
+                logger.warning(
+                    "Duplicate completion event for operation %s — ignoring payload overwrite",
+                    operation_id,
+                )
 
             subscribers = list(state.subscribers)
 
@@ -193,12 +257,20 @@ class EventStreamManager:
         Mark an operation as complete and close subscriber streams.
 
         Queues receive a sentinel value that terminates the async generator.
+        Idempotent: calling complete() on an already-completed operation is a no-op.
         """
         subscribers: List[_Subscription] = []
 
         async with self._lock:
             state = self._operations.get(operation_id)
             if state is None:
+                return
+
+            if state.completed:
+                logger.debug(
+                    "Operation %s already completed — ignoring duplicate complete()",
+                    operation_id,
+                )
                 return
 
             state.completed = True
@@ -227,6 +299,25 @@ class EventStreamManager:
             for op_id in stale_ids:
                 del self._operations[op_id]
                 logger.debug("Cleaned up stale operation %s", op_id)
+
+    async def cleanup_stale_subscriptions(self) -> None:
+        """Remove subscriptions that have been inactive beyond the stale threshold."""
+        now = datetime.now(timezone.utc)
+        async with self._lock:
+            for op_id, state in list(self._operations.items()):
+                stale_subs = [
+                    sub for sub in state.subscribers
+                    if now - sub.last_activity >= self._stale_after
+                ]
+                for sub in stale_subs:
+                    state.subscribers.remove(sub)
+                    await sub.queue.put(None)  # Signal termination
+                    logger.debug(
+                        "Removed stale subscription for operation %s (user %s, inactive %.0fs)",
+                        op_id,
+                        sub.user_id,
+                        (now - sub.last_activity).total_seconds(),
+                    )
 
     async def active_operation_ids(self) -> List[str]:
         """Return active operation identifiers (intended for diagnostics/tests)."""
@@ -301,10 +392,11 @@ class EventStreamManager:
         self._cleanup_task = loop.create_task(self._cleanup_loop())
 
     async def _cleanup_loop(self) -> None:
-        """Periodically purge stale operations."""
+        """Periodically purge stale operations and subscriptions."""
         try:
             while True:
                 await asyncio.sleep(self._cleanup_interval)
+                await self.cleanup_stale_subscriptions()
                 await self.cleanup_stale_operations()
         except asyncio.CancelledError:
             logger.debug("EventStreamManager cleanup task cancelled")
@@ -360,6 +452,7 @@ async def emit_step_start(
     step: str,
     message: str,
     progress: Optional[int] = None,
+    user_id: Optional[UUID] = None,
 ) -> None:
     """Emit an event indicating that a pipeline step has started."""
     await event_stream_manager.publish(
@@ -370,7 +463,8 @@ async def emit_step_start(
             status="started",
             message=message,
             progress=progress,
-        )
+        ),
+        publisher_user_id=user_id,
     )
 
 
@@ -382,6 +476,7 @@ async def emit_step_progress(
     message: str,
     progress: Optional[int] = None,
     payload: Optional[Dict[str, object]] = None,
+    user_id: Optional[UUID] = None,
 ) -> None:
     """Emit an event describing progress within a pipeline step."""
     await event_stream_manager.publish(
@@ -393,7 +488,8 @@ async def emit_step_progress(
             message=message,
             progress=progress,
             payload=payload,
-        )
+        ),
+        publisher_user_id=user_id,
     )
 
 
@@ -405,6 +501,7 @@ async def emit_step_success(
     message: str,
     payload: Optional[Dict[str, object]] = None,
     progress: Optional[int] = None,
+    user_id: Optional[UUID] = None,
 ) -> None:
     """Emit an event when a pipeline step completes successfully."""
     await event_stream_manager.publish(
@@ -416,7 +513,8 @@ async def emit_step_success(
             message=message,
             payload=payload,
             progress=progress,
-        )
+        ),
+        publisher_user_id=user_id,
     )
 
 
@@ -427,6 +525,7 @@ async def emit_step_failure(
     step: str,
     message: str,
     error: Optional[str] = None,
+    user_id: Optional[UUID] = None,
 ) -> None:
     """Emit an event when a pipeline step fails."""
     payload = {"error": error} if error else None
@@ -438,7 +537,8 @@ async def emit_step_failure(
             status="failed",
             message=message,
             payload=payload,
-        )
+        ),
+        publisher_user_id=user_id,
     )
 
 
@@ -448,6 +548,7 @@ async def emit_pipeline_complete(
     scope: str,
     message: str,
     payload: Optional[Dict[str, object]] = None,
+    user_id: Optional[UUID] = None,
 ) -> None:
     """Emit a final event for a pipeline and close the subscriber streams."""
     await event_stream_manager.publish(
@@ -459,7 +560,7 @@ async def emit_pipeline_complete(
             message=message,
             payload=payload,
             progress=100,
-        )
+        ),
+        publisher_user_id=user_id,
     )
     await event_stream_manager.complete(operation_id)
-

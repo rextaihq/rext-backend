@@ -49,6 +49,7 @@ class WorkspacePipeline:
         db: AsyncSession,
         operation_id: str,
         workspace_id: UUID,
+        user_id: UUID,
         url: str,
         scraper: Optional[ScrapeCallable] = None,
         vector_uploader: Optional[VectorUploaderCallable] = None,
@@ -58,6 +59,7 @@ class WorkspacePipeline:
         self.operation_id = operation_id
         self.workspace_id = workspace_id
         self.url = url
+        self.user_id = user_id
         self._scraper = scraper or self._default_scraper
         self._vector_uploader = vector_uploader or self._default_vector_uploader
         self._brand_voice_generator = (
@@ -88,6 +90,7 @@ class WorkspacePipeline:
                 scope=self.scope,
                 message="Workspace creation pipeline completed successfully",
                 payload=payload,
+                user_id=self.user_id,
             )
             logger.info(
                 "Workspace pipeline completed",
@@ -109,6 +112,7 @@ class WorkspacePipeline:
                 step="pipeline",
                 message="Workspace creation pipeline failed",
                 error=str(exc),
+                user_id=self.user_id,
             )
             raise
 
@@ -129,6 +133,7 @@ class WorkspacePipeline:
             step="scrape",
             message=f"Scraping website: {self.url}",
             progress=10,
+            user_id=self.user_id,
         )
 
         try:
@@ -140,6 +145,7 @@ class WorkspacePipeline:
                 step="scrape",
                 message=f"Failed to scrape website: {exc}",
                 error=str(exc),
+                user_id=self.user_id,
             )
             raise
 
@@ -162,6 +168,7 @@ class WorkspacePipeline:
             message="Website scraped successfully",
             payload=metadata,
             progress=30,
+            user_id=self.user_id,
         )
 
         return _ScrapeResult(
@@ -246,6 +253,7 @@ class WorkspacePipeline:
             step="brand_voice",
             message="Analyzing brand voice",
             progress=70,
+            user_id=self.user_id,
         )
 
         if not content.strip():
@@ -256,6 +264,7 @@ class WorkspacePipeline:
                 message="No content available for brand voice extraction",
                 payload=None,
                 progress=90,
+                user_id=self.user_id,
             )
             return None
 
@@ -290,6 +299,7 @@ class WorkspacePipeline:
                 step="brand_voice",
                 message=f"Failed to extract brand voice: {exc}",
                 error=str(exc),
+                user_id=self.user_id,
             )
             raise
 
@@ -301,6 +311,7 @@ class WorkspacePipeline:
                 message="Brand voice extraction returned no data",
                 payload=None,
                 progress=90,
+                user_id=self.user_id,
             )
             return None
 
@@ -311,6 +322,7 @@ class WorkspacePipeline:
             message="Brand voice extracted successfully",
             payload=brand_voice_schema.model_dump(),
             progress=90,
+            user_id=self.user_id,
         )
         return brand_voice_schema
 
@@ -530,6 +542,7 @@ async def run_workspace_pipeline(
     db: AsyncSession,
     operation_id: str,
     workspace_id: UUID,
+    user_id: UUID,
     url: str,
     scraper: Optional[ScrapeCallable] = None,
     vector_uploader: Optional[VectorUploaderCallable] = None,
@@ -551,6 +564,7 @@ async def run_workspace_pipeline(
         db=db,
         operation_id=operation_id,
         workspace_id=workspace_id,
+        user_id=user_id,
         url=url,
         scraper=scraper,
         vector_uploader=vector_uploader,

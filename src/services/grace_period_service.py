@@ -130,6 +130,7 @@ class GracePeriodService:
                 from src.services.billing_email_service import BillingEmailService
 
                 # Calculate outstanding amount
+                plan_name = plan.name if plan else "Unknown Plan"
                 if subscription.billing_period.value == "monthly":
                     amount_cents = plan.price_monthly if plan else 0
                 else:

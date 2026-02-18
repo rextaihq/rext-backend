@@ -68,6 +68,7 @@ async def test_workspace_pipeline_emits_progress_and_persists_brand_voice(
         db=db_session,
         operation_id="op-123",
         workspace_id=uuid4(),
+        user_id=uuid4(),
         url="https://example.com",
         scraper=fake_scraper,
         vector_uploader=fake_vector_uploader,
@@ -119,6 +120,7 @@ async def test_workspace_pipeline_propagates_scraper_failure(
         db=db_session,
         operation_id="op-123",
         workspace_id=uuid4(),
+        user_id=uuid4(),
         url="https://example.com",
         scraper=failing_scraper,
     )
@@ -170,6 +172,7 @@ async def test_workspace_pipeline_persona_partial_insertion_rolls_back() -> None
         db=db_session,
         operation_id="op-123",
         workspace_id=uuid4(),
+        user_id=uuid4(),
         url="https://example.com",
         scraper=fake_scraper,
     )

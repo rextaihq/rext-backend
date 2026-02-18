@@ -1,36 +1,39 @@
-from typing import List, Optional, Literal, Any
-from typing_extensions import TypedDict,Annotated,List, Dict, Any, Literal
+from __future__ import annotations
+
 import operator
+from typing_extensions import Annotated, Any, Literal, Optional, TypedDict
 
 IssueLevel = Literal["CRITICAL", "ERROR", "WARNING", "INFO"]
+
 
 class ContentSection(TypedDict):
     heading: str
     description: str
-    key_points: List[str]
+    key_points: list[str]
     suggested_word_count: Optional[int]
 
 
 class ContentOutline(TypedDict):
     title: str
     brief: str
-    sections: List[ContentSection]
-    target_audience: List[str]
+    sections: list[ContentSection]
+    target_audience: list[str]
     tone: str
-    keywords_to_include: List[str]
+    keywords_to_include: list[str]
 
     status: Literal["approved", "rejected"]
-    rejected_reason: Annotated[Optional[str],operator.add]
+    rejected_reason: Annotated[Optional[str], operator.add]
 
 
 class ContentDraft(TypedDict):
     title: str
     body_markdown: str
     word_count: int
-    sections_completed: List[str]
+    sections_completed: list[str]
 
     status: Literal["approved", "rejected"]
     rejected_reason: Optional[str]
+
 
 # Readability Metrics
 class ReadabilityMetrics(TypedDict):
@@ -43,7 +46,7 @@ class ReadabilityMetrics(TypedDict):
     dale_chall_score: float
 
 
-# OnPagge SEO
+# On-Page SEO
 
 class SEOIssue(TypedDict):
     type: str                # e.g. "Image Alt Text"
@@ -60,7 +63,7 @@ class PageMetadata(TypedDict):
 
 
 class ContentQuality(TypedDict):
-    top_keywords: Dict[str, str]   
+    top_keywords: dict[str, str]
 
 
 class IssueSummary(TypedDict):
@@ -76,7 +79,7 @@ class SeokarSEOState(TypedDict):
     """
 
     # Core Score
-    seo_health_score: float        
+    seo_health_score: float
     # Issue Summary
     issue_summary: IssueSummary
 
@@ -84,10 +87,11 @@ class SeokarSEOState(TypedDict):
     page: PageMetadata
 
     # Issues
-    issues: List[SEOIssue]
+    issues: list[SEOIssue]
 
     # Content Quality Signals
     content_quality: ContentQuality
+
 
 # Trust Score (E-E-A-T & Credibility Metrics)
 class TrustScore(TypedDict):
@@ -102,7 +106,7 @@ class TrustScore(TypedDict):
     transparency: float         # Clear disclosures, affiliate links transparency, and contact info
     spam_signals: float         # Absence of aggressive ads, manipulative links, or duplicate content
     technical_trust: float      # HTTPS, mobile-friendliness, and site security signals
-    
+
 
 class ContentReview(TypedDict, total=False):
     readability_metrics: ReadabilityMetrics
@@ -118,14 +122,14 @@ class FinalContent(TypedDict):
 
     meta_title: str
     meta_description: str
-    tags: List[str]
+    tags: list[str]
 
     primary_keyword: Optional[str]
-    secondary_keywords: Optional[List[str]]
+    secondary_keywords: Optional[list[str]]
     word_count: int
     status: Literal["approved", "rejected", "draft"]
     rejected_reason: Optional[str]
-    
+
     # WordPress publishing fields
     wordpress_post_id: Optional[int]
     wordpress_link: Optional[str]
@@ -138,7 +142,7 @@ class CONTENT(TypedDict, total=False):
     """
 
     # Core artifact
-    topics: List[str]
+    topics: list[str]
     selected_topic: str
     outline: ContentOutline
     review: ContentReview
@@ -160,7 +164,7 @@ class CONTENT(TypedDict, total=False):
         "report",
         "whitepaper",
     ]
-    
+
     # Post-review action tracking
     action: Optional[Literal["publish", "edit", "save"]]
     site_id: Optional[str]

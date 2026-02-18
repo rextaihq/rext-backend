@@ -341,15 +341,8 @@ async def handle_subscription_created(
             }
         )
 
-    # TODO: Return email task data for subscription_created email (Task 1.5.1)
-    # This will be implemented when we update email templates
     logger.info(
-        f"Subscription created email would be sent to {user.email}",
-        extra={"user_id": str(user.id), "subscription_id": str(subscription.id)}
-    )
-
-    logger.info(
-        "Successfully processed subscription_created webhook",
+        f"Successfully processed subscription_created webhook",
         operation="webhook_subscription_created",
         event_id=webhook_data.get("event_id"),
         subscription_id=str(subscription.id),
@@ -359,8 +352,20 @@ async def handle_subscription_created(
         correlation_id=correlation_id
     )
 
-    # Return None for now - email sending not implemented yet
-    return None
+    # Return email task data for subscription_created email
+    return {
+        "send_email": True,
+        "email_type": "subscription_created",
+        "email_data": {
+            "user_id": str(user.id),
+            "user_email": user.email,
+            "plan_name": plan.name,
+            "plan_price": f"${(plan.price_yearly if billing_period == BillingPeriod.YEARLY else plan.price_monthly) / 100:.2f}",
+            "billing_period": billing_period.value,
+            "features": plan.features_list if hasattr(plan, 'features_list') else [],
+            "subscription_id": str(subscription.id),
+        }
+    }
 
 
 async def handle_subscription_updated(
@@ -834,12 +839,6 @@ async def handle_subscription_payment_success(
 
     await db.flush()
 
-    # TODO: Return email task data for payment success email (Task 1.5.3)
-    logger.info(
-        f"Successfully processed payment for subscription {subscription.id}",
-        extra={"subscription_id": str(subscription.id)}
-    )
-
     # Audit log
     audit_logger.log_payment_succeeded(
         user_id=subscription.user_id,
@@ -850,8 +849,19 @@ async def handle_subscription_payment_success(
         metadata={"renews_at": renews_at}
     )
 
-    # Return None for now - email sending not implemented yet
-    return None
+    # Return email task data for payment success email
+    return {
+        "send_email": True,
+        "email_type": "payment_succeeded",
+        "email_data": {
+            "user_id": str(subscription.user_id),
+            "plan_name": subscription.plan.name if subscription.plan else "Your Plan",
+            "amount_cents": 0,  # Not available in webhook
+            "payment_date": datetime.now(timezone.utc).strftime("%B %d, %Y"),
+            "next_billing_date": subscription.renews_at.strftime("%B %d, %Y") if subscription.renews_at else "N/A",
+            "subscription_id": str(subscription.id),
+        }
+    }
 
 
 async def handle_subscription_payment_failed(

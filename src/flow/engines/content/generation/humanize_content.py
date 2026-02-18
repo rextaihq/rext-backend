@@ -7,7 +7,7 @@ targeting 90% human-written detection score (10% AI detection).
 
 import logging
 from src.flow.states.rext import REXT
-from src.flow.model.llm_manager import load_model
+from src.flow.model.llm_manager import load_content_model
 from src.flow.model.structure.content import GeneratedContent
 from src.flow.prompts.human.humanize import get_humanize_prompt
 
@@ -42,6 +42,15 @@ async def humanize_content(state: REXT) -> dict:
     try:
         # 1️⃣ Get content from state
         content_state = state.get("content", {})
+
+            # Check for upstream errors — skip processing if prior node failed
+        if content_state.get("error"):
+            logger.warning(
+                "Skipping humanization due to upstream error: %s",
+                content_state["error"],
+            )
+            return {"content": content_state}
+
         final_content = content_state.get("final_content", {})
         
         if not final_content:
@@ -64,7 +73,7 @@ async def humanize_content(state: REXT) -> dict:
         }
         
         # 3️⃣ Load model and prepare messages
-        model = load_model().with_structured_output(GeneratedContent)
+        model = load_content_model().with_structured_output(GeneratedContent)
         messages = get_humanize_prompt().format_messages(**prompt_data)
         
         # 4️⃣ Invoke LLM for humanization

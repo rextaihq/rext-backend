@@ -3,11 +3,12 @@ from src.flow.states.rext import REXT
 from src.flow.model.structure.outline import Outline
 from src.flow.model.llm_manager import load_model
 from src.flow.prompts.human.outline import get_outline_prompt
+DEFAULT_MAX_TOKENS = 4096
 
 logger = logging.getLogger(__name__)
 
 
-async def generate_outline(state: REXT):
+async def generate_outline(state: REXT) -> dict:
     """Generate a content outline using an LLM.
 
     Uses the selected topic, content type, SERP context, competitor
@@ -24,21 +25,20 @@ async def generate_outline(state: REXT):
         dict: State update with ``content.outline`` and ``content.status``
         set to ``"planning"``, or error state on failure.
     """
-
-    # 1. Get topic and content type from state
     content_state = state.get("content", {})
     topic = content_state.get("selected_topic", "")
-    content_type = content_state.get("content_type", "article")  # Default to article
-    
+    content_type = content_state.get("content_type", "article")
 
-    # if not topic:
-    #     logger.error("No topic found in state")
-    #     return {
-    #         "content": {
-    #             **state.get("content", {}),
-    #             "error": "No topic found in state",
-    #         }
-    #     }
+    if not topic:
+        logger.error("No topic found in state")
+        return {
+            "content": {
+                **content_state,
+                "error": "No topic found in state",
+            }
+        }
+    logger.info("Generating outline for: %s (content type: %s)", topic, content_type)
+
 
     logger.info(f"Generating outline for: {topic} (content type: {content_type})")
 
@@ -69,7 +69,7 @@ async def generate_outline(state: REXT):
 
     # 3. Generate outline
     try:
-        outline_model = load_model().with_structured_output(Outline)
+        outline_model = load_model(max_tokens=DEFAULT_MAX_TOKENS).with_structured_output(Outline)
         prompt_template = get_outline_prompt()
 
         messages = prompt_template.format_messages(

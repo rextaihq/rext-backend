@@ -12,7 +12,7 @@ class Permission(Base, SerializableMixin, UUIDPrimaryKeyMixin, TimestampMixin):
     __tablename__ = "permissions"
 
     # id, created_at now provided by mixins
-    name = Column(String(150), nullable=False)
+    name = Column(String(150), nullable=False, unique=True)
     display_name = Column(String(200))
     description = Column(Text)
     resource = Column(String(50))

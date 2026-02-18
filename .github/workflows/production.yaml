@@ -10,15 +10,6 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # 🔹 Free disk space ASAP
-      - name: Free disk space
-        run: |
-          sudo rm -rf /usr/share/dotnet
-          sudo rm -rf /usr/local/lib/android
-          sudo rm -rf /opt/ghc
-          docker system prune -af
-          df -h
-
       - name: Checkout code
         uses: actions/checkout@v4
 
@@ -30,7 +21,6 @@ jobs:
       - name: Install uv
         run: pip install uv
 
-      # 🔹 Cache only uv (not pip)
       - name: Cache uv dependencies
         uses: actions/cache@v4
         with:
@@ -41,6 +31,14 @@ jobs:
 
       - name: Install dependencies
         run: uv sync
+
+      - name: Cache pip packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/uv.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
 
       - name: Install system dependencies
         run: |
@@ -55,12 +53,11 @@ jobs:
             libstdc++6 \
             && sudo apt-get clean
 
-      - name: Install Python tools
-        run: |
-          uv pip install --system --no-cache-dir playwright crawl4ai
+      - name: Install uv and Python dependencies
+        run: pip install uv && uv pip install --system --no-cache-dir playwright crawl4ai
 
       - name: Install Playwright browser
-        run: playwright install chromium --with-deps
+        run: playwright install chromium
 
       - name: Setup Crawl4AI
         run: |
@@ -70,30 +67,19 @@ jobs:
       - name: Install dev dependencies
         run: uv sync --group dev
 
-      # 🔹 Cleanup after build job
-      - name: Cleanup after build
-        run: |
-          rm -rf ~/.cache/pip
-          rm -rf ~/.cache/uv
-          rm -rf ~/.cache/ms-playwright
-          docker system prune -af
-          df -h
-
+      # - name: Run tests
+      #   run: uv run pytest tests/ -x --tb=short
+      #   env:
+      #     ENVIRONMENT: test
+      #     SECRET_KEY: ci-test-secret-key-must-be-at-least-32-chars-long
+      #     REFRESH_SECRET_KEY: ci-test-refresh-secret-key-must-be-at-least-32-chars-long
+      #     POSTGRES_URI_CUSTOM: postgresql+asyncpg://user:pass@localhost:5432/test_db
 
   docker_job:
     needs: build
     runs-on: ubuntu-latest
 
     steps:
-      # 🔹 Free disk again
-      - name: Free disk space
-        run: |
-          sudo rm -rf /usr/share/dotnet
-          sudo rm -rf /usr/local/lib/android
-          sudo rm -rf /opt/ghc
-          docker system prune -af
-          df -h
-
       - name: Checkout code
         uses: actions/checkout@v4
 
@@ -114,9 +100,3 @@ jobs:
 
       - name: Push Docker image
         run: docker push ${{ secrets.DOCKER_USERNAME }}/wrext:dev
-
-      - name: Cleanup Docker (Post-build)
-        if: always()
-        run: |
-          docker system prune -af
-          df -h

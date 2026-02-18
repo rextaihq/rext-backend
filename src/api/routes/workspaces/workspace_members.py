@@ -276,7 +276,7 @@ async def remove_workspace_member(
         .where(
             UserRole.user_id == member.user_id,
             UserRole.workspace_id == workspace.id,
-            Role.name == "workspace_owner",
+            Role.hierarchy_level >= 80, # workspace_owner or higher
         )
     )
     if owner_role_check.scalar_one_or_none() is not None:

@@ -65,6 +65,8 @@ async def subscribe_to_operation_events(
         return EventSourceResponse(
             event_stream_manager.subscribe_completed(operation_id, user_id),
             media_type="text/event-stream",
+            ping=15,
+            send_timeout=5,
             headers={
                 "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0",
                 "X-Accel-Buffering": "no",
@@ -74,6 +76,8 @@ async def subscribe_to_operation_events(
     return EventSourceResponse(
         event_stream_manager.subscribe(operation_id, user_id),
         media_type="text/event-stream",
+        ping=15,
+        send_timeout=5,
         headers={
             "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0",
             "X-Accel-Buffering": "no",

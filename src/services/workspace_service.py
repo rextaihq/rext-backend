@@ -53,6 +53,7 @@ from src.api.cache.decorators import cached
 from src.utils.logger import logger
 from src.api.database.async_database import get_async_db
 from src.services.workspace_pipeline import run_workspace_pipeline
+from src.services.sse_service import event_stream_manager
 from langsmith import traceable, trace
 import weakref
 
@@ -140,6 +141,9 @@ class WorkspaceService:
 
         operation_id = str(uuid4())
 
+        # Register ownership so only this user can publish events to this operation
+        await event_stream_manager.set_operation_owner(operation_id, user_id)
+
         async def run_pipeline() -> None:
             with trace(
                 name="Run Workspace Pipeline",
@@ -151,6 +155,7 @@ class WorkspaceService:
                             db=bg_db,
                             operation_id=operation_id,
                             workspace_id=workspace.id,
+                            user_id=user_id,
                             url=url,
                         )
                     except Exception as exc:
@@ -234,6 +239,9 @@ class WorkspaceService:
 
         operation_id = str(uuid4())
 
+        # Register ownership so only this user can publish events to this operation
+        await event_stream_manager.set_operation_owner(operation_id, user_id)
+
         async def run_pipeline() -> None:
             async for bg_db in get_async_db():
                 try:
@@ -241,6 +249,7 @@ class WorkspaceService:
                         db=bg_db,
                         operation_id=operation_id,
                         workspace_id=workspace.id,
+                        user_id=user_id,
                         url=workspace.url,
                     )
                 except Exception as exc:
@@ -744,7 +753,7 @@ class WorkspaceService:
             .where(
                 UserRole.user_id == user_id,
                 UserRole.workspace_id == workspace_id,
-                Role.name == "workspace_owner",
+                Role.hierarchy_level >= 80, # workspace_owner or higher
             )
         )
         
