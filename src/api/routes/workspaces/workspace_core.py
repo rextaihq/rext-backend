@@ -20,6 +20,7 @@ from src.api.schema.workspace_schema import WorkspaceSchema, WorkspaceUpdateSche
 from src.api.middleware.usage_limiter import check_workspace_limit
 from src.services.workspace_service import WorkspaceService
 from src.services.email_service import EmailService
+from src.services.email_helpers import send_workspace_email
 from src.api.dependencies.feature_gate import RequireFeature
 
 
@@ -187,6 +188,52 @@ async def get_workspace_by_id(
 
 
 # -------------------------
+# Get available roles
+# -------------------------
+@router.get("/available-roles")
+@db_transaction_handler("get available roles", auto_commit=False)
+async def get_available_roles(
+    request: Request,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Get available roles for workspace member invitations.
+
+    Returns workspace roles that can be assigned to workspace members.
+    """
+    # Fetch all workspace roles ordered by hierarchy
+    query = (
+        select(Role)
+        .where(Role.is_workspace_role == True)
+        .order_by(Role.hierarchy_level.desc())
+    )
+    result = await db.execute(query)
+    roles = result.scalars().all()
+
+    roles_data = [
+        {
+            "id": str(role.id),
+            "name": role.name,
+            "display_name": role.display_name,
+            "description": role.description,
+            "is_system_role": role.is_system_role,
+            "is_workspace_role": role.is_workspace_role,
+            "hierarchy_level": role.hierarchy_level,
+            "created_at": role.created_at.isoformat() if role.created_at else None,
+            "updated_at": role.updated_at.isoformat() if role.updated_at else None,
+        }
+        for role in roles
+    ]
+
+    return success(
+        data={"roles": roles_data, "total_count": len(roles_data)},
+        request=request,
+        message=f"Retrieved {len(roles_data)} available role(s)",
+    )
+
+
+# -------------------------
 # Get workspace by ID or slug (RESTful)
 # -------------------------
 @router.get("/{workspace_id}")
@@ -317,18 +364,18 @@ async def delete_workspace_endpoint(
     # Send confirmation email
     try:
         recovery_date = (datetime.now(timezone.utc) + timedelta(days=30)).strftime("%B %d, %Y")
-        email_service = EmailService(db)
-
-        await email_service.send_email(
-            to_email=db_user.email,
-            subject=f"Workspace '{workspace.name}' deleted",
-            template_type="workspace_deleted",
-            template_data={
-                "user_name": db_user.display_name or db_user.email,
-                "workspace_name": workspace.name,
-                "recovery_deadline": recovery_date,
-                "remaining_workspaces": remaining_after_delete
-            }
+        
+        await send_workspace_email(
+            db=db,
+            email_type="workspace_deleted",
+            workspace_id=workspace.id,
+            recipient_email=db_user.email,
+            user_id=UUID(user_id),
+            # Template Context
+            user_name=db_user.display_name or db_user.email,
+            workspace_name=workspace.name,
+            recovery_deadline=recovery_date,
+            remaining_workspaces=remaining_after_delete
         )
     except Exception as e:
         logger.error(f"Failed to send deletion confirmation email: {str(e)}")
@@ -341,47 +388,3 @@ async def delete_workspace_endpoint(
     }
 
 
-# -------------------------
-# Get available roles
-# -------------------------
-@router.get("/available-roles")
-@db_transaction_handler("get available roles", auto_commit=False)
-async def get_available_roles(
-    request: Request,
-    db: AsyncSession = Depends(get_async_db),
-    current_user: dict = Depends(get_current_user),
-):
-    """
-    Get available roles for workspace member invitations.
-
-    Returns workspace roles that can be assigned to workspace members.
-    """
-    # Fetch all workspace roles ordered by hierarchy
-    query = (
-        select(Role)
-        .where(Role.is_workspace_role == True)
-        .order_by(Role.hierarchy_level.desc())
-    )
-    result = await db.execute(query)
-    roles = result.scalars().all()
-
-    roles_data = [
-        {
-            "id": str(role.id),
-            "name": role.name,
-            "display_name": role.display_name,
-            "description": role.description,
-            "is_system_role": role.is_system_role,
-            "is_workspace_role": role.is_workspace_role,
-            "hierarchy_level": role.hierarchy_level,
-            "created_at": role.created_at.isoformat() if role.created_at else None,
-            "updated_at": role.updated_at.isoformat() if role.updated_at else None,
-        }
-        for role in roles
-    ]
-
-    return success(
-        data={"roles": roles_data, "total_count": len(roles_data)},
-        request=request,
-        message=f"Retrieved {len(roles_data)} available role(s)",
-    )
