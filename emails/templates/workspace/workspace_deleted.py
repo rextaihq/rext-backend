@@ -6,14 +6,15 @@ Sent to workspace owner when a workspace is soft-deleted.
 from typing import Optional
 from emails.components import simple_header, primary_button, simple_footer
 from emails.utils.renderer import compose_email
-
+from dotenv import load_dotenv
+import os
 
 def render_workspace_deleted_email(
     workspace_name: str,
     user_name: str,
     recovery_deadline: str,
     remaining_workspaces: int,
-    frontend_url: str = "https://app.rext.com",
+    frontend_url: str = os.getenv("FRONTEND_URL"),
     unsubscribe_token: Optional[str] = None
 ) -> str:
     """
@@ -94,7 +95,7 @@ def create_workspace_deleted_email(
     user_name: str,
     recovery_deadline: str,
     remaining_workspaces: int,
-    frontend_url: str = "https://app.rext.com",
+    frontend_url: str = os.getenv("FRONTEND_URL"),
     unsubscribe_token: Optional[str] = None
 ) -> str:
     """Convenience function for use with EmailService."""
