@@ -115,7 +115,7 @@ class FinalContent(TypedDict):
     title: str
     html_content: str
     body_markdown: str
-
+    
     meta_title: str
     meta_description: str
     tags: List[str]

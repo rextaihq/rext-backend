@@ -7,8 +7,8 @@ targeting 90% human-written detection score (10% AI detection).
 
 import logging
 from src.flow.states.rext import REXT
-from src.flow.model.llm_manager import load_model
-from src.flow.model.structure.content import GeneratedContent
+from src.flow.model.llm_manager import load_model, load_humanize_model
+from src.flow.model.structure.content import GeneratedContent, GeneratedHumanizeContent
 from src.flow.prompts.human.humanize import get_humanize_prompt
 
 logger = logging.getLogger(__name__)
@@ -42,6 +42,8 @@ async def humanize_content(state: REXT) -> dict:
     try:
         # 1️⃣ Get content from state
         content_state = state.get("content", {})
+        content_outline = content_state.get("outline", {})
+
         final_content = content_state.get("final_content", {})
         
         if not final_content:
@@ -60,19 +62,28 @@ async def humanize_content(state: REXT) -> dict:
         # 2️⃣ Prepare prompt data
         prompt_data = {
             "title": title,
-            "body_markdown": body_markdown
+            "introduction": final_content.get("introduction", ""),
+            "body_markdown": body_markdown,
+            "selected_topic":content_state.get("selected_top", ""),
+            "content_type":content_state.get("content_type", ""),
+            "word_count":final_content.get("word_count", ""),
+            "target_audience":content_outline.get("target_audience", ""),
+            "content_tone":content_outline.get("tone", ""),
         }
         
         # 3️⃣ Load model and prepare messages
-        model = load_model().with_structured_output(GeneratedContent)
+        # model = load_model().with_structured_output(GeneratedHumanizeContent)
+        model = load_model()
         messages = get_humanize_prompt().format_messages(**prompt_data)
         
         # 4️⃣ Invoke LLM for humanization
         logger.info("Invoking LLM for content humanization (target: 90% human-written)...")
         humanized_content = await model.ainvoke(messages)
-        humanized_dict = humanized_content.model_dump()
+        # humanized_dict = humanized_content.model_dump()
         
-        logger.info(f"Humanization completed (90% human target). Keys: {humanized_dict.keys()}")
+        # logger.info(f"Humanization completed (90% human target). Keys: {humanized_dict.keys()}")
+        
+        logger.info(f"Humanization completed (90% human target). Keys:")
         
         # 5️⃣ Update state with humanized content
         return {
@@ -80,12 +91,10 @@ async def humanize_content(state: REXT) -> dict:
                 **content_state,
                 "final_content": {
                     **final_content,
-                    "title": humanized_dict.get("title", title),
-                    "body_markdown": humanized_dict.get("body_markdown", body_markdown),
-                    "word_count": humanized_dict.get("word_count", final_content.get("word_count", 0)),
-                    "meta_title": humanized_dict.get("meta_title", final_content.get("meta_title", "")),
-                    "meta_description": humanized_dict.get("meta_description", final_content.get("meta_description", "")),
-                    "tags": humanized_dict.get("tags", final_content.get("tags", [])),
+                    "humanized_content":humanized_content
+                    # "humanized_title": humanized_dict.get("title", title),
+                    # "humanized_introduction": humanized_dict.get("introduction", final_content.get("introduction", "")),
+                    # "humanized_body_markdown": humanized_dict.get("body_markdown", body_markdown),
                 },
                 "status": "humanized"
             }

@@ -21,7 +21,7 @@ import time
 from typing import Dict, Tuple, Optional
 from fastapi import Request, HTTPException, status, Depends
 from starlette.middleware.base import BaseHTTPMiddleware
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from collections import defaultdict, deque
 import hashlib
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -29,6 +29,7 @@ from sqlalchemy import select
 from src.utils.logger import logger
 from src.api.security.dependencies import get_current_user
 from src.api.cache.redis_client import cache
+
 
 
 class RateLimiter:

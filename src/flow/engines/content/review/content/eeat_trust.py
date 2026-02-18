@@ -5,7 +5,7 @@ from src.flow.states.rext import REXT
 logger = logging.getLogger(__name__)
 
 
-def calculate_eeat_trust(state: REXT):
+async def calculate_eeat_trust(state: REXT):
     # get the content state form rext state
     content_state = state.get("content", {})
     final_content = content_state.get("final_content", {})
@@ -31,7 +31,7 @@ def calculate_eeat_trust(state: REXT):
     
     # Run hybrid evaluation
     try:
-        eeat_results = calculate_eeat_trust_score(
+        eeat_results = await calculate_eeat_trust_score(
             html_content=html_content,
             metadata={
                 "title": title,

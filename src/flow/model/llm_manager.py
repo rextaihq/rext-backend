@@ -12,6 +12,23 @@ settings = get_settings()
 
 
 @lru_cache(maxsize=1)
+def load_humanize_model():
+    """
+    Initializes and returns a chat model using LangChain's `init_chat_model`.
+
+    This function loads the `gpt-4o-mini` model from the OpenAI provider.
+    The model is cached (singleton) and includes automatic retry logic
+    for transient failures (rate limits, timeouts).
+
+    Returns:
+        BaseChatModel: An instance of the initialized chat model with retry.
+    """
+    model = init_chat_model("gpt-4o-mini", model_provider="openai", api_key=settings.OPENAI_API_KEY, temperature=2.0, top_p=0.9, presence_penalty=0.5, frequency_penalty=0.5)
+    return model
+
+
+
+@lru_cache(maxsize=1)
 def load_model():
     """
     Initializes and returns a chat model using LangChain's `init_chat_model`.
