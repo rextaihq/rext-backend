@@ -30,7 +30,8 @@ class StorageBackend(ABC):
         file: BinaryIO,
         path: str,
         content_type: str,
-        metadata: Optional[dict] = None
+        metadata: Optional[dict] = None,
+        is_public: bool = False
     ) -> str:
         """
         Upload file and return storage path.
@@ -40,6 +41,7 @@ class StorageBackend(ABC):
             path: Destination path/key
             content_type: MIME type
             metadata: Optional metadata dict
+            is_public: Whether the file should be publicly accessible
 
         Returns:
             Storage path/key
@@ -80,6 +82,17 @@ class StorageBackend(ABC):
 
         Returns:
             True if file exists
+        """
+        pass
+
+    @abstractmethod
+    async def update_acl(self, path: str, is_public: bool) -> None:
+        """
+        Update file access control.
+
+        Args:
+            path: File path/key
+            is_public: Whether the file should be public
         """
         pass
 
@@ -131,18 +144,18 @@ class CloudflareR2Backend(StorageBackend):
         file: BinaryIO,
         path: str,
         content_type: str,
-        metadata: Optional[dict] = None
+        metadata: Optional[dict] = None,
+        is_public: bool = False
     ) -> str:
         """Upload file to Cloudflare R2."""
         extra_args = {
             'ContentType': content_type,
-            'ACL': 'private'  # Default to private
+            'ACL': 'public-read' if is_public else 'private'
         }
 
         if metadata:
             extra_args['Metadata'] = {k: str(v) for k, v in metadata.items()}
 
-        # Run blocking S3 upload in executor to avoid blocking
         loop = asyncio.get_event_loop()
         await loop.run_in_executor(
             None,
@@ -216,6 +229,10 @@ class CloudflareR2Backend(StorageBackend):
         Args:
             path: File path/key to make public
         """
+        await self.update_acl(path, is_public=True)
+
+    async def update_acl(self, path: str, is_public: bool) -> None:
+        """Update R2 object ACL."""
         loop = asyncio.get_event_loop()
         await loop.run_in_executor(
             None,
@@ -223,7 +240,7 @@ class CloudflareR2Backend(StorageBackend):
                 self.s3.put_object_acl,
                 Bucket=self.bucket,
                 Key=path,
-                ACL='public-read'
+                ACL='public-read' if is_public else 'private'
             )
         )
 
@@ -279,7 +296,8 @@ class LocalStorageBackend(StorageBackend):
         file: BinaryIO,
         path: str,
         content_type: str,
-        metadata: Optional[dict] = None
+        metadata: Optional[dict] = None,
+        is_public: bool = False
     ) -> str:
         """Save file to local filesystem."""
         full_path = self._resolve_safe_path(path)
@@ -292,6 +310,8 @@ class LocalStorageBackend(StorageBackend):
             content = file.read()
             await f.write(content)
 
+        # Note: Local backend doesn't have ACL concepts.
+        # Public/private access is managed at the HTTP level.
         return path
 
     async def delete(self, path: str) -> None:
@@ -317,6 +337,13 @@ class LocalStorageBackend(StorageBackend):
         """Check if file exists on filesystem."""
         full_path = self._resolve_safe_path(path)
         return os.path.exists(full_path)
+
+    async def update_acl(self, path: str, is_public: bool) -> None:
+        """
+        Update local file ACL.
+        No-op for local backend as access is managed elsewhere.
+        """
+        pass
 
 
 class StorageService:
@@ -374,7 +401,8 @@ class StorageService:
         content_type: str,
         workspace_id: str,
         user_id: str,
-        metadata: Optional[dict] = None
+        metadata: Optional[dict] = None,
+        is_public: bool = False
     ) -> Tuple[str, str]:
         """
         Upload file with automatic naming.
@@ -386,12 +414,15 @@ class StorageService:
             workspace_id: Workspace UUID
             user_id: User UUID
             metadata: Optional metadata
+            is_public: Whether the file should be publicly accessible
 
         Returns:
             Tuple of (storage_path, generated_filename)
         """
         filename = self.generate_filename(original_filename, workspace_id, user_id)
-        storage_path = await self.backend.upload(file, filename, content_type, metadata)
+        storage_path = await self.backend.upload(
+            file, filename, content_type, metadata, is_public=is_public
+        )
         return storage_path, filename
 
     async def delete_file(self, path: str) -> None:
@@ -416,6 +447,30 @@ class StorageService:
         """
         return await self.backend.get_url(path, expires_in)
 
+    async def get_public_file_url(self, path: str) -> str:
+        """
+        Get a permanent public URL for a file.
+
+        For R2 with a public domain configured, returns a direct URL.
+        For R2 without a public domain, returns a presigned URL with long expiry.
+        For local backend, returns the standard local URL.
+
+        Args:
+            path: File path/key
+
+        Returns:
+            Permanent public URL
+        """
+        if isinstance(self.backend, CloudflareR2Backend):
+            if self.backend.public_domain:
+                return f"https://{self.backend.public_domain}/{path}"
+            else:
+                # No public domain configured — use a long-lived presigned URL
+                # (7 days max for S3-compatible APIs)
+                return await self.backend.get_url(path, expires_in=604800)
+        else:
+            return await self.backend.get_url(path)
+
     async def file_exists(self, path: str) -> bool:
         """
         Check if file exists.
@@ -427,6 +482,16 @@ class StorageService:
             True if file exists
         """
         return await self.backend.exists(path)
+
+    async def update_file_acl(self, path: str, is_public: bool) -> None:
+        """
+        Update file access control.
+
+        Args:
+            path: File path/key
+            is_public: Whether the file should be public
+        """
+        await self.backend.update_acl(path, is_public)
 
 
 def create_storage_service(

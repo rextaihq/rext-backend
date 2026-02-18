@@ -232,7 +232,8 @@ class MediaService:
                 mime_type,
                 workspace_id,
                 user_id,
-                metadata={"original_filename": filename}
+                metadata={"original_filename": filename},
+                is_public=is_public
             )
 
             # Get storage backend name
@@ -243,8 +244,11 @@ class MediaService:
             if storage_backend == "r2":
                 storage_bucket = storage_settings.r2_bucket
 
-            # Generate public URL
-            public_url = await self.storage.get_file_url(storage_path)
+            # Generate URL — use permanent public URL for public files
+            if is_public:
+                public_url = await self.storage.get_public_file_url(storage_path)
+            else:
+                public_url = await self.storage.get_file_url(storage_path)
 
             # Create thumbnail for images
             if mime_type.startswith('image/'):
@@ -263,9 +267,13 @@ class MediaService:
                         thumb_filename,
                         'image/jpeg',
                         workspace_id,
-                        user_id
+                        user_id,
+                        is_public=is_public
                     )
-                    thumbnail_url = await self.storage.get_file_url(thumbnail_path)
+                    if is_public:
+                        thumbnail_url = await self.storage.get_public_file_url(thumbnail_path)
+                    else:
+                        thumbnail_url = await self.storage.get_file_url(thumbnail_path)
 
                 except Exception as e:
                     logger.error(f"Failed to create thumbnail: {e}")
@@ -461,9 +469,28 @@ class MediaService:
             media.folder = folder
         if tags is not None:
             media.tags = tags
-        if is_public is not None:
+        if is_public is not None and is_public != media.is_public:
             media.is_public = is_public
             media.access_level = "public" if is_public else "private"
+            
+            # Update storage ACL
+            try:
+                await self.storage.update_file_acl(media.storage_path, is_public)
+                if media.thumbnail_path:
+                    await self.storage.update_file_acl(media.thumbnail_path, is_public)
+                
+                # Update public_url with permanent URL or presigned URL
+                if is_public:
+                    media.public_url = await self.storage.get_public_file_url(media.storage_path)
+                    if media.thumbnail_path:
+                        media.thumbnail_url = await self.storage.get_public_file_url(media.thumbnail_path)
+                else:
+                    media.public_url = await self.storage.get_file_url(media.storage_path)
+                    if media.thumbnail_path:
+                        media.thumbnail_url = await self.storage.get_file_url(media.thumbnail_path)
+            except Exception as e:
+                logger.error(f"Failed to update storage ACL for {media.id}: {e}")
+                # We still update the DB record, but log the storage error
 
         media.updated_at = datetime.now(timezone.utc)
 
