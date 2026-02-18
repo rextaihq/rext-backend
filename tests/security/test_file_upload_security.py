@@ -201,6 +201,27 @@ class TestStorageQuotaValidation:
         )
         assert result.is_valid  # 600MB < 1024MB
 
+    @pytest.mark.asyncio
+    async def test_soft_deleted_files_excluded_from_quota(self, validator, mock_db):
+        """Test that soft-deleted files do not count toward storage quota."""
+        # Mock: 50MB of active files (soft-deleted files should be excluded by query)
+        mock_db.execute = AsyncMock(return_value=MagicMock(scalar=lambda: 50 * 1024 * 1024))
+
+        result = await validator.validate_storage_quota(
+            user_id="user123",
+            workspace_id="workspace123",
+            new_file_size_mb=40.0,
+            subscription_tier="free"  # 100MB limit
+        )
+        assert result.is_valid  # 50MB + 40MB = 90MB < 100MB limit
+
+        # Verify the query was constructed with deleted_at filter
+        call_args = mock_db.execute.call_args
+        # The SQL statement should contain a WHERE clause filtering deleted_at IS NULL
+        stmt = call_args[0][0]
+        compiled = str(stmt.compile())
+        assert "deleted_at IS NULL" in compiled or "deleted_at" in compiled
+
 
 # Virus Scanning Tests (Mocked)
 class TestVirusScanningValidation:

@@ -261,7 +261,10 @@ class FileSecurityValidator:
             ValidationResult with current_storage_mb
         """
         # Query current storage usage
-        stmt = select(func.sum(Media.file_size)).where(Media.user_id == user_id)
+        stmt = select(func.sum(Media.file_size)).where(
+            Media.user_id == user_id,
+            Media.deleted_at.is_(None)
+        )
         if workspace_id:
             stmt = stmt.where(Media.workspace_id == workspace_id)
 
