@@ -9,6 +9,7 @@ Uses boto3 for R2 communication (S3-compatible API).
 """
 
 import os
+from pathlib import Path as PathLib
 import boto3
 from typing import BinaryIO, Optional, Tuple
 from abc import ABC, abstractmethod
@@ -242,9 +243,36 @@ class LocalStorageBackend(StorageBackend):
             base_path: Base directory for file storage
             public_url_base: Base URL path for accessing files
         """
-        self.base_path = base_path
+        self.base_path = str(PathLib(base_path).resolve())
         self.public_url_base = public_url_base
-        os.makedirs(base_path, exist_ok=True)
+        os.makedirs(self.base_path, exist_ok=True)
+
+    def _resolve_safe_path(self, path: str) -> str:
+        """
+        Resolve a storage path safely, preventing directory traversal.
+
+        Uses pathlib.Path.resolve() to canonicalize the path (resolving
+        symlinks, '.', and '..') and verifies the result is within base_path.
+
+        Args:
+            path: Relative storage path
+
+        Returns:
+            Resolved absolute path string
+
+        Raises:
+            ValueError: If the resolved path escapes base_path
+        """
+        base = PathLib(self.base_path).resolve()
+        full = (base / path).resolve()
+
+        if not str(full).startswith(str(base) + os.sep) and full != base:
+            raise ValueError(
+                f"Invalid storage path: directory traversal detected. "
+                f"Path '{path}' resolves outside the storage directory."
+            )
+
+        return str(full)
 
     async def upload(
         self,
@@ -254,7 +282,7 @@ class LocalStorageBackend(StorageBackend):
         metadata: Optional[dict] = None
     ) -> str:
         """Save file to local filesystem."""
-        full_path = os.path.join(self.base_path, path)
+        full_path = self._resolve_safe_path(path)
 
         # Create directory structure
         os.makedirs(os.path.dirname(full_path), exist_ok=True)
@@ -268,7 +296,7 @@ class LocalStorageBackend(StorageBackend):
 
     async def delete(self, path: str) -> None:
         """Delete file from filesystem."""
-        full_path = os.path.join(self.base_path, path)
+        full_path = self._resolve_safe_path(path)
         if os.path.exists(full_path):
             await asyncio.get_event_loop().run_in_executor(
                 None,
@@ -282,11 +310,12 @@ class LocalStorageBackend(StorageBackend):
 
         Note: Local files don't expire, expires_in is ignored.
         """
+        self._resolve_safe_path(path)  # Validate path even for URL generation
         return f"{self.public_url_base}/{path}"
 
     async def exists(self, path: str) -> bool:
         """Check if file exists on filesystem."""
-        full_path = os.path.join(self.base_path, path)
+        full_path = self._resolve_safe_path(path)
         return os.path.exists(full_path)
 
 
