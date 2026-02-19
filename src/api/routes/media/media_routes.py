@@ -17,6 +17,7 @@ from src.services.image_processing_service import ImageProcessingService
 from src.config.storage_config import storage_settings
 from src.utils.response_utils import success, created, error
 from src.utils.route_decorators import db_transaction_handler, require_permissions
+from src.api.middleware.rate_limiter import media_upload_rate_limit
 from src.utils.logger import logger
 
 
@@ -75,7 +76,8 @@ async def upload_media(
     tags: Optional[str] = Form(None),  # Comma-separated
     is_public: bool = Form(False),
     db: AsyncSession = Depends(get_async_db),
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
+    _rate_limit: None = Depends(media_upload_rate_limit()),
 ):
     """
     Upload media file to workspace.

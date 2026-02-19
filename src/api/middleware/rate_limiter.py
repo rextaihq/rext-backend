@@ -521,6 +521,18 @@ def email_verification_rate_limit():
         description="email verification"
     )
 
+def media_upload_rate_limit():
+    """
+    Rate limiter for media upload endpoint.
+
+    Limit: 10 uploads per minute per user.
+    Prevents storage abuse and server resource exhaustion.
+    """
+    return EndpointRateLimiter(
+        requests=10,
+        window_minutes=1,
+        description="media upload"
+    )
 
 def notification_read_rate_limit():
     """
