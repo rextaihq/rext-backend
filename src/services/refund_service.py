@@ -21,6 +21,7 @@ from src.api.models.subscription_models.subscriptions import UserSubscription
 from src.api.models.subscription_models.licenses import License, LicenseStatus
 from src.api.models.user_models.users import Users
 from src.utils.logger import logger
+from src.services.webhook_monitoring_service import _mask_email
 
 
 class RefundService:
@@ -296,8 +297,8 @@ class RefundService:
 
             # Add user details
             if refund.user:
-                refund_dict["user_email"] = refund.user.email
-                refund_dict["user_name"] = refund.user.full_name or refund.user.display_name or refund.user.email
+                refund_dict["user_email_masked"] = _mask_email(refund.user.email)
+                refund_dict["user_name"] = refund.user.full_name or refund.user.display_name or "***"
 
             # Add plan details
             if refund.subscription and refund.subscription.plan:
@@ -345,8 +346,8 @@ class RefundService:
 
         # Add user details
         if refund.user:
-            refund_dict["user_email"] = refund.user.email
-            refund_dict["user_name"] = refund.user.full_name or refund.user.display_name or refund.user.email
+            refund_dict["user_email_masked"] = _mask_email(refund.user.email)
+            refund_dict["user_name"] = refund.user.full_name or refund.user.display_name or "***"
 
         # Add plan details
         if refund.subscription and refund.subscription.plan:

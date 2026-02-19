@@ -5,6 +5,8 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List
 
+from src.services.webhook_monitoring_service import _mask_email
+
 from sqlalchemy import and_, case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from src.api.models.user_models.users import Users
@@ -534,8 +536,8 @@ class SubscriptionAnalyticsService:
         for sub, user_email, user_name, plan_name in records:
             subscriptions.append({
                 "subscription_id": str(sub.id),
-                "user_email": user_email,
-                "user_name": user_name or user_email,
+                "user_email_masked": _mask_email(user_email),
+                "user_name": user_name or "***",
                 "plan_name": plan_name,
                 "status": sub.status.value,
                 "start_date": sub.start_date.isoformat() if sub.start_date else None,
