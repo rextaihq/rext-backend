@@ -152,11 +152,16 @@ async def _send_sse_after_commit(
             payload=payload,
         )
         logger.info(
-            f"SSE notification sent for notification {notification_id} to user {user_id}"
+            "SSE notification sent for notification %s to user %s",
+            notification_id,
+            user_id,
         )
     except Exception as e:
         logger.error(
-            f"Failed to send SSE notification {notification_id} for user {user_id}: {e}"
+            "Failed to send SSE notification %s for user %s: %s",
+            notification_id,
+            user_id,
+            e,
         )
 
 async def _recheck_preference_enabled(
@@ -183,23 +188,23 @@ async def _recheck_preference_enabled(
     pref = result.scalar_one_or_none()
 
     if not pref:
-        logger.debug(f"[recheck] No NotificationPreferences row for user {user_id}")
+        logger.debug("[recheck] No NotificationPreferences row for user %s", user_id)
         return False
 
     if not pref.in_app_notifications:
-        logger.debug(f"[recheck] User {user_id} has disabled all in-app notifications.")
+        logger.debug("[recheck] User %s has disabled all in-app notifications.", user_id)
         return False
 
-    # Map virtual flags to real columns (same logic as main function)
-    real_pref_column = pref_flag
-    if pref_flag in ["profile_update_failed", "avatar_uploaded", "avatar_upload_failed"]:
-        real_pref_column = "in_app_notifications"
+    # Resolve the real preference column via the registry (single source of truth)
+    recheck_config = NOTIFICATION_REGISTRY.get(pref_flag)
+    real_pref_column = (recheck_config.pref_column if recheck_config and recheck_config.pref_column else pref_flag)
 
     flag_enabled = getattr(pref, real_pref_column, False)
     if not flag_enabled:
         logger.debug(
-            f"[recheck] User {user_id} has {real_pref_column}=False – "
-            "notification suppressed after re-check."
+            "[recheck] User %s has %s=False – notification suppressed after re-check.",
+            user_id,
+            real_pref_column,
         )
         return False
 
@@ -240,8 +245,10 @@ async def schedule_if_allowed(
         user_uuid = _safe_to_uuid(user_id, "user_id")
     except ValueError:
         logger.error(
-            f"schedule_if_allowed called with invalid user_id: {user_id!r} – "
-            f"skipping notification (pref_flag={pref_flag})"
+            "schedule_if_allowed called with invalid user_id: %r – "
+            "skipping notification (pref_flag=%s)",
+            user_id,
+            pref_flag,
         )
         return
 
@@ -251,8 +258,10 @@ async def schedule_if_allowed(
             workspace_uuid = _safe_to_uuid(workspace_id, "workspace_id")
         except ValueError:
             logger.error(
-                f"schedule_if_allowed called with invalid workspace_id: "
-                f"{workspace_id!r} – skipping notification (pref_flag={pref_flag})"
+                "schedule_if_allowed called with invalid workspace_id: %r – "
+                "skipping notification (pref_flag=%s)",
+                workspace_id,
+                pref_flag,
             )
             return
 
@@ -260,17 +269,17 @@ async def schedule_if_allowed(
     pref_service = NotificationPreferencesService(db)
     pref = await pref_service.get_or_create(user_uuid)
 
-    logger.debug(f"Notification preferences for user {user_id}: in_app={pref.in_app_notifications}")
-    logger.debug(f"Checking preference flag: {pref_flag}")
+    logger.debug("Notification preferences for user %s: in_app=%s", user_id, pref.in_app_notifications)
+    logger.debug("Checking preference flag: %s", pref_flag)
     if not pref:
-        # This branch is technicaly unreachable now because get_or_create guarantees a record,
+        # This branch is technically unreachable now because get_or_create guarantees a record,
         # but we keep it for defensive stability.
-        logger.debug(f"No NotificationPreferences row for user {user_id}")
+        logger.debug("No NotificationPreferences row for user %s", user_id)
         return
 
     # 2. Global master switch for in-app notifications
     if not pref.in_app_notifications:
-        logger.debug(f"User {user_id} disabled all in-app notifications.")
+        logger.debug("User %s disabled all in-app notifications.", user_id)
         return
 
     # 3️⃣ Resolve preference column and check specific flag
@@ -305,8 +314,10 @@ async def schedule_if_allowed(
     # 4.5 Re-check preferences with row-level lock to prevent TOCTOU race
     if not await _recheck_preference_enabled(db, user_uuid, pref_flag):
         logger.info(
-            f"Notification suppressed for user {user_id} – preference {pref_flag} "
-            "was disabled between initial check and creation (TOCTOU prevented)."
+            "Notification suppressed for user %s – preference %s "
+            "was disabled between initial check and creation (TOCTOU prevented).",
+            user_id,
+            pref_flag,
         )
         return
 
@@ -341,8 +352,11 @@ async def schedule_if_allowed(
         await db.refresh(notification)
         db_persist_ok = True
         logger.info(
-            f"Created notification record {notification.id} for user {user_id} – "
-            f"type: {notification_type}, category: {pref_flag}"
+            "Created notification record %s for user %s – type: %s, category: %s",
+            notification.id,
+            user_id,
+            notification_type,
+            pref_flag,
         )
     except IntegrityError as exc:
         # Constraint violation (duplicate, FK missing, etc.)
@@ -350,18 +364,24 @@ async def schedule_if_allowed(
         await db.rollback()
         db.expunge(notification)
         logger.warning(
-            f"IntegrityError persisting notification for user {user_id} "
-            f"(type={notification_type}, category={pref_flag}): {exc}. "
-            "Notification record skipped; SSE will still be sent."
+            "IntegrityError persisting notification for user %s "
+            "(type=%s, category=%s): %s. Notification record skipped; SSE will still be sent.",
+            user_id,
+            notification_type,
+            pref_flag,
+            exc,
         )
     except OperationalError as exc:
         # Connection lost, deadlock, timeout, etc.
         await db.rollback()
         db.expunge(notification)
         logger.warning(
-            f"OperationalError persisting notification for user {user_id} "
-            f"(type={notification_type}, category={pref_flag}): {exc}. "
-            "Notification record skipped; SSE will still be sent."
+            "OperationalError persisting notification for user %s "
+            "(type=%s, category=%s): %s. Notification record skipped; SSE will still be sent.",
+            user_id,
+            notification_type,
+            pref_flag,
+            exc,
         )
     except Exception as exc:
         # Catch-all for unexpected DB errors (e.g., ProgrammingError, DataError)
@@ -371,9 +391,12 @@ async def schedule_if_allowed(
         except Exception:
             pass  # Object may not be in session after certain errors
         logger.error(
-            f"Unexpected error persisting notification for user {user_id} "
-            f"(type={notification_type}, category={pref_flag}): {exc}. "
-            "Notification record skipped; SSE will still be sent.",
+            "Unexpected error persisting notification for user %s "
+            "(type=%s, category=%s): %s. Notification record skipped; SSE will still be sent.",
+            user_id,
+            notification_type,
+            pref_flag,
+            exc,
             exc_info=True,
         )
 
@@ -393,4 +416,4 @@ async def schedule_if_allowed(
         payload=safe_payload,
         notification_id=str(notification.id),
     )
-    logger.debug(f"SSE notification task scheduled for notification {notification.id}")
+    logger.debug("SSE notification task scheduled for notification %s", notification.id)
