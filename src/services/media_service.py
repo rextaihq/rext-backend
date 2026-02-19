@@ -9,7 +9,7 @@ High-level service for media management that orchestrates:
 """
 
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_, func, or_
+from sqlalchemy import select, and_, func, or_, update, delete
 from typing import List, Optional, BinaryIO, Dict, Any
 from datetime import datetime, timezone
 from io import BytesIO
@@ -572,7 +572,11 @@ class MediaService:
         permanent: bool = False
     ) -> Dict[str, Any]:
         """
-        Delete multiple media files.
+        Delete multiple media files using batched database operations.
+
+        For soft delete: executes a single UPDATE statement.
+        For permanent delete: fetches all records, deletes storage files
+        individually, then executes a single batch DELETE.
 
         Args:
             media_ids: List of media UUIDs to delete
@@ -582,22 +586,75 @@ class MediaService:
         Returns:
             Dictionary with deleted and failed counts
         """
-        deleted_count = 0
-        failed_count = 0
+        if not media_ids:
+            return {"deleted": 0, "failed": 0, "errors": []}
+
         errors = []
 
-        for media_id in media_ids:
-            try:
-                success = await self.delete_media(media_id, workspace_id, permanent)
-                if success:
-                    deleted_count += 1
-                else:
-                    failed_count += 1
-                    errors.append(f"Media {media_id} not found")
-            except Exception as e:
-                failed_count += 1
-                errors.append(f"Media {media_id}: {str(e)}")
-                logger.error(f"Error deleting media {media_id}: {e}")
+        # Fetch all matching media in a single query
+        result = await self.db.execute(
+            select(Media).where(
+                and_(
+                    Media.id.in_(media_ids),
+                    Media.workspace_id == workspace_id,
+                    Media.deleted_at.is_(None)
+                )
+            )
+        )
+        media_items = result.scalars().all()
+
+        # Identify which IDs were found vs not found
+        found_ids = {str(media.id) for media in media_items}
+        not_found_ids = [mid for mid in media_ids if mid not in found_ids]
+        for mid in not_found_ids:
+            errors.append(f"Media {mid} not found")
+
+        if not media_items:
+            return {
+                "deleted": 0,
+                "failed": len(not_found_ids),
+                "errors": errors
+            }
+
+        deleted_count = 0
+        failed_count = len(not_found_ids)
+
+        if permanent:
+            # Permanent delete: remove files from storage first, then batch DB delete
+            storage_errors = []
+            successfully_deleted_ids = []
+
+            for media in media_items:
+                try:
+                    await self.storage.delete_file(media.storage_path)
+                    if media.thumbnail_path:
+                        await self.storage.delete_file(media.thumbnail_path)
+                    successfully_deleted_ids.append(media.id)
+                except Exception as e:
+                    logger.error(f"Error deleting storage file for media {media.id}: {e}")
+                    storage_errors.append(f"Media {media.id}: storage delete failed - {str(e)}")
+                    # Still delete from DB even if storage delete fails
+                    successfully_deleted_ids.append(media.id)
+
+            errors.extend(storage_errors)
+
+            # Batch delete from database
+            if successfully_deleted_ids:
+                await self.db.execute(
+                    delete(Media).where(Media.id.in_(successfully_deleted_ids))
+                )
+                deleted_count = len(successfully_deleted_ids)
+        else:
+            # Soft delete: single UPDATE statement for all matching records
+            batch_ids = [media.id for media in media_items]
+            await self.db.execute(
+                update(Media)
+                .where(Media.id.in_(batch_ids))
+                .values(deleted_at=datetime.now(timezone.utc))
+            )
+            deleted_count = len(batch_ids)
+
+        await self.db.flush()
 
         logger.info(f"Bulk delete: {deleted_count} deleted, {failed_count} failed")
         return {
