@@ -152,7 +152,7 @@ class SubscriptionManagementService:
         }
 
     # ------------------------------------------------------------------
-    # Helpers
+    # Helperss
     # ------------------------------------------------------------------
 
     async def _get_user_or_404(self, user_id: UUID) -> Users:

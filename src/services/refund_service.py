@@ -240,7 +240,7 @@ class RefundService:
         total_result = await self.db.execute(count_query)
         total_refunds = total_result.scalar() or 0
 
-        # Get paginated refunds with relationships
+        # Get paginated refunds with relationshipss
         offset = (page - 1) * per_page
         query = (
             select(Refund)

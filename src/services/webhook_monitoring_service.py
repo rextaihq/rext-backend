@@ -85,7 +85,7 @@ class WebhookMonitoringService:
                 cutoff_time = datetime.now(timezone.utc) - timedelta(hours=hours)
                 conditions.append(WebhookEvent.created_at >= cutoff_time)
 
-            # Count total matching events
+            # Count total matching eventss
             count_stmt = select(func.count(WebhookEvent.id))
             if conditions:
                 count_stmt = count_stmt.where(and_(*conditions))

@@ -388,7 +388,7 @@ class SubscriptionAnalyticsService:
         # Get recent subscriptions
         recent_subscriptions = await self._get_recent_subscriptions(limit=10)
 
-        # Calculate growth metrics
+        # Calculate growth metricss
         new_revenue_30d = await self._calculate_new_revenue(days=30)
         growth_rate = self._safe_percentage(new_revenue_30d, mrr)
 
