@@ -251,7 +251,7 @@ class ImpersonationService:
             .join(UserRole, UserRole.role_id == Role.id)
             .where(
                 UserRole.user_id == user_id,
-                Permission.name == "user.update"
+                Permission.name == "user.impersonate"
             )
         )
         permission = result.scalar_one_or_none()
