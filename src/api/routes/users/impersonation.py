@@ -73,7 +73,10 @@ async def start_impersonation(
         metadata={
             "admin_user_email": impersonation_context["impersonated_by_email"],
             "target_user_email": impersonation_context["target_email"],
-            "target_user_name": impersonation_context["target_display_name"] or impersonation_context["target_full_name"],
+            "target_user_name": (
+                impersonation_context["target_display_name"]
+                or impersonation_context["target_full_name"]
+            ),
             "session_id": session_id
         },
     )
@@ -90,7 +93,10 @@ async def start_impersonation(
         "original_user_id": str(admin_user_id),
         "impersonated_user_id": impersonation_context["target_user_id"],
         "impersonated_user_email": impersonation_context["target_email"],
-        "impersonated_user_name": impersonation_context["target_display_name"] or impersonation_context["target_full_name"],
+        "impersonated_user_name": (
+            impersonation_context["target_display_name"]
+            or impersonation_context["target_full_name"]
+        ),
         "roles": impersonation_context["roles"],
         "permissions": impersonation_context["permissions"],
         "access_token": access_token,
