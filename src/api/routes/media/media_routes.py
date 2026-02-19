@@ -130,12 +130,24 @@ async def upload_media(
             is_public=is_public
         )
 
+        media_data = media.to_dict()
+
+        # Surface processing warnings to the client
+        warnings = media_data.get("file_metadata", {}).get("processing_warnings", [])
+
+        response_data = {
+            **media_data,
+        }
+        if warnings:
+            response_data["warnings"] = warnings
+
         logger.info(f"Media uploaded successfully: {media.id}")
 
         return created(
-            data=media.to_dict(),
+            data=response_data,
             request=request,
             message=f"File '{file.filename}' uploaded successfully"
+            + (f" (with {len(warnings)} warning(s))" if warnings else "")
         )
 
     except ValueError as e:

@@ -197,6 +197,7 @@ class MediaService:
         thumbnail_url = None
         processing_status = "pending"
         processing_error = None
+        processing_warnings = []
 
         try:
             # Process image if applicable
@@ -234,8 +235,7 @@ class MediaService:
                 mime_type,
                 workspace_id,
                 user_id,
-                metadata={"original_filename": filename},
-                is_public=is_public
+                metadata={"original_filename": filename}
             )
 
             # Get storage backend name
@@ -246,11 +246,8 @@ class MediaService:
             if storage_backend == "r2":
                 storage_bucket = storage_settings.r2_bucket
 
-            # Generate URL — use permanent public URL for public files
-            if is_public:
-                public_url = await self.storage.get_public_file_url(storage_path)
-            else:
-                public_url = await self.storage.get_file_url(storage_path)
+            # Generate public URL
+            public_url = await self.storage.get_file_url(storage_path)
 
             # Create thumbnail for images
             if mime_type.startswith('image/'):
@@ -269,19 +266,17 @@ class MediaService:
                         thumb_filename,
                         'image/jpeg',
                         workspace_id,
-                        user_id,
-                        is_public=is_public
+                        user_id
                     )
-                    if is_public:
-                        thumbnail_url = await self.storage.get_public_file_url(thumbnail_path)
-                    else:
-                        thumbnail_url = await self.storage.get_file_url(thumbnail_path)
+                    thumbnail_url = await self.storage.get_file_url(thumbnail_path)
 
                 except Exception as e:
                     logger.error(f"Failed to create thumbnail: {e}")
-                    # Continue without thumbnail
+                    processing_warnings.append(
+                        f"Thumbnail generation failed: {type(e).__name__}"
+                    )
 
-            processing_status = "completed"
+            processing_status = "completed_with_warnings" if processing_warnings else "completed"
 
         except Exception as e:
             logger.error(f"Error processing media: {e}")
@@ -317,7 +312,10 @@ class MediaService:
             thumbnail_url=thumbnail_url,
             processing_status=processing_status,
             processing_error=processing_error,
-            file_metadata=file_metadata
+            file_metadata={
+                **file_metadata,
+                **({"processing_warnings": processing_warnings} if processing_warnings else {})
+            }
         )
 
         self.db.add(media)
