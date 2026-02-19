@@ -324,10 +324,33 @@ class CustomerAdminService:
             if not sub:
                 raise ResourceNotFoundException("No active subscription found", "subscription", str(user_id))
 
+            cancel_immediately = bool(metadata.get("cancel_immediately", True))
             audit_details["previous_status"] = sub.status.value
-            sub.status = "cancelled"
-            sub.cancelled_at = datetime.now(timezone.utc)
-            result = {"status": "subscription_cancelled"}
+            audit_details["cancel_immediately"] = cancel_immediately
+            audit_details["provider_subscription_id"] = (
+                sub.lemonsqueezy_subscription_id or sub.provider_subscription_id
+            )
+
+            from src.services.subscription_service import SubscriptionService
+            subscription_service = SubscriptionService(self.db)
+
+            cancelled_subscription = await subscription_service.cancel(
+                user_id=user_id,
+                reason=f"Admin cancellation: {reason}",
+                cancel_immediately=cancel_immediately,
+                background_tasks=None,
+                fail_on_provider_error=True
+            )
+
+            result = {
+                "status": "subscription_cancelled",
+                "cancelled_at": (
+                    cancelled_subscription.cancelled_at.isoformat()
+                    if cancelled_subscription.cancelled_at
+                    else None
+                ),
+                "cancel_at_period_end": cancelled_subscription.cancel_at_period_end
+            }
 
         else:
             raise RextValidationException(f"Invalid action: {action}")

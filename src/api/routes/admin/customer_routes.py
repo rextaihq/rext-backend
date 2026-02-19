@@ -11,8 +11,10 @@ from typing import Any, Dict, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Request
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from src.api.middleware.exceptions import RextValidationException
 
 from src.api.database.async_database import get_async_db
 from src.api.security.dependencies import get_current_user
@@ -43,6 +45,19 @@ class CustomerActionRequest(BaseModel):
     )
     reason: str = Field(..., min_length=1, max_length=500)
     metadata: Dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def validate_action_metadata(self) -> "CustomerActionRequest":
+        """Validate metadata based on action."""
+        if self.action == "cancel_subscription":
+            # Ensure cancel_immediately is bool if provided, default to True
+            cancel_imm = self.metadata.get("cancel_immediately")
+            if cancel_imm is not None and not isinstance(cancel_imm, bool):
+                raise RextValidationException(
+                    message="cancel_immediately must be a boolean",
+                    field_errors={"metadata.cancel_immediately": ["Must be a boolean"]}
+                )
+        return self
 
 
 # ============================================================================
@@ -177,9 +192,10 @@ async def perform_customer_action(
     - action: deactivate, activate, reset_usage, extend_trial, cancel_subscription
     - reason: Reason for the action (required for audit trail)
     - metadata: Additional metadata
+        - cancel_immediately (bool, optional): For cancel_subscription, default True.
 
     Returns:
-    - Action result
+    - Action result with status and state details
     - Updated user/subscription state
 
     Raises:
