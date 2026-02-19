@@ -20,7 +20,6 @@ CONTENT_GENERATION_MAX_TOKENS = 8192
 TOPIC_GENERATION_MAX_TOKENS = 1024
 
 
-@lru_cache(maxsize=1)
 def load_model(max_tokens: int = DEFAULT_MAX_TOKENS):
     """
     Initializes and returns a chat model using LangChain's `init_chat_model`.
@@ -65,7 +64,6 @@ def load_content_model():
     )
 
 
-@lru_cache(maxsize=1)
 def topic_generation_model():
     """
     Initializes a chat model with structured output for BasicTopicGenerationList.
