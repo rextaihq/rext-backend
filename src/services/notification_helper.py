@@ -12,6 +12,125 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+from dataclasses import dataclass as _dataclass
+
+
+@_dataclass(frozen=True, slots=True)
+class NotificationConfig:
+    """Configuration for a single notification type."""
+    notification_type: str
+    title: str
+    status: str = "success"
+    pref_column: str | None = None  # Override preference column (None = use pref_flag as column name)
+
+
+NOTIFICATION_REGISTRY: dict[str, NotificationConfig] = {
+    # Workspace notifications
+    "ws_invite_received": NotificationConfig(
+        notification_type="workspace",
+        title="Workspace Invitation",
+    ),
+    "ws_invite_accepted": NotificationConfig(
+        notification_type="workspace",
+        title="Invitation Accepted",
+    ),
+    "ws_role_changed": NotificationConfig(
+        notification_type="workspace",
+        title="Role Changed",
+    ),
+    "ws_member_removed": NotificationConfig(
+        notification_type="workspace",
+        title="Member Removed",
+    ),
+    # Billing notifications
+    "billing_payment_success": NotificationConfig(
+        notification_type="billing",
+        title="Payment Successful",
+    ),
+    "billing_payment_failed": NotificationConfig(
+        notification_type="billing",
+        title="Payment Failed",
+        status="error",
+    ),
+    "billing_subscription_cancelled": NotificationConfig(
+        notification_type="billing",
+        title="Subscription Cancelled",
+        status="warning",
+    ),
+    "billing_subscription_expiring": NotificationConfig(
+        notification_type="billing",
+        title="Subscription Expiring",
+        status="warning",
+    ),
+    "billing_trial_ending": NotificationConfig(
+        notification_type="billing",
+        title="Trial Ending",
+        status="warning",
+    ),
+    "billing_usage_limit_warning": NotificationConfig(
+        notification_type="billing",
+        title="Usage Limit Warning",
+        status="warning",
+    ),
+    "billing_usage_limit_exceeded": NotificationConfig(
+        notification_type="billing",
+        title="Usage Limit Exceeded",
+        status="error",
+    ),
+    # Knowledge base notifications
+    "kb_processing_completed": NotificationConfig(
+        notification_type="knowledge",
+        title="Knowledge Processing Complete",
+    ),
+    "kb_processing_failed": NotificationConfig(
+        notification_type="knowledge",
+        title="Knowledge Processing Failed",
+        status="error",
+    ),
+    # Content generation notifications
+    "gen_started": NotificationConfig(
+        notification_type="content",
+        title="Content Generation Started",
+        status="info",
+    ),
+    "gen_completed": NotificationConfig(
+        notification_type="content",
+        title="Content Generation Complete",
+    ),
+    "gen_failed": NotificationConfig(
+        notification_type="content",
+        title="Content Generation Failed",
+        status="error",
+    ),
+    "gen_published": NotificationConfig(
+        notification_type="content",
+        title="Content Published",
+    ),
+    # User/profile notifications (virtual flags → in_app_notifications column)
+    "in_app_notifications": NotificationConfig(
+        notification_type="user",
+        title="Profile Updated",
+        pref_column="in_app_notifications",
+    ),
+    "profile_update_failed": NotificationConfig(
+        notification_type="user",
+        title="Profile Update Failed",
+        status="error",
+        pref_column="in_app_notifications",
+    ),
+    "avatar_uploaded": NotificationConfig(
+        notification_type="user",
+        title="Avatar Updated",
+        pref_column="in_app_notifications",
+    ),
+    "avatar_upload_failed": NotificationConfig(
+        notification_type="user",
+        title="Avatar Upload Failed",
+        status="error",
+        pref_column="in_app_notifications",
+    ),
+}
+
 async def _send_sse_after_commit(
     user_id: UUID,
     message: str,
@@ -154,90 +273,33 @@ async def schedule_if_allowed(
         logger.debug(f"User {user_id} disabled all in-app notifications.")
         return
 
-    # 3. Specific flag
-    # Handle virtual flags mapping to real columns
-    real_pref_column = pref_flag
-    if pref_flag in ["profile_update_failed", "avatar_uploaded", "avatar_upload_failed"]:
-        real_pref_column = "in_app_notifications"
+    # 3️⃣ Resolve preference column and check specific flag
+    config = NOTIFICATION_REGISTRY.get(pref_flag)
+    if config is None:
+        logger.warning(
+            "Unknown notification pref_flag '%s' for user %s — using defaults",
+            pref_flag,
+            user_id,
+        )
+        config = NotificationConfig(
+            notification_type="system",
+            title="Notification",
+        )
 
+    real_pref_column = config.pref_column or pref_flag
     flag_enabled = getattr(pref, real_pref_column, False)
     if not flag_enabled:
         logger.debug(
-            f"User {user_id} has preference {real_pref_column}=False – skipping notification."
+            "User %s has preference %s=False – skipping notification.",
+            user_id,
+            real_pref_column,
         )
         return
 
-    # 4. Determine notification type and status based on pref_flag
-    notification_type = "system"
-    notification_status = "success"
-    notification_title = "Notification"
-
-    # Map pref_flag to notification type and generate title
-    if pref_flag.startswith("ws_"):
-        notification_type = "workspace"
-        if pref_flag == "ws_invite_received":
-            notification_title = "Workspace Invitation"
-        elif pref_flag == "ws_invite_accepted":
-            notification_title = "Invitation Accepted"
-        elif pref_flag == "ws_role_changed":
-            notification_title = "Role Changed"
-        elif pref_flag == "ws_member_removed":
-            notification_title = "Member Removed"
-    elif pref_flag.startswith("billing_"):
-        notification_type = "billing"
-        if pref_flag == "billing_payment_success":
-            notification_title = "Payment Successful"
-        elif pref_flag == "billing_payment_failed":
-            notification_title = "Payment Failed"
-            notification_status = "error"
-        elif pref_flag == "billing_subscription_cancelled":
-            notification_title = "Subscription Cancelled"
-            notification_status = "warning"
-        elif pref_flag == "billing_subscription_expiring":
-            notification_title = "Subscription Expiring"
-            notification_status = "warning"
-        elif pref_flag == "billing_trial_ending":
-            notification_title = "Trial Ending"
-            notification_status = "warning"
-        elif pref_flag == "billing_usage_limit_warning":
-            notification_title = "Usage Limit Warning"
-            notification_status = "warning"
-        elif pref_flag == "billing_usage_limit_exceeded":
-            notification_title = "Usage Limit Exceeded"
-            notification_status = "error"
-    elif pref_flag.startswith("kb_"):
-        notification_type = "knowledge"
-        if pref_flag == "kb_processing_completed":
-            notification_title = "Knowledge Processing Complete"
-        elif pref_flag == "kb_processing_failed":
-            notification_title = "Knowledge Processing Failed"
-            notification_status = "error"
-    elif pref_flag.startswith("gen_"):
-        notification_type = "content"
-        if pref_flag == "gen_started":
-            notification_title = "Content Generation Started"
-            notification_status = "info"
-        elif pref_flag == "gen_completed":
-            notification_title = "Content Generation Complete"
-        elif pref_flag == "gen_failed":
-            notification_title = "Content Generation Failed"
-            notification_status = "error"
-        elif pref_flag == "gen_published":
-            notification_title = "Content Published"
-    elif pref_flag == "in_app_notifications":
-        notification_type = "user"
-        notification_title = "Profile Updated"
-    elif pref_flag == "profile_update_failed":
-        notification_type = "user"
-        notification_title = "Profile Update Failed"
-        notification_status = "error"
-    elif pref_flag == "avatar_uploaded":
-        notification_type = "user"
-        notification_title = "Avatar Updated"
-    elif pref_flag == "avatar_upload_failed":
-        notification_type = "user"
-        notification_title = "Avatar Upload Failed"
-        notification_status = "error"
+    # 4️⃣ Use resolved notification metadata
+    notification_type = config.notification_type
+    notification_status = config.status
+    notification_title = config.title
 
 
     # 4.5 Re-check preferences with row-level lock to prevent TOCTOU race
