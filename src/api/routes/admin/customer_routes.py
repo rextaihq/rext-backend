@@ -7,7 +7,7 @@ including listing, filtering, viewing details, performing actions, and adding no
 All endpoints require admin permissions.
 """
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Literal, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Request
@@ -95,7 +95,10 @@ async def list_customers(
     search: Optional[str] = Query(None, description="Search by name or email"),
     status: Optional[str] = Query(None, description="Filter by subscription status"),
     plan_id: Optional[str] = Query(None, description="Filter by plan ID"),
-    sort_by: str = Query("created_at", description="Sort field"),
+    sort_by: Literal["created_at", "email", "display_name", "last_login_at"] = Query(
+        "created_at",
+        description="Sort field (created_at, email, display_name, last_login_at)"
+    ),
     sort_order: str = Query("desc", pattern="^(asc|desc)$", description="Sort order"),
     db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user),

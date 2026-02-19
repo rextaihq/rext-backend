@@ -38,6 +38,15 @@ from src.utils.logger import logger
 class CustomerAdminService:
     """Service for administrative customer management operations"""
 
+    # Defined allowed sort columns to prevent unsafe attribute access
+    ALLOWED_SORT_COLUMNS = {
+        "created_at": Users.created_at,
+        "email": Users.email,
+        "display_name": Users.display_name,
+        "last_login_at": Users.last_login_at,
+    }
+
+
     def __init__(self, db: AsyncSession):
         """
         Initialize CustomerAdminService.
@@ -124,8 +133,14 @@ class CustomerAdminService:
         total_result = await self.db.execute(count_query)
         total = total_result.scalar() or 0
 
-        # Apply sorting
-        sort_column = getattr(Users, sort_by, Users.created_at)
+        # Apply sorting with validation
+        sort_column = self.ALLOWED_SORT_COLUMNS.get(sort_by)
+        if sort_column is None:
+            # Fallback to created_at for safety, or raise validation error
+            # Route-level Literal should catch most cases, but service should be robust
+            sort_column = Users.created_at
+            logger.warning(f"Invalid sort field provided to service: {sort_by}")
+
         if sort_order == "desc":
             query = query.order_by(sort_column.desc())
         else:
