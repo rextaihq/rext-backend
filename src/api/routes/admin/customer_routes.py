@@ -57,6 +57,27 @@ class CustomerActionRequest(BaseModel):
                     message="cancel_immediately must be a boolean",
                     field_errors={"metadata.cancel_immediately": ["Must be a boolean"]}
                 )
+        
+        elif self.action == "extend_trial":
+            # Ensure days is integer between 1 and 90
+            days = self.metadata.get("days")
+            if days is None:
+                # Default to 7 if not provided (matching service logic but making it explicit)
+                self.metadata["days"] = 7
+                days = 7
+            
+            if not isinstance(days, int):
+                raise RextValidationException(
+                    message="Trial extension days must be an integer",
+                    field_errors={"metadata.days": ["Must be an integer"]}
+                )
+            
+            if days < 1 or days > 90:
+                raise RextValidationException(
+                    message="Trial extension must be between 1 and 90 days",
+                    field_errors={"metadata.days": ["Must be between 1 and 90"]}
+                )
+                
         return self
 
 

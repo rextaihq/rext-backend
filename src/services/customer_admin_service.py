@@ -306,9 +306,24 @@ class CustomerAdminService:
             if not sub:
                 raise ResourceNotFoundException("No trial subscription found", "subscription", str(user_id))
 
-            extension_days = metadata.get("days", 7)
+            raw_days = metadata.get("days", 7)
+            try:
+                extension_days = int(raw_days)
+            except (TypeError, ValueError):
+                raise RextValidationException(
+                    message="Invalid trial extension days",
+                    field_errors={"metadata.days": ["Must be an integer between 1 and 90"]},
+                )
+
+            if extension_days < 1 or extension_days > 90:
+                raise RextValidationException(
+                    message="Invalid trial extension days",
+                    field_errors={"metadata.days": ["Must be between 1 and 90"]},
+                )
+
             old_trial_end = sub.trial_end_date
             sub.trial_end_date = sub.trial_end_date + timedelta(days=extension_days)
+            sub.updated_at = datetime.now(timezone.utc)
 
             audit_details["old_trial_end"] = old_trial_end.isoformat() if old_trial_end else None
             audit_details["new_trial_end"] = sub.trial_end_date.isoformat()
@@ -316,7 +331,8 @@ class CustomerAdminService:
 
             result = {
                 "status": "trial_extended",
-                "new_trial_end": sub.trial_end_date.isoformat()
+                "new_trial_end": sub.trial_end_date.isoformat(),
+                "extension_days": extension_days,
             }
 
         elif action == "cancel_subscription":
