@@ -88,8 +88,8 @@ class Notification(Base, SerializableMixin, SoftDeleteMixin):
     is_archived = Column(Boolean, default=False, nullable=False, index=True)
     archived_at = Column(DateTime(timezone=True), nullable=True)
 
-    # Note: is_deleted is provided as a hybrid property by SoftDeleteMixin
-    # which uses the deleted_at column.
+    is_deleted = Column(Boolean, default=False, nullable=False, index=True)
+    deleted_at = Column(DateTime(timezone=True), nullable=True)
 
     # ==============================
     # ADDITIONAL DATA
@@ -132,7 +132,7 @@ class Notification(Base, SerializableMixin, SoftDeleteMixin):
     # INDEXES
     # ==============================
     __table_args__ = (
-        Index('idx_user_read_deleted', 'user_id', 'is_read', 'deleted_at'),
+        Index('idx_user_read_deleted', 'user_id', 'is_read', 'is_deleted'),
         Index('idx_user_created', 'user_id', 'created_at'),
         Index('idx_user_type_created', 'user_id', 'type', 'created_at'),
         Index('idx_workspace_created', 'workspace_id', 'created_at'),
@@ -170,3 +170,11 @@ class Notification(Base, SerializableMixin, SoftDeleteMixin):
     def unarchive(self):
         self.is_archived = False
         self.archived_at = None
+
+    def soft_delete(self):
+        self.is_deleted = True
+        self.deleted_at = datetime.now(timezone.utc)
+
+    def restore(self):
+        self.is_deleted = False
+        self.deleted_at = None

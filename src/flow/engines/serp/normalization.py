@@ -39,26 +39,7 @@ def normalize_serp_results(state: REXT) -> Dict[str, Any]:
     domains: List[str] = []
     year_counter = Counter()
 
-    # -------- Normalize Organic Results --------
-    # for item in organic:
-    #     url = item.get("link", "")
-    #     domain = urlparse(url).netloc.replace("www.", "") if url else ""
-
-    #     date = item.get("date")
-    #     if date:
-    #         match = re.search(r"\b(20\d{2})\b", date)
-    #         if match:
-    #             year = match.group(1)
-    #             if year.isdigit():
-    #                 year_counter[year] += 1
-    #             else:
-    #                 year_counter["older"] += 1
-    #         else:
-    #             year_counter["older"] += 1
-    #     else:
-    #         year_counter["older"] += 1
-
-
+    # Normalize Organic Results
     for item in organic:
         url = item.get("link", "")
         domain = urlparse(url).netloc.replace("www.", "") if url else ""
@@ -100,27 +81,27 @@ def normalize_serp_results(state: REXT) -> Dict[str, Any]:
     logger.debug(f"Normalized {len(normalized_results)} organic results across {len(unique_domains)} unique domains")
 
 
-    # -------- Freshness Analysis --------
+    # Freshness Analysis
     current_year = datetime.now().year
     freshness = {
         "recent": year_counter.get(str(current_year), 0),
         "older": sum(year_counter.values()) - year_counter.get(str(current_year), 0),
     }
 
-    # -------- SERP Features --------
+    # SERP Features
     features = {
         "people_also_ask": bool(people_ask),
         # "sitelinks": any(r["has_sitelinks"] for r in normalized_results),
         # "wikipedia": any("wikipedia.org" in d for d in domains)
     }
 
-    # -------- Domain Stats --------
+    # Domain Stats
     domain_stats = {
         "unique_domains": len(unique_domains),
         "top_domains": [d for d, _ in Counter(domains).most_common(5)]
     }
 
-    # -------- Final Normalized State --------
+    # Final Normalized State
     serp_normalized = {
         "query": query,
         "engine": engine,

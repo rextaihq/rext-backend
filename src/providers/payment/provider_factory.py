@@ -65,23 +65,24 @@ def get_payment_provider() -> PaymentProvider:
         )
 
 
-# Singleton instance for reuse
+import threading
+
 _provider_instance: PaymentProvider = None
+_provider_lock = threading.Lock()
 
 
 def get_payment_provider_singleton() -> PaymentProvider:
     """
-    Get singleton instance of payment provider.
+    Get singleton instance of payment provider (thread-safe).
 
-    This ensures the same provider instance is reused across requests,
-    which is useful for providers that maintain connection pools or cache data.
-
-    Returns:
-        PaymentProvider: Singleton payment provider instance
+    Uses double-checked locking to ensure only one provider instance
+    is created even under concurrent access.
     """
     global _provider_instance
 
     if _provider_instance is None:
-        _provider_instance = get_payment_provider()
+        with _provider_lock:
+            if _provider_instance is None:
+                _provider_instance = get_payment_provider()
 
     return _provider_instance

@@ -5,16 +5,18 @@ Routes handle HTTP concerns and delegate business logic to RoleService.
 """
 
 from fastapi import APIRouter, Depends, Request, Query
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from uuid import UUID
 
 from src.api.database.async_database import get_async_db
+from src.api.models.workspace_models.workspace_model import WorkspaceModel
+from src.api.routes.roles.modules.helpers import check_role_permission
 from src.api.security.dependencies import get_current_user
 from src.api.schema.user_role_schema import AssignUserRoleRequest
 from src.services.role_service import RoleService
 from src.utils.route_decorators import db_transaction_handler, require_permissions
 from src.utils.logger import logger
-
 
 router = APIRouter()
 
@@ -63,8 +65,6 @@ async def assign_role_to_user(
     # Get workspace name if applicable
     workspace_name = None
     if assignment_data.workspace_id:
-        from sqlalchemy import select
-        from src.api.models.workspace_models.workspace_model import WorkspaceModel
         ws_result = await db.execute(
             select(WorkspaceModel).where(WorkspaceModel.id == assignment_data.workspace_id)
         )
@@ -156,11 +156,7 @@ async def get_current_user_roles(
         "roles": roles_data,
         "count": len(roles_data)
     }
-
-
-
 @router.get("/{user_id}/roles")
-@require_permissions("role.read", workspace_scoped=False)
 @db_transaction_handler("list user roles", auto_commit=False)
 async def list_user_roles(
     request: Request,
@@ -172,21 +168,23 @@ async def list_user_roles(
     """
     List all roles assigned to a user.
 
-    Requires: user.read permission OR admin role OR requesting own roles
+    Authorization:
+    - Users can always view their own roles (no permission required).
+    - Viewing another user's roles requires 'user.read' permission or admin role.
 
     Parameters:
-    - user_id: UUID of the user
-    - workspace_id: Optional workspace UUID to filter roles
+    - user_id: UUID of the user whose roles to retrieve
+    - workspace_id: Optional workspace UUID to filter roles by workspace
 
     Returns:
     - List of user's roles with details
     """
+
     requester_id = current_user.get("identity")
     is_own_user = requester_id == user_id
 
-    # If not own user, check permissions
+    # Non-self requests require user.read permission or admin role
     if not is_own_user:
-        from src.api.routes.roles.modules.helpers import check_role_permission
         await check_role_permission(db, UUID(requester_id), "user.read")
 
     service = RoleService(db)

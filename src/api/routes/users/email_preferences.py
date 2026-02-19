@@ -9,6 +9,7 @@ import secrets
 from src.api.database.async_database import get_async_db
 from src.api.security.dependencies import get_current_user
 from src.services.email_preferences_service import EmailPreferencesService
+from src.services.notification_preferences_service import NotificationPreferencesService
 from src.utils.route_decorators import db_transaction_handler
 from src.api.middleware.exceptions import ResourceNotFoundException
 from src.api.models.user_models.notification_preferences import NotificationPreferences
@@ -71,22 +72,9 @@ async def get_preferences(
     """
     user_id = UUID(current_user["identity"])
     
-    # Get or create preferences
-    result = await db.execute(
-        select(NotificationPreferences).where(
-            NotificationPreferences.user_id == user_id
-        )
-    )
-    prefs = result.scalar_one_or_none()
-
-    if not prefs:
-        prefs = NotificationPreferences(
-            user_id=user_id,
-            unsubscribe_token=secrets.token_urlsafe(32)
-        )
-        db.add(prefs)
-        await db.flush()
-        logger.info(f"Created default notification preferences for user {user_id}")
+    # Get or create preferences using service
+    pref_service = NotificationPreferencesService(db)
+    prefs = await pref_service.get_or_create(user_id)
 
     return success(
         data=prefs.to_dict(),
@@ -137,21 +125,9 @@ async def update_preferences(
     if not update_data:
         return success(data={}, request=request, message="No preferences to update")
 
-    # Get or create preferences
-    result = await db.execute(
-        select(NotificationPreferences).where(
-            NotificationPreferences.user_id == user_id
-        )
-    )
-    prefs = result.scalar_one_or_none()
-
-    if not prefs:
-        prefs = NotificationPreferences(
-            user_id=user_id,
-            unsubscribe_token=secrets.token_urlsafe(32)
-        )
-        db.add(prefs)
-        await db.flush()
+    # Get or create preferences using service
+    pref_service = NotificationPreferencesService(db)
+    prefs = await pref_service.get_or_create(user_id)
 
     # Apply updates
     for field, value in update_data.items():

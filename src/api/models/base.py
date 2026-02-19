@@ -44,7 +44,6 @@ from decimal import Decimal
 
 from sqlalchemy.orm import class_mapper
 from sqlalchemy.inspection import inspect
-from sqlalchemy.orm.attributes import NO_VALUE
 
 
 class SerializableMixin:
@@ -144,7 +143,7 @@ class SerializableMixin:
 
                 # Check if the relationship is loaded (won't trigger lazy load)
                 rel_state = inspector.attrs.get(rel_name)
-                if rel_state is None or rel_state.loaded_value is NO_VALUE:
+                if rel_state is None or not rel_state.loaded_value:
                     # Relationship not loaded, skip it
                     continue
 

@@ -213,13 +213,12 @@ class PermissionChecker:
 
     @staticmethod
     async def _is_super_admin(db: AsyncSession, user_id: str) -> bool:
-        """Check if user has super_admin role (cached)."""
+        """Check if user has super-admin level role (cached)."""
+        from src.utils.rbac_utils import is_user_super_admin
+        
         # Convert string ID to UUID object as expected by rbac_utils
         user_uuid = UUID(user_id) if isinstance(user_id, str) else user_id
-        
-        # Get user roles (cached)
-        role_names = await get_user_role_names(db, user_uuid)
-        return "super_admin" in role_names
+        return await is_user_super_admin(db, user_uuid)
 
     @staticmethod
     async def _validate_workspace_membership(
@@ -315,9 +314,10 @@ async def is_admin(
     """
     Check if current user is an admin.
 
-    This is a convenience dependency that checks if the user has either
-    the 'admin' or 'super_admin' role (cached via rbac_utils).
+    This is a convenience dependency that checks if the user has
+    hierarchy_level >= 90 (cached via rbac_utils).
     """
+    from src.utils.rbac_utils import is_user_admin
     user_id = current_user.get("identity")
 
     if not user_id:
@@ -333,9 +333,8 @@ async def is_admin(
     # Convert string ID to UUID object as expected by rbac_utils
     user_uuid = UUID(user_id) if isinstance(user_id, str) else user_id
 
-    # Check if user has admin or super_admin role (cached)
-    role_names = await get_user_role_names(db, user_uuid)
-    is_authorized = any(role in ["admin", "super_admin"] for role in role_names)
+    # Check if user has admin-level role (cached)
+    is_authorized = await is_user_admin(db, user_uuid)
 
     if not is_authorized:
         logger.warning(

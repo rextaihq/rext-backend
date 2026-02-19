@@ -11,7 +11,7 @@ from sqlalchemy import orm
 from sqlalchemy.ext.declarative import declarative_base
 import sqlalchemy as sa
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from decimal import Decimal
 
 # revision identifiers, used by Alembic.
@@ -87,8 +87,8 @@ def upgrade() -> None:
             "is_public": True,
             "stripe_price_id_monthly": None,
             "stripe_price_id_yearly": None,
-            "created_at": datetime.utcnow(),
-            "updated_at": datetime.utcnow()
+            "created_at": datetime.now(timezone.utc).replace(tzinfo=None),
+            "updated_at": datetime.now(timezone.utc).replace(tzinfo=None)
         },
         {
             "id": uuid.uuid4(),
@@ -114,8 +114,8 @@ def upgrade() -> None:
             "is_public": True,
             "stripe_price_id_monthly": None,  # To be configured when Stripe is integrated
             "stripe_price_id_yearly": None,
-            "created_at": datetime.utcnow(),
-            "updated_at": datetime.utcnow()
+            "created_at": datetime.now(timezone.utc).replace(tzinfo=None),
+            "updated_at": datetime.now(timezone.utc).replace(tzinfo=None)
         },
         {
             "id": uuid.uuid4(),
@@ -144,8 +144,8 @@ def upgrade() -> None:
             "is_public": True,
             "stripe_price_id_monthly": None,
             "stripe_price_id_yearly": None,
-            "created_at": datetime.utcnow(),
-            "updated_at": datetime.utcnow()
+            "created_at": datetime.now(timezone.utc).replace(tzinfo=None),
+            "updated_at": datetime.now(timezone.utc).replace(tzinfo=None)
         }
     ]
 

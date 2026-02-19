@@ -27,6 +27,7 @@ from src.api.middleware.exceptions import (
 )
 from datetime import datetime, timezone
 from src.services.notification_helper import schedule_if_allowed
+from src.services.notification_preferences_service import NotificationPreferencesService
 from user_agents import parse as parse_user_agent
 from src.api.models.user_models.notification_preferences import NotificationPreferences
 from src.api.middleware.rate_limiter import (
@@ -137,33 +138,9 @@ async def create_user(
         full_name=user.full_name
     )
 
-    # notification preference for the user
-    notification_preference = NotificationPreferences(
-        user_id=new_user.id,
-        email_notifications=True,
-        in_app_notifications=True,
-        ws_invite_received=True,
-        ws_invite_accepted=True,
-        ws_role_changed=True,
-        ws_member_removed=True,
-        gen_started=True,
-        gen_completed=True,
-        gen_failed=True,
-        gen_published=True,
-        billing_payment_success=True,
-        billing_payment_failed=True,
-        billing_subscription_cancelled=True,
-        billing_subscription_expiring=True,
-        billing_trial_ending=True,
-        billing_usage_limit_warning=True,
-        billing_usage_limit_exceeded=True,
-        kb_processing_completed=True,
-        kb_processing_failed=True,
-        digest_enabled=True,
-        digest_frequency="daily",
-        marketing_updates=False
-    )
-    db.add(notification_preference)
+    # Create notification preferences using standardized service
+    pref_service = NotificationPreferencesService(db)
+    await pref_service.get_or_create(new_user.id)
     
     # Commit here to ensure user exists before background task
     await db.commit()
@@ -398,15 +375,9 @@ async def oauth_login(
         token_expires_at=token_expires_at
     )
 
-    # Check if notification preferences exist
-    from sqlalchemy import select
-    existing_prefs_result = await db.execute(
-        select(NotificationPreferences).where(NotificationPreferences.user_id == new_user.id)
-    )
-    if not existing_prefs_result.scalar_one_or_none():
-        notification_preference = NotificationPreferences(user_id=new_user.id)
-        db.add(notification_preference)
-        await db.flush()
+    # Guarantee notification preferences exist using service
+    pref_service = NotificationPreferencesService(db)
+    await pref_service.get_or_create(new_user.id)
 
     return {
         "access_token": tokens["access_token"],
@@ -453,9 +424,9 @@ async def register_with_invitation(
         existing_user.email_verified = True
         existing_user.email_verified_at = datetime.now(timezone.utc)
         
-        # Add notification preference
-        db.add(NotificationPreferences(user_id=existing_user.id))
-        await db.flush()
+        # Add notification preference using service
+        pref_service = NotificationPreferencesService(db)
+        await pref_service.get_or_create(existing_user.id)
         
         background_tasks.add_task(
             send_welcome_email_task,

@@ -31,5 +31,3 @@ class Persona(Base, SerializableMixin, UUIDPrimaryKeyMixin, TimestampMixin, Work
 
     # Relationships
     workspace = relationship("WorkspaceModel", back_populates="personas")
-
-    # to_dict() inherited from SerializableMixin
