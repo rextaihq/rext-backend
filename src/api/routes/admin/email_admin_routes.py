@@ -7,7 +7,7 @@ from typing import List, Optional
 from uuid import UUID
 from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_
+from sqlalchemy import select, and_, func
 from datetime import datetime, timezone, timedelta
 
 from src.api.database.async_database import get_async_db
@@ -77,14 +77,16 @@ async def get_failed_emails(
     try:
         cutoff_date = datetime.now(timezone.utc) - timedelta(days=days_back)
 
+        # Define common filters
+        filters = and_(
+            EmailLog.status == "failed",
+            EmailLog.created_at >= cutoff_date
+        )
+
+        # Get page data
         stmt = (
             select(EmailLog)
-            .where(
-                and_(
-                    EmailLog.status == "failed",
-                    EmailLog.created_at >= cutoff_date
-                )
-            )
+            .where(filters)
             .order_by(EmailLog.created_at.desc())
             .limit(limit)
             .offset(offset)
@@ -93,18 +95,10 @@ async def get_failed_emails(
         result = await db.execute(stmt)
         failed_emails = result.scalars().all()
 
-        # Count total failed emails in this period
-        count_stmt = (
-            select(EmailLog)
-            .where(
-                and_(
-                    EmailLog.status == "failed",
-                    EmailLog.created_at >= cutoff_date
-                )
-            )
-        )
+        # Count total failed emails in this period as a scalar integer
+        count_stmt = select(func.count(EmailLog.id)).where(filters)
         count_result = await db.execute(count_stmt)
-        total_count = len(count_result.scalars().all())
+        total_count = int(count_result.scalar() or 0)
 
         logger.info(
             f"Retrieved {len(failed_emails)} failed emails",
