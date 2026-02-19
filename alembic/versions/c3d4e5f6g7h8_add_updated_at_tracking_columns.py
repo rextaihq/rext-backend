@@ -29,7 +29,7 @@ def upgrade() -> None:
 
     # Add updated_at to content_ai_config
     op.add_column('content_ai_config',
-        sa.Column('updated_at', sa.TIMESTAMP(), nullable=True)
+        sa.Column('updated_at', sa.DateTime(timezone=True), nullable=True)
     )
 
     # Populate existing rows with created_at value
@@ -42,7 +42,7 @@ def upgrade() -> None:
 
     # Add updated_at to content_versions
     op.add_column('content_versions',
-        sa.Column('updated_at', sa.TIMESTAMP(), nullable=True)
+        sa.Column('updated_at', sa.DateTime(timezone=True), nullable=True)
     )
 
     # Populate existing rows with created_at value

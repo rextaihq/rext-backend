@@ -29,13 +29,13 @@ def upgrade() -> None:
         sa.Column('provider_account_email', sa.String(255), nullable=True),
         sa.Column('access_token', sa.Text, nullable=True),
         sa.Column('refresh_token', sa.Text, nullable=True),
-        sa.Column('token_expires_at', sa.TIMESTAMP, nullable=True),
+        sa.Column('token_expires_at', sa.DateTime(timezone=True), nullable=True),
         sa.Column('provider_username', sa.String(255), nullable=True),
         sa.Column('provider_profile_url', sa.String(500), nullable=True),
         sa.Column('provider_avatar_url', sa.String(500), nullable=True),
-        sa.Column('created_at', sa.TIMESTAMP, nullable=False, server_default=sa.text('NOW()')),
-        sa.Column('updated_at', sa.TIMESTAMP, nullable=True, onupdate=sa.text('NOW()')),
-        sa.Column('last_used_at', sa.TIMESTAMP, nullable=True),
+        sa.Column('created_at', sa.DateTime(timezone=True), nullable=False, server_default=sa.text('NOW()')),
+        sa.Column('updated_at', sa.DateTime(timezone=True), nullable=True, onupdate=sa.text('NOW()')),
+        sa.Column('last_used_at', sa.DateTime(timezone=True), nullable=True),
 
         # Foreign key to users table
         sa.ForeignKeyConstraint(['user_id'], ['users.id'], ondelete='CASCADE'),

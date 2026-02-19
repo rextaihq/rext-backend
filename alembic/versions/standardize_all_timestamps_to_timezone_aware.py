@@ -25,7 +25,7 @@ def upgrade() -> None:
     op.alter_column(
         'users',
         'password_changed_at',
-        existing_type=sa.TIMESTAMP(),
+        existing_type=sa.DateTime(timezone=True),
         type_=sa.DateTime(timezone=True),
         postgresql_using=f"password_changed_at AT TIME ZONE 'UTC'",
         nullable=True
@@ -34,7 +34,7 @@ def upgrade() -> None:
     op.alter_column(
         'users',
         'locked_until',
-        existing_type=sa.TIMESTAMP(),
+        existing_type=sa.DateTime(timezone=True),
         type_=sa.DateTime(timezone=True),
         postgresql_using=f"locked_until AT TIME ZONE 'UTC'",
         nullable=True
@@ -43,7 +43,7 @@ def upgrade() -> None:
     op.alter_column(
         'users',
         'email_verified_at',
-        existing_type=sa.TIMESTAMP(),
+        existing_type=sa.DateTime(timezone=True),
         type_=sa.DateTime(timezone=True),
         postgresql_using=f"email_verified_at AT TIME ZONE 'UTC'",
         nullable=True
@@ -52,7 +52,7 @@ def upgrade() -> None:
     op.alter_column(
         'users',
         'last_login_at',
-        existing_type=sa.TIMESTAMP(),
+        existing_type=sa.DateTime(timezone=True),
         type_=sa.DateTime(timezone=True),
         postgresql_using=f"last_login_at AT TIME ZONE 'UTC'",
         nullable=True
@@ -61,7 +61,7 @@ def upgrade() -> None:
     op.alter_column(
         'users',
         'created_at',
-        existing_type=sa.TIMESTAMP(),
+        existing_type=sa.DateTime(timezone=True),
         type_=sa.DateTime(timezone=True),
         postgresql_using=f"created_at AT TIME ZONE 'UTC'"
     )
@@ -69,7 +69,7 @@ def upgrade() -> None:
     op.alter_column(
         'users',
         'updated_at',
-        existing_type=sa.TIMESTAMP(),
+        existing_type=sa.DateTime(timezone=True),
         type_=sa.DateTime(timezone=True),
         postgresql_using=f"updated_at AT TIME ZONE 'UTC'",
         nullable=True
@@ -78,7 +78,7 @@ def upgrade() -> None:
     op.alter_column(
         'users',
         'deactivated_at',
-        existing_type=sa.TIMESTAMP(),
+        existing_type=sa.DateTime(timezone=True),
         type_=sa.DateTime(timezone=True),
         postgresql_using=f"deactivated_at AT TIME ZONE 'UTC'",
         nullable=True
@@ -87,7 +87,7 @@ def upgrade() -> None:
     op.alter_column(
         'users',
         'deleted_at',
-        existing_type=sa.TIMESTAMP(),
+        existing_type=sa.DateTime(timezone=True),
         type_=sa.DateTime(timezone=True),
         postgresql_using=f"deleted_at AT TIME ZONE 'UTC'",
         nullable=True
@@ -97,7 +97,7 @@ def upgrade() -> None:
     op.alter_column(
         'user_invitations',
         'created_at',
-        existing_type=sa.TIMESTAMP(),
+        existing_type=sa.DateTime(timezone=True),
         type_=sa.DateTime(timezone=True),
         postgresql_using=f"created_at AT TIME ZONE 'UTC'"
     )
@@ -105,7 +105,7 @@ def upgrade() -> None:
     op.alter_column(
         'user_invitations',
         'expires_at',
-        existing_type=sa.TIMESTAMP(),
+        existing_type=sa.DateTime(timezone=True),
         type_=sa.DateTime(timezone=True),
         postgresql_using=f"expires_at AT TIME ZONE 'UTC'"
     )
@@ -114,7 +114,7 @@ def upgrade() -> None:
     op.alter_column(
         'oauth_accounts',
         'token_expires_at',
-        existing_type=sa.TIMESTAMP(),
+        existing_type=sa.DateTime(timezone=True),
         type_=sa.DateTime(timezone=True),
         postgresql_using=f"token_expires_at AT TIME ZONE 'UTC'",
         nullable=True
@@ -123,7 +123,7 @@ def upgrade() -> None:
     op.alter_column(
         'oauth_accounts',
         'created_at',
-        existing_type=sa.TIMESTAMP(),
+        existing_type=sa.DateTime(timezone=True),
         type_=sa.DateTime(timezone=True),
         postgresql_using=f"created_at AT TIME ZONE 'UTC'"
     )
@@ -131,7 +131,7 @@ def upgrade() -> None:
     op.alter_column(
         'oauth_accounts',
         'updated_at',
-        existing_type=sa.TIMESTAMP(),
+        existing_type=sa.DateTime(timezone=True),
         type_=sa.DateTime(timezone=True),
         postgresql_using=f"updated_at AT TIME ZONE 'UTC'",
         nullable=True
@@ -140,7 +140,7 @@ def upgrade() -> None:
     op.alter_column(
         'oauth_accounts',
         'last_used_at',
-        existing_type=sa.TIMESTAMP(),
+        existing_type=sa.DateTime(timezone=True),
         type_=sa.DateTime(timezone=True),
         postgresql_using=f"last_used_at AT TIME ZONE 'UTC'",
         nullable=True
@@ -150,7 +150,7 @@ def upgrade() -> None:
     op.alter_column(
         'roles',
         'created_at',
-        existing_type=sa.TIMESTAMP(),
+        existing_type=sa.DateTime(timezone=True),
         type_=sa.DateTime(timezone=True),
         postgresql_using=f"created_at AT TIME ZONE 'UTC'"
     )
@@ -158,7 +158,7 @@ def upgrade() -> None:
     op.alter_column(
         'roles',
         'updated_at',
-        existing_type=sa.TIMESTAMP(),
+        existing_type=sa.DateTime(timezone=True),
         type_=sa.DateTime(timezone=True),
         postgresql_using=f"updated_at AT TIME ZONE 'UTC'",
         nullable=True
@@ -168,7 +168,7 @@ def upgrade() -> None:
     op.alter_column(
         'permissions',
         'created_at',
-        existing_type=sa.TIMESTAMP(),
+        existing_type=sa.DateTime(timezone=True),
         type_=sa.DateTime(timezone=True),
         postgresql_using=f"created_at AT TIME ZONE 'UTC'",
         nullable=True
@@ -178,7 +178,7 @@ def upgrade() -> None:
     op.alter_column(
         'role_permissions',
         'created_at',
-        existing_type=sa.TIMESTAMP(),
+        existing_type=sa.DateTime(timezone=True),
         type_=sa.DateTime(timezone=True),
         postgresql_using=f"created_at AT TIME ZONE 'UTC'"
     )
@@ -187,7 +187,7 @@ def upgrade() -> None:
     op.alter_column(
         'user_roles',
         'assigned_at',
-        existing_type=sa.TIMESTAMP(),
+        existing_type=sa.DateTime(timezone=True),
         type_=sa.DateTime(timezone=True),
         postgresql_using=f"assigned_at AT TIME ZONE 'UTC'"
     )
@@ -196,7 +196,7 @@ def upgrade() -> None:
     op.alter_column(
         'user_sessions',
         'created_at',
-        existing_type=sa.TIMESTAMP(),
+        existing_type=sa.DateTime(timezone=True),
         type_=sa.DateTime(timezone=True),
         postgresql_using=f"created_at AT TIME ZONE 'UTC'"
     )
@@ -204,7 +204,7 @@ def upgrade() -> None:
     op.alter_column(
         'user_sessions',
         'last_activity_at',
-        existing_type=sa.TIMESTAMP(),
+        existing_type=sa.DateTime(timezone=True),
         type_=sa.DateTime(timezone=True),
         postgresql_using=f"last_activity_at AT TIME ZONE 'UTC'"
     )
@@ -212,7 +212,7 @@ def upgrade() -> None:
     op.alter_column(
         'user_sessions',
         'expires_at',
-        existing_type=sa.TIMESTAMP(),
+        existing_type=sa.DateTime(timezone=True),
         type_=sa.DateTime(timezone=True),
         postgresql_using=f"expires_at AT TIME ZONE 'UTC'"
     )
@@ -220,7 +220,7 @@ def upgrade() -> None:
     op.alter_column(
         'user_sessions',
         'revoked_at',
-        existing_type=sa.TIMESTAMP(),
+        existing_type=sa.DateTime(timezone=True),
         type_=sa.DateTime(timezone=True),
         postgresql_using=f"revoked_at AT TIME ZONE 'UTC'",
         nullable=True
@@ -230,7 +230,7 @@ def upgrade() -> None:
     op.alter_column(
         'token_blacklist',
         'revoked_at',
-        existing_type=sa.TIMESTAMP(),
+        existing_type=sa.DateTime(timezone=True),
         type_=sa.DateTime(timezone=True),
         postgresql_using=f"revoked_at AT TIME ZONE 'UTC'"
     )
@@ -238,7 +238,7 @@ def upgrade() -> None:
     op.alter_column(
         'token_blacklist',
         'expires_at',
-        existing_type=sa.TIMESTAMP(),
+        existing_type=sa.DateTime(timezone=True),
         type_=sa.DateTime(timezone=True),
         postgresql_using=f"expires_at AT TIME ZONE 'UTC'"
     )
@@ -247,7 +247,7 @@ def upgrade() -> None:
     op.alter_column(
         'notification_preferences',
         'created_at',
-        existing_type=sa.TIMESTAMP(),
+        existing_type=sa.DateTime(timezone=True),
         type_=sa.DateTime(timezone=True),
         postgresql_using=f"created_at AT TIME ZONE 'UTC'"
     )
@@ -255,7 +255,7 @@ def upgrade() -> None:
     op.alter_column(
         'notification_preferences',
         'updated_at',
-        existing_type=sa.TIMESTAMP(),
+        existing_type=sa.DateTime(timezone=True),
         type_=sa.DateTime(timezone=True),
         postgresql_using=f"updated_at AT TIME ZONE 'UTC'"
     )
@@ -264,7 +264,7 @@ def upgrade() -> None:
     op.alter_column(
         'workspace_members',
         'joined_at',
-        existing_type=sa.TIMESTAMP(),
+        existing_type=sa.DateTime(timezone=True),
         type_=sa.DateTime(timezone=True),
         postgresql_using=f"joined_at AT TIME ZONE 'UTC'"
     )
@@ -272,7 +272,7 @@ def upgrade() -> None:
     op.alter_column(
         'workspace_members',
         'last_activity_at',
-        existing_type=sa.TIMESTAMP(),
+        existing_type=sa.DateTime(timezone=True),
         type_=sa.DateTime(timezone=True),
         postgresql_using=f"last_activity_at AT TIME ZONE 'UTC'",
         nullable=True
@@ -282,7 +282,7 @@ def upgrade() -> None:
     op.alter_column(
         'email_templates',
         'created_at',
-        existing_type=sa.TIMESTAMP(),
+        existing_type=sa.DateTime(timezone=True),
         type_=sa.DateTime(timezone=True),
         postgresql_using=f"created_at AT TIME ZONE 'UTC'"
     )
@@ -290,7 +290,7 @@ def upgrade() -> None:
     op.alter_column(
         'email_templates',
         'updated_at',
-        existing_type=sa.TIMESTAMP(),
+        existing_type=sa.DateTime(timezone=True),
         type_=sa.DateTime(timezone=True),
         postgresql_using=f"updated_at AT TIME ZONE 'UTC'",
         nullable=True
@@ -300,7 +300,7 @@ def upgrade() -> None:
     op.alter_column(
         'media',
         'created_at',
-        existing_type=sa.TIMESTAMP(),
+        existing_type=sa.DateTime(timezone=True),
         type_=sa.DateTime(timezone=True),
         postgresql_using=f"created_at AT TIME ZONE 'UTC'"
     )
@@ -308,7 +308,7 @@ def upgrade() -> None:
     op.alter_column(
         'media',
         'updated_at',
-        existing_type=sa.TIMESTAMP(),
+        existing_type=sa.DateTime(timezone=True),
         type_=sa.DateTime(timezone=True),
         postgresql_using=f"updated_at AT TIME ZONE 'UTC'",
         nullable=True
@@ -317,7 +317,7 @@ def upgrade() -> None:
     op.alter_column(
         'media',
         'deleted_at',
-        existing_type=sa.TIMESTAMP(),
+        existing_type=sa.DateTime(timezone=True),
         type_=sa.DateTime(timezone=True),
         postgresql_using=f"deleted_at AT TIME ZONE 'UTC'",
         nullable=True
@@ -327,7 +327,7 @@ def upgrade() -> None:
     op.alter_column(
         'subscription_plans',
         'created_at',
-        existing_type=sa.TIMESTAMP(),
+        existing_type=sa.DateTime(timezone=True),
         type_=sa.DateTime(timezone=True),
         postgresql_using=f"created_at AT TIME ZONE 'UTC'"
     )
@@ -335,7 +335,7 @@ def upgrade() -> None:
     op.alter_column(
         'subscription_plans',
         'updated_at',
-        existing_type=sa.TIMESTAMP(),
+        existing_type=sa.DateTime(timezone=True),
         type_=sa.DateTime(timezone=True),
         postgresql_using=f"updated_at AT TIME ZONE 'UTC'",
         nullable=True
@@ -345,7 +345,7 @@ def upgrade() -> None:
     op.alter_column(
         'user_subscriptions',
         'start_date',
-        existing_type=sa.TIMESTAMP(),
+        existing_type=sa.DateTime(timezone=True),
         type_=sa.DateTime(timezone=True),
         postgresql_using=f"start_date AT TIME ZONE 'UTC'"
     )
@@ -353,7 +353,7 @@ def upgrade() -> None:
     op.alter_column(
         'user_subscriptions',
         'end_date',
-        existing_type=sa.TIMESTAMP(),
+        existing_type=sa.DateTime(timezone=True),
         type_=sa.DateTime(timezone=True),
         postgresql_using=f"end_date AT TIME ZONE 'UTC'",
         nullable=True
@@ -362,7 +362,7 @@ def upgrade() -> None:
     op.alter_column(
         'user_subscriptions',
         'trial_end_date',
-        existing_type=sa.TIMESTAMP(),
+        existing_type=sa.DateTime(timezone=True),
         type_=sa.DateTime(timezone=True),
         postgresql_using=f"trial_end_date AT TIME ZONE 'UTC'",
         nullable=True
@@ -371,7 +371,7 @@ def upgrade() -> None:
     op.alter_column(
         'user_subscriptions',
         'cancelled_at',
-        existing_type=sa.TIMESTAMP(),
+        existing_type=sa.DateTime(timezone=True),
         type_=sa.DateTime(timezone=True),
         postgresql_using=f"cancelled_at AT TIME ZONE 'UTC'",
         nullable=True
@@ -380,7 +380,7 @@ def upgrade() -> None:
     op.alter_column(
         'user_subscriptions',
         'renews_at',
-        existing_type=sa.TIMESTAMP(),
+        existing_type=sa.DateTime(timezone=True),
         type_=sa.DateTime(timezone=True),
         postgresql_using=f"renews_at AT TIME ZONE 'UTC'",
         nullable=True
@@ -389,7 +389,7 @@ def upgrade() -> None:
     op.alter_column(
         'user_subscriptions',
         'ends_at',
-        existing_type=sa.TIMESTAMP(),
+        existing_type=sa.DateTime(timezone=True),
         type_=sa.DateTime(timezone=True),
         postgresql_using=f"ends_at AT TIME ZONE 'UTC'",
         nullable=True
@@ -398,7 +398,7 @@ def upgrade() -> None:
     op.alter_column(
         'user_subscriptions',
         'grace_period_end',
-        existing_type=sa.TIMESTAMP(),
+        existing_type=sa.DateTime(timezone=True),
         type_=sa.DateTime(timezone=True),
         postgresql_using=f"grace_period_end AT TIME ZONE 'UTC'",
         nullable=True
@@ -407,7 +407,7 @@ def upgrade() -> None:
     op.alter_column(
         'user_subscriptions',
         'payment_failed_at',
-        existing_type=sa.TIMESTAMP(),
+        existing_type=sa.DateTime(timezone=True),
         type_=sa.DateTime(timezone=True),
         postgresql_using=f"payment_failed_at AT TIME ZONE 'UTC'",
         nullable=True
@@ -416,7 +416,7 @@ def upgrade() -> None:
     op.alter_column(
         'user_subscriptions',
         'usage_reset_date',
-        existing_type=sa.TIMESTAMP(),
+        existing_type=sa.DateTime(timezone=True),
         type_=sa.DateTime(timezone=True),
         postgresql_using=f"usage_reset_date AT TIME ZONE 'UTC'",
         nullable=True
@@ -425,7 +425,7 @@ def upgrade() -> None:
     op.alter_column(
         'user_subscriptions',
         'created_at',
-        existing_type=sa.TIMESTAMP(),
+        existing_type=sa.DateTime(timezone=True),
         type_=sa.DateTime(timezone=True),
         postgresql_using=f"created_at AT TIME ZONE 'UTC'"
     )
@@ -433,7 +433,7 @@ def upgrade() -> None:
     op.alter_column(
         'user_subscriptions',
         'updated_at',
-        existing_type=sa.TIMESTAMP(),
+        existing_type=sa.DateTime(timezone=True),
         type_=sa.DateTime(timezone=True),
         postgresql_using=f"updated_at AT TIME ZONE 'UTC'",
         nullable=True
@@ -443,7 +443,7 @@ def upgrade() -> None:
     op.alter_column(
         'webhook_events',
         'processed_at',
-        existing_type=sa.TIMESTAMP(),
+        existing_type=sa.DateTime(timezone=True),
         type_=sa.DateTime(timezone=True),
         postgresql_using=f"processed_at AT TIME ZONE 'UTC'",
         nullable=True
@@ -452,7 +452,7 @@ def upgrade() -> None:
     op.alter_column(
         'webhook_events',
         'created_at',
-        existing_type=sa.TIMESTAMP(),
+        existing_type=sa.DateTime(timezone=True),
         type_=sa.DateTime(timezone=True),
         postgresql_using=f"created_at AT TIME ZONE 'UTC'"
     )
@@ -460,7 +460,7 @@ def upgrade() -> None:
     op.alter_column(
         'webhook_events',
         'updated_at',
-        existing_type=sa.TIMESTAMP(),
+        existing_type=sa.DateTime(timezone=True),
         type_=sa.DateTime(timezone=True),
         postgresql_using=f"updated_at AT TIME ZONE 'UTC'"
     )
@@ -469,7 +469,7 @@ def upgrade() -> None:
     op.alter_column(
         'refunds',
         'processed_at',
-        existing_type=sa.TIMESTAMP(),
+        existing_type=sa.DateTime(timezone=True),
         type_=sa.DateTime(timezone=True),
         postgresql_using=f"processed_at AT TIME ZONE 'UTC'",
         nullable=True
@@ -478,7 +478,7 @@ def upgrade() -> None:
     op.alter_column(
         'refunds',
         'created_at',
-        existing_type=sa.TIMESTAMP(),
+        existing_type=sa.DateTime(timezone=True),
         type_=sa.DateTime(timezone=True),
         postgresql_using=f"created_at AT TIME ZONE 'UTC'"
     )
@@ -486,7 +486,7 @@ def upgrade() -> None:
     op.alter_column(
         'refunds',
         'updated_at',
-        existing_type=sa.TIMESTAMP(),
+        existing_type=sa.DateTime(timezone=True),
         type_=sa.DateTime(timezone=True),
         postgresql_using=f"updated_at AT TIME ZONE 'UTC'"
     )
@@ -495,7 +495,7 @@ def upgrade() -> None:
     op.alter_column(
         'payment_methods',
         'created_at',
-        existing_type=sa.TIMESTAMP(),
+        existing_type=sa.DateTime(timezone=True),
         type_=sa.DateTime(timezone=True),
         postgresql_using=f"created_at AT TIME ZONE 'UTC'"
     )
@@ -503,7 +503,7 @@ def upgrade() -> None:
     op.alter_column(
         'payment_methods',
         'updated_at',
-        existing_type=sa.TIMESTAMP(),
+        existing_type=sa.DateTime(timezone=True),
         type_=sa.DateTime(timezone=True),
         postgresql_using=f"updated_at AT TIME ZONE 'UTC'",
         nullable=True
@@ -513,7 +513,7 @@ def upgrade() -> None:
     op.alter_column(
         'licenses',
         'activated_at',
-        existing_type=sa.TIMESTAMP(),
+        existing_type=sa.DateTime(timezone=True),
         type_=sa.DateTime(timezone=True),
         postgresql_using=f"activated_at AT TIME ZONE 'UTC'",
         nullable=True
@@ -522,7 +522,7 @@ def upgrade() -> None:
     op.alter_column(
         'licenses',
         'expires_at',
-        existing_type=sa.TIMESTAMP(),
+        existing_type=sa.DateTime(timezone=True),
         type_=sa.DateTime(timezone=True),
         postgresql_using=f"expires_at AT TIME ZONE 'UTC'",
         nullable=True
@@ -531,7 +531,7 @@ def upgrade() -> None:
     op.alter_column(
         'licenses',
         'created_at',
-        existing_type=sa.TIMESTAMP(),
+        existing_type=sa.DateTime(timezone=True),
         type_=sa.DateTime(timezone=True),
         postgresql_using=f"created_at AT TIME ZONE 'UTC'"
     )
@@ -539,7 +539,7 @@ def upgrade() -> None:
     op.alter_column(
         'licenses',
         'updated_at',
-        existing_type=sa.TIMESTAMP(),
+        existing_type=sa.DateTime(timezone=True),
         type_=sa.DateTime(timezone=True),
         postgresql_using=f"updated_at AT TIME ZONE 'UTC'"
     )
@@ -548,7 +548,7 @@ def upgrade() -> None:
     op.alter_column(
         'license_activations',
         'activated_at',
-        existing_type=sa.TIMESTAMP(timezone=True),
+        existing_type=sa.DateTime(timezone=True),
         type_=sa.DateTime(timezone=True),
         postgresql_using=f"activated_at AT TIME ZONE 'UTC'"
     )
@@ -556,7 +556,7 @@ def upgrade() -> None:
     op.alter_column(
         'license_activations',
         'deactivated_at',
-        existing_type=sa.TIMESTAMP(timezone=True),
+        existing_type=sa.DateTime(timezone=True),
         type_=sa.DateTime(timezone=True),
         postgresql_using=f"deactivated_at AT TIME ZONE 'UTC'",
         nullable=True
@@ -565,7 +565,7 @@ def upgrade() -> None:
     op.alter_column(
         'license_activations',
         'last_checked_at',
-        existing_type=sa.TIMESTAMP(timezone=True),
+        existing_type=sa.DateTime(timezone=True),
         type_=sa.DateTime(timezone=True),
         postgresql_using=f"last_checked_at AT TIME ZONE 'UTC'",
         nullable=True
@@ -575,7 +575,7 @@ def upgrade() -> None:
     op.alter_column(
         'discount_usage',
         'applied_at',
-        existing_type=sa.TIMESTAMP(timezone=True),
+        existing_type=sa.DateTime(timezone=True),
         type_=sa.DateTime(timezone=True),
         postgresql_using=f"applied_at AT TIME ZONE 'UTC'"
     )
@@ -587,7 +587,7 @@ def upgrade() -> None:
     op.alter_column(
         'content_media',
         'created_at',
-        existing_type=sa.TIMESTAMP(timezone=True),
+        existing_type=sa.DateTime(timezone=True),
         type_=sa.DateTime(timezone=True),
         postgresql_using=f"created_at AT TIME ZONE 'UTC'"
     )
@@ -596,7 +596,7 @@ def upgrade() -> None:
     op.alter_column(
         'audit_logs',
         'created_at',
-        existing_type=sa.TIMESTAMP(),
+        existing_type=sa.DateTime(timezone=True),
         type_=sa.DateTime(timezone=True),
         postgresql_using=f"created_at AT TIME ZONE 'UTC'"
     )
@@ -605,7 +605,7 @@ def upgrade() -> None:
     op.alter_column(
         'notifications',
         'read_at',
-        existing_type=sa.TIMESTAMP(),
+        existing_type=sa.DateTime(timezone=True),
         type_=sa.DateTime(timezone=True),
         postgresql_using=f"read_at AT TIME ZONE 'UTC'",
         nullable=True
@@ -614,7 +614,7 @@ def upgrade() -> None:
     op.alter_column(
         'notifications',
         'archived_at',
-        existing_type=sa.TIMESTAMP(),
+        existing_type=sa.DateTime(timezone=True),
         type_=sa.DateTime(timezone=True),
         postgresql_using=f"archived_at AT TIME ZONE 'UTC'",
         nullable=True
@@ -623,7 +623,7 @@ def upgrade() -> None:
     op.alter_column(
         'notifications',
         'deleted_at',
-        existing_type=sa.TIMESTAMP(),
+        existing_type=sa.DateTime(timezone=True),
         type_=sa.DateTime(timezone=True),
         postgresql_using=f"deleted_at AT TIME ZONE 'UTC'",
         nullable=True
@@ -632,7 +632,7 @@ def upgrade() -> None:
     op.alter_column(
         'notifications',
         'email_sent_at',
-        existing_type=sa.TIMESTAMP(),
+        existing_type=sa.DateTime(timezone=True),
         type_=sa.DateTime(timezone=True),
         postgresql_using=f"email_sent_at AT TIME ZONE 'UTC'",
         nullable=True
@@ -641,7 +641,7 @@ def upgrade() -> None:
     op.alter_column(
         'notifications',
         'sse_sent_at',
-        existing_type=sa.TIMESTAMP(),
+        existing_type=sa.DateTime(timezone=True),
         type_=sa.DateTime(timezone=True),
         postgresql_using=f"sse_sent_at AT TIME ZONE 'UTC'",
         nullable=True
@@ -650,7 +650,7 @@ def upgrade() -> None:
     op.alter_column(
         'notifications',
         'expires_at',
-        existing_type=sa.TIMESTAMP(),
+        existing_type=sa.DateTime(timezone=True),
         type_=sa.DateTime(timezone=True),
         postgresql_using=f"expires_at AT TIME ZONE 'UTC'",
         nullable=True
@@ -659,7 +659,7 @@ def upgrade() -> None:
     op.alter_column(
         'notifications',
         'created_at',
-        existing_type=sa.TIMESTAMP(),
+        existing_type=sa.DateTime(timezone=True),
         type_=sa.DateTime(timezone=True),
         postgresql_using=f"created_at AT TIME ZONE 'UTC'"
     )
@@ -667,7 +667,7 @@ def upgrade() -> None:
     op.alter_column(
         'notifications',
         'updated_at',
-        existing_type=sa.TIMESTAMP(),
+        existing_type=sa.DateTime(timezone=True),
         type_=sa.DateTime(timezone=True),
         postgresql_using=f"updated_at AT TIME ZONE 'UTC'"
     )
@@ -676,7 +676,7 @@ def upgrade() -> None:
     op.alter_column(
         'email_preferences',
         'created_at',
-        existing_type=sa.TIMESTAMP(),
+        existing_type=sa.DateTime(timezone=True),
         type_=sa.DateTime(timezone=True),
         postgresql_using=f"created_at AT TIME ZONE 'UTC'",
         nullable=True
@@ -685,7 +685,7 @@ def upgrade() -> None:
     op.alter_column(
         'email_preferences',
         'updated_at',
-        existing_type=sa.TIMESTAMP(),
+        existing_type=sa.DateTime(timezone=True),
         type_=sa.DateTime(timezone=True),
         postgresql_using=f"updated_at AT TIME ZONE 'UTC'",
         nullable=True
@@ -695,7 +695,7 @@ def upgrade() -> None:
     op.alter_column(
         'user_preferences',
         'created_at',
-        existing_type=sa.TIMESTAMP(),
+        existing_type=sa.DateTime(timezone=True),
         type_=sa.DateTime(timezone=True),
         postgresql_using=f"created_at AT TIME ZONE 'UTC'"
     )
@@ -703,7 +703,7 @@ def upgrade() -> None:
     op.alter_column(
         'user_preferences',
         'updated_at',
-        existing_type=sa.TIMESTAMP(),
+        existing_type=sa.DateTime(timezone=True),
         type_=sa.DateTime(timezone=True),
         postgresql_using=f"updated_at AT TIME ZONE 'UTC'"
     )
@@ -712,7 +712,7 @@ def upgrade() -> None:
     op.alter_column(
         'user_onboarding',
         'started_at',
-        existing_type=sa.TIMESTAMP(timezone=True),
+        existing_type=sa.DateTime(timezone=True),
         type_=sa.DateTime(timezone=True),
         postgresql_using=f"started_at AT TIME ZONE 'UTC'"
     )
@@ -720,7 +720,7 @@ def upgrade() -> None:
     op.alter_column(
         'user_onboarding',
         'completed_at',
-        existing_type=sa.TIMESTAMP(timezone=True),
+        existing_type=sa.DateTime(timezone=True),
         type_=sa.DateTime(timezone=True),
         postgresql_using=f"completed_at AT TIME ZONE 'UTC'",
         nullable=True
@@ -729,7 +729,7 @@ def upgrade() -> None:
     op.alter_column(
         'user_onboarding',
         'created_at',
-        existing_type=sa.TIMESTAMP(timezone=True),
+        existing_type=sa.DateTime(timezone=True),
         type_=sa.DateTime(timezone=True),
         postgresql_using=f"created_at AT TIME ZONE 'UTC'"
     )
@@ -737,7 +737,7 @@ def upgrade() -> None:
     op.alter_column(
         'user_onboarding',
         'updated_at',
-        existing_type=sa.TIMESTAMP(timezone=True),
+        existing_type=sa.DateTime(timezone=True),
         type_=sa.DateTime(timezone=True),
         postgresql_using=f"updated_at AT TIME ZONE 'UTC'"
     )
@@ -746,7 +746,7 @@ def upgrade() -> None:
     op.alter_column(
         'error_logs',
         'timestamp',
-        existing_type=sa.DateTime(),
+        existing_type=sa.DateTime(timezone=True),
         type_=sa.DateTime(timezone=True),
         postgresql_using=f"timestamp AT TIME ZONE 'UTC'"
     )
@@ -754,7 +754,7 @@ def upgrade() -> None:
     op.alter_column(
         'error_logs',
         'resolved_at',
-        existing_type=sa.DateTime(),
+        existing_type=sa.DateTime(timezone=True),
         type_=sa.DateTime(timezone=True),
         postgresql_using=f"resolved_at AT TIME ZONE 'UTC'",
         nullable=True
@@ -764,7 +764,7 @@ def upgrade() -> None:
     op.alter_column(
         'content',
         'created_at',
-        existing_type=sa.TIMESTAMP(timezone=True),
+        existing_type=sa.DateTime(timezone=True),
         type_=sa.DateTime(timezone=True),
         postgresql_using=f"created_at AT TIME ZONE 'UTC'"
     )
@@ -772,7 +772,7 @@ def upgrade() -> None:
     op.alter_column(
         'content',
         'updated_at',
-        existing_type=sa.TIMESTAMP(timezone=True),
+        existing_type=sa.DateTime(timezone=True),
         type_=sa.DateTime(timezone=True),
         postgresql_using=f"updated_at AT TIME ZONE 'UTC'",
         nullable=True
@@ -781,7 +781,7 @@ def upgrade() -> None:
     op.alter_column(
         'content',
         'wordpress_published_at',
-        existing_type=sa.TIMESTAMP(timezone=True),
+        existing_type=sa.DateTime(timezone=True),
         type_=sa.DateTime(timezone=True),
         postgresql_using=f"wordpress_published_at AT TIME ZONE 'UTC'",
         nullable=True
@@ -791,7 +791,7 @@ def upgrade() -> None:
     op.alter_column(
         'workspace',
         'created_at',
-        existing_type=sa.TIMESTAMP(timezone=True),
+        existing_type=sa.DateTime(timezone=True),
         type_=sa.DateTime(timezone=True),
         postgresql_using=f"created_at AT TIME ZONE 'UTC'"
     )
@@ -799,7 +799,7 @@ def upgrade() -> None:
     op.alter_column(
         'workspace',
         'updated_at',
-        existing_type=sa.TIMESTAMP(timezone=True),
+        existing_type=sa.DateTime(timezone=True),
         type_=sa.DateTime(timezone=True),
         postgresql_using=f"updated_at AT TIME ZONE 'UTC'",
         nullable=True
@@ -809,7 +809,7 @@ def upgrade() -> None:
     op.alter_column(
         'platform_admin_invitations',
         'created_at',
-        existing_type=sa.TIMESTAMP(),
+        existing_type=sa.DateTime(timezone=True),
         type_=sa.DateTime(timezone=True),
         postgresql_using=f"created_at AT TIME ZONE 'UTC'"
     )
@@ -817,7 +817,7 @@ def upgrade() -> None:
     op.alter_column(
         'platform_admin_invitations',
         'expires_at',
-        existing_type=sa.TIMESTAMP(),
+        existing_type=sa.DateTime(timezone=True),
         type_=sa.DateTime(timezone=True),
         postgresql_using=f"expires_at AT TIME ZONE 'UTC'"
     )
@@ -825,7 +825,7 @@ def upgrade() -> None:
     op.alter_column(
         'platform_admin_invitations',
         'accepted_at',
-        existing_type=sa.TIMESTAMP(),
+        existing_type=sa.DateTime(timezone=True),
         type_=sa.DateTime(timezone=True),
         postgresql_using=f"accepted_at AT TIME ZONE 'UTC'",
         nullable=True
@@ -834,7 +834,7 @@ def upgrade() -> None:
     op.alter_column(
         'platform_admin_invitations',
         'declined_at',
-        existing_type=sa.TIMESTAMP(),
+        existing_type=sa.DateTime(timezone=True),
         type_=sa.DateTime(timezone=True),
         postgresql_using=f"declined_at AT TIME ZONE 'UTC'",
         nullable=True
@@ -843,7 +843,7 @@ def upgrade() -> None:
     op.alter_column(
         'platform_admin_invitations',
         'revoked_at',
-        existing_type=sa.TIMESTAMP(),
+        existing_type=sa.DateTime(timezone=True),
         type_=sa.DateTime(timezone=True),
         postgresql_using=f"revoked_at AT TIME ZONE 'UTC'",
         nullable=True
@@ -858,7 +858,7 @@ def downgrade() -> None:
         'users',
         'password_changed_at',
         existing_type=sa.DateTime(timezone=True),
-        type_=sa.TIMESTAMP(),
+        type_=sa.DateTime(timezone=True),
         nullable=True
     )
     
@@ -866,7 +866,7 @@ def downgrade() -> None:
         'users',
         'locked_until',
         existing_type=sa.DateTime(timezone=True),
-        type_=sa.TIMESTAMP(),
+        type_=sa.DateTime(timezone=True),
         nullable=True
     )
     
@@ -874,7 +874,7 @@ def downgrade() -> None:
         'users',
         'email_verified_at',
         existing_type=sa.DateTime(timezone=True),
-        type_=sa.TIMESTAMP(),
+        type_=sa.DateTime(timezone=True),
         nullable=True
     )
     
@@ -882,7 +882,7 @@ def downgrade() -> None:
         'users',
         'last_login_at',
         existing_type=sa.DateTime(timezone=True),
-        type_=sa.TIMESTAMP(),
+        type_=sa.DateTime(timezone=True),
         nullable=True
     )
     
@@ -890,14 +890,14 @@ def downgrade() -> None:
         'users',
         'created_at',
         existing_type=sa.DateTime(timezone=True),
-        type_=sa.TIMESTAMP()
+        type_=sa.DateTime(timezone=True)
     )
     
     op.alter_column(
         'users',
         'updated_at',
         existing_type=sa.DateTime(timezone=True),
-        type_=sa.TIMESTAMP(),
+        type_=sa.DateTime(timezone=True),
         nullable=True
     )
     
@@ -905,7 +905,7 @@ def downgrade() -> None:
         'users',
         'deactivated_at',
         existing_type=sa.DateTime(timezone=True),
-        type_=sa.TIMESTAMP(),
+        type_=sa.DateTime(timezone=True),
         nullable=True
     )
     
@@ -913,7 +913,7 @@ def downgrade() -> None:
         'users',
         'deleted_at',
         existing_type=sa.DateTime(timezone=True),
-        type_=sa.TIMESTAMP(),
+        type_=sa.DateTime(timezone=True),
         nullable=True
     )
     
@@ -922,14 +922,14 @@ def downgrade() -> None:
         'user_invitations',
         'created_at',
         existing_type=sa.DateTime(timezone=True),
-        type_=sa.TIMESTAMP()
+        type_=sa.DateTime(timezone=True)
     )
     
     op.alter_column(
         'user_invitations',
         'expires_at',
         existing_type=sa.DateTime(timezone=True),
-        type_=sa.TIMESTAMP()
+        type_=sa.DateTime(timezone=True)
     )
     
     # OAuth Accounts table
@@ -937,7 +937,7 @@ def downgrade() -> None:
         'oauth_accounts',
         'token_expires_at',
         existing_type=sa.DateTime(timezone=True),
-        type_=sa.TIMESTAMP(),
+        type_=sa.DateTime(timezone=True),
         nullable=True
     )
     
@@ -945,14 +945,14 @@ def downgrade() -> None:
         'oauth_accounts',
         'created_at',
         existing_type=sa.DateTime(timezone=True),
-        type_=sa.TIMESTAMP()
+        type_=sa.DateTime(timezone=True)
     )
     
     op.alter_column(
         'oauth_accounts',
         'updated_at',
         existing_type=sa.DateTime(timezone=True),
-        type_=sa.TIMESTAMP(),
+        type_=sa.DateTime(timezone=True),
         nullable=True
     )
     
@@ -960,7 +960,7 @@ def downgrade() -> None:
         'oauth_accounts',
         'last_used_at',
         existing_type=sa.DateTime(timezone=True),
-        type_=sa.TIMESTAMP(),
+        type_=sa.DateTime(timezone=True),
         nullable=True
     )
     
@@ -969,14 +969,14 @@ def downgrade() -> None:
         'roles',
         'created_at',
         existing_type=sa.DateTime(timezone=True),
-        type_=sa.TIMESTAMP()
+        type_=sa.DateTime(timezone=True)
     )
     
     op.alter_column(
         'roles',
         'updated_at',
         existing_type=sa.DateTime(timezone=True),
-        type_=sa.TIMESTAMP(),
+        type_=sa.DateTime(timezone=True),
         nullable=True
     )
     
@@ -985,7 +985,7 @@ def downgrade() -> None:
         'permissions',
         'created_at',
         existing_type=sa.DateTime(timezone=True),
-        type_=sa.TIMESTAMP(),
+        type_=sa.DateTime(timezone=True),
         nullable=True
     )
     
@@ -994,7 +994,7 @@ def downgrade() -> None:
         'role_permissions',
         'created_at',
         existing_type=sa.DateTime(timezone=True),
-        type_=sa.TIMESTAMP()
+        type_=sa.DateTime(timezone=True)
     )
     
     # User Roles table
@@ -1002,7 +1002,7 @@ def downgrade() -> None:
         'user_roles',
         'assigned_at',
         existing_type=sa.DateTime(timezone=True),
-        type_=sa.TIMESTAMP()
+        type_=sa.DateTime(timezone=True)
     )
     
     # User Sessions table
@@ -1010,28 +1010,28 @@ def downgrade() -> None:
         'user_sessions',
         'created_at',
         existing_type=sa.DateTime(timezone=True),
-        type_=sa.TIMESTAMP()
+        type_=sa.DateTime(timezone=True)
     )
     
     op.alter_column(
         'user_sessions',
         'last_activity_at',
         existing_type=sa.DateTime(timezone=True),
-        type_=sa.TIMESTAMP()
+        type_=sa.DateTime(timezone=True)
     )
     
     op.alter_column(
         'user_sessions',
         'expires_at',
         existing_type=sa.DateTime(timezone=True),
-        type_=sa.TIMESTAMP()
+        type_=sa.DateTime(timezone=True)
     )
     
     op.alter_column(
         'user_sessions',
         'revoked_at',
         existing_type=sa.DateTime(timezone=True),
-        type_=sa.TIMESTAMP(),
+        type_=sa.DateTime(timezone=True),
         nullable=True
     )
     
@@ -1040,14 +1040,14 @@ def downgrade() -> None:
         'token_blacklist',
         'revoked_at',
         existing_type=sa.DateTime(timezone=True),
-        type_=sa.TIMESTAMP()
+        type_=sa.DateTime(timezone=True)
     )
     
     op.alter_column(
         'token_blacklist',
         'expires_at',
         existing_type=sa.DateTime(timezone=True),
-        type_=sa.TIMESTAMP()
+        type_=sa.DateTime(timezone=True)
     )
     
     # Notification Preferences table
@@ -1055,14 +1055,14 @@ def downgrade() -> None:
         'notification_preferences',
         'created_at',
         existing_type=sa.DateTime(timezone=True),
-        type_=sa.TIMESTAMP()
+        type_=sa.DateTime(timezone=True)
     )
     
     op.alter_column(
         'notification_preferences',
         'updated_at',
         existing_type=sa.DateTime(timezone=True),
-        type_=sa.TIMESTAMP()
+        type_=sa.DateTime(timezone=True)
     )
     
     # Workspace Members table
@@ -1070,14 +1070,14 @@ def downgrade() -> None:
         'workspace_members',
         'joined_at',
         existing_type=sa.DateTime(timezone=True),
-        type_=sa.TIMESTAMP()
+        type_=sa.DateTime(timezone=True)
     )
     
     op.alter_column(
         'workspace_members',
         'last_activity_at',
         existing_type=sa.DateTime(timezone=True),
-        type_=sa.TIMESTAMP(),
+        type_=sa.DateTime(timezone=True),
         nullable=True
     )
     
@@ -1086,14 +1086,14 @@ def downgrade() -> None:
         'email_templates',
         'created_at',
         existing_type=sa.DateTime(timezone=True),
-        type_=sa.TIMESTAMP()
+        type_=sa.DateTime(timezone=True)
     )
     
     op.alter_column(
         'email_templates',
         'updated_at',
         existing_type=sa.DateTime(timezone=True),
-        type_=sa.TIMESTAMP(),
+        type_=sa.DateTime(timezone=True),
         nullable=True
     )
     
@@ -1102,14 +1102,14 @@ def downgrade() -> None:
         'media',
         'created_at',
         existing_type=sa.DateTime(timezone=True),
-        type_=sa.TIMESTAMP()
+        type_=sa.DateTime(timezone=True)
     )
     
     op.alter_column(
         'media',
         'updated_at',
         existing_type=sa.DateTime(timezone=True),
-        type_=sa.TIMESTAMP(),
+        type_=sa.DateTime(timezone=True),
         nullable=True
     )
     
@@ -1117,7 +1117,7 @@ def downgrade() -> None:
         'media',
         'deleted_at',
         existing_type=sa.DateTime(timezone=True),
-        type_=sa.TIMESTAMP(),
+        type_=sa.DateTime(timezone=True),
         nullable=True
     )
     
@@ -1126,14 +1126,14 @@ def downgrade() -> None:
         'subscription_plans',
         'created_at',
         existing_type=sa.DateTime(timezone=True),
-        type_=sa.TIMESTAMP()
+        type_=sa.DateTime(timezone=True)
     )
     
     op.alter_column(
         'subscription_plans',
         'updated_at',
         existing_type=sa.DateTime(timezone=True),
-        type_=sa.TIMESTAMP(),
+        type_=sa.DateTime(timezone=True),
         nullable=True
     )
     
@@ -1142,14 +1142,14 @@ def downgrade() -> None:
         'user_subscriptions',
         'start_date',
         existing_type=sa.DateTime(timezone=True),
-        type_=sa.TIMESTAMP()
+        type_=sa.DateTime(timezone=True)
     )
     
     op.alter_column(
         'user_subscriptions',
         'end_date',
         existing_type=sa.DateTime(timezone=True),
-        type_=sa.TIMESTAMP(),
+        type_=sa.DateTime(timezone=True),
         nullable=True
     )
     
@@ -1157,7 +1157,7 @@ def downgrade() -> None:
         'user_subscriptions',
         'trial_end_date',
         existing_type=sa.DateTime(timezone=True),
-        type_=sa.TIMESTAMP(),
+        type_=sa.DateTime(timezone=True),
         nullable=True
     )
     
@@ -1165,7 +1165,7 @@ def downgrade() -> None:
         'user_subscriptions',
         'cancelled_at',
         existing_type=sa.DateTime(timezone=True),
-        type_=sa.TIMESTAMP(),
+        type_=sa.DateTime(timezone=True),
         nullable=True
     )
     
@@ -1173,7 +1173,7 @@ def downgrade() -> None:
         'user_subscriptions',
         'renews_at',
         existing_type=sa.DateTime(timezone=True),
-        type_=sa.TIMESTAMP(),
+        type_=sa.DateTime(timezone=True),
         nullable=True
     )
     
@@ -1181,7 +1181,7 @@ def downgrade() -> None:
         'user_subscriptions',
         'ends_at',
         existing_type=sa.DateTime(timezone=True),
-        type_=sa.TIMESTAMP(),
+        type_=sa.DateTime(timezone=True),
         nullable=True
     )
     
@@ -1189,7 +1189,7 @@ def downgrade() -> None:
         'user_subscriptions',
         'grace_period_end',
         existing_type=sa.DateTime(timezone=True),
-        type_=sa.TIMESTAMP(),
+        type_=sa.DateTime(timezone=True),
         nullable=True
     )
     
@@ -1197,7 +1197,7 @@ def downgrade() -> None:
         'user_subscriptions',
         'payment_failed_at',
         existing_type=sa.DateTime(timezone=True),
-        type_=sa.TIMESTAMP(),
+        type_=sa.DateTime(timezone=True),
         nullable=True
     )
     
@@ -1205,7 +1205,7 @@ def downgrade() -> None:
         'user_subscriptions',
         'usage_reset_date',
         existing_type=sa.DateTime(timezone=True),
-        type_=sa.TIMESTAMP(),
+        type_=sa.DateTime(timezone=True),
         nullable=True
     )
     
@@ -1213,14 +1213,14 @@ def downgrade() -> None:
         'user_subscriptions',
         'created_at',
         existing_type=sa.DateTime(timezone=True),
-        type_=sa.TIMESTAMP()
+        type_=sa.DateTime(timezone=True)
     )
     
     op.alter_column(
         'user_subscriptions',
         'updated_at',
         existing_type=sa.DateTime(timezone=True),
-        type_=sa.TIMESTAMP(),
+        type_=sa.DateTime(timezone=True),
         nullable=True
     )
     
@@ -1229,7 +1229,7 @@ def downgrade() -> None:
         'webhook_events',
         'processed_at',
         existing_type=sa.DateTime(timezone=True),
-        type_=sa.TIMESTAMP(),
+        type_=sa.DateTime(timezone=True),
         nullable=True
     )
     
@@ -1237,14 +1237,14 @@ def downgrade() -> None:
         'webhook_events',
         'created_at',
         existing_type=sa.DateTime(timezone=True),
-        type_=sa.TIMESTAMP()
+        type_=sa.DateTime(timezone=True)
     )
     
     op.alter_column(
         'webhook_events',
         'updated_at',
         existing_type=sa.DateTime(timezone=True),
-        type_=sa.TIMESTAMP()
+        type_=sa.DateTime(timezone=True)
     )
     
     # Refunds table
@@ -1252,7 +1252,7 @@ def downgrade() -> None:
         'refunds',
         'processed_at',
         existing_type=sa.DateTime(timezone=True),
-        type_=sa.TIMESTAMP(),
+        type_=sa.DateTime(timezone=True),
         nullable=True
     )
     
@@ -1260,14 +1260,14 @@ def downgrade() -> None:
         'refunds',
         'created_at',
         existing_type=sa.DateTime(timezone=True),
-        type_=sa.TIMESTAMP()
+        type_=sa.DateTime(timezone=True)
     )
     
     op.alter_column(
         'refunds',
         'updated_at',
         existing_type=sa.DateTime(timezone=True),
-        type_=sa.TIMESTAMP()
+        type_=sa.DateTime(timezone=True)
     )
     
     # Payment Methods table
@@ -1275,14 +1275,14 @@ def downgrade() -> None:
         'payment_methods',
         'created_at',
         existing_type=sa.DateTime(timezone=True),
-        type_=sa.TIMESTAMP()
+        type_=sa.DateTime(timezone=True)
     )
     
     op.alter_column(
         'payment_methods',
         'updated_at',
         existing_type=sa.DateTime(timezone=True),
-        type_=sa.TIMESTAMP(),
+        type_=sa.DateTime(timezone=True),
         nullable=True
     )
     
@@ -1291,7 +1291,7 @@ def downgrade() -> None:
         'licenses',
         'activated_at',
         existing_type=sa.DateTime(timezone=True),
-        type_=sa.TIMESTAMP(),
+        type_=sa.DateTime(timezone=True),
         nullable=True
     )
     
@@ -1299,7 +1299,7 @@ def downgrade() -> None:
         'licenses',
         'expires_at',
         existing_type=sa.DateTime(timezone=True),
-        type_=sa.TIMESTAMP(),
+        type_=sa.DateTime(timezone=True),
         nullable=True
     )
     
@@ -1307,14 +1307,14 @@ def downgrade() -> None:
         'licenses',
         'created_at',
         existing_type=sa.DateTime(timezone=True),
-        type_=sa.TIMESTAMP()
+        type_=sa.DateTime(timezone=True)
     )
     
     op.alter_column(
         'licenses',
         'updated_at',
         existing_type=sa.DateTime(timezone=True),
-        type_=sa.TIMESTAMP()
+        type_=sa.DateTime(timezone=True)
     )
     
     # License Activations table
@@ -1322,14 +1322,14 @@ def downgrade() -> None:
         'license_activations',
         'activated_at',
         existing_type=sa.DateTime(timezone=True),
-        type_=sa.TIMESTAMP(timezone=True)
+        type_=sa.DateTime(timezone=True)
     )
     
     op.alter_column(
         'license_activations',
         'deactivated_at',
         existing_type=sa.DateTime(timezone=True),
-        type_=sa.TIMESTAMP(timezone=True),
+        type_=sa.DateTime(timezone=True),
         nullable=True
     )
     
@@ -1337,7 +1337,7 @@ def downgrade() -> None:
         'license_activations',
         'last_checked_at',
         existing_type=sa.DateTime(timezone=True),
-        type_=sa.TIMESTAMP(timezone=True),
+        type_=sa.DateTime(timezone=True),
         nullable=True
     )
     
@@ -1346,7 +1346,7 @@ def downgrade() -> None:
         'discount_usage',
         'applied_at',
         existing_type=sa.DateTime(timezone=True),
-        type_=sa.TIMESTAMP(timezone=True)
+        type_=sa.DateTime(timezone=True)
     )
     
     # Content Media table
@@ -1354,7 +1354,7 @@ def downgrade() -> None:
         'content_media',
         'created_at',
         existing_type=sa.DateTime(timezone=True),
-        type_=sa.TIMESTAMP(timezone=True)
+        type_=sa.DateTime(timezone=True)
     )
     
     # Audit Logs table
@@ -1362,7 +1362,7 @@ def downgrade() -> None:
         'audit_logs',
         'created_at',
         existing_type=sa.DateTime(timezone=True),
-        type_=sa.TIMESTAMP()
+        type_=sa.DateTime(timezone=True)
     )
     
     # Notifications table
@@ -1370,7 +1370,7 @@ def downgrade() -> None:
         'notifications',
         'read_at',
         existing_type=sa.DateTime(timezone=True),
-        type_=sa.TIMESTAMP(),
+        type_=sa.DateTime(timezone=True),
         nullable=True
     )
     
@@ -1378,7 +1378,7 @@ def downgrade() -> None:
         'notifications',
         'archived_at',
         existing_type=sa.DateTime(timezone=True),
-        type_=sa.TIMESTAMP(),
+        type_=sa.DateTime(timezone=True),
         nullable=True
     )
     
@@ -1386,7 +1386,7 @@ def downgrade() -> None:
         'notifications',
         'deleted_at',
         existing_type=sa.DateTime(timezone=True),
-        type_=sa.TIMESTAMP(),
+        type_=sa.DateTime(timezone=True),
         nullable=True
     )
     
@@ -1394,7 +1394,7 @@ def downgrade() -> None:
         'notifications',
         'email_sent_at',
         existing_type=sa.DateTime(timezone=True),
-        type_=sa.TIMESTAMP(),
+        type_=sa.DateTime(timezone=True),
         nullable=True
     )
     
@@ -1402,7 +1402,7 @@ def downgrade() -> None:
         'notifications',
         'sse_sent_at',
         existing_type=sa.DateTime(timezone=True),
-        type_=sa.TIMESTAMP(),
+        type_=sa.DateTime(timezone=True),
         nullable=True
     )
     
@@ -1410,7 +1410,7 @@ def downgrade() -> None:
         'notifications',
         'expires_at',
         existing_type=sa.DateTime(timezone=True),
-        type_=sa.TIMESTAMP(),
+        type_=sa.DateTime(timezone=True),
         nullable=True
     )
     
@@ -1418,14 +1418,14 @@ def downgrade() -> None:
         'notifications',
         'created_at',
         existing_type=sa.DateTime(timezone=True),
-        type_=sa.TIMESTAMP()
+        type_=sa.DateTime(timezone=True)
     )
     
     op.alter_column(
         'notifications',
         'updated_at',
         existing_type=sa.DateTime(timezone=True),
-        type_=sa.TIMESTAMP()
+        type_=sa.DateTime(timezone=True)
     )
     
     # Email Preferences table
@@ -1433,7 +1433,7 @@ def downgrade() -> None:
         'email_preferences',
         'created_at',
         existing_type=sa.DateTime(timezone=True),
-        type_=sa.TIMESTAMP(),
+        type_=sa.DateTime(timezone=True),
         nullable=True
     )
     
@@ -1441,7 +1441,7 @@ def downgrade() -> None:
         'email_preferences',
         'updated_at',
         existing_type=sa.DateTime(timezone=True),
-        type_=sa.TIMESTAMP(),
+        type_=sa.DateTime(timezone=True),
         nullable=True
     )
     
@@ -1450,14 +1450,14 @@ def downgrade() -> None:
         'user_preferences',
         'created_at',
         existing_type=sa.DateTime(timezone=True),
-        type_=sa.TIMESTAMP()
+        type_=sa.DateTime(timezone=True)
     )
     
     op.alter_column(
         'user_preferences',
         'updated_at',
         existing_type=sa.DateTime(timezone=True),
-        type_=sa.TIMESTAMP()
+        type_=sa.DateTime(timezone=True)
     )
     
     # User Onboarding table
@@ -1465,14 +1465,14 @@ def downgrade() -> None:
         'user_onboarding',
         'started_at',
         existing_type=sa.DateTime(timezone=True),
-        type_=sa.TIMESTAMP(timezone=True)
+        type_=sa.DateTime(timezone=True)
     )
     
     op.alter_column(
         'user_onboarding',
         'completed_at',
         existing_type=sa.DateTime(timezone=True),
-        type_=sa.TIMESTAMP(timezone=True),
+        type_=sa.DateTime(timezone=True),
         nullable=True
     )
     
@@ -1480,14 +1480,14 @@ def downgrade() -> None:
         'user_onboarding',
         'created_at',
         existing_type=sa.DateTime(timezone=True),
-        type_=sa.TIMESTAMP(timezone=True)
+        type_=sa.DateTime(timezone=True)
     )
     
     op.alter_column(
         'user_onboarding',
         'updated_at',
         existing_type=sa.DateTime(timezone=True),
-        type_=sa.TIMESTAMP(timezone=True)
+        type_=sa.DateTime(timezone=True)
     )
     
     # Error Logs table
@@ -1495,14 +1495,14 @@ def downgrade() -> None:
         'error_logs',
         'timestamp',
         existing_type=sa.DateTime(timezone=True),
-        type_=sa.DateTime()
+        type_=sa.DateTime(timezone=True)
     )
     
     op.alter_column(
         'error_logs',
         'resolved_at',
         existing_type=sa.DateTime(timezone=True),
-        type_=sa.DateTime(),
+        type_=sa.DateTime(timezone=True),
         nullable=True
     )
     
@@ -1511,14 +1511,14 @@ def downgrade() -> None:
         'content',
         'created_at',
         existing_type=sa.DateTime(timezone=True),
-        type_=sa.TIMESTAMP(timezone=True)
+        type_=sa.DateTime(timezone=True)
     )
     
     op.alter_column(
         'content',
         'updated_at',
         existing_type=sa.DateTime(timezone=True),
-        type_=sa.TIMESTAMP(timezone=True),
+        type_=sa.DateTime(timezone=True),
         nullable=True
     )
     
@@ -1526,7 +1526,7 @@ def downgrade() -> None:
         'content',
         'wordpress_published_at',
         existing_type=sa.DateTime(timezone=True),
-        type_=sa.TIMESTAMP(timezone=True),
+        type_=sa.DateTime(timezone=True),
         nullable=True
     )
     
@@ -1535,14 +1535,14 @@ def downgrade() -> None:
         'workspace',
         'created_at',
         existing_type=sa.DateTime(timezone=True),
-        type_=sa.TIMESTAMP(timezone=True)
+        type_=sa.DateTime(timezone=True)
     )
     
     op.alter_column(
         'workspace',
         'updated_at',
         existing_type=sa.DateTime(timezone=True),
-        type_=sa.TIMESTAMP(timezone=True),
+        type_=sa.DateTime(timezone=True),
         nullable=True
     )
     
@@ -1551,21 +1551,21 @@ def downgrade() -> None:
         'platform_admin_invitations',
         'created_at',
         existing_type=sa.DateTime(timezone=True),
-        type_=sa.TIMESTAMP()
+        type_=sa.DateTime(timezone=True)
     )
     
     op.alter_column(
         'platform_admin_invitations',
         'expires_at',
         existing_type=sa.DateTime(timezone=True),
-        type_=sa.TIMESTAMP()
+        type_=sa.DateTime(timezone=True)
     )
     
     op.alter_column(
         'platform_admin_invitations',
         'accepted_at',
         existing_type=sa.DateTime(timezone=True),
-        type_=sa.TIMESTAMP(),
+        type_=sa.DateTime(timezone=True),
         nullable=True
     )
     
@@ -1573,7 +1573,7 @@ def downgrade() -> None:
         'platform_admin_invitations',
         'declined_at',
         existing_type=sa.DateTime(timezone=True),
-        type_=sa.TIMESTAMP(),
+        type_=sa.DateTime(timezone=True),
         nullable=True
     )
     
@@ -1581,6 +1581,6 @@ def downgrade() -> None:
         'platform_admin_invitations',
         'revoked_at',
         existing_type=sa.DateTime(timezone=True),
-        type_=sa.TIMESTAMP(),
+        type_=sa.DateTime(timezone=True),
         nullable=True
     )

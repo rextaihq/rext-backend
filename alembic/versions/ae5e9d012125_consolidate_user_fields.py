@@ -63,8 +63,8 @@ def upgrade() -> None:
             sa.Column('id', sa.UUID(), nullable=False),
             sa.Column('session_id', sa.String(length=255), nullable=False),
             sa.Column('is_valid', sa.Boolean(), nullable=False),
-            sa.Column('invalidated_at', sa.DateTime(), nullable=False),
-            sa.Column('created_at', sa.DateTime(), nullable=False),
+            sa.Column('invalidated_at', sa.DateTime(timezone=True), nullable=False),
+            sa.Column('created_at', sa.DateTime(timezone=True), nullable=False),
             sa.PrimaryKeyConstraint('id')
         )
         op.create_index(op.f('ix_impersonation_sessions_session_id'), 'impersonation_sessions', ['session_id'], unique=True)

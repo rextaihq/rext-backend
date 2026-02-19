@@ -46,7 +46,7 @@ class RolePermission(Base):
     id = sa.Column(sa.dialects.postgresql.UUID(as_uuid=True), primary_key=True)
     role_id = sa.Column(sa.dialects.postgresql.UUID(as_uuid=True), nullable=False)
     permission_id = sa.Column(sa.dialects.postgresql.UUID(as_uuid=True), nullable=False)
-    created_at = sa.Column(sa.TIMESTAMP, nullable=False)
+    created_at = sa.Column(sa.DateTime(timezone=True), nullable=False)
 
 
 def upgrade() -> None:

@@ -23,13 +23,13 @@ def upgrade() -> None:
     # Add grace_period_end column to track when subscription should be suspended
     op.add_column(
         'user_subscriptions',
-        sa.Column('grace_period_end', sa.TIMESTAMP(), nullable=True)
+        sa.Column('grace_period_end', sa.DateTime(timezone=True), nullable=True)
     )
 
     # Add payment_failed_at column to track when payment first failed
     op.add_column(
         'user_subscriptions',
-        sa.Column('payment_failed_at', sa.TIMESTAMP(), nullable=True)
+        sa.Column('payment_failed_at', sa.DateTime(timezone=True), nullable=True)
     )
 
     # Add index on grace_period_end for efficient background job queries

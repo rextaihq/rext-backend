@@ -75,9 +75,9 @@ def upgrade() -> None:
         sa.Column('processing_error', sa.Text(), nullable=True, comment='Error message if processing failed'),
 
         # Timestamps
-        sa.Column('created_at', sa.TIMESTAMP(), nullable=False, server_default=sa.text('NOW()')),
-        sa.Column('updated_at', sa.TIMESTAMP(), nullable=True, onupdate=sa.text('NOW()')),
-        sa.Column('deleted_at', sa.TIMESTAMP(), nullable=True, comment='Soft delete timestamp'),
+        sa.Column('created_at', sa.DateTime(timezone=True), nullable=False, server_default=sa.text('NOW()')),
+        sa.Column('updated_at', sa.DateTime(timezone=True), nullable=True, onupdate=sa.text('NOW()')),
+        sa.Column('deleted_at', sa.DateTime(timezone=True), nullable=True, comment='Soft delete timestamp'),
 
         # Foreign key constraints
         sa.ForeignKeyConstraint(['workspace_id'], ['workspace.id'], ondelete='CASCADE'),

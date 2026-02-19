@@ -20,7 +20,7 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     """Add deactivated_at column to users table."""
-    op.add_column('users', sa.Column('deactivated_at', sa.TIMESTAMP(), nullable=True))
+    op.add_column('users', sa.Column('deactivated_at', sa.DateTime(timezone=True), nullable=True))
 
     # Create index for efficient querying of deactivated accounts
     op.create_index(

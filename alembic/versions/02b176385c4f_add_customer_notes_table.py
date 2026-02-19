@@ -27,8 +27,8 @@ def upgrade() -> None:
         sa.Column('admin_id', sa.UUID(), nullable=False),
         sa.Column('note', sa.Text(), nullable=False),
         sa.Column('category', sa.String(length=50), nullable=True),
-        sa.Column('created_at', sa.DateTime(), nullable=False, server_default=sa.text('NOW()')),
-        sa.Column('updated_at', sa.DateTime(), nullable=True, onupdate=sa.text('NOW()')),
+        sa.Column('created_at', sa.DateTime(timezone=True), nullable=False, server_default=sa.text('NOW()')),
+        sa.Column('updated_at', sa.DateTime(timezone=True), nullable=True, onupdate=sa.text('NOW()')),
         sa.ForeignKeyConstraint(['admin_id'], ['users.id'], ),
         sa.ForeignKeyConstraint(['user_id'], ['users.id'], ondelete='CASCADE'),
         sa.PrimaryKeyConstraint('id')

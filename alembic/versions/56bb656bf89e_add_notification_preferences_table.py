@@ -38,8 +38,8 @@ def upgrade() -> None:
         sa.Column('in_app_comments', sa.Boolean(), nullable=False, server_default='true'),
         sa.Column('in_app_mentions', sa.Boolean(), nullable=False, server_default='true'),
         sa.Column('in_app_updates', sa.Boolean(), nullable=False, server_default='false'),
-        sa.Column('created_at', sa.TIMESTAMP(), nullable=False, server_default=sa.text('now()')),
-        sa.Column('updated_at', sa.TIMESTAMP(), nullable=False, server_default=sa.text('now()')),
+        sa.Column('created_at', sa.DateTime(timezone=True), nullable=False, server_default=sa.text('now()')),
+        sa.Column('updated_at', sa.DateTime(timezone=True), nullable=False, server_default=sa.text('now()')),
         sa.ForeignKeyConstraint(['user_id'], ['users.id'], ondelete='CASCADE'),
         sa.UniqueConstraint('user_id', name='uq_notification_preferences_user_id')
     )

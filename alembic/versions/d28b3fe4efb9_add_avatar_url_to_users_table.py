@@ -26,8 +26,8 @@ def upgrade() -> None:
     sa.Column('jti', sa.String(length=255), nullable=False),
     sa.Column('token_type', sa.String(length=20), nullable=False),
     sa.Column('user_id', sa.UUID(), nullable=False),
-    sa.Column('revoked_at', sa.TIMESTAMP(), nullable=False),
-    sa.Column('expires_at', sa.TIMESTAMP(), nullable=False),
+    sa.Column('revoked_at', sa.DateTime(timezone=True), nullable=False),
+    sa.Column('expires_at', sa.DateTime(timezone=True), nullable=False),
     sa.Column('reason', sa.String(length=100), nullable=True),
     sa.PrimaryKeyConstraint('id')
     )

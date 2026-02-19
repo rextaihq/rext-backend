@@ -34,7 +34,7 @@ def upgrade() -> None:
 
     # Add created_at column with server default (nullable initially to allow existing rows)
     op.add_column('brand_voice',
-        sa.Column('created_at', sa.TIMESTAMP(timezone=True),
+        sa.Column('created_at', sa.DateTime(timezone=True),
                   server_default=sa.text('CURRENT_TIMESTAMP'),
                   nullable=True)
     )
@@ -50,7 +50,7 @@ def upgrade() -> None:
     # Add updated_at column (nullable - only set when record is updated)
     # No server default - only updated when record is explicitly updated
     op.add_column('brand_voice',
-        sa.Column('updated_at', sa.TIMESTAMP(timezone=True), nullable=True)
+        sa.Column('updated_at', sa.DateTime(timezone=True), nullable=True)
     )
 
     print("✅ Added created_at and updated_at columns to brand_voice table")

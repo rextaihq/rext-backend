@@ -51,8 +51,8 @@ def upgrade() -> None:
     op.add_column('user_subscriptions', sa.Column('lemonsqueezy_order_id', sa.String(255), nullable=True))
     op.add_column('user_subscriptions', sa.Column('lemonsqueezy_product_id', sa.String(255), nullable=True))
     op.add_column('user_subscriptions', sa.Column('lemonsqueezy_variant_id', sa.String(255), nullable=True))
-    op.add_column('user_subscriptions', sa.Column('renews_at', sa.TIMESTAMP(), nullable=True))
-    op.add_column('user_subscriptions', sa.Column('ends_at', sa.TIMESTAMP(), nullable=True))
+    op.add_column('user_subscriptions', sa.Column('renews_at', sa.DateTime(timezone=True), nullable=True))
+    op.add_column('user_subscriptions', sa.Column('ends_at', sa.DateTime(timezone=True), nullable=True))
     op.add_column('user_subscriptions', sa.Column('cancel_at_period_end', sa.Boolean(), default=False, nullable=False, server_default='false'))
 
     # Create indexes for LemonSqueezy IDs
@@ -77,11 +77,11 @@ def upgrade() -> None:
         sa.Column('event_name', sa.String(100), nullable=False),
         sa.Column('payload', JSONB, nullable=False),
         sa.Column('processed', sa.Boolean(), default=False, nullable=False),
-        sa.Column('processed_at', sa.TIMESTAMP(), nullable=True),
+        sa.Column('processed_at', sa.DateTime(timezone=True), nullable=True),
         sa.Column('error_message', sa.Text(), nullable=True),
         sa.Column('retry_count', sa.Integer(), default=0, nullable=False),
-        sa.Column('created_at', sa.TIMESTAMP(), nullable=False, server_default=sa.text('now()')),
-        sa.Column('updated_at', sa.TIMESTAMP(), nullable=False, server_default=sa.text('now()'))
+        sa.Column('created_at', sa.DateTime(timezone=True), nullable=False, server_default=sa.text('now()')),
+        sa.Column('updated_at', sa.DateTime(timezone=True), nullable=False, server_default=sa.text('now()'))
     )
 
     # Create indexes for webhook_events

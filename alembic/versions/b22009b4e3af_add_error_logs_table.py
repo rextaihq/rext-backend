@@ -25,7 +25,7 @@ def upgrade() -> None:
     op.create_table(
         'error_logs',
         sa.Column('id', sa.UUID(), nullable=False),
-        sa.Column('timestamp', sa.DateTime(), nullable=False, server_default=sa.text('NOW()')),
+        sa.Column('timestamp', sa.DateTime(timezone=True), nullable=False, server_default=sa.text('NOW()')),
         sa.Column('severity', sa.String(length=20), nullable=False),
         sa.Column('message', sa.Text(), nullable=False),
         sa.Column('source', sa.String(length=255), nullable=True),
@@ -34,7 +34,7 @@ def upgrade() -> None:
         sa.Column('stack_trace', sa.Text(), nullable=True),
         sa.Column('metadata', postgresql.JSONB(astext_type=sa.Text()), nullable=True, server_default='{}'),
         sa.Column('resolved', sa.Boolean(), nullable=False, server_default='false'),
-        sa.Column('resolved_at', sa.DateTime(), nullable=True),
+        sa.Column('resolved_at', sa.DateTime(timezone=True), nullable=True),
         sa.Column('resolved_by', sa.UUID(), nullable=True),
         sa.ForeignKeyConstraint(['resolved_by'], ['users.id'], ),
         sa.ForeignKeyConstraint(['user_id'], ['users.id'], ),

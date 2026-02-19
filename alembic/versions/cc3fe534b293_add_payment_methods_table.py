@@ -35,8 +35,8 @@ def upgrade() -> None:
         sa.Column('card_exp_year', sa.Integer(), nullable=True),
         sa.Column('billing_email', sa.String(length=255), nullable=True),
         sa.Column('payment_metadata', sa.dialects.postgresql.JSONB(), default=dict, nullable=True),
-        sa.Column('created_at', sa.TIMESTAMP(), nullable=False, server_default=sa.text('NOW()')),
-        sa.Column('updated_at', sa.TIMESTAMP(), nullable=True, onupdate=sa.text('NOW()')),
+        sa.Column('created_at', sa.DateTime(timezone=True), nullable=False, server_default=sa.text('NOW()')),
+        sa.Column('updated_at', sa.DateTime(timezone=True), nullable=True, onupdate=sa.text('NOW()')),
         sa.ForeignKeyConstraint(['user_id'], ['users.id'], ondelete='CASCADE'),
         sa.UniqueConstraint('provider_payment_method_id', name='uq_provider_payment_method_id')
     )

@@ -90,7 +90,7 @@ def upgrade() -> None:
         ),
         sa.Column(
             'created_at',
-            sa.TIMESTAMP(timezone=True),
+            sa.DateTime(timezone=True),
             server_default=sa.text('now()'),
             nullable=False
         ),

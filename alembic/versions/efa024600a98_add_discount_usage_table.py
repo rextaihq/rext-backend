@@ -32,7 +32,7 @@ def upgrade() -> None:
         sa.Column('subscription_id', postgresql.UUID(as_uuid=True), nullable=True),
         sa.Column('order_id', sa.String(255), nullable=True),
         sa.Column('lemonsqueezy_discount_id', sa.String(255), nullable=True),
-        sa.Column('applied_at', sa.TIMESTAMP(timezone=True), server_default=sa.text('CURRENT_TIMESTAMP'), nullable=False),
+        sa.Column('applied_at', sa.DateTime(timezone=True), server_default=sa.text('CURRENT_TIMESTAMP'), nullable=False),
         sa.Column('usage_metadata', postgresql.JSONB(astext_type=sa.Text()), nullable=True),
         sa.PrimaryKeyConstraint('id'),
         sa.ForeignKeyConstraint(['user_id'], ['users.id'], ondelete='CASCADE'),

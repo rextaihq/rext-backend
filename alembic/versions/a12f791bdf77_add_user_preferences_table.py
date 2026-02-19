@@ -29,8 +29,8 @@ def upgrade() -> None:
         sa.Column('time_format', sa.String(20), nullable=True, server_default='24h'),
         sa.Column('items_per_page', sa.Integer(), nullable=True, server_default='25'),
         sa.Column('sidebar_collapsed', sa.Boolean(), nullable=True, server_default='false'),
-        sa.Column('created_at', sa.DateTime(), nullable=False, server_default=sa.text('now()')),
-        sa.Column('updated_at', sa.DateTime(), nullable=False, server_default=sa.text('now()')),
+        sa.Column('created_at', sa.DateTime(timezone=True), nullable=False, server_default=sa.text('now()')),
+        sa.Column('updated_at', sa.DateTime(timezone=True), nullable=False, server_default=sa.text('now()')),
         sa.PrimaryKeyConstraint('id'),
         sa.ForeignKeyConstraint(['user_id'], ['users.id'], ondelete='CASCADE'),
         sa.UniqueConstraint('user_id', name='uq_user_preferences_user_id')

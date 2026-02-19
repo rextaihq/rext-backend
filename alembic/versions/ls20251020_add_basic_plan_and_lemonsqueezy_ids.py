@@ -51,8 +51,8 @@ class SubscriptionPlan(Base):
     lemonsqueezy_variant_id_monthly = sa.Column(sa.String(255))
     lemonsqueezy_variant_id_yearly = sa.Column(sa.String(255))
     lemonsqueezy_store_id = sa.Column(sa.String(255))
-    created_at = sa.Column(sa.TIMESTAMP, nullable=False)
-    updated_at = sa.Column(sa.TIMESTAMP)
+    created_at = sa.Column(sa.DateTime(timezone=True), nullable=False)
+    updated_at = sa.Column(sa.DateTime(timezone=True))
 
 
 def upgrade() -> None:

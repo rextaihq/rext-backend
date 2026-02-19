@@ -43,8 +43,8 @@ class SubscriptionPlan(Base):
     is_public = sa.Column(sa.Boolean, default=True)
     stripe_price_id_monthly = sa.Column(sa.String(255))
     stripe_price_id_yearly = sa.Column(sa.String(255))
-    created_at = sa.Column(sa.TIMESTAMP, nullable=False)
-    updated_at = sa.Column(sa.TIMESTAMP)
+    created_at = sa.Column(sa.DateTime(timezone=True), nullable=False)
+    updated_at = sa.Column(sa.DateTime(timezone=True))
 
 
 def upgrade() -> None:

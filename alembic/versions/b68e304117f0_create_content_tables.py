@@ -52,9 +52,9 @@ def upgrade() -> None:
         sa.Column('content_format', sa.Text(), nullable=True, server_default='Markdown'),
         sa.Column('status', sa.Text(), nullable=True, server_default='draft'),
         sa.Column('content_language', sa.Text(), nullable=True, server_default='English'),
-        sa.Column('created_at', sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now()),
-        sa.Column('updated_at', sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now()),
-        sa.Column('deleted_at', sa.TIMESTAMP(timezone=True), nullable=True),
+        sa.Column('created_at', sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
+        sa.Column('updated_at', sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
+        sa.Column('deleted_at', sa.DateTime(timezone=True), nullable=True),
         sa.ForeignKeyConstraint(['workspace_id'], ['workspace.id'], ondelete='CASCADE'),
         sa.ForeignKeyConstraint(['topic_id'], ['topics.id'], ondelete='SET NULL'),
         sa.ForeignKeyConstraint(['created_by_user_id'], ['users.id'], ondelete='SET NULL'),
@@ -77,8 +77,8 @@ def upgrade() -> None:
         sa.Column('status_message', sa.Text(), nullable=True),
         sa.Column('step_details', postgresql.JSONB(), nullable=True),
         sa.Column('estimated_time_remaining', sa.Integer(), nullable=True),
-        sa.Column('created_at', sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now()),
-        sa.Column('updated_at', sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now()),
+        sa.Column('created_at', sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
+        sa.Column('updated_at', sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
         sa.ForeignKeyConstraint(['content_id'], ['content.id'], ondelete='CASCADE'),
     )
 
@@ -102,8 +102,8 @@ def upgrade() -> None:
         sa.Column('content_quality_scores', postgresql.JSONB(), nullable=True),
         sa.Column('featured_image_prompt', sa.Text(), nullable=True),
         sa.Column('featured_image_alt_text', sa.Text(), nullable=True),
-        sa.Column('created_at', sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now()),
-        sa.Column('updated_at', sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now()),
+        sa.Column('created_at', sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
+        sa.Column('updated_at', sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
         sa.ForeignKeyConstraint(['content_id'], ['content.id'], ondelete='CASCADE'),
     )
 
@@ -117,8 +117,8 @@ def upgrade() -> None:
         sa.Column('content_search_intent', postgresql.ARRAY(sa.Text()), nullable=True),
         sa.Column('content_seo_score', sa.Float(), nullable=True),
         sa.Column('content_readability_score', sa.Float(), nullable=True),
-        sa.Column('created_at', sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now()),
-        sa.Column('updated_at', sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now()),
+        sa.Column('created_at', sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
+        sa.Column('updated_at', sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
         sa.ForeignKeyConstraint(['content_id'], ['content.id'], ondelete='CASCADE'),
     )
 
@@ -136,8 +136,8 @@ def upgrade() -> None:
         sa.Column('generation_errors', postgresql.JSONB(), nullable=True),
         sa.Column('generation_warnings', postgresql.JSONB(), nullable=True),
         sa.Column('structured_output', postgresql.JSONB(), nullable=True),
-        sa.Column('generated_at', sa.TIMESTAMP(timezone=True), nullable=True),
-        sa.Column('created_at', sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now()),
+        sa.Column('generated_at', sa.DateTime(timezone=True), nullable=True),
+        sa.Column('created_at', sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
         sa.ForeignKeyConstraint(['content_id'], ['content.id'], ondelete='CASCADE'),
     )
 
@@ -155,8 +155,8 @@ def upgrade() -> None:
         sa.Column('include_statistics', sa.Boolean(), server_default='false'),
         sa.Column('include_quotes', sa.Boolean(), server_default='false'),
         sa.Column('competitor_analysis', sa.Boolean(), server_default='false'),
-        sa.Column('created_at', sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now()),
-        sa.Column('updated_at', sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now()),
+        sa.Column('created_at', sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
+        sa.Column('updated_at', sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
         sa.ForeignKeyConstraint(['content_id'], ['content.id'], ondelete='CASCADE'),
     )
 
@@ -168,8 +168,8 @@ def upgrade() -> None:
         sa.Column('fact_checking', sa.Text(), nullable=True),
         sa.Column('content_freshness', sa.Text(), nullable=True),
         sa.Column('research_context', postgresql.JSONB(), nullable=True),
-        sa.Column('created_at', sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now()),
-        sa.Column('updated_at', sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now()),
+        sa.Column('created_at', sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
+        sa.Column('updated_at', sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
         sa.ForeignKeyConstraint(['content_id'], ['content.id'], ondelete='CASCADE'),
     )
 
@@ -181,8 +181,8 @@ def upgrade() -> None:
         sa.Column('flow_execution_id', postgresql.UUID(as_uuid=True), nullable=True),
         sa.Column('request_payload', postgresql.JSONB(), nullable=True),
         sa.Column('topic_snapshot', postgresql.JSONB(), nullable=True),
-        sa.Column('created_at', sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now()),
-        sa.Column('updated_at', sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now()),
+        sa.Column('created_at', sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
+        sa.Column('updated_at', sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
         sa.ForeignKeyConstraint(['content_id'], ['content.id'], ondelete='CASCADE'),
     )
 
@@ -195,8 +195,8 @@ def upgrade() -> None:
         sa.Column('assigned_reviewers', postgresql.ARRAY(postgresql.UUID(as_uuid=True)), nullable=True),
         sa.Column('status', sa.String(20), nullable=True),
         sa.Column('created_by', postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column('created_at', sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now()),
-        sa.Column('updated_at', sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now()),
+        sa.Column('created_at', sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
+        sa.Column('updated_at', sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
         sa.ForeignKeyConstraint(['content_id'], ['content.id'], ondelete='CASCADE'),
         sa.ForeignKeyConstraint(['created_by'], ['users.id'], ondelete='SET NULL'),
     )
@@ -209,7 +209,7 @@ def upgrade() -> None:
         sa.Column('version_number', sa.Integer(), nullable=False),
         sa.Column('content_data', postgresql.JSONB(), nullable=False),
         sa.Column('is_current', sa.Boolean(), server_default='false'),
-        sa.Column('created_at', sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now()),
+        sa.Column('created_at', sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
         sa.ForeignKeyConstraint(['content_id'], ['content.id'], ondelete='CASCADE'),
     )
     op.create_index('ix_content_versions_content_id', 'content_versions', ['content_id'])

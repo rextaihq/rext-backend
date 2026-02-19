@@ -29,9 +29,9 @@ def upgrade() -> None:
         sa.Column('instance_id', sa.String(255), nullable=False, comment='Device ID, domain, or unique instance identifier'),
         sa.Column('instance_name', sa.String(255), nullable=True, comment='Human-readable name for the instance'),
         sa.Column('is_active', sa.Boolean(), nullable=False, server_default=sa.text('true')),
-        sa.Column('activated_at', sa.TIMESTAMP(timezone=True), server_default=sa.text('CURRENT_TIMESTAMP'), nullable=False),
-        sa.Column('deactivated_at', sa.TIMESTAMP(timezone=True), nullable=True),
-        sa.Column('last_checked_at', sa.TIMESTAMP(timezone=True), nullable=True, comment='Last time this activation was validated/checked'),
+        sa.Column('activated_at', sa.DateTime(timezone=True), server_default=sa.text('CURRENT_TIMESTAMP'), nullable=False),
+        sa.Column('deactivated_at', sa.DateTime(timezone=True), nullable=True),
+        sa.Column('last_checked_at', sa.DateTime(timezone=True), nullable=True, comment='Last time this activation was validated/checked'),
         sa.Column('activation_metadata', postgresql.JSONB(astext_type=sa.Text()), nullable=False, server_default=sa.text("'{}'::jsonb"), comment='Additional info: IP, user agent, OS, etc.'),
         sa.PrimaryKeyConstraint('id'),
         sa.ForeignKeyConstraint(['license_id'], ['licenses.id'], ondelete='CASCADE')

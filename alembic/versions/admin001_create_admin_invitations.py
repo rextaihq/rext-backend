@@ -102,20 +102,20 @@ def upgrade():
         # Timestamps
         sa.Column(
             'created_at',
-            sa.TIMESTAMP,
+            sa.DateTime(timezone=True),
             nullable=False,
             server_default=sa.text('NOW()'),
             comment='When invitation was created'
         ),
         sa.Column(
             'expires_at',
-            sa.TIMESTAMP,
+            sa.DateTime(timezone=True),
             nullable=False,
             comment='When invitation expires'
         ),
         sa.Column(
             'accepted_at',
-            sa.TIMESTAMP,
+            sa.DateTime(timezone=True),
             nullable=True,
             comment='When invitation was accepted'
         ),
@@ -132,7 +132,7 @@ def upgrade():
         # Declined tracking
         sa.Column(
             'declined_at',
-            sa.TIMESTAMP,
+            sa.DateTime(timezone=True),
             nullable=True,
             comment='When invitation was declined (if declined)'
         ),
@@ -146,7 +146,7 @@ def upgrade():
         # Revoked tracking
         sa.Column(
             'revoked_at',
-            sa.TIMESTAMP,
+            sa.DateTime(timezone=True),
             nullable=True,
             comment='When invitation was revoked'
         ),

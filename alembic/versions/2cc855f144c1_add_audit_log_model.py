@@ -38,7 +38,7 @@ def upgrade() -> None:
     sa.Column('audit_metadata', postgresql.JSONB(astext_type=sa.Text()), nullable=True),
     sa.Column('status', sa.String(length=20), nullable=True),
     sa.Column('error_message', sa.Text(), nullable=True),
-    sa.Column('created_at', sa.TIMESTAMP(), nullable=False),
+    sa.Column('created_at', sa.DateTime(timezone=True), nullable=False),
     sa.ForeignKeyConstraint(['user_id'], ['users.id'], ondelete='SET NULL'),
     sa.ForeignKeyConstraint(['workspace_id'], ['workspace.id'], ondelete='SET NULL'),
     sa.PrimaryKeyConstraint('id'),

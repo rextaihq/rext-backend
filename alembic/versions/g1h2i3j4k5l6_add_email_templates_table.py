@@ -65,8 +65,8 @@ def upgrade() -> None:
         sa.Column('is_active', sa.Boolean(), default=True, nullable=False),
         sa.Column('is_default', sa.Boolean(), default=False, nullable=False),
         sa.Column('created_by_user_id', postgresql.UUID(as_uuid=True), nullable=True),
-        sa.Column('created_at', sa.TIMESTAMP(), nullable=False, server_default=sa.text('now()')),
-        sa.Column('updated_at', sa.TIMESTAMP(), nullable=True),
+        sa.Column('created_at', sa.DateTime(timezone=True), nullable=False, server_default=sa.text('now()')),
+        sa.Column('updated_at', sa.DateTime(timezone=True), nullable=True),
         sa.ForeignKeyConstraint(['workspace_id'], ['workspace.id'], ondelete='CASCADE'),
         sa.ForeignKeyConstraint(['created_by_user_id'], ['users.id'], ondelete='SET NULL'),
     )

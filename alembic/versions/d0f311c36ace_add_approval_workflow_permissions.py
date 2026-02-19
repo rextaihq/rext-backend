@@ -36,7 +36,7 @@ class Permission(Base):
     description = sa.Column(sa.Text)
     resource = sa.Column(sa.String(50))
     action = sa.Column(sa.String(50))
-    created_at = sa.Column(sa.TIMESTAMP, nullable=False)
+    created_at = sa.Column(sa.DateTime(timezone=True), nullable=False)
 
 
 def upgrade() -> None:

@@ -50,11 +50,11 @@ class Users(Base):
     display_name = sa.Column(sa.String(200))
     status = sa.Column(sa.String(20), default="active")
     email_verified = sa.Column(sa.Boolean, default=True)
-    email_verified_at = sa.Column(sa.TIMESTAMP)
+    email_verified_at = sa.Column(sa.DateTime(timezone=True))
     language = sa.Column(sa.String(10), default="en")
     timezone = sa.Column(sa.String(50), default="UTC")
-    created_at = sa.Column(sa.TIMESTAMP, nullable=False)
-    updated_at = sa.Column(sa.TIMESTAMP)
+    created_at = sa.Column(sa.DateTime(timezone=True), nullable=False)
+    updated_at = sa.Column(sa.DateTime(timezone=True))
 
 
 class Role(Base):
@@ -71,7 +71,7 @@ class UserRole(Base):
     workspace_id = sa.Column(sa.dialects.postgresql.UUID(as_uuid=True))
     assigned_by_user_id = sa.Column(sa.dialects.postgresql.UUID(as_uuid=True))
     is_primary = sa.Column(sa.Boolean, default=True)
-    assigned_at = sa.Column(sa.TIMESTAMP, nullable=False)
+    assigned_at = sa.Column(sa.DateTime(timezone=True), nullable=False)
 
 
 class SubscriptionPlan(Base):
@@ -92,8 +92,8 @@ class SubscriptionPlan(Base):
     is_public = sa.Column(sa.Boolean, default=True)
     provider_price_id_monthly = sa.Column(sa.String(255))
     provider_price_id_yearly = sa.Column(sa.String(255))
-    created_at = sa.Column(sa.TIMESTAMP, nullable=False)
-    updated_at = sa.Column(sa.TIMESTAMP)
+    created_at = sa.Column(sa.DateTime(timezone=True), nullable=False)
+    updated_at = sa.Column(sa.DateTime(timezone=True))
 
 
 def upgrade() -> None:
