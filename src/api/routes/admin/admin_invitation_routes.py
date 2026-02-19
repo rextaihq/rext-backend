@@ -185,7 +185,7 @@ async def list_admin_invitations(
     """
     service = AdminInvitationService(db)
 
-    invitations = await service.get_all_invitations(
+    invitations, total_count = await service.get_all_invitations_paginated(
         status=status,
         limit=limit,
         offset=offset,
@@ -195,7 +195,7 @@ async def list_admin_invitations(
 
     return AdminInvitationListResponse(
         invitations=invitation_responses,
-        total_count=len(invitation_responses),
+        total_count=total_count,
         status_filter=status,
         limit=limit,
         offset=offset,

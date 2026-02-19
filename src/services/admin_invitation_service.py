@@ -30,7 +30,7 @@ from datetime import datetime, timezone, timedelta
 import secrets
 import hashlib
 
-from sqlalchemy import select, and_
+from sqlalchemy import select, and_, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -302,6 +302,54 @@ class AdminInvitationService:
 
         return invitation
 
+    async def get_all_invitations_paginated(
+        self,
+        status: Optional[str] = None,
+        limit: int = 100,
+        offset: int = 0
+    ) -> tuple[List[PlatformAdminInvitations], int]:
+        """
+        Get paginated admin invitations with total count (super_admin only).
+
+        Args:
+            status: Optional status filter (pending/accepted/revoked/expired)
+            limit: Maximum results
+            offset: Results to skip
+
+        Returns:
+            Tuple of (List[PlatformAdminInvitations], total_count)
+        """
+        # Base filter
+        base_filter = []
+        if status:
+            base_filter.append(PlatformAdminInvitations.status == status)
+
+        # Count total matching rows
+        count_query = select(func.count(PlatformAdminInvitations.id))
+        if base_filter:
+            count_query = count_query.where(and_(*base_filter))
+        
+        total_result = await self.db.execute(count_query)
+        total_count = int(total_result.scalar() or 0)
+
+        # Get page data
+        query = select(PlatformAdminInvitations).options(
+            selectinload(PlatformAdminInvitations.invited_by),
+            selectinload(PlatformAdminInvitations.accepted_by)
+        )
+
+        if base_filter:
+            query = query.where(and_(*base_filter))
+
+        query = query.order_by(
+            PlatformAdminInvitations.created_at.desc()
+        ).limit(limit).offset(offset)
+
+        result = await self.db.execute(query)
+        rows = list(result.scalars().all())
+        
+        return rows, total_count
+
     async def get_all_invitations(
         self,
         status: Optional[str] = None,
@@ -310,29 +358,14 @@ class AdminInvitationService:
     ) -> List[PlatformAdminInvitations]:
         """
         Get all admin invitations (super_admin only).
-
-        Args:
-            status: Optional status filter (pending/accepted/revoked/expired)
-            limit: Maximum results
-            offset: Results to skip
-
-        Returns:
-            List of PlatformAdminInvitations
+        Maintained for backward compatibility.
         """
-        query = select(PlatformAdminInvitations).options(
-            selectinload(PlatformAdminInvitations.invited_by),
-            selectinload(PlatformAdminInvitations.accepted_by)
+        invitations, _ = await self.get_all_invitations_paginated(
+            status=status,
+            limit=limit,
+            offset=offset
         )
-
-        if status:
-            query = query.where(PlatformAdminInvitations.status == status)
-
-        query = query.order_by(
-            PlatformAdminInvitations.created_at.desc()
-        ).limit(limit).offset(offset)
-
-        result = await self.db.execute(query)
-        return list(result.scalars().all())
+        return invitations
 
     async def accept_admin_invitation(
         self,
