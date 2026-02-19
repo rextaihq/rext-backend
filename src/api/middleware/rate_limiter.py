@@ -561,6 +561,35 @@ def notification_write_rate_limit():
         description="notification write"
     )
 
+def invitation_creation_rate_limit():
+    """
+    Rate limiter for invitation creation endpoints.
+
+    Limit: 10 invitations per 5 minutes per user.
+    Prevents email spam and quota exhaustion while allowing
+    reasonable batch invitation workflows.
+    """
+    return EndpointRateLimiter(
+        requests=10,
+        window_minutes=5,
+        description="invitation creation"
+    )
+
+
+def admin_invitation_rate_limit():
+    """
+    Rate limiter for admin invitation creation endpoints.
+
+    Limit: 5 admin invitations per 5 minutes per user.
+    More restrictive than workspace invitations because admin
+    invitations grant platform-level privileges.
+    """
+    return EndpointRateLimiter(
+        requests=5,
+        window_minutes=5,
+        description="admin invitation creation"
+    )
+
 
 
 # ============================================================================

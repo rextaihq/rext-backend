@@ -16,6 +16,7 @@ from src.api.middleware.exceptions import (
 )
 from src.api.middleware.usage_limiter import check_member_limit
 from src.api.models.user_models.invitations import UserInvitations
+from src.api.middleware.rate_limiter import invitation_creation_rate_limit
 from src.api.models.user_models.roles import Role
 from src.api.models.user_models.users import Users
 from src.api.schema.invitation_schema import (
@@ -188,6 +189,7 @@ async def create_workspace_invitation(
     db: AsyncSession = Depends(get_async_db),
     user: dict = Depends(get_current_user),
     _: None = Depends(check_member_limit()),
+    __: None = Depends(invitation_creation_rate_limit()),  # Add rate limiting
 ):
     """Create an invitation tied to the workspace."""
     user_uuid = UUID(str(user.get("identity")))
@@ -340,6 +342,7 @@ async def create_bulk_workspace_invitations(
     db: AsyncSession = Depends(get_async_db),
     user: dict = Depends(get_current_user),
     _: None = Depends(check_member_limit()),
+    __: None = Depends(invitation_creation_rate_limit()),  # Add rate limiting
 ):
     """Create invitations for multiple recipients."""
     user_uuid = UUID(str(user.get("identity")))
@@ -495,6 +498,7 @@ async def resend_workspace_invitation(
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_async_db),
     user: dict = Depends(get_current_user),
+    __: None = Depends(invitation_creation_rate_limit()),
 ):
     """Resend a pending invitation with a new token and extended expiry."""
     user_uuid = UUID(str(user.get("identity")))
