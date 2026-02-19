@@ -119,7 +119,7 @@ def upgrade() -> None:
                         id=uuid.uuid4(),
                         role_id=role.id,
                         permission_id=perm.id,
-                        created_at=datetime.now(timezone.utc)
+                        created_at=datetime.now(timezone.utc).replace(tzinfo=None)
                     )
                     session.add(rp)
                     print(f"  ✓ Assigned {perm_name} to {role_name}")
@@ -258,7 +258,7 @@ def downgrade() -> None:
                         id=uuid.uuid4(),
                         role_id=editor_role.id,
                         permission_id=perm.id,
-                        created_at=datetime.now(timezone.utc)
+                        created_at=datetime.now(timezone.utc).replace(tzinfo=None)
                     )
                     session.add(rp)
                     print(f"  ✓ Restored {perm.name} to editor")

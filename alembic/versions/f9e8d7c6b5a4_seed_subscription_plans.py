@@ -87,8 +87,8 @@ def upgrade() -> None:
             "is_public": True,
             "stripe_price_id_monthly": None,
             "stripe_price_id_yearly": None,
-            "created_at": datetime.now(timezone.utc),
-            "updated_at": datetime.now(timezone.utc)
+            "created_at": datetime.now(timezone.utc).replace(tzinfo=None),
+            "updated_at": datetime.now(timezone.utc).replace(tzinfo=None)
         },
         {
             "id": uuid.uuid4(),
@@ -114,8 +114,8 @@ def upgrade() -> None:
             "is_public": True,
             "stripe_price_id_monthly": None,  # To be configured when Stripe is integrated
             "stripe_price_id_yearly": None,
-            "created_at": datetime.now(timezone.utc),
-            "updated_at": datetime.now(timezone.utc)
+            "created_at": datetime.now(timezone.utc).replace(tzinfo=None),
+            "updated_at": datetime.now(timezone.utc).replace(tzinfo=None)
         },
         {
             "id": uuid.uuid4(),
@@ -144,8 +144,8 @@ def upgrade() -> None:
             "is_public": True,
             "stripe_price_id_monthly": None,
             "stripe_price_id_yearly": None,
-            "created_at": datetime.now(timezone.utc),
-            "updated_at": datetime.now(timezone.utc)
+            "created_at": datetime.now(timezone.utc).replace(tzinfo=None),
+            "updated_at": datetime.now(timezone.utc).replace(tzinfo=None)
         }
     ]
 
