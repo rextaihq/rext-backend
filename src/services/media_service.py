@@ -16,6 +16,8 @@ from io import BytesIO
 import os
 import uuid 
 import filetype
+import asyncio
+from functools import partial
 
 from src.api.models.media_models.media import Media
 from src.api.models.workspace_models.workspace_model import WorkspaceModel
@@ -204,23 +206,34 @@ class MediaService:
             if mime_type.startswith('image/'):
                 file_io = BytesIO(file_content)
 
-                # Validate image
-                is_valid, error_msg = self.image.validate_image(
-                    file_io,
-                    max_size_mb=max_size / (1024 * 1024)
+                # Validate image (CPU-bound, offload to thread)
+                loop = asyncio.get_event_loop()
+                is_valid, error_msg = await loop.run_in_executor(
+                    None,
+                    partial(
+                        self.image.validate_image,
+                        file_io,
+                        max_size_mb=max_size / (1024 * 1024)
+                    )
                 )
                 if not is_valid:
                     raise ValueError(error_msg)
 
-                # Extract metadata
+                # Extract metadata (CPU-bound, offload to thread)
                 file_io.seek(0)
-                file_metadata = self.image.extract_metadata(file_io)
+                file_metadata = await loop.run_in_executor(
+                    None,
+                    partial(self.image.extract_metadata, file_io)
+                )
                 width = file_metadata.get('width')
                 height = file_metadata.get('height')
 
-                # Optimize image
+                # Optimize image (CPU-bound, offload to thread)
                 file_io.seek(0)
-                optimized = self.image.optimize_image(file_io)
+                optimized = await loop.run_in_executor(
+                    None,
+                    partial(self.image.optimize_image, file_io)
+                )
                 file_content = optimized.read()
                 optimized.seek(0)
 
@@ -253,8 +266,10 @@ class MediaService:
             if mime_type.startswith('image/'):
                 try:
                     file_io = BytesIO(file_content)
-                    thumbnail = self.image.create_thumbnail(file_io, size='medium')
-
+                    thumbnail = await loop.run_in_executor(
+                        None,
+                        partial(self.image.create_thumbnail, file_io, size='medium')
+                    )
                     # Generate thumbnail filename
                     thumb_filename = f"thumb_{generated_filename}"
                     if not thumb_filename.endswith('.jpg'):
