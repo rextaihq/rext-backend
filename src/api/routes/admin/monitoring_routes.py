@@ -109,7 +109,7 @@ async def get_error_logs(
 @db_transaction_handler("resolve error log", auto_commit=True)
 async def resolve_error_log(
     request: Request,
-    log_id: str,
+    log_id: UUID,
     db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user)
 ):
@@ -127,7 +127,7 @@ async def resolve_error_log(
     # Use service
     service = MonitoringService(db)
     log_data = await service.resolve_error_log(
-        log_id=UUID(log_id),
+        log_id=log_id,
         admin_user_id=UUID(admin_user_id)
     )
 

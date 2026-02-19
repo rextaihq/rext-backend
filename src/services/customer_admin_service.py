@@ -33,7 +33,8 @@ from src.api.models.knowledge_models.knowledge_model import KnowledgeBase
 from src.api.models.admin_models.customer_note import CustomerNote
 from src.api.middleware.exceptions import ResourceNotFoundException, RextValidationException
 from src.utils.logger import logger
-
+from src.services.audit_service import AuditService
+from src.services.usage_tracking_service import UsageTrackingService
 
 class CustomerAdminService:
     """Service for administrative customer management operations"""
@@ -207,10 +208,8 @@ class CustomerAdminService:
         # Get usage metrics
         usage = None
         if subscription:
-            from src.services.usage_tracking_service import UsageTrackingService
             usage_service = UsageTrackingService(self.db)
             usage = await usage_service.get_usage_metrics(str(user_id))
-
         # Activity summary
         activity_summary = await self._get_activity_summary(user)
 
@@ -218,7 +217,6 @@ class CustomerAdminService:
         from src.services.audit_service import AuditService
         audit_service = AuditService(self.db)
         audit_events = await audit_service.get_recent_user_events(str(user_id), limit=10)
-
         # Get customer notes
         notes = await self._get_customer_notes(user_id)
 
@@ -336,13 +334,13 @@ class CustomerAdminService:
         from src.services.audit_service import AuditService
         audit_service = AuditService(self.db)
         await audit_service.log_admin_action(
-            admin_id=admin_user_id,
-            action=action,
-            entity_type="user",
-            entity_id=str(user_id),
-            details=audit_details,
-            db=self.db
-        )
+        admin_id=admin_user_id,
+        action=action,
+        entity_type="user",
+        entity_id=str(user_id),
+        details=audit_details,
+        db=self.db,
+    )
 
         logger.info(f"Customer action '{action}' performed on user {user_id} by admin {admin_user_id}")
 
@@ -388,13 +386,13 @@ class CustomerAdminService:
         from src.services.audit_service import AuditService
         audit_service = AuditService(self.db)
         await audit_service.log_admin_action(
-            admin_id=str(admin_user_id),
-            action="add_customer_note",
-            entity_type="user",
-            entity_id=str(user_id),
-            details={"category": category},
-            db=self.db
-        )
+        admin_id=str(admin_user_id),
+        action="add_customer_note",
+        entity_type="user",
+        entity_id=str(user_id),
+        details={"category": category},
+        db=self.db,
+)
 
         logger.info(f"Customer note added for user {user_id} by admin {admin_user_id}")
 

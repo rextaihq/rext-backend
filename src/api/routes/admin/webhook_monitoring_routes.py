@@ -11,7 +11,7 @@ All endpoints require super admin permissions.
 """
 from fastapi import APIRouter, Depends, Request, Query, Path, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-
+from uuid import UUID 
 from src.api.database.async_database import get_async_db
 from src.api.security.dependencies import get_current_user
 from src.services.webhook_monitoring_service import WebhookMonitoringService
@@ -101,7 +101,7 @@ async def get_failed_webhooks(
 @db_transaction_handler("retry webhook", auto_commit=True)
 async def retry_webhook(
     request: Request,
-    webhook_id: str = Path(..., description="Webhook event ID to retry"),
+    webhook_id: UUID = Path(..., description="Webhook event ID to retry"),
     db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user)
 ):
