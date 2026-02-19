@@ -162,7 +162,11 @@ PERMISSIONS = [
 
     # Platform Management
     ("audit.read", "View Audit Logs", "View audit logs", "audit", "read"),
+    ("audit.write", "Write Audit Logs", "Allows modifying audit/monitoring records (resolve errors, etc.)", "audit", "write"),
     ("audit.export", "Export Audit Logs", "Export audit logs", "audit", "export"),
+
+    # Email Management (Admin)
+    ("email.resend", "Resend Emails", "Allows resending failed emails via admin panel", "email", "resend"),
 
     # Support Staff Permissions
     ("support.view_workspace", "View Any Workspace", "View any workspace (read-only)", "support", "view_workspace"),
@@ -249,7 +253,8 @@ ROLE_PERMISSION_ASSIGNMENTS = {
         "role.read", "role.update", "role.manage_permissions",
         "permission.read", "permission.create", "permission.update",
         "role.create", "workspace.transfer",
-        "audit.read", "audit.export",
+        "audit.read", "audit.write", "audit.export",
+        "email.resend",
         "support.view_workspace", "support.view_billing",
     ],
     "support": [

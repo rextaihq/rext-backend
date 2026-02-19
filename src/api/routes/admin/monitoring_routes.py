@@ -105,7 +105,7 @@ async def get_error_logs(
 
 
 @router.patch("/error-logs/{log_id}/resolve", response_model=dict)
-@require_permissions("audit.read", workspace_scoped=False)
+@require_permissions("audit.write", workspace_scoped=False)
 @db_transaction_handler("resolve error log", auto_commit=True)
 async def resolve_error_log(
     request: Request,
