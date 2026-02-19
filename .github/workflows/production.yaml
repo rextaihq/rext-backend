@@ -101,10 +101,10 @@ jobs:
           df -h
 
       - name: Build Docker image with LangGraph
-        run: langgraph build -t ${{ secrets.DOCKER_USERNAME }}/wrext:dev
+        run: langgraph build -t ${{ secrets.DOCKER_USERNAME }}/wrext:latest
 
       - name: Push Docker image
-        run: docker push ${{ secrets.DOCKER_USERNAME }}/wrext:dev
+        run: docker push ${{ secrets.DOCKER_USERNAME }}/wrext:latest
 
       - name: Cleanup Docker (Post-build)
         if: always()
