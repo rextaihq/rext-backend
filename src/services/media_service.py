@@ -32,6 +32,7 @@ from src.config.storage_config import storage_settings
 from src.utils.file_security import validate_file_upload
 from src.api.config import get_settings
 import logging
+from src.api.cache.decorators import cached
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -67,9 +68,17 @@ class MediaService:
         self.storage = storage_service
         self.image = image_service
 
+    @cached(
+        key_prefix="user:subscription_tier",
+        ttl=300,
+        key_builder=lambda self, user_id: str(user_id),
+    )
     async def _get_user_subscription_tier(self, user_id: str) -> str:
         """
         Get user's subscription tier for limit enforcement.
+
+        Results are cached in Redis for 5 minutes to avoid redundant
+        database queries during batch uploads.
 
         Args:
             user_id: User UUID
@@ -81,7 +90,7 @@ class MediaService:
             select(UserSubscription, SubscriptionPlan)
             .join(SubscriptionPlan, UserSubscription.plan_id == SubscriptionPlan.id)
             .where(
-                UserSubscription.user_id == uuid.UUID(user_id),
+                UserSubscription.user_id == uuid.UUID(user_id) if isinstance(user_id, str) else user_id,
                 UserSubscription.status.in_([SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIAL])
             )
         )

@@ -28,6 +28,7 @@ from sqlalchemy import select, func, and_
 from sqlalchemy.orm import selectinload
 
 from src.api.models.subscription_models.plans import SubscriptionPlan
+from src.api.cache.decorators import invalidate_cache
 from src.api.models.subscription_models.subscriptions import (
     UserSubscription,
     SubscriptionStatus,
@@ -131,6 +132,9 @@ class SubscriptionService:
         self.db.add(new_subscription)
         await self.db.flush()
         await self.db.refresh(new_subscription)
+
+        # Invalidate subscription tier cache
+        await invalidate_cache(f"user:subscription_tier:{user_id}:*")
 
         logger.info(
             f"User {user_id} subscribed to plan: {plan.name} ({billing_period.value})",
@@ -459,6 +463,9 @@ class SubscriptionService:
         await self.db.flush()
         await self.db.refresh(current_subscription)
 
+        # Invalidate subscription tier cache
+        await invalidate_cache(f"user:subscription_tier:{user_id}:*")
+
         action = "downgraded" if is_downgrade else "upgraded"
         logger.info(
             f"User {user_id} {action} from {current_plan.name} to {new_plan.name}",
@@ -616,6 +623,9 @@ class SubscriptionService:
         subscription.updated_at = datetime.now(timezone.utc)
         await self.db.flush()
         await self.db.refresh(subscription)
+
+        # Invalidate subscription tier cache
+        await invalidate_cache(f"user:subscription_tier:{user_id}:*")
 
         logger.info(
             f"User {user_id} cancelled subscription (immediately={cancel_immediately})",
