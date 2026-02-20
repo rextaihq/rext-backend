@@ -18,6 +18,23 @@ from src.services.lemonsqueezy_webhook_service import LemonSqueezyWebhookService
 from src.utils.logger import logger
 
 
+def _mask_email(email: str) -> str:
+    """
+    Mask an email address for display in monitoring contexts.
+
+    Examples:
+        "john.doe@example.com" -> "jo***@example.com"
+        "a@b.com" -> "a***@b.com"
+        None or invalid -> "***"
+    """
+    if not email or not isinstance(email, str) or "@" not in email:
+        return "***"
+    local, domain = email.rsplit("@", 1)
+    if len(local) <= 1:
+        return f"{local[0]}***@{domain}"
+    return f"{local[:2]}***@{domain}"
+
+
 class WebhookMonitoringService:
     """Service for monitoring and managing webhook events."""
 
@@ -68,7 +85,7 @@ class WebhookMonitoringService:
                 cutoff_time = datetime.now(timezone.utc) - timedelta(hours=hours)
                 conditions.append(WebhookEvent.created_at >= cutoff_time)
 
-            # Count total matching events
+            # Count total matching eventss
             count_stmt = select(func.count(WebhookEvent.id))
             if conditions:
                 count_stmt = count_stmt.where(and_(*conditions))
@@ -193,7 +210,8 @@ class WebhookMonitoringService:
                     "retry_count": event.retry_count,
                     "created_at": event.created_at.isoformat() if event.created_at else None,
                     "updated_at": event.updated_at.isoformat() if event.updated_at else None,
-                    "payload": event.payload  # Include full payload for debugging
+                    # Redact PII from payload before including in response
+                    "payload": self._redact_payload_pii(event.payload) if event.payload else None
                 })
 
             logger.info(
@@ -453,12 +471,14 @@ class WebhookMonitoringService:
     def _summarize_payload(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         """
         Create a summary of the webhook payload for monitoring.
+        PII fields are masked to comply with data minimization principles
+        (GDPR Article 5(1)(c), CCPA).
 
         Args:
             payload: Full webhook payload
 
         Returns:
-            Summarized payload with key information
+            Summarized payload with key information (PII masked)
         """
         summary = {}
 
@@ -468,18 +488,42 @@ class WebhookMonitoringService:
             summary["id"] = data.get("id")
             summary["type"] = data.get("type")
 
-            # Extract key attributes
+            # Extract key attributes with PII masking
             if "attributes" in data:
                 attrs = data["attributes"]
                 summary["status"] = attrs.get("status")
-                summary["user_email"] = attrs.get("user_email")
-                summary["customer_id"] = attrs.get("customer_id")
+                summary["user_email_masked"] = _mask_email(attrs.get("user_email"))
+                summary["has_customer_id"] = bool(attrs.get("customer_id"))
 
         # Include meta information
         if "meta" in payload:
             summary["meta"] = payload["meta"]
 
         return summary
+
+    def _redact_payload_pii(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Create a deep copy of the payload with PII fields redacted.
+        Used when the full payload structure is needed for debugging
+        but PII must not be exposed.
+
+        Args:
+            payload: Original webhook payload
+
+        Returns:
+            Payload copy with PII fields masked
+        """
+        import copy
+        redacted = copy.deepcopy(payload)
+
+        if "data" in redacted and "attributes" in redacted["data"]:
+            attrs = redacted["data"]["attributes"]
+            if "user_email" in attrs:
+                attrs["user_email"] = _mask_email(attrs["user_email"])
+            if "customer_id" in attrs:
+                attrs["customer_id"] = "[REDACTED]"
+
+        return redacted
 
     def _serialize_event(self, event: WebhookEvent) -> Dict[str, Any]:
         """Serialize a webhook event to dictionary."""
