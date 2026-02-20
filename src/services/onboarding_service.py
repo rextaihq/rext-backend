@@ -259,9 +259,6 @@ class OnboardingService:
         Returns:
             True if onboarding should be shown, False otherwise
         """
-        from src.api.models.workspace_models.workspace_member import WorkspaceMembers
-        from src.api.models.user_models.user_roles import UserRole
-        from src.api.models.user_models.roles import Role
 
         # Check if user is an invited user (has workspace membership with invitation_id)
         result = await db.execute(
