@@ -723,7 +723,7 @@ class UserService:
             user_ids: List of user UUIDs
 
         Returns:
-            Dict mapping user_id -> Users object
+            Dict mapping user_id -> Users object   
         """
         if not user_ids:
             return {}
