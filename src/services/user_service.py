@@ -215,7 +215,8 @@ class UserService:
             f"User password changed: {user_id}",
             extra={"user_id": str(user_id)}
         )
-
+        self.db.add(user)
+        await self.db.commit()
         return user
 
     async def deactivate_account(
@@ -246,7 +247,8 @@ class UserService:
             f"User account deactivated: {user_id}",
             extra={"user_id": str(user_id)}
         )
-
+        self.db.add(user)
+        await self.db.commit()
         return user
 
     async def reactivate_account(
@@ -277,7 +279,8 @@ class UserService:
             f"User account reactivated: {user_id}",
             extra={"user_id": str(user_id)}
         )
-
+        self.db.add(user)
+        await self.db.commit()
         return user
 
     async def change_user_status(
@@ -324,7 +327,8 @@ class UserService:
                 "new_status": new_status,
             }
         )
-
+        self.db.add(user)
+        await self.db.commit()
         return user, old_status
 
     async def cleanup_deactivated_accounts(self) -> int:
@@ -373,6 +377,8 @@ class UserService:
         user.login_count = (user.login_count or 0) + 1
         user.failed_login_attempts = 0  # Reset failed attempts on successful login
 
+        self.db.add(user)
+        await self.db.commit()
         logger.info(
             f"User last login updated: {user_id}",
             extra={"user_id": str(user_id), "login_count": user.login_count}
@@ -568,6 +574,9 @@ class UserService:
         user.updated_at = datetime.now(dt_timezone.utc)
 
         logger.info(f"User {user_id} updated successfully")
+
+        self.db.add(user)
+        await self.db.commit()
         return user
 
     async def set_reset_token(
@@ -592,6 +601,9 @@ class UserService:
         user.reset_token = reset_token
 
         logger.info(f"Reset token set for user {user_id}")
+
+        self.db.add(user)
+        await self.db.commit()
         return user
 
     async def reset_password_with_token(
@@ -631,6 +643,8 @@ class UserService:
         user.password_changed_at = datetime.now(dt_timezone.utc)
 
         logger.info(f"Password reset successfully for user {user.id}")
+        self.db.add(user)
+        await self.db.commit()
         return user
 
     async def verify_user_password(
