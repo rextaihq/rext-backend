@@ -18,7 +18,7 @@ Does NOT:
 
 from typing import Optional, Dict, Any, List
 from uuid import UUID
-from datetime import datetime, timezone as dt_timezone
+from datetime import datetime, timezone
 import bcrypt
 
 from sqlalchemy import select
@@ -147,7 +147,8 @@ class UserService:
             f"User profile updated: {user_id}",
             extra={"user_id": str(user_id), "updated_fields": list(kwargs.keys())}
         )
-
+        self.db.add(user)
+        await self.db.commit()
         return user
 
     async def change_password(
@@ -455,7 +456,7 @@ class UserService:
 
         user = await self.get_user_by_id(user_id)
 
-        if user.deleted_at:
+        if user.is_deleted:
             raise RextValidationException("User already deleted")
 
         user.deleted_at = datetime.now(dt_timezone.utc)
@@ -683,7 +684,7 @@ class UserService:
         query = select(Users).where(Users.email == email.lower())
 
         if exclude_deleted:
-            query = query.where(Users.deleted_at.is_(None))
+            query = query.where(Users.active())
 
         result = await self.db.execute(query)
         user = result.scalar_one_or_none()
