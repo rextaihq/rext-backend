@@ -42,22 +42,37 @@ class CleanupConfig:
     @classmethod
     def get_retention_periods(cls) -> Dict[str, timedelta]:
         """Get retention periods as timedelta objects."""
+        
         return {
             "audit_logs": timedelta(days=cls.AUDIT_LOG_RETENTION_DAYS),
             "email_logs": timedelta(days=cls.EMAIL_LOG_RETENTION_DAYS),
             "email_events": timedelta(days=cls.EMAIL_EVENT_RETENTION_DAYS),
             "user_sessions": timedelta(days=cls.USER_SESSION_INACTIVE_DAYS),
+            "webhook_events": timedelta(days=cls.WEBHOOK_EVENT_RETENTION_DAYS),
+            "cancelled_subscriptions": timedelta(days=cls.CANCELLED_SUBSCRIPTION_RETENTION_DAYS),
         }
 
     @classmethod
     def get_retention_summary(cls) -> Dict[str, str]:
         """Get human-readable retention summary."""
+        
         return {
             "audit_logs": f"{cls.AUDIT_LOG_RETENTION_DAYS} days",
             "email_logs": f"{cls.EMAIL_LOG_RETENTION_DAYS} days",
             "email_events": f"{cls.EMAIL_EVENT_RETENTION_DAYS} days",
             "user_sessions": f"{cls.USER_SESSION_INACTIVE_DAYS} days (inactive)",
-        }
+            "webhook_events": f"{cls.WEBHOOK_EVENT_RETENTION_DAYS} days",
+            "cancelled_subscriptions": f"{cls.CANCELLED_SUBSCRIPTION_RETENTION_DAYS} days",
+}
+        
+    AUDIT_LOG_RETENTION_DAYS: int = int(os.getenv("AUDIT_LOG_RETENTION_DAYS", "365"))
+    EMAIL_LOG_RETENTION_DAYS: int = int(os.getenv("EMAIL_LOG_RETENTION_DAYS", "30"))
+    EMAIL_EVENT_RETENTION_DAYS: int = int(os.getenv("EMAIL_EVENT_RETENTION_DAYS", "30"))
+    USER_SESSION_INACTIVE_DAYS: int = int(os.getenv("USER_SESSION_INACTIVE_DAYS", "7"))
+    WEBHOOK_EVENT_RETENTION_DAYS: int = int(os.getenv("WEBHOOK_EVENT_RETENTION_DAYS", "90"))
+    CANCELLED_SUBSCRIPTION_RETENTION_DAYS: int = int(
+    os.getenv("CANCELLED_SUBSCRIPTION_RETENTION_DAYS", "90")
+)    
 
 
 # Singleton instance

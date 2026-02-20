@@ -42,6 +42,7 @@ from src.api.schema.admin_invitation_schema import (
 from src.api.schema.response_schemas import GenericResponse
 from src.utils.route_decorators import db_transaction_handler, require_permissions
 from src.utils.logger import logger
+from src.api.middleware.exceptions import ResourceNotFoundException, RextValidationException
 
 
 # Admin routes (authenticated, super_admin only)
@@ -105,6 +106,20 @@ def _invitation_to_response(invitation) -> AdminInvitationResponse:
         can_be_accepted=invitation.can_be_accepted(),
         days_until_expiry=days_until_expiry,
     )
+
+
+def _invalid_invitation_validation_response() -> ValidateAdminInvitationResponse:
+    """Return a client-safe response for invalid/unavailable admin invitation tokens."""
+    return ValidateAdminInvitationResponse(
+        valid=False,
+        email="",
+        admin_role="",
+        expires_at=datetime.now(timezone.utc).isoformat(),
+        is_expired=True,
+        status="invalid",
+        error_message="Invitation is invalid or expired",
+    )
+
 
 
 # ============================================================================
@@ -185,7 +200,7 @@ async def list_admin_invitations(
     """
     service = AdminInvitationService(db)
 
-    invitations = await service.get_all_invitations(
+    invitations, total_count = await service.get_all_invitations_paginated(
         status=status,
         limit=limit,
         offset=offset,
@@ -195,7 +210,7 @@ async def list_admin_invitations(
 
     return AdminInvitationListResponse(
         invitations=invitation_responses,
-        total_count=len(invitation_responses),
+        total_count=total_count,
         status_filter=status,
         limit=limit,
         offset=offset,
@@ -317,18 +332,10 @@ async def validate_admin_invitation_token(
     token: str,
     db: AsyncSession = Depends(get_async_db),
 ):
-    """
-    Validate an admin invitation token (public endpoint).
+    """Validate an admin invitation token (public endpoint)."""
+    service = AdminInvitationService(db)
 
-    **Purpose:**
-    - Show invitation details before acceptance
-    - Check if invitation is still valid
-    - Used by frontend to display invitation info
-
-    **No authentication required** - token serves as proof of invitation.
-    """
     try:
-        service = AdminInvitationService(db)
         invitation = await service.get_invitation_by_token(token)
 
         return ValidateAdminInvitationResponse(
@@ -339,26 +346,23 @@ async def validate_admin_invitation_token(
             message=invitation.message,
             invited_by_name=(
                 f"{invitation.invited_by.first_name} {invitation.invited_by.last_name}"
-                if invitation.invited_by else None
+                if invitation.invited_by
+                else None
             ),
             expires_at=invitation.expires_at.isoformat(),
             is_expired=invitation.is_expired(),
             status=invitation.status,
-            error_message=None if invitation.can_be_accepted() else (
-                "Invitation has expired" if invitation.is_expired()
-                else f"Invitation is {invitation.status}"
-            ),
+            error_message=None
+            if invitation.can_be_accepted()
+            else ("Invitation has expired" if invitation.is_expired() else "Invitation is no longer pending"),
         )
-    except Exception as e:
-        return ValidateAdminInvitationResponse(
-            valid=False,
-            email="",
-            admin_role="",
-            expires_at=datetime.now(timezone.utc).isoformat(),
-            is_expired=True,
-            status="invalid",
-            error_message=str(e),
-        )
+    except (ResourceNotFoundException, RextValidationException):
+        logger.info("Admin invitation token validation failed", extra={"reason": "invalid_or_not_found"})
+        return _invalid_invitation_validation_response()
+    except Exception:
+        logger.exception("Unexpected error validating admin invitation token")
+        return _invalid_invitation_validation_response()
+
 
 
 @public_router.post("/{token}/accept", response_model=AdminInvitationResponse)

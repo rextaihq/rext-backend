@@ -30,7 +30,7 @@ from src.api.models.user_models.permissions import Permission
 from src.api.models.user_models.roles import Role
 from src.api.models.user_models.role_permissions import RolePermission
 from src.utils.logger import logger
-from datetime import datetime
+from datetime import datetime, timezone
 import uuid
 
 
@@ -139,7 +139,11 @@ GLOBAL_PERMISSIONS = [
 
     # Platform Management
     ("audit.read", "View Audit Logs", "audit", "read", "View audit logs"),
+    ("audit.write", "Write Audit Logs", "audit", "write", "Allows modifying audit/monitoring records (resolve errors, etc.)"),
     ("audit.export", "Export Audit Logs", "audit", "export", "Export audit logs"),
+
+    # Email Management (Admin)
+    ("email.resend", "Resend Emails", "email", "resend", "Allows resending failed emails via admin panel"),
 
     # Support Staff Permissions
     ("support.view_workspace", "View Any Workspace", "support", "view_workspace", "View any workspace (read-only)"),
@@ -319,7 +323,8 @@ ROLE_PERMISSION_ASSIGNMENTS = {
         "workspace.create", "admin.invite",
         "role.create", "role.read", "role.update", "role.delete", "role.manage_permissions",
         "permission.create", "permission.read", "permission.update", "permission.delete",
-        "audit.read", "audit.export",
+        "audit.read", "audit.write", "audit.export",
+        "email.resend",
         "support.view_workspace", "support.view_billing",
     ],
 
@@ -361,7 +366,8 @@ ROLE_PERMISSION_ASSIGNMENTS = {
         "user.create", "user.read", "user.update", "user.manage_roles",
         "role.create", "role.read", "role.update", "role.manage_permissions",
         "permission.create", "permission.read", "permission.update",
-        "audit.read", "audit.export",
+        "audit.read", "audit.write", "audit.export",
+        "email.resend",
         "admin.invite",
         "support.view_workspace", "support.view_billing",
     ],
