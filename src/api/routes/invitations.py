@@ -75,7 +75,8 @@ async def validate_invitation(
         raise ResourceNotFoundException(
             resource_type="Invitation",
             resource_id=token,
-            message="Invitation not found or already used"
+            message="Invitation not found. If you received multiple invitation emails, "
+                    "please use the link from the most recent one."
         )
 
     # Check if invitation is pending
