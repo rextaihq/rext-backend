@@ -2,6 +2,7 @@
 from datetime import datetime, timezone
 from io import StringIO
 from typing import Optional
+from uuid import UUID
 import csv
 import json
 
@@ -10,9 +11,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.database.async_database import get_async_db
 from src.api.middleware.permissions import is_admin
+from src.api.middleware.rate_limiter import audit_export_rate_limit
 from src.api.schema.audit_schema import AuditLogExportFormat
 from src.api.security.dependencies import get_current_user
 from src.services.audit_service import AuditService
+from src.utils.audit_helper import create_audit_log
 from src.utils.route_decorators import db_transaction_handler
 
 router = APIRouter()
@@ -33,12 +36,36 @@ async def export_audit_logs(
     status_filter: Optional[str] = Query(None, description="Filter by status"),
     date_from: Optional[str] = Query(None, description="Start date (ISO 8601)"),
     date_to: Optional[str] = Query(None, description="End date (ISO 8601)"),
-    limit: int = Query(1000, ge=1, le=10000, description="Max records to export"),
+    limit: int = Query(1000, ge=1, le=5000, description="Max records to export"),
     db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user),
     _: bool = Depends(is_admin),
+    __: None = Depends(audit_export_rate_limit()),
 ):
-    """Export audit logs as JSON or CSV (admin only)."""
+    """Export audit logs as JSON or CSV (admin only, rate-limited)."""
+
+    # Log the export action itself for audit trail
+    admin_user_id = current_user.get("identity")
+    await create_audit_log(
+        db=db,
+        user_id=UUID(admin_user_id) if admin_user_id else None,
+        action="audit.export",
+        resource_type="audit_log",
+        resource_id="bulk_export",
+        request=request,
+        metadata={
+            "format": format.value,
+            "limit": limit,
+            "filters": {
+                "user_id": user_id,
+                "action": action,
+                "resource_type": resource_type,
+                "date_from": date_from,
+                "date_to": date_to,
+            }
+        },
+    )
+
     service = AuditService(db)
     logs = await service.fetch_logs(
         user_id=user_id,

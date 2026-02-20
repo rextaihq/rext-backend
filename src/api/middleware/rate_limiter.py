@@ -990,3 +990,16 @@ def license_revoke_rate_limit():
         window_minutes=1,
         description="license revocation"
     )
+
+def audit_export_rate_limit():
+    """
+    Rate limiter for audit log export endpoint.
+
+    Limit: 5 export requests per 5 minutes per user.
+    Prevents rapid bulk data exfiltration and resource exhaustion.
+    """
+    return EndpointRateLimiter(
+        requests=5,
+        window_minutes=5,
+        description="audit export"
+    )
