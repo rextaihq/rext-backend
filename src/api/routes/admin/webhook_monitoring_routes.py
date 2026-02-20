@@ -28,6 +28,7 @@ router = APIRouter()
 @router.get("/webhooks/events", response_model=dict)
 @require_permissions("audit.webhooks", workspace_scoped=False)
 @db_transaction_handler("get webhook events", auto_commit=False)
+@require_permissions("audit.webhooks", workspace_scoped=False)
 async def get_webhook_events(
     request: Request,
     limit: int = Query(50, ge=1, le=100, description="Maximum events to return"),
@@ -65,6 +66,7 @@ async def get_webhook_events(
 @router.get("/webhooks/failed", response_model=dict)
 @require_permissions("audit.webhooks", workspace_scoped=False)
 @db_transaction_handler("get failed webhooks", auto_commit=False)
+@require_permissions("audit.webhooks", workspace_scoped=False)
 async def get_failed_webhooks(
     request: Request,
     limit: int = Query(50, ge=1, le=100, description="Maximum events to return"),
@@ -101,6 +103,7 @@ async def get_failed_webhooks(
 @router.post("/webhooks/{webhook_id}/retry", response_model=dict)
 @require_permissions("audit.webhooks", workspace_scoped=False)
 @db_transaction_handler("retry webhook", auto_commit=True)
+@require_permissions("audit.webhooks", workspace_scoped=False)
 async def retry_webhook(
     request: Request,
     webhook_id: UUID = Path(..., description="Webhook event ID to retry"),
@@ -133,6 +136,7 @@ async def retry_webhook(
 @router.get("/webhooks/statistics", response_model=dict)
 @require_permissions("audit.webhooks", workspace_scoped=False)
 @db_transaction_handler("get webhook statistics", auto_commit=False)
+@require_permissions("audit.webhooks", workspace_scoped=False)
 async def get_webhook_statistics(
     request: Request,
     hours: int = Query(24, ge=1, le=720, description="Statistics period in hours"),

@@ -165,6 +165,8 @@ PERMISSIONS = [
     ("audit.read", "View Audit Logs", "View audit logs", "audit", "read"),
     ("audit.write", "Write Audit Logs", "Allows modifying audit/monitoring records (resolve errors, etc.)", "audit", "write"),
     ("audit.export", "Export Audit Logs", "Export audit logs", "audit", "export"),
+    ("audit.admin", "Admin Audit Access", "Admin access to all audit logs and monitoring", "audit", "admin"),
+    ("audit.webhooks", "Webhook Monitoring", "Monitor and retry webhook events", "audit", "webhooks"),
 
     # Email Management (Admin)
     ("email.resend", "Resend Emails", "Allows resending failed emails via admin panel", "email", "resend"),
@@ -268,7 +270,7 @@ ROLE_PERMISSION_ASSIGNMENTS = {
         "member.read",
         "license.view", "license.read",
         "user.read",
-        "audit.read",
+        "audit.read", "audit.admin", "audit.webhooks",
         "support.view_workspace", "support.view_billing",
     ],
     "user": [

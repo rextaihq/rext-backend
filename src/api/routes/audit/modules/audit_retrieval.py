@@ -20,10 +20,11 @@ router = APIRouter()
 @router.get("/", response_model=dict)
 @require_permissions("audit.admin", workspace_scoped=False)
 @db_transaction_handler("list audit logs", "Audit logs retrieved successfully", auto_commit=False)
+@require_permissions("audit.admin", workspace_scoped=False)
 async def list_audit_logs(
     request: Request,
     user_id: Optional[str] = Query(None, description="Filter by user ID"),
-    username: Optional[str] = Query(None, description="Filter by username (partial match)"),
+    full_name: Optional[str] = Query(None, description="Filter by full name (partial match)"),
     user_email: Optional[str] = Query(None, description="Filter by user email (partial match)"),
     action: Optional[str] = Query(None, description="Filter by action (exact or prefix with '.')"),
     resource_type: Optional[str] = Query(None, description="Filter by resource type"),
@@ -42,7 +43,7 @@ async def list_audit_logs(
 
     Query Parameters:
     - user_id: Filter by user UUID
-    - username: Search by username (partial match)
+    - full_name: Search by full name (partial match)
     - user_email: Search by email (partial match)
     - action: Filter by action (exact match or prefix with '.', e.g., 'user.' for all user actions)
     - resource_type: Filter by resource type
@@ -61,7 +62,7 @@ async def list_audit_logs(
     query = await build_audit_query(
         db=db,
         user_id=user_id,
-        username=username,
+        full_name=full_name,
         user_email=user_email,
         action=action,
         resource_type=resource_type,
@@ -100,6 +101,7 @@ async def list_audit_logs(
 @router.get("/{audit_log_id}", response_model=dict)
 @require_permissions("audit.admin", workspace_scoped=False)
 @db_transaction_handler("get audit log", "Audit log retrieved successfully", auto_commit=False)
+@require_permissions("audit.admin", workspace_scoped=False)
 async def get_audit_log(
     request: Request,
     audit_log_id: str,
