@@ -482,16 +482,20 @@ def password_reset_rate_limit():
     )
 
 
-def registration_rate_limit():
+REGISTRATION_REQUESTS_PER_HOUR = 3
+REGISTRATION_WINDOW_MINUTES = 60
+
+
+def registration_rate_limit() -> "EndpointRateLimiter":
     """
     Rate limiter for registration endpoint.
 
     Limit: 3 registrations per hour per IP.
     """
     return EndpointRateLimiter(
-        requests=1000,
-        window_minutes=60,
-        description="registration"
+        requests=REGISTRATION_REQUESTS_PER_HOUR,
+        window_minutes=REGISTRATION_WINDOW_MINUTES,
+        description="registration",
     )
 
 
