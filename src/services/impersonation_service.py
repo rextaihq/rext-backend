@@ -324,6 +324,7 @@ class ImpersonationService:
             "roles": auth_context["roles"],
             "permissions": auth_context["permissions"],
         }
+
     async def invalidate_session(self, session_id: str) -> bool:
         """
         Invalidate an impersonation session by session_id.
