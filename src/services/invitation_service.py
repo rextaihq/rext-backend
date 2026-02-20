@@ -147,8 +147,7 @@ class InvitationService:
             select(UserInvitations).where(
                 and_(
                     UserInvitations.email == email,
-                    UserInvitations.workspace_id == workspace_id,
-                    # UserInvitations.status == "pending"
+                    UserInvitations.workspace_id == workspace_id
                 )
             )
         )
@@ -576,7 +575,7 @@ class InvitationService:
 
         return invitation
 
-    # remvove invitation if exists
+    # Remove invitation if it exists
     async def remove_invitation_if_exists(
         self,
         workspace_id: UUID,
