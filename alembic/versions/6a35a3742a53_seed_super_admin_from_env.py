@@ -102,7 +102,7 @@ def upgrade() -> None:
     session = orm.Session(bind=bind)
 
     try:
-        now = datetime.now(timezone.utc)
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
 
         print("\n" + "="*80)
         print("SEEDING SUPER ADMIN & TRIAL PLAN")

@@ -12,6 +12,34 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+async def _send_sse_after_commit(
+    user_id: UUID,
+    message: str,
+    payload: dict,
+    notification_id: str,
+) -> None:
+    """
+    Send SSE notification. Designed to run as a FastAPI background task,
+    which executes AFTER the response is sent (and therefore after the
+    transaction is committed by the response middleware).
+
+    This ordering guarantees that the notification record is visible in the
+    database before the SSE event reaches the client.
+    """
+    try:
+        await notification_service.send_success_notification(
+            user_id=user_id,
+            message=message,
+            payload=payload,
+        )
+        logger.info(
+            f"SSE notification sent for notification {notification_id} to user {user_id}"
+        )
+    except Exception as e:
+        logger.error(
+            f"Failed to send SSE notification {notification_id} for user {user_id}: {e}"
+        )
+
 async def _recheck_preference_enabled(
     db: AsyncSession,
     user_id: UUID,  # Changed from str to UUID
@@ -72,7 +100,6 @@ def _safe_to_uuid(value: str, param_name: str) -> UUID:
         ) from exc
 
 
-# src/services/notification_helper.py
 async def schedule_if_allowed(
     *,
     db: AsyncSession,
@@ -288,15 +315,20 @@ async def schedule_if_allowed(
             exc_info=True,
         )
 
-    # 6. Schedule the SSE notification (always, even if DB persistence failed)
-    logger.info(
-        f"Scheduling SSE notification for user {user_id} – flag {pref_flag} – message: {safe_message}"
-        + (" (DB record saved)" if db_persist_ok else " (DB record NOT saved)")
-    )
+    # 6. Schedule the SSE notification as a background task.
+    #
+    # IMPORTANT: FastAPI BackgroundTasks execute AFTER the response is sent,
+    # which is after the transaction commit in the response middleware.
+    # This ensures the notification record is committed and visible to other
+    # sessions before the SSE event reaches the client.
+    #
+    # Do NOT call notification_service directly here (before commit) — that
+    # would send the SSE event before the notification is committed.
     background_tasks.add_task(
-        notification_service.send_success_notification,
+        _send_sse_after_commit,
         user_id=user_uuid,
         message=safe_message,
         payload=safe_payload,
+        notification_id=str(notification.id),
     )
-    logger.info("Notification task scheduled.")
+    logger.debug(f"SSE notification task scheduled for notification {notification.id}")

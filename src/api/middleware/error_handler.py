@@ -208,6 +208,7 @@ class ErrorHandlerMiddleware(BaseHTTPMiddleware):
         )
 
     def _handle_http_exception(
+        self,
         exception: HTTPException,
         request_id: str,
         processing_time_ms: Optional[int] = None

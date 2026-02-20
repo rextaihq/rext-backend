@@ -50,8 +50,8 @@ class Role(Base):
     description = sa.Column(sa.Text)
     hierarchy_level = sa.Column(sa.Integer, default=0)
     is_system_role = sa.Column(sa.Boolean, default=True)
-    created_at = sa.Column(sa.TIMESTAMP, default=lambda: datetime.now(timezone.utc))
-    updated_at = sa.Column(sa.TIMESTAMP, default=lambda: datetime.now(timezone.utc))
+    created_at = sa.Column(sa.TIMESTAMP, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
+    updated_at = sa.Column(sa.TIMESTAMP, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
 
 
 class RolePermission(Base):
@@ -118,7 +118,7 @@ def upgrade() -> None:
             description=perm["description"],
             resource=perm["resource"],
             action=perm["action"],
-            created_at=datetime.now(timezone.utc)
+            created_at=datetime.now(timezone.utc).replace(tzinfo=None)
         )
         session.add(new_perm)
 
@@ -158,7 +158,7 @@ def upgrade() -> None:
                 id=uuid.uuid4(),
                 role_id=role.id,
                 permission_id=perm_id,
-                created_at=datetime.now(timezone.utc)
+                created_at=datetime.now(timezone.utc).replace(tzinfo=None)
             )
             session.add(role_perm)
 
