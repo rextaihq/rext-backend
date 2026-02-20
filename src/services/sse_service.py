@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import re
 from asyncio import Queue
 from collections import deque
 from dataclasses import dataclass, field
@@ -25,6 +26,23 @@ class OperationOwnershipError(Exception):
 def _utcnow() -> datetime:
     """Return the current UTC time."""
     return datetime.now(timezone.utc)
+
+
+# Matches plain UUIDs and prefixed UUIDs (e.g., "user-notifications-<uuid>")
+# Allows lowercase alphanumeric characters and hyphens, 1-100 chars
+OPERATION_ID_PATTERN = re.compile(r"^[a-z0-9](?:[a-z0-9\-]{0,98}[a-z0-9])?$")
+
+
+def validate_operation_id(operation_id: str) -> None:
+    """
+    Validate that the operation_id matches the expected format.
+    Raises ValueError if validation fails.
+    """
+    if not OPERATION_ID_PATTERN.match(operation_id):
+        raise ValueError(
+            f"Invalid operation_id format: {operation_id}. "
+            "Must be 1-100 lowercase alphanumeric characters or hyphens."
+        )
 
 
 @dataclass
@@ -106,6 +124,7 @@ class EventStreamManager:
             user_id: The authenticated user's ID.
             max_duration_seconds: Maximum connection lifetime in seconds (default: 2 hours).
         """
+        validate_operation_id(operation_id)
         queue: Queue[Optional[str]] = asyncio.Queue()
         subscription = _Subscription(
             operation_id=operation_id,
@@ -199,6 +218,7 @@ class EventStreamManager:
                 ``operation_id`` originates from user input.
         """
         operation_id = event.operation_id
+        validate_operation_id(operation_id)
 
         # --- Authorization gate ---
         if publisher_user_id is not None:
