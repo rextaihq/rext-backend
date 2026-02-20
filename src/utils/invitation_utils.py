@@ -9,7 +9,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.models.user_models.invitations import UserInvitations
 from src.utils.logger import logger
+from src.api.middleware.exceptions import RextValidationException
 
+
+
+MIN_EXPIRY_DAYS = 1
+MAX_EXPIRY_DAYS = 30
 
 # ------------------------------------------------------------------
 # CHECK EXPIRY (NO DB → stays sync)
@@ -138,3 +143,25 @@ async def get_invitation_with_details(
         "expires_at": invitation.expires_at.isoformat() if invitation.expires_at else None,
         "is_expired": is_invitation_expired(invitation),
     }
+
+
+def validate_expiry_days(expiry_days: int) -> None:
+    """
+    Validate that invitation expiry days is within the allowed range.
+
+    Args:
+        expiry_days: Number of days until invitation expires.
+
+    Raises:
+        RextValidationException: If expiry_days is not between
+            MIN_EXPIRY_DAYS and MAX_EXPIRY_DAYS (inclusive).
+    """
+    if not MIN_EXPIRY_DAYS <= expiry_days <= MAX_EXPIRY_DAYS:
+        raise RextValidationException(
+            message=f"Expiry days must be between {MIN_EXPIRY_DAYS} and {MAX_EXPIRY_DAYS}",
+            field_errors={
+                "expiry_days": [
+                    f"Must be between {MIN_EXPIRY_DAYS} and {MAX_EXPIRY_DAYS} days"
+                ]
+            }
+        )

@@ -2,6 +2,8 @@
 from pydantic import BaseModel, EmailStr, Field
 from typing import Optional, List
 from datetime import datetime, timezone
+from src.utils.invitation_utils import MIN_EXPIRY_DAYS, MAX_EXPIRY_DAYS
+
 
 
 class AcceptInvitationRequest(BaseModel):
@@ -14,7 +16,7 @@ class CreateInvitationRequest(BaseModel):
     email: EmailStr = Field(..., description="Email address to invite")
     workspace_id: str = Field(..., description="Workspace ID")
     role_id: str = Field(..., description="Role ID to assign")
-    expiry_days: Optional[int] = Field(7, ge=1, le=30, description="Days until invitation expires (1-30, default 7)")
+    expiry_days: Optional[int] = Field(7, ge=MIN_EXPIRY_DAYS, le=MAX_EXPIRY_DAYS, description=f"Days until invitation expires ({MIN_EXPIRY_DAYS}-{MAX_EXPIRY_DAYS}, default 7)")
 
 
 class BulkCreateInvitationRequest(BaseModel):
@@ -22,7 +24,7 @@ class BulkCreateInvitationRequest(BaseModel):
     emails: List[EmailStr] = Field(..., min_length=1, max_length=50, description="List of email addresses to invite (max 50)")
     workspace_id: str = Field(..., description="Workspace ID")
     role_id: str = Field(..., description="Role ID to assign to all invitees")
-    expiry_days: Optional[int] = Field(7, ge=1, le=30, description="Days until invitations expire (1-30, default 7)")
+    expiry_days: Optional[int] = Field(7, ge=MIN_EXPIRY_DAYS, le=MAX_EXPIRY_DAYS, description=f"Days until invitations expire ({MIN_EXPIRY_DAYS}-{MAX_EXPIRY_DAYS}, default 7)")
 
 
 class WorkspaceInvitationCreateRequest(BaseModel):

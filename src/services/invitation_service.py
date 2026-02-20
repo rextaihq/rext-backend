@@ -26,6 +26,7 @@ import secrets
 from sqlalchemy import select, and_, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.utils.invitation_utils import validate_expiry_days
 from src.api.models.user_models.invitations import UserInvitations
 from src.api.models.workspace_models.workspace_model import WorkspaceModel
 from src.api.models.user_models.users import Users
@@ -102,11 +103,7 @@ class InvitationService:
             RextValidationException: If expiry_days invalid
         """
         # Validate expiry_days
-        if not 1 <= expiry_days <= 30:
-            raise RextValidationException(
-                message="Expiry days must be between 1 and 30",
-                field_errors={"expiry_days": ["Must be between 1 and 30 days"]}
-            )
+        validate_expiry_days(expiry_days)
 
         # Normalize email
         email = email.lower().strip()
