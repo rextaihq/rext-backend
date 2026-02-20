@@ -12,41 +12,14 @@ from datetime import datetime, timezone, timedelta
 
 from src.api.database.async_database import get_async_db
 from src.api.models.email_models.email_log import EmailLog
+from src.api.schema.admin_email_schema import AdminEmailLogResponse, ResendEmailRequest
 from src.services.email_service import EmailService
 from src.api.lib.logger import auto_logger
 from src.utils.response_utils import success, error
 from src.utils.route_decorators import require_permissions
-from pydantic import BaseModel
 
 logger = auto_logger()
 router = APIRouter(prefix="/api/v1/admin/emails", tags=["Admin - Emails"])
-
-
-# ============================================================================
-# REQUEST/RESPONSE SCHEMAS
-# ============================================================================
-
-class EmailLogResponse(BaseModel):
-    """Email log response schema."""
-    id: UUID
-    to_email: str
-    from_email: str
-    subject: str
-    status: str
-    provider: str
-    retry_count: int
-    error_message: Optional[str]
-    created_at: datetime
-    sent_at: Optional[datetime]
-    failed_at: Optional[datetime]
-
-    class Config:
-        from_attributes = True
-
-
-class ResendEmailRequest(BaseModel):
-    """Request to resend failed email."""
-    email_log_ids: List[UUID]
 
 
 # ============================================================================
@@ -113,7 +86,7 @@ async def get_failed_emails(
 
         return success(
             data={
-                "emails": [EmailLogResponse.model_validate(email).model_dump() for email in failed_emails],
+                "emails": [AdminEmailLogResponse.model_validate(email).model_dump() for email in failed_emails],
                 "total": total_count,
                 "limit": limit,
                 "offset": offset,
