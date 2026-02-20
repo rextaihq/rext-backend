@@ -44,7 +44,8 @@ from fastapi import UploadFile
 
 from src.api.models.knowledge_models.knowledge_model import KnowledgeFiles, TextKnowledge, Website, KnowledgeBase
 from src.utils.logger import logger
-from src.utils.file_upload_utils import validate_and_store_file, delete_file
+from src.utils.file_security import validate_upload
+from src.utils.file_upload_utils import delete_file, _sanitize_filename
 from src.utils.utils import load_split_file_data
 from src.utils.splitter import split_data
 from src.utils.vector_store import add_to_vector_store, delete_vectors

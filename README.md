@@ -298,6 +298,17 @@ Package management: Using `uv` (lock file: `uv.lock`)
 
 ---
 
+## Datetime Convention
+
+All datetime objects in the Rext backend MUST be timezone-aware. Use `datetime.now(timezone.utc)` instead of the deprecated `datetime.utcnow()`.
+
+- **Model columns:** Use `DateTime(timezone=True)` with `default=lambda: datetime.now(timezone.utc)`
+- **Application code:** Use `datetime.now(timezone.utc)` for current time
+- **Date parsing:** Always ensure parsed datetimes have tzinfo set; assume UTC if not provided
+- **ISO formatting:** Use `.isoformat()` which includes timezone offset for aware datetimes
+
+---
+
 ## 🤝 Contributions
 
 Pull requests and feedback are welcome! Let’s make this more powerful and production-ready together.

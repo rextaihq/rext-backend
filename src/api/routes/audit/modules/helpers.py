@@ -63,7 +63,10 @@ async def build_audit_query(
     if date_from:
         try:
             date_from_dt = datetime.fromisoformat(date_from.replace("Z", "+00:00"))
-            query = query.where(AuditLog.created_at >= date_from_dt)
+            # Ensure timezone-aware: if user provides naive datetime, assume UTC
+            if date_from_dt.tzinfo is None:
+                date_from_dt = date_from_dt.replace(tzinfo=timezone.utc)
+            conditions.append(AuditLog.created_at >= date_from_dt)
         except ValueError:
             raise RextValidationException(
                 field="date_from",
@@ -73,7 +76,10 @@ async def build_audit_query(
     if date_to:
         try:
             date_to_dt = datetime.fromisoformat(date_to.replace("Z", "+00:00"))
-            query = query.where(AuditLog.created_at <= date_to_dt)
+            # Ensure timezone-aware: if user provides naive datetime, assume UTC
+            if date_to_dt.tzinfo is None:
+                date_to_dt = date_to_dt.replace(tzinfo=timezone.utc)
+            conditions.append(AuditLog.created_at <= date_to_dt)
         except ValueError:
             raise RextValidationException(
                 field="date_to",
