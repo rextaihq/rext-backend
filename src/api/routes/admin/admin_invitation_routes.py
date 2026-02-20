@@ -178,7 +178,7 @@ async def create_admin_invitation(
 
 @admin_router.get("", response_model=AdminInvitationListResponse)
 @db_transaction_handler("list admin invitations", auto_commit=False)
-@require_permissions("audit.read", workspace_scoped=False)
+@require_permissions("audit.admin", workspace_scoped=False)
 async def list_admin_invitations(
     request: Request,
     status: Optional[str] = Query(None, description="Filter by status (pending/accepted/revoked/expired/declined)"),
@@ -219,7 +219,7 @@ async def list_admin_invitations(
 
 @admin_router.get("/{invitation_id}", response_model=AdminInvitationResponse)
 @db_transaction_handler("get admin invitation", auto_commit=False)
-@require_permissions("audit.read", workspace_scoped=False)
+@require_permissions("audit.admin", workspace_scoped=False)
 async def get_admin_invitation(
     request: Request,
     invitation_id: UUID,

@@ -5,13 +5,12 @@ from typing import Optional
 
 from src.api.database.async_database import get_async_db
 from src.api.security.dependencies import get_current_user
-from src.api.middleware.permissions import is_admin
 from src.api.models.audit_models.audit_logs import AuditLog
 from src.api.schema.audit_schema import AuditStatus
 from src.utils.response_utils import success
 from src.api.middleware.exceptions import ResourceNotFoundException, RextValidationException
 from src.utils.logger import logger
-from src.utils.route_decorators import db_transaction_handler
+from src.utils.route_decorators import db_transaction_handler, require_permissions
 from .helpers import build_audit_query, format_audit_log
 
 
@@ -19,6 +18,7 @@ router = APIRouter()
 
 
 @router.get("/", response_model=dict)
+@require_permissions("audit.admin", workspace_scoped=False)
 @db_transaction_handler("list audit logs", "Audit logs retrieved successfully", auto_commit=False)
 async def list_audit_logs(
     request: Request,
@@ -35,8 +35,7 @@ async def list_audit_logs(
     limit: int = Query(50, ge=1, le=1000, description="Results per page"),
     offset: int = Query(0, ge=0, description="Pagination offset"),
     db: AsyncSession = Depends(get_async_db),
-    current_user: dict = Depends(get_current_user),
-    _: bool = Depends(is_admin)
+    current_user: dict = Depends(get_current_user)
 ):
     """
     List all audit logs with filtering (admin only).
@@ -99,13 +98,13 @@ async def list_audit_logs(
 
 
 @router.get("/{audit_log_id}", response_model=dict)
+@require_permissions("audit.admin", workspace_scoped=False)
 @db_transaction_handler("get audit log", "Audit log retrieved successfully", auto_commit=False)
 async def get_audit_log(
     request: Request,
     audit_log_id: str,
     db: AsyncSession = Depends(get_async_db),
-    current_user: dict = Depends(get_current_user),
-    _: bool = Depends(is_admin)
+    current_user: dict = Depends(get_current_user)
 ):
     """
     Get detailed audit log entry by ID (admin only).

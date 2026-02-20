@@ -28,7 +28,7 @@ router = APIRouter(prefix="/invitations", tags=["admin-analytics"])
 
 @router.get("/analytics", summary="Get invitation analytics")
 @db_transaction_handler("get invitation analytics", auto_commit=False)
-@require_permissions("audit.read")
+@require_permissions("audit.admin", workspace_scoped=False)
 async def get_invitation_analytics(
     request: Request,
     workspace_id: Optional[str] = Query(

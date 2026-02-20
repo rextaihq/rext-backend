@@ -32,7 +32,7 @@ router = APIRouter(prefix="/reports", tags=["Admin - Reports"])
 
 
 @router.get("/revenue", response_model=dict)
-@require_permissions("audit.read", workspace_scoped=False)
+@require_permissions("audit.admin", workspace_scoped=False)
 @db_transaction_handler("get revenue report", auto_commit=False)
 async def get_revenue_report(
     request: Request,
@@ -97,7 +97,7 @@ async def get_revenue_report(
     }
 
 @router.get("/revenue/export", response_class=Response)
-@require_permissions("audit.read", workspace_scoped=False)
+@require_permissions("audit.admin", workspace_scoped=False)
 @db_transaction_handler("export revenue report", auto_commit=False)
 async def export_revenue_report(
     request: Request,
@@ -229,7 +229,7 @@ async def export_revenue_report(
 
 
 @router.get("/revenue/summary", response_model=dict)
-@require_permissions("audit.read", workspace_scoped=False)
+@require_permissions("audit.admin", workspace_scoped=False)
 @db_transaction_handler("get revenue summary", auto_commit=False)
 async def get_revenue_summary(
     request: Request,
