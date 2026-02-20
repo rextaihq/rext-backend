@@ -90,7 +90,7 @@ async def list_audit_logs(
     logs_data = [format_audit_log(log, include_details=False) for log in logs]
 
     return {
-        "logs": logs_data,
+        "items": logs_data,
         "total": total_count,
         "limit": limit,
         "offset": offset,

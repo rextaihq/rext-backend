@@ -118,7 +118,7 @@ async def export_audit_logs(
 
 
 @router.get("/stats/overview", response_model=dict)
-@db_transaction_handler("get audit statistics", auto_commit=False)
+@db_transaction_handler("get audit statistics", "Audit statistics retrieved successfully", auto_commit=False)
 async def get_audit_stats(
     request: Request,
     days: int = Query(30, ge=1, le=365, description="Number of days to analyze"),
@@ -130,7 +130,4 @@ async def get_audit_stats(
     service = AuditService(db)
     stats = await service.get_statistics(days)
 
-    return {
-        "data": stats,
-        "message": "Audit statistics retrieved successfully",
-    }
+    return stats
