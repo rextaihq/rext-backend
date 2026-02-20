@@ -2,6 +2,7 @@
 
 from datetime import datetime, timezone
 from typing import Optional
+import secrets
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -26,6 +27,25 @@ def is_invitation_expired(invitation: UserInvitations) -> bool:
 
     return now > expires_at
 
+def generate_invitation_token(nbytes: int = 32) -> str:
+    """
+    Generate a cryptographically secure invitation token.
+
+    Uses Python's secrets module which provides access to the most secure
+    source of randomness available on the OS. The token is URL-safe
+    Base64-encoded, suitable for use in invitation URLs.
+
+    Args:
+        nbytes: Number of random bytes. Defaults to 32 (produces ~43 char token).
+                Use 48 for higher-security tokens (~64 chars).
+
+    Returns:
+        URL-safe token string.
+
+    Reference:
+        https://docs.python.org/3.11/library/secrets.html#secrets.token_urlsafe
+    """
+    return secrets.token_urlsafe(nbytes)
 
 # ------------------------------------------------------------------
 # CLEANUP EXPIRED INVITATIONS

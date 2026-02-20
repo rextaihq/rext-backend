@@ -28,7 +28,6 @@ from typing import Optional, List
 from uuid import UUID
 from datetime import datetime, timezone, timedelta
 import secrets
-import hashlib
 
 from sqlalchemy import select, and_
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -65,15 +64,13 @@ class AdminInvitationService:
         Generate a secure admin invitation token.
 
         Args:
-            email: Invitee email
+            email: Invitee email (unused — kept for API compatibility)
 
         Returns:
             Secure token string
         """
-        random_part = secrets.token_urlsafe(48)  # Longer for admin invitations
-        combined = f"{email}:{random_part}:{datetime.now(timezone.utc).timestamp()}"
-        token_hash = hashlib.sha256(combined.encode()).hexdigest()
-        return token_hash
+        from src.utils.invitation_utils import generate_invitation_token
+        return generate_invitation_token(nbytes=48)
 
     async def _verify_super_admin(self, user_id: UUID) -> None:
         """

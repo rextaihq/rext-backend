@@ -22,7 +22,6 @@ from typing import Optional, List, Dict, Any
 from uuid import UUID
 from datetime import datetime, timezone, timedelta,timezone
 import secrets
-import hashlib
 
 from sqlalchemy import select, and_, or_
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -58,16 +57,14 @@ class InvitationService:
         Generate a secure invitation token.
 
         Args:
-            email: Invitee email
-            workspace_id: Workspace UUID
+            email: Invitee email (unused — kept for API compatibility)
+            workspace_id: Workspace UUID (unused — kept for API compatibility)
 
         Returns:
             Secure token string
         """
-        random_part = secrets.token_urlsafe(32)
-        combined = f"{email}:{workspace_id}:{random_part}:{datetime.now(timezone.utc).timestamp()}"
-        token_hash = hashlib.sha256(combined.encode()).hexdigest()
-        return token_hash
+        from src.utils.invitation_utils import generate_invitation_token
+        return generate_invitation_token(nbytes=32)
 
     async def create_invitation(
         self,
