@@ -353,6 +353,11 @@ async def validate_admin_invitation_token(
             ),
         )
     except Exception as e:
+        logger.error(
+            "Failed to validate admin invitation token",
+            exc_info=True,
+            extra={"token_preview": token[:8] if token else None}
+        )
         return ValidateAdminInvitationResponse(
             valid=False,
             email="",
@@ -360,7 +365,7 @@ async def validate_admin_invitation_token(
             expires_at=datetime.now(timezone.utc).isoformat(),
             is_expired=True,
             status="invalid",
-            error_message=str(e),
+            error_message="Invalid or expired invitation token",
         )
 
 

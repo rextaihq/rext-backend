@@ -72,9 +72,8 @@ def db_transaction_handler(
                     Set to False if you need manual transaction control
         error_severity: Severity level for unexpected errors (default: HIGH)
         error_code: Error code for unexpected errors (default: INTERNAL_SERVER_ERROR)
-        include_error_details: Whether to include error details in logging (default: True)
-                              Error details are always logged but this controls the verbosity
-
+        include_error_details: Whether to include error details in logging (default: False)
+                      Error details are logged but never returned to clients
     Returns:
         Decorated async function that handles transactions and errors
 
