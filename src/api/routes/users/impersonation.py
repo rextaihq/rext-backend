@@ -22,7 +22,6 @@ from src.utils.route_decorators import db_transaction_handler, require_permissio
 router = APIRouter()
 
 
-
 @router.post("/impersonate/start", dependencies=[Depends(is_admin)])
 @require_permissions("user.update", workspace_scoped=False)
 @db_transaction_handler("start impersonation", auto_commit=False)
@@ -38,9 +37,6 @@ async def start_impersonation(
     
     # Generate unique session ID
     session_id = str(uuid4())
-
-    
-    
 
     service = ImpersonationService(db)
     impersonation_context = await service.start_impersonation(admin_user_id, target_user_id)
