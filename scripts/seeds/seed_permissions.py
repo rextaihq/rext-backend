@@ -145,6 +145,7 @@ PERMISSIONS = [
     ("user.create", "Create Users", "Create new users", "user", "create"),
     ("user.read", "View Users", "View all users", "user", "read"),
     ("user.update", "Update Users", "Edit user profiles", "user", "update"),
+    ("user.impersonate", "Impersonate Users", "Impersonate other users for support", "user", "impersonate"),
     ("user.delete", "Delete Users", "Delete users", "user", "delete"),
     ("user.manage_roles", "Manage User Roles", "Assign global roles to users", "user", "manage_roles"),
 
