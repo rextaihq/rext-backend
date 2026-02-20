@@ -11,7 +11,7 @@ All endpoints require super admin permissions.
 """
 from fastapi import APIRouter, Depends, Request, Query, Path, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-
+from uuid import UUID 
 from src.api.database.async_database import get_async_db
 from src.api.security.dependencies import get_current_user
 from src.services.webhook_monitoring_service import WebhookMonitoringService
@@ -70,6 +70,10 @@ async def get_failed_webhooks(
     limit: int = Query(50, ge=1, le=100, description="Maximum events to return"),
     offset: int = Query(0, ge=0, description="Offset for pagination"),
     hours: int = Query(24, ge=1, le=720, description="Only show events from last N hours"),
+    include_payload: bool = Query(
+        False,
+        description="Include redacted payload body in response (default false)"
+    ),
     db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user)
 ):
@@ -80,15 +84,17 @@ async def get_failed_webhooks(
     - limit: Maximum number of events (default 50, max 100)
     - offset: Pagination offset (default 0)
     - hours: Only show events from last N hours (default 24)
+    - include_payload: Include redacted payload body
 
     Returns:
-    - List of failed webhook events with full payload for debugging
+    - List of failed webhook events with redacted payload (if requested)
     """
     service = WebhookMonitoringService(db)
     return await service.get_failed_webhooks(
         limit=limit,
         offset=offset,
-        hours=hours
+        hours=hours,
+        include_payload=include_payload
     )
 
 
@@ -97,7 +103,7 @@ async def get_failed_webhooks(
 @db_transaction_handler("retry webhook", auto_commit=True)
 async def retry_webhook(
     request: Request,
-    webhook_id: str = Path(..., description="Webhook event ID to retry"),
+    webhook_id: UUID = Path(..., description="Webhook event ID to retry"),
     db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user)
 ):

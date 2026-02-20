@@ -70,6 +70,10 @@ async def get_error_logs(
     severity: Optional[str] = Query(None, description="Filter by severity"),
     start_date: Optional[datetime] = Query(None, description="Start date filter"),
     end_date: Optional[datetime] = Query(None, description="End date filter"),
+    include_stack_trace: bool = Query(
+        False,
+        description="Include redacted stack traces in response (default false)"
+    ),
     db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user)
 ):
@@ -82,6 +86,7 @@ async def get_error_logs(
     - severity: Filter by severity (error, warning, critical)
     - start_date: Start date filter (ISO format)
     - end_date: End date filter (ISO format)
+    - include_stack_trace: Include redacted stack traces in response (default false)
 
     Returns:
     - List of error logs with details
@@ -94,7 +99,8 @@ async def get_error_logs(
         per_page=per_page,
         severity=severity,
         start_date=start_date,
-        end_date=end_date
+        end_date=end_date,
+        include_stack_trace=include_stack_trace
     )
 
     return {
@@ -105,11 +111,11 @@ async def get_error_logs(
 
 
 @router.patch("/error-logs/{log_id}/resolve", response_model=dict)
-@require_permissions("audit.admin", workspace_scoped=False)
+@require_permissions("audit.write", workspace_scoped=False)
 @db_transaction_handler("resolve error log", auto_commit=True)
 async def resolve_error_log(
     request: Request,
-    log_id: str,
+    log_id: UUID,
     db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user)
 ):
@@ -127,7 +133,7 @@ async def resolve_error_log(
     # Use service
     service = MonitoringService(db)
     log_data = await service.resolve_error_log(
-        log_id=UUID(log_id),
+        log_id=log_id,
         admin_user_id=UUID(admin_user_id)
     )
 

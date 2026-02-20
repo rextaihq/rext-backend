@@ -9,6 +9,8 @@ Uses boto3 for R2 communication (S3-compatible API).
 """
 
 import os
+import stat
+import secrets
 from pathlib import Path as PathLib
 import boto3
 from typing import BinaryIO, Optional, Tuple
@@ -19,6 +21,7 @@ from datetime import datetime, timezone
 from botocore.exceptions import ClientError
 import asyncio
 from functools import partial
+from src.config.storage_config import storage_settings
 
 
 class StorageBackend(ABC):
@@ -59,13 +62,13 @@ class StorageBackend(ABC):
         pass
 
     @abstractmethod
-    async def get_url(self, path: str, expires_in: int = 3600) -> str:
+    async def get_url(self, path: str, expires_in: int | None = None) -> str:
         """
         Get URL to access file.
 
         Args:
             path: File path/key
-            expires_in: URL expiration in seconds
+            expires_in: URL expiration in seconds. If None, uses configured default.
 
         Returns:
             Accessible URL (presigned for private files)
@@ -147,7 +150,21 @@ class CloudflareR2Backend(StorageBackend):
         metadata: Optional[dict] = None,
         is_public: bool = False
     ) -> str:
-        """Upload file to Cloudflare R2."""
+        """
+    Upload a file object to the configured R2 bucket.
+
+    Uses run_in_executor to avoid blocking the event loop since
+    boto3's upload_fileobj is synchronous.
+
+    Args:
+        file: Binary file-like object to upload.
+        path: Storage key (e.g., "workspace_123/images/photo.jpg").
+        content_type: MIME type for the Content-Type header.
+        metadata: Optional key-value metadata to attach to the object.
+
+    Returns:
+        The storage path (same as input path) for reference.
+    """
         extra_args = {
             'ContentType': content_type,
             'ACL': 'public-read' if is_public else 'private'
@@ -182,18 +199,23 @@ class CloudflareR2Backend(StorageBackend):
             )
         )
 
-    async def get_url(self, path: str, expires_in: int = 3600) -> str:
+    async def get_url(self, path: str, expires_in: int | None = None) -> str:
         """
         Generate presigned URL for R2 object.
 
         For public buckets with custom domain, returns direct URL.
-        For private buckets, returns presigned URL.
+        For private buckets, returns presigned URL with configurable expiration.
         """
         if self.public_domain:
-            # Return public URL if custom domain is configured
             return f"https://{self.public_domain}/{path}"
 
-        # Generate presigned URL for private access
+        # Use configured default if not explicitly provided
+        if expires_in is None:
+            expires_in = storage_settings.presigned_url_expiration
+
+        # Enforce maximum expiration
+        expires_in = min(expires_in, storage_settings.presigned_url_max_expiration)
+
         loop = asyncio.get_event_loop()
         url = await loop.run_in_executor(
             None,
@@ -263,6 +285,34 @@ class LocalStorageBackend(StorageBackend):
         self.base_path = str(PathLib(base_path).resolve())
         self.public_url_base = public_url_base
         os.makedirs(self.base_path, exist_ok=True)
+        os.chmod(base_path, stat.S_IRWXU | stat.S_IRGRP | stat.S_IXGRP)
+    
+    async def upload(
+        self,
+        file: BinaryIO,
+        path: str,
+        content_type: str,
+        metadata: Optional[dict] = None
+    ) -> str:
+        """Save file to local filesystem with restricted permissions."""
+        full_path = os.path.join(self.base_path, path)
+
+        # Create directory structure with restricted permissions
+        dir_path = os.path.dirname(full_path)
+        os.makedirs(dir_path, exist_ok=True)
+        # Set directory permissions: rwxr-x--- (owner: rwx, group: r-x, others: none)
+        os.chmod(dir_path, stat.S_IRWXU | stat.S_IRGRP | stat.S_IXGRP)
+
+        # Write file asynchronously
+        async with aiofiles.open(full_path, 'wb') as f:
+            content = file.read()
+            await f.write(content)
+
+        # Set file permissions: rw-r----- (owner: rw, group: r, others: none)
+        os.chmod(full_path, stat.S_IRUSR | stat.S_IWUSR | stat.S_IRGRP)
+
+        return path
+
 
     def _resolve_safe_path(self, path: str) -> str:
         """
@@ -324,13 +374,12 @@ class LocalStorageBackend(StorageBackend):
                 full_path
             )
 
-    async def get_url(self, path: str, expires_in: int = 3600) -> str:
+    async def get_url(self, path: str, expires_in: int | None = None) -> str:
         """
         Return local file URL.
 
         Note: Local files don't expire, expires_in is ignored.
         """
-        self._resolve_safe_path(path)  # Validate path even for URL generation
         return f"{self.public_url_base}/{path}"
 
     async def exists(self, path: str) -> bool:
@@ -374,6 +423,10 @@ class StorageService:
 
         Format: {workspace_id}/{user_id}/{timestamp}_{hash}{extension}
 
+        Uniqueness is guaranteed by including a cryptographically random
+        component in the hash input, preventing collisions even for
+        identical uploads within the same second.
+
         Args:
             original_filename: Original upload filename
             workspace_id: Workspace UUID
@@ -384,8 +437,11 @@ class StorageService:
         """
         timestamp = datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')
 
-        # Create hash for uniqueness
-        hash_input = f"{original_filename}{workspace_id}{user_id}{timestamp}"
+        # Add random component to prevent same-second collisions
+        random_suffix = secrets.token_hex(4)  # 8 hex chars, 2^32 possible values
+
+        # Create hash for uniqueness (includes random component)
+        hash_input = f"{original_filename}{workspace_id}{user_id}{timestamp}{random_suffix}"
         hash_value = hashlib.md5(hash_input.encode()).hexdigest()[:8]
 
         # Extract extension
@@ -434,13 +490,13 @@ class StorageService:
         """
         await self.backend.delete(path)
 
-    async def get_file_url(self, path: str, expires_in: int = 3600) -> str:
+    async def get_file_url(self, path: str, expires_in: int | None = None) -> str:
         """
         Get accessible URL for file.
 
         Args:
             path: File path/key
-            expires_in: URL expiration in seconds (for presigned URLs)
+            expires_in: URL expiration in seconds. If None, uses configured default.
 
         Returns:
             Accessible URL

@@ -81,6 +81,7 @@ class TestWebhookFailureRecording:
     async def test_record_single_failure(self, monitor, mock_redis):
         """Test recording a single verification failure"""
         mock_redis.pipeline.return_value.execute.return_value = [None, None, None, 1]
+        mock_redis.zcount.return_value = 1
         
         await monitor.record_verification_failure(
             ip_address="192.168.1.100",
@@ -97,6 +98,7 @@ class TestWebhookFailureRecording:
     async def test_record_multiple_failures_same_ip(self, monitor, mock_redis):
         """Test recording multiple failures from same IP"""
         mock_redis.pipeline.return_value.execute.return_value = [None, None, None, 3]
+        mock_redis.zcount.return_value = 3
         
         for i in range(3):
             await monitor.record_verification_failure(
