@@ -43,7 +43,7 @@ async def list_audit_logs(
 
     Query Parameters:
     - user_id: Filter by user UUID
-    - username: Search by username (partial match)
+    - full_name: Search by user's full name (partial match)
     - user_email: Search by email (partial match)
     - action: Filter by action (exact match or prefix with '.', e.g., 'user.' for all user actions)
     - resource_type: Filter by resource type
