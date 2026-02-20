@@ -4,7 +4,7 @@ Email Analytics Routes
 Admin-only routes for email analytics and performance monitoring.
 Supports workspace-scoped filtering for multi-tenancy.
 """
-from typing import Optional
+from typing import Literal, Optional
 from uuid import UUID
 from fastapi import APIRouter, Depends, Request, Query
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -24,7 +24,7 @@ router = APIRouter(
 
 @router.get("/overview")
 @db_transaction_handler("get email analytics overview", auto_commit=False)
-@require_permissions("audit.read", workspace_scoped=False)
+@require_permissions("audit.admin", workspace_scoped=False)
 async def get_email_analytics_overview(
     request: Request,
     date_range: str = Query("30d", description="Date range (e.g., 7d, 30d, 90d)"),
@@ -78,7 +78,7 @@ async def get_email_analytics_overview(
 
 @router.get("/by-template")
 @db_transaction_handler("get email analytics by template", auto_commit=False)
-@require_permissions("audit.read", workspace_scoped=False)
+@require_permissions("audit.admin", workspace_scoped=False)
 async def get_email_analytics_by_template(
     request: Request,
     date_range: str = Query("30d", description="Date range (e.g., 7d, 30d, 90d)"),
@@ -130,10 +130,13 @@ async def get_email_analytics_by_template(
 
 @router.get("/timeline")
 @db_transaction_handler("get email timeline", auto_commit=False)
-@require_permissions("audit.read", workspace_scoped=False)
+@require_permissions("audit.admin", workspace_scoped=False)
 async def get_email_timeline(
     request: Request,
-    period: str = Query("daily", description="Aggregation period (daily, weekly, monthly)"),
+    period: Literal["daily", "weekly", "monthly"] = Query(
+        "daily",
+        description="Aggregation period (allowed: daily, weekly, monthly)"
+    ),
     date_range: str = Query("30d", description="Date range (e.g., 7d, 30d, 90d)"),
     workspace_id: Optional[str] = Query(None, description="Optional workspace ID for filtering (multi-tenancy)"),
     db: AsyncSession = Depends(get_async_db),
@@ -181,7 +184,7 @@ async def get_email_timeline(
 
 @router.get("/failures")
 @db_transaction_handler("get email failures", auto_commit=False)
-@require_permissions("audit.read", workspace_scoped=False)
+@require_permissions("audit.admin", workspace_scoped=False)
 async def get_email_failures(
     request: Request,
     limit: int = Query(100, ge=1, le=500, description="Maximum number of failures"),

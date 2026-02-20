@@ -9,7 +9,6 @@ from fastapi import APIRouter, Depends, Query, Request, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.database.async_database import get_async_db
-from src.api.middleware.permissions import is_admin
 from src.api.schema.audit_schema import AuditLogExportFormat
 from src.api.security.dependencies import get_current_user
 from src.services.audit_service import AuditService
@@ -19,6 +18,7 @@ router = APIRouter()
 
 
 @router.get("/export/download")
+@require_permissions("audit.export", workspace_scoped=False)
 @db_transaction_handler("export audit logs", auto_commit=False)
 @require_permissions("audit.export", workspace_scoped=False)
 async def export_audit_logs(
@@ -36,7 +36,7 @@ async def export_audit_logs(
     date_to: Optional[str] = Query(None, description="End date (ISO 8601)"),
     limit: int = Query(1000, ge=1, le=10000, description="Max records to export"),
     db: AsyncSession = Depends(get_async_db),
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(get_current_user)
 ):
     """Export audit logs as JSON or CSV (admin only)."""
     service = AuditService(db)
@@ -118,13 +118,14 @@ async def export_audit_logs(
 
 
 @router.get("/stats/overview", response_model=dict)
+@require_permissions("audit.admin", workspace_scoped=False)
 @db_transaction_handler("get audit statistics", auto_commit=False)
 @require_permissions("audit.admin", workspace_scoped=False)
 async def get_audit_stats(
     request: Request,
     days: int = Query(30, ge=1, le=365, description="Number of days to analyze"),
     db: AsyncSession = Depends(get_async_db),
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(get_current_user)
 ):
     """Get audit log statistics (admin only)."""
     service = AuditService(db)
