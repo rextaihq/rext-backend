@@ -163,6 +163,8 @@ PERMISSIONS = [
     # Platform Management
     ("audit.read", "View Audit Logs", "View audit logs", "audit", "read"),
     ("audit.export", "Export Audit Logs", "Export audit logs", "audit", "export"),
+    ("audit.admin", "Admin Audit Access", "Admin access to all audit logs and monitoring", "audit", "admin"),
+    ("audit.webhooks", "Webhook Monitoring", "Monitor and retry webhook events", "audit", "webhooks"),
 
     # Support Staff Permissions
     ("support.view_workspace", "View Any Workspace", "View any workspace (read-only)", "support", "view_workspace"),
@@ -249,7 +251,7 @@ ROLE_PERMISSION_ASSIGNMENTS = {
         "role.read", "role.update", "role.manage_permissions",
         "permission.read", "permission.create", "permission.update",
         "role.create", "workspace.transfer",
-        "audit.read", "audit.export",
+        "audit.read", "audit.export", "audit.admin", "audit.webhooks",
         "support.view_workspace", "support.view_billing",
     ],
     "support": [
@@ -262,7 +264,7 @@ ROLE_PERMISSION_ASSIGNMENTS = {
         "member.read",
         "license.view", "license.read",
         "user.read",
-        "audit.read",
+        "audit.read", "audit.admin", "audit.webhooks",
         "support.view_workspace", "support.view_billing",
     ],
     "user": [
