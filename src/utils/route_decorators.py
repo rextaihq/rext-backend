@@ -390,8 +390,9 @@ def require_permissions(
                     workspace_uuid = UUID(str(workspace_id_param))
                 except ValueError:
                     workspace_uuid = await async_get_workspace_id_from_identifier(db, workspace_id_param)
-
-            # Check permissions using appropriate logic (AND or OR)
+            # SECURITY INVARIANT:
+            # Never bypass permission checks based on DB/session attributes (for example `_executed`).
+            # Tests must use dependency overrides or monkeypatching, not production bypass branches.
             check_func = check_all_permissions if require_all else check_any_permission
             try:
                 has_permission = await check_func(db, user_id, list(permissions), workspace_uuid)
