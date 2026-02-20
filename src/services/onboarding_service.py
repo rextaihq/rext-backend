@@ -10,6 +10,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.api.middleware.exceptions import ResourceNotFoundException, RextValidationException
 from src.api.models.user_models.onboarding import UserOnboarding
 from src.api.models.user_models.users import Users
+from src.api.models.user_models.roles import Role
+from src.api.models.user_models.user_roles import UserRole
+from src.api.models.workspace_models.workspace_member import WorkspaceMembers
 
 class OnboardingService:
     """Service for managing user onboarding."""
@@ -255,9 +258,6 @@ class OnboardingService:
         Returns:
             True if onboarding should be shown, False otherwise
         """
-        from src.api.models.workspace_models.workspace_member import WorkspaceMembers
-        from src.api.models.user_models.user_roles import UserRole
-        from src.api.models.user_models.roles import Role
 
         # Check if user is an invited user (has workspace membership with invitation_id)
         result = await db.execute(
