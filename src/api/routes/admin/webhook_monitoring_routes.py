@@ -15,8 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.api.database.async_database import get_async_db
 from src.api.security.dependencies import get_current_user
 from src.services.webhook_monitoring_service import WebhookMonitoringService
-from src.utils.route_decorators import db_transaction_handler
-from src.api.routes.subscriptions.admin.shared.auth import require_super_admin
+from src.utils.route_decorators import db_transaction_handler, require_permissions
 
 
 router = APIRouter()
@@ -27,6 +26,7 @@ router = APIRouter()
 # ============================================================================
 
 @router.get("/webhooks/events", response_model=dict)
+@require_permissions("audit.webhooks", workspace_scoped=False)
 @db_transaction_handler("get webhook events", auto_commit=False)
 async def get_webhook_events(
     request: Request,
@@ -52,9 +52,6 @@ async def get_webhook_events(
     - List of webhook events with metadata
     - Total count for pagination
     """
-    admin_user_id = current_user.get("identity")
-    await require_super_admin(db, admin_user_id)
-
     service = WebhookMonitoringService(db)
     return await service.get_webhook_events(
         limit=limit,
@@ -66,6 +63,7 @@ async def get_webhook_events(
 
 
 @router.get("/webhooks/failed", response_model=dict)
+@require_permissions("audit.webhooks", workspace_scoped=False)
 @db_transaction_handler("get failed webhooks", auto_commit=False)
 async def get_failed_webhooks(
     request: Request,
@@ -86,9 +84,6 @@ async def get_failed_webhooks(
     Returns:
     - List of failed webhook events with full payload for debugging
     """
-    admin_user_id = current_user.get("identity")
-    await require_super_admin(db, admin_user_id)
-
     service = WebhookMonitoringService(db)
     return await service.get_failed_webhooks(
         limit=limit,
@@ -98,6 +93,7 @@ async def get_failed_webhooks(
 
 
 @router.post("/webhooks/{webhook_id}/retry", response_model=dict)
+@require_permissions("audit.webhooks", workspace_scoped=False)
 @db_transaction_handler("retry webhook", auto_commit=True)
 async def retry_webhook(
     request: Request,
@@ -119,9 +115,6 @@ async def retry_webhook(
     - Retry count is incremented
     - Error messages are updated if retry fails
     """
-    admin_user_id = current_user.get("identity")
-    await require_super_admin(db, admin_user_id)
-
     service = WebhookMonitoringService(db)
     result = await service.retry_webhook(webhook_id)
 
@@ -132,6 +125,7 @@ async def retry_webhook(
 
 
 @router.get("/webhooks/statistics", response_model=dict)
+@require_permissions("audit.webhooks", workspace_scoped=False)
 @db_transaction_handler("get webhook statistics", auto_commit=False)
 async def get_webhook_statistics(
     request: Request,
@@ -152,8 +146,5 @@ async def get_webhook_statistics(
     - Breakdown by event type
     - Recent errors for troubleshooting
     """
-    admin_user_id = current_user.get("identity")
-    await require_super_admin(db, admin_user_id)
-
     service = WebhookMonitoringService(db)
     return await service.get_webhook_statistics(hours=hours)
