@@ -145,6 +145,7 @@ PERMISSIONS = [
     ("user.create", "Create Users", "Create new users", "user", "create"),
     ("user.read", "View Users", "View all users", "user", "read"),
     ("user.update", "Update Users", "Edit user profiles", "user", "update"),
+    ("user.impersonate", "Impersonate Users", "Impersonate other users for support", "user", "impersonate"),
     ("user.delete", "Delete Users", "Delete users", "user", "delete"),
     ("user.manage_roles", "Manage User Roles", "Assign global roles to users", "user", "manage_roles"),
 
@@ -162,7 +163,11 @@ PERMISSIONS = [
 
     # Platform Management
     ("audit.read", "View Audit Logs", "View audit logs", "audit", "read"),
+    ("audit.write", "Write Audit Logs", "Allows modifying audit/monitoring records (resolve errors, etc.)", "audit", "write"),
     ("audit.export", "Export Audit Logs", "Export audit logs", "audit", "export"),
+
+    # Email Management (Admin)
+    ("email.resend", "Resend Emails", "Allows resending failed emails via admin panel", "email", "resend"),
 
     # Support Staff Permissions
     ("support.view_workspace", "View Any Workspace", "View any workspace (read-only)", "support", "view_workspace"),
@@ -249,7 +254,8 @@ ROLE_PERMISSION_ASSIGNMENTS = {
         "role.read", "role.update", "role.manage_permissions",
         "permission.read", "permission.create", "permission.update",
         "role.create", "workspace.transfer",
-        "audit.read", "audit.export",
+        "audit.read", "audit.write", "audit.export",
+        "email.resend",
         "support.view_workspace", "support.view_billing",
     ],
     "support": [

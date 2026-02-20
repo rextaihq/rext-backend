@@ -36,6 +36,7 @@ from src.api.models.user_models.user_roles import UserRole
 from src.api.models.user_models.users import Users
 from src.utils.logger import logger
 
+
 class ImpersonationService:
     """Service for user impersonation management"""
 
@@ -249,7 +250,7 @@ class ImpersonationService:
             .join(UserRole, UserRole.role_id == Role.id)
             .where(
                 UserRole.user_id == user_id,
-                Permission.name == "user.update"
+                Permission.name == "user.impersonate"
             )
         )
         permission = result.scalar_one_or_none()
@@ -365,7 +366,7 @@ class ImpersonationService:
         try:
             stmt = select(ImpersonationSession).where(
                 ImpersonationSession.session_id == session_id,
-                ImpersonationSession.is_valid == False
+                ImpersonationSession.is_valid.is_(False)
             )
             result = await self.db.execute(stmt)
             invalidated_session = result.scalar_one_or_none()

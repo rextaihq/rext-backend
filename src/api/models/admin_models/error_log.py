@@ -42,9 +42,13 @@ class ErrorLog(Base, SerializableMixin):
         index=True
     )
 
-    def to_dict(self, **kwargs):
-        """Serialize with 'metadata' key for backward compatibility."""
-        data = super().to_dict(**kwargs)
+    def to_dict(self, include_stack_trace: bool = False, **kwargs):
+        """Serialize ErrorLog with stack traces excluded by default."""
+        exclude = list(kwargs.pop("exclude", []))
+        if not include_stack_trace and "stack_trace" not in exclude:
+            exclude.append("stack_trace")
+
+        data = super().to_dict(exclude=exclude, **kwargs)
         # Rename error_metadata to metadata for API compatibility
         if 'error_metadata' in data:
             data['metadata'] = data.pop('error_metadata')

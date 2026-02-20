@@ -4,9 +4,9 @@ Payment Provider Configuration
 This module handles configuration for the LemonSqueezy payment provider.
 """
 
-from typing import Literal
+from typing import Literal, Optional
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import field_validator
+from pydantic import field_validator, model_validator
 from dotenv import load_dotenv
 import os
 
@@ -22,21 +22,21 @@ class PaymentSettings(BaseSettings):
     payment_provider: PaymentProviderType = "lemonsqueezy"
 
     # Sandbox/test mode toggle
-    payment_sandbox_mode: bool = False
+    payment_sandbox_mode: bool = True
 
     # Generic settings
-    payment_currency: str = os.getenv("PAYMENT_CURRENCY", "USD")
-    payment_success_url: str = f"{os.getenv('FRONTEND_URL')}/checkout/success"
-    payment_cancel_url: str = f"{os.getenv('FRONTEND_URL')}/pricing"
+    payment_currency: str = "USD"
+    payment_success_url: str = "http://localhost:3000/checkout/success"
+    payment_cancel_url: str = "http://localhost:3000/pricing"
 
     # LemonSqueezy configuration
-    lemonsqueezy_api_key: str = os.getenv("LEMONSQUEEZY_API_KEY")
-    lemonsqueezy_store_id: str = os.getenv("LEMONSQUEEZY_STORE_ID")
-    lemonsqueezy_webhook_secret: str = os.getenv("LEMONSQUEEZY_WEBHOOK_SECRET")
+    lemonsqueezy_api_key: Optional[str] = None
+    lemonsqueezy_store_id: Optional[str] = None
+    lemonsqueezy_webhook_secret: Optional[str] = None
 
-    # Webhook Security (Phase 2, Task CRITICAL-4)
-    webhook_ip_validation_enabled: bool = os.getenv("WEBHOOK_IP_VALIDATION_ENABLED", True)
-    lemonsqueezy_webhook_ips: str = os.getenv("LEMONSQUEEZY_WEBHOOK_IPS", "159.223.172.0/24")  # Comma-separated IPs/CIDR ranges
+    # Webhook Security
+    webhook_ip_validation_enabled: bool = True
+    lemonsqueezy_webhook_ips: str = "159.223.172.0/24"
 
     @field_validator("payment_provider")
     @classmethod
@@ -48,6 +48,40 @@ class PaymentSettings(BaseSettings):
                 f"Mock payment provider has been removed."
             )
         return v
+
+    @field_validator(
+        "lemonsqueezy_api_key",
+        "lemonsqueezy_store_id",
+        "lemonsqueezy_webhook_secret",
+        mode="before"
+    )
+    @classmethod
+    def normalize_blank_credentials(cls, v: Optional[str]) -> Optional[str]:
+        """Normalize blank strings to None"""
+        if v is None:
+            return None
+        if isinstance(v, str):
+            stripped = v.strip()
+            return stripped or None
+        return v
+
+    @model_validator(mode="after")
+    def validate_required_payment_credentials(self) -> "PaymentSettings":
+        """Fail fast if any required LemonSqueezy credential is missing in non-sandbox mode"""
+        if self.payment_provider == "lemonsqueezy" and not self.payment_sandbox_mode:
+            missing = []
+            if not self.lemonsqueezy_api_key:
+                missing.append("LEMONSQUEEZY_API_KEY")
+            if not self.lemonsqueezy_store_id:
+                missing.append("LEMONSQUEEZY_STORE_ID")
+            if not self.lemonsqueezy_webhook_secret:
+                missing.append("LEMONSQUEEZY_WEBHOOK_SECRET")
+            if missing:
+                raise ValueError(
+                    "Missing required LemonSqueezy credentials for non-sandbox mode: "
+                    + ", ".join(missing)
+                )
+        return self
 
     model_config = SettingsConfigDict(
         env_file=".env",

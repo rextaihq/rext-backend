@@ -39,6 +39,15 @@ from src.services.usage_tracking_service import UsageTrackingService
 class CustomerAdminService:
     """Service for administrative customer management operations"""
 
+    # Defined allowed sort columns to prevent unsafe attribute access
+    ALLOWED_SORT_COLUMNS = {
+        "created_at": Users.created_at,
+        "email": Users.email,
+        "display_name": Users.display_name,
+        "last_login_at": Users.last_login_at,
+    }
+
+
     def __init__(self, db: AsyncSession):
         """
         Initialize CustomerAdminService.
@@ -125,8 +134,14 @@ class CustomerAdminService:
         total_result = await self.db.execute(count_query)
         total = total_result.scalar() or 0
 
-        # Apply sorting
-        sort_column = getattr(Users, sort_by, Users.created_at)
+        # Apply sorting with validation
+        sort_column = self.ALLOWED_SORT_COLUMNS.get(sort_by)
+        if sort_column is None:
+            # Fallback to created_at for safety, or raise validation error
+            # Route-level Literal should catch most cases, but service should be robust
+            sort_column = Users.created_at
+            logger.warning(f"Invalid sort field provided to service: {sort_by}")
+
         if sort_order == "desc":
             query = query.order_by(sort_column.desc())
         else:
@@ -304,9 +319,24 @@ class CustomerAdminService:
             if not sub:
                 raise ResourceNotFoundException("No trial subscription found", "subscription", str(user_id))
 
-            extension_days = metadata.get("days", 7)
+            raw_days = metadata.get("days", 7)
+            try:
+                extension_days = int(raw_days)
+            except (TypeError, ValueError):
+                raise RextValidationException(
+                    message="Invalid trial extension days",
+                    field_errors={"metadata.days": ["Must be an integer between 1 and 90"]},
+                )
+
+            if extension_days < 1 or extension_days > 90:
+                raise RextValidationException(
+                    message="Invalid trial extension days",
+                    field_errors={"metadata.days": ["Must be between 1 and 90"]},
+                )
+
             old_trial_end = sub.trial_end_date
             sub.trial_end_date = sub.trial_end_date + timedelta(days=extension_days)
+            sub.updated_at = datetime.now(timezone.utc)
 
             audit_details["old_trial_end"] = old_trial_end.isoformat() if old_trial_end else None
             audit_details["new_trial_end"] = sub.trial_end_date.isoformat()
@@ -314,7 +344,8 @@ class CustomerAdminService:
 
             result = {
                 "status": "trial_extended",
-                "new_trial_end": sub.trial_end_date.isoformat()
+                "new_trial_end": sub.trial_end_date.isoformat(),
+                "extension_days": extension_days,
             }
 
         elif action == "cancel_subscription":
@@ -322,10 +353,33 @@ class CustomerAdminService:
             if not sub:
                 raise ResourceNotFoundException("No active subscription found", "subscription", str(user_id))
 
+            cancel_immediately = bool(metadata.get("cancel_immediately", True))
             audit_details["previous_status"] = sub.status.value
-            sub.status = "cancelled"
-            sub.cancelled_at = datetime.now(timezone.utc)
-            result = {"status": "subscription_cancelled"}
+            audit_details["cancel_immediately"] = cancel_immediately
+            audit_details["provider_subscription_id"] = (
+                sub.lemonsqueezy_subscription_id or sub.provider_subscription_id
+            )
+
+            from src.services.subscription_service import SubscriptionService
+            subscription_service = SubscriptionService(self.db)
+
+            cancelled_subscription = await subscription_service.cancel(
+                user_id=user_id,
+                reason=f"Admin cancellation: {reason}",
+                cancel_immediately=cancel_immediately,
+                background_tasks=None,
+                fail_on_provider_error=True
+            )
+
+            result = {
+                "status": "subscription_cancelled",
+                "cancelled_at": (
+                    cancelled_subscription.cancelled_at.isoformat()
+                    if cancelled_subscription.cancelled_at
+                    else None
+                ),
+                "cancel_at_period_end": cancelled_subscription.cancel_at_period_end
+            }
 
         else:
             raise RextValidationException(f"Invalid action: {action}")

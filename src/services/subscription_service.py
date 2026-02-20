@@ -521,7 +521,8 @@ class SubscriptionService:
         user_id: UUID,
         reason: Optional[str] = None,
         cancel_immediately: bool = False,
-        background_tasks: Optional[BackgroundTasks] = None
+        background_tasks: Optional[BackgroundTasks] = None,
+        fail_on_provider_error: bool = False
     ) -> UserSubscription:
         """
         Cancel subscription.
@@ -537,12 +538,14 @@ class SubscriptionService:
             reason: Optional cancellation reason
             cancel_immediately: If True, cancel now; if False, at end of period
             background_tasks: Optional background tasks for notifications
+            fail_on_provider_error: If True, raise exception if payment provider call fails
 
         Returns:
             Updated UserSubscription object
 
         Raises:
             ResourceNotFoundException: If no active subscription
+            RextValidationException: If payment provider cancellation fails and fail_on_provider_error is True
         """
         # Get current subscription
         subscription = await self.get_subscription_by_user(user_id)
@@ -559,7 +562,7 @@ class SubscriptionService:
                 provider_sub_id = subscription.lemonsqueezy_subscription_id or subscription.provider_subscription_id
 
                 # Cancel with payment provider
-                cancelled_subscription = await self.payment_provider.cancel_subscription(
+                await self.payment_provider.cancel_subscription(
                     subscription_id=provider_sub_id,
                     at_period_end=not cancel_immediately
                 )
@@ -590,7 +593,13 @@ class SubscriptionService:
                     }
                 )
 
-                # Continue with local cancellation even if provider cancellation fails
+                if fail_on_provider_error:
+                    raise RextValidationException(
+                        message="Payment provider cancellation failed; local cancellation aborted",
+                        context={"user_id": str(user_id), "provider_error": str(e)}
+                    )
+
+                # Continue with local cancellation even if provider cancellation fails for non-admin paths
                 # This ensures we don't leave the user stuck
 
         # Update local subscription
