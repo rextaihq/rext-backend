@@ -18,7 +18,7 @@ import re
 from sqlalchemy import func, and_, or_, desc, Integer
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-
+from uuid import UUID 
 from src.api.models.subscription_models.webhooks import WebhookEvent
 from src.services.lemonsqueezy_webhook_service import LemonSqueezyWebhookService
 from src.utils.logger import logger
@@ -289,7 +289,8 @@ class WebhookMonitoringService:
             )
             raise
 
-    async def retry_webhook(self, webhook_id: str) -> Dict[str, Any]:
+    async def retry_webhook(self, webhook_id: UUID) -> Dict[str, Any]:
+        stmt = select(WebhookEvent).where(WebhookEvent.id == webhook_id)
         """
         Retry processing a failed webhook event.
 

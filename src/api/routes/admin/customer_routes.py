@@ -151,39 +151,13 @@ async def list_customers(
 @db_transaction_handler("get customer detail", auto_commit=False)
 async def get_customer_detail(
     request: Request,
-    user_id: str,
+    user_id: UUID,
     db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user),
-    _: bool = Depends(is_admin)
+    _: bool = Depends(is_admin),
 ):
-    """
-    Get detailed customer information.
-
-    **Security: Requires admin or super_admin role**
-
-    This endpoint exposes comprehensive customer data including billing information,
-    subscription details, usage metrics, and audit logs. Access is restricted to
-    platform administrators only.
-
-    Path Parameters:
-    - user_id: User ID
-
-    Returns:
-    - User details
-    - Subscription details
-    - Workspaces list
-    - Usage metrics
-    - Activity summary
-    - Recent audit events
-    - Customer notes
-
-    Raises:
-        HTTPException: 401 if not authenticated, 403 if not admin
-    """
-    # Use service
     service = CustomerAdminService(db)
-    customer_data = await service.get_customer_detail(UUID(user_id))
-
+    customer_data = await service.get_customer_detail(user_id)
     return {
         "data": customer_data,
         "message": "Customer details retrieved successfully"
@@ -194,11 +168,11 @@ async def get_customer_detail(
 @db_transaction_handler("perform customer action", auto_commit=True)
 async def perform_customer_action(
     request: Request,
-    user_id: str,
+    user_id: UUID,
     action_request: CustomerActionRequest,
     db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user),
-    _: bool = Depends(is_admin)
+    _: bool = Depends(is_admin),
 ):
     """
     Perform admin actions on customer account.
@@ -230,11 +204,11 @@ async def perform_customer_action(
     # Use service
     service = CustomerAdminService(db)
     result = await service.perform_customer_action(
-        user_id=UUID(user_id),
+        user_id=user_id,
         action=action_request.action,
         reason=action_request.reason,
         metadata=action_request.metadata,
-        admin_user_id=admin_user_id
+        admin_user_id=admin_user_id,
     )
 
     return {
@@ -247,11 +221,11 @@ async def perform_customer_action(
 @db_transaction_handler("add customer note", auto_commit=True)
 async def add_customer_note(
     request: Request,
-    user_id: str,
+    user_id: UUID,
     note_request: CustomerNoteRequest,
     db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user),
-    _: bool = Depends(is_admin)
+    _: bool = Depends(is_admin),
 ):
     """
     Add internal note to customer account.
