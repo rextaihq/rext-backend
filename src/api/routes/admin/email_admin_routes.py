@@ -169,10 +169,17 @@ async def resend_single_email(
         email_service = EmailService(db)
 
         # Resend email (creates new log entry)
+        if not original_email.html_content:
+            raise HTTPException(
+                status_code=422,
+                detail="Original email content not available for resend. "
+                       "Only emails sent after the html_content migration can be resent."
+            )
+
         new_email_log = await email_service.send_email(
             to=original_email.to_email,
             subject=original_email.subject,
-            html="",  # Would need to store original HTML or regenerate
+            html=original_email.html_content,
             from_email=original_email.from_email,
             workspace_id=original_email.workspace_id,
             user_id=original_email.user_id,
@@ -245,10 +252,18 @@ async def resend_batch_emails(
                     continue
 
                 # Resend email
+                if not original_email.html_content:
+                    results["failed"].append({
+                        "id": str(email_log_id),
+                        "error": "Original email content not available for resend. "
+                               "Only emails sent after the html_content migration can be resent."
+                    })
+                    continue
+
                 new_email_log = await email_service.send_email(
                     to=original_email.to_email,
                     subject=original_email.subject,
-                    html="",  # Would need to store original HTML
+                    html=original_email.html_content,
                     from_email=original_email.from_email,
                     workspace_id=original_email.workspace_id,
                     user_id=original_email.user_id,
