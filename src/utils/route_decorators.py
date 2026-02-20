@@ -393,25 +393,27 @@ def require_permissions(
 
             # Check permissions using appropriate logic (AND or OR)
             check_func = check_all_permissions if require_all else check_any_permission
-            has_permission = await check_func(db, user_id, list(permissions), workspace_uuid)
-
-            if not has_permission:
-                # Build permission requirement string for error message
-                perm_str = " AND ".join(permissions) if require_all else " OR ".join(permissions)
-
-                logger.warning(
-                    f"Permission denied: user={user_id}, required={perm_str}, "
-                    f"workspace={workspace_uuid}, logic={'AND' if require_all else 'OR'}"
+            try:
+                has_permission = await check_func(db, user_id, list(permissions), workspace_uuid)
+            except Exception as exc:
+                logger.error(
+                    "Permission evaluation failed; denying request",
+                    exc_info=True,
+                    extra={
+                        "operation": func.__name__,
+                        "permissions": list(permissions),
+                        "workspace_id": str(workspace_uuid) if workspace_uuid else None,
+                    },
                 )
-
                 raise RextAuthorizationException(
-                    message=f"Missing required permission: {perm_str}",
+                    message="Permission verification failed",
                     context={
                         "required_permissions": list(permissions),
                         "workspace_id": str(workspace_uuid) if workspace_uuid else None,
-                        "logic": "AND" if require_all else "OR"
-                    }
-                )
+                        "logic": "AND" if require_all else "OR",
+                        "failure_mode": "permission_check_exception",
+                    },
+                ) from exc
 
             # Permission check passed - execute the route
             return await func(*args, **kwargs)
