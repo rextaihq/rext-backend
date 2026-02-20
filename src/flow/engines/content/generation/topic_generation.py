@@ -39,7 +39,7 @@ async def topic_generation(state: REXT) -> Dict[str, Any]:
 
     # Load the model with structured output
     model = topic_generation_model().with_structured_output(SEOTopics)
-    current_year = datetime.now().year
+    current_year = datetime.now(timezone.utc).year
     # Use a LIST of messages, not a SET
     messages = [
     SystemMessage(
