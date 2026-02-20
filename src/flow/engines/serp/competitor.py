@@ -76,7 +76,7 @@ async def extract_competitors_from_serp(state: REXT) -> Dict[str, Any]:
             match = re.search(r"\b(20\d{2})\b", date)
             if match:
                 year = match.group(1)
-                if year.isdigit() and int(year) >= datetime.now().year - 2:  # consider recent
+                if year.isdigit() and int(year) >= datetime.now(timezone.utc).year - 2:  # consider recent
                     group["freshness"]["recent"] += 1
                 else:
                     group["freshness"]["older"] += 1
