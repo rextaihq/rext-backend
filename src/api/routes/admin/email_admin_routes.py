@@ -7,7 +7,7 @@ from typing import List, Optional
 from uuid import UUID
 from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_
+from sqlalchemy import select, and_, func
 from datetime import datetime, timezone, timedelta
 
 from src.api.database.async_database import get_async_db
@@ -77,14 +77,16 @@ async def get_failed_emails(
     try:
         cutoff_date = datetime.now(timezone.utc) - timedelta(days=days_back)
 
+        # Define common filters
+        filters = and_(
+            EmailLog.status == "failed",
+            EmailLog.created_at >= cutoff_date
+        )
+
+        # Get page data
         stmt = (
             select(EmailLog)
-            .where(
-                and_(
-                    EmailLog.status == "failed",
-                    EmailLog.created_at >= cutoff_date
-                )
-            )
+            .where(filters)
             .order_by(EmailLog.created_at.desc())
             .limit(limit)
             .offset(offset)
@@ -93,18 +95,10 @@ async def get_failed_emails(
         result = await db.execute(stmt)
         failed_emails = result.scalars().all()
 
-        # Count total failed emails in this period
-        count_stmt = (
-            select(EmailLog)
-            .where(
-                and_(
-                    EmailLog.status == "failed",
-                    EmailLog.created_at >= cutoff_date
-                )
-            )
-        )
+        # Count total failed emails in this period as a scalar integer
+        count_stmt = select(func.count(EmailLog.id)).where(filters)
         count_result = await db.execute(count_stmt)
-        total_count = len(count_result.scalars().all())
+        total_count = int(count_result.scalar() or 0)
 
         logger.info(
             f"Retrieved {len(failed_emails)} failed emails",
@@ -131,7 +125,7 @@ async def get_failed_emails(
 
 
 @router.post("/{email_log_id}/resend")
-@require_permissions("audit.read", workspace_scoped=False)
+@require_permissions("email.resend", workspace_scoped=False)
 async def resend_single_email(
     email_log_id: UUID,
     db: AsyncSession = Depends(get_async_db)
@@ -139,7 +133,7 @@ async def resend_single_email(
     """
     Resend a single failed email.
 
-    Requires permission: audit.read (admin monitoring)
+    Requires permission: email.resend (admin monitoring)
 
     Args:
         email_log_id: ID of the email log to resend
@@ -169,10 +163,17 @@ async def resend_single_email(
         email_service = EmailService(db)
 
         # Resend email (creates new log entry)
+        if not original_email.html_content:
+            raise HTTPException(
+                status_code=422,
+                detail="Original email content not available for resend. "
+                       "Only emails sent after the html_content migration can be resent."
+            )
+
         new_email_log = await email_service.send_email(
             to=original_email.to_email,
             subject=original_email.subject,
-            html="",  # Would need to store original HTML or regenerate
+            html=original_email.html_content,
             from_email=original_email.from_email,
             workspace_id=original_email.workspace_id,
             user_id=original_email.user_id,
@@ -203,7 +204,7 @@ async def resend_single_email(
 
 
 @router.post("/resend-batch")
-@require_permissions("audit.read", workspace_scoped=False)
+@require_permissions("email.resend", workspace_scoped=False)
 async def resend_batch_emails(
     request: ResendEmailRequest,
     db: AsyncSession = Depends(get_async_db)
@@ -211,7 +212,7 @@ async def resend_batch_emails(
     """
     Resend multiple failed emails in batch.
 
-    Requires permission: audit.read (admin only)
+    Requires permission: email.resend (admin only)
 
     Args:
         request: List of email log IDs to resend
@@ -245,10 +246,18 @@ async def resend_batch_emails(
                     continue
 
                 # Resend email
+                if not original_email.html_content:
+                    results["failed"].append({
+                        "id": str(email_log_id),
+                        "error": "Original email content not available for resend. "
+                               "Only emails sent after the html_content migration can be resent."
+                    })
+                    continue
+
                 new_email_log = await email_service.send_email(
                     to=original_email.to_email,
                     subject=original_email.subject,
-                    html="",  # Would need to store original HTML
+                    html=original_email.html_content,
                     from_email=original_email.from_email,
                     workspace_id=original_email.workspace_id,
                     user_id=original_email.user_id,

@@ -543,10 +543,14 @@ class InvitationService:
         extend_days: int = 7
     ) -> UserInvitations:
         """
-        Resend an invitation by extending expiry and generating new token.
+        Resend a workspace invitation by generating a new token.
+
+        The old token is overwritten in the database, which means any
+        previously sent email links will no longer work. This is by design —
+        only the most recent token is valid at any time.
 
         Args:
-            invitation_id: Invitation UUID
+            invitation_id: UUID of the invitation to resend
             extend_days: Days to extend expiry
 
         Returns:
@@ -564,7 +568,12 @@ class InvitationService:
                 rule_name="can_only_resend_pending"
             )
 
-        # Generate new token and extend expiry
+        # Store old token hash for audit trail (do not log the full token)
+        old_token_prefix = invitation.invitation_token[:8] if invitation.invitation_token else "none"
+        old_expires_at = invitation.expires_at
+
+        # Generate new token — this overwrites the old token in the database,
+        # effectively invalidating any previously sent email links
         invitation.invitation_token = self._generate_invitation_token(
             invitation.email,
             invitation.workspace_id
@@ -572,10 +581,15 @@ class InvitationService:
         invitation.expires_at = datetime.now(timezone.utc) + timedelta(days=extend_days)
 
         logger.info(
-            f"Invitation resent: {invitation.email}",
+            "Invitation token rotated on resend",
             extra={
                 "invitation_id": str(invitation.id),
-                "new_expires_at": invitation.expires_at.isoformat()
+                "email": invitation.email,
+                "old_token_prefix": old_token_prefix,
+                "new_token_prefix": invitation.invitation_token[:8],
+                "old_expires_at": old_expires_at.isoformat() if old_expires_at else None,
+                "new_expires_at": invitation.expires_at.isoformat(),
+                "event_type": "token_rotation",
             }
         )
 
