@@ -16,6 +16,7 @@ Does NOT:
 - Check authentication (that's decorators)
 """
 
+import re
 import time
 from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, List, Optional
@@ -35,6 +36,13 @@ from src.utils.logger import logger
 class MonitoringService:
     """Service for system monitoring operations"""
 
+    _SENSITIVE_TEXT_PATTERNS = [
+        re.compile(r"(?i)(authorization\s*:\s*bearer\s+)[^\s]+"),
+        re.compile(r"(?i)(api[_-]?key\s*[=:]\s*)[^\s,;]+"),
+        re.compile(r"(?i)(password\s*[=:]\s*)[^\s,;]+"),
+        re.compile(r"(?i)(secret\s*[=:]\s*)[^\s,;]+"),
+    ]
+
     def __init__(self, db: AsyncSession):
         """
         Initialize MonitoringService.
@@ -43,6 +51,44 @@ class MonitoringService:
             db: Async database session
         """
         self.db = db
+
+    def _redact_text(self, value: Optional[str]) -> Optional[str]:
+        """Redact sensitive patterns from text and truncate if too long."""
+        if value is None:
+            return None
+
+        redacted = value
+        for pattern in self._SENSITIVE_TEXT_PATTERNS:
+            redacted = pattern.sub(r"\1[REDACTED]", redacted)
+
+        # Keep payloads bounded for API responses
+        if len(redacted) > 4000:
+            return redacted[:4000] + "\n...[truncated]"
+        return redacted
+
+    def _redact_json(self, obj: Any) -> Any:
+        """Recursively redact sensitive keys in JSON-like objects."""
+        sensitive_keys = {
+            "authorization", "api_key", "apikey", "password", "secret", "token",
+            "access_token", "refresh_token", "client_secret"
+        }
+
+        if isinstance(obj, dict):
+            result = {}
+            for key, value in obj.items():
+                if key.lower() in sensitive_keys:
+                    result[key] = "[REDACTED]"
+                else:
+                    result[key] = self._redact_json(value)
+            return result
+
+        if isinstance(obj, list):
+            return [self._redact_json(item) for item in obj]
+
+        if isinstance(obj, str):
+            return self._redact_text(obj)
+
+        return obj
 
     async def get_system_health(self) -> Dict[str, Any]:
         """
@@ -119,7 +165,8 @@ class MonitoringService:
         per_page: int = 50,
         severity: Optional[str] = None,
         start_date: Optional[datetime] = None,
-        end_date: Optional[datetime] = None
+        end_date: Optional[datetime] = None,
+        include_stack_trace: bool = False
     ) -> Dict[str, Any]:
         """
         Get error logs with filtering and pagination.
@@ -130,6 +177,7 @@ class MonitoringService:
             severity: Filter by severity
             start_date: Start date filter
             end_date: End date filter
+            include_stack_trace: Whether to include redacted stack traces
 
         Returns:
             Dict with error logs and pagination metadata
@@ -170,12 +218,12 @@ class MonitoringService:
                 "id": str(log.id),
                 "timestamp": log.timestamp.isoformat() if log.timestamp else None,
                 "severity": log.severity,
-                "message": log.message,
+                "message": self._redact_text(log.message),
                 "source": log.source,
                 "user_id": str(log.user_id) if log.user_id else None,
                 "request_id": log.request_id,
-                "stack_trace": log.stack_trace,
-                "metadata": log.metadata,
+                "stack_trace": self._redact_text(log.stack_trace) if include_stack_trace else None,
+                "metadata": self._redact_json(log.metadata),
                 "resolved": log.resolved,
                 "resolved_at": log.resolved_at.isoformat() if log.resolved_at else None
             }
