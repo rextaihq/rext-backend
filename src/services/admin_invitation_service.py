@@ -577,6 +577,10 @@ class AdminInvitationService:
         """
         Resend (refresh) an admin invitation with new token and expiry.
 
+        The old token is overwritten in the database, which means any
+        previously sent email links will no longer work. This is by design —
+        only the most recent token is valid at any time.
+
         Args:
             invitation_id: Invitation UUID
             resent_by_admin_id: Admin resending the invitation
@@ -610,13 +614,27 @@ class AdminInvitationService:
                 rule_name="invitation_cannot_be_resent"
             )
 
+        # Store old token hash for audit trail (do not log the full token)
+        old_token_prefix = invitation.invitation_token[:8] if invitation.invitation_token else "none"
+
         # Generate new token and expiry
+        # This overwrites the old token in the database, effectively
+        # invalidating any previously sent email links
         invitation.invitation_token = self._generate_invitation_token(invitation.email)
         invitation.expires_at = datetime.now(timezone.utc) + timedelta(days=expiry_days)
         invitation.status = 'pending'
 
         logger.info(
-            f"Admin invitation resent: {invitation.email} by admin {resent_by_admin_id}"
+            "Admin invitation token rotated on resend",
+            extra={
+                "invitation_id": str(invitation.id),
+                "email": invitation.email,
+                "old_token_prefix": old_token_prefix,
+                "new_token_prefix": invitation.invitation_token[:8],
+                "new_expires_at": invitation.expires_at.isoformat(),
+                "event_type": "admin_token_rotation",
+                "resent_by": str(resent_by_admin_id),
+            }
         )
 
         return invitation

@@ -77,7 +77,7 @@ services:
 
     # Backend API Service
     rext-api:
-        image: revnixhq/wrext:${IMAGE_TAG:-dev}
+        image: revnixhq/wrext:${IMAGE_TAG:-latest}
         labels:
             - "traefik.docker.network=d4wwgc0coow0888wogwc04gs"
         deploy:
