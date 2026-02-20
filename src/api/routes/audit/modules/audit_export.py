@@ -25,7 +25,7 @@ async def export_audit_logs(
     request: Request,
     format: AuditLogExportFormat = Query(AuditLogExportFormat.JSON, description="Export format (json/csv)"),
     user_id: Optional[str] = Query(None, description="Filter by user ID"),
-    full_name: Optional[str] = Query(None, description="Filter by full name"),
+    full_name: Optional[str] = Query(None, description="Filter by user's full name"),
     user_email: Optional[str] = Query(None, description="Filter by user email"),
     action: Optional[str] = Query(None, description="Filter by action"),
     resource_type: Optional[str] = Query(None, description="Filter by resource type"),

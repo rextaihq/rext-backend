@@ -24,7 +24,7 @@ router = APIRouter()
 async def list_audit_logs(
     request: Request,
     user_id: Optional[str] = Query(None, description="Filter by user ID"),
-    full_name: Optional[str] = Query(None, description="Filter by full name (partial match)"),
+    full_name: Optional[str] = Query(None, description="Filter by user's full name (partial match)"),
     user_email: Optional[str] = Query(None, description="Filter by user email (partial match)"),
     action: Optional[str] = Query(None, description="Filter by action (exact or prefix with '.')"),
     resource_type: Optional[str] = Query(None, description="Filter by resource type"),
@@ -43,7 +43,7 @@ async def list_audit_logs(
 
     Query Parameters:
     - user_id: Filter by user UUID
-    - full_name: Search by full name (partial match)
+    - full_name: Search by user's full name (partial match)
     - user_email: Search by email (partial match)
     - action: Filter by action (exact match or prefix with '.', e.g., 'user.' for all user actions)
     - resource_type: Filter by resource type
