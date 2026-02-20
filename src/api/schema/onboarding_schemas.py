@@ -5,14 +5,45 @@ from typing import List, Optional
 from uuid import UUID
 
 from pydantic import BaseModel, Field
+from src.constants.onboarding_steps import OnboardingStep
+
 
 
 class OnboardingStepUpdate(BaseModel):
     """Schema for updating onboarding step."""
 
-    step: int = Field(..., ge=0, le=1, description="Step number (0-1)")
+    step: int = Field(
+        ...,
+        ge=OnboardingStep.STRATEGY.value,
+        le=OnboardingStep.COMPLETE.value,
+        description="Step number (0-2)",
+    )
     action: str = Field(..., description="Action: complete, skip, or set_current")
 
+
+ONBOARDING_STEPS = [
+    {
+        "id": OnboardingStep.STRATEGY.value,
+        "name": "content_strategy",
+        "title": "Welcome to Rext",
+        "description": "Choose your content strategy foundation",
+        "required": True,
+    },
+    {
+        "id": OnboardingStep.MARKETING.value,
+        "name": "marketing_questions",
+        "title": "Tell Us About Yourself",
+        "description": "Help us personalize your experience",
+        "required": True,
+    },
+    {
+        "id": OnboardingStep.COMPLETE.value,
+        "name": "complete",
+        "title": "You're All Set!",
+        "description": "Start creating amazing content",
+        "required": True,
+    },
+]
 
 class OnboardingMarketingData(BaseModel):
     """Schema for marketing data collected during onboarding."""
