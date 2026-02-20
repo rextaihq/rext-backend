@@ -16,6 +16,7 @@ from uuid import UUID
 from datetime import datetime, timezone
 
 from src.api.database.async_database import get_async_db
+from src.api.config import get_settings
 from src.api.models.user_models.invitations import UserInvitations
 from src.api.models.user_models.users import Users
 from src.api.models.user_models.roles import Role
@@ -344,7 +345,7 @@ async def accept_invitation(
                 new_member_email=user_email,
                 role_name=role_name_str,
                 workspace_id=workspace_id_str,
-                frontend_url="http://localhost:3000"  # TODO: Get from config
+                frontend_url=get_settings().FRONTEND_URL
             )
 
             # Send email to inviter
