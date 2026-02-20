@@ -16,27 +16,26 @@ Does NOT:
 - Create actual JWT tokens (that's token utils)
 """
 
-from typing import Dict, Any, Optional
-from uuid import UUID
 from datetime import datetime, timezone
+from typing import Any, Dict, Optional
+from uuid import UUID
 
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.api.models.user_models.users import Users
-from src.api.models.user_models.user_roles import UserRole
-from src.api.models.user_models.roles import Role
-from src.api.models.user_models.permissions import Permission
-from src.api.models.user_models.role_permissions import RolePermission
-from src.utils.logger import logger
 from src.api.middleware.exceptions import (
     ResourceNotFoundException,
+    RextAuthenticationException,
     RextValidationException,
-    RextAuthenticationException
 )
-from datetime import datetime, timezone
-from sqlalchemy import select
 from src.api.models.user_models.impersonation_session import ImpersonationSession
+from src.api.models.user_models.permissions import Permission
+from src.api.models.user_models.role_permissions import RolePermission
+from src.api.models.user_models.roles import Role
+from src.api.models.user_models.user_roles import UserRole
+from src.api.models.user_models.users import Users
+from src.utils.logger import logger
+
 
 class ImpersonationService:
     """Service for user impersonation management"""
@@ -367,7 +366,7 @@ class ImpersonationService:
         try:
             stmt = select(ImpersonationSession).where(
                 ImpersonationSession.session_id == session_id,
-                ImpersonationSession.is_valid == False
+                ImpersonationSession.is_valid.is_(False)
             )
             result = await self.db.execute(stmt)
             invalidated_session = result.scalar_one_or_none()

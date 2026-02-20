@@ -7,8 +7,14 @@ Provides webhook event tracking and monitoring capabilities:
 - Retry failed webhooks
 - Get webhook statistics
 """
+<<<<<<< fix/task-378-customer-sort-by-allowlist
+from datetime import datetime, timezone, timedelta
+=======
 from datetime import datetime, timedelta, timezone
+>>>>>>> merge_tasks
 from typing import Dict, List, Optional, Any
+from copy import deepcopy
+import re
 from sqlalchemy import func, and_, or_, desc, Integer
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
@@ -38,10 +44,48 @@ def _mask_email(email: str) -> str:
 class WebhookMonitoringService:
     """Service for monitoring and managing webhook events."""
 
+    _SENSITIVE_KEYS = {
+        "name", "address", "phone",
+        "api_key", "token", "secret", "authorization", "card_number",
+        "card_last_four", "payment_method", "iban", "metadata", "custom_data"
+    }
+
     def __init__(self, db: AsyncSession):
         """Initialize service with database session."""
         self.db = db
         self.webhook_service = LemonSqueezyWebhookService(db)
+
+    def _mask_email(self, value: Optional[str]) -> Optional[str]:
+        """Partially mask email address for PII protection."""
+        if not value or "@" not in value:
+            return value
+        try:
+            local, domain = value.split("@", 1)
+            if len(local) <= 2:
+                return "***@" + domain
+            return local[:2] + "***@" + domain
+        except ValueError:
+            return value
+
+    def _redact_payload(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        """Recursively redact sensitive keys from payload."""
+        def _walk(value: Any, parent_key: Optional[str] = None) -> Any:
+            if isinstance(value, dict):
+                out: Dict[str, Any] = {}
+                for k, v in value.items():
+                    key_lower = k.lower()
+                    if key_lower in self._SENSITIVE_KEYS:
+                        out[k] = "[REDACTED]"
+                    else:
+                        out[k] = _walk(v, k)
+                return out
+            if isinstance(value, list):
+                return [_walk(item, parent_key) for item in value]
+            if isinstance(value, str) and parent_key and parent_key.lower() in ["user_email", "customer_email", "email"]:
+                return self._mask_email(value)
+            return value
+
+        return _walk(deepcopy(payload))
 
     async def get_webhook_events(
         self,
@@ -156,7 +200,8 @@ class WebhookMonitoringService:
         self,
         limit: int = 50,
         offset: int = 0,
-        hours: Optional[int] = 24
+        hours: Optional[int] = 24,
+        include_payload: bool = False
     ) -> Dict[str, Any]:
         """
         Get failed webhook events.
@@ -165,6 +210,7 @@ class WebhookMonitoringService:
             limit: Maximum number of events to return (default 50)
             offset: Offset for pagination (default 0)
             hours: Only show events from last N hours (default 24)
+            include_payload: Whether to include redacted payload body
 
         Returns:
             Dictionary with failed webhook events:
@@ -202,6 +248,7 @@ class WebhookMonitoringService:
             # Serialize events with more details for troubleshooting
             events_data = []
             for event in events:
+                event_payload = event.payload or {}
                 events_data.append({
                     "id": str(event.id),
                     "event_id": event.event_id,
@@ -210,8 +257,13 @@ class WebhookMonitoringService:
                     "retry_count": event.retry_count,
                     "created_at": event.created_at.isoformat() if event.created_at else None,
                     "updated_at": event.updated_at.isoformat() if event.updated_at else None,
+<<<<<<< fix/task-378-customer-sort-by-allowlist
+                    "payload_summary": self._summarize_payload(event_payload),
+                    "payload": self._redact_payload(event_payload) if include_payload else None
+=======
                     # Redact PII from payload before including in response
                     "payload": self._redact_payload_pii(event.payload) if event.payload else None
+>>>>>>> merge_tasks
                 })
 
             logger.info(
@@ -492,8 +544,13 @@ class WebhookMonitoringService:
             if "attributes" in data:
                 attrs = data["attributes"]
                 summary["status"] = attrs.get("status")
+<<<<<<< fix/task-378-customer-sort-by-allowlist
+                summary["user_email_masked"] = self._mask_email(attrs.get("user_email"))
+                summary["customer_id"] = attrs.get("customer_id")
+=======
                 summary["user_email_masked"] = _mask_email(attrs.get("user_email"))
                 summary["has_customer_id"] = bool(attrs.get("customer_id"))
+>>>>>>> merge_tasks
 
         # Include meta information
         if "meta" in payload:
