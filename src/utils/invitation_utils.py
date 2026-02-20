@@ -165,3 +165,20 @@ def validate_expiry_days(expiry_days: int) -> None:
                 ]
             }
         )
+
+
+def normalize_email(email: str) -> str:
+    """
+    Normalize an email address for consistent comparison and storage.
+
+    Applies lowercase and whitespace trimming. Per RFC 5321, the domain
+    part is case-insensitive. While the local part is technically
+    case-sensitive, all major providers treat it as case-insensitive.
+
+    Args:
+        email: Email address to normalize.
+
+    Returns:
+        Normalized email address (lowercase, trimmed).
+    """
+    return email.lower().strip()

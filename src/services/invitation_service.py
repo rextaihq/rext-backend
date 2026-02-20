@@ -27,6 +27,7 @@ from sqlalchemy import select, and_, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.utils.invitation_utils import validate_expiry_days
+from src.utils.invitation_utils import normalize_email
 from src.api.models.user_models.invitations import UserInvitations
 from src.api.models.workspace_models.workspace_model import WorkspaceModel
 from src.api.models.user_models.users import Users
@@ -106,7 +107,7 @@ class InvitationService:
         validate_expiry_days(expiry_days)
 
         # Normalize email
-        email = email.lower().strip()
+        email = normalize_email(email)
 
         # Verify workspace exists
         result = await self.db.execute(
@@ -288,7 +289,7 @@ class InvitationService:
             List of UserInvitations objects
         """
         # Normalize email for case-insensitive comparison
-        email = email.lower().strip()
+        email = normalize_email(email)
 
         query = select(UserInvitations).where(
             UserInvitations.email == email
@@ -389,7 +390,7 @@ class InvitationService:
                 resource_id=str(user_id)
             )
 
-        if user.email.lower() != invitation.email.lower():
+        if normalize_email(user.email) != normalize_email(invitation.email):
             raise BusinessRuleViolationException(
                 message="User email does not match invitation email",
                 rule_name="email_must_match"
@@ -590,7 +591,7 @@ class InvitationService:
         Returns:
             None
         """
-        email = email.lower().strip()
+        email = normalize_email(email)
         result = await self.db.execute(
             select(UserInvitations).where(
                 and_(

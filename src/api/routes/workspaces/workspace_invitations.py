@@ -34,7 +34,7 @@ from src.services.role_service import RoleService
 from src.services.user_service import UserService
 from src.utils.audit_helper import create_audit_log_async
 from src.utils.auth_utils import verify_current_user
-from src.utils.invitation_utils import is_invitation_expired
+from src.utils.invitation_utils import is_invitation_expired, normalize_email
 from src.utils.logger import logger
 from src.utils.response_utils import created, success
 from src.utils.route_decorators import db_transaction_handler, require_permissions
@@ -717,7 +717,7 @@ async def get_received_invitations(
             resource_id=str(user_id)
         )
 
-    user_email = user.email.lower()
+    user_email = normalize_email(user.email)
 
     # Query pending invitations for this email with eager loading
     query = (

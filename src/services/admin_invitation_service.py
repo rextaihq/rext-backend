@@ -34,6 +34,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from src.utils.invitation_utils import validate_expiry_days
+from src.utils.invitation_utils import normalize_email
 from src.api.models.admin_models.admin_invitations import PlatformAdminInvitations
 from src.api.models.user_models.users import Users
 from src.api.models.user_models.roles import Role
@@ -165,7 +166,7 @@ class AdminInvitationService:
         validate_expiry_days(expiry_days)
 
         # Normalize email
-        email = email.lower().strip()
+        email = normalize_email(email)
 
         # Validate admin role
         await self._validate_admin_role(admin_role)
@@ -384,7 +385,7 @@ class AdminInvitationService:
             )
 
         # Verify email match (security)
-        if user.email.lower() != invitation.email.lower():
+        if normalize_email(user.email) != normalize_email(invitation.email):
             raise BusinessRuleViolationException(
                 message=f"This invitation is for {invitation.email}",
                 rule_name="email_mismatch"
