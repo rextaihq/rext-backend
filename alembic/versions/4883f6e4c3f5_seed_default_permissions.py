@@ -65,7 +65,7 @@ def upgrade() -> None:
                 description=perm_data["description"],
                 resource=perm_data["resource"],
                 action=perm_data["action"],
-                created_at=datetime.now(timezone.utc)
+                created_at=datetime.now(timezone.utc).replace(tzinfo=None).replace(tzinfo=None)
             )
             session.add(perm)
 

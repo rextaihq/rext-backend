@@ -19,6 +19,7 @@ from uuid import uuid4
 
 from fastapi import Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware
+from src.api.cache.redis_client import cache
 
 from src.utils.logger import logger
 
@@ -93,6 +94,7 @@ class RequestTrackerMiddleware(BaseHTTPMiddleware):
             if self.include_processing_time:
                 processing_time_ms = int((time.time() - start_time) * 1000)
 
+            await self._record_api_metrics(processing_time_ms, response.status_code)
             # Add tracking headers to response
             self._add_response_headers(response, request_id, processing_time_ms)
 
@@ -108,6 +110,7 @@ class RequestTrackerMiddleware(BaseHTTPMiddleware):
             if self.include_processing_time:
                 processing_time_ms = int((time.time() - start_time) * 1000)
 
+            await self._record_api_metrics(processing_time_ms, 500)
             # Log error (detailed error logging is handled by error handler)
             if self.log_requests:
                 self._log_request_error(request, exc, request_id, processing_time_ms)
@@ -293,6 +296,37 @@ class RequestTrackerMiddleware(BaseHTTPMiddleware):
         """
         return getattr(request.client, "host", "unknown") if request.client else "unknown"
 
+
+    async def _record_api_metrics(self, processing_time_ms: int, status_code: int) -> None:
+        """Record API metrics in Redis for monitoring dashboard."""
+        try:
+            redis = cache.redis
+            if redis is None:
+                return
+
+            now_ts = int(time.time())
+            minute_bucket = now_ts - (now_ts % 60)  # Round to minute
+
+            pipe = redis.pipeline()
+            # Increment request count for current minute
+            count_key = f"metrics:api:count:{minute_bucket}"
+            pipe.incr(count_key)
+            pipe.expire(count_key, 3600)  # Keep 1 hour of minute buckets
+
+            # Track response time (running sum for averaging)
+            time_key = f"metrics:api:time_sum:{minute_bucket}"
+            pipe.incrbyfloat(time_key, processing_time_ms)
+            pipe.expire(time_key, 3600)
+
+            # Track errors
+            if status_code >= 500:
+                error_key = f"metrics:api:errors:{minute_bucket}"
+                pipe.incr(error_key)
+                pipe.expire(error_key, 3600)
+
+            await pipe.execute()
+        except Exception:
+            pass  # Non-critical, don't break request flow
 
 def get_request_id(request: Request) -> str:
     """

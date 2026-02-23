@@ -17,8 +17,7 @@ from src.api.models.user_models.invitations import UserInvitations
 from src.api.models.user_models.roles import Role
 from src.api.models.user_models.users import Users
 from src.api.models.workspace_models.workspace_model import WorkspaceModel
-from src.api.security.dependencies import get_current_user
-from src.utils.auth_utils import verify_current_user
+from src.api.security.dependencies import get_current_active_user, get_current_user
 from src.utils.logger import logger
 from src.utils.logger import logger
 from src.utils.rbac_utils import check_all_permissions
@@ -39,6 +38,7 @@ async def get_invitation_analytics(
     days: int = Query(30, description="Number of days to analyze", ge=1, le=365),
     db: AsyncSession = Depends(get_async_db),
     user: dict = Depends(get_current_user),
+    current_db_user: Users = Depends(get_current_active_user),
 ):
     """
     Get comprehensive invitation analytics.
@@ -56,12 +56,12 @@ async def get_invitation_analytics(
         days: Number of days to analyze (default 30)
         db: Database session
         user: Current user
+        current_db_user: Current authenticated user row
 
     Returns:
         Comprehensive invitation analytics
     """
-    user_uuid = UUID(str(user.get("identity")))
-    await verify_current_user(db, str(user_uuid))
+    user_uuid = current_db_user.id
 
     # Add explicit workspace authorization guard if workspace_id is provided
     if workspace_id:
@@ -295,7 +295,7 @@ async def get_invitation_analytics(
     logger.info(
         f"Invitation analytics generated: {total_invitations} invitations in {days} days",
         extra={
-            "user_id": str(user_uuid),
+            "user_id": str(current_db_user.id),
             "workspace_id": workspace_id,
             "days": days,
             "total_invitations": total_invitations,

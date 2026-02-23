@@ -126,7 +126,7 @@ def upgrade() -> None:
                     id=uuid.uuid4(),
                     role_id=role.id,
                     permission_id=permission.id,
-                    created_at=datetime.now(timezone.utc)
+                    created_at=datetime.now(timezone.utc).replace(tzinfo=None)
                 )
                 session.add(role_perm)
                 assigned_count += 1

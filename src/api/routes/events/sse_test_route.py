@@ -80,4 +80,6 @@ async def stream_test_events(request: Request) -> EventSourceResponse:
     return EventSourceResponse(
         _heartbeat_stream(request),
         media_type="text/event-stream",
+        ping=15,
+        send_timeout=5,
     )
