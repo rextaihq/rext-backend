@@ -56,6 +56,22 @@ def verify_webhook_signature(
     """
     # Check if webhook secret is configured
     if not email_config.resend_webhook_secret:
+        from src.api.config import settings
+
+        if settings.is_production or settings.ENVIRONMENT.lower() == "staging":
+            logger.error(
+                "CRITICAL: Resend webhook secret not configured in production/staging! "
+                "All webhooks will be rejected until RESEND_WEBHOOK_SECRET is set.",
+                extra={
+                    "environment": settings.ENVIRONMENT,
+                    "endpoint": "/api/v1/email/webhooks/resend"
+                }
+            )
+            raise HTTPException(
+                status_code=503,
+                detail="Webhook verification unavailable — service misconfigured"
+            )
+
         logger.warning(
             "Resend webhook secret not configured - skipping signature verification",
             extra={"warning": "This is insecure for production"}

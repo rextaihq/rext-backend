@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 from src.utils.logger import logger
 from src.api.security.dependencies import get_current_user
 from src.utils.route_decorators import require_permissions, db_transaction_handler
-from src.api.schema.user_schema import UpdateProfileRequest, DeactivateAccountRequest, UserResponse, ProfileResponse
+from src.api.schema.user_schema import UpdateProfileRequest, UserResponse, ProfileResponse
 from src.api.schema.notification_schema import NotificationPreferencesResponse, UpdateNotificationPreferencesRequest
 from src.api.database.async_database import get_async_db
 from src.utils.response_utils import success, error
@@ -181,8 +181,9 @@ async def upload_avatar(
     # 1. Format validation using MAGIC BYTES
     file_content = await file.read()
     kind = filetype.guess(file_content)
-    
-    ALLOWED_MIME_TYPES = {"image/jpeg", "image/png", "image/gif", "image/webp"}
+    from src.config.storage_config import get_allowed_types_by_category
+
+    ALLOWED_MIME_TYPES = set(get_allowed_types_by_category("image"))
     
     if kind is None or kind.mime not in ALLOWED_MIME_TYPES:
         logger.warning(

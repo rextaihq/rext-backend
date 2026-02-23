@@ -55,16 +55,79 @@ class FileSecurityValidator:
     """
 
     def __init__(self, db: AsyncSession, settings: Settings):
-        """
-        Initialize validator.
-
-        Args:
-            db: Database session for quota queries
-            settings: Application settings with security config
-        """
         self.db = db
         self.settings = settings
-        self.allowed_mime_types = settings.allowed_mime_types_list
+        self._clamav_path: Optional[str] = None
+
+        # Validate ClamAV binary path if virus scanning is configured
+        if settings.virus_scanning_enabled and settings.VIRUS_SCAN_METHOD == "clamav":
+            self._clamav_path = self._resolve_clamav_path()
+
+    def _resolve_clamav_path(self) -> Optional[str]:
+        """
+        Resolve and validate the ClamAV binary path.
+
+        Checks the configured path first, then falls back to shutil.which().
+        Validates that the resolved path is a real file and is executable.
+
+        Returns:
+            Validated absolute path to clamdscan binary, or None if not found.
+        """
+        configured_path = self.settings.CLAMAV_BINARY_PATH
+
+        # Check configured path first
+        if configured_path and os.path.isfile(configured_path) and os.access(configured_path, os.X_OK):
+            logger.info(f"ClamAV binary validated at configured path: {configured_path}")
+            return configured_path
+
+        # Fall back to shutil.which() to search PATH
+        found_path = shutil.which("clamdscan")
+        if found_path:
+            resolved = os.path.realpath(found_path)  # Resolve symlinks
+            if os.access(resolved, os.X_OK):
+                logger.info(f"ClamAV binary found via PATH: {resolved}")
+                return resolved
+
+        logger.warning(
+            "ClamAV binary not found. Virus scanning is configured but clamdscan "
+            f"is not available at '{configured_path}' or in PATH. "
+            "File uploads will proceed without virus scanning."
+        )
+        return None
+
+
+    def _scan_unavailable_result(self, reason: str, filename: str) -> ValidationResult:
+        """
+        Return appropriate result when virus scanning is unavailable.
+
+        In fail-closed mode (production default), rejects the upload.
+        In fail-open mode (development), allows the upload with a warning.
+
+        Args:
+            reason: Why the scan failed (for logging)
+            filename: Original filename (for logging)
+
+        Returns:
+            ValidationResult based on fail behavior setting
+        """
+        fail_behavior = getattr(self.settings, 'VIRUS_SCAN_FAIL_BEHAVIOR', 'closed').lower()
+
+        if fail_behavior == "open":
+            logger.warning(
+                f"Virus scan unavailable (fail-open mode) for {filename}: {reason}. "
+                f"Upload allowed without scan."
+            )
+            return ValidationResult(is_valid=True)
+
+        logger.error(
+            f"Virus scan unavailable (fail-closed mode) for {filename}: {reason}. "
+            f"Upload rejected for security."
+        )
+        return ValidationResult(
+            is_valid=False,
+            error_message="File upload temporarily unavailable. Virus scanning service is not responding. Please try again later.",
+            error_code="SCAN_UNAVAILABLE"
+        )
 
     async def validate_upload(
         self,
@@ -228,7 +291,10 @@ class FileSecurityValidator:
             ValidationResult with current_storage_mb
         """
         # Query current storage usage
-        stmt = select(func.sum(Media.file_size)).where(Media.user_id == user_id)
+        stmt = select(func.sum(Media.file_size)).where(
+            Media.user_id == user_id,
+            Media.deleted_at.is_(None)
+        )
         if workspace_id:
             stmt = stmt.where(Media.workspace_id == workspace_id)
 
@@ -285,23 +351,33 @@ class FileSecurityValidator:
         elif method == "virustotal":
             return await self._scan_virustotal(file_bytes, filename)
         else:
-            # Shouldn't reach here due to virus_scanning_enabled check
-            logger.warning(f"Unknown virus scan method: {method}")
-            return ValidationResult(is_valid=True)  # Fail open
+            logger.error(f"Unknown virus scan method: {method}")
+            return self._scan_unavailable_result(
+                f"Unknown virus scan method: {method}",
+                filename
+            )
 
-    async def _scan_clamav(self, file_bytes: bytes, filename: str) -> ValidationResult:
+    def _scan_clamav(self, file_bytes: bytes, filename: str) -> ValidationResult:
         """
-        Scan file using ClamAV daemon.
+        Scan file using ClamAV daemon via clamdscan CLI.
+
+        Uses the validated binary path resolved during initialization.
+        If the binary was not found during init, fails according to
+        the configured fail behavior.
 
         Args:
-            file_bytes: File content
-            filename: Original filename
+            file_bytes: File content as bytes
+            filename: Original filename for logging
 
         Returns:
             ValidationResult
         """
+        # Check if ClamAV binary was validated during initialization
+        if not self._clamav_path:
+            logger.error("ClamAV binary path not available — skipping virus scan")
+            return ValidationResult(is_valid=True)
+
         try:
-            # Try using clamdscan CLI (simpler than pyclamd)
             import tempfile
 
             with tempfile.NamedTemporaryFile(delete=False) as tmp_file:
@@ -309,9 +385,9 @@ class FileSecurityValidator:
                 tmp_file_path = tmp_file.name
 
             try:
-                # Run clamdscan
+                # Run clamdscan using validated absolute path
                 result = subprocess.run(
-                    ['clamdscan', '--no-summary', tmp_file_path],
+                    [self._clamav_path, '--no-summary', tmp_file_path],
                     capture_output=True,
                     text=True,
                     timeout=30
@@ -330,7 +406,6 @@ class FileSecurityValidator:
                     )
                 else:
                     logger.error(f"ClamAV scan error: {result.stderr}")
-                    # Fail open (allow upload) but log warning
                     logger.warning(f"Allowing upload despite ClamAV error: {filename}")
                     return ValidationResult(is_valid=True)
 
@@ -338,25 +413,17 @@ class FileSecurityValidator:
                 # Clean up temp file
                 Path(tmp_file_path).unlink(missing_ok=True)
 
-        except FileNotFoundError:
-            logger.error("clamdscan command not found. ClamAV not installed or not in PATH.")
-            # Fail open
-            return ValidationResult(is_valid=True)
         except subprocess.TimeoutExpired:
             logger.error(f"ClamAV scan timeout for: {filename}")
-            # Fail open
             return ValidationResult(is_valid=True)
         except Exception as e:
             logger.error(f"ClamAV scan error: {e}", exc_info=True)
-            # Fail open
             return ValidationResult(is_valid=True)
+
 
     async def _scan_virustotal(self, file_bytes: bytes, filename: str) -> ValidationResult:
         """
         Scan file using VirusTotal API.
-
-        Note: VirusTotal free tier has rate limits (4 requests/minute).
-        For production, consider upgrading to premium tier or using ClamAV.
 
         Args:
             file_bytes: File content
@@ -367,10 +434,9 @@ class FileSecurityValidator:
         """
         if not self.settings.VIRUSTOTAL_API_KEY:
             logger.error("VirusTotal API key not configured")
-            return ValidationResult(is_valid=True)  # Fail open
+            return self._scan_unavailable_result("VirusTotal API key not configured", filename)
 
         try:
-            # Upload file for scanning
             url = "https://www.virustotal.com/api/v3/files"
             headers = {"x-apikey": self.settings.VIRUSTOTAL_API_KEY}
 
@@ -383,22 +449,30 @@ class FileSecurityValidator:
 
                 if response.status_code != 200:
                     logger.error(f"VirusTotal API error: {response.status_code} - {response.text}")
-                    return ValidationResult(is_valid=True)  # Fail open
+                    return self._scan_unavailable_result(
+                        f"VirusTotal API returned {response.status_code}",
+                        filename
+                    )
 
                 data = response.json()
                 analysis_id = data.get("data", {}).get("id")
 
                 if not analysis_id:
                     logger.error("VirusTotal: No analysis ID in response")
-                    return ValidationResult(is_valid=True)  # Fail open
+                    return self._scan_unavailable_result(
+                        "VirusTotal returned no analysis ID",
+                        filename
+                    )
 
-                # Get analysis results
                 analysis_url = f"https://www.virustotal.com/api/v3/analyses/{analysis_id}"
                 analysis_response = await client.get(analysis_url, headers=headers, timeout=30)
 
                 if analysis_response.status_code != 200:
                     logger.error(f"VirusTotal analysis error: {analysis_response.status_code}")
-                    return ValidationResult(is_valid=True)  # Fail open
+                    return self._scan_unavailable_result(
+                        f"VirusTotal analysis fetch returned {analysis_response.status_code}",
+                        filename
+                    )
 
             analysis_data = analysis_response.json()
             stats = analysis_data.get("data", {}).get("attributes", {}).get("stats", {})
@@ -417,38 +491,79 @@ class FileSecurityValidator:
 
         except httpx.HTTPError as e:
             logger.error(f"VirusTotal API request error: {e}", exc_info=True)
-            return ValidationResult(is_valid=True)  # Fail open
+            return self._scan_unavailable_result(f"VirusTotal HTTP error: {e}", filename)
         except Exception as e:
             logger.error(f"VirusTotal scan error: {e}", exc_info=True)
-            return ValidationResult(is_valid=True)  # Fail open
+            return self._scan_unavailable_result(f"VirusTotal error: {e}", filename)
 
 
-# Convenience function for quick validation
-async def validate_file_upload(
-    db: AsyncSession,
-    settings: Settings,
-    file_bytes: bytes,
-    filename: str,
-    user_id: str,
-    workspace_id: Optional[str] = None,
-    subscription_tier: str = "free"
-) -> ValidationResult:
-    """
-    Convenience function for file upload validation.
+    # Convenience function for quick validation
+    async def validate_file_upload(
+        db: AsyncSession,
+        settings: Settings,
+        file_bytes: bytes,
+        filename: str,
+        user_id: str,
+        workspace_id: Optional[str] = None,
+        subscription_tier: str = "free"
+    ) -> ValidationResult:
+        """
+        Convenience function for file upload validation.
 
-    Args:
-        db: Database session
-        settings: Application settings
-        file_bytes: File content
-        filename: Original filename
-        user_id: User ID
-        workspace_id: Optional workspace ID
-        subscription_tier: Subscription tier
+        Args:
+            db: Database session
+            settings: Application settings
+            file_bytes: File content
+            filename: Original filename
+            user_id: User ID
+            workspace_id: Optional workspace ID
+            subscription_tier: Subscription tier
 
-    Returns:
-        ValidationResult
-    """
-    validator = FileSecurityValidator(db, settings)
-    return await validator.validate_upload(
-        file_bytes, filename, user_id, workspace_id, subscription_tier
-    )
+        Returns:
+            ValidationResult
+        """
+        validator = FileSecurityValidator(db, settings)
+        return await validator.validate_upload(
+            file_bytes, filename, user_id, workspace_id, subscription_tier
+        )
+
+    async def validate_upload(
+        db,
+        file_bytes: bytes,
+        filename: str,
+        user_id: str,
+        workspace_id: str,
+        subscription_tier: str,
+        allowed_categories: Optional[List[str]] = None,
+    ) -> ValidationResult:
+        """
+        Unified file upload validation entry point.
+
+        Validates MIME type, file size, storage quota, and virus scanning
+        using the centralized security pipeline.
+
+        Args:
+            db: Database session
+            file_bytes: Raw file bytes
+            filename: Original filename
+            user_id: User performing the upload
+            workspace_id: Target workspace
+            subscription_tier: User's subscription tier
+            allowed_categories: Optional list of allowed categories
+                (e.g., ["document", "spreadsheet"]) to restrict types.
+                If None, all configured types are allowed.
+
+        Returns:
+            ValidationResult with validation outcome
+        """
+        settings = get_settings()
+        return await validate_file_upload(
+            db=db,
+            settings=settings,
+            file_bytes=file_bytes,
+            filename=filename,
+            user_id=user_id,
+            workspace_id=workspace_id,
+            subscription_tier=subscription_tier,
+        )
+

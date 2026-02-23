@@ -522,6 +522,35 @@ def email_verification_rate_limit():
     )
 
 
+def notification_read_rate_limit():
+    """
+    Rate limiter for notification read endpoints (GET).
+
+    Limit: 60 requests per minute per user.
+    Generous enough for normal polling but prevents abuse.
+    """
+    return EndpointRateLimiter(
+        requests=60,
+        window_minutes=1,
+        description="notification read"
+    )
+
+
+def notification_write_rate_limit():
+    """
+    Rate limiter for notification write endpoints (POST mark-as-read, clear).
+
+    Limit: 20 requests per minute per user.
+    Stricter because write operations are more expensive.
+    """
+    return EndpointRateLimiter(
+        requests=20,
+        window_minutes=1,
+        description="notification write"
+    )
+
+
+
 # ============================================================================
 # AI ENDPOINT RATE LIMITERS (Tier-Based)
 # ============================================================================

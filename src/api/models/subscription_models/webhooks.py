@@ -33,8 +33,11 @@ class WebhookEvent(Base, SerializableMixin):
     def __repr__(self):
         return f"<WebhookEvent(id={self.id}, event_id={self.event_id}, event_name={self.event_name}, processed={self.processed})>"
 
-    def to_dict(self, **kwargs):
-        """Custom serialization to handle payload."""
-        data = super().to_dict(**kwargs)
-        # Payload is already JSON-compatible
+    def to_dict(self, include_payload: bool = False, **kwargs):
+        """Serialize WebhookEvent with payload excluded by default."""
+        exclude = list(kwargs.pop("exclude", []))
+        if not include_payload and "payload" not in exclude:
+            exclude.append("payload")
+
+        data = super().to_dict(exclude=exclude, **kwargs)
         return data

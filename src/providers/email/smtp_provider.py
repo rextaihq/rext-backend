@@ -237,11 +237,11 @@ class SMTPEmailProvider(IEmailProvider):
             Simple message ID based on recipient and timestamp
         """
         import hashlib
-        from datetime import datetime, timezone
+        from src.utils.datetime_utils import utc_now
 
         # Create a simple message ID from recipient and timestamp
         to_email = message.to[0].email if message.to else "unknown"
-        timestamp = datetime.now(timezone.utc).isoformat()
+        timestamp = utc_now().isoformat()
         content = f"{to_email}:{message.subject}:{timestamp}"
 
         msg_hash = hashlib.md5(content.encode()).hexdigest()[:16]

@@ -1,11 +1,14 @@
-# src/api/services/notification_helper.py
 from uuid import UUID
 from typing import Optional
 from fastapi import BackgroundTasks
+from html import escape as html_escape
 from src.services.notifications_services import notification_service
+from src.services.notification_preferences_service import NotificationPreferencesService
 from src.api.models.user_models.notification_preferences import NotificationPreferences
+from src.utils.payload_sanitizer import sanitize_notification_payload
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError, OperationalError
 import logging
 
 logger = logging.getLogger(__name__)
@@ -190,6 +193,8 @@ async def schedule_if_allowed(
     pref = result.scalar_one_or_none()
 
     if not pref:
+        # This branch is technicaly unreachable now because get_or_create guarantees a record,
+        # but we keep it for defensive stability.
         logger.debug(f"No NotificationPreferences row for user {user_id}")
         return
 
@@ -226,7 +231,7 @@ async def schedule_if_allowed(
         category=pref_flag,
         status=config["status"],
         priority="normal",
-        payload=payload,
+        payload=safe_payload,
         is_read=False,
         sent_via_sse=True,
         sse_sent_at=datetime.now(timezone.utc),
@@ -246,10 +251,11 @@ async def schedule_if_allowed(
         f"Scheduling SSE notification for user {user_id} — flag {pref_flag} — message: {message}"
     )
     background_tasks.add_task(
-        notification_service.send_success_notification,
-        user_id=UUID(user_id),
-        message=message,
-        payload=payload,
+        _send_sse_after_commit,
+        user_id=user_uuid,
+        message=safe_message,
+        payload=safe_payload,
+        notification_id=str(notification.id),
     )
     logger.info("Notification task scheduled.")
 

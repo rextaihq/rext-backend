@@ -27,6 +27,7 @@ class EmailLog(Base, SerializableMixin):
     to_email = Column(String(255), nullable=False, index=True)
     from_email = Column(String(255), nullable=False)
     subject = Column(String(500), nullable=False)
+    html_content = Column(Text, nullable=True)  # Stored for retry capability
     status = Column(String(50), nullable=False, default="queued", index=True)  # queued, sent, failed, delivered, bounced
     error_message = Column(Text, nullable=True)
     retry_count = Column(Integer, nullable=False, default=0)  # Number of retry attempts

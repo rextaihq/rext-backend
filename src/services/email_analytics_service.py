@@ -5,6 +5,7 @@ Service for calculating email analytics and performance metrics.
 Supports workspace-scoped filtering for multi-tenancy.
 """
 from datetime import datetime, timezone, timedelta
+from src.utils.datetime_utils import utc_now
 from typing import Optional, Dict, List, Any
 from uuid import UUID
 
@@ -26,7 +27,7 @@ class EmailAnalyticsService:
 
     def _parse_date_range(self, date_range: str) -> datetime:
         """Parse date range string to start date"""
-        now = datetime.now(timezone.utc)
+        now = utc_now()
 
         if date_range.endswith('d'):
             days = int(date_range[:-1])
@@ -48,6 +49,44 @@ class EmailAnalyticsService:
         if workspace_id:
             filters.append(EmailLog.workspace_id == workspace_id)
         return filters
+
+    async def _get_event_count(
+        self,
+        event_type: str,
+        start_date: datetime,
+        workspace_id: Optional[UUID] = None
+    ) -> int:
+        """
+        Get distinct email count for a specific event type.
+
+        Builds the appropriate query based on whether workspace filtering is needed.
+        When workspace_id is provided, joins EmailEvent with EmailLog to filter
+        by workspace. Without workspace_id, queries EmailEvent directly for better
+        performance.
+
+        Args:
+            event_type: Event type to count (e.g., "opened", "clicked", "complained")
+            start_date: Start date for the query range
+            workspace_id: Optional workspace ID for multi-tenancy filtering
+
+        Returns:
+            Count of distinct email_log_ids with the specified event type
+        """
+        base_query = select(func.count(func.distinct(EmailEvent.email_log_id)))
+
+        conditions = [
+            EmailEvent.received_at >= start_date,
+            EmailEvent.event_type == event_type
+        ]
+
+        if workspace_id:
+            base_query = base_query.select_from(EmailEvent).join(
+                EmailLog, EmailEvent.email_log_id == EmailLog.id
+            )
+            conditions.append(EmailLog.workspace_id == workspace_id)
+
+        result = await self.db.execute(base_query.where(and_(*conditions)))
+        return result.scalar() or 0
 
     async def get_overview_stats(
         self,
@@ -83,77 +122,10 @@ class EmailAnalyticsService:
         delivered = delivered_result.scalar() or 0
 
         # For event queries, we need to join with EmailLog to filter by workspace
-        if workspace_id:
-            # Query event counts with workspace filter (join required)
-            opened_query = select(func.count(func.distinct(EmailEvent.email_log_id))).select_from(
-                EmailEvent
-            ).join(
-                EmailLog, EmailEvent.email_log_id == EmailLog.id
-            ).where(
-                and_(
-                    EmailEvent.received_at >= start_date,
-                    EmailEvent.event_type == "opened",
-                    EmailLog.workspace_id == workspace_id
-                )
-            )
-            opened_result = await self.db.execute(opened_query)
-            opened = opened_result.scalar() or 0
-
-            clicked_query = select(func.count(func.distinct(EmailEvent.email_log_id))).select_from(
-                EmailEvent
-            ).join(
-                EmailLog, EmailEvent.email_log_id == EmailLog.id
-            ).where(
-                and_(
-                    EmailEvent.received_at >= start_date,
-                    EmailEvent.event_type == "clicked",
-                    EmailLog.workspace_id == workspace_id
-                )
-            )
-            clicked_result = await self.db.execute(clicked_query)
-            clicked = clicked_result.scalar() or 0
-
-            complained_query = select(func.count(func.distinct(EmailEvent.email_log_id))).select_from(
-                EmailEvent
-            ).join(
-                EmailLog, EmailEvent.email_log_id == EmailLog.id
-            ).where(
-                and_(
-                    EmailEvent.received_at >= start_date,
-                    EmailEvent.event_type == "complained",
-                    EmailLog.workspace_id == workspace_id
-                )
-            )
-            complained_result = await self.db.execute(complained_query)
-            complained = complained_result.scalar() or 0
-        else:
-            # Query event counts without workspace filter (faster)
-            opened_query = select(func.count(func.distinct(EmailEvent.email_log_id))).where(
-                and_(
-                    EmailEvent.received_at >= start_date,
-                    EmailEvent.event_type == "opened"
-                )
-            )
-            opened_result = await self.db.execute(opened_query)
-            opened = opened_result.scalar() or 0
-
-            clicked_query = select(func.count(func.distinct(EmailEvent.email_log_id))).where(
-                and_(
-                    EmailEvent.received_at >= start_date,
-                    EmailEvent.event_type == "clicked"
-                )
-            )
-            clicked_result = await self.db.execute(clicked_query)
-            clicked = clicked_result.scalar() or 0
-
-            complained_query = select(func.count(func.distinct(EmailEvent.email_log_id))).where(
-                and_(
-                    EmailEvent.received_at >= start_date,
-                    EmailEvent.event_type == "complained"
-                )
-            )
-            complained_result = await self.db.execute(complained_query)
-            complained = complained_result.scalar() or 0
+        # Query event counts (workspace filter applied automatically if workspace_id provided)
+        opened = await self._get_event_count("opened", start_date, workspace_id)
+        clicked = await self._get_event_count("clicked", start_date, workspace_id)
+        complained = await self._get_event_count("complained", start_date, workspace_id)
 
         # Query bounced count
         bounced_filters = base_filters + [EmailLog.status == "bounced"]
@@ -265,13 +237,21 @@ class EmailAnalyticsService:
         start_date = self._parse_date_range(date_range)
         base_filters = self._build_base_filters(start_date, workspace_id)
 
-        # Determine SQL date truncation based on period
-        if period == "daily":
-            date_trunc = func.date_trunc('day', EmailLog.created_at)
-        elif period == "weekly":
-            date_trunc = func.date_trunc('week', EmailLog.created_at)
-        else:  # monthly
-            date_trunc = func.date_trunc('month', EmailLog.created_at)
+        # Map periods to SQL date truncation intervals
+        _PERIOD_TO_DATE_TRUNC = {
+            "daily": "day",
+            "weekly": "week",
+            "monthly": "month",
+        }
+
+        if period not in _PERIOD_TO_DATE_TRUNC:
+            # Fallback to monthly for safety, though route-level validation should prevent this
+            interval = "month"
+            self.log.warning(f"Unsupported period provided to get_timeline: {period}. Defaulting to monthly.")
+        else:
+            interval = _PERIOD_TO_DATE_TRUNC[period]
+
+        date_trunc = func.date_trunc(interval, EmailLog.created_at)
 
         # Query for timeline
         query = select(

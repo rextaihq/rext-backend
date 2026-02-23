@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, Request, BackgroundTasks, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, delete
+from sqlalchemy import select, delete, and_
+from sqlalchemy.orm import selectinload
 from uuid import UUID
 import uuid
 import json
@@ -18,6 +19,8 @@ from src.utils.response_utils import success, error
 from src.api.schema.response_schemas import ErrorCode, ErrorSeverity
 from src.api.models.workspace_models.workspace_member import WorkspaceMembers
 from src.api.models.subscription_models.subscriptions import UserSubscription
+from src.api.models.user_models.users import Users
+from src.api.models.user_models.user_roles import UserRole
 from src.api.config import get_settings
 
 router = APIRouter()
@@ -149,11 +152,10 @@ async def delete_user(
 
 
 @router.put("/update/{user_id}")
-@require_permissions("user.update", workspace_scoped=False)
 @db_transaction_handler("update user", auto_commit=True)
 async def update_user(
-    user_id: str,
-    user_update: UpdateUser,
+    user_id: UUID,  # Changed from str to UUID for auto-validation (returns 422 on bad ID)
+    update_data: UpdateUser,
     request: Request,
     db: AsyncSession = Depends(get_async_db)
 ):
@@ -163,8 +165,8 @@ async def update_user(
     service = UserService(db)
 
     db_user = await service.update_user(
-        user_id=UUID(user_id),
-        update_data=user_update
+        user_id=user_id,
+        **update_data.model_dump(exclude_unset=True)
     )
 
     return success(
@@ -199,10 +201,20 @@ async def export_user_data(
     Request export of user's data.
     """
     user_id = UUID(current_user.get("identity"))
-    service = UserService(db)
+    # Get user with relationships eagerly loaded to avoid MissingGreenlet error
+    stmt = (
+        select(Users)
+        .where(Users.id == user_id)
+        .options(
+            selectinload(Users.user_roles).selectinload(UserRole.role),
+            selectinload(Users.workspace_memberships)
+        )
+    )
+    result = await db.execute(stmt)
+    db_user = result.scalar_one_or_none()
     
-    # Get user with relationships
-    db_user = await service.get_user_by_id(user_id)
+    if not db_user:
+        raise ResourceNotFoundException(resource_type="User", resource_id=str(user_id))
     
     export_data = {
         "profile": {

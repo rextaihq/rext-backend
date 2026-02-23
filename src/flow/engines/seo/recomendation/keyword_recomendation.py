@@ -159,7 +159,8 @@ def keyword_recommendation(state: REXT) -> Dict[str, Any] | Command:
                     "top_keywords_used": title_result.get("top_keywords_used", []),
                     "total_competitors_analyzed": title_result.get("total_competitors_analyzed", 0),
                     "error": None,
-                    "is_changed": True
+                    "is_changed": True,
+                    "keyword_iteration_count": state.get("seo_result", {}).get("keyword_iteration_count", 0) + 1,
                 }
             },
             "serp_normalized": {

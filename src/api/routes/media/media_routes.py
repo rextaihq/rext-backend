@@ -19,6 +19,78 @@ from src.utils.response_utils import success, created, error
 from src.utils.route_decorators import db_transaction_handler, require_permissions
 from src.utils.logger import logger
 
+# File: src/api/routes/media/media_routes.py
+# Add this function before the route definitions, after the imports (around line 21):
+
+import re
+
+
+MAX_TAGS = 20
+MAX_TAG_LENGTH = 50
+TAG_PATTERN = re.compile(r'^[a-zA-Z0-9][a-zA-Z0-9_\- ]*$')
+
+
+def parse_and_validate_tags(tags_string: Optional[str]) -> List[str]:
+    """
+    Parse comma-separated tags string and validate each tag.
+
+    Rules:
+    - Maximum 20 tags per media item
+    - Maximum 50 characters per tag
+    - Tags must start with an alphanumeric character
+    - Only alphanumeric characters, hyphens, underscores, and spaces are allowed
+    - Tags are lowercased and trimmed
+    - Empty tags and duplicates are removed
+
+    Args:
+        tags_string: Comma-separated tags string from user input
+
+    Returns:
+        List of validated, deduplicated tag strings
+
+    Raises:
+        ValueError: If any tag contains invalid characters
+    """
+    if not tags_string:
+        return []
+
+    raw_tags = tags_string.split(',')
+    validated_tags = []
+    seen = set()
+
+    for raw_tag in raw_tags:
+        # Strip whitespace
+        tag = raw_tag.strip()
+
+        # Skip empty tags
+        if not tag:
+            continue
+
+        # Enforce max length (truncate silently)
+        if len(tag) > MAX_TAG_LENGTH:
+            tag = tag[:MAX_TAG_LENGTH].rstrip()
+
+        # Lowercase for consistency
+        tag = tag.lower()
+
+        # Validate allowed characters
+        if not TAG_PATTERN.match(tag):
+            raise ValueError(
+                f"Invalid tag '{tag[:20]}': tags may only contain "
+                "alphanumeric characters, hyphens, underscores, and spaces"
+            )
+
+        # Deduplicate
+        if tag not in seen:
+            seen.add(tag)
+            validated_tags.append(tag)
+
+    # Enforce max tag count
+    if len(validated_tags) > MAX_TAGS:
+        validated_tags = validated_tags[:MAX_TAGS]
+
+    return validated_tags
+
 
 router = APIRouter(
     prefix="/workspaces/{workspace_id}/media",
@@ -108,7 +180,7 @@ async def upload_media(
     user_id = current_user.get("identity")
 
     # Parse tags
-    tag_list = [t.strip() for t in tags.split(',')] if tags else []
+    tag_list = parse_and_validate_tags(tags)
 
     try:
         # Get service
@@ -186,7 +258,19 @@ async def list_media(
         Paginated list of media objects
     """
     # Parse tags
-    tag_list = [t.strip() for t in tags.split(',')] if tags else None
+    # Validate tags in filter (Step 5)
+    if tags:
+        try:
+            tag_list = parse_and_validate_tags(tags)
+        except ValueError as e:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid tag in filter: {str(e)}"
+            )
+    else:
+        tag_list = None
+
+    
 
     # Get service
     service = get_media_service(db)
@@ -292,7 +376,7 @@ async def update_media_metadata(
         Updated media object
     """
     # Parse tags
-    tag_list = [t.strip() for t in tags.split(',')] if tags else None
+    tag_list = parse_and_validate_tags(tags) if tags is not None else None
 
     # Get service
     service = get_media_service(db)

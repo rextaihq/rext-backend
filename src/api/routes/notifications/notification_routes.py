@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from src.api.database.async_database import get_async_db
 from src.api.security.dependencies import get_current_user
 from src.api.models.notification.notification_model import Notification
+from src.api.middleware.rate_limiter import notification_read_rate_limit, notification_write_rate_limit
 from src.utils.response_utils import success, error
 from src.api.schema.response_schemas import ErrorCode, ErrorSeverity
 from src.utils.route_decorators import require_permissions
@@ -22,6 +23,7 @@ async def get_notifications(
     request: Request,
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_async_db),
+    _rate_limit=Depends(notification_read_rate_limit()),
     page: int = Query(1, ge=1, description="Page number"),
     limit: int = Query(20, ge=1, le=100, description="Items per page"),
     unread_only: bool = Query(False, description="Filter to only unread notifications"),
@@ -151,6 +153,7 @@ async def mark_notifications_as_read(
     request: Request,
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_async_db),
+    _rate_limit=Depends(notification_write_rate_limit()),
     notification_ids: Optional[List[str]] = Query(None, description="Specific notification IDs to mark as read"),
     mark_all: bool = Query(False, description="Mark all notifications as read"),
 ):
@@ -271,6 +274,7 @@ async def clear_notifications(
     request: Request,
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_async_db),
+    _rate_limit=Depends(notification_write_rate_limit()),
     notification_ids: Optional[List[str]] = Query(None, description="Specific notification IDs to clear"),
     clear_all_read: bool = Query(False, description="Clear all read notifications"),
 ):
@@ -393,6 +397,7 @@ async def get_unread_count(
     request: Request,
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_async_db),
+    _rate_limit=Depends(notification_read_rate_limit()),
 ):
     """
     Get the count of unread notifications for the current user.
@@ -434,6 +439,7 @@ async def get_notification_by_id(
     request: Request,
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_async_db),
+    _rate_limit=Depends(notification_read_rate_limit()),
 ):
     """
     Get a specific notification by ID.

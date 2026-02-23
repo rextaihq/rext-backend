@@ -1,10 +1,10 @@
 from typing import Dict, Any
-from src.flow.states.wrext import WREXT
-from src.services.seo_service import KeywordExtractor
+from src.flow.states.rext import REXT
+from src.services.keyword_service import KeywordExtractor
 from langgraph.types import interrupt, Command
 from langgraph.graph import END
 
-def keyword_recommendation(state: WREXT) -> Dict[str, Any]:
+def keyword_recommendation(state: REXT) -> Dict[str, Any]:
     """
     LangGraph node: Generate title recommendations based on SERP analysis.
     

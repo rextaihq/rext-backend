@@ -5,6 +5,8 @@ from collections import Counter
 from datetime import datetime, timezone
 from typing import List, Dict, Any
 from src.flow.states.rext import REXT, NormalizedOrganicResult, SERPNORMALIZED
+from collections import defaultdict
+from dateutil import parser
 
 logger = logging.getLogger(__name__)
 
@@ -30,33 +32,37 @@ def normalize_serp_results(state: REXT) -> Dict[str, Any]:
     people_ask = serp_result.get("people_ask", [])
     search_params = serp_result.get("search_params", {})
 
-    engine = search_params.get("engine", "google")
+    engine = search_params.get("se", "google")
     logger.debug(f"Normalizing results for engine: {engine}, query: '{query}'")
 
     normalized_results: List[NormalizedOrganicResult] = []
     domains: List[str] = []
     year_counter = Counter()
 
-    # -------- Normalize Organic Results --------
+    # Normalize Organic Results
     for item in organic:
         url = item.get("link", "")
         domain = urlparse(url).netloc.replace("www.", "") if url else ""
 
-        date = item.get("date")
+        year = None
+
+        # ---- 1️⃣ timestamp (best signal) ----
+        date = item.get("timestamp")
         if date:
-            match = re.search(r"\b(20\d{2})\b", date)
-            if match:
-                year = match.group(1)
-                if year.isdigit():
-                    year_counter[year] += 1
-                else:
-                    year_counter["older"] += 1
-            else:
-                year_counter["older"] += 1
+            try:
+                dt = parser.parse(date)
+                year = str(dt.year)
+            except Exception:
+                pass
+
+        # ---- 3️⃣ classify ----
+        if year and year.isdigit():
+            year_counter[year] += 1
         else:
             year_counter["older"] += 1
 
-        has_sitelinks = bool(item.get("sitelinks"))
+
+        # has_sitelinks = bool(item.get("sitelinks"))
 
         normalized_results.append({
             "position": item.get("position"),
@@ -65,7 +71,7 @@ def normalize_serp_results(state: REXT) -> Dict[str, Any]:
             "snippet": item.get("snippet"),
             "domain": domain,
             "date": date,
-            "has_sitelinks": has_sitelinks
+            # "has_sitelinks": has_sitelinks
         })
 
         if domain:
@@ -75,27 +81,27 @@ def normalize_serp_results(state: REXT) -> Dict[str, Any]:
     logger.debug(f"Normalized {len(normalized_results)} organic results across {len(unique_domains)} unique domains")
 
 
-    # -------- Freshness Analysis --------
-    current_year = datetime.now().year
+    # Freshness Analysis
+    current_year = datetime.now(timezone.utc).year
     freshness = {
         "recent": year_counter.get(str(current_year), 0),
         "older": sum(year_counter.values()) - year_counter.get(str(current_year), 0),
     }
 
-    # -------- SERP Features --------
+    # SERP Features
     features = {
         "people_also_ask": bool(people_ask),
-        "sitelinks": any(r["has_sitelinks"] for r in normalized_results),
+        # "sitelinks": any(r["has_sitelinks"] for r in normalized_results),
         # "wikipedia": any("wikipedia.org" in d for d in domains)
     }
 
-    # -------- Domain Stats --------
+    # Domain Stats
     domain_stats = {
         "unique_domains": len(unique_domains),
         "top_domains": [d for d, _ in Counter(domains).most_common(5)]
     }
 
-    # -------- Final Normalized State --------
+    # Final Normalized State
     serp_normalized = {
         "query": query,
         "engine": engine,

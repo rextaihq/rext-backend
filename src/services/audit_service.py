@@ -7,6 +7,7 @@ from typing import Any, Dict, Iterable, Optional
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from uuid import UUID
 
 from src.api.models.audit_models.audit_logs import AuditLog
 from src.api.schema.audit_schema import AuditLogExportFormat, AuditStatus
@@ -89,14 +90,6 @@ class AuditService:
             "logs": formatted_logs,
         }
 
-    async def get_recent_user_events(self, user_id: str, limit: int = 10) -> Iterable[Dict[str, Any]]:
-        """Retrieve and format recent audit logs for a specific user."""
-        # Lazy import to avoid circular dependency
-        from src.api.routes.audit.modules.helpers import format_audit_log
-
-        logs = await self.fetch_logs(user_id=user_id, limit=limit)
-        return [format_audit_log(log) for log in logs]
-
     async def log_admin_action(
         self,
         admin_id: str,
@@ -104,23 +97,29 @@ class AuditService:
         entity_type: str,
         entity_id: str,
         details: Dict[str, Any],
-        db: Optional[AsyncSession] = None,
+        db: AsyncSession
     ) -> None:
-        """Log an administrative action to the audit logs."""
-        from src.utils.audit_helper import create_audit_log
-        from uuid import UUID
-
-        # Use provided db session or the service's session
-        session = db or self.db
-
-        await create_audit_log(
-            db=session,
-            user_id=UUID(admin_id) if admin_id else None,
-            action=f"admin.{action}",
+        """Log an administrative action."""
+        # Lazy import to avoid circular dependency
+        from src.api.models.user_models.users import Users
+        
+        # Get admin user for denormalized fields
+        admin_query = select(Users).where(Users.id == UUID(admin_id))
+        admin_result = await db.execute(admin_query)
+        admin = admin_result.scalar_one_or_none()
+        
+        audit_log = AuditLog(
+            user_id=UUID(admin_id),
+            full_name=admin.full_name if admin else "Unknown Admin",
+            user_email=admin.email if admin else "unknown@admin.com",
+            action=action,
             resource_type=entity_type,
             resource_id=entity_id,
-            metadata=details,
+            audit_metadata=details,
+            status="success"
         )
+        db.add(audit_log)
+        await db.flush()
 
     async def get_statistics(self, days: int) -> Dict[str, Any]:
         """Return summary statistics for audit logs over the provided window."""

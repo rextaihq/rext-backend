@@ -141,13 +141,14 @@ class UserService:
         if "timezone" in kwargs:
             user.timezone = kwargs["timezone"]
 
-        user.updated_at = datetime.now(timezone.utc)
+        user.updated_at = datetime.now(dt_timezone.utc)
 
         logger.info(
             f"User profile updated: {user_id}",
             extra={"user_id": str(user_id), "updated_fields": list(kwargs.keys())}
         )
-
+        self.db.add(user)
+        await self.db.commit()
         return user
 
     async def change_password(
@@ -207,14 +208,15 @@ class UserService:
         # Hash new password
         new_hash = bcrypt.hashpw(new_password.encode('utf-8'), bcrypt.gensalt())
         user.password_hash = new_hash.decode('utf-8')
-        user.password_changed_at = datetime.now(timezone.utc)
-        user.updated_at = datetime.now(timezone.utc)
+        user.password_changed_at = datetime.now(dt_timezone.utc)
+        user.updated_at = datetime.now(dt_timezone.utc)
 
         logger.info(
             f"User password changed: {user_id}",
             extra={"user_id": str(user_id)}
         )
-
+        self.db.add(user)
+        await self.db.commit()
         return user
 
     async def deactivate_account(
@@ -238,14 +240,15 @@ class UserService:
         user = await self.get_user_by_id(user_id)
 
         user.status = "inactive"
-        user.deactivated_at = datetime.now(timezone.utc)
-        user.updated_at = datetime.now(timezone.utc)
+        user.deactivated_at = datetime.now(dt_timezone.utc)
+        user.updated_at = datetime.now(dt_timezone.utc)
 
         logger.info(
             f"User account deactivated: {user_id}",
             extra={"user_id": str(user_id)}
         )
-
+        self.db.add(user)
+        await self.db.commit()
         return user
 
     async def reactivate_account(
@@ -270,13 +273,14 @@ class UserService:
 
         user.status = "active"
         user.deactivated_at = None
-        user.updated_at = datetime.now(timezone.utc)
+        user.updated_at = datetime.now(dt_timezone.utc)
 
         logger.info(
             f"User account reactivated: {user_id}",
             extra={"user_id": str(user_id)}
         )
-
+        self.db.add(user)
+        await self.db.commit()
         return user
 
     async def change_user_status(
@@ -323,7 +327,8 @@ class UserService:
                 "new_status": new_status,
             }
         )
-
+        self.db.add(user)
+        await self.db.commit()
         return user, old_status
 
     async def cleanup_deactivated_accounts(self) -> int:
@@ -368,10 +373,12 @@ class UserService:
         """
         user = await self.get_user_by_id(user_id)
 
-        user.last_login_at = datetime.now(timezone.utc)
+        user.last_login_at = datetime.now(dt_timezone.utc)
         user.login_count = (user.login_count or 0) + 1
         user.failed_login_attempts = 0  # Reset failed attempts on successful login
 
+        self.db.add(user)
+        await self.db.commit()
         logger.info(
             f"User last login updated: {user_id}",
             extra={"user_id": str(user_id), "login_count": user.login_count}
@@ -455,10 +462,10 @@ class UserService:
 
         user = await self.get_user_by_id(user_id)
 
-        if user.deleted_at:
+        if user.is_deleted:
             raise RextValidationException("User already deleted")
 
-        user.deleted_at = datetime.now(timezone.utc)
+        user.deleted_at = datetime.now(dt_timezone.utc)
 
         logger.info(f"User {user_id} soft deleted")
         return user
@@ -506,7 +513,9 @@ class UserService:
         full_name: Optional[str] = None,
         display_name: Optional[str] = None,
         language: Optional[str] = None,
-        timezone: Optional[str] = None
+        timezone: Optional[str] = None,
+        password: Optional[str] = None,
+        avatar_url: Optional[str] = None
     ) -> Users:
         """
         Update user with email validation and profile fields.
@@ -518,6 +527,8 @@ class UserService:
             display_name: Display name
             language: Language preference
             timezone: Timezone preference
+            password: New password (will be hashed)
+            avatar_url: Profile avatar URL
 
         Returns:
             Updated user object
@@ -527,6 +538,7 @@ class UserService:
             RextValidationException: If email already exists
         """
         from src.api.middleware.exceptions import RextValidationException
+        from src.api.security.token_utils import hash_password
 
         user = await self.get_user_by_id(user_id)
 
@@ -550,10 +562,21 @@ class UserService:
             user.language = language
         if timezone is not None:
             user.timezone = timezone
+        if avatar_url is not None:
+            user.avatar_url = avatar_url
 
-        user.updated_at = datetime.now(timezone.utc)
+        # Handle password update
+        if password:
+            validate_password_strength(password)
+            user.password_hash = hash_password(password)
+            user.password_changed_at = datetime.now(dt_timezone.utc)
+
+        user.updated_at = datetime.now(dt_timezone.utc)
 
         logger.info(f"User {user_id} updated successfully")
+
+        self.db.add(user)
+        await self.db.commit()
         return user
 
     async def set_reset_token(
@@ -578,6 +601,9 @@ class UserService:
         user.reset_token = reset_token
 
         logger.info(f"Reset token set for user {user_id}")
+
+        self.db.add(user)
+        await self.db.commit()
         return user
 
     async def reset_password_with_token(
@@ -614,9 +640,11 @@ class UserService:
         # Update password
         user.password_hash = hash_password(new_password)
         user.reset_token = None
-        user.password_changed_at = datetime.now(timezone.utc)
+        user.password_changed_at = datetime.now(dt_timezone.utc)
 
         logger.info(f"Password reset successfully for user {user.id}")
+        self.db.add(user)
+        await self.db.commit()
         return user
 
     async def verify_user_password(
@@ -670,7 +698,7 @@ class UserService:
         query = select(Users).where(Users.email == email.lower())
 
         if exclude_deleted:
-            query = query.where(Users.deleted_at.is_(None))
+            query = query.where(Users.active())
 
         result = await self.db.execute(query)
         user = result.scalar_one_or_none()
@@ -695,7 +723,7 @@ class UserService:
             user_ids: List of user UUIDs
 
         Returns:
-            Dict mapping user_id -> Users object
+            Dict mapping user_id -> Users object   
         """
         if not user_ids:
             return {}

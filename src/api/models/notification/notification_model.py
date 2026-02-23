@@ -88,8 +88,7 @@ class Notification(Base, SerializableMixin, SoftDeleteMixin):
     is_archived = Column(Boolean, default=False, nullable=False, index=True)
     archived_at = Column(DateTime(timezone=True), nullable=True)
 
-    # Note: is_deleted is provided as a hybrid property by SoftDeleteMixin
-    # which uses the deleted_at column.
+    # is_deleted and deleted_at are provided by SoftDeleteMixin
 
     # ==============================
     # ADDITIONAL DATA
@@ -170,3 +169,4 @@ class Notification(Base, SerializableMixin, SoftDeleteMixin):
     def unarchive(self):
         self.is_archived = False
         self.archived_at = None
+

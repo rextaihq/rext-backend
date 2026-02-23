@@ -6,8 +6,18 @@ from src.flow.states.rext import REXT
 logger = logging.getLogger(__name__)
 
 def review_outline(state: REXT):
-    """
-    Interrupts for human approval of the generated outline.
+    """Interrupt workflow for human approval of the generated outline.
+
+    Presents the outline to the user via LangGraph's ``interrupt()``
+    mechanism. Handles approve/reject actions, optionally prompting
+    for a rejection reason if not provided.
+
+    Args:
+        state: REXT state containing ``content.outline``.
+
+    Returns:
+        dict: State update with ``content.outline.status`` set to
+        ``"approved"`` or ``"rejected"`` with reason.
     """
     content_state = state.get("content", {})
     outline_dict = content_state.get("outline", {})
