@@ -141,7 +141,7 @@ async def send_auth_email(
 
 async def send_workspace_email(
     db: AsyncSession,
-    email_type: Literal["invitation", "invitation_accepted", "role_changed", "member_removed"],
+    email_type: Literal["invitation", "invitation_accepted", "role_changed", "member_removed", "workspace_deleted"],
     workspace_id: UUID,
     recipient_email: str,
     user_id: UUID = None,
@@ -204,10 +204,10 @@ async def send_workspace_email(
 
             # Fallback to Python templates
             from emails.templates.workspace import (
-                create_workspace_invitation_email,
                 create_invitation_accepted_email,
                 create_role_changed_email,
-                create_member_removed_email
+                create_member_removed_email,
+                create_workspace_deleted_email
             )
 
             if email_type == "invitation":
@@ -222,6 +222,9 @@ async def send_workspace_email(
             elif email_type == "member_removed":
                 html = create_member_removed_email(**context_with_token)
                 subject = f"You've been removed from {context.get('workspace_name', 'a workspace')}"
+            elif email_type == "workspace_deleted":
+                html = create_workspace_deleted_email(**context_with_token)
+                subject = f"Workspace '{context.get('workspace_name', 'your workspace')}' deleted"
             else:
                 raise ValueError(f"Unknown workspace email type: {email_type}")
 

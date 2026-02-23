@@ -92,7 +92,7 @@ def upgrade():
                     'description': perm['description'],
                     'resource': perm['resource'],
                     'action': perm['action'],
-                    'created_at': datetime.now(timezone.utc)
+                    'created_at': datetime.now(timezone.utc).replace(tzinfo=None)
                 }
             )
             permission_ids[perm['name']] = perm_id
@@ -136,7 +136,7 @@ def upgrade():
                             'id': str(uuid4()),
                             'role_id': role_id,
                             'permission_id': permission_ids[perm_name],
-                            'created_at': datetime.now(timezone.utc)
+                            'created_at': datetime.now(timezone.utc).replace(tzinfo=None)
                         }
                     )
                     print(f"Assigned {perm_name} to {role_name}")
@@ -167,7 +167,7 @@ def upgrade():
                                 'id': str(uuid4()),
                                 'role_id': role_id,
                                 'permission_id': permission_ids[perm_name],
-                                'created_at': datetime.now(timezone.utc)
+                                'created_at': datetime.now(timezone.utc).replace(tzinfo=None)
                             }
                         )
                         print(f"Assigned {perm_name} to {role_name} (admin only)")

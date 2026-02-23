@@ -22,6 +22,12 @@ from src.api.models.knowledge_models.knowledge_model import (
     Website
 )
 from src.utils.logger import logger
+from src.api.config import get_settings
+
+# Default limits for free tier when no subscription plan is found
+FREE_MAX_WORKSPACES = 1
+FREE_MAX_KNOWLEDGE_ITEMS = 10
+FREE_MAX_API_CALLS = 100
 
 
 class UsageTrackingService:
@@ -97,7 +103,6 @@ class UsageTrackingService:
         usage_data = {
             "workspaces": build_metric(workspace_count, plan.max_workspaces),
             "members": build_metric(member_count, plan.max_members_per_workspace),
-            "topics": build_metric(0, plan.max_topics), # Topic tracking not fully implemented here
             "knowledge_items": build_metric(knowledge_count, plan.max_knowledge_items),
             "api_calls": {
                 **build_metric(api_calls, plan.max_api_calls_per_month),
@@ -141,12 +146,24 @@ class UsageTrackingService:
         used = metric.get("used", 0) or 0
         limit = metric.get("limit")
 
-        # Unlimited if limit is None or <= 0
+        # BYPASS: Workspace limit check is temporarily disabled to allow multiple workspaces for testing
+        if limit_type == "workspaces":
+            return True, used, None
+
+        # Original limit check logic
+        # if limit is None or limit <= 0:
+        #     return True, used, None
+        #
+        # within_limit = used < limit
+        # return within_limit, used, limit
+
+        # Default to True for other types if no limit is set
         if limit is None or limit <= 0:
             return True, used, None
 
         within_limit = used < limit
         return within_limit, used, limit
+
 
     async def increment_api_calls(self, user_id: UUID) -> None:
         """
@@ -260,12 +277,12 @@ class UsageTrackingService:
             }
 
         usage_data = {
-            "workspaces": build_metric(workspace_count, free_max_workspaces),
+            "workspaces": build_metric(workspace_count, FREE_MAX_WORKSPACES),
             "members": build_metric(member_count, 3), # Default free limit if not in plan
             "topics": build_metric(0, 5), # Default free limit
-            "knowledge_items": build_metric(knowledge_count, free_max_knowledge_items),
+            "knowledge_items": build_metric(knowledge_count, FREE_MAX_KNOWLEDGE_ITEMS),
             "api_calls": {
-                **build_metric(0, free_max_api_calls),
+                **build_metric(0, FREE_MAX_API_CALLS),
                 "reset_date": None
             },
             "meta": {

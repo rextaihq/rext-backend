@@ -132,7 +132,7 @@ async def validate_invitation(
     role_id = str(role.id)
     role_name = role.display_name or role.name
     inviter_display_name = inviter.display_name if inviter else None
-    inviter_username = inviter.username if inviter else "Unknown"
+    inviter_username = inviter.display_name or inviter.email if inviter else "Unknown"
     inviter_first_name = inviter.first_name if inviter and hasattr(inviter, 'first_name') else ""
     inviter_last_name = inviter.last_name if inviter and hasattr(inviter, 'last_name') else ""
     inviter_id = str(inviter.id) if inviter else None
@@ -231,14 +231,14 @@ async def accept_invitation(
     user_service = UserService(db)
     current_user_obj = await user_service.get_user_by_id(user_id)
 
-    # Optional: Verify email matches invitation
-    # Note: Commented out to allow any authenticated user to accept
-    # This is useful if user signed up with different email or OAuth
-    # if current_user_obj.email != invitation.email:
-    #     raise BusinessRuleViolationException(
-    #         message=f"This invitation is for {invitation.email}, but you are logged in as {current_user_obj.email}",
-    #         rule_name="email_must_match_invitation"
-    #     )
+    # Verify authenticated user's email matches the invitation target email
+    # This prevents unauthorized users from accepting invitations meant for others
+    if current_user_obj.email.lower().strip() != invitation.email.lower().strip():
+        raise BusinessRuleViolationException(
+            message=f"This invitation is for {invitation.email}, but you are logged in as {current_user_obj.email}. "
+                    f"Please sign in with the correct account to accept this invitation.",
+            rule_name="email_must_match_invitation"
+        )
 
     # Load workspace and role for response
     workspace = await db.get(WorkspaceModel, invitation.workspace_id)
@@ -251,7 +251,7 @@ async def accept_invitation(
     role_service = RoleService(db)
     role = await role_service.get_role_by_id(invitation.role_id)
 
-    # Add member to workspace via service
+    # Add members to workspace via service
     member_service = MemberService(db)
     already_member = False
     try:
@@ -296,7 +296,7 @@ async def accept_invitation(
     workspace_name_str = workspace.name
     workspace_slug_str = workspace.slug
     role_name_str = role.display_name or role.name
-    user_username = current_user_obj.username
+    user_display_name = current_user_obj.display_name or current_user_obj.email
     user_email = current_user_obj.email
 
     # Create audit log
@@ -313,7 +313,7 @@ async def accept_invitation(
         },
         request=request,
         workspace_id=invitation.workspace_id,
-        username=user_username,
+        username=user_display_name,
         user_email=user_email,
     )
 
@@ -336,7 +336,7 @@ async def accept_invitation(
             from emails.templates.workspace.invitation_accepted import create_invitation_accepted_email
 
             # Prepare member details
-            new_member_name = current_user_obj.display_name or current_user_obj.username
+            new_member_name = current_user_obj.display_name or current_user_obj.email
 
             # Generate email HTML
             email_html = create_invitation_accepted_email(

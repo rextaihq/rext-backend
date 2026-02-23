@@ -1,19 +1,21 @@
-# import asyncio
-# import os
+import asyncio
+import os
 from src.flow.engines.rext import create_rext_engine
 graph = create_rext_engine()
 
 # result = asyncio.run(graph.ainvoke(
 #     {
 #         "serp_payload": {
-#             "query": "wordpress support and maintenance",
-#             "country": "us"
+#             "query": "what is machine learning",
+#             "country": "Pakistan",
+#             "user_id": "tes0",
+#             "workspace_id": "tes0"
 #         }
 #     }
 # ))
 
 # print(
-#     result['scrape_context']
+#     result['serp_result']
 # )
 
 # import asyncio

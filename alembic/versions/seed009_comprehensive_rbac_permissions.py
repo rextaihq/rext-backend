@@ -348,7 +348,7 @@ def upgrade():
                     'description': description,
                     'resource': resource,
                     'action': action,
-                    'created_at': datetime.now(timezone.utc)
+                    'created_at': datetime.now(timezone.utc).replace(tzinfo=None)
                 }
             )
             permission_map[name] = perm_id
@@ -407,7 +407,7 @@ def upgrade():
                         'id': str(uuid4()),
                         'role_id': role_id,
                         'permission_id': perm_id,
-                        'created_at': datetime.now(timezone.utc)
+                        'created_at': datetime.now(timezone.utc).replace(tzinfo=None)
                     }
                 )
                 assigned_count += 1
