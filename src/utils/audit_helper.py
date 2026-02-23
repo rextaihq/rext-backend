@@ -42,7 +42,7 @@ async def create_audit_log(
         metadata: Additional context information (aliased as 'details' in some calls)
         status: Status of the action (success, failed, partial)
         error_message: Error message if status is failed
-        **kwargs: Additional parameters for backward compatibility (e.g., 'details')
+        **kwargs: Additional parameters for backward compatibility (e.g., 'details', 'username')
 
     Returns:
         AuditLog: Created audit log entry, or None if creation failed
@@ -55,9 +55,8 @@ async def create_audit_log(
     if not full_name and 'username' in kwargs:
         full_name = kwargs.get('username')
 
-    # Support 'email' as an alias for 'user_email' for backward compatibility
-    if not user_email and 'email' in kwargs:
-        user_email = kwargs.get('email')
+    if not user_email and 'user_email' in kwargs:
+        user_email = kwargs.get('user_email')
 
     try:
         # Extract request details if provided
@@ -101,7 +100,10 @@ async def create_audit_log(
         return audit_log
 
     except Exception as e:
-        logger.error(f"Failed to create audit log: {str(e)}")
+        logger.error(
+            f"Failed to create audit log for action '{action}' on "
+            f"{resource_type}:{resource_id}: {type(e).__name__}: {str(e)}"
+        )
         # DO NOT rollback here - let the decorator handle transaction rollback
         # Rolling back here would cause the entire request transaction to fail
         return None
