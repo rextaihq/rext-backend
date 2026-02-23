@@ -54,13 +54,21 @@ async def get_webhook_events(
     - Total count for pagination
     """
     service = WebhookMonitoringService(db)
-    return await service.get_webhook_events(
+    result = await service.get_webhook_events(
         limit=limit,
         offset=offset,
         event_name=event_name,
         processed=processed,
         hours=hours
     )
+    # Normalize to consistent pagination shape
+    return {
+        "items": result.get("events", []),
+        "total": result.get("total", 0),
+        "limit": limit,
+        "offset": offset,
+        "has_more": (offset + limit) < result.get("total", 0)
+    }
 
 
 @router.get("/webhooks/failed", response_model=dict)
@@ -92,12 +100,19 @@ async def get_failed_webhooks(
     - List of failed webhook events with redacted payload (if requested)
     """
     service = WebhookMonitoringService(db)
-    return await service.get_failed_webhooks(
+    result = await service.get_failed_webhooks(
         limit=limit,
         offset=offset,
         hours=hours,
         include_payload=include_payload
     )
+    return {
+        "items": result.get("events", []),
+        "total": result.get("total", 0),
+        "limit": limit,
+        "offset": offset,
+        "has_more": (offset + limit) < result.get("total", 0)
+    }
 
 
 @router.post("/webhooks/{webhook_id}/retry", response_model=dict)
@@ -126,11 +141,9 @@ async def retry_webhook(
     """
     service = WebhookMonitoringService(db)
     result = await service.retry_webhook(webhook_id)
-
-    if not result["success"]:
-        raise HTTPException(status_code=400, detail=result["message"])
-
-    return result
+    if not result.get("success"):
+        raise HTTPException(status_code=400, detail=result.get("message", "Retry failed"))
+    return {"event": result.get("event")}
 
 
 @router.get("/webhooks/statistics", response_model=dict)

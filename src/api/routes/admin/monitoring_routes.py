@@ -49,10 +49,7 @@ async def get_system_health(
     service = MonitoringService(db)
     health_data = await service.get_system_health()
 
-    return {
-        "data": health_data,
-        "message": "System health retrieved successfully"
-    }
+    return health_data
 
 
 # ============================================================================
@@ -104,9 +101,8 @@ async def get_error_logs(
     )
 
     return {
-        "data": result["logs"],
-        "pagination": result["pagination"],
-        "message": "Error logs retrieved successfully"
+        "items": result["logs"],
+        "pagination": result["pagination"]
     }
 
 
@@ -137,11 +133,7 @@ async def resolve_error_log(
         admin_user_id=UUID(admin_user_id)
     )
 
-    return {
-        "data": log_data,
-        "message": "Error log marked as resolved"
-    }
-
+    return log_data
 
 # ============================================================================
 # USAGE STATISTICS ENDPOINTS
@@ -172,10 +164,8 @@ async def get_usage_stats(
     service = MonitoringService(db)
     stats_data = await service.get_usage_stats(period=period)
 
-    return {
-        "data": stats_data,
-        "message": "Usage statistics retrieved successfully"
-    }
+    return stats_data
+
 
 
 @router.get("/usage-stats/trends", response_model=dict)

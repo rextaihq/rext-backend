@@ -131,7 +131,4 @@ async def get_audit_stats(
     service = AuditService(db)
     stats = await service.get_statistics(days)
 
-    return {
-        "data": stats,
-        "message": "Audit statistics retrieved successfully",
-    }
+    return stats
