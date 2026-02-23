@@ -64,7 +64,7 @@ async def humanize_content(state: REXT) -> dict:
             "title": title,
             "introduction": final_content.get("introduction", ""),
             "body_markdown": body_markdown,
-            "selected_topic":content_state.get("selected_top", ""),
+            "selected_topic":content_state.get("selected_topic", ""),
             "content_type":content_state.get("content_type", ""),
             "word_count":final_content.get("word_count", ""),
             "target_audience":content_outline.get("target_audience", ""),
@@ -82,8 +82,6 @@ async def humanize_content(state: REXT) -> dict:
         humanized_dict = humanized_content.model_dump()
         
         logger.info(f"Humanization completed (90% human target). Keys: {humanized_dict.keys()}")
-        
-        logger.info(f"Humanization completed (90% human target). Keys:")
         
         # 5️⃣ Update state with humanized content
         return {

@@ -1,6 +1,8 @@
 import logging
 from functools import lru_cache
 
+logger = logging.getLogger(__name__)
+
 from langchain.chat_models import init_chat_model
 from langchain_community.callbacks.manager import get_openai_callback
 from src.states.schemas import RewriterTitle, QueryDecomposer
@@ -64,12 +66,11 @@ def load_content_model():
 
 def topic_generation_model():
     """
-    Initializes a chat model with structured output for BasicTopicGenerationList.
+    Initializes a chat model with low token limits suitable for topic generation.
     Cached as singleton — reuses the same instance across all calls.
 
     Returns:
-        BaseStructuredChatModel: A chat model that returns outputs conforming
-        to the `BasicTopicGenerationList` schema.
+        BaseChatModel: A chat model with 1024 max output tokens.
     """
     model = init_chat_model(
         "gpt-4o-mini",
@@ -77,5 +78,21 @@ def topic_generation_model():
         api_key=settings.OPENAI_API_KEY,
         max_tokens=TOPIC_GENERATION_MAX_TOKENS,
     )
-    return model.with_structured_output(BasicTopicGenerationList)
+    return model
 
+def load_humanize_model():
+    """
+    Returns a model configured for content humanization with higher token limits.
+
+    Humanization transforms AI content to appear natural, which requires
+    significant context and output length.
+
+    Returns:
+        BaseChatModel: A chat model with 8192 max output tokens.
+    """
+    return init_chat_model(
+        "gpt-4o-mini",
+        model_provider="openai",
+        api_key=settings.OPENAI_API_KEY,
+        max_tokens=CONTENT_GENERATION_MAX_TOKENS,
+    )

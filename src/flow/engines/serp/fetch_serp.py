@@ -63,9 +63,11 @@ async def _do_fetch_serp(
 
 
 def _parse_serp_response(raw_data: Dict[str, Any]) -> SERPEngineState:
-    task = raw_data.get("tasks", [{}])[0]
-    result = task.get("result", [{}])[0]
-    items = result.get("items", [])
+    tasks = raw_data.get("tasks") or [{}]
+    task = tasks[0] if tasks else {}
+    results = task.get("result") or [{}]
+    result = results[0] if results else {}
+    items = result.get("items") or []
 
     serp_state: SERPEngineState = {
         "search_params": task.get("data", {}),
@@ -102,7 +104,7 @@ def _parse_serp_response(raw_data: Dict[str, Any]) -> SERPEngineState:
         # RELATED SEARCHES
         # ----------------------------
         elif item_type in ("related_searches", "related_search"):
-            for r in item.get("items", []):
+            for r in (item.get("items") or []):
                 value = r if isinstance(r, str) else r.get("query", "")
                 if value:
                     serp_state["related_searches"].append(value)
@@ -111,9 +113,9 @@ def _parse_serp_response(raw_data: Dict[str, Any]) -> SERPEngineState:
         # PEOPLE ALSO ASK
         # ----------------------------
         elif item_type == "people_also_ask":
-            data = item.get("items", [])
+            data = item.get("items") or []
             for d in data:
-                expanded_element = d.get("expanded_element", [])
+                expanded_element = d.get("expanded_element") or []
                 for exp_elm in expanded_element:
                     serp_state["people_ask"].append({
                         "question": d.get("title", ""),

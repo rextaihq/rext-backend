@@ -127,6 +127,10 @@ class FinalContent(TypedDict):
     primary_keyword: Optional[str]
     secondary_keywords: Optional[list[str]]
     word_count: int
+    humanized_title: Optional[str]
+    humanized_introduction: Optional[str]
+    humanized_body_markdown: Optional[str]
+    
     status: Literal["approved", "rejected", "draft"]
     rejected_reason: Optional[str]
 

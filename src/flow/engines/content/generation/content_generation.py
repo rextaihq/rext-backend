@@ -17,7 +17,7 @@ from src.flow.store.rext_search import search_scraped_chunks
 logger = logging.getLogger(__name__)
 
 
-def generate_content(state: REXT) -> dict:
+async def generate_content(state: REXT) -> dict:
     """
     Generates SEO-optimized content using an LLM.
     
@@ -63,12 +63,12 @@ def generate_content(state: REXT) -> dict:
         # page_content = "\n\n".join(
         #     chunk.get("chunk", "") for chunk in relevant_context
         # )
-        relevant_context = asyncio.run( search_scraped_chunks(
+        relevant_context = await search_scraped_chunks(
             user_id,
             workspace_id,
             query,
             limit=20
-        ))
+        )
         page_content = relevant_context.get("text", "")
         logger.info(f"Page content length: {len(page_content.split())} words")
 
@@ -122,7 +122,7 @@ def generate_content(state: REXT) -> dict:
 
         # Invoke LLM
         logger.info("Invoking LLM for content generation...")
-        generated_content = content_model.invoke(messages)
+        generated_content = await content_model.ainvoke(messages)
         content_dict = generated_content.model_dump()
         logger.info(f"Content generated successfully. Word count: {content_dict.get('word_count', 0)}")
 
