@@ -34,6 +34,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.lib.logger import auto_logger
+from src.api.lib.log_policy import get_event_level, log_with_level
 from src.utils.response_utils import success, error
 from src.api.schema.response_schemas import ErrorCode, ErrorSeverity
 from src.api.middleware.exceptions import RextAPIException
@@ -400,9 +401,11 @@ def require_permissions(
                 # Build permission requirement string for error message
                 perm_str = " AND ".join(permissions) if require_all else " OR ".join(permissions)
 
-                logger.warning(
+                log_with_level(
+                    logger,
+                    get_event_level("permission_denied"),
                     f"Permission denied: user={user_id}, required={perm_str}, "
-                    f"workspace={workspace_uuid}, logic={'AND' if require_all else 'OR'}"
+                    f"workspace={workspace_uuid}, logic={'AND' if require_all else 'OR'}",
                 )
 
                 raise RextAuthorizationException(

@@ -29,6 +29,7 @@ from sqlalchemy import select
 from src.utils.logger import logger
 from src.api.security.dependencies import get_current_user
 from src.api.cache.redis_client import cache
+from src.api.lib.log_policy import get_event_level, log_with_level
 
 
 class RateLimiter:
@@ -298,9 +299,10 @@ class RateLimiterMiddleware(BaseHTTPMiddleware):
         is_allowed, retry_after, limit_type = await self.limiter.check_rate_limit(client_key)
 
         if not is_allowed:
-            logger.warning(
-                f"Rate limit exceeded for {client_key}: {limit_type} limit reached. "
-                f"Retry after {retry_after}s"
+            log_with_level(
+                logger,
+                get_event_level("rate_limit_exceeded"),
+                f"Rate limit exceeded for {client_key}: {limit_type} limit reached. Retry after {retry_after}s",
             )
 
             # Add rate limit headers
@@ -403,9 +405,11 @@ class EndpointRateLimiter:
                 count = results[1]
 
                 if count >= self.requests:
-                    logger.warning(
+                    log_with_level(
+                        logger,
+                        get_event_level("rate_limit_exceeded"),
                         f"Rate limit exceeded for {client_key} on {self.description}: "
-                        f"{count}/{self.requests} in {self.window_seconds}s"
+                        f"{count}/{self.requests} in {self.window_seconds}s",
                     )
                     raise HTTPException(
                         status_code=status.HTTP_429_TOO_MANY_REQUESTS,
@@ -438,9 +442,11 @@ class EndpointRateLimiter:
             oldest = timestamps[0]
             retry_after = int((oldest + timedelta(seconds=self.window_seconds) - now).total_seconds()) + 1
 
-            logger.warning(
+            log_with_level(
+                logger,
+                get_event_level("rate_limit_exceeded"),
                 f"Rate limit exceeded for {client_key} on {self.description}: "
-                f"{len(timestamps)}/{self.requests} in {self.window_seconds}s"
+                f"{len(timestamps)}/{self.requests} in {self.window_seconds}s",
             )
 
             raise HTTPException(
@@ -688,9 +694,11 @@ class AIEndpointRateLimiter:
                 count = results[1]
 
                 if count >= max_requests:
-                    logger.warning(
+                    log_with_level(
+                        logger,
+                        get_event_level("rate_limit_exceeded"),
                         f"AI rate limit exceeded for user {user_id} (tier: {tier}): "
-                        f"{count}/{max_requests} in {self.window_seconds}s"
+                        f"{count}/{max_requests} in {self.window_seconds}s",
                     )
                     raise HTTPException(
                         status_code=status.HTTP_429_TOO_MANY_REQUESTS,
@@ -728,9 +736,11 @@ class AIEndpointRateLimiter:
             oldest = timestamps[0]
             retry_after = int((oldest + timedelta(seconds=self.window_seconds) - now).total_seconds()) + 1
 
-            logger.warning(
+            log_with_level(
+                logger,
+                get_event_level("rate_limit_exceeded"),
                 f"AI rate limit exceeded for user {user_id} (tier: {tier}): "
-                f"{len(timestamps)}/{max_requests} in {self.window_seconds}s"
+                f"{len(timestamps)}/{max_requests} in {self.window_seconds}s",
             )
 
             raise HTTPException(
