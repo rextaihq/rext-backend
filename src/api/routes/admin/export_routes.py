@@ -20,6 +20,7 @@ from src.api.security.dependencies import get_current_user
 from src.services.subscription_export_service import SubscriptionExportService
 from src.utils.route_decorators import db_transaction_handler, require_permissions
 from src.api.routes.subscriptions.admin.shared.auth import require_super_admin
+from src.api.routes.subscriptions.admin.shared.auth import require_super_admin_user
 
 
 router = APIRouter()
@@ -39,7 +40,7 @@ async def export_subscriptions(
     start_date: datetime = Query(None, description="Filter by start date (ISO 8601)"),
     end_date: datetime = Query(None, description="Filter by end date (ISO 8601)"),
     db: AsyncSession = Depends(get_async_db),
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(require_super_admin_user),
 ):
     """
     Export subscriptions to CSV (super admin only).
@@ -90,7 +91,7 @@ async def export_invoices(
     end_date: datetime = Query(None, description="Filter by invoice date (ISO 8601)"),
     min_amount: float = Query(None, description="Filter by minimum amount"),
     db: AsyncSession = Depends(get_async_db),
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(require_super_admin_user)
 ):
     """
     Export invoices to CSV (super admin only).
@@ -115,9 +116,12 @@ async def export_invoices(
             end_date=end_date,
             min_amount=min_amount
         )
-    except NotImplementedError as e:
+    except NotImplementedError:
         from fastapi import HTTPException
-        raise HTTPException(status_code=501, detail=str(e))
+        raise HTTPException(
+            status_code=501,
+            detail="Invoice export is not available yet"
+        )
 
     # Create streaming response
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
@@ -141,7 +145,7 @@ async def export_usage_data(
     start_date: datetime = Query(None, description="Filter by date (ISO 8601)"),
     end_date: datetime = Query(None, description="Filter by date (ISO 8601)"),
     db: AsyncSession = Depends(get_async_db),
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(require_super_admin_user)
 ):
     """
     Export usage data to CSV (super admin only).
@@ -184,7 +188,7 @@ async def export_revenue_summary(
     request: Request,
     months: int = Query(12, ge=1, le=36, description="Number of months to include"),
     db: AsyncSession = Depends(get_async_db),
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(require_super_admin_user)
 ):
     """
     Export revenue summary by month to CSV (super admin only).

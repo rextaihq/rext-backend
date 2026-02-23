@@ -237,13 +237,21 @@ class EmailAnalyticsService:
         start_date = self._parse_date_range(date_range)
         base_filters = self._build_base_filters(start_date, workspace_id)
 
-        # Determine SQL date truncation based on period
-        if period == "daily":
-            date_trunc = func.date_trunc('day', EmailLog.created_at)
-        elif period == "weekly":
-            date_trunc = func.date_trunc('week', EmailLog.created_at)
-        else:  # monthly
-            date_trunc = func.date_trunc('month', EmailLog.created_at)
+        # Map periods to SQL date truncation intervals
+        _PERIOD_TO_DATE_TRUNC = {
+            "daily": "day",
+            "weekly": "week",
+            "monthly": "month",
+        }
+
+        if period not in _PERIOD_TO_DATE_TRUNC:
+            # Fallback to monthly for safety, though route-level validation should prevent this
+            interval = "month"
+            self.log.warning(f"Unsupported period provided to get_timeline: {period}. Defaulting to monthly.")
+        else:
+            interval = _PERIOD_TO_DATE_TRUNC[period]
+
+        date_trunc = func.date_trunc(interval, EmailLog.created_at)
 
         # Query for timeline
         query = select(

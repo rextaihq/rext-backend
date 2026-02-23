@@ -5,7 +5,7 @@ Handles image optimization, thumbnail generation, and metadata extraction.
 Uses Pillow (PIL) for image manipulation.
 """
 
-from PIL import Image, ImageOps
+from PIL import Image, ImageOps, features, ExifTags
 from io import BytesIO
 from typing import Tuple, Optional, Dict, Any
 import logging
@@ -53,6 +53,33 @@ class ImageProcessingService:
             'large': 600
         }
 
+        # Validate runtime image format support
+        self.webp_supported = features.check_module("webp")
+        if not self.webp_supported:
+            logger.warning(
+                "WEBP support is not available in this Pillow installation. "
+                "WEBP images will not be processed. Install libwebp and "
+                "reinstall Pillow to enable WEBP support."
+            )
+    
+    def is_animated(self, file: BytesIO) -> bool:
+        """
+        Check if an image file contains animation (multiple frames).
+
+        Args:
+            file: Image file as BytesIO
+
+        Returns:
+            True if the image has more than one frame
+        """
+        try:
+            with Image.open(file) as img:
+                return getattr(img, 'is_animated', False)
+        except Exception:
+            return False
+        finally:
+            file.seek(0)
+
     def get_image_dimensions(self, file: BytesIO) -> Tuple[int, int]:
         """
         Get image width and height.
@@ -65,7 +92,6 @@ class ImageProcessingService:
         """
         try:
             with Image.open(file) as img:
-                # Handle EXIF orientation
                 img = ImageOps.exif_transpose(img)
                 return img.size
         except Exception as e:
@@ -100,14 +126,40 @@ class ImageProcessingService:
         max_width = max_width or self.max_width
         max_height = max_height or self.max_height
         quality = quality or self.quality
+        try:
+            with Image.open(file) as img:
+                # Check if animated — skip optimization to preserve all frames
+                if getattr(img, 'is_animated', False):
+                    logger.info(
+                        f"Skipping optimization for animated image "
+                        f"({getattr(img, 'n_frames', 1)} frames, format={img.format})"
+                    )
+                    file.seek(0)
+                    return file
+
+                # Handle EXIF orientation (rotate based on EXIF data)
+                img = ImageOps.exif_transpose(img)
 
         try:
             with Image.open(file) as img:
                 # Handle EXIF orientation (rotate based on EXIF data)
+                # Handle EXIF orientation (rotate based on EXIF data)
+                # This applies the rotation physically, so the EXIF orientation tag
+                # is no longer needed. When saving below, EXIF data is NOT written
+                # to the output, effectively stripping all EXIF metadata including
+                # GPS coordinates, device info, and timestamps.
                 img = ImageOps.exif_transpose(img)
 
                 # Store original format
                 original_format = img.format or 'JPEG'
+
+                # Validate WEBP support if the image is WEBP
+                if original_format == 'WEBP' and not self.webp_supported:
+                    logger.warning("WEBP image received but WEBP support is not available")
+                    raise ValueError(
+                        "WEBP image processing is not available. "
+                        "The server is missing libwebp support."
+                    )
 
                 # Convert RGBA to RGB if saving as JPEG
                 if img.mode in ('RGBA', 'LA', 'P') and original_format in ('JPEG', 'JPG'):
@@ -165,10 +217,25 @@ class ImageProcessingService:
             Thumbnail image as BytesIO (JPEG format)
         """
         target_size = custom_size or self.thumbnail_sizes.get(size, self.thumbnail_size)
+        try:
+            with Image.open(file) as img:
+                # For animated images, create a static thumbnail from the first frame
+                # but log a warning that animation is not preserved in thumbnail
+                if getattr(img, 'is_animated', False):
+                    logger.info(
+                        f"Creating static thumbnail from first frame of animated image "
+                        f"({getattr(img, 'n_frames', 1)} frames)"
+                    )
+                    # Continue with normal thumbnail logic (first frame only is acceptable for thumbnails)
+
+                # Handle EXIF orientation
+                img = ImageOps.exif_transpose(img)
 
         try:
             with Image.open(file) as img:
-                # Handle EXIF orientation
+                # Handle EXIF orientation — applied physically, then EXIF is
+                # stripped from thumbnail output (Pillow doesn't write EXIF by
+                # default when saving without exif= parameter).
                 img = ImageOps.exif_transpose(img)
 
                 # Convert to RGB if needed (for JPEG)
@@ -220,7 +287,7 @@ class ImageProcessingService:
                 file.seek(0, 2)  # Seek to end
                 file_size = file.tell()
                 file.seek(0)  # Reset to beginning
-
+                
                 metadata = {
                     'format': img.format,
                     'mode': img.mode,
@@ -228,22 +295,55 @@ class ImageProcessingService:
                     'height': img.height,
                     'has_transparency': img.mode in ('RGBA', 'LA', 'P'),
                     'file_size': file_size,
+                    'is_animated': getattr(img, 'is_animated', False),
+                    'frame_count': getattr(img, 'n_frames', 1),
                 }
 
-                # Add EXIF data if available
-                if hasattr(img, '_getexif') and img._getexif():
-                    try:
-                        exif = img._getexif()
+                # Add EXIF data if available (using modern Pillow API)
+                try:
+                    exif_data = img.getexif()
+                    if exif_data:
                         metadata['has_exif'] = True
-                        # Add commonly used EXIF tags
-                        if 271 in exif:  # Make
-                            metadata['camera_make'] = exif[271]
-                        if 272 in exif:  # Model
-                            metadata['camera_model'] = exif[272]
-                        if 306 in exif:  # DateTime
-                            metadata['datetime'] = exif[306]
-                    except Exception:
-                        pass
+
+                        # Whitelist of safe EXIF tags to extract
+                        # Only retain non-privacy-sensitive metadata
+                        SAFE_MAIN_TAGS = {
+                            274: 'orientation',     # Orientation (critical for display)
+                            256: 'image_width',     # ImageWidth
+                            257: 'image_height',    # ImageLength
+                        }
+
+                        for tag_id, key_name in SAFE_MAIN_TAGS.items():
+                            if tag_id in exif_data:
+                                metadata[key_name] = exif_data[tag_id]
+
+                        # Extract safe tags from ExifIFD (tag 0x8769)
+                        exif_ifd = exif_data.get_ifd(0x8769)
+                        if exif_ifd:
+                            # ColorSpace (tag 40961)
+                            if 40961 in exif_ifd:
+                                metadata['color_space'] = exif_ifd[40961]
+                            # ExifImageWidth (tag 40962)
+                            if 40962 in exif_ifd:
+                                metadata['exif_width'] = exif_ifd[40962]
+                            # ExifImageHeight (tag 40963)
+                            if 40963 in exif_ifd:
+                                metadata['exif_height'] = exif_ifd[40963]
+
+                        # EXPLICITLY DO NOT extract:
+                        # - GPSInfo IFD (0x8825 / 34853) — contains GPS coordinates
+                        # - Tag 271 (Make) — device manufacturer
+                        # - Tag 272 (Model) — device model
+                        # - Tag 305 (Software) — editing software
+                        # - Tag 306 (DateTime) — date/time of capture
+                        # - Tag 36867 (DateTimeOriginal)
+                        # - Tag 36868 (DateTimeDigitized)
+                        # - Tag 42033 (SerialNumber) — camera serial number
+                        # - Tag 42036 (LensSerialNumber)
+
+                except Exception:
+                    # EXIF extraction is non-critical; continue without it
+                    pass
 
                 return metadata
 
@@ -313,6 +413,17 @@ class ImageProcessingService:
         """
         quality = quality or self.quality
 
+        with Image.open(file) as img:
+                # Validate WEBP support for target format
+                if target_format.upper() == 'WEBP' and not self.webp_supported:
+                    raise ValueError(
+                        "Cannot convert to WEBP: WEBP support is not available. "
+                        "Install libwebp and reinstall Pillow."
+                    )
+
+                # Handle EXIF orientation
+                img = ImageOps.exif_transpose(img)
+
         try:
             with Image.open(file) as img:
                 # Handle EXIF orientation
@@ -348,3 +459,19 @@ class ImageProcessingService:
         except Exception as e:
             logger.error(f"Error converting image format: {e}")
             raise ValueError(f"Failed to convert image: {e}")
+
+    def get_supported_formats(self) -> dict:
+        """
+        Return a dictionary of supported image format capabilities.
+        Useful for health checks and configuration validation.
+
+        Returns:
+            Dict with format names and their support status
+        """
+        return {
+            "jpeg": True,  # Always supported by Pillow core
+            "png": True,   # Always supported by Pillow core
+            "gif": True,   # Always supported by Pillow core
+            "webp": self.webp_supported,
+            "webp_version": features.version_module("webp") if self.webp_supported else None,
+        }

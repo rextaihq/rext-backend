@@ -12,6 +12,13 @@ from src.api.models.base import SerializableMixin, SoftDeleteMixin
 class Notification(Base, SerializableMixin, SoftDeleteMixin):
     """
     Notification model for storing user notifications.
+
+    Lifecycle states:
+    - is_read / read_at: whether the user has seen the notification
+    - is_deleted / deleted_at: soft delete via SoftDeleteMixin (cleared notifications)
+
+    Note: Archive functionality was removed as it had no consumers.
+    Use soft delete (clear) for removing notifications from the user's view.
     """
     __tablename__ = "notifications"
 
@@ -85,10 +92,9 @@ class Notification(Base, SerializableMixin, SoftDeleteMixin):
     is_read = Column(Boolean, default=False, nullable=False, index=True)
     read_at = Column(DateTime(timezone=True), nullable=True)
 
-    is_archived = Column(Boolean, default=False, nullable=False, index=True)
-    archived_at = Column(DateTime(timezone=True), nullable=True)
-
-    # is_deleted and deleted_at are provided by SoftDeleteMixin
+    # Note: is_deleted and deleted_at are provided by SoftDeleteMixin.
+    # Do NOT redeclare them here — the mixin's hybrid property handles both
+    # Python-side and SQL-side is_deleted checks via deleted_at.
 
     # ==============================
     # ADDITIONAL DATA
@@ -165,12 +171,4 @@ class Notification(Base, SerializableMixin, SoftDeleteMixin):
     def mark_as_unread(self):
         self.is_read = False
         self.read_at = None
-
-    def archive(self):
-        self.is_archived = True
-        self.archived_at = datetime.now(timezone.utc)
-
-    def unarchive(self):
-        self.is_archived = False
-        self.archived_at = None
 
