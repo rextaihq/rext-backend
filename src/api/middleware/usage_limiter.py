@@ -330,9 +330,14 @@ class APICallLimiter:
         subscription, plan = await _get_user_subscription_and_plan_async(db, user_id)
 
         if not subscription or not plan:
-            logger.debug(
-                "Skipping API usage increment for user %s because no active subscription row exists",
-                user_id,
+            # Free-tier API-call tracking is currently disabled by design.
+            logger.info(
+                "Skipping API-call counter update for user without active subscription",
+                extra={
+                    "user_id": user_id,
+                    "component": "APICallLimiter",
+                    "tracking_state": "disabled",
+                },
             )
             return
 
