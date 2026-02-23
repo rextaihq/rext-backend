@@ -137,17 +137,21 @@ class Notification(Base, SerializableMixin, SoftDeleteMixin):
         Index('idx_workspace_created', 'workspace_id', 'created_at'),
     )
 
-    # ✅ FIXED to_dict (TASK-054 compliant)
     def to_dict(self, **kwargs):
-        """Return only fields required by the frontend/UI."""
+        """Return notification data for the frontend/UI.
+
+        Exposes all user-facing fields including priority, action buttons,
+        payload, and read timestamp. Excludes internal state tracking
+        (soft delete, archive) and delivery channel metadata.
+        """
         if 'exclude' not in kwargs:
             kwargs['exclude'] = [
+                # Internal state — not needed by frontend
                 'is_archived', 'archived_at',
                 'is_deleted', 'deleted_at',
-                'payload', 'action_url', 'action_label',
+                # Delivery channel tracking — internal metadata
                 'sent_via_email', 'sent_via_sse',
                 'email_sent_at', 'sse_sent_at',
-                'expires_at', 'read_at', 'priority',
             ]
         return super().to_dict(**kwargs)
 
