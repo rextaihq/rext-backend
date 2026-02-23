@@ -7,130 +7,14 @@ from src.services.notification_preferences_service import NotificationPreference
 from src.api.models.user_models.notification_preferences import NotificationPreferences
 from src.utils.payload_sanitizer import sanitize_notification_payload
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, func, and_
 from sqlalchemy.exc import IntegrityError, OperationalError
+from datetime import datetime, timezone, timedelta
 import logging
 
 logger = logging.getLogger(__name__)
 
-from dataclasses import dataclass as _dataclass
-
-
-@_dataclass(frozen=True, slots=True)
-class NotificationConfig:
-    """Configuration for a single notification type."""
-    notification_type: str
-    title: str
-    status: str = "success"
-    pref_column: str | None = None  # Override preference column (None = use pref_flag as column name)
-
-
-NOTIFICATION_REGISTRY: dict[str, NotificationConfig] = {
-    # Workspace notifications
-    "ws_invite_received": NotificationConfig(
-        notification_type="workspace",
-        title="Workspace Invitation",
-    ),
-    "ws_invite_accepted": NotificationConfig(
-        notification_type="workspace",
-        title="Invitation Accepted",
-    ),
-    "ws_role_changed": NotificationConfig(
-        notification_type="workspace",
-        title="Role Changed",
-    ),
-    "ws_member_removed": NotificationConfig(
-        notification_type="workspace",
-        title="Member Removed",
-    ),
-    # Billing notifications
-    "billing_payment_success": NotificationConfig(
-        notification_type="billing",
-        title="Payment Successful",
-    ),
-    "billing_payment_failed": NotificationConfig(
-        notification_type="billing",
-        title="Payment Failed",
-        status="error",
-    ),
-    "billing_subscription_cancelled": NotificationConfig(
-        notification_type="billing",
-        title="Subscription Cancelled",
-        status="warning",
-    ),
-    "billing_subscription_expiring": NotificationConfig(
-        notification_type="billing",
-        title="Subscription Expiring",
-        status="warning",
-    ),
-    "billing_trial_ending": NotificationConfig(
-        notification_type="billing",
-        title="Trial Ending",
-        status="warning",
-    ),
-    "billing_usage_limit_warning": NotificationConfig(
-        notification_type="billing",
-        title="Usage Limit Warning",
-        status="warning",
-    ),
-    "billing_usage_limit_exceeded": NotificationConfig(
-        notification_type="billing",
-        title="Usage Limit Exceeded",
-        status="error",
-    ),
-    # Knowledge base notifications
-    "kb_processing_completed": NotificationConfig(
-        notification_type="knowledge",
-        title="Knowledge Processing Complete",
-    ),
-    "kb_processing_failed": NotificationConfig(
-        notification_type="knowledge",
-        title="Knowledge Processing Failed",
-        status="error",
-    ),
-    # Content generation notifications
-    "gen_started": NotificationConfig(
-        notification_type="content",
-        title="Content Generation Started",
-        status="info",
-    ),
-    "gen_completed": NotificationConfig(
-        notification_type="content",
-        title="Content Generation Complete",
-    ),
-    "gen_failed": NotificationConfig(
-        notification_type="content",
-        title="Content Generation Failed",
-        status="error",
-    ),
-    "gen_published": NotificationConfig(
-        notification_type="content",
-        title="Content Published",
-    ),
-    # User/profile notifications (virtual flags → in_app_notifications column)
-    "in_app_notifications": NotificationConfig(
-        notification_type="user",
-        title="Profile Updated",
-        pref_column="in_app_notifications",
-    ),
-    "profile_update_failed": NotificationConfig(
-        notification_type="user",
-        title="Profile Update Failed",
-        status="error",
-        pref_column="in_app_notifications",
-    ),
-    "avatar_uploaded": NotificationConfig(
-        notification_type="user",
-        title="Avatar Updated",
-        pref_column="in_app_notifications",
-    ),
-    "avatar_upload_failed": NotificationConfig(
-        notification_type="user",
-        title="Avatar Upload Failed",
-        status="error",
-        pref_column="in_app_notifications",
-    ),
-}
+DEDUP_WINDOW_SECONDS = 60  # Suppress duplicate notifications within this window
 
 async def _send_sse_after_commit(
     user_id: UUID,
@@ -323,6 +207,37 @@ async def schedule_if_allowed(
             "was disabled between initial check and creation (TOCTOU prevented).",
             user_id,
             pref_flag,
+        )
+        return
+
+    # 4.6 Sanitize message and payload to prevent stored XSS (TASK-280)
+    safe_message = html_escape(message[:2000]) if message else ""
+    safe_payload = sanitize_notification_payload(payload)
+
+    # 4.7 Deduplication check — prevent duplicate notifications within time window
+    from src.api.models.notification.notification_model import Notification
+    from datetime import datetime, timezone
+
+    dedup_cutoff = datetime.now(timezone.utc) - timedelta(seconds=DEDUP_WINDOW_SECONDS)
+    dedup_conditions = [
+        Notification.user_id == user_uuid,
+        Notification.category == pref_flag,
+        Notification.created_at >= dedup_cutoff,
+        Notification.is_deleted.is_(False),
+    ]
+    if workspace_uuid:
+        dedup_conditions.append(Notification.workspace_id == workspace_uuid)
+    else:
+        dedup_conditions.append(Notification.workspace_id.is_(None))
+
+    existing_count_result = await db.execute(
+        select(func.count(Notification.id)).where(and_(*dedup_conditions))
+    )
+    if existing_count_result.scalar() > 0:
+        logger.info(
+            f"Duplicate notification suppressed for user {user_id} – "
+            f"category: {pref_flag}, workspace: {workspace_id}, "
+            f"window: {DEDUP_WINDOW_SECONDS}s"
         )
         return
 

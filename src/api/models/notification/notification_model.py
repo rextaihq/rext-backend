@@ -141,6 +141,8 @@ class Notification(Base, SerializableMixin, SoftDeleteMixin):
         Index('idx_user_created', 'user_id', 'created_at'),
         Index('idx_user_type_created', 'user_id', 'type', 'created_at'),
         Index('idx_workspace_created', 'workspace_id', 'created_at'),
+        # Deduplication index — supports the time-windowed duplicate check
+        Index('idx_dedup_user_category_workspace', 'user_id', 'category', 'workspace_id', 'created_at'),
     )
 
     def to_dict(self, **kwargs):
