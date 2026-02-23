@@ -19,6 +19,7 @@ from src.api.middleware.error_handler import ErrorHandlerMiddleware, setup_excep
 from src.api.middleware.security import SecurityHeadersMiddleware
 from src.api.middleware.rate_limiter import RateLimiterMiddleware
 from src.config.payment_config import payment_settings
+from src.config.storage_config import storage_settings
 from src.tasks.scheduled_tasks import start_scheduled_tasks, shutdown_scheduled_tasks
 from src.api.cache.redis_client import cache
 from src.api.config import settings
@@ -217,13 +218,11 @@ register_routes(app)
 # Mount media directory for serving uploaded files
 # This allows the frontend to access media files via URLs like:
 # http://localhost:2024/media/workspace-id/user-id/filename.jpg
-media_dir = os.path.join(os.getcwd(), "media")
-if not os.path.exists(media_dir):
-    os.makedirs(media_dir, exist_ok=True)
-    logger.info(f"Created media directory at: {media_dir}")
+media_dir = str(storage_settings.local_storage_path)
+os.makedirs(media_dir, exist_ok=True)
 
 app.mount("/media", StaticFiles(directory=media_dir), name="media")
-logger.info(f"Mounted media directory for static file serving: {media_dir}")
+logger.info("Mounted media directory for static file serving: %s", media_dir)
 
 # ============================================================================
 # ROOT ENDPOINTS
