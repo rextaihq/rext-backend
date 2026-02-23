@@ -144,11 +144,17 @@ class Notification(Base, SerializableMixin, SoftDeleteMixin):
     )
 
     def to_dict(self, **kwargs):
-        """Return notification data for the frontend/UI."""
+        """Return notification data for the frontend/UI.
+
+        Exposes all user-facing fields including priority, action buttons,
+        payload, and read timestamp. Excludes internal state tracking
+        (soft delete, archive) and delivery channel metadata.
+        """
         if 'exclude' not in kwargs:
             kwargs['exclude'] = [
-                # Internal state — soft delete managed by mixin
-                'deleted_at',
+                # Internal state — not needed by frontend
+                'is_archived', 'archived_at',
+                'is_deleted', 'deleted_at',
                 # Delivery channel tracking — internal metadata
                 'sent_via_email', 'sent_via_sse',
                 'email_sent_at', 'sse_sent_at',
