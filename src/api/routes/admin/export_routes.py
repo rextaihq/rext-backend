@@ -10,10 +10,9 @@ This module provides CSV export functionality for:
 All endpoints require super admin permissions.
 """
 from datetime import datetime, timezone
-from fastapi import APIRouter, Depends, Request, Query, Response
+from fastapi import APIRouter, Depends, Request, Query
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
-import io
 
 from src.api.database.async_database import get_async_db
 from src.api.security.dependencies import get_current_user
@@ -30,7 +29,7 @@ router = APIRouter()
 # ============================================================================
 
 @router.get("/export/subscriptions")
-@require_permissions("subscription.read")
+@require_permissions("subscription.read", workspace_scoped=False)
 @db_transaction_handler("export subscriptions", auto_commit=False)
 async def export_subscriptions(
     request: Request,
@@ -64,16 +63,13 @@ async def export_subscriptions(
         end_date=end_date
     )
 
-    # Create streaming response
-    output = io.StringIO(csv_content)
-
     # Generate filename with timestamp
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     filename = f"subscriptions_export_{timestamp}.csv"
 
     return StreamingResponse(
         iter([csv_content]),
-        media_type="text/csv",
+        media_type="text/csv; charset=utf-8",
         headers={
             "Content-Disposition": f"attachment; filename={filename}"
         }
@@ -81,7 +77,7 @@ async def export_subscriptions(
 
 
 @router.get("/export/invoices")
-@require_permissions("subscription.read")
+@require_permissions("subscription.read", workspace_scoped=False)
 @db_transaction_handler("export invoices", auto_commit=False)
 async def export_invoices(
     request: Request,
@@ -133,7 +129,7 @@ async def export_invoices(
 
 
 @router.get("/export/usage")
-@require_permissions("subscription.read")
+@require_permissions("subscription.read", workspace_scoped=False)
 @db_transaction_handler("export usage data", auto_commit=False)
 async def export_usage_data(
     request: Request,
@@ -178,7 +174,7 @@ async def export_usage_data(
 
 
 @router.get("/export/revenue-summary")
-@require_permissions("subscription.read")
+@require_permissions("subscription.read", workspace_scoped=False)
 @db_transaction_handler("export revenue summary", auto_commit=False)
 async def export_revenue_summary(
     request: Request,
