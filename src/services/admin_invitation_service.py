@@ -28,12 +28,13 @@ from typing import Optional, List
 from uuid import UUID
 from datetime import datetime, timezone, timedelta
 import secrets
-import hashlib
 
 from sqlalchemy import select, and_, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from src.utils.invitation_utils import validate_expiry_days
+from src.utils.invitation_utils import normalize_email
 from src.api.models.admin_models.admin_invitations import PlatformAdminInvitations
 from src.api.models.user_models.users import Users
 from src.api.models.user_models.roles import Role
@@ -65,15 +66,13 @@ class AdminInvitationService:
         Generate a secure admin invitation token.
 
         Args:
-            email: Invitee email
+            email: Invitee email (unused — kept for API compatibility)
 
         Returns:
             Secure token string
         """
-        random_part = secrets.token_urlsafe(48)  # Longer for admin invitations
-        combined = f"{email}:{random_part}:{datetime.now(timezone.utc).timestamp()}"
-        token_hash = hashlib.sha256(combined.encode()).hexdigest()
-        return token_hash
+        from src.utils.invitation_utils import generate_invitation_token
+        return generate_invitation_token(nbytes=48)
 
     async def _verify_super_admin(self, user_id: UUID) -> None:
         """
@@ -164,14 +163,10 @@ class AdminInvitationService:
         await self._verify_super_admin(invited_by_admin_id)
 
         # Validate expiry_days
-        if not 1 <= expiry_days <= 30:
-            raise RextValidationException(
-                message="Expiry days must be between 1 and 30",
-                field_errors={"expiry_days": ["Must be between 1 and 30 days"]}
-            )
+        validate_expiry_days(expiry_days)
 
         # Normalize email
-        email = email.lower().strip()
+        email = normalize_email(email)
 
         # Validate admin role
         await self._validate_admin_role(admin_role)
@@ -423,7 +418,7 @@ class AdminInvitationService:
             )
 
         # Verify email match (security)
-        if user.email.lower() != invitation.email.lower():
+        if normalize_email(user.email) != normalize_email(invitation.email):
             raise BusinessRuleViolationException(
                 message=f"This invitation is for {invitation.email}",
                 rule_name="email_mismatch"
@@ -598,11 +593,7 @@ class AdminInvitationService:
         await self._verify_super_admin(resent_by_admin_id)
 
         # Validate expiry
-        if not 1 <= expiry_days <= 30:
-            raise RextValidationException(
-                message="Expiry days must be between 1 and 30",
-                field_errors={"expiry_days": ["Must be between 1 and 30 days"]}
-            )
+        validate_expiry_days(expiry_days)
 
         # Get invitation
         invitation = await self.get_invitation_by_id(invitation_id)

@@ -22,7 +22,7 @@ from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, List, Optional
 from uuid import UUID
 
-from sqlalchemy import and_, func, select
+from sqlalchemy import and_, func, select, case
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.models.admin_models.error_log import ErrorLog
@@ -104,18 +104,26 @@ class MonitoringService:
             db_response_time = int((time.time() - db_start) * 1000)
             db_status = "healthy" if db_response_time < 100 else "degraded"
 
+            # Get real pool statistics from the async engine
+            from src.api.database.async_database import async_engine
+            pool = async_engine.pool
             db_health = {
                 "status": db_status,
                 "response_time_ms": db_response_time,
-                "connection_count": 5,  # Placeholder
-                "max_connections": 100
+                "connection_count": pool.checkedin() + pool.checkedout(),
+                "connections_checked_in": pool.checkedin(),
+                "connections_checked_out": pool.checkedout(),
+                "pool_overflow": pool.overflow(),
+                "pool_size": pool.size(),
+                "max_overflow": async_engine.pool._max_overflow,
+                "max_connections": pool.size() + async_engine.pool._max_overflow,
             }
         except Exception as e:
             db_health = {
                 "status": "unhealthy",
                 "response_time_ms": 0,
                 "connection_count": 0,
-                "max_connections": 100,
+                "max_connections": 0,
                 "error": str(e)
             }
 
@@ -134,19 +142,72 @@ class MonitoringService:
                 "error": str(e)
             }
 
-        # API health metrics (placeholder)
-        api_health = {
-            "status": "healthy",
-            "requests_per_minute": 150,
-            "avg_response_time_ms": 120,
-            "error_rate": 0.2
-        }
+        try:
+            from src.api.cache.redis_client import cache as redis_cache
+            redis = redis_cache.redis
+            if redis is not None:
+                now_ts = int(time.time())
+                current_minute = now_ts - (now_ts % 60)
 
-        # Workers health (placeholder)
+                # Get last 5 minutes of data for rolling averages
+                total_requests = 0
+                total_time = 0
+                total_errors = 0
+                minutes_with_data = 0
+
+                pipe = redis.pipeline()
+                for i in range(5):
+                    bucket = current_minute - (i * 60)
+                    pipe.get(f"metrics:api:count:{bucket}")
+                    pipe.get(f"metrics:api:time_sum:{bucket}")
+                    pipe.get(f"metrics:api:errors:{bucket}")
+                results = await pipe.execute()
+
+                for i in range(5):
+                    count = int(results[i * 3] or 0)
+                    time_sum = float(results[i * 3 + 1] or 0)
+                    errors = int(results[i * 3 + 2] or 0)
+                    if count > 0:
+                        total_requests += count
+                        total_time += time_sum
+                        total_errors += errors
+                        minutes_with_data += 1
+
+                avg_rpm = total_requests / max(minutes_with_data, 1)
+                avg_response_time = total_time / max(total_requests, 1)
+                error_rate = (total_errors / max(total_requests, 1)) * 100
+
+                api_status = "healthy"
+                if error_rate > 10:
+                    api_status = "degraded"
+                if error_rate > 50:
+                    api_status = "unhealthy"
+
+                api_health = {
+                    "status": api_status,
+                    "requests_per_minute": round(avg_rpm, 1),
+                    "avg_response_time_ms": round(avg_response_time, 1),
+                    "error_rate": round(error_rate, 2),
+                    "sample_window_minutes": minutes_with_data,
+                }
+            else:
+                api_health = {
+                    "status": "unknown",
+                    "requests_per_minute": 0,
+                    "avg_response_time_ms": 0,
+                    "error_rate": 0,
+                    "note": "Redis unavailable — API metrics not tracked"
+                }
+        except Exception as e:
+            api_health = {
+                "status": "unknown",
+                "error": str(e)
+            }
+
+        # Workers health — background job queue not implemented
         workers_health = {
-            "status": "not_configured",
-            "active_jobs": 0,
-            "failed_jobs_24h": 0
+            "status": "not_implemented",
+            "note": "Background job monitoring not yet implemented"
         }
 
         logger.info("System health metrics retrieved")
@@ -306,21 +367,43 @@ class MonitoringService:
         period_delta = period_map.get(period, timedelta(hours=24))
         period_start = datetime.now(timezone.utc) - period_delta
 
-        # API calls (placeholder - would track via middleware in production)
-        api_stats = {
-            "total": 15000,
-            "by_endpoint": [
-                {"endpoint": "/api/v1/content/generate", "count": 5000},
-                {"endpoint": "/api/v1/workspaces", "count": 3000},
-                {"endpoint": "/api/v1/topics", "count": 2500},
-            ],
-            "by_hour": []
-        }
+        # API calls from Redis metrics
+        try:
+            from src.api.cache.redis_client import cache as redis_cache
+            redis = redis_cache.redis
+            api_total = 0
+            if redis is not None:
+                now_ts = int(time.time())
+                period_seconds = int(period_delta.total_seconds())
+                minutes = period_seconds // 60
+
+                # Sample up to 1440 minute-buckets (24 hours) for performance
+                sample_minutes = min(minutes, 1440)
+                pipe = redis.pipeline()
+                for i in range(sample_minutes):
+                    bucket = (now_ts - (now_ts % 60)) - (i * 60)
+                    pipe.get(f"metrics:api:count:{bucket}")
+                results = await pipe.execute()
+                api_total = sum(int(r or 0) for r in results)
+
+            api_stats = {
+                "total": api_total,
+                "by_endpoint": [],
+                "by_hour": [],
+                "note": "Endpoint-level breakdown not yet implemented"
+            }
+        except Exception:
+            api_stats = {
+                "total": 0,
+                "by_endpoint": [],
+                "by_hour": [],
+                "note": "API metrics unavailable"
+            }
 
         # Content generation stats
         content_query = select(
-            func.count(Content.id).label("total"),
-            func.sum(func.case((Content.status == "published", 1), else_=0)).label("successful")
+            func.coalesce(func.count(Content.id), 0).label("total"),
+            func.coalesce(func.sum(case({Content.status == "published": 1}, else_=0)), 0).label("successful")
         ).where(Content.created_at >= period_start)
 
         content_result = await self.db.execute(content_query)

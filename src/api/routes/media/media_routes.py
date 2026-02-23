@@ -17,6 +17,7 @@ from src.services.image_processing_service import ImageProcessingService
 from src.config.storage_config import storage_settings
 from src.utils.response_utils import success, created, error
 from src.utils.route_decorators import db_transaction_handler, require_permissions
+from src.api.middleware.rate_limiter import media_upload_rate_limit
 from src.utils.logger import logger
 
 # File: src/api/routes/media/media_routes.py
@@ -147,7 +148,8 @@ async def upload_media(
     tags: Optional[str] = Form(None),  # Comma-separated
     is_public: bool = Form(False),
     db: AsyncSession = Depends(get_async_db),
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
+    _rate_limit: None = Depends(media_upload_rate_limit()),
 ):
     """
     Upload media file to workspace.
@@ -200,12 +202,24 @@ async def upload_media(
             is_public=is_public
         )
 
+        media_data = media.to_dict()
+
+        # Surface processing warnings to the client
+        warnings = media_data.get("file_metadata", {}).get("processing_warnings", [])
+
+        response_data = {
+            **media_data,
+        }
+        if warnings:
+            response_data["warnings"] = warnings
+
         logger.info(f"Media uploaded successfully: {media.id}")
 
         return created(
-            data=media.to_dict(),
+            data=response_data,
             request=request,
             message=f"File '{file.filename}' uploaded successfully"
+            + (f" (with {len(warnings)} warning(s))" if warnings else "")
         )
 
     except ValueError as e:
@@ -301,6 +315,80 @@ async def list_media(
         },
         message=f"Found {result['total']} media files"
     )
+
+
+@router.post("/bulk-delete", response_model=dict)
+@db_transaction_handler("bulk delete media")
+@require_permissions("media.delete")
+async def bulk_delete_media(
+    request: Request,
+    workspace_id: str,
+    media_ids: list[str],
+    permanent: bool = Query(False, description="Permanently delete from storage"),
+    db: AsyncSession = Depends(get_async_db),
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Delete multiple media files at once.
+
+    By default, performs soft delete (sets deleted_at).
+    Use permanent=true to remove from storage and database.
+
+    Args:
+        workspace_id: Workspace UUID
+        media_ids: List of media UUIDs to delete
+        permanent: If true, permanently delete
+
+    Returns:
+        Bulk delete results with counts
+    """
+    # Get service
+    service = get_media_service(db)
+
+    # Bulk delete media
+    result = await service.bulk_delete_media(
+        media_ids=media_ids,
+        workspace_id=workspace_id,
+        permanent=permanent
+    )
+
+    delete_type = "permanently deleted" if permanent else "moved to trash"
+    message = f"{result['deleted']} media files {delete_type}"
+    if result['failed'] > 0:
+        message += f", {result['failed']} failed"
+
+    return success(
+        data=result,
+        message=message
+    )
+
+
+@router.get("/usage/stats", response_model=dict)
+@db_transaction_handler("get storage usage")
+@require_permissions("media.read")
+async def get_storage_usage(
+    request: Request,
+    workspace_id: str,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Get storage usage statistics for workspace.
+
+    Returns:
+        Usage statistics including file counts and storage size
+    """
+    # Get service
+    service = get_media_service(db)
+
+    # Get usage stats
+    usage = await service.get_workspace_storage_usage(workspace_id)
+
+    return success(
+        data=usage,
+        message="Storage usage retrieved successfully"
+    )
+
 
 
 @router.get("/{media_id}", response_model=dict)
@@ -453,51 +541,6 @@ async def delete_media(
     )
 
 
-@router.post("/bulk-delete", response_model=dict)
-@db_transaction_handler("bulk delete media")
-@require_permissions("media.delete")
-async def bulk_delete_media(
-    request: Request,
-    workspace_id: str,
-    media_ids: list[str],
-    permanent: bool = Query(False, description="Permanently delete from storage"),
-    db: AsyncSession = Depends(get_async_db),
-    current_user: dict = Depends(get_current_user)
-):
-    """
-    Delete multiple media files at once.
-
-    By default, performs soft delete (sets deleted_at).
-    Use permanent=true to remove from storage and database.
-
-    Args:
-        workspace_id: Workspace UUID
-        media_ids: List of media UUIDs to delete
-        permanent: If true, permanently delete
-
-    Returns:
-        Bulk delete results with counts
-    """
-    # Get service
-    service = get_media_service(db)
-
-    # Bulk delete media
-    result = await service.bulk_delete_media(
-        media_ids=media_ids,
-        workspace_id=workspace_id,
-        permanent=permanent
-    )
-
-    delete_type = "permanently deleted" if permanent else "moved to trash"
-    message = f"{result['deleted']} media files {delete_type}"
-    if result['failed'] > 0:
-        message += f", {result['failed']} failed"
-
-    return success(
-        data=result,
-        message=message
-    )
-
 
 @router.get("/{media_id}/usage", response_model=dict)
 @db_transaction_handler("get media usage")
@@ -531,31 +574,4 @@ async def get_media_usage_info(
     return success(
         data=usage,
         message="Media usage retrieved successfully"
-    )
-
-
-@router.get("/usage/stats", response_model=dict)
-@db_transaction_handler("get storage usage")
-@require_permissions("media.read")
-async def get_storage_usage(
-    request: Request,
-    workspace_id: str,
-    db: AsyncSession = Depends(get_async_db),
-    current_user: dict = Depends(get_current_user)
-):
-    """
-    Get storage usage statistics for workspace.
-
-    Returns:
-        Usage statistics including file counts and storage size
-    """
-    # Get service
-    service = get_media_service(db)
-
-    # Get usage stats
-    usage = await service.get_workspace_storage_usage(workspace_id)
-
-    return success(
-        data=usage,
-        message="Storage usage retrieved successfully"
     )

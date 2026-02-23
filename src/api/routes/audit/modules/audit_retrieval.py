@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Request, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import func, select
+from sqlalchemy import select
 from typing import Optional
 
 from src.api.database.async_database import get_async_db
@@ -58,11 +58,15 @@ async def list_audit_logs(
     Returns:
     - Paginated list of audit logs
     """
-    # Build query with filters
-    query = await build_audit_query(
+    # Build query with filters (returns both data query and count query)
+    query, count_query = await build_audit_query(
         db=db,
         user_id=user_id,
+<<<<<<< task-413
+        full_name=username,
+=======
         full_name=full_name,
+>>>>>>> merge_tasks
         user_email=user_email,
         action=action,
         resource_type=resource_type,
@@ -74,10 +78,6 @@ async def list_audit_logs(
     )
 
     # Get total count
-    count_query = select(func.count()).select_from(AuditLog)
-    # Apply same filters for count
-    for whereclause in query.whereclause.clauses if hasattr(query.whereclause, 'clauses') else [query.whereclause] if query.whereclause is not None else []:
-        count_query = count_query.where(whereclause)
     count_result = await db.execute(count_query)
     total_count = count_result.scalar() or 0
 

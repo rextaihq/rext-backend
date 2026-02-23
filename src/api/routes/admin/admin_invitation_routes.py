@@ -28,6 +28,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.api.database.async_database import get_async_db
 from src.api.security.dependencies import get_current_user
 from src.services.admin_invitation_service import AdminInvitationService
+from src.api.middleware.rate_limiter import admin_invitation_rate_limit, invitation_creation_rate_limit
 from src.api.schema.admin_invitation_schema import (
     CreateAdminInvitationRequest,
     AcceptAdminInvitationRequest,
@@ -135,6 +136,7 @@ async def create_admin_invitation(
     data: CreateAdminInvitationRequest,
     db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user),
+    _: None = Depends(admin_invitation_rate_limit()),  # Add rate limiting
 ):
     """
     Create a new platform admin invitation.
@@ -248,6 +250,7 @@ async def resend_admin_invitation(
     data: ResendAdminInvitationRequest,
     db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user),
+    __: None = Depends(admin_invitation_rate_limit()),
 ):
     """
     Resend (refresh) an admin invitation with new token and expiry.

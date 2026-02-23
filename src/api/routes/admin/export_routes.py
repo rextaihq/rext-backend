@@ -116,9 +116,12 @@ async def export_invoices(
             end_date=end_date,
             min_amount=min_amount
         )
-    except NotImplementedError as e:
+    except NotImplementedError:
         from fastapi import HTTPException
-        raise HTTPException(status_code=501, detail=str(e))
+        raise HTTPException(
+            status_code=501,
+            detail="Invoice export is not available yet"
+        )
 
     # Create streaming response
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")

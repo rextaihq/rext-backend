@@ -582,6 +582,18 @@ def create_storage_service(
         )
     """
     if backend_type == "r2":
+        required = {
+            "bucket": kwargs.get("bucket"),
+            "account_id": kwargs.get("account_id"),
+            "access_key_id": kwargs.get("access_key_id"),
+            "secret_access_key": kwargs.get("secret_access_key"),
+        }
+        missing = [name for name, value in required.items() if not value or not str(value).strip()]
+        if missing:
+            raise ValueError(
+                f"R2 storage backend requires the following configuration: "
+                f"{', '.join(missing)}. Check your environment variables."
+            )
         backend = CloudflareR2Backend(
             bucket=kwargs.get("bucket"),
             account_id=kwargs.get("account_id"),

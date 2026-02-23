@@ -9,13 +9,15 @@ High-level service for media management that orchestrates:
 """
 
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_, func, or_
+from sqlalchemy import select, and_, func, or_, update, delete
 from typing import List, Optional, BinaryIO, Dict, Any
 from datetime import datetime, timezone
 from io import BytesIO
 import os
 import uuid 
 import filetype
+import asyncio
+from functools import partial
 
 from src.api.models.media_models.media import Media
 from src.api.models.workspace_models.workspace_model import WorkspaceModel
@@ -30,6 +32,7 @@ from src.config.storage_config import storage_settings
 from src.utils.file_security import validate_file_upload
 from src.api.config import get_settings
 import logging
+from src.api.cache.decorators import cached
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -65,9 +68,17 @@ class MediaService:
         self.storage = storage_service
         self.image = image_service
 
+    @cached(
+        key_prefix="user:subscription_tier",
+        ttl=300,
+        key_builder=lambda self, user_id: str(user_id),
+    )
     async def _get_user_subscription_tier(self, user_id: str) -> str:
         """
         Get user's subscription tier for limit enforcement.
+
+        Results are cached in Redis for 5 minutes to avoid redundant
+        database queries during batch uploads.
 
         Args:
             user_id: User UUID
@@ -79,7 +90,7 @@ class MediaService:
             select(UserSubscription, SubscriptionPlan)
             .join(SubscriptionPlan, UserSubscription.plan_id == SubscriptionPlan.id)
             .where(
-                UserSubscription.user_id == uuid.UUID(user_id),
+                UserSubscription.user_id == uuid.UUID(user_id) if isinstance(user_id, str) else user_id,
                 UserSubscription.status.in_([SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIAL])
             )
         )
@@ -278,23 +289,32 @@ class MediaService:
         thumbnail_url = None
         processing_status = "pending"
         processing_error = None
+        processing_warnings = []
 
         try:
             # Process image if applicable
             if mime_type.startswith('image/'):
                 file_io = BytesIO(file_content)
 
-                # Validate image
-                is_valid, error_msg = self.image.validate_image(
-                    file_io,
-                    max_size_mb=max_size / (1024 * 1024)
+                # Validate image (CPU-bound, offload to thread)
+                loop = asyncio.get_event_loop()
+                is_valid, error_msg = await loop.run_in_executor(
+                    None,
+                    partial(
+                        self.image.validate_image,
+                        file_io,
+                        max_size_mb=max_size / (1024 * 1024)
+                    )
                 )
                 if not is_valid:
                     raise ValueError(error_msg)
 
-                # Extract metadata
+                # Extract metadata (CPU-bound, offload to thread)
                 file_io.seek(0)
-                file_metadata = self.image.extract_metadata(file_io)
+                file_metadata = await loop.run_in_executor(
+                    None,
+                    partial(self.image.extract_metadata, file_io)
+                )
                 width = file_metadata.get('width')
                 height = file_metadata.get('height')
                 is_animated = file_metadata.get('is_animated', False)
@@ -315,9 +335,12 @@ class MediaService:
                         f"{frame_count} frames, {filename}"
                     )
 
-                # Optimize image
+                # Optimize image (CPU-bound, offload to thread)
                 file_io.seek(0)
-                optimized = self.image.optimize_image(file_io)
+                optimized = await loop.run_in_executor(
+                    None,
+                    partial(self.image.optimize_image, file_io)
+                )
                 file_content = optimized.read()
                 optimized.seek(0)
 
@@ -332,8 +355,7 @@ class MediaService:
                 mime_type,
                 workspace_id,
                 user_id,
-                metadata={"original_filename": filename},
-                is_public=is_public
+                metadata={"original_filename": filename}
             )
 
             # Get storage backend name
@@ -344,18 +366,17 @@ class MediaService:
             if storage_backend == "r2":
                 storage_bucket = storage_settings.r2_bucket
 
-            # Generate URL — use permanent public URL for public files
-            if is_public:
-                public_url = await self.storage.get_public_file_url(storage_path)
-            else:
-                public_url = await self.storage.get_file_url(storage_path)
+            # Generate public URL
+            public_url = await self.storage.get_file_url(storage_path)
 
             # Create thumbnail for images
             if mime_type.startswith('image/'):
                 try:
                     file_io = BytesIO(file_content)
-                    thumbnail = self.image.create_thumbnail(file_io, size='medium')
-
+                    thumbnail = await loop.run_in_executor(
+                        None,
+                        partial(self.image.create_thumbnail, file_io, size='medium')
+                    )
                     # Generate thumbnail filename
                     thumb_filename = f"thumb_{generated_filename}"
                     if not thumb_filename.endswith('.jpg'):
@@ -367,9 +388,11 @@ class MediaService:
                         thumb_filename,
                         'image/jpeg',
                         workspace_id,
-                        user_id,
-                        is_public=is_public
+                        user_id
                     )
+<<<<<<< task-413
+                    thumbnail_url = await self.storage.get_file_url(thumbnail_path)
+=======
                     if is_public:
                         thumbnail_url = await self.storage.get_public_file_url(thumbnail_path)
                     else:
@@ -377,12 +400,15 @@ class MediaService:
                             thumbnail_path,
                         expires_in=storage_settings.thumbnail_url_expiration
                         )
+>>>>>>> merge_tasks
 
                 except Exception as e:
                     logger.error(f"Failed to create thumbnail: {e}")
-                    # Continue without thumbnail
+                    processing_warnings.append(
+                        f"Thumbnail generation failed: {type(e).__name__}"
+                    )
 
-            processing_status = "completed"
+            processing_status = "completed_with_warnings" if processing_warnings else "completed"
 
         except Exception as e:
             logger.error(f"Error processing media: {e}")
@@ -418,7 +444,10 @@ class MediaService:
             thumbnail_url=thumbnail_url,
             processing_status=processing_status,
             processing_error=processing_error,
-            file_metadata=file_metadata
+            file_metadata={
+                **file_metadata,
+                **({"processing_warnings": processing_warnings} if processing_warnings else {})
+            }
         )
 
         self.db.add(media)
@@ -654,7 +683,11 @@ class MediaService:
         permanent: bool = False
     ) -> Dict[str, Any]:
         """
-        Delete multiple media files.
+        Delete multiple media files using batched database operations.
+
+        For soft delete: executes a single UPDATE statement.
+        For permanent delete: fetches all records, deletes storage files
+        individually, then executes a single batch DELETE.
 
         Args:
             media_ids: List of media UUIDs to delete
@@ -664,22 +697,75 @@ class MediaService:
         Returns:
             Dictionary with deleted and failed counts
         """
-        deleted_count = 0
-        failed_count = 0
+        if not media_ids:
+            return {"deleted": 0, "failed": 0, "errors": []}
+
         errors = []
 
-        for media_id in media_ids:
-            try:
-                success = await self.delete_media(media_id, workspace_id, permanent)
-                if success:
-                    deleted_count += 1
-                else:
-                    failed_count += 1
-                    errors.append(f"Media {media_id} not found")
-            except Exception as e:
-                failed_count += 1
-                errors.append(f"Media {media_id}: {str(e)}")
-                logger.error(f"Error deleting media {media_id}: {e}")
+        # Fetch all matching media in a single query
+        result = await self.db.execute(
+            select(Media).where(
+                and_(
+                    Media.id.in_(media_ids),
+                    Media.workspace_id == workspace_id,
+                    Media.deleted_at.is_(None)
+                )
+            )
+        )
+        media_items = result.scalars().all()
+
+        # Identify which IDs were found vs not found
+        found_ids = {str(media.id) for media in media_items}
+        not_found_ids = [mid for mid in media_ids if mid not in found_ids]
+        for mid in not_found_ids:
+            errors.append(f"Media {mid} not found")
+
+        if not media_items:
+            return {
+                "deleted": 0,
+                "failed": len(not_found_ids),
+                "errors": errors
+            }
+
+        deleted_count = 0
+        failed_count = len(not_found_ids)
+
+        if permanent:
+            # Permanent delete: remove files from storage first, then batch DB delete
+            storage_errors = []
+            successfully_deleted_ids = []
+
+            for media in media_items:
+                try:
+                    await self.storage.delete_file(media.storage_path)
+                    if media.thumbnail_path:
+                        await self.storage.delete_file(media.thumbnail_path)
+                    successfully_deleted_ids.append(media.id)
+                except Exception as e:
+                    logger.error(f"Error deleting storage file for media {media.id}: {e}")
+                    storage_errors.append(f"Media {media.id}: storage delete failed - {str(e)}")
+                    # Still delete from DB even if storage delete fails
+                    successfully_deleted_ids.append(media.id)
+
+            errors.extend(storage_errors)
+
+            # Batch delete from database
+            if successfully_deleted_ids:
+                await self.db.execute(
+                    delete(Media).where(Media.id.in_(successfully_deleted_ids))
+                )
+                deleted_count = len(successfully_deleted_ids)
+        else:
+            # Soft delete: single UPDATE statement for all matching records
+            batch_ids = [media.id for media in media_items]
+            await self.db.execute(
+                update(Media)
+                .where(Media.id.in_(batch_ids))
+                .values(deleted_at=datetime.now(timezone.utc))
+            )
+            deleted_count = len(batch_ids)
+
+        await self.db.flush()
 
         logger.info(f"Bulk delete: {deleted_count} deleted, {failed_count} failed")
         return {

@@ -18,6 +18,7 @@ async def create_audit_log(
     request: Optional[Request] = None,
     workspace_id: Optional[uuid.UUID] = None,
     full_name: Optional[str] = None,
+    user_email: Optional[str] = None,
     metadata: Optional[Dict[str, Any]] = None,
     status: str = "success",
     error_message: Optional[str] = None,
@@ -53,6 +54,10 @@ async def create_audit_log(
     # Support 'username' as an alias for 'full_name' for backward compatibility
     if not full_name and 'username' in kwargs:
         full_name = kwargs.get('username')
+
+    # Support 'email' as an alias for 'user_email' for backward compatibility
+    if not user_email and 'email' in kwargs:
+        user_email = kwargs.get('email')
 
     try:
         # Extract request details if provided

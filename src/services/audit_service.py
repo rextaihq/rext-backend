@@ -49,7 +49,7 @@ class AuditService:
                     field_errors={"status_filter": ["Unsupported audit status"]},
                 ) from exc
 
-        query = await build_audit_query(
+        data_query, _ = await build_audit_query(
             db=self.db,
             user_id=user_id,
             full_name=full_name,
@@ -63,7 +63,7 @@ class AuditService:
             date_to=date_to,
         )
 
-        query = query.order_by(AuditLog.created_at.desc()).limit(limit)
+        query = data_query.order_by(AuditLog.created_at.desc()).limit(limit)
         result = await self.db.execute(query)
         return result.scalars().all()
 

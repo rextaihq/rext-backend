@@ -2,6 +2,7 @@
 from datetime import datetime, timezone
 from io import StringIO
 from typing import Optional
+from uuid import UUID
 import csv
 import json
 
@@ -34,11 +35,34 @@ async def export_audit_logs(
     status_filter: Optional[str] = Query(None, description="Filter by status"),
     date_from: Optional[str] = Query(None, description="Start date (ISO 8601)"),
     date_to: Optional[str] = Query(None, description="End date (ISO 8601)"),
-    limit: int = Query(1000, ge=1, le=10000, description="Max records to export"),
+    limit: int = Query(1000, ge=1, le=5000, description="Max records to export"),
     db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user)
 ):
-    """Export audit logs as JSON or CSV (admin only)."""
+    """Export audit logs as JSON or CSV (admin only, rate-limited)."""
+
+    # Log the export action itself for audit trail
+    admin_user_id = current_user.get("identity")
+    await create_audit_log(
+        db=db,
+        user_id=UUID(admin_user_id) if admin_user_id else None,
+        action="audit.export",
+        resource_type="audit_log",
+        resource_id="bulk_export",
+        request=request,
+        metadata={
+            "format": format.value,
+            "limit": limit,
+            "filters": {
+                "user_id": user_id,
+                "action": action,
+                "resource_type": resource_type,
+                "date_from": date_from,
+                "date_to": date_to,
+            }
+        },
+    )
+
     service = AuditService(db)
     logs = await service.fetch_logs(
         user_id=user_id,

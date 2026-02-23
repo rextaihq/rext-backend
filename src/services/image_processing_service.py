@@ -143,6 +143,11 @@ class ImageProcessingService:
         try:
             with Image.open(file) as img:
                 # Handle EXIF orientation (rotate based on EXIF data)
+                # Handle EXIF orientation (rotate based on EXIF data)
+                # This applies the rotation physically, so the EXIF orientation tag
+                # is no longer needed. When saving below, EXIF data is NOT written
+                # to the output, effectively stripping all EXIF metadata including
+                # GPS coordinates, device info, and timestamps.
                 img = ImageOps.exif_transpose(img)
 
                 # Store original format
@@ -228,7 +233,9 @@ class ImageProcessingService:
 
         try:
             with Image.open(file) as img:
-                # Handle EXIF orientation
+                # Handle EXIF orientation — applied physically, then EXIF is
+                # stripped from thumbnail output (Pillow doesn't write EXIF by
+                # default when saving without exif= parameter).
                 img = ImageOps.exif_transpose(img)
 
                 # Convert to RGB if needed (for JPEG)
@@ -292,30 +299,51 @@ class ImageProcessingService:
                     'frame_count': getattr(img, 'n_frames', 1),
                 }
 
-                # Add EXIF data if available (using public getexif() API)
-                exif_data = img.getexif()
-                if exif_data:
-                    try:
+                # Add EXIF data if available (using modern Pillow API)
+                try:
+                    exif_data = img.getexif()
+                    if exif_data:
                         metadata['has_exif'] = True
-                        # Access IFD0 tags using named constants
-                        make = exif_data.get(ExifTags.Base.Make)
-                        if make:
-                            metadata['camera_make'] = str(make).strip()
-                        model = exif_data.get(ExifTags.Base.Model)
-                        if model:
-                            metadata['camera_model'] = str(model).strip()
-                        datetime_tag = exif_data.get(ExifTags.Base.DateTime)
-                        if datetime_tag:
-                            metadata['datetime'] = str(datetime_tag)
 
-                        # Access EXIF IFD for additional tags if needed
-                        exif_ifd = exif_data.get_ifd(ExifTags.IFD.Exif)
+                        # Whitelist of safe EXIF tags to extract
+                        # Only retain non-privacy-sensitive metadata
+                        SAFE_MAIN_TAGS = {
+                            274: 'orientation',     # Orientation (critical for display)
+                            256: 'image_width',     # ImageWidth
+                            257: 'image_height',    # ImageLength
+                        }
+
+                        for tag_id, key_name in SAFE_MAIN_TAGS.items():
+                            if tag_id in exif_data:
+                                metadata[key_name] = exif_data[tag_id]
+
+                        # Extract safe tags from ExifIFD (tag 0x8769)
+                        exif_ifd = exif_data.get_ifd(0x8769)
                         if exif_ifd:
-                            # ExposureTime, FNumber, ISO, etc. could be extracted here
-                            metadata['has_exif_ifd'] = True
-                    except Exception:
-                        # EXIF parsing is best-effort — don't fail the upload
-                        pass
+                            # ColorSpace (tag 40961)
+                            if 40961 in exif_ifd:
+                                metadata['color_space'] = exif_ifd[40961]
+                            # ExifImageWidth (tag 40962)
+                            if 40962 in exif_ifd:
+                                metadata['exif_width'] = exif_ifd[40962]
+                            # ExifImageHeight (tag 40963)
+                            if 40963 in exif_ifd:
+                                metadata['exif_height'] = exif_ifd[40963]
+
+                        # EXPLICITLY DO NOT extract:
+                        # - GPSInfo IFD (0x8825 / 34853) — contains GPS coordinates
+                        # - Tag 271 (Make) — device manufacturer
+                        # - Tag 272 (Model) — device model
+                        # - Tag 305 (Software) — editing software
+                        # - Tag 306 (DateTime) — date/time of capture
+                        # - Tag 36867 (DateTimeOriginal)
+                        # - Tag 36868 (DateTimeDigitized)
+                        # - Tag 42033 (SerialNumber) — camera serial number
+                        # - Tag 42036 (LensSerialNumber)
+
+                except Exception:
+                    # EXIF extraction is non-critical; continue without it
+                    pass
 
                 return metadata
 

@@ -72,9 +72,8 @@ def db_transaction_handler(
                     Set to False if you need manual transaction control
         error_severity: Severity level for unexpected errors (default: HIGH)
         error_code: Error code for unexpected errors (default: INTERNAL_SERVER_ERROR)
-        include_error_details: Whether to include error details in logging (default: True)
-                              Error details are always logged but this controls the verbosity
-
+        include_error_details: Whether to include error details in logging (default: False)
+                      Error details are logged but never returned to clients
     Returns:
         Decorated async function that handles transactions and errors
 
@@ -391,28 +390,31 @@ def require_permissions(
                     workspace_uuid = UUID(str(workspace_id_param))
                 except ValueError:
                     workspace_uuid = await async_get_workspace_id_from_identifier(db, workspace_id_param)
-
-            # Check permissions using appropriate logic (AND or OR)
+            # SECURITY INVARIANT:
+            # Never bypass permission checks based on DB/session attributes (for example `_executed`).
+            # Tests must use dependency overrides or monkeypatching, not production bypass branches.
             check_func = check_all_permissions if require_all else check_any_permission
-            has_permission = await check_func(db, user_id, list(permissions), workspace_uuid)
-
-            if not has_permission:
-                # Build permission requirement string for error message
-                perm_str = " AND ".join(permissions) if require_all else " OR ".join(permissions)
-
-                logger.warning(
-                    f"Permission denied: user={user_id}, required={perm_str}, "
-                    f"workspace={workspace_uuid}, logic={'AND' if require_all else 'OR'}"
+            try:
+                has_permission = await check_func(db, user_id, list(permissions), workspace_uuid)
+            except Exception as exc:
+                logger.error(
+                    "Permission evaluation failed; denying request",
+                    exc_info=True,
+                    extra={
+                        "operation": func.__name__,
+                        "permissions": list(permissions),
+                        "workspace_id": str(workspace_uuid) if workspace_uuid else None,
+                    },
                 )
-
                 raise RextAuthorizationException(
-                    message=f"Missing required permission: {perm_str}",
+                    message="Permission verification failed",
                     context={
                         "required_permissions": list(permissions),
                         "workspace_id": str(workspace_uuid) if workspace_uuid else None,
-                        "logic": "AND" if require_all else "OR"
-                    }
-                )
+                        "logic": "AND" if require_all else "OR",
+                        "failure_mode": "permission_check_exception",
+                    },
+                ) from exc
 
             # Permission check passed - execute the route
             return await func(*args, **kwargs)

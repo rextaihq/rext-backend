@@ -1,3 +1,4 @@
+
 """
 Storage Configuration
 
@@ -5,6 +6,7 @@ Configuration for file storage backends (Cloudflare R2, Local).
 """
 
 from typing import Literal, Optional
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import field_validator, model_validator
 
@@ -191,18 +193,25 @@ class StorageSettings(BaseSettings):
         extra="ignore",
     )
 
-        # Image processing
-        thumbnail_size: int = 300
-        max_image_width: int = 2000
-        max_image_height: int = 2000
-        image_quality: int = 85
+    @model_validator(mode='after')
+    def validate_r2_credentials(self) -> 'StorageSettings':
+        """Validate that all required R2 credentials are provided when R2 backend is selected."""
+        if self.storage_backend == "r2":
+            required_fields = {
+                "r2_bucket": self.r2_bucket,
+                "r2_account_id": self.r2_account_id,
+                "r2_access_key_id": self.r2_access_key_id,
+                "r2_secret_access_key": self.r2_secret_access_key,
+            }
+            missing = [name for name, value in required_fields.items() if not value.strip()]
+            if missing:
+                raise ValueError(
+                    f"Storage backend is set to 'r2' but the following required "
+                    f"credentials are missing or empty: {', '.join(missing)}. "
+                    f"Set these via environment variables or .env file."
+                )
+        return self
 
-        model_config = SettingsConfigDict(
-            env_file=".env",
-            env_file_encoding="utf-8",
-            case_sensitive=True,
-            extra="ignore",
-        )
 
-
-    storage_settings = StorageSettings()
+# Global settings instance
+storage_settings = StorageSettings()
