@@ -23,6 +23,8 @@ from fastapi import Depends, HTTPException, status, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import func, select
 from datetime import datetime, timezone, timedelta
+from uuid import UUID
+from src.services.usage_tracking_service import UsageTrackingService
 
 from src.api.database.async_database import get_async_db as get_db
 from src.api.security.dependencies import get_current_user
@@ -284,12 +286,7 @@ class KnowledgeItemLimitChecker:
         current_count = website_count + files_count + text_count
 
         if not subscription or not plan:
-            # Default free tier (allow 100 knowledge items)
-            if current_count >= 100:
-                raise HTTPException(
-                    status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                    detail=f"Knowledge item limit reached ({current_count}/100). Please subscribe to a plan to add more items."
-                )
+            # No subscription = default free tier
             return
 
         # Check plan limit
@@ -333,8 +330,10 @@ class APICallLimiter:
         subscription, plan = await _get_user_subscription_and_plan_async(db, user_id)
 
         if not subscription or not plan:
-            # No subscription = default free tier (1000 calls/month)
-            # TODO: Implement tracking for users without subscription
+            logger.debug(
+                "Skipping API usage increment for user %s because no active subscription row exists",
+                user_id,
+            )
             return
 
         # Check if usage period needs reset
@@ -361,33 +360,29 @@ class APICallLimiter:
 # UTILITY FUNCTIONS
 # ============================================================================
 
-def increment_api_calls(db: AsyncSession, user_id: str) -> None:
-    """
-    Manually increment API call counter for a user.
-
-    NOTE: Temporarily disabled - subscription tracking disabled.
-
-    Args:
-        db: Database session
-        user_id: User UUID
-    """
-    # Temporarily disabled - subscription tracking not active
-    logger.debug(f"API call tracking disabled for user {user_id}")
-    return
+async def increment_api_calls(db: AsyncSession, user_id: str) -> None:
+    """Increment API calls for a user via canonical usage-tracking service."""
+    tracker = UsageTrackingService(db)
+    await tracker.increment_api_calls(UUID(str(user_id)))
+    await db.flush()
 
 
-def reset_monthly_usage(db: AsyncSession) -> int:
-    """
-    Reset monthly usage for all subscriptions (called by cron job).
+async def reset_monthly_usage(db: AsyncSession) -> int:
+    """Reset monthly usage counters for all active/trial subscriptions."""
+    result = await db.execute(
+        select(UserSubscription.user_id)
+        .where(UserSubscription.status.in_([SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIAL]))
+        .distinct()
+    )
+    user_ids = [row[0] for row in result.all() if row[0] is not None]
 
-    NOTE: Temporarily disabled - subscription tracking disabled.
+    tracker = UsageTrackingService(db)
+    for uid in user_ids:
+        await tracker.reset_monthly_usage(uid)
 
-    Returns:
-        Number of subscriptions reset
-    """
-    # Temporarily disabled - subscription tracking not active
-    logger.info("Monthly usage reset disabled - subscription tracking not active")
-    return 0
+    await db.flush()
+    logger.info("Monthly usage reset completed for %d active subscriptions", len(user_ids))
+    return len(user_ids)
 
 
 # ============================================================================
