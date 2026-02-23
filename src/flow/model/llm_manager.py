@@ -6,7 +6,7 @@ from sentence_transformers import SentenceTransformer
 from src.states.schemas import BasicTopicGenerationList
 from langsmith import trace, traceable, Client
 from src.api.config import get_settings
-
+from openai import OpenAI
 # Get settings instance
 settings = get_settings()
 
@@ -23,9 +23,14 @@ def load_humanize_model():
     Returns:
         BaseChatModel: An instance of the initialized chat model with retry.
     """
-    model = init_chat_model("gpt-4o-mini", model_provider="openai", api_key=settings.OPENAI_API_KEY, temperature=2.0, top_p=0.9, presence_penalty=0.5, frequency_penalty=0.5)
-    return model
+    # model = init_chat_model("gpt-4o-mini", model_provider="openai", api_key=settings.OPENAI_API_KEY, temperature=2.0, top_p=0.9, presence_penalty=0.5, frequency_penalty=0.5)
+    # return model
 
+    # client = OpenAI(api_key=settings.OPENAI_API_KEY)
+    # return client 
+
+    model = init_chat_model("gpt-5.2", model_provider="openai", api_key=settings.OPENAI_API_KEY, reasoning_effort="low")
+    return model
 
 
 @lru_cache(maxsize=1)

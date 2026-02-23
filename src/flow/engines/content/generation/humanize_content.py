@@ -73,15 +73,15 @@ async def humanize_content(state: REXT) -> dict:
         
         # 3️⃣ Load model and prepare messages
         # model = load_model().with_structured_output(GeneratedHumanizeContent)
-        model = load_model()
+        model = load_humanize_model().with_structured_output(GeneratedHumanizeContent)
         messages = get_humanize_prompt().format_messages(**prompt_data)
         
         # 4️⃣ Invoke LLM for humanization
         logger.info("Invoking LLM for content humanization (target: 90% human-written)...")
         humanized_content = await model.ainvoke(messages)
-        # humanized_dict = humanized_content.model_dump()
+        humanized_dict = humanized_content.model_dump()
         
-        # logger.info(f"Humanization completed (90% human target). Keys: {humanized_dict.keys()}")
+        logger.info(f"Humanization completed (90% human target). Keys: {humanized_dict.keys()}")
         
         logger.info(f"Humanization completed (90% human target). Keys:")
         
@@ -91,10 +91,10 @@ async def humanize_content(state: REXT) -> dict:
                 **content_state,
                 "final_content": {
                     **final_content,
-                    "humanized_content":humanized_content
-                    # "humanized_title": humanized_dict.get("title", title),
-                    # "humanized_introduction": humanized_dict.get("introduction", final_content.get("introduction", "")),
-                    # "humanized_body_markdown": humanized_dict.get("body_markdown", body_markdown),
+                    # "humanized_content":humanized_content
+                    "humanized_title": humanized_dict.get("title", title),
+                    "humanized_introduction": humanized_dict.get("introduction", final_content.get("introduction", "")),
+                    "humanized_body_markdown": humanized_dict.get("body_markdown", body_markdown),
                 },
                 "status": "humanized"
             }
