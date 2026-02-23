@@ -1,4 +1,5 @@
 from uuid import UUID
+from typing import Optional
 from fastapi import BackgroundTasks
 from html import escape as html_escape
 from src.services.notifications_services import notification_service
@@ -173,10 +174,14 @@ async def _recheck_preference_enabled(
     Re-read the user's notification preferences with a row-level lock
     (SELECT ... FOR UPDATE) immediately before creating a notification.
 
-    This closes the TOCTOU race window by:
-    1. Acquiring an exclusive lock on the preferences row, preventing concurrent
-       updates from committing until this transaction completes.
-    2. Reading the latest committed state of the preference, not a stale snapshot.
+# ==============================
+# NOTIFICATION CONFIGURATION
+# ==============================
+# Single source of truth for all notification flags.
+# Keys are pref_flag values passed to schedule_if_allowed().
+# "pref_column" is the actual column on NotificationPreferences to check.
+# If pref_column matches the flag name, it's a "real" column.
+# If pref_column differs, it's a "virtual" flag mapped to a real column.
 
     Returns True if the notification should proceed, False otherwise.
     """
@@ -232,13 +237,13 @@ async def schedule_if_allowed(
     pref_flag: str,
     message: str,
     payload: dict,
-    workspace_id: str = None,
+    workspace_id: Optional[str] = None,
 ) -> None:
     """
     Load the user's NotificationPreferences, check the master in-app toggle
-    (in_app_notifications) and the specific Boolean column named ``pref_flag``.
-    If both are True, schedule ``notification_service.send_success_notification``
-    AND persist the notification to the database.
+    and the specific preference column for the given flag.
+    If both are True, persist the notification to the database and schedule
+    SSE delivery via background task.
     """
     # 0. Validate and convert UUIDs once at entry
     try:
@@ -277,7 +282,7 @@ async def schedule_if_allowed(
         logger.debug("No NotificationPreferences row for user %s", user_id)
         return
 
-    # 2. Global master switch for in-app notifications
+    # 3. Global master switch for in-app notifications
     if not pref.in_app_notifications:
         logger.debug("User %s disabled all in-app notifications.", user_id)
         return
@@ -321,22 +326,18 @@ async def schedule_if_allowed(
         )
         return
 
-    # 4.6 Sanitize message and payload to prevent stored XSS (TASK-280)
-    safe_message = html_escape(message[:2000]) if message else ""
-    safe_payload = sanitize_notification_payload(payload)
-
     # 5. Create notification record in database
     from src.api.models.notification.notification_model import Notification
     from datetime import datetime, timezone
 
     notification = Notification(
-        user_id=user_uuid,
-        workspace_id=workspace_uuid,
-        title=notification_title,
-        message=safe_message,
-        type=notification_type,
+        user_id=UUID(user_id),
+        workspace_id=UUID(workspace_id) if workspace_id else None,
+        title=config["title"],
+        message=message,
+        type=config["type"],
         category=pref_flag,
-        status=notification_status,
+        status=config["status"],
         priority="normal",
         payload=safe_payload,
         is_read=False,
@@ -400,15 +401,15 @@ async def schedule_if_allowed(
             exc_info=True,
         )
 
-    # 6. Schedule the SSE notification as a background task.
-    #
-    # IMPORTANT: FastAPI BackgroundTasks execute AFTER the response is sent,
-    # which is after the transaction commit in the response middleware.
-    # This ensures the notification record is committed and visible to other
-    # sessions before the SSE event reaches the client.
-    #
-    # Do NOT call notification_service directly here (before commit) — that
-    # would send the SSE event before the notification is committed.
+    logger.info(
+        f"Created notification record {notification.id} for user {user_id} — "
+        f"type: {config['type']}, category: {pref_flag}"
+    )
+
+    # 6. Schedule the SSE notification
+    logger.info(
+        f"Scheduling SSE notification for user {user_id} — flag {pref_flag} — message: {message}"
+    )
     background_tasks.add_task(
         _send_sse_after_commit,
         user_id=user_uuid,

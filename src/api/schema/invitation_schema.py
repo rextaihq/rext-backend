@@ -1,9 +1,12 @@
 """Invitation schemas for request/response validation."""
 from pydantic import BaseModel, EmailStr, Field
 from typing import Optional, List
+<<<<<<< task-413
 from datetime import datetime, timezone
 from src.utils.invitation_utils import MIN_EXPIRY_DAYS, MAX_EXPIRY_DAYS
 
+=======
+>>>>>>> merge_tasks
 
 
 class AcceptInvitationRequest(BaseModel):
