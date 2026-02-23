@@ -6,11 +6,14 @@ from src.services.notification_preferences_service import NotificationPreference
 from src.api.models.user_models.notification_preferences import NotificationPreferences
 from src.utils.payload_sanitizer import sanitize_notification_payload
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, func, and_
 from sqlalchemy.exc import IntegrityError, OperationalError
+from datetime import datetime, timezone, timedelta
 import logging
 
 logger = logging.getLogger(__name__)
+
+DEDUP_WINDOW_SECONDS = 60  # Suppress duplicate notifications within this window
 
 async def _send_sse_after_commit(
     user_id: UUID,
@@ -251,6 +254,33 @@ async def schedule_if_allowed(
     # 4.6 Sanitize message and payload to prevent stored XSS (TASK-280)
     safe_message = html_escape(message[:2000]) if message else ""
     safe_payload = sanitize_notification_payload(payload)
+
+    # 4.7 Deduplication check — prevent duplicate notifications within time window
+    from src.api.models.notification.notification_model import Notification
+    from datetime import datetime, timezone
+
+    dedup_cutoff = datetime.now(timezone.utc) - timedelta(seconds=DEDUP_WINDOW_SECONDS)
+    dedup_conditions = [
+        Notification.user_id == user_uuid,
+        Notification.category == pref_flag,
+        Notification.created_at >= dedup_cutoff,
+        Notification.is_deleted.is_(False),
+    ]
+    if workspace_uuid:
+        dedup_conditions.append(Notification.workspace_id == workspace_uuid)
+    else:
+        dedup_conditions.append(Notification.workspace_id.is_(None))
+
+    existing_count_result = await db.execute(
+        select(func.count(Notification.id)).where(and_(*dedup_conditions))
+    )
+    if existing_count_result.scalar() > 0:
+        logger.info(
+            f"Duplicate notification suppressed for user {user_id} – "
+            f"category: {pref_flag}, workspace: {workspace_id}, "
+            f"window: {DEDUP_WINDOW_SECONDS}s"
+        )
+        return
 
     # 5. Create notification record in database
     from src.api.models.notification.notification_model import Notification
