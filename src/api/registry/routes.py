@@ -97,6 +97,8 @@ def register_routes(app: FastAPI) -> None:
     app.include_router(admin_monitoring_routes_router, prefix="/api/v1/admin", tags=["Admin - Monitoring"])
     app.include_router(admin_reports_routes_router, prefix="/api/v1/admin", tags=["Admin - Reports"])
     app.include_router(admin_email_analytics_routes_router, prefix="/api/v1", tags=["Admin - Email Analytics"])
+    # NOTE: admin_email_routes_router already defines its own
+    # prefix ("/api/v1/admin/emails") and tags ("Admin - Emails").
     app.include_router(admin_email_routes_router)
     app.include_router(admin_webhook_monitoring_routes_router, prefix="/api/v1/admin", tags=["Admin - Webhooks"])
     app.include_router(admin_export_routes_router, prefix="/api/v1/admin", tags=["Admin - Exports"])
