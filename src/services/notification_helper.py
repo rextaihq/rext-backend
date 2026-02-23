@@ -1,4 +1,5 @@
 from uuid import UUID
+from typing import Optional
 from fastapi import BackgroundTasks
 from html import escape as html_escape
 from src.services.notifications_services import notification_service
@@ -12,92 +13,149 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-async def _send_sse_after_commit(
-    user_id: UUID,
-    message: str,
-    payload: dict,
-    notification_id: str,
-) -> None:
-    """
-    Send SSE notification. Designed to run as a FastAPI background task,
-    which executes AFTER the response is sent (and therefore after the
-    transaction is committed by the response middleware).
 
-    This ordering guarantees that the notification record is visible in the
-    database before the SSE event reaches the client.
-    """
-    try:
-        await notification_service.send_success_notification(
-            user_id=user_id,
-            message=message,
-            payload=payload,
-        )
-        logger.info(
-            f"SSE notification sent for notification {notification_id} to user {user_id}"
-        )
-    except Exception as e:
-        logger.error(
-            f"Failed to send SSE notification {notification_id} for user {user_id}: {e}"
-        )
+# ==============================
+# NOTIFICATION CONFIGURATION
+# ==============================
+# Single source of truth for all notification flags.
+# Keys are pref_flag values passed to schedule_if_allowed().
+# "pref_column" is the actual column on NotificationPreferences to check.
+# If pref_column matches the flag name, it's a "real" column.
+# If pref_column differs, it's a "virtual" flag mapped to a real column.
 
-async def _recheck_preference_enabled(
-    db: AsyncSession,
-    user_id: UUID,  # Changed from str to UUID
-    pref_flag: str,
-) -> bool:
-    """
-    Re-read the user's notification preferences with a row-level lock
-    (SELECT ... FOR UPDATE) immediately before creating a notification.
-
-    This closes the TOCTOU race window by:
-    1. Acquiring an exclusive lock on the preferences row, preventing concurrent
-       updates from committing until this transaction completes.
-    2. Reading the latest committed state of the preference, not a stale snapshot.
-
-    Returns True if the notification should proceed, False otherwise.
-    """
-    result = await db.execute(
-        select(NotificationPreferences)
-        .where(NotificationPreferences.user_id == user_id)
-        .with_for_update()
-    )
-    pref = result.scalar_one_or_none()
-
-    if not pref:
-        logger.debug(f"[recheck] No NotificationPreferences row for user {user_id}")
-        return False
-
-    if not pref.in_app_notifications:
-        logger.debug(f"[recheck] User {user_id} has disabled all in-app notifications.")
-        return False
-
-    # Map virtual flags to real columns (same logic as main function)
-    real_pref_column = pref_flag
-    if pref_flag in ["profile_update_failed", "avatar_uploaded", "avatar_upload_failed"]:
-        real_pref_column = "in_app_notifications"
-
-    flag_enabled = getattr(pref, real_pref_column, False)
-    if not flag_enabled:
-        logger.debug(
-            f"[recheck] User {user_id} has {real_pref_column}=False – "
-            "notification suppressed after re-check."
-        )
-        return False
-
-    return True
-
-def _safe_to_uuid(value: str, param_name: str) -> UUID:
-    """
-    Convert a string to a UUID, raising a clear ValueError with context
-    if the string is not a valid UUID format.
-    """
-    try:
-        return UUID(value)
-    except (ValueError, AttributeError) as exc:
-        raise ValueError(
-            f"Invalid {param_name}: expected a valid UUID string, "
-            f"got {value!r}"
-        ) from exc
+NOTIFICATION_CONFIG = {
+    # Workspace notifications
+    "ws_invite_received": {
+        "pref_column": "ws_invite_received",
+        "type": "workspace",
+        "title": "Workspace Invitation",
+        "status": "success",
+    },
+    "ws_invite_accepted": {
+        "pref_column": "ws_invite_accepted",
+        "type": "workspace",
+        "title": "Invitation Accepted",
+        "status": "success",
+    },
+    "ws_role_changed": {
+        "pref_column": "ws_role_changed",
+        "type": "workspace",
+        "title": "Role Changed",
+        "status": "success",
+    },
+    "ws_member_removed": {
+        "pref_column": "ws_member_removed",
+        "type": "workspace",
+        "title": "Member Removed",
+        "status": "success",
+    },
+    # Billing notifications
+    "billing_payment_success": {
+        "pref_column": "billing_payment_success",
+        "type": "billing",
+        "title": "Payment Successful",
+        "status": "success",
+    },
+    "billing_payment_failed": {
+        "pref_column": "billing_payment_failed",
+        "type": "billing",
+        "title": "Payment Failed",
+        "status": "error",
+    },
+    "billing_subscription_cancelled": {
+        "pref_column": "billing_subscription_cancelled",
+        "type": "billing",
+        "title": "Subscription Cancelled",
+        "status": "warning",
+    },
+    "billing_subscription_expiring": {
+        "pref_column": "billing_subscription_expiring",
+        "type": "billing",
+        "title": "Subscription Expiring",
+        "status": "warning",
+    },
+    "billing_trial_ending": {
+        "pref_column": "billing_trial_ending",
+        "type": "billing",
+        "title": "Trial Ending",
+        "status": "warning",
+    },
+    "billing_usage_limit_warning": {
+        "pref_column": "billing_usage_limit_warning",
+        "type": "billing",
+        "title": "Usage Limit Warning",
+        "status": "warning",
+    },
+    "billing_usage_limit_exceeded": {
+        "pref_column": "billing_usage_limit_exceeded",
+        "type": "billing",
+        "title": "Usage Limit Exceeded",
+        "status": "error",
+    },
+    # Knowledge base notifications
+    "kb_processing_completed": {
+        "pref_column": "kb_processing_completed",
+        "type": "knowledge",
+        "title": "Knowledge Processing Complete",
+        "status": "success",
+    },
+    "kb_processing_failed": {
+        "pref_column": "kb_processing_failed",
+        "type": "knowledge",
+        "title": "Knowledge Processing Failed",
+        "status": "error",
+    },
+    # Content generation notifications
+    "gen_started": {
+        "pref_column": "gen_started",
+        "type": "content",
+        "title": "Content Generation Started",
+        "status": "info",
+    },
+    "gen_completed": {
+        "pref_column": "gen_completed",
+        "type": "content",
+        "title": "Content Generation Complete",
+        "status": "success",
+    },
+    "gen_failed": {
+        "pref_column": "gen_failed",
+        "type": "content",
+        "title": "Content Generation Failed",
+        "status": "error",
+    },
+    "gen_published": {
+        "pref_column": "gen_published",
+        "type": "content",
+        "title": "Content Published",
+        "status": "success",
+    },
+    # User/profile notifications (virtual flags → in_app_notifications column)
+    "in_app_notifications": {
+        "pref_column": "in_app_notifications",
+        "type": "user",
+        "title": "Profile Updated",
+        "status": "success",
+    },
+    "profile_update_failed": {
+        "pref_column": "in_app_notifications",
+        "type": "user",
+        "title": "Profile Update Failed",
+        "status": "error",
+    },
+    "avatar_uploaded": {
+        "pref_column": "in_app_notifications",
+        "type": "user",
+        "title": "Avatar Updated",
+        "status": "success",
+    },
+    "avatar_upload_failed": {
+        "pref_column": "in_app_notifications",
+        "type": "user",
+        "title": "Avatar Upload Failed",
+        "status": "error",
+    },
+}
 
 
 async def schedule_if_allowed(
@@ -108,162 +166,70 @@ async def schedule_if_allowed(
     pref_flag: str,
     message: str,
     payload: dict,
-    workspace_id: str = None,
+    workspace_id: Optional[str] = None,
 ) -> None:
     """
     Load the user's NotificationPreferences, check the master in-app toggle
-    (in_app_notifications) and the specific Boolean column named ``pref_flag``.
-    If both are True, schedule ``notification_service.send_success_notification``
-    AND persist the notification to the database.
+    and the specific preference column for the given flag.
+    If both are True, persist the notification to the database and schedule
+    SSE delivery via background task.
     """
-    # 0. Validate and convert UUIDs once at entry
-    try:
-        user_uuid = _safe_to_uuid(user_id, "user_id")
-    except ValueError:
-        logger.error(
-            f"schedule_if_allowed called with invalid user_id: {user_id!r} – "
-            f"skipping notification (pref_flag={pref_flag})"
+    # 1. Validate the pref_flag against known configuration
+    config = NOTIFICATION_CONFIG.get(pref_flag)
+    if config is None:
+        logger.warning(
+            f"Unknown notification flag '{pref_flag}' — no configuration entry exists. "
+            f"Notification for user {user_id} will not be sent. "
+            f"Add an entry to NOTIFICATION_CONFIG in notification_helper.py."
         )
         return
 
-    workspace_uuid: UUID | None = None
-    if workspace_id:
-        try:
-            workspace_uuid = _safe_to_uuid(workspace_id, "workspace_id")
-        except ValueError:
-            logger.error(
-                f"schedule_if_allowed called with invalid workspace_id: "
-                f"{workspace_id!r} – skipping notification (pref_flag={pref_flag})"
-            )
-            return
+    # 2. Load preferences
+    result = await db.execute(
+        select(NotificationPreferences).where(
+            NotificationPreferences.user_id == UUID(user_id)
+        )
+    )
+    pref = result.scalar_one_or_none()
 
-    # 1. Load or create preferences (guarantees a record always exists)
-    pref_service = NotificationPreferencesService(db)
-    pref = await pref_service.get_or_create(user_uuid)
-
-    logger.debug(f"Notification preferences for user {user_id}: in_app={pref.in_app_notifications}")
-    logger.debug(f"Checking preference flag: {pref_flag}")
     if not pref:
         # This branch is technicaly unreachable now because get_or_create guarantees a record,
         # but we keep it for defensive stability.
         logger.debug(f"No NotificationPreferences row for user {user_id}")
         return
 
-    # 2. Global master switch for in-app notifications
+    # 3. Global master switch for in-app notifications
     if not pref.in_app_notifications:
         logger.debug(f"User {user_id} disabled all in-app notifications.")
         return
 
-    # 3. Specific flag
-    # Handle virtual flags mapping to real columns
-    real_pref_column = pref_flag
-    if pref_flag in ["profile_update_failed", "avatar_uploaded", "avatar_upload_failed"]:
-        real_pref_column = "in_app_notifications"
-
-    flag_enabled = getattr(pref, real_pref_column, False)
+    # 4. Specific flag check using the mapped column
+    pref_column = config["pref_column"]
+    flag_enabled = getattr(pref, pref_column, None)
+    if flag_enabled is None:
+        logger.error(
+            f"Preference column '{pref_column}' does not exist on NotificationPreferences model. "
+            f"Flag: '{pref_flag}'. This indicates a configuration error in NOTIFICATION_CONFIG."
+        )
+        return
     if not flag_enabled:
         logger.debug(
-            f"User {user_id} has preference {real_pref_column}=False – skipping notification."
+            f"User {user_id} has preference {pref_column}=False — skipping notification."
         )
         return
-
-    # 4. Determine notification type and status based on pref_flag
-    notification_type = "system"
-    notification_status = "success"
-    notification_title = "Notification"
-
-    # Map pref_flag to notification type and generate title
-    if pref_flag.startswith("ws_"):
-        notification_type = "workspace"
-        if pref_flag == "ws_invite_received":
-            notification_title = "Workspace Invitation"
-        elif pref_flag == "ws_invite_accepted":
-            notification_title = "Invitation Accepted"
-        elif pref_flag == "ws_role_changed":
-            notification_title = "Role Changed"
-        elif pref_flag == "ws_member_removed":
-            notification_title = "Member Removed"
-    elif pref_flag.startswith("billing_"):
-        notification_type = "billing"
-        if pref_flag == "billing_payment_success":
-            notification_title = "Payment Successful"
-        elif pref_flag == "billing_payment_failed":
-            notification_title = "Payment Failed"
-            notification_status = "error"
-        elif pref_flag == "billing_subscription_cancelled":
-            notification_title = "Subscription Cancelled"
-            notification_status = "warning"
-        elif pref_flag == "billing_subscription_expiring":
-            notification_title = "Subscription Expiring"
-            notification_status = "warning"
-        elif pref_flag == "billing_trial_ending":
-            notification_title = "Trial Ending"
-            notification_status = "warning"
-        elif pref_flag == "billing_usage_limit_warning":
-            notification_title = "Usage Limit Warning"
-            notification_status = "warning"
-        elif pref_flag == "billing_usage_limit_exceeded":
-            notification_title = "Usage Limit Exceeded"
-            notification_status = "error"
-    elif pref_flag.startswith("kb_"):
-        notification_type = "knowledge"
-        if pref_flag == "kb_processing_completed":
-            notification_title = "Knowledge Processing Complete"
-        elif pref_flag == "kb_processing_failed":
-            notification_title = "Knowledge Processing Failed"
-            notification_status = "error"
-    elif pref_flag.startswith("gen_"):
-        notification_type = "content"
-        if pref_flag == "gen_started":
-            notification_title = "Content Generation Started"
-            notification_status = "info"
-        elif pref_flag == "gen_completed":
-            notification_title = "Content Generation Complete"
-        elif pref_flag == "gen_failed":
-            notification_title = "Content Generation Failed"
-            notification_status = "error"
-        elif pref_flag == "gen_published":
-            notification_title = "Content Published"
-    elif pref_flag == "in_app_notifications":
-        notification_type = "user"
-        notification_title = "Profile Updated"
-    elif pref_flag == "profile_update_failed":
-        notification_type = "user"
-        notification_title = "Profile Update Failed"
-        notification_status = "error"
-    elif pref_flag == "avatar_uploaded":
-        notification_type = "user"
-        notification_title = "Avatar Updated"
-    elif pref_flag == "avatar_upload_failed":
-        notification_type = "user"
-        notification_title = "Avatar Upload Failed"
-        notification_status = "error"
-
-
-    # 4.5 Re-check preferences with row-level lock to prevent TOCTOU race
-    if not await _recheck_preference_enabled(db, user_uuid, pref_flag):
-        logger.info(
-            f"Notification suppressed for user {user_id} – preference {pref_flag} "
-            "was disabled between initial check and creation (TOCTOU prevented)."
-        )
-        return
-
-    # 4.6 Sanitize message and payload to prevent stored XSS (TASK-280)
-    safe_message = html_escape(message[:2000]) if message else ""
-    safe_payload = sanitize_notification_payload(payload)
 
     # 5. Create notification record in database
     from src.api.models.notification.notification_model import Notification
     from datetime import datetime, timezone
 
     notification = Notification(
-        user_id=user_uuid,
-        workspace_id=workspace_uuid,
-        title=notification_title,
-        message=safe_message,
-        type=notification_type,
+        user_id=UUID(user_id),
+        workspace_id=UUID(workspace_id) if workspace_id else None,
+        title=config["title"],
+        message=message,
+        type=config["type"],
         category=pref_flag,
-        status=notification_status,
+        status=config["status"],
         priority="normal",
         payload=safe_payload,
         is_read=False,
@@ -271,59 +237,19 @@ async def schedule_if_allowed(
         sse_sent_at=datetime.now(timezone.utc),
     )
 
-    # 5a. Attempt to persist notification record
-    db_persist_ok = False
-    try:
-        db.add(notification)
-        await db.flush()
-        await db.refresh(notification)
-        db_persist_ok = True
-        logger.info(
-            f"Created notification record {notification.id} for user {user_id} – "
-            f"type: {notification_type}, category: {pref_flag}"
-        )
-    except IntegrityError as exc:
-        # Constraint violation (duplicate, FK missing, etc.)
-        # Expunge the dirty object and rollback to restore session health
-        await db.rollback()
-        db.expunge(notification)
-        logger.warning(
-            f"IntegrityError persisting notification for user {user_id} "
-            f"(type={notification_type}, category={pref_flag}): {exc}. "
-            "Notification record skipped; SSE will still be sent."
-        )
-    except OperationalError as exc:
-        # Connection lost, deadlock, timeout, etc.
-        await db.rollback()
-        db.expunge(notification)
-        logger.warning(
-            f"OperationalError persisting notification for user {user_id} "
-            f"(type={notification_type}, category={pref_flag}): {exc}. "
-            "Notification record skipped; SSE will still be sent."
-        )
-    except Exception as exc:
-        # Catch-all for unexpected DB errors (e.g., ProgrammingError, DataError)
-        await db.rollback()
-        try:
-            db.expunge(notification)
-        except Exception:
-            pass  # Object may not be in session after certain errors
-        logger.error(
-            f"Unexpected error persisting notification for user {user_id} "
-            f"(type={notification_type}, category={pref_flag}): {exc}. "
-            "Notification record skipped; SSE will still be sent.",
-            exc_info=True,
-        )
+    db.add(notification)
+    await db.flush()
+    await db.refresh(notification)
 
-    # 6. Schedule the SSE notification as a background task.
-    #
-    # IMPORTANT: FastAPI BackgroundTasks execute AFTER the response is sent,
-    # which is after the transaction commit in the response middleware.
-    # This ensures the notification record is committed and visible to other
-    # sessions before the SSE event reaches the client.
-    #
-    # Do NOT call notification_service directly here (before commit) — that
-    # would send the SSE event before the notification is committed.
+    logger.info(
+        f"Created notification record {notification.id} for user {user_id} — "
+        f"type: {config['type']}, category: {pref_flag}"
+    )
+
+    # 6. Schedule the SSE notification
+    logger.info(
+        f"Scheduling SSE notification for user {user_id} — flag {pref_flag} — message: {message}"
+    )
     background_tasks.add_task(
         _send_sse_after_commit,
         user_id=user_uuid,
@@ -331,4 +257,5 @@ async def schedule_if_allowed(
         payload=safe_payload,
         notification_id=str(notification.id),
     )
-    logger.debug(f"SSE notification task scheduled for notification {notification.id}")
+    logger.info("Notification task scheduled.")
+
