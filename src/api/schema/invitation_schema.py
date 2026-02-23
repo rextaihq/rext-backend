@@ -61,6 +61,49 @@ class InvitationResponse(BaseModel):
     expires_at: str
     is_expired: bool
 
+class InvitationDetailResponse(BaseModel):
+    """Detailed schema for a single invitation with nested workspace/role/inviter info.
+
+    Used by public-facing endpoints like /validate and /accept
+    where the consumer needs full context.
+    """
+    id: str
+    email: str
+    status: str
+    expires_at: Optional[str] = None
+    created_at: Optional[str] = None
+    is_expired: bool
+    token: Optional[str] = None
+
+    # Nested objects for rich context
+    workspace: Optional[dict] = None
+    role: Optional[dict] = None
+    invited_by: Optional[dict] = None
+
+    class Config:
+        from_attributes = True
+
+
+class InvitationSummaryResponse(BaseModel):
+    """Flat schema for invitation lists where compact representation is preferred.
+
+    Used by workspace-scoped list endpoints.
+    """
+    id: str
+    email: str
+    workspace_id: str
+    role_id: Optional[str] = None
+    role_name: Optional[str] = None
+    status: str
+    expires_at: Optional[str] = None
+    created_at: Optional[str] = None
+    invited_by_user_id: Optional[str] = None
+    invited_by_name: Optional[str] = None
+    is_expired: bool
+
+    class Config:
+        from_attributes = True
+
 
 class InvitationListResponse(BaseModel):
     """Schema for list of invitations."""
@@ -83,3 +126,11 @@ class BulkInvitationResponse(BaseModel):
     successful: int
     failed: int
     results: List[BulkInvitationResult]
+
+class DeclineInvitationByTokenRequest(BaseModel):
+    """Request body for declining an invitation via token."""
+    reason: Optional[str] = Field(
+        None,
+        max_length=500,
+        description="Optional reason for declining the invitation"
+    )

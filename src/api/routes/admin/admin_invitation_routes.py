@@ -39,6 +39,10 @@ from src.api.schema.admin_invitation_schema import (
     ValidateAdminInvitationResponse,
     AdminInvitationStatsResponse,
 )
+from src.api.middleware.exceptions import (
+    ResourceNotFoundException,
+    BusinessRuleViolationException,
+)
 from src.api.schema.response_schemas import GenericResponse
 from src.utils.route_decorators import db_transaction_handler, require_permissions
 from src.utils.logger import logger
@@ -349,7 +353,17 @@ async def validate_admin_invitation_token(
                 else f"Invitation is {invitation.status}"
             ),
         )
-    except Exception as e:
+    except ResourceNotFoundException:
+        return ValidateAdminInvitationResponse(
+            valid=False,
+            email="",
+            admin_role="",
+            expires_at=datetime.now(timezone.utc).isoformat(),
+            is_expired=True,
+            status="not_found",
+            error_message="Invitation not found or has been revoked",
+        )
+    except BusinessRuleViolationException as e:
         return ValidateAdminInvitationResponse(
             valid=False,
             email="",
@@ -359,6 +373,10 @@ async def validate_admin_invitation_token(
             status="invalid",
             error_message=str(e),
         )
+    # Let all other exceptions propagate to the global exception handler
+    # in src/api/middleware/exceptions.py — this ensures proper HTTP 500
+    # responses and Sentry error capturing.
+
 
 
 @public_router.post("/{token}/accept", response_model=AdminInvitationResponse)

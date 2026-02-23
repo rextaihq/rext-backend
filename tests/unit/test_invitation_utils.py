@@ -81,20 +81,20 @@ class TestIsInvitationExpired:
 class TestCleanupExpiredInvitations:
     """Tests for cleanup_expired_invitations function."""
 
-    def test_cleanup_expired_invitations_none_expired(self):
+    async def test_cleanup_expired_invitations_none_expired(self):
         """Test cleanup when no invitations are expired."""
         mock_db = MagicMock()
         mock_query = MagicMock()
         mock_query.all.return_value = []
         mock_db.query.return_value.filter.return_value = mock_query
         
-        result = cleanup_expired_invitations(mock_db)
+        result =  await cleanup_expired_invitations(mock_db)
         
         assert result == 0
         assert mock_db.commit.called
         assert not mock_db.rollback.called
 
-    def test_cleanup_expired_invitations_multiple_expired(self):
+    async def test_cleanup_expired_invitations_multiple_expired(self):
         """Test cleanup when multiple invitations are expired."""
         mock_db = MagicMock()
         
@@ -110,7 +110,7 @@ class TestCleanupExpiredInvitations:
         mock_query.all.return_value = [inv1, inv2, inv3]
         mock_db.query.return_value.filter.return_value = mock_query
         
-        result = cleanup_expired_invitations(mock_db)
+        result = await cleanup_expired_invitations(mock_db)
         
         assert result == 3
         assert inv1.status == "expired"
@@ -119,7 +119,7 @@ class TestCleanupExpiredInvitations:
         assert mock_db.commit.called
         assert not mock_db.rollback.called
 
-    def test_cleanup_expired_invitations_single_expired(self):
+    async def test_cleanup_expired_invitations_single_expired(self):
         """Test cleanup with single expired invitation."""
         mock_db = MagicMock()
         
@@ -130,14 +130,14 @@ class TestCleanupExpiredInvitations:
         mock_query.all.return_value = [inv]
         mock_db.query.return_value.filter.return_value = mock_query
         
-        result = cleanup_expired_invitations(mock_db)
+        result = await cleanup_expired_invitations(mock_db)
         
         assert result == 1
         assert inv.status == "expired"
         assert mock_db.commit.called
 
     @patch('src.utils.invitation_utils.logger')
-    def test_cleanup_expired_invitations_logs_when_cleaned(self, mock_logger):
+    async def test_cleanup_expired_invitations_logs_when_cleaned(self, mock_logger):
         """Test that cleanup logs when invitations are marked expired."""
         mock_db = MagicMock()
         
@@ -148,13 +148,13 @@ class TestCleanupExpiredInvitations:
         mock_query.all.return_value = [inv]
         mock_db.query.return_value.filter.return_value = mock_query
         
-        cleanup_expired_invitations(mock_db)
+        await cleanup_expired_invitations(mock_db)
         
         mock_logger.info.assert_called_once()
         assert "Marked 1 expired invitations" in str(mock_logger.info.call_args)
 
     @patch('src.utils.invitation_utils.logger')
-    def test_cleanup_expired_invitations_no_log_when_none(self, mock_logger):
+    async def test_cleanup_expired_invitations_no_log_when_none(self, mock_logger):
         """Test that cleanup doesn't log when no invitations expired."""
         mock_db = MagicMock()
         
@@ -162,18 +162,18 @@ class TestCleanupExpiredInvitations:
         mock_query.all.return_value = []
         mock_db.query.return_value.filter.return_value = mock_query
         
-        cleanup_expired_invitations(mock_db)
+        await cleanup_expired_invitations(mock_db)
         
         # Should not call logger.info since count is 0
         mock_logger.info.assert_not_called()
 
     @patch('src.utils.invitation_utils.logger')
-    def test_cleanup_expired_invitations_handles_exception(self, mock_logger):
+    async def test_cleanup_expired_invitations_handles_exception(self, mock_logger):
         """Test that cleanup handles exceptions gracefully."""
         mock_db = MagicMock()
         mock_db.query.side_effect = Exception("Database error")
         
-        result = cleanup_expired_invitations(mock_db)
+        result = await cleanup_expired_invitations(mock_db)
         
         assert result == 0
         assert mock_db.rollback.called

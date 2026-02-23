@@ -14,8 +14,9 @@ from fastapi import APIRouter, Depends, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from uuid import UUID
 from datetime import datetime, timezone
-
+from src.utils.invitation_serializers import serialize_invitation_detail
 from src.api.database.async_database import get_async_db
+from src.api.models.enums import InvitationStatus
 from src.api.models.user_models.invitations import UserInvitations
 from src.api.models.user_models.users import Users
 from src.api.models.user_models.roles import Role
@@ -79,7 +80,7 @@ async def validate_invitation(
         )
 
     # Check if invitation is pending
-    if invitation.status != "pending":
+    if invitation.status != InvitationStatus.PENDING:
         raise BusinessRuleViolationException(
             message=f"Invitation is {invitation.status} and cannot be used",
             rule_name="invitation_must_be_pending"
@@ -88,7 +89,7 @@ async def validate_invitation(
     # Check if expired
     if is_invitation_expired(invitation):
         # Auto-expire it
-        invitation.status = "expired"
+        invitation.status = InvitationStatus.EXPIRED
         await db.flush()
         raise BusinessRuleViolationException(
             message="Invitation has expired",
@@ -107,7 +108,6 @@ async def validate_invitation(
             resource_type="Workspace",
             resource_id=str(invitation.workspace_id)
         )
-
     # Load role
     role = await role_service.get_role_by_id(invitation.role_id)
 
@@ -119,50 +119,17 @@ async def validate_invitation(
         except ResourceNotFoundException:
             pass  # Inviter might have been deleted
 
-    # Eagerly load all attributes we need (avoid lazy loading issues)
-    invitation_id = str(invitation.id)
-    invitation_email = invitation.email
-    invitation_expires_at = invitation.expires_at.isoformat()
-    invitation_status = invitation.status
-    workspace_id = str(workspace.id)
-    workspace_name = workspace.name
-    workspace_slug = workspace.slug
-    role_id = str(role.id)
-    role_name = role.display_name or role.name
-    inviter_display_name = inviter.display_name if inviter else None
-    inviter_username = inviter.username if inviter else "Unknown"
-    inviter_first_name = inviter.first_name if inviter and hasattr(inviter, 'first_name') else ""
-    inviter_last_name = inviter.last_name if inviter and hasattr(inviter, 'last_name') else ""
-    inviter_id = str(inviter.id) if inviter else None
+    invitation_data = serialize_invitation_detail(
+        invitation=invitation,
+        workspace=workspace,
+        role=role,
+        invited_by=inviter,
+        include_token=True,
+        token=token,
+    )
 
     return success(
-        data={
-            "invitation": {
-                "id": invitation_id,
-                "email": invitation_email,
-                "workspace": {
-                    "id": workspace_id,
-                    "title": workspace_name,
-                    "name": workspace_name,
-                    "slug": workspace_slug,
-                },
-                "role": {
-                    "id": role_id,
-                    "name": role_name,
-                    "display_name": role_name,
-                },
-                "invited_by": {
-                    "id": inviter_id,
-                    "username": inviter_username,
-                    "first_name": inviter_first_name,
-                    "last_name": inviter_last_name,
-                    "display_name": inviter_display_name,
-                },
-                "expires_at": invitation_expires_at,
-                "status": invitation_status,
-                "token": token,
-            }
-        },
+        data={"invitation": invitation_data},
         request=request,
         message="Invitation is valid",
     )
@@ -209,7 +176,7 @@ async def accept_invitation(
         )
 
     # Check if invitation is pending
-    if invitation.status != "pending":
+    if invitation.status != InvitationStatus.PENDING:
         raise BusinessRuleViolationException(
             message=f"Invitation is {invitation.status} and cannot be accepted",
             rule_name="invitation_must_be_pending"
@@ -218,7 +185,7 @@ async def accept_invitation(
     # Check if expired
     if is_invitation_expired(invitation):
         # Auto-expire it
-        invitation.status = "expired"
+        invitation.status = InvitationStatus.EXPIRED
         await db.flush()
         raise BusinessRuleViolationException(
             message="Invitation has expired",
@@ -283,7 +250,7 @@ async def accept_invitation(
         membership = result.scalar_one()
 
     # Update invitation status
-    invitation.status = "accepted"
+    invitation.status = InvitationStatus.ACCEPTED
     invitation.accepted_at = datetime.now(timezone.utc)
     invitation.accepted_by_user_id = user_id
     await db.flush()
@@ -407,4 +374,100 @@ async def accept_invitation(
         },
         request=request,
         message=api_message,
+    )
+
+
+from src.api.schema.invitation_schema import DeclineInvitationByTokenRequest
+
+
+@router.post("/{token}/decline")
+@db_transaction_handler("decline invitation by token", auto_commit=True)
+async def decline_invitation_by_token(
+    token: str,
+    request: Request,
+    data: DeclineInvitationByTokenRequest,
+    db: AsyncSession = Depends(get_async_db),
+):
+    """
+    Decline a workspace invitation by token (public endpoint).
+
+    Allows invited users to decline without authentication.
+    The token from the email link serves as proof of invitation.
+
+    Args:
+        token: Invitation token from email link
+        request: FastAPI request object
+        data: Optional decline reason
+        db: Database session
+
+    Returns:
+        Success message with declined invitation details
+    """
+    invitation_service = InvitationService(db)
+    invitation = await invitation_service.decline_invitation_by_token(
+        token=token,
+        reason=data.reason if data else None,
+    )
+
+    # Send decline notification to inviter
+    if invitation.invited_by_user_id:
+        try:
+            workspace = await db.get(WorkspaceModel, invitation.workspace_id)
+            user_service = UserService(db)
+            inviter = await user_service.get_user_by_id(invitation.invited_by_user_id)
+
+            from emails.templates.workspace.invitation_declined import create_invitation_declined_email
+            from src.api.config import get_settings
+
+            settings = get_settings()
+            email_html = create_invitation_declined_email(
+                workspace_name=workspace.name if workspace else "Unknown",
+                declined_by_email=invitation.email,
+                decline_reason=data.reason if data else None,
+                workspace_id=str(invitation.workspace_id),
+                frontend_url=settings.FRONTEND_URL
+            )
+
+            email_service = EmailService(db)
+            await email_service.send_email(
+                to=inviter.email,
+                subject=f"Invitation to {workspace.name if workspace else 'workspace'} was declined",
+                html=email_html,
+                workspace_id=invitation.workspace_id,
+                user_id=invitation.invited_by_user_id,
+                template_type="invitation_declined",
+                tags={
+                    "type": "workspace",
+                    "action": "invitation_declined",
+                    "invitation_id": str(invitation.id),
+                },
+                auto_commit=False
+            )
+        except Exception:
+            logger.error(
+                "Failed to send decline notification email",
+                exc_info=True,
+                extra={"invitation_id": str(invitation.id)}
+            )
+
+    await create_audit_log_async(
+        db=db,
+        action="invitation.declined_by_token",
+        resource_type="invitation",
+        resource_id=str(invitation.id),
+        details={
+            "workspace_id": str(invitation.workspace_id),
+            "invitation_email": invitation.email,
+            "decline_reason": data.reason if data else None,
+        },
+        request=request,
+    )
+
+    return success(
+        data={
+            "invitation_id": str(invitation.id),
+            "status": "declined",
+        },
+        request=request,
+        message="Invitation declined successfully",
     )

@@ -16,10 +16,12 @@ from sqlalchemy.orm import selectinload
 from uuid import UUID
 from datetime import datetime, timezone
 from src.utils.response_utils import success, error
+from src.api.models.enums import InvitationStatus
 
 from src.api.database.async_database import get_async_db
 from src.api.security.dependencies import get_current_user
 from src.api.models.user_models.invitations import UserInvitations
+from src.api.models.enums import InvitationStatus
 from src.api.config import get_settings
 from src.api.models.workspace_models.workspace_model import WorkspaceModel
 from src.api.models.user_models.roles import Role
@@ -128,7 +130,7 @@ async def get_pending_invitations(
         .where(
             and_(
                 UserInvitations.email == user_email,
-                UserInvitations.status == "pending"
+                UserInvitations.status == InvitationStatus.PENDING
             )
         )
         .order_by(UserInvitations.created_at.desc())
@@ -143,7 +145,7 @@ async def get_pending_invitations(
     for invitation in invitations:
         # Skip expired invitations (and auto-update status)
         if is_invitation_expired(invitation):
-            invitation.status = "expired"
+            invitation.status = InvitationStatus.EXPIRED
             await db.flush()
             continue
 
@@ -266,7 +268,7 @@ async def decline_invitation(
         )
 
     # Check if invitation can be declined
-    if invitation.status != "pending":
+    if invitation.status != InvitationStatus.PENDING:
         raise BusinessRuleViolationException(
             message=f"Invitation is {invitation.status} and cannot be declined",
             rule_name="invitation_must_be_pending_to_decline"
@@ -276,7 +278,7 @@ async def decline_invitation(
     decline_reason = decline_data.reason
 
     # Update invitation status
-    invitation.status = "declined"
+    invitation.status = InvitationStatus.DECLINED
 
     # Get workspace details for notification
     workspace_result = await db.execute(
@@ -367,7 +369,7 @@ async def decline_invitation(
     return success(
         data={
             "invitation_id": str(invitation_id),
-            "status": "declined",
+            "status": InvitationStatus.DECLINED,
             "declined_at": datetime.now(timezone.utc).isoformat()
         },
         request=request,
