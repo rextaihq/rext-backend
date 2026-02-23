@@ -12,7 +12,7 @@ def register_routes(app: FastAPI) -> None:
     from src.api.routes.events import router as events_router
 
     # ---- Workspace routes ----
-    from src.api.routes.workspaces import workspaces_router
+    from src.api.routes.workspaces import workspaces_router, workspace_router
     from src.api.routes.workspaces.workspace_knowledge import (
         router as workspace_knowledge_router,
     )
@@ -78,6 +78,7 @@ def register_routes(app: FastAPI) -> None:
 
 
     app.include_router(workspaces_router, prefix="/api/v1", tags=["Workspaces"])
+    app.include_router(workspace_router, prefix="/api/v1", tags=["Workspaces"])
     app.include_router(workspace_knowledge_router, prefix="/api/v1", tags=["Workspace Knowledge"])
     app.include_router(workspace_knowledge_bases_router, prefix="/api/v1", tags=["Knowledge Bases"])
     app.include_router(email_template_router, prefix="/api/v1", tags=["Email Templates"])
@@ -118,9 +119,9 @@ def register_routes(app: FastAPI) -> None:
     app.include_router(notification_router, prefix="/api/v1", tags=["Notifications"])
     app.include_router(tools_router, prefix="/api/v1", tags=["Tools"])
     app.include_router(
-    dashboard_router,
-    prefix="/api/v1",
-    tags=["Dashboard"]
-)
+        dashboard_router,
+        prefix="/api/v1",
+        tags=["Dashboard"],
+    )
     # app.include_router(test_api_key_router, prefix="/api/v1", tags=["Testing"])
 
