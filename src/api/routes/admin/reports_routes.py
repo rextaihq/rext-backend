@@ -10,6 +10,7 @@ All endpoints require admin permissions.
 from datetime import datetime, timezone, timedelta
 from typing import Optional
 import csv
+import json
 from io import StringIO
 
 from fastapi import APIRouter, Depends, Query, Request, Response
@@ -133,8 +134,6 @@ async def export_revenue_report(
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
 
     if format == "json":
-        import json
-
         report_data = {
             "report_period": {
                 "start_date": start_date.isoformat(),
