@@ -181,8 +181,9 @@ async def upload_avatar(
     # 1. Format validation using MAGIC BYTES
     file_content = await file.read()
     kind = filetype.guess(file_content)
-    
-    ALLOWED_MIME_TYPES = {"image/jpeg", "image/png", "image/gif", "image/webp"}
+    from src.config.storage_config import get_allowed_types_by_category
+
+    ALLOWED_MIME_TYPES = set(get_allowed_types_by_category("image"))
     
     if kind is None or kind.mime not in ALLOWED_MIME_TYPES:
         logger.warning(

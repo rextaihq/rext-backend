@@ -31,4 +31,4 @@ def audit_routes(directory):
                         print("-" * 20)
 
 if __name__ == "__main__":
-    audit_routes('d:/work/rext-backend/src/api/routes')
+    audit_routes('src/api/routes')

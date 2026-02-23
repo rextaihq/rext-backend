@@ -25,6 +25,7 @@ from src.api.schema.subscription import (
     AdminUsageResetRequest,
 )
 from src.utils.logger import logger
+from src.services.webhook_monitoring_service import _mask_email
 
 
 class SubscriptionManagementService:
@@ -78,8 +79,8 @@ class SubscriptionManagementService:
         response = subscription.to_dict()
         response["plan_name"] = plan.name
         response["plan_display_name"] = plan.display_name
-        response["user_full_name"] = user.full_name or user.display_name or user.email
-        response["user_email"] = user.email
+        response["user_full_name"] = user.full_name or user.display_name or "***"
+        response["user_email_masked"] = _mask_email(user.email)
         return {
             "subscription": response,
             "message": f"Successfully assigned {plan.display_name} to user {user.full_name or user.email}",
@@ -151,7 +152,7 @@ class SubscriptionManagementService:
         }
 
     # ------------------------------------------------------------------
-    # Helpers
+    # Helperss
     # ------------------------------------------------------------------
 
     async def _get_user_or_404(self, user_id: UUID) -> Users:

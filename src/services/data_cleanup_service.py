@@ -9,7 +9,7 @@ from datetime import datetime, timezone, timedelta
 from typing import Dict, Optional
 from uuid import UUID
 
-from sqlalchemy import delete, select, func
+from sqlalchemy import delete, select, func,update 
 from sqlalchemy.ext.asyncio import AsyncSession
 from src.api.models.user_models.token_blacklist import TokenBlacklist
 
@@ -329,7 +329,8 @@ class DataCleanupService:
         Returns:
             Number of records deleted (or would be deleted in dry-run mode)
         """
-        retention_days = retention_days or 90  # Default 90 days for webhook events
+        
+        retention_days = retention_days or cleanup_config.WEBHOOK_EVENT_RETENTION_DAYS
         cutoff_date = datetime.now(timezone.utc) - timedelta(days=retention_days)
 
         logger.info(
@@ -405,7 +406,7 @@ class DataCleanupService:
         Returns:
             Number of records anonymized (or would be anonymized in dry-run mode)
         """
-        retention_days = retention_days or 90  # Default 90 days after cancellation
+        retention_days = retention_days or cleanup_config.CANCELLED_SUBSCRIPTION_RETENTION_DAYS
         cutoff_date = datetime.now(timezone.utc) - timedelta(days=retention_days)
 
         logger.info(
@@ -430,14 +431,13 @@ class DataCleanupService:
 
         if not self.dry_run:
             # Anonymize by setting user_id to NULL (keep subscription for financial records)
-            from sqlalchemy import update
 
             result = await self.db.execute(
                 update(UserSubscription)
                 .where(
                     UserSubscription.updated_at < cutoff_date,
                     UserSubscription.status.in_(["cancelled", "expired"]),
-                    UserSubscription.user_id.isnot(None)
+                    UserSubscription.user_id.isnot(None),
                 )
                 .values(user_id=None)
                 .returning(UserSubscription.id)
