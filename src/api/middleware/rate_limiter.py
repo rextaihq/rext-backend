@@ -184,26 +184,13 @@ class RateLimiter:
         Generate a unique key for the client.
 
         Prefers user ID if authenticated, falls back to IP address.
-
-        Args:
-            request: FastAPI request object
-
-        Returns:
-            Unique client identifier
+        Uses request.client.host (set by ProxyHeadersMiddleware for proxied requests).
         """
-        # Try to get user ID from request state (set by auth middleware)
         user_id = getattr(request.state, "user_id", None)
         if user_id:
             return f"user:{user_id}"
 
-        # Fall back to IP address
         client_ip = request.client.host if request.client else "unknown"
-
-        # Handle proxied requests
-        forwarded_for = request.headers.get("X-Forwarded-For")
-        if forwarded_for:
-            client_ip = forwarded_for.split(",")[0].strip()
-
         return f"ip:{client_ip}"
 
     def cleanup_old_entries(self) -> int:
@@ -534,6 +521,35 @@ def email_verification_rate_limit():
         window_minutes=10,
         description="email verification"
     )
+
+
+def notification_read_rate_limit():
+    """
+    Rate limiter for notification read endpoints (GET).
+
+    Limit: 60 requests per minute per user.
+    Generous enough for normal polling but prevents abuse.
+    """
+    return EndpointRateLimiter(
+        requests=60,
+        window_minutes=1,
+        description="notification read"
+    )
+
+
+def notification_write_rate_limit():
+    """
+    Rate limiter for notification write endpoints (POST mark-as-read, clear).
+
+    Limit: 20 requests per minute per user.
+    Stricter because write operations are more expensive.
+    """
+    return EndpointRateLimiter(
+        requests=20,
+        window_minutes=1,
+        description="notification write"
+    )
+
 
 
 # ============================================================================
@@ -877,4 +893,60 @@ def role_assignment_rate_limit():
         requests=15,
         window_minutes=1,
         description="role assignment"
+    )
+
+
+def license_validate_rate_limit():
+    """
+    Rate limiter for license validation endpoint.
+
+    Limit: 10 attempts per minute per user.
+    Prevents brute-force license key discovery.
+    """
+    return EndpointRateLimiter(
+        requests=10,
+        window_minutes=1,
+        description="license validation"
+    )
+
+
+def license_activate_rate_limit():
+    """
+    Rate limiter for license activation endpoint.
+
+    Limit: 5 attempts per minute per user.
+    Prevents activation slot exhaustion.
+    """
+    return EndpointRateLimiter(
+        requests=5,
+        window_minutes=1,
+        description="license activation"
+    )
+
+
+def license_deactivate_rate_limit():
+    """
+    Rate limiter for license deactivation endpoint.
+
+    Limit: 5 attempts per minute per user.
+    Prevents rapid deactivation abuse.
+    """
+    return EndpointRateLimiter(
+        requests=5,
+        window_minutes=1,
+        description="license deactivation"
+    )
+
+
+def license_revoke_rate_limit():
+    """
+    Rate limiter for license revocation endpoint (admin).
+
+    Limit: 10 attempts per minute per admin.
+    Prevents mass license revocation abuse.
+    """
+    return EndpointRateLimiter(
+        requests=10,
+        window_minutes=1,
+        description="license revocation"
     )

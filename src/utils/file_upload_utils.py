@@ -21,7 +21,7 @@ import os
 import hashlib
 from pathlib import Path
 from typing import Dict, List, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 from uuid import uuid4
 
 import filetype
@@ -399,8 +399,8 @@ def get_file_info(file_path: str) -> Optional[Dict]:
         return {
             "path": str(path),
             "size": stat.st_size,
-            "created_at": datetime.fromtimestamp(stat.st_ctime).isoformat(),
-            "modified_at": datetime.fromtimestamp(stat.st_mtime).isoformat(),
+            "created_at": datetime.fromtimestamp(stat.st_ctime, tz=timezone.utc).isoformat(),
+            "modified_at": datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc).isoformat(),
             "exists": True
         }
     except Exception as e:

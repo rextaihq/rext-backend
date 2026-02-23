@@ -8,6 +8,7 @@ from abc import ABC, abstractmethod
 from typing import List, Optional, Dict, Any
 from dataclasses import dataclass, field
 from datetime import datetime
+from src.utils.datetime_utils import utc_now
 
 
 @dataclass
@@ -63,7 +64,7 @@ class EmailResult:
     message_id: Optional[str] = None
     error: Optional[str] = None
     provider_response: Optional[Dict[str, Any]] = None
-    sent_at: Optional[datetime] = field(default_factory=lambda: datetime.now(timezone.utc))
+    sent_at: Optional[datetime] = field(default_factory=utc_now)
 
     def __repr__(self):
         status = "SUCCESS" if self.success else "FAILED"

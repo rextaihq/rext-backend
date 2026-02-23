@@ -13,7 +13,7 @@ Public endpoints:
 from fastapi import APIRouter, Depends, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from uuid import UUID
-from datetime import datetime
+from datetime import datetime, timezone
 
 from src.api.database.async_database import get_async_db
 from src.api.models.user_models.invitations import UserInvitations
@@ -263,7 +263,7 @@ async def accept_invitation(
         # User is already a member - this is okay, just mark invitation as accepted
         already_member = True
         logger.info(
-            f"User already member of workspace, accepting invitation anyway",
+            "User already member of workspace, accepting invitation anyway",
             extra={
                 "user_id": str(user_id),
                 "workspace_id": str(invitation.workspace_id),
@@ -316,7 +316,7 @@ async def accept_invitation(
     )
 
     logger.info(
-        f"Invitation accepted: {user_email} joined {workspace_name_str}",
+        "Invitation accepted",
         extra={
             "invitation_id": str(invitation.id),
             "user_id": str(user_id),
@@ -365,7 +365,7 @@ async def accept_invitation(
             )
 
             logger.info(
-                f"Invitation accepted notification sent to inviter: {inviter.email}",
+                "Invitation accepted notification sent to inviter",
                 extra={
                     "invitation_id": str(invitation.id),
                     "inviter_id": str(invitation.invited_by_user_id),
@@ -375,7 +375,7 @@ async def accept_invitation(
         except Exception as e:
             # Don't fail the acceptance if email fails
             logger.error(
-                f"Failed to send invitation accepted notification: {str(e)}",
+                "Failed to send invitation accepted notification",
                 exc_info=True,
                 extra={
                     "invitation_id": str(invitation.id),

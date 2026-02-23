@@ -26,7 +26,7 @@ Security:
 
 from typing import Optional, List
 from uuid import UUID
-from datetime import datetime, timedelta
+from datetime import datetime, timezone, timedelta
 import secrets
 import hashlib
 
@@ -78,28 +78,10 @@ class AdminInvitationService:
     async def _verify_super_admin(self, user_id: UUID) -> None:
         """
         Verify that user is a super_admin.
-
-        Args:
-            user_id: User UUID to check
-
-        Raises:
-            RextAuthorizationException: If user is not super_admin
         """
-        # Check if user has super_admin role
-        result = await self.db.execute(
-            select(UserRole)
-            .join(Role)
-            .where(
-                and_(
-                    UserRole.user_id == user_id,
-                    Role.name == 'super_admin',
-                    UserRole.workspace_id.is_(None)  # Platform-level role
-                )
-            )
-        )
-        super_admin_role = result.scalar_one_or_none()
-
-        if not super_admin_role:
+        from src.utils.rbac_utils import is_user_super_admin
+        
+        if not await is_user_super_admin(self.db, user_id):
             raise RextAuthorizationException(
                 message="Only super admins can create admin invitations",
                 required_permission="admin.invite"
@@ -213,14 +195,15 @@ class AdminInvitationService:
             )
 
         # Check if user with email already has admin role
+        from src.utils.rbac_utils import ADMIN_HIERARCHY_THRESHOLD
         result = await self.db.execute(
             select(Users)
-            .join(UserRole)
-            .join(Role)
+            .join(UserRole, Users.id == UserRole.user_id)
+            .join(Role, Role.id == UserRole.role_id)
             .where(
                 and_(
                     Users.email == email,
-                    Role.name.in_(['super_admin', 'support_admin', 'platform_admin']),
+                    Role.hierarchy_level >= ADMIN_HIERARCHY_THRESHOLD,
                     UserRole.workspace_id.is_(None)  # Platform-level
                 )
             )

@@ -11,7 +11,7 @@ from uuid import UUID
 from sqlalchemy import select
 
 from src.flow.states.rext import REXT
-from src.flow.model.llm_manager import load_model
+from src.flow.model.llm_manager import load_content_model
 from src.flow.model.structure.content import GeneratedContent
 from src.flow.prompts.human.eeat import get_eeat_prompt
 from src.api.database.async_database import get_async_db_context
@@ -38,6 +38,13 @@ async def inject_eeat(state: REXT) -> dict:
         dict: Updated state with E-E-A-T enhanced content
     """
     content_state = state.get("content", {})
+
+    if content_state.get("error"):
+        logger.warning(
+            "Skipping E-E-A-T injection due to upstream error: %s",
+            content_state["error"],
+        )
+        return {"content": content_state}
     
     try:
         # 1️⃣ Get content from state
@@ -119,7 +126,7 @@ async def inject_eeat(state: REXT) -> dict:
         }
         
         # 7️⃣ Load model and prepare messages
-        model = load_model().with_structured_output(GeneratedContent)
+        model = load_content_model().with_structured_output(GeneratedContent)
         messages = get_eeat_prompt().format_messages(**prompt_data)
         
         # 8️⃣ Invoke LLM for E-E-A-T injection

@@ -1,7 +1,7 @@
 """User subscription model."""
 import uuid
 from datetime import datetime, timezone
-from sqlalchemy import Column, String, Integer, Boolean, DateTime, ForeignKey, Enum as SQLEnum
+from sqlalchemy import Column, String, Integer, Boolean, DateTime, ForeignKey, Enum as SQLEnum, Text
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import relationship
 import enum
@@ -32,8 +32,8 @@ class UserSubscription(Base, SerializableMixin):
     __tablename__ = "user_subscriptions"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, unique=True, nullable=False)
-    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-    plan_id = Column(UUID(as_uuid=True), ForeignKey("subscription_plans.id", ondelete="RESTRICT"), nullable=False)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    plan_id = Column(UUID(as_uuid=True), ForeignKey("subscription_plans.id", ondelete="RESTRICT"), nullable=False, index=True)
 
     # Subscription details
     status = Column(SQLEnum(SubscriptionStatus), default=SubscriptionStatus.ACTIVE, nullable=False)
@@ -44,6 +44,7 @@ class UserSubscription(Base, SerializableMixin):
     end_date = Column(DateTime(timezone=True), nullable=True)  # Null for active subscriptions
     trial_end_date = Column(DateTime(timezone=True), nullable=True)
     cancelled_at = Column(DateTime(timezone=True), nullable=True)
+    cancellation_reason = Column(Text, nullable=True) 
 
     # Payment Provider Integration (provider-agnostic)
     provider_subscription_id = Column(String(255), unique=True)
@@ -76,7 +77,7 @@ class UserSubscription(Base, SerializableMixin):
     # Relationships
     user = relationship("Users", back_populates="subscriptions")
     plan = relationship("SubscriptionPlan", back_populates="subscriptions")
-    discount_usages = relationship("DiscountUsage", back_populates="subscription", cascade="all, delete-orphan")
+    discount_usages = relationship("DiscountUsage", back_populates="subscription", cascade="all, delete-orphan", passive_deletes=True)
     refunds = relationship("Refund", back_populates="subscription")
     trial_conversions = relationship("TrialConversion", back_populates="subscription")
 

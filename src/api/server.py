@@ -32,6 +32,9 @@ from src.api.lib.logging_config import configure_logging, RequestIDMiddleware
 # Sentry error monitoring
 from src.api.lib.sentry_config import init_sentry
 
+from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
+
+
 load_dotenv()
 
 # Configure structured logging at startup
@@ -52,7 +55,13 @@ async def lifespan(app):
         init_sentry(settings)
         logger.info("✅ Sentry initialized successfully")
     except Exception as e:
-        logger.warning(f"⚠️ Failed to initialize Sentry: {e}")
+        logger.warning(
+            "Failed to initialize Sentry",
+            exc_info=True,
+            extra={
+                "error": str(e),
+            }
+        )
 
     # --- Connect Redis cache ---
     try:
@@ -82,7 +91,13 @@ async def lifespan(app):
         start_scheduled_tasks()
         logger.info("✅ Scheduled tasks started")
     except Exception as e:
-        logger.warning(f"⚠️ Failed to start scheduled tasks: {e}")
+        logger.warning(
+            "Failed to start scheduled tasks",
+            exc_info=True,
+            extra={
+                "error": str(e),
+            }
+        )
 
     # --- Application is now ready ---
     logger.info("✅ Application startup complete. Ready to serve requests.")
@@ -95,7 +110,13 @@ async def lifespan(app):
         shutdown_scheduled_tasks()
         logger.info("✅ Scheduled tasks stopped")
     except Exception as e:
-        logger.warning(f"⚠️ Failed to stop scheduled tasks: {e}")
+        logger.warning(
+            "Failed to stop scheduled tasks",
+            exc_info=True,
+            extra={
+                "error": str(e),
+            }
+        )
 
     try:
         await cache.disconnect()
@@ -121,6 +142,14 @@ app = FastAPI(
 # NOTE: In Starlette/FastAPI, middleware added LAST is the OUTERMOST (processes
 # requests first). CORS must be outermost so preflight OPTIONS requests get
 # proper headers even if inner middleware returns early.
+
+# Proxy headers middleware 
+app.add_middleware(
+    ProxyHeadersMiddleware,
+    trusted_hosts=settings.TRUSTED_PROXY_IPS.split(",")
+    if hasattr(settings, "TRUSTED_PROXY_IPS") and settings.TRUSTED_PROXY_IPS
+    else ["127.0.0.1", "::1"]
+)
 
 # Request tracking middleware
 app.add_middleware(
@@ -225,7 +254,7 @@ async def health_check(request: Request):
     Returns overall system health with detailed dependency checks.
     Returns 200 if healthy, 503 if degraded.
     """
-    from datetime import datetime
+    from datetime import datetime, timezone
     from fastapi.responses import JSONResponse
     from sqlalchemy import text
     import shutil
@@ -290,7 +319,7 @@ async def liveness_check(request: Request):
     This endpoint should only fail if the application has crashed or is deadlocked.
     Kubernetes will restart the pod if this returns non-200.
     """
-    from datetime import datetime
+    from datetime import datetime, timezone
     return {
         "status": "alive",
         "service": "rext-api",
@@ -307,7 +336,7 @@ async def readiness_check(request: Request):
     Returns 503 if dependencies are unavailable.
     Kubernetes will remove pod from load balancer if this returns non-200.
     """
-    from datetime import datetime
+    from datetime import datetime, timezone
     from fastapi.responses import JSONResponse
     from sqlalchemy import text
 

@@ -11,7 +11,7 @@ from sqlalchemy import orm
 from sqlalchemy.ext.declarative import declarative_base
 import sqlalchemy as sa
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from decimal import Decimal
 
 # revision identifiers, used by Alembic.
@@ -78,7 +78,7 @@ def upgrade() -> None:
                 "advanced_analytics": False,
                 "priority_support": False
             },
-            "max_workspaces": 1,
+            "max_workspaces": 100,
             "max_members_per_workspace": 3,
             "max_topics": 50,
             "max_knowledge_items": 100,
@@ -87,8 +87,8 @@ def upgrade() -> None:
             "is_public": True,
             "stripe_price_id_monthly": None,
             "stripe_price_id_yearly": None,
-            "created_at": datetime.utcnow(),
-            "updated_at": datetime.utcnow()
+            "created_at": datetime.now(timezone.utc).replace(tzinfo=None),
+            "updated_at": datetime.now(timezone.utc).replace(tzinfo=None)
         },
         {
             "id": uuid.uuid4(),
@@ -105,7 +105,7 @@ def upgrade() -> None:
                 "advanced_analytics": True,
                 "priority_support": False
             },
-            "max_workspaces": 5,
+            "max_workspaces": 500,
             "max_members_per_workspace": 10,
             "max_topics": 500,
             "max_knowledge_items": 5000,
@@ -114,8 +114,8 @@ def upgrade() -> None:
             "is_public": True,
             "stripe_price_id_monthly": None,  # To be configured when Stripe is integrated
             "stripe_price_id_yearly": None,
-            "created_at": datetime.utcnow(),
-            "updated_at": datetime.utcnow()
+            "created_at": datetime.now(timezone.utc).replace(tzinfo=None),
+            "updated_at": datetime.now(timezone.utc).replace(tzinfo=None)
         },
         {
             "id": uuid.uuid4(),
@@ -144,8 +144,8 @@ def upgrade() -> None:
             "is_public": True,
             "stripe_price_id_monthly": None,
             "stripe_price_id_yearly": None,
-            "created_at": datetime.utcnow(),
-            "updated_at": datetime.utcnow()
+            "created_at": datetime.now(timezone.utc).replace(tzinfo=None),
+            "updated_at": datetime.now(timezone.utc).replace(tzinfo=None)
         }
     ]
 

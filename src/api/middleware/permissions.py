@@ -25,7 +25,7 @@ from src.api.security.dependencies import get_current_user
 from src.api.models.user_models.user_roles import UserRole
 from src.api.models.user_models.roles import Role
 from src.utils.logger import logger
-from src.utils.rbac_utils import get_user_permissions, get_user_role_names
+from src.utils.rbac_utils import get_user_role_names
 
 
 class PermissionChecker:
@@ -200,50 +200,25 @@ class PermissionChecker:
 
         Returns:
             Set of permission names (e.g., {"user.read", "user.write"})
-        """
+        """ 
+        from uuid import UUID as UUIDType
+        from src.utils.rbac_utils import get_user_permissions
+
         # Convert string IDs to UUID objects as expected by rbac_utils
-        user_uuid = UUID(user_id) if isinstance(user_id, str) else user_id
-        workspace_uuid = (
-            UUID(workspace_id) if workspace_id and isinstance(workspace_id, str)
-            else workspace_id
-        )
+        user_uuid = UUIDType(user_id) if isinstance(user_id, str) else user_id
+        workspace_uuid = UUIDType(workspace_id) if workspace_id and isinstance(workspace_id, str) else workspace_id
 
         permissions_list = await get_user_permissions(db, user_uuid, workspace_uuid)
         return set(permissions_list)
 
     @staticmethod
-    def _check_permissions(
-        user_permissions: set,
-        required_permissions: List[str],
-        require_all: bool
-    ) -> bool:
-        """
-        Check if user has required permissions.
-
-        Args:
-            user_permissions: Set of user's permission names
-            required_permissions: List of required permission names
-            require_all: If True, must have ALL. If False, must have at least ONE.
-
-        Returns:
-            True if user has sufficient permissions, False otherwise
-        """
-        if require_all:
-            # User must have ALL required permissions
-            return all(perm in user_permissions for perm in required_permissions)
-        else:
-            # User must have at least ONE of the required permissions
-            return any(perm in user_permissions for perm in required_permissions)
-
-    @staticmethod
     async def _is_super_admin(db: AsyncSession, user_id: str) -> bool:
-        """Check if user has super_admin role (cached)."""
+        """Check if user has super-admin level role (cached)."""
+        from src.utils.rbac_utils import is_user_super_admin
+        
         # Convert string ID to UUID object as expected by rbac_utils
         user_uuid = UUID(user_id) if isinstance(user_id, str) else user_id
-        
-        # Get user roles (cached)
-        role_names = await get_user_role_names(db, user_uuid)
-        return "super_admin" in role_names
+        return await is_user_super_admin(db, user_uuid)
 
     @staticmethod
     async def _validate_workspace_membership(
@@ -339,9 +314,10 @@ async def is_admin(
     """
     Check if current user is an admin.
 
-    This is a convenience dependency that checks if the user has either
-    the 'admin' or 'super_admin' role (cached via rbac_utils).
+    This is a convenience dependency that checks if the user has
+    hierarchy_level >= 90 (cached via rbac_utils).
     """
+    from src.utils.rbac_utils import is_user_admin
     user_id = current_user.get("identity")
 
     if not user_id:
@@ -357,9 +333,8 @@ async def is_admin(
     # Convert string ID to UUID object as expected by rbac_utils
     user_uuid = UUID(user_id) if isinstance(user_id, str) else user_id
 
-    # Check if user has admin or super_admin role (cached)
-    role_names = await get_user_role_names(db, user_uuid)
-    is_authorized = any(role in ["admin", "super_admin"] for role in role_names)
+    # Check if user has admin-level role (cached)
+    is_authorized = await is_user_admin(db, user_uuid)
 
     if not is_authorized:
         logger.warning(

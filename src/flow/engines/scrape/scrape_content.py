@@ -5,11 +5,16 @@ from typing import Dict, Any, List
 
 from crawl4ai import AsyncWebCrawler
 from langchain_core.documents import Document
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+
 from src.flow.engines.scrape.config.clean_content import clean_content
 from src.flow.engines.scrape.config.crawler_config import CrawlerConfiguration
 from src.flow.states.rext import REXT
 
 logger = logging.getLogger(__name__)
+import os
+
+MAX_SCRAPE_URLS = int(os.getenv("MAX_SCRAPE_URLS", "5"))  # Max URLs to scrape per workflow
 
 
 def _extract_headings(markdown_text: str) -> List[str]:
@@ -22,10 +27,47 @@ def _extract_headings(markdown_text: str) -> List[str]:
     return [heading.strip() for _, heading in matches]
 
 
+def _chunk_document(
+    doc: Document,
+    chunk_size: int = 800,
+    chunk_overlap: int = 150,
+) -> List[Document]:
+    """
+    Split a document into overlapping text chunks while
+    preserving metadata.
+    """
+    if not doc.page_content:
+        return []
+
+    splitter = RecursiveCharacterTextSplitter(
+        chunk_size=chunk_size,
+        chunk_overlap=chunk_overlap,
+    )
+
+    texts = splitter.split_text(doc.page_content)
+
+    chunks: List[Document] = []
+    total_chunks = len(texts)
+
+    for idx, text in enumerate(texts):
+        chunks.append(
+            Document(
+                page_content=text,
+                metadata={
+                    **doc.metadata,
+                    "chunk_index": idx,
+                    "chunk_total": total_chunks,
+                },
+            )
+        )
+
+    return chunks
+
+
 async def scrape_serp_content(state: REXT) -> Dict[str, Any]:
     """
-    Scrape full content from SERP URLs and attach domain + rank position
-    to each scraped document.
+    Scrape full content from SERP URLs, extract headings,
+    and chunk each document for downstream processing.
     """
     logger.info("Starting SERP content scraping")
 
@@ -41,8 +83,18 @@ async def scrape_serp_content(state: REXT) -> Dict[str, Any]:
     query = serp_payload.get("query")
     crawler_config = CrawlerConfiguration(query=query)
 
-    urls = [item["link"] for item in organic_results if item.get("link")]
-    logger.info("Queued %d URLs for crawling", len(urls))
+    all_urls = [item["link"] for item in organic_results if item.get("link")]
+    urls = all_urls[:MAX_SCRAPE_URLS]
+    if len(all_urls) > MAX_SCRAPE_URLS:
+        logger.info(
+            "Limited scraping to %d of %d available URLs",
+            MAX_SCRAPE_URLS,
+            len(all_urls),
+            )
+    else:
+        logger.info("Queued %d URLs for crawling", len(urls))
+    # urls = [item["link"] for item in organic_results if item.get("link")]
+    # logger.info("Queued %d URLs for crawling", len(urls))
 
     browser_config = crawler_config.get_browser_config()
     run_config = crawler_config.get_run_config()
@@ -82,11 +134,14 @@ async def scrape_serp_content(state: REXT) -> Dict[str, Any]:
                         "links_detail": [],
                     },
                 )
+
                 scrape_data_list.append({
                     "document": doc,
                     "content_length": 0,
                     "keywords": [],
                     "headings": [],
+                    "chunks": [],
+                    "chunk_count": 0,
                 })
                 continue
 
@@ -94,8 +149,7 @@ async def scrape_serp_content(state: REXT) -> Dict[str, Any]:
             content_length = len(text.strip())
 
             headings = _extract_headings(text)
-            # Note: Keyword extraction removed - should be done in SEO engine with SERP data
-            keywords = []
+            keywords = []  # intentionally empty (SEO engine responsibility)
 
             internal_links = result.links.get("internal", []) if result.links else []
 
@@ -130,11 +184,16 @@ async def scrape_serp_content(state: REXT) -> Dict[str, Any]:
                 },
             )
 
+            # 🔹 CHUNKING HAPPENS HERE
+            chunks = _chunk_document(doc)
+
             scrape_data_list.append({
                 "document": doc,
                 "content_length": content_length,
                 "keywords": keywords,
                 "headings": headings,
+                "chunks": chunks,
+                "chunk_count": len(chunks),
             })
 
     except Exception as exc:

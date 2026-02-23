@@ -1,5 +1,4 @@
 from typing import Annotated, Any
-from typing_extensions import TypedDict
 
 def merge_dicts(left: dict[str, Any], right: dict[str, Any]) -> dict[str, Any]:
     result = left.copy() if left else {}

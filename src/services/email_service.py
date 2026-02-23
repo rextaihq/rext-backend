@@ -6,7 +6,8 @@ Acts as the main interface between application code and email providers.
 """
 from typing import Optional, Dict, Any, List
 from uuid import UUID
-from datetime import datetime
+from datetime import datetime, timezone
+from src.utils.datetime_utils import utc_now
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from tenacity import (
@@ -153,7 +154,6 @@ class EmailService:
             tags=tags
         )
 
-        # Create initial log entry
         email_log = EmailLog(
             workspace_id=workspace_id,
             user_id=user_id,
@@ -162,10 +162,11 @@ class EmailService:
             to_email=to,
             from_email=from_email,
             subject=subject,
+            html_content=html,  # Store HTML for retry capability
             status="queued",
             tags=tags,
-            created_at=datetime.now(timezone.utc),
-            updated_at=datetime.now(timezone.utc)
+            created_at=utc_now(),
+            updated_at=utc_now()
         )
 
         self.db.add(email_log)
@@ -214,7 +215,7 @@ class EmailService:
 
         # Commit transaction (unless disabled for testing)
         if auto_commit:
-            await self.db.commit()
+            await self.db.flush()  # Changed from commit() as per Task 074
 
         # Note: We don't refresh after commit because:
         # 1. We already have all the data we just set
@@ -239,21 +240,13 @@ class EmailService:
         provider,
         email_log: EmailLog
     ) -> EmailResult:
-        """
-        Send email using specific provider with exponential backoff retry.
+        """Send email using specific provider with configurable retry."""
+        max_attempts = email_config.email_retry_max_attempts if email_config.email_retry_enabled else 1
+        delay_seconds = email_config.email_retry_delay_seconds
 
-        Args:
-            message: Email message to send
-            provider: Provider instance to use
-            email_log: Log entry to update
-
-        Returns:
-            EmailResult from provider
-        """
-        # Create retry decorator with exponential backoff
         @retry(
-            stop=stop_after_attempt(3),
-            wait=wait_exponential(multiplier=1, min=4, max=10),
+            stop=stop_after_attempt(max_attempts),
+            wait=wait_exponential(multiplier=1, min=delay_seconds, max=delay_seconds * 3),
             before_sleep=before_sleep_log(logging.getLogger(__name__), logging.WARNING),
             reraise=True
         )
@@ -322,15 +315,15 @@ class EmailService:
         if result.success:
             email_log.status = "sent"
             email_log.provider_message_id = result.message_id
-            email_log.sent_at = datetime.now(timezone.utc)
+            email_log.sent_at = utc_now()
             email_log.error_message = None
         else:
             email_log.status = "failed"
             email_log.error_message = result.error
-            email_log.failed_at = datetime.now(timezone.utc)
+            email_log.failed_at = utc_now()
 
         email_log.provider_response = result.provider_response
-        email_log.updated_at = datetime.now(timezone.utc)
+        email_log.updated_at = utc_now()
 
     async def get_email_log(self, email_log_id: UUID) -> Optional[EmailLog]:
         """
@@ -416,7 +409,7 @@ class EmailService:
         """
         from datetime import timedelta
 
-        cutoff_time = datetime.now(timezone.utc) - timedelta(hours=hours)
+        cutoff_time = utc_now() - timedelta(hours=hours)
 
         result = await self.db.execute(
             select(EmailLog)
@@ -460,13 +453,17 @@ class EmailService:
             }
         )
 
-        # Build message from log data
-        # Note: HTML content is not stored in logs for privacy/storage reasons
-        # For retry, we use a placeholder that indicates this is a retry
+        # Build message from stored log data
+        if not email_log.html_content:
+            raise ValueError(
+                f"Email log {email_log_id} has no stored HTML content. "
+                "Emails sent before the html_content column was added cannot be retried."
+            )
+
         message = EmailMessage(
             to=[EmailRecipient(email=email_log.to_email)],
             subject=email_log.subject,
-            html="<p>Retrying failed email. Original content not available.</p>",
+            html=email_log.html_content,
             from_email=email_log.from_email,
             tags=email_log.tags
         )
@@ -475,7 +472,7 @@ class EmailService:
         email_log.status = "queued"
         email_log.error_message = None
         email_log.failed_at = None
-        email_log.updated_at = datetime.now(timezone.utc)
+        email_log.updated_at = utc_now()
 
         # Try sending with current provider
         provider = get_email_provider()
@@ -485,7 +482,7 @@ class EmailService:
         self._update_log_with_result(email_log, result)
 
         if auto_commit:
-            await self.db.commit()
+            await self.db.flush()  # Changed from commit() as per Task 074
 
         # Note: No refresh after commit (see send_email for explanation)
 

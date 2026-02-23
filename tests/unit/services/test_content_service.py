@@ -19,6 +19,7 @@ from src.services.content_service import ContentService
 from src.api.schema.content_schema import (
     ContentCreate,
     ContentUpdate,
+    ContentSEODataSchema,
 )
 from src.api.middleware.exceptions import (
     ResourceNotFoundException,
@@ -93,9 +94,10 @@ class TestContentServiceCreate:
         assert content.title == "Complete Article"
         assert content.body_markdown == "# Full Content"
         assert content.content_language == "Spanish"
-        assert content.meta_title == "SEO Title"
-        assert content.meta_description == "SEO Description"
-        assert content.focus_keyphrase == "keyphrase"
+        assert content.seo_data is not None
+        assert content.seo_data.meta_title == "SEO Title"
+        assert content.seo_data.meta_description == "SEO Description"
+        assert content.seo_data.focus_keyphrase == "keyphrase"
         assert content.seo_data.trust_score == 0.95
         assert content.tags == ["tag1", "tag2"]
 

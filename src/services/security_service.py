@@ -20,7 +20,7 @@ Does NOT:
 
 from typing import List, Dict, Any, Optional
 from uuid import UUID
-from datetime import datetime, timedelta,timezone
+from datetime import datetime, timezone, timedelta,timezone
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_
@@ -339,7 +339,8 @@ class SecurityService:
     async def get_user_login_history(
         self,
         user_id: UUID,
-        limit: int = 50
+        limit: int = 50,
+        offset: int = 0
     ) -> Dict[str, Any]:
         """
         Get login history for a specific user.
@@ -347,22 +348,33 @@ class SecurityService:
         Args:
             user_id: User UUID
             limit: Number of recent login events (1-100)
+            offset: Pagination offset
 
         Returns:
-            Dict with user info and login history
+            Dict with user info, login history, and pagination info
 
         Raises:
             ResourceNotFoundException: If user not found
         """
+        from sqlalchemy import func
+
         # Get user
         user = await self._get_user_or_404(user_id)
 
-        # Get login events from audit log
+        # Build base query for login events
+        base_query = select(AuditLog).where(
+            AuditLog.user_id == user_id,
+            AuditLog.action.like("auth.login%")
+        )
+
+        # Get total count
+        count_query = select(func.count()).select_from(base_query.subquery())
+        total_result = await self.db.execute(count_query)
+        total_count = total_result.scalar() or 0
+
+        # Get paginated login events
         events_result = await self.db.execute(
-            select(AuditLog).where(
-                AuditLog.user_id == user_id,
-                AuditLog.action.like("auth.login%")
-            ).order_by(AuditLog.created_at.desc()).limit(limit)
+            base_query.order_by(AuditLog.created_at.desc()).offset(offset).limit(limit)
         )
         login_events = events_result.scalars().all()
 
@@ -382,7 +394,10 @@ class SecurityService:
             "full_name": user.full_name,
             "email": user.email,
             "login_history": login_history,
-            "total_events": len(login_history)
+            "total": total_count,
+            "limit": limit,
+            "offset": offset,
+            "has_more": (offset + limit) < total_count
         }
 
     # ========================================================================

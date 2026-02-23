@@ -56,12 +56,22 @@ async def _process_webhook_in_background(body: bytes, signature: str) -> None:
             _register_all_handlers(webhook_service)
 
             result = await webhook_service.process_webhook(body, signature)
+            
+            # Commit changes BEFORE sending emails
             await db.commit()
 
             logger.info(
                 f"LemonSqueezy webhook processed in background: {result.get('event_type')}",
                 extra={"event_id": result.get("event_id")}
             )
+
+            # Handle post-commit tasks (like sending emails)
+            handler_result = result.get("handler_result")
+            if handler_result and isinstance(handler_result, dict) and handler_result.get("send_email"):
+                try:
+                    await _send_webhook_email(handler_result, db)
+                except Exception as email_err:
+                    logger.error(f"Failed to send post-webhook email: {email_err}")
 
             audit_logger.log_webhook_processed(
                 event_id=result.get("event_id", "unknown"),
@@ -76,6 +86,55 @@ async def _process_webhook_in_background(body: bytes, signature: str) -> None:
                 f"LemonSqueezy webhook background processing failed: {str(e)}",
                 exc_info=True
             )
+
+
+async def _send_webhook_email(task_data: dict, db: AsyncSessionLocal) -> None:
+    """Send email based on task data from webhook handler."""
+    from src.services.billing_email_service import BillingEmailService
+    
+    email_type = task_data.get("email_type")
+    data = task_data.get("email_data", {})
+    user_id = data.get("user_id")
+    
+    if not email_type or not user_id:
+        return
+
+    # Use a new session for email sending to ensure it's independent
+    async with AsyncSessionLocal() as email_db:
+        billing_email = BillingEmailService(email_db)
+        
+        if email_type == "payment_failed":
+            await billing_email.send_payment_failed_email(
+                user_id=user_id,
+                plan_name=data.get("plan_name"),
+                amount=f"${data.get('amount_cents', 0) / 100:.2f}",
+                retry_date=data.get("retry_date")
+            )
+        elif email_type == "payment_recovered":
+            await billing_email.send_payment_recovered_email(
+                user_id=user_id,
+                plan_name=data.get("plan_name"),
+                amount=f"${data.get('amount_cents', 0) / 100:.2f}",
+                recovery_date=data.get("recovery_date"),
+                next_billing_date=data.get("next_billing_date")
+            )
+        elif email_type == "subscription_created":
+            await billing_email.send_subscription_created_email(
+                user_id=user_id,
+                plan_name=data.get("plan_name"),
+                plan_price=data.get("plan_price"),
+                billing_period=data.get("billing_period"),
+                features=data.get("features", [])
+            )
+        elif email_type == "payment_succeeded":
+            await billing_email.send_payment_succeeded_email(
+                user_id=user_id,
+                plan_name=data.get("plan_name"),
+                amount=f"${data.get('amount_cents', 0) / 100:.2f}",
+                payment_date=data.get("payment_date"),
+                next_billing_date=data.get("next_billing_date")
+            )
+        # Add other types as needed
 
 
 @router.post("/lemonsqueezy", status_code=status.HTTP_200_OK)
@@ -137,7 +196,8 @@ async def handle_lemonsqueezy_webhook(
         except Exception:
             pass
 
-        webhook_security_monitor.record_verification_failure(
+        # Record failure in security monitor
+        await webhook_security_monitor.record_verification_failure(
             ip_address=client_ip,
             event_type=event_type,
             signature_prefix=signature[:8] if len(signature) >= 8 else signature,

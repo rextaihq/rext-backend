@@ -1,8 +1,8 @@
 """
 Humanization System Prompt
 
-This system prompt defines how the LLM should transform AI-generated content
-to appear naturally human-written, targeting 90% human-written detection score.
+Concise system prompt for transforming AI-generated content to appear
+naturally human-written, targeting 90% human-written detection score.
 """
 
 HUMANIZE_SYSTEM_PROMPT = """

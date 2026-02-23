@@ -1,9 +1,4 @@
-"""
-Email Provider Factory
-
-Factory pattern for creating email provider instances based on configuration.
-Supports multiple providers with fallback mechanism.
-"""
+import threading
 from typing import Optional
 from src.providers.email.base import IEmailProvider
 from src.providers.email.resend_provider import ResendEmailProvider
@@ -21,71 +16,57 @@ class EmailProviderFactory:
 
     Uses configuration to determine which provider to instantiate.
     Supports fallback providers if primary provider fails to initialize.
+    Thread-safe singleton pattern with double-checked locking.
     """
 
     _instance: Optional[IEmailProvider] = None
     _fallback_instance: Optional[IEmailProvider] = None
+    _lock = threading.Lock()
+    _fallback_lock = threading.Lock()
 
     @classmethod
     def get_provider(cls, force_recreate: bool = False) -> IEmailProvider:
-        """
-        Get email provider instance (singleton pattern).
-
-        Args:
-            force_recreate: If True, creates new instance even if one exists
-
-        Returns:
-            Configured email provider instance
-
-        Raises:
-            ValueError: If no valid provider can be created
-
-        Note:
-            Uses singleton pattern to reuse provider instances across the application.
-            Provider is determined by EMAIL_PROVIDER environment variable.
-        """
+        """Get email provider instance (thread-safe singleton pattern)."""
         if cls._instance is None or force_recreate:
-            cls._instance = cls._create_provider(email_config.email_provider)
-
+            with cls._lock:
+                if cls._instance is None or force_recreate:
+                    cls._instance = cls._create_provider(email_config.email_provider)
         return cls._instance
 
     @classmethod
     def get_fallback_provider(cls, force_recreate: bool = False) -> Optional[IEmailProvider]:
-        """
-        Get fallback email provider instance.
-
-        Args:
-            force_recreate: If True, creates new instance even if one exists
-
-        Returns:
-            Fallback provider instance or None if not configured
-
-        Note:
-            Fallback provider is used when primary provider fails.
-            Configured via EMAIL_FALLBACK_PROVIDER environment variable.
-        """
+        """Get fallback email provider instance (thread-safe)."""
         if not email_config.email_fallback_provider:
             logger.debug("No fallback provider configured")
             return None
 
         if cls._fallback_instance is None or force_recreate:
-            try:
-                cls._fallback_instance = cls._create_provider(
-                    email_config.email_fallback_provider
-                )
-            except Exception as e:
-                logger.warning(
-                    f"Fallback provider '{email_config.email_fallback_provider}' failed to initialize: {str(e)}. Email will use primary provider only.",
-                    extra={
-                        "fallback_provider": email_config.email_fallback_provider,
-                        "error_type": type(e).__name__
-                    }
-                )
-                # Set to a sentinel value to avoid retry attempts
-                cls._fallback_instance = None
-                return None
-
+            with cls._fallback_lock:
+                if cls._fallback_instance is None or force_recreate:
+                    try:
+                        cls._fallback_instance = cls._create_provider(
+                            email_config.email_fallback_provider
+                        )
+                    except Exception as e:
+                        logger.warning(
+                            f"Fallback provider '{email_config.email_fallback_provider}' failed to initialize: {str(e)}. Email will use primary provider only.",
+                            extra={
+                                "fallback_provider": email_config.email_fallback_provider,
+                                "error_type": type(e).__name__
+                            }
+                        )
+                        cls._fallback_instance = None
+                        return None
         return cls._fallback_instance
+
+    @classmethod
+    def reset(cls) -> None:
+        """Reset factory singleton instances (thread-safe)."""
+        with cls._lock:
+            with cls._fallback_lock:
+                logger.info("Resetting email provider factory instances")
+                cls._instance = None
+                cls._fallback_instance = None
 
     @classmethod
     def _create_provider(cls, provider_name: str) -> IEmailProvider:
@@ -170,17 +151,6 @@ class EmailProviderFactory:
         """
         logger.info("Creating Mock email provider")
         return MockEmailProvider()
-
-    @classmethod
-    def reset(cls) -> None:
-        """
-        Reset factory singleton instances.
-
-        Useful for testing to force recreation of providers with new configuration.
-        """
-        logger.info("Resetting email provider factory instances")
-        cls._instance = None
-        cls._fallback_instance = None
 
     @classmethod
     def get_available_providers(cls) -> list[str]:

@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, Request, HTTPException, status, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-from datetime import datetime
+from datetime import datetime, timezone
 from uuid import UUID
 import os
 
@@ -207,19 +207,19 @@ async def revoke_invitation(
     # Check permission: must be invitation creator or workspace admin (route-level authorization)
     is_creator = str(invitation.invited_by_user_id) == str(user_id)
 
-    # Check if user has admin role in the workspace
+    # Check if user has admin/owner role in the workspace (hierarchy >= 80)
     result = await db.execute(
         select(UserRole)
         .join(Role, UserRole.role_id == Role.id)
         .where(
             UserRole.user_id == UUID(user_id),
             UserRole.workspace_id == invitation.workspace_id,
-            Role.name.in_(["admin", "owner", "workspace_admin"])
+            Role.hierarchy_level >= 80 # 80 is workspace_owner threshold
         )
     )
-    is_admin = result.first() is not None
+    is_authorized_by_role = result.first() is not None
 
-    if not is_creator and not is_admin:
+    if not is_creator and not is_authorized_by_role:
         raise RextAuthenticationException(
             message="Insufficient permissions to revoke this invitation"
         )

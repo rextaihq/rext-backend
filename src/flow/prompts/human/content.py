@@ -31,6 +31,9 @@ Approved Outline:
 Reference / Source Content:
 {reference_text}
 
+Meta_data:
+{meta_data}
+
 Tone: 
 {tone}
 

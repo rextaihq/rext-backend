@@ -93,7 +93,7 @@ async def test_update_brand_voice_restful_returns_serialized_payload(monkeypatch
         "target_audience": ["Audience A"],
         "brand_voice": ["Friendly"],
         "competitors": ["Competitor"],
-        "content_pillar": ["Strategy"],
+        "content_strategy": ["Strategy"],
     }
 
     try:
@@ -129,7 +129,7 @@ async def test_update_brand_voice_restful_returns_serialized_payload(monkeypatch
     assert called_user_id == user_identifier
     # Ensure original request payload surfaced through BrandSchema
     assert brand_data.about == "Updated about"
-    assert brand_data.content_pillar == ["Strategy"]
+    assert brand_data.strategy == ["Strategy"]
 
 
 @pytest.mark.asyncio

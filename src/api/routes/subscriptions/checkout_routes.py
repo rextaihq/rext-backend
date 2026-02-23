@@ -105,7 +105,7 @@ async def create_portal_session(
         logger.error(f"Failed to create portal session: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to create portal session: {str(e)}"
+            detail="Failed to create portal session. Please try again or contact support."
         )
 
 
@@ -266,8 +266,8 @@ async def cancel_subscription(
         )
 
     except Exception as e:
-        logger.error(f"Failed to cancel subscription: {str(e)}")
+        logger.error("Failed to cancel subscription", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to cancel subscription: {str(e)}"
+            detail="Failed to cancel subscription. Please try again or contact support."
         )

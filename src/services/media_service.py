@@ -11,12 +11,14 @@ High-level service for media management that orchestrates:
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_, func, or_
 from typing import List, Optional, BinaryIO, Dict, Any
-from datetime import datetime
+from datetime import datetime, timezone
 from io import BytesIO
 import os
+import uuid 
 import filetype
 
 from src.api.models.media_models.media import Media
+from src.api.models.workspace_models.workspace_model import WorkspaceModel
 from src.api.models.subscription_models.subscriptions import (
     UserSubscription,
     SubscriptionStatus
@@ -77,7 +79,7 @@ class MediaService:
             select(UserSubscription, SubscriptionPlan)
             .join(SubscriptionPlan, UserSubscription.plan_id == SubscriptionPlan.id)
             .where(
-                UserSubscription.user_id == user_id,
+                UserSubscription.user_id == uuid.UUID(user_id),
                 UserSubscription.status.in_([SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIAL])
             )
         )
@@ -232,7 +234,8 @@ class MediaService:
                 mime_type,
                 workspace_id,
                 user_id,
-                metadata={"original_filename": filename}
+                metadata={"original_filename": filename},
+                is_public=is_public
             )
 
             # Get storage backend name
@@ -243,8 +246,11 @@ class MediaService:
             if storage_backend == "r2":
                 storage_bucket = storage_settings.r2_bucket
 
-            # Generate public URL
-            public_url = await self.storage.get_file_url(storage_path)
+            # Generate URL — use permanent public URL for public files
+            if is_public:
+                public_url = await self.storage.get_public_file_url(storage_path)
+            else:
+                public_url = await self.storage.get_file_url(storage_path)
 
             # Create thumbnail for images
             if mime_type.startswith('image/'):
@@ -263,9 +269,13 @@ class MediaService:
                         thumb_filename,
                         'image/jpeg',
                         workspace_id,
-                        user_id
+                        user_id,
+                        is_public=is_public
                     )
-                    thumbnail_url = await self.storage.get_file_url(thumbnail_path)
+                    if is_public:
+                        thumbnail_url = await self.storage.get_public_file_url(thumbnail_path)
+                    else:
+                        thumbnail_url = await self.storage.get_file_url(thumbnail_path)
 
                 except Exception as e:
                     logger.error(f"Failed to create thumbnail: {e}")
@@ -311,7 +321,7 @@ class MediaService:
         )
 
         self.db.add(media)
-        await self.db.commit()
+        await self.db.flush()
         await self.db.refresh(media)
 
         logger.info(f"Media uploaded: {media.id} ({media.original_filename})")
@@ -461,13 +471,32 @@ class MediaService:
             media.folder = folder
         if tags is not None:
             media.tags = tags
-        if is_public is not None:
+        if is_public is not None and is_public != media.is_public:
             media.is_public = is_public
             media.access_level = "public" if is_public else "private"
+            
+            # Update storage ACL
+            try:
+                await self.storage.update_file_acl(media.storage_path, is_public)
+                if media.thumbnail_path:
+                    await self.storage.update_file_acl(media.thumbnail_path, is_public)
+                
+                # Update public_url with permanent URL or presigned URL
+                if is_public:
+                    media.public_url = await self.storage.get_public_file_url(media.storage_path)
+                    if media.thumbnail_path:
+                        media.thumbnail_url = await self.storage.get_public_file_url(media.thumbnail_path)
+                else:
+                    media.public_url = await self.storage.get_file_url(media.storage_path)
+                    if media.thumbnail_path:
+                        media.thumbnail_url = await self.storage.get_file_url(media.thumbnail_path)
+            except Exception as e:
+                logger.error(f"Failed to update storage ACL for {media.id}: {e}")
+                # We still update the DB record, but log the storage error
 
         media.updated_at = datetime.now(timezone.utc)
 
-        await self.db.commit()
+        await self.db.flush()
         await self.db.refresh(media)
 
         logger.info(f"Media updated: {media.id}")
@@ -509,7 +538,7 @@ class MediaService:
             # Soft delete
             media.deleted_at = datetime.now(timezone.utc)
 
-        await self.db.commit()
+        await self.db.flush()
 
         logger.info(f"Media deleted: {media.id} (permanent={permanent})")
         return True
@@ -555,7 +584,10 @@ class MediaService:
             "errors": errors
         }
 
-    async def get_workspace_storage_usage(self, workspace_id: str) -> Dict[str, Any]:
+    async def get_workspace_storage_usage(
+        self,
+        workspace_id: str
+    ) -> Dict[str, Any]:
         """
         Calculate total storage usage for workspace with subscription limits.
 
@@ -570,9 +602,6 @@ class MediaService:
             - usage_percentage: Percentage of storage used
             - by_type: Breakdown by file type (image, document, video)
         """
-        # Import subscription models here to avoid circular imports
-        from src.api.models.subscription_models.subscriptions import UserSubscription
-        from src.api.models.subscription_models.plans import SubscriptionPlan
 
         # Get media usage
         result = await self.db.execute(
@@ -610,11 +639,23 @@ class MediaService:
         total_mb = float(total_bytes) / (1024 * 1024)
         total_gb = float(total_bytes) / (1024 * 1024 * 1024)
 
-        # Use generous default storage limit for now
-        # TODO: Link workspace to owner's subscription for accurate limits
-        # UserSubscription is per-user, not per-workspace, so we'd need to
-        # query workspace.owner_id -> user_subscriptions -> plan
-        storage_limit_bytes = 100 * 1024 * 1024 * 1024  # 100GB default
+        # Query workspace owner's subscription tier for accurate storage limit
+        workspace_result = await self.db.execute(
+            select(WorkspaceModel.user_id).where(
+                WorkspaceModel.id == workspace_id,
+                WorkspaceModel.deleted_at.is_(None)
+            )
+        )
+        owner_id = workspace_result.scalar_one_or_none()
+
+        if owner_id:
+            tier = await self._get_user_subscription_tier(str(owner_id))
+        else:
+            tier = "free"
+
+        # Get storage limit from settings based on tier (returns MB)
+        storage_limit_mb = settings.get_tier_storage_limit(tier)
+        storage_limit_bytes = storage_limit_mb * 1024 * 1024
 
         # Calculate usage percentage
         usage_percentage = (total_bytes / storage_limit_bytes * 100) if storage_limit_bytes > 0 else 0
@@ -623,6 +664,8 @@ class MediaService:
             "total_files": int(row.file_count or 0),
             "total_size": total_bytes,
             "storage_limit": storage_limit_bytes,
+            "storage_limit_mb": storage_limit_mb,
+            "subscription_tier": tier,
             "usage_percentage": round(usage_percentage, 2),
             "by_type": {
                 "image": {

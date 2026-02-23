@@ -47,7 +47,7 @@ def db_transaction_handler(
     auto_commit: bool = True,
     error_severity: ErrorSeverity = ErrorSeverity.HIGH,
     error_code: ErrorCode = ErrorCode.INTERNAL_SERVER_ERROR,
-    include_error_details: bool = True
+    include_error_details: bool = False
 ):
     """
     Decorator for automatic database transaction and error handling.
@@ -342,14 +342,32 @@ def require_permissions(
             from uuid import UUID
 
             # Extract required dependencies from kwargs
-            # Support both 'user' and 'current_user' for backward compatibility
-            user = kwargs.get('user') or kwargs.get('current_user')
+            # Prioritize 'current_user' (standard auth dependency name) 
+            # over generic 'user' which might be a payload model
+            user = kwargs.get('current_user') or kwargs.get('user')
             db = kwargs.get('db')
 
             if not user or not db:
                 raise ValueError(
-                    "require_permissions decorator requires 'user' (or 'current_user') and 'db' parameters in route signature"
+                    "require_permissions decorator requires 'current_user' (or 'user') and 'db' parameters in route signature"
                 )
+
+            # Safety check: Ensure user is a dict and has 'identity'
+            # This prevents picking up Pydantic models named 'user' from the payload
+            if not isinstance(user, dict) or "identity" not in user:
+                # If we have both, maybe 'current_user' is the real one
+                if "current_user" in kwargs and isinstance(kwargs["current_user"], dict):
+                    user = kwargs["current_user"]
+                else:
+                    logger.error(
+                        f"require_permissions decorator found invalid user object in {func.__name__}. "
+                        f"Expected dict with 'identity', got {type(user).__name__}",
+                        extra={"operation": func.__name__}
+                    )
+                    raise ValueError(
+                        f"require_permissions decorator in {func.__name__} could not find a valid authenticated user object. "
+                        f"Check if Depends(get_current_user) is added to the route."
+                    )
 
             user_id = UUID(user.get("identity"))
             workspace_uuid = None
@@ -376,19 +394,7 @@ def require_permissions(
 
             # Check permissions using appropriate logic (AND or OR)
             check_func = check_all_permissions if require_all else check_any_permission
-            try:
-                has_permission = await check_func(db, user_id, list(permissions), workspace_uuid)
-            except Exception as e:
-                logger.error(
-                    f"Error checking permissions for {func.__name__}: {str(e)}",
-                    extra={
-                        "operation": func.__name__,
-                        "user_id": str(user_id),
-                        "workspace_id": str(workspace_uuid) if workspace_uuid else None,
-                        "permissions": list(permissions),
-                    }
-                )
-                has_permission = False
+            has_permission = await check_func(db, user_id, list(permissions), workspace_uuid)
 
             if not has_permission:
                 # Build permission requirement string for error message

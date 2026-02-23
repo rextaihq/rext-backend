@@ -9,7 +9,7 @@ All endpoints require super admin permissions.
 
 import csv
 import io
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Request, Query
@@ -181,6 +181,9 @@ async def export_invoices_csv(
     Raises:
         NotImplementedError: Invoice model does not exist yet
     """
+    admin_user_id = current_user.get("identity")
+    await require_super_admin(db, admin_user_id)
+
     # TODO: Implement invoice export when Invoice model is created
     # The Invoice database model does not exist in the codebase.
     # This functionality requires creating the Invoice model and migration first.

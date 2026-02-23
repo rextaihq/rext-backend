@@ -1,4 +1,4 @@
-import os
+
 from datetime import datetime
 from typing import Dict, List, Optional
 from uuid import UUID
@@ -75,12 +75,24 @@ async def send_workspace_invitation_email_task(
                 template_type="workspace_invitation",
                 tags={"type": "workspace", "action": "invitation", "invitation_id": invitation_id}
             )
-            logger.info(f"Workspace invitation email sent successfully to {email}")
+            logger.info(
+                "Workspace invitation email sent successfully",
+                extra={
+                    "email": email,
+                    "workspace_id": workspace_id,
+                    "invitation_id": invitation_id
+                }
+            )
     except Exception as e:
-        logger.error(f"Failed to send workspace invitation email to {email}: {str(e)}", exc_info=True)
-
-
-
+        logger.error(
+            "Failed to send workspace invitation email",
+            exc_info=True,
+            extra={
+                "email": email,
+                "workspace_id": workspace_id,
+                "invitation_id": invitation_id
+            }
+        )
 
 def _serialize_invitation(
     invitation: UserInvitations,
@@ -295,7 +307,14 @@ async def create_workspace_invitation(
             },
             workspace_id=str(workspace_id),
         )
-        logger.info(f"Scheduled in-app notification for existing user {existing_user.id}")
+        logger.info(
+            "Scheduled in-app notification for existing user",
+            extra={
+                "user_id": str(existing_user.id),
+                "workspace_id": str(workspace_id),
+                "invitation_id": str(invitation_id)
+            }
+        )
 
     return created(
         data={

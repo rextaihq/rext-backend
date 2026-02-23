@@ -69,6 +69,10 @@ class Settings(BaseSettings):
     RATE_LIMIT_PER_HOUR: int = Field(default=10000, description="Rate limit: requests per hour", ge=1)
     RATE_LIMIT_PER_DAY: int = Field(default=100000, description="Rate limit: requests per day", ge=1)
     RATE_LIMITING_ENABLED: bool = Field(default=True, description="Enable rate limiting")
+    
+
+    # Trusted reverse proxy IPs (comma-separated)
+    TRUSTED_PROXY_IPS: str = Field(default="127.0.0.1,::1",description="Comma-separated list of trusted reverse proxy IPs")
 
     # ============================================================================
     # AI SERVICES
@@ -177,6 +181,13 @@ class Settings(BaseSettings):
         ge=1,
         le=65535
     )
+    VIRUS_SCAN_FAIL_BEHAVIOR: str = Field(
+        default="closed",
+        description="Behavior when virus scanner is unavailable: 'closed' (reject upload) or 'open' (allow upload). "
+                    "Production should always use 'closed'. Use 'open' only for development/testing."
+    )
+
+    
 
     # Subscription Tier Limits - File Size (in MB)
     TIER_FREE_MAX_FILE_SIZE_MB: int = Field(default=10, description="Free tier: max file size in MB", ge=1)

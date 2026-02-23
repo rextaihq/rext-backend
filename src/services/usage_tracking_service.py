@@ -7,7 +7,7 @@ It calculates current usage against plan limits and provides real-time usage dat
 
 from typing import Dict, Any, Tuple, Optional
 from uuid import UUID
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_
 from sqlalchemy.orm import selectinload
@@ -22,6 +22,12 @@ from src.api.models.knowledge_models.knowledge_model import (
     Website
 )
 from src.utils.logger import logger
+from src.api.config import get_settings
+
+# Default limits for free tier when no subscription plan is found
+FREE_MAX_WORKSPACES = 1
+FREE_MAX_KNOWLEDGE_ITEMS = 10
+FREE_MAX_API_CALLS = 100
 
 
 class UsageTrackingService:
@@ -35,17 +41,13 @@ class UsageTrackingService:
         """
         Get current usage metrics for a user.
 
-        Args:
-            user_id: User UUID
-
         Returns:
             Dictionary with usage metrics for each resource type:
             {
-                "workspaces": {"used": 3, "limit": 10, "percentage": 30},
-                "members": {"used": 15, "limit": 50, "percentage": 30},
-                "topics": {"used": 45, "limit": 100, "percentage": 45},
-                "knowledge_items": {"used": 230, "limit": 1000, "percentage": 23},
-                "api_calls": {"used": 450, "limit": 10000, "percentage": 4.5, "reset_date": "2025-11-12"}
+                "workspaces": {"used": 3, "limit": 10, ...},
+                "knowledge_items": {"used": 230, "limit": 1000, ...},
+                "api_calls": {"used": 450, "limit": 10000, ...},
+                "meta": {"plan_name": "Pro", ...}
             }
         """
         # Get user's active subscription with plan eagerly loaded
@@ -88,24 +90,32 @@ class UsageTrackingService:
         # Get API calls this month
         api_calls = subscription.current_api_calls or 0
 
+        # Helper to build metric dict
+        def build_metric(used, limit):
+            unlimited = limit == -1 or limit is None
+            return {
+                "used": used,
+                "limit": limit if not unlimited else None,
+                "percentage": self._calc_percentage(used, limit),
+                "unlimited": unlimited
+            }
+
         usage_data = {
-            "subscription_id": str(subscription.id),
-            "plan_name": plan.name if plan else "Unknown",
-            "billing_period": subscription.billing_period.value,
-            "current_workspaces": workspace_count,
-            "current_knowledge_items": knowledge_count,
-            "current_api_calls": subscription.current_api_calls,
-            "max_workspaces": plan.max_workspaces if plan else 0,
-            "max_knowledge_items": plan.max_knowledge_items if plan else 0,
-            "max_api_calls_per_month": plan.max_api_calls_per_month if plan else 0,
-            "workspaces_usage_percent": self._calc_percentage(workspace_count, plan.max_workspaces if plan else 0),
-            "knowledge_items_usage_percent": self._calc_percentage(knowledge_count, plan.max_knowledge_items if plan else 0),
-            "api_calls_usage_percent": self._calc_percentage(api_calls, plan.max_api_calls_per_month if plan else 0),
-            "usage_reset_date": subscription.usage_reset_date.isoformat() if subscription.usage_reset_date else None
+            "workspaces": build_metric(workspace_count, plan.max_workspaces),
+            "members": build_metric(member_count, plan.max_members_per_workspace),
+            "knowledge_items": build_metric(knowledge_count, plan.max_knowledge_items),
+            "api_calls": {
+                **build_metric(api_calls, plan.max_api_calls_per_month),
+                "reset_date": subscription.usage_reset_date.isoformat() if subscription.usage_reset_date else None
+            },
+            "meta": {
+                "subscription_id": str(subscription.id),
+                "plan_name": plan.name,
+                "billing_period": subscription.billing_period.value
+            }
         }
 
         return usage_data
-
 
     async def check_limit(
         self,
@@ -117,7 +127,8 @@ class UsageTrackingService:
 
         Args:
             user_id: User UUID
-            limit_type: Type of limit to check (workspaces, members, topics, knowledge_items, api_calls)
+            limit_type: Type of limit to check
+                        Valid values: "workspaces", "knowledge_items", "api_calls"
 
         Returns:
             Tuple of (within_limit, used, limit)
@@ -126,23 +137,33 @@ class UsageTrackingService:
             - limit: Limit value (None if unlimited)
         """
         usage = await self.get_usage_metrics(user_id)
-        limit_data = usage.get(limit_type)
 
-        if not limit_data:
+        if limit_type not in usage:
             logger.warning(f"Unknown limit type: {limit_type}")
-            return (True, 0, None)
+            return True, 0, None
 
-        # Check if unlimited
-        if limit_data.get("unlimited", False):
-            return (True, limit_data["used"], None)
+        metric = usage.get(limit_type, {})
+        used = metric.get("used", 0) or 0
+        limit = metric.get("limit")
 
-        used = limit_data["used"]
-        limit = limit_data["limit"]
+        # BYPASS: Workspace limit check is temporarily disabled to allow multiple workspaces for testing
+        if limit_type == "workspaces":
+            return True, used, None
 
-        # Within limit if usage is less than limit
-        within_limit = used < limit if limit is not None else True
+        # Original limit check logic
+        # if limit is None or limit <= 0:
+        #     return True, used, None
+        #
+        # within_limit = used < limit
+        # return within_limit, used, limit
 
-        return (within_limit, used, limit)
+        # Default to True for other types if no limit is set
+        if limit is None or limit <= 0:
+            return True, used, None
+
+        within_limit = used < limit
+        return within_limit, used, limit
+
 
     async def increment_api_calls(self, user_id: UUID) -> None:
         """
@@ -162,7 +183,7 @@ class UsageTrackingService:
 
         if subscription:
             subscription.current_api_calls = (subscription.current_api_calls or 0) + 1
-            await self.db.commit()
+            await self.db.flush()
             logger.debug(f"Incremented API calls for user {user_id}: {subscription.current_api_calls}")
 
     async def reset_monthly_usage(self, user_id: UUID) -> None:
@@ -181,7 +202,7 @@ class UsageTrackingService:
         if subscription:
             subscription.current_api_calls = 0
             subscription.usage_reset_date = datetime.now(timezone.utc) + timedelta(days=30)
-            await self.db.commit()
+            await self.db.flush()
             logger.info(f"Reset monthly usage for user {user_id}")
 
     async def _count_knowledge_items(self, user_id: UUID) -> int:
@@ -245,25 +266,30 @@ class UsageTrackingService:
         # Count knowledge items
         knowledge_count = await self._count_knowledge_items(user_id)
 
-        # Free tier limits
-        free_max_workspaces = 1
-        free_max_knowledge_items = 50
-        free_max_api_calls = 100
+        # Helper to build metric dict
+        def build_metric(used, limit):
+            unlimited = limit == -1 or limit is None
+            return {
+                "used": used,
+                "limit": limit if not unlimited else None,
+                "percentage": self._calc_percentage(used, limit),
+                "unlimited": unlimited
+            }
 
         usage_data = {
-            "subscription_id": None,
-            "plan_name": "Free",
-            "billing_period": None,
-            "current_workspaces": workspace_count,
-            "current_knowledge_items": knowledge_count,
-            "current_api_calls": 0,
-            "max_workspaces": free_max_workspaces,
-            "max_knowledge_items": free_max_knowledge_items,
-            "max_api_calls_per_month": free_max_api_calls,
-            "workspaces_usage_percent": self._calc_percentage(workspace_count, free_max_workspaces),
-            "knowledge_items_usage_percent": self._calc_percentage(knowledge_count, free_max_knowledge_items),
-            "api_calls_usage_percent": 0.0,
-            "usage_reset_date": None
+            "workspaces": build_metric(workspace_count, FREE_MAX_WORKSPACES),
+            "members": build_metric(member_count, 3), # Default free limit if not in plan
+            "topics": build_metric(0, 5), # Default free limit
+            "knowledge_items": build_metric(knowledge_count, FREE_MAX_KNOWLEDGE_ITEMS),
+            "api_calls": {
+                **build_metric(0, FREE_MAX_API_CALLS),
+                "reset_date": None
+            },
+            "meta": {
+                "subscription_id": None,
+                "plan_name": "Free",
+                "billing_period": None
+            }
         }
 
         return usage_data

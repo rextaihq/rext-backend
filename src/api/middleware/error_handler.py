@@ -6,7 +6,7 @@ converting all exceptions into standardized error responses that match the
 frontend expectations.
 
 Features:
-- Automatic exception to error response conversion
+- Automatic exception  to error response conversion
 - Request ID correlation for error tracking
 - Detailed error logging with context
 - Security-conscious error message filtering
@@ -16,7 +16,7 @@ Features:
 
 import json
 import traceback
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Callable, Dict, Any, Optional
 
 from fastapi import FastAPI, Request, HTTPException
@@ -208,6 +208,7 @@ class ErrorHandlerMiddleware(BaseHTTPMiddleware):
         )
 
     def _handle_http_exception(
+        self,
         exception: HTTPException,
         request_id: str,
         processing_time_ms: Optional[int] = None

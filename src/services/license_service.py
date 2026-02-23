@@ -13,7 +13,7 @@ Business Rules:
 """
 
 from typing import List, Optional, Dict, Any
-from datetime import datetime
+from datetime import datetime, timezone
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -74,6 +74,12 @@ class LicenseService:
             raise RextValidationException(
                 message="This license has been disabled",
                 field_errors={"license_key": ["License is disabled"]}
+            )
+
+        if license_obj.status == LicenseStatus.REVOKED:
+            raise RextValidationException(
+                message="This license has been revoked",
+                field_errors={"license_key": ["License has been revoked by an administrator"]}
             )
 
         # Check if license is expired
@@ -359,7 +365,7 @@ class LicenseService:
         stmt = select(LicenseActivation).where(
             and_(
                 LicenseActivation.license_id == license_id,
-                LicenseActivation.is_active == True
+                LicenseActivation.is_active.is_(True)
             )
         )
         result = await self.db.execute(stmt)
@@ -369,7 +375,7 @@ class LicenseService:
             activation.deactivate()
 
         # Update license status
-        license_obj.status = LicenseStatus.DISABLED
+        license_obj.status = LicenseStatus.REVOKED
         license_obj.activation_count = 0
 
         await self.db.flush()
@@ -422,7 +428,7 @@ class LicenseService:
         stmt = select(func.count(LicenseActivation.id)).where(
             and_(
                 LicenseActivation.license_id == license_id,
-                LicenseActivation.is_active == True
+                LicenseActivation.is_active.is_(True)
             )
         )
         result = await self.db.execute(stmt)

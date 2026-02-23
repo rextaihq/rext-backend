@@ -419,7 +419,7 @@ def create_error_response(
     if details:
         # Details might already be dicts (from exceptions) or Pydantic models
         error_data["details"] = [
-            detail.dict() if hasattr(detail, 'dict') else detail
+            detail.model_dump() if hasattr(detail, 'model_dump') else detail
             for detail in details
         ]
 

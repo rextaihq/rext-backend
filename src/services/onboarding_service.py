@@ -1,21 +1,21 @@
 """Onboarding service for managing user onboarding flow."""
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 from uuid import UUID, uuid4
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.api.middleware.exceptions import ResourceNotFoundException, RextValidationException
 from src.api.models.user_models.onboarding import UserOnboarding
 from src.api.models.user_models.users import Users
-
 
 class OnboardingService:
     """Service for managing user onboarding."""
 
     @staticmethod
-    async def get_or_create_onboarding(db: AsyncSession, user_id: UUID) -> UserOnboarding:
+    async def get_or_create_onboarding(db: AsyncSession, user_id: UUID | str) -> UserOnboarding:
         """
         Get user onboarding status or create if doesn't exist.
 
@@ -27,8 +27,11 @@ class OnboardingService:
             UserOnboarding object
 
         Raises:
-            ValueError: If user doesn't exist in the database
+            ResourceNotFoundException: If user doesn't exist in the database
         """
+        if isinstance(user_id, str):
+            user_id = UUID(user_id)
+
         stmt = select(UserOnboarding).where(UserOnboarding.user_id == user_id)
         result = await db.execute(stmt)
         onboarding = result.scalar_one_or_none()
@@ -40,7 +43,11 @@ class OnboardingService:
             user = user_result.scalar_one_or_none()
 
             if not user:
-                raise ValueError(f"User with ID {user_id} not found")
+                raise ResourceNotFoundException(
+                    resource_type="User",
+                    resource_id=str(user_id),
+                    message=f"User with ID {user_id} not found"
+                )
 
             # Create new onboarding record
             onboarding = UserOnboarding(
@@ -52,7 +59,7 @@ class OnboardingService:
                 skipped_steps=[],
             )
             db.add(onboarding)
-            await db.commit()
+            await db.flush()
             await db.refresh(onboarding)
 
         return onboarding
@@ -112,7 +119,7 @@ class OnboardingService:
             onboarding.completed = True
             onboarding.completed_at = datetime.now(timezone.utc)
 
-        await db.commit()
+        await db.flush()
         await db.refresh(onboarding)
         return onboarding
 
@@ -134,7 +141,7 @@ class OnboardingService:
         # Don't allow skipping required steps (0, 1)
         required_steps = [0, 1]
         if step in required_steps:
-            raise ValueError(f"Cannot skip required step {step}")
+            raise RextValidationException(f"Cannot skip required step {step}")
 
         # Add to skipped steps if not already there
         if step not in onboarding.skipped_steps:
@@ -160,7 +167,7 @@ class OnboardingService:
             onboarding.completed = True
             onboarding.completed_at = datetime.now(timezone.utc)
 
-        await db.commit()
+        await db.flush()
         await db.refresh(onboarding)
         return onboarding
 
@@ -179,7 +186,7 @@ class OnboardingService:
         """
         onboarding = await OnboardingService.get_or_create_onboarding(db, user_id)
         onboarding.current_step = step
-        await db.commit()
+        await db.flush()
         await db.refresh(onboarding)
         return onboarding
 
@@ -206,7 +213,7 @@ class OnboardingService:
             if step not in onboarding.completed_steps:
                 onboarding.completed_steps = onboarding.completed_steps + [step]
 
-        await db.commit()
+        await db.flush()
         await db.refresh(onboarding)
         return onboarding
 
@@ -230,7 +237,7 @@ class OnboardingService:
         onboarding.completed_at = None
         onboarding.started_at = datetime.now(timezone.utc)
 
-        await db.commit()
+        await db.flush()
         await db.refresh(onboarding)
         return onboarding
 
@@ -323,7 +330,7 @@ class OnboardingService:
         if heard_from is not None:
             onboarding.heard_from = heard_from
 
-        await db.commit()
+        await db.flush()
         await db.refresh(onboarding)
         return onboarding
 

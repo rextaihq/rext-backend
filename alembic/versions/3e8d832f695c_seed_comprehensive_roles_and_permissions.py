@@ -11,7 +11,7 @@ from sqlalchemy import orm
 from sqlalchemy.ext.declarative import declarative_base
 import sqlalchemy as sa
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 # revision identifiers, used by Alembic.
 revision: str = '3e8d832f695c'
@@ -43,8 +43,8 @@ class Role(Base):
     hierarchy_level = sa.Column(sa.Integer, default=0)
     is_system_role = sa.Column(sa.Boolean, default=True)
     # Note: is_workspace_role does not exist at this point in migration history
-    created_at = sa.Column(sa.TIMESTAMP, default=datetime.utcnow)
-    updated_at = sa.Column(sa.TIMESTAMP, default=datetime.utcnow)
+    created_at = sa.Column(sa.TIMESTAMP, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
+    updated_at = sa.Column(sa.TIMESTAMP, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
 
 
 class RolePermission(Base):
@@ -128,7 +128,7 @@ def upgrade() -> None:
                 description=perm_data["description"],
                 resource=perm_data["resource"],
                 action=perm_data["action"],
-                created_at=datetime.utcnow()
+                created_at=datetime.now(timezone.utc).replace(tzinfo=None)
             )
             session.add(perm)
             session.flush()
@@ -248,8 +248,8 @@ def upgrade() -> None:
                 hierarchy_level=role_data["hierarchy_level"],
                 is_system_role=role_data.get("is_system_role", True),  # Default to True if not specified
                 # Note: is_workspace_role is added in a later migration (3dbd19e83367)
-                created_at=datetime.utcnow(),
-                updated_at=datetime.utcnow()
+                created_at=datetime.now(timezone.utc).replace(tzinfo=None),
+                updated_at=datetime.now(timezone.utc).replace(tzinfo=None)
             )
             session.add(role)
             session.flush()
@@ -261,7 +261,7 @@ def upgrade() -> None:
                         id=uuid.uuid4(),
                         role_id=role.id,
                         permission_id=permission_map[perm_name],
-                        created_at=datetime.utcnow()
+                        created_at=datetime.now(timezone.utc).replace(tzinfo=None)
                     )
                     session.add(role_perm)
 

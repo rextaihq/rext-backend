@@ -12,8 +12,10 @@ Public endpoints:
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_
+from sqlalchemy.orm import selectinload
 from uuid import UUID
-from datetime import datetime
+from datetime import datetime, timezone
+from src.utils.response_utils import success, error
 
 from src.api.database.async_database import get_async_db
 from src.api.security.dependencies import get_current_user
@@ -29,11 +31,12 @@ from src.api.middleware.exceptions import (
 from src.services.invitation_service import InvitationService
 from src.services.user_service import UserService
 from src.services.email_service import EmailService
-from src.utils.response_utils import success
+from src.utils.logger import logger
 from src.utils.route_decorators import db_transaction_handler, require_permissions
 from src.utils.audit_helper import create_audit_log_async
 from src.utils.invitation_utils import is_invitation_expired
 from src.utils.logger import logger
+from src.api.schema.user_schema import DeclineInvitationRequest  # Added import
 
 router = APIRouter(prefix="/invitations", tags=["User Invitations"])
 
@@ -114,9 +117,14 @@ async def get_pending_invitations(
 
     user_email = user.email.lower()
 
-    # Query pending invitations for this email
+    # Query pending invitations for this email with eager loading
     query = (
         select(UserInvitations)
+        .options(
+            selectinload(UserInvitations.workspace),
+            selectinload(UserInvitations.role),
+            selectinload(UserInvitations.invited_by),
+        )
         .where(
             and_(
                 UserInvitations.email == user_email,
@@ -139,32 +147,13 @@ async def get_pending_invitations(
             await db.flush()
             continue
 
-        # Get workspace details
-        workspace_result = await db.execute(
-            select(WorkspaceModel).where(
-                and_(
-                    WorkspaceModel.id == invitation.workspace_id,
-                    WorkspaceModel.deleted_at.is_(None)
-                )
-            )
-        )
-        workspace = workspace_result.scalar_one_or_none()
-
-        # Skip if workspace is deleted
-        if not workspace:
+        # Workspace is already loaded - check for soft delete
+        workspace = invitation.workspace
+        if not workspace or workspace.deleted_at is not None:
             continue
 
-        # Get role details
-        role_result = await db.execute(
-            select(Role).where(Role.id == invitation.role_id)
-        )
-        role = role_result.scalar_one_or_none()
-
-        # Get inviter details
-        inviter_result = await db.execute(
-            select(Users).where(Users.id == invitation.invited_by_user_id)
-        )
-        inviter = inviter_result.scalar_one_or_none()
+        role = invitation.role
+        inviter = invitation.invited_by
 
         # Build invitation data
         invitation_data = {
@@ -182,7 +171,6 @@ async def get_pending_invitations(
             "invited_by": {
                 "id": str(inviter.id),
                 "name": inviter.full_name or inviter.display_name or inviter.email,
-                
                 "email": inviter.email
             } if inviter else None,
             "token": invitation.invitation_token,
@@ -201,14 +189,10 @@ async def get_pending_invitations(
         }
     )
 
-    return success(
-        data={
-            "invitations": invitation_list,
-            "count": len(invitation_list)
-        },
-        request=request,
-        message="Pending invitations retrieved successfully"
-    )
+    return {
+        "invitations": invitation_list,
+        "count": len(invitation_list)
+    }
 
 
 @router.post("/{invitation_id}/decline")
@@ -216,7 +200,8 @@ async def get_pending_invitations(
 @db_transaction_handler("decline invitation", auto_commit=True)
 async def decline_invitation(
     invitation_id: UUID,
-    request: Request,
+    decline_data: DeclineInvitationRequest,  # CHANGED: Added Pydantic schema parameter
+    request: Request,  # CHANGED: Moved to third position
     db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user)
 ):
@@ -233,6 +218,7 @@ async def decline_invitation(
 
     Args:
         invitation_id: UUID of the invitation to decline
+        decline_data: Optional decline reason
         request: FastAPI request object
         db: Database session
         current_user: Current authenticated user from JWT
@@ -286,9 +272,8 @@ async def decline_invitation(
             rule_name="invitation_must_be_pending_to_decline"
         )
 
-    # Parse request body for optional decline reason
-    body = await request.json() if request.headers.get("content-type") == "application/json" else {}
-    decline_reason = body.get("reason")
+    # CHANGED: Access decline reason from Pydantic model
+    decline_reason = decline_data.reason
 
     # Update invitation status
     invitation.status = "declined"

@@ -6,7 +6,7 @@ This module defines Pydantic models for role-related API operations.
 
 from pydantic import BaseModel, Field
 from typing import Optional, List
-from datetime import datetime
+from datetime import datetime, timezone
 
 
 class RoleCreate(BaseModel):
@@ -38,7 +38,10 @@ class RoleCreate(BaseModel):
         default=False,
         description="Whether this is a system role (cannot be modified/deleted)"
     )
-
+    is_workspace_role: bool = Field(
+        default=False,
+        description="Whether this role can be assigned to workspace members"
+    )
     class Config:
         json_schema_extra = {
             "example": {
@@ -46,7 +49,8 @@ class RoleCreate(BaseModel):
                 "display_name": "Content Editor",
                 "description": "Can create and edit content",
                 "hierarchy_level": 5,
-                "is_system_role": False
+                "is_system_role": False,
+                "is_workspace_role": True
             }
         }
 
@@ -100,6 +104,7 @@ class RoleResponse(BaseModel):
     description: Optional[str]
     hierarchy_level: int
     is_system_role: bool
+    is_workspace_role: bool
     created_at: str
     updated_at: Optional[str]
 

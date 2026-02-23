@@ -5,7 +5,7 @@ from src.flow.model.structure.topics import SEOTopics
 from src.flow.model.llm_manager import load_model
 from langgraph.types import interrupt
 from langchain_core.messages import SystemMessage, HumanMessage
-from src.flow.model.structure.intent_suggession import INTENT_TO_CONTENT_TYPES
+from src.flow.model.structure.intent_suggestion import INTENT_TO_CONTENT_TYPES
 
 logger = logging.getLogger(__name__)
 
@@ -24,6 +24,13 @@ def content_type(state: REXT) -> REXT:
     
     # get the selected topic from the state
     content_state = state.get("content", {})
+    # Check for upstream errors — skip processing if prior node failed
+    if content_state.get("error"):
+        logger.warning(
+            "Skipping content type selection due to upstream error: %s",
+            content_state["error"],
+        )
+        return {"content": content_state}
     selected_topic = content_state.get("selected_topic", "")
     
     # get the intent from the state - aggregate intent distribution across all competitors

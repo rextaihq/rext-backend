@@ -4,6 +4,8 @@ Role CRUD operations module.
 Routes handle HTTP concerns and delegate business logic to RoleService.
 """
 
+from uuid import UUID
+
 from fastapi import APIRouter, Depends, status, Request, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -11,18 +13,18 @@ from src.api.database.async_database import get_async_db
 from src.api.security.dependencies import get_current_user
 from src.api.schema.role_schema import RoleCreate, RoleUpdate
 from src.services.role_service import RoleService
+from src.utils.audit_helper import create_audit_log_async
 from src.utils.response_utils import success, created
 from src.utils.route_decorators import db_transaction_handler, require_permissions
 from src.utils.logger import logger
 from src.api.middleware.rate_limiter import role_management_rate_limit
 from .helpers import check_role_permission
 
-
 router = APIRouter()
 
 
 @router.get("/", response_model=dict)
-@require_permissions("role.read")
+@require_permissions("role.read", workspace_scoped=False)
 @db_transaction_handler("list roles", auto_commit=False)
 async def list_roles(
     request: Request,
@@ -71,7 +73,7 @@ async def list_roles(
 
 
 @router.get("/{role_id}", response_model=dict)
-@require_permissions("role.read")
+@require_permissions("role.read", workspace_scoped=False)
 @db_transaction_handler("get role", auto_commit=False)
 async def get_role(
     request: Request,
@@ -94,24 +96,18 @@ async def get_role(
     Returns:
     - Role details with optional permissions
     """
-    # Check permission
-    user_id = current_user.get("identity")
-    await check_role_permission(db, user_id, "role.read")
-
     service = RoleService(db)
 
     if include_permissions:
         role_data = await service.get_role_with_permissions(role_id)
     else:
-        from uuid import UUID
-        role = await service._get_role_or_404(UUID(role_id))
+        role = await service.get_role_by_id(UUID(role_id))
         role_data = role.to_dict()
 
     return {
         "data": {"role": role_data},
         "message": "Role retrieved successfully"
     }
-
 
 @router.post("/", response_model=dict, status_code=status.HTTP_201_CREATED)
 @db_transaction_handler("create role", auto_commit=True)
@@ -134,6 +130,7 @@ async def create_role(
     - description: Optional description
     - hierarchy_level: 0-100 (default: 1)
     - is_system_role: Boolean (default: false)
+    - is_workspace_role: Boolean (default: false)
 
     Returns:
     - Created role details
@@ -144,10 +141,7 @@ async def create_role(
     **Phase 3, Task HIGH-4: Rate Limiting**
     Rate limit: 20 requests per minute per user
     """
-    # Check permission
     user_id = current_user.get("identity")
-    await check_role_permission(db, user_id, "role.create")
-
     service = RoleService(db)
 
     # Create the role
@@ -156,7 +150,8 @@ async def create_role(
         display_name=role_data.display_name,
         description=role_data.description,
         hierarchy_level=role_data.hierarchy_level,
-        is_system_role=role_data.is_system_role
+        is_system_role=role_data.is_system_role,
+        is_workspace_role=role_data.is_workspace_role
     )
 
     # Prepare values for audit log
@@ -165,12 +160,11 @@ async def create_role(
         "display_name": new_role.display_name,
         "description": new_role.description,
         "hierarchy_level": new_role.hierarchy_level,
-        "is_system_role": new_role.is_system_role
+        "is_system_role": new_role.is_system_role,
+        "is_workspace_role": new_role.is_workspace_role
     }
 
     # Create audit log (HIGH-3: Role Creation Audit Logging)
-    from src.utils.audit_helper import create_audit_log_async
-    from uuid import UUID
     await create_audit_log_async(
         db=db,
         user_id=UUID(user_id),
@@ -240,15 +234,12 @@ async def update_role(
     **Phase 3, Task HIGH-4: Rate Limiting**
     Rate limit: 20 requests per minute per user
     """
-    # Check permission
     user_id = current_user.get("identity")
-    await check_role_permission(db, user_id, "role.update")
 
     service = RoleService(db)
-    from uuid import UUID
 
     # Get role details before update for audit log
-    role_before = await service._get_role_or_404(UUID(role_id))
+    role_before = await service.get_role_by_id(UUID(role_id))
     old_values = {
         "display_name": role_before.display_name,
         "description": role_before.description,
@@ -271,7 +262,6 @@ async def update_role(
     }
 
     # Create audit log (HIGH-3: Role Update Audit Logging)
-    from src.utils.audit_helper import create_audit_log_async
     await create_audit_log_async(
         db=db,
         user_id=UUID(user_id),
@@ -339,15 +329,12 @@ async def delete_role(
     **Phase 3, Task HIGH-4: Rate Limiting**
     Rate limit: 20 requests per minute per user
     """
-    # Check permission
     user_id = current_user.get("identity")
-    await check_role_permission(db, user_id, "role.delete")
 
     service = RoleService(db)
-    from uuid import UUID
 
     # Get role details before deletion for audit log
-    role = await service._get_role_or_404(UUID(role_id))
+    role = await service.get_role_by_id(UUID(role_id))
     role_name = role.display_name
     role_details = {
         "name": role.name,
@@ -362,7 +349,6 @@ async def delete_role(
     await service.delete_role(role_id=UUID(role_id))
 
     # Create audit log (HIGH-3: Role Deletion Audit Logging)
-    from src.utils.audit_helper import create_audit_log_async
     await create_audit_log_async(
         db=db,
         user_id=UUID(user_id),

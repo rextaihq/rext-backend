@@ -16,6 +16,7 @@ class LicenseStatus(str, enum.Enum):
     INACTIVE = "inactive"
     EXPIRED = "expired"
     DISABLED = "disabled"
+    REVOKED = "revoked"
 
 
 class License(Base, SerializableMixin):
@@ -52,7 +53,7 @@ class License(Base, SerializableMixin):
 
     # Relationships
     user = relationship("Users", back_populates="licenses")
-    activations = relationship("LicenseActivation", back_populates="license", cascade="all, delete-orphan")
+    activations = relationship("LicenseActivation", back_populates="license", cascade="all, delete-orphan", passive_deletes=True)
 
     def __repr__(self):
         return f"<License(id={self.id}, key={self.license_key[:12]}..., status={self.status.value})>"
@@ -68,14 +69,13 @@ class License(Base, SerializableMixin):
     @property
     def is_valid(self) -> bool:
         """Check if license is currently valid."""
-        if self.status != LicenseStatus.ACTIVE:
+        if self.status not in (LicenseStatus.ACTIVE,):
             return False
         if self.expires_at and self.expires_at < datetime.now(timezone.utc):
             return False
         if self.activation_limit and self.activation_count >= self.activation_limit:
             return False
         return True
-
     @property
     def is_expired(self) -> bool:
         """Check if license has expired."""

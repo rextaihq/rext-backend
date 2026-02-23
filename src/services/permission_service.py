@@ -19,6 +19,7 @@ from src.api.models.user_models.role_permissions import RolePermission
 from src.api.models.user_models.roles import Role
 from src.api.models.user_models.user_roles import UserRole
 from src.api.schema.permission_schema import PermissionCreate, PermissionUpdate
+from sqlalchemy.exc import IntegrityError
 from src.utils.logger import logger
 
 
@@ -123,7 +124,18 @@ class PermissionService:
         )
 
         self.db.add(permission)
-        await self.db.flush()
+        try:
+            await self.db.flush()
+        except IntegrityError as e:
+            await self.db.rollback()
+            if "uq_permissions_name" in str(e.orig):
+                raise DuplicateResourceException(
+                    message="Permission with this name already exists",
+                    resource_type="permission",
+                    conflicting_field="name",
+                    conflicting_value=payload.name,
+                )
+            raise
         await self.db.refresh(permission)
 
         logger.info(
@@ -207,7 +219,6 @@ class PermissionService:
             "data": {"permission_id": str(permission_id)},
             "message": f"Permission '{permission_name}' deleted successfully",
         }
-
     async def assign_permissions_to_role(
         self,
         *,
@@ -240,6 +251,8 @@ class PermissionService:
 
         if added:
             await self.db.flush()
+            # Invalidate permission cache for all users with this role
+            await self._invalidate_role_users_cache(role_id)
 
         logger.info(
             "Assigned permissions to role",
@@ -258,7 +271,6 @@ class PermissionService:
             "skipped_count": skipped,
             "invalid_count": invalid,
         }
-
     async def revoke_permission_from_role(
         self,
         *,
@@ -283,6 +295,9 @@ class PermissionService:
 
         await self.db.delete(assignment)
 
+        # Invalidate permission cache for all users with this role
+        await self._invalidate_role_users_cache(role_id)
+
         logger.info(
             "Revoked permission from role",
             extra={"role_id": str(role_id), "permission_id": str(permission_id)},
@@ -300,26 +315,13 @@ class PermissionService:
     # ------------------------------------------------------------------
 
     async def _ensure_user_can(self, user_id: UUID, permission_name: str) -> None:
-        admin_check = await self.db.execute(
-            select(UserRole)
-            .join(Role)
-            .where(UserRole.user_id == user_id, Role.name.in_(["admin", "super_admin"]))
-        )
-        if admin_check.scalar_one_or_none():
-            return
-
-        permission_check = await self.db.execute(
-            select(Permission.name)
-            .join(RolePermission, RolePermission.permission_id == Permission.id)
-            .join(UserRole, UserRole.role_id == RolePermission.role_id)
-            .where(UserRole.user_id == user_id, Permission.name == permission_name)
+        """Check if user has permission or is admin. Raises RextAuthorizationException on denial."""
+        from src.utils.rbac_utils import check_permission_or_admin
+        await check_permission_or_admin(
+            self.db, user_id, permission_name,
+            raise_on_deny=True, use_http_exception=False
         )
 
-        if not permission_check.scalar_one_or_none():
-            raise RextAuthorizationException(
-                message="You do not have permission to perform this action",
-                context={"required_permission": permission_name, "user_id": str(user_id)},
-            )
 
     async def _get_permission_or_404(self, permission_id: UUID) -> Permission:
         result = await self.db.execute(
@@ -399,3 +401,44 @@ class PermissionService:
                 message="Permission with this name already exists",
                 context={"name": name},
             )
+    async def _invalidate_role_users_cache(self, role_id: UUID) -> None:
+        """
+        Invalidate permission cache for all users assigned to a specific role.
+
+        When permissions on a role change (added or revoked), all users holding
+        that role may have stale cached permissions. This method queries all
+        user_role assignments for the given role and invalidates each user's
+        permission cache in Redis.
+
+        Args:
+            role_id: UUID of the role whose users' caches should be invalidated
+        """
+        from src.api.cache.decorators import invalidate_cache
+
+        # Find all users assigned to this role
+        result = await self.db.execute(
+            select(UserRole.user_id).where(UserRole.role_id == role_id)
+        )
+        user_ids = [row[0] for row in result.all()]
+
+        if not user_ids:
+            logger.debug(
+                "No users assigned to role, skipping cache invalidation",
+                extra={"role_id": str(role_id)}
+            )
+            return
+
+        # Invalidate cache for each affected user
+        invalidated_count = 0
+        for user_id in user_ids:
+            deleted = await invalidate_cache(f"user:permissions:{user_id}:*")
+            invalidated_count += deleted
+
+        logger.info(
+            "Invalidated permission cache for role users",
+            extra={
+                "role_id": str(role_id),
+                "affected_users": len(user_ids),
+                "cache_keys_deleted": invalidated_count
+            }
+        )

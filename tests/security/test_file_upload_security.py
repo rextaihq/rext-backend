@@ -201,6 +201,27 @@ class TestStorageQuotaValidation:
         )
         assert result.is_valid  # 600MB < 1024MB
 
+    @pytest.mark.asyncio
+    async def test_soft_deleted_files_excluded_from_quota(self, validator, mock_db):
+        """Test that soft-deleted files do not count toward storage quota."""
+        # Mock: 50MB of active files (soft-deleted files should be excluded by query)
+        mock_db.execute = AsyncMock(return_value=MagicMock(scalar=lambda: 50 * 1024 * 1024))
+
+        result = await validator.validate_storage_quota(
+            user_id="user123",
+            workspace_id="workspace123",
+            new_file_size_mb=40.0,
+            subscription_tier="free"  # 100MB limit
+        )
+        assert result.is_valid  # 50MB + 40MB = 90MB < 100MB limit
+
+        # Verify the query was constructed with deleted_at filter
+        call_args = mock_db.execute.call_args
+        # The SQL statement should contain a WHERE clause filtering deleted_at IS NULL
+        stmt = call_args[0][0]
+        compiled = str(stmt.compile())
+        assert "deleted_at IS NULL" in compiled or "deleted_at" in compiled
+
 
 # Virus Scanning Tests (Mocked)
 class TestVirusScanningValidation:
@@ -234,17 +255,43 @@ class TestVirusScanningValidation:
             assert result.error_code == "VIRUS_DETECTED"
 
     @pytest.mark.asyncio
-    async def test_scanner_error_fails_open(self, validator, mock_settings):
-        """Test that scanner errors fail open (allow upload)."""
+    async def test_scanner_error_fails_closed_by_default(self, validator, mock_settings):
+        """Test that scanner errors fail closed (reject upload) by default."""
         mock_settings.virus_scanning_enabled = True
         mock_settings.VIRUS_SCAN_METHOD = "clamav"
+        mock_settings.VIRUS_SCAN_FAIL_BEHAVIOR = "closed"
 
         with patch('subprocess.run') as mock_run:
-            # Simulate scanner error
             mock_run.side_effect = FileNotFoundError("clamdscan not found")
 
             result = await validator.scan_for_viruses(b"file content", "test.txt")
-            assert result.is_valid  # Fails open for better UX
+            assert not result.is_valid
+            assert result.error_code == "SCAN_UNAVAILABLE"
+
+    @pytest.mark.asyncio
+    async def test_scanner_error_fails_open_when_configured(self, validator, mock_settings):
+        """Test that scanner errors fail open when explicitly configured."""
+        mock_settings.virus_scanning_enabled = True
+        mock_settings.VIRUS_SCAN_METHOD = "clamav"
+        mock_settings.VIRUS_SCAN_FAIL_BEHAVIOR = "open"
+
+        with patch('subprocess.run') as mock_run:
+            mock_run.side_effect = FileNotFoundError("clamdscan not found")
+
+            result = await validator.scan_for_viruses(b"file content", "test.txt")
+            assert result.is_valid  # Fails open when explicitly configured
+
+    @pytest.mark.asyncio
+    async def test_virustotal_missing_key_fails_closed(self, validator, mock_settings):
+        """Test that missing VirusTotal API key fails closed by default."""
+        mock_settings.virus_scanning_enabled = True
+        mock_settings.VIRUS_SCAN_METHOD = "virustotal"
+        mock_settings.VIRUSTOTAL_API_KEY = None
+        mock_settings.VIRUS_SCAN_FAIL_BEHAVIOR = "closed"
+
+        result = await validator.scan_for_viruses(b"file content", "test.txt")
+        assert not result.is_valid
+        assert result.error_code == "SCAN_UNAVAILABLE"
 
 
 # Integration Tests

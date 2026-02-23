@@ -6,7 +6,7 @@ This module contains Pydantic models for user impersonation requests and respons
 
 from pydantic import BaseModel, Field
 from typing import Optional
-from datetime import datetime
+from datetime import datetime, timezone
 
 
 class ImpersonateStartRequest(BaseModel):

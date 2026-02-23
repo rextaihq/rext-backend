@@ -2,7 +2,7 @@ import uuid
 from sqlalchemy import Column, String, Boolean, DateTime, ForeignKey
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
-from datetime import datetime
+from datetime import datetime, timezone
 from src.api.database.base import Base
 from src.api.models.base import SerializableMixin
 import secrets
@@ -22,30 +22,6 @@ class NotificationPreferences(Base, SerializableMixin):
     # ==============================
     email_notifications = Column(Boolean, default=True, nullable=False)
     in_app_notifications = Column(Boolean, default=True, nullable=False)
-
-    # ==============================
-    # ACTIVITY & ALERTS
-    # ==============================
-    email_team_activity = Column(Boolean, default=True, nullable=False)
-    in_app_team_activity = Column(Boolean, default=True, nullable=False)
-
-    email_security_alerts = Column(Boolean, default=True, nullable=False)
-    in_app_security_alerts = Column(Boolean, default=True, nullable=False)
-
-    email_billing_updates = Column(Boolean, default=True, nullable=False)
-    in_app_billing_updates = Column(Boolean, default=True, nullable=False)
-
-    email_product_updates = Column(Boolean, default=True, nullable=False)
-    in_app_product_updates = Column(Boolean, default=True, nullable=False)
-
-    email_content_updates = Column(Boolean, default=True, nullable=False)
-    in_app_content_updates = Column(Boolean, default=True, nullable=False)
-
-    email_mentions = Column(Boolean, default=True, nullable=False)
-    in_app_mentions = Column(Boolean, default=True, nullable=False)
-
-    email_comments = Column(Boolean, default=True, nullable=False)
-    in_app_comments = Column(Boolean, default=True, nullable=False)
 
     # ==============================
     # WORKSPACE NOTIFICATIONS
@@ -90,6 +66,24 @@ class NotificationPreferences(Base, SerializableMixin):
     # MARKETING COMMUNICATIONS
     # ==============================
     marketing_updates = Column(Boolean, default=False, nullable=False)
+    
+    # ==============================
+    # EXPANDED CATEGORIES (Matched with DB)
+    # ==============================
+    email_team_activity = Column(Boolean, default=True, nullable=False)
+    in_app_team_activity = Column(Boolean, default=True, nullable=False)
+    email_security_alerts = Column(Boolean, default=True, nullable=False)
+    in_app_security_alerts = Column(Boolean, default=True, nullable=False)
+    email_billing_updates = Column(Boolean, default=True, nullable=False)
+    in_app_billing_updates = Column(Boolean, default=True, nullable=False)
+    email_product_updates = Column(Boolean, default=False, nullable=False)
+    in_app_product_updates = Column(Boolean, default=False, nullable=False)
+    email_content_updates = Column(Boolean, default=True, nullable=False)
+    in_app_content_updates = Column(Boolean, default=True, nullable=False)
+    email_mentions = Column(Boolean, default=True, nullable=False)
+    in_app_mentions = Column(Boolean, default=True, nullable=False)
+    email_comments = Column(Boolean, default=True, nullable=False)
+    in_app_comments = Column(Boolean, default=True, nullable=False)
     unsubscribe_token = Column(
         String,
         unique=True,
@@ -111,20 +105,40 @@ class NotificationPreferences(Base, SerializableMixin):
     user = relationship("Users", back_populates="notification_preferences")
 
     def to_dict(self, **kwargs):
-        """API response formatter matching the frontend spec."""
+        """API response formatter."""
+        data = super().to_dict(exclude=['id', 'user_id'], **kwargs)
+
         return {
             "email_enabled": self.email_notifications,
             "in_app_enabled": self.in_app_notifications,
             "digest_enabled": self.digest_enabled,
             "digest_frequency": self.digest_frequency,
-            "categories": {
-                "mentions": self.email_mentions or self.in_app_mentions,
-                "workspace_invites": self.ws_invite_received,
-                "content_updates": self.email_content_updates or self.in_app_content_updates,
-                "comments": self.email_comments or self.in_app_comments,
-                "team_activity": self.email_team_activity or self.in_app_team_activity,
-                "security_alerts": self.email_security_alerts or self.in_app_security_alerts,
-                "billing_updates": self.email_billing_updates or self.in_app_billing_updates,
-                "product_updates": self.email_product_updates or self.in_app_product_updates,
+            "workspace_notifications": {
+                "invite_received": data["ws_invite_received"],
+                "invite_accepted": data["ws_invite_accepted"],
+                "role_changed": data["ws_role_changed"],
+                "member_removed": data["ws_member_removed"],
+            },
+            "content_generation": {
+                "generation_started": data["gen_started"],
+                "generation_completed": data["gen_completed"],
+                "generation_failed": data["gen_failed"],
+                "content_published": data["gen_published"],
+            },
+            "billing": {
+                "payment_success": data["billing_payment_success"],
+                "payment_failed": data["billing_payment_failed"],
+                "subscription_cancelled": data["billing_subscription_cancelled"],
+                "subscription_expiring": data["billing_subscription_expiring"],
+                "trial_ending": data["billing_trial_ending"],
+                "usage_limit_warning": data["billing_usage_limit_warning"],
+                "usage_limit_exceeded": data["billing_usage_limit_exceeded"],
+            },
+            "knowledge_base": {
+                "processing_completed": data["kb_processing_completed"],
+                "processing_failed": data["kb_processing_failed"],
+            },
+            "marketing": {
+                "marketing_updates": data["marketing_updates"]
             }
         }

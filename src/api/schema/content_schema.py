@@ -1,6 +1,6 @@
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, ConfigDict
 from typing import Optional, List, Dict, Any
-from datetime import datetime
+from datetime import datetime, timezone
 from uuid import UUID
 
 
@@ -126,8 +126,7 @@ class ContentResponse(BaseModel):
     updated_at: Optional[datetime] = None
     deleted_at: Optional[datetime] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class ContentListResponse(BaseModel):
@@ -146,13 +145,12 @@ class WorkspaceIntegrationBase(BaseModel):
     site_url: Optional[str] = None
     api_endpoint: Optional[str] = None
     username: Optional[str] = None
-    app_password: Optional[str] = None
-    api_key: Optional[str] = None
     config_json: Optional[Dict[str, Any]] = None
 
 
 class WorkspaceIntegrationCreate(WorkspaceIntegrationBase):
-    pass
+    app_password: Optional[str] = None
+    api_key: Optional[str] = None
 
 
 class WorkspaceIntegrationUpdate(BaseModel):
@@ -166,14 +164,15 @@ class WorkspaceIntegrationUpdate(BaseModel):
     config_json: Optional[Dict[str, Any]] = None
 
 
-class WorkspaceIntegrationResponse(WorkspaceIntegrationBase):
+class WorkspaceIntegrationResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: UUID
     workspace_id: UUID
+    has_app_password: bool = False
+    has_api_key: bool = False
     created_at: datetime
     updated_at: Optional[datetime] = None
-
-    class Config:
-        from_attributes = True
 
 
 class WorkspaceIntegrationListResponse(BaseModel):
@@ -205,3 +204,4 @@ class PublishToSitesResponse(BaseModel):
     successful: int
     failed: int
     results: List[PublishResponse]
+    all_failed: bool = False

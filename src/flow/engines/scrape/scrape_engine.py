@@ -4,7 +4,8 @@ from langgraph.graph import StateGraph,START,END
 
 def create_scrape_engine()-> StateGraph:
     from src.flow.engines.scrape.scrape_content import scrape_serp_content
-    from src.flow.engines.scrape.store_content import store_scraped_content
+    from src.flow.store.store_scrape_chunks import store_scraped_chunks
+
     scrape_graph = StateGraph(REXT)
 
     #  add node
