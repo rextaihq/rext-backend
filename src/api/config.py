@@ -2,7 +2,7 @@
 API Configuration Settings
 
 Centralized configuration using environment variables with Pydantic validation.
-Note: dotenv is loaded in server.py before importing this module.
+Note: dotenv is loaded in src/api/server.py before importing this module.
 """
 from typing import List, Optional
 from pathlib import Path
