@@ -16,6 +16,14 @@ def get_humanize_prompt() -> ChatPromptTemplate:
     Template variables:
         - title: Content title to humanize
         - body_markdown: Content body in markdown format
+        - persona_full_name: Author's full name
+        - persona_professional_title: Author's professional title
+        - persona_areas_of_expertise: Author's areas of expertise
+        - persona_bio: Author's biography
+        - persona_tone_of_voice: Author's specific tone
+        - persona_description: General description of the persona
+        - persona_goals: Author's goals for writing
+        - persona_behaviors: Author's writing behaviors/style
     
     Returns:
         ChatPromptTemplate configured for humanization (90% human-written target)

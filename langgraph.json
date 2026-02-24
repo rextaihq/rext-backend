@@ -8,7 +8,6 @@
   "env": ".env",
   "image_distro": "wolfi",
   "pip_installer": "uv",
-
   "checkpointer": {
     "ttl": {
       "default_ttl": 259200,
