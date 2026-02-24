@@ -18,24 +18,18 @@ from typing import Callable
 from uuid import uuid4
 
 from fastapi import Request, Response
-from starlette.middleware.base import BaseHTTPMiddleware
+
 from src.api.cache.redis_client import cache
 
 from src.utils.logger import logger
 
 
-class RequestTrackerMiddleware(BaseHTTPMiddleware):
+
+class RequestTrackerMiddleware:
     """
     Middleware to track requests with unique IDs and performance metrics.
-
-    This middleware:
-    1. Generates or extracts request IDs from headers
-    2. Adds request ID to request state for use in handlers
-    3. Tracks request processing time
-    4. Adds correlation headers to responses
-    5. Logs request start/end for debugging
+    Using pure ASGI interface to avoid BaseHTTPMiddleware issues with streaming responses.
     """
-
     def __init__(
         self,
         app,
@@ -44,78 +38,71 @@ class RequestTrackerMiddleware(BaseHTTPMiddleware):
         log_requests: bool = True,
         include_processing_time: bool = True
     ):
-        """
-        Initialize the request tracker middleware.
-
-        Args:
-            app: FastAPI application instance
-            header_name: Header name for request ID (default: X-Request-ID)
-            generate_if_missing: Generate ID if not provided by client
-            log_requests: Whether to log request start/end
-            include_processing_time: Whether to track and include processing time
-        """
-        super().__init__(app)
+        self.app = app
         self.header_name = header_name
         self.generate_if_missing = generate_if_missing
         self.log_requests = log_requests
         self.include_processing_time = include_processing_time
         self.sensitive_params = {"token", "secret", "password", "api_key", "key", "signature"}
 
-    async def dispatch(self, request: Request, call_next: Callable) -> Response:
-        """
-        Process request with tracking and timing.
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
 
-        Args:
-            request: Incoming request
-            call_next: Next middleware/handler in chain
+        from starlette.requests import Request
+        request = Request(scope, receive)
 
-        Returns:
-            Response: Response with tracking headers added
-        """
         # Generate or extract request ID
         request_id = self._get_or_generate_request_id(request)
+        scope["state"] = scope.get("state", {})
+        scope["state"]["request_id"] = request_id
 
-        # Store request ID in request state for use in handlers
-        request.state.request_id = request_id
-
-        # Record start time for performance tracking
         start_time = time.time()
 
-        # Log request start if enabled
         if self.log_requests:
             self._log_request_start(request, request_id)
 
+        async def send_wrapper(message):
+            if message["type"] == "http.response.start":
+                status_code = message["status"]
+                processing_time_ms = int((time.time() - start_time) * 1000) if self.include_processing_time else None
+                
+                # Record metrics
+                await self._record_api_metrics(processing_time_ms, status_code)
+
+                # Add headers
+                headers = list(message.get("headers", []))
+                headers.append((self.header_name.encode(), request_id.encode()))
+                if processing_time_ms is not None:
+                    headers.append((b"X-Processing-Time-MS", str(processing_time_ms).encode()))
+                headers.append((b"X-Response-Time", str(int(time.time())).encode()))
+                message["headers"] = headers
+
+                # Log success (only on start of response)
+                if self.log_requests:
+                    # We don't have the full response object here, so we simulate minimal logging
+                    logger.info(
+                        f"Request completed: {request.method} {request.url.path} - {status_code}",
+                        extra={
+                            "request_id": request_id,
+                            "method": request.method,
+                            "path": request.url.path,
+                            "status_code": status_code,
+                            "processing_time_ms": processing_time_ms,
+                            "event_type": "request_success"
+                        }
+                    )
+
+            await send(message)
+
         try:
-            # Process request through the application
-            response = await call_next(request)
-
-            # Calculate processing time
-            processing_time_ms = None
-            if self.include_processing_time:
-                processing_time_ms = int((time.time() - start_time) * 1000)
-
-            await self._record_api_metrics(processing_time_ms, response.status_code)
-            # Add tracking headers to response
-            self._add_response_headers(response, request_id, processing_time_ms)
-
-            # Log successful request completion
-            if self.log_requests:
-                self._log_request_success(request, response, request_id, processing_time_ms)
-
-            return response
-
+            await self.app(scope, receive, send_wrapper)
         except Exception as exc:
-            # Calculate processing time for errors too
-            processing_time_ms = None
-            if self.include_processing_time:
-                processing_time_ms = int((time.time() - start_time) * 1000)
-
+            processing_time_ms = int((time.time() - start_time) * 1000) if self.include_processing_time else None
             await self._record_api_metrics(processing_time_ms, 500)
-            # Log error (detailed error logging is handled by error handler)
             if self.log_requests:
                 self._log_request_error(request, exc, request_id, processing_time_ms)
-
-            # Re-raise the exception to be handled by error handler
             raise exc
 
     def _get_or_generate_request_id(self, request: Request) -> str:

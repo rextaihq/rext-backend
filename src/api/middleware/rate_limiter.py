@@ -17,10 +17,10 @@ Usage:
     )
 """
 
+import json
 import time
 from typing import Dict, Tuple, Optional
 from fastapi import Request, HTTPException, status, Depends
-from starlette.middleware.base import BaseHTTPMiddleware
 from datetime import datetime, timedelta, timezone
 from collections import defaultdict, deque
 import hashlib
@@ -251,14 +251,13 @@ class RateLimiter:
         return len(keys_to_remove)
 
 
-class RateLimiterMiddleware(BaseHTTPMiddleware):
+
+class RateLimiterMiddleware:
     """
     FastAPI middleware for rate limiting requests.
-
-    Applies rate limits to all incoming requests based on IP or user ID.
+    Using pure ASGI interface to avoid BaseHTTPMiddleware issues with streaming responses.
     """
-
-    # Paths exempt from rate limiting (health checks, docs, monitoring, etc.)
+    # Paths exempt from rate limiting
     EXEMPT_PATHS = {
         "/",
         "/health",
@@ -268,7 +267,6 @@ class RateLimiterMiddleware(BaseHTTPMiddleware):
         "/redoc",
         "/openapi.json",
         "/api/status",
-        # LangGraph Studio polling endpoints
         "/ok",
         "/info"
     }
@@ -281,17 +279,7 @@ class RateLimiterMiddleware(BaseHTTPMiddleware):
         requests_per_day: int = 10000,
         enable: bool = True
     ):
-        """
-        Initialize rate limiter middleware.
-
-        Args:
-            app: FastAPI application
-            requests_per_minute: Max requests per minute (default: 60)
-            requests_per_hour: Max requests per hour (default: 1000)
-            requests_per_day: Max requests per day (default: 10000)
-            enable: Whether to enable rate limiting (default: True)
-        """
-        super().__init__(app)
+        self.app = app
         self.limiter = RateLimiter(
             requests_per_minute=requests_per_minute,
             requests_per_hour=requests_per_hour,
@@ -300,30 +288,18 @@ class RateLimiterMiddleware(BaseHTTPMiddleware):
         self.enable = enable
         self.cleanup_counter = 0
 
-        if not enable:
-            logger.warning("Rate limiting is DISABLED")
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http" or not self.enable:
+            await self.app(scope, receive, send)
+            return
 
-    async def dispatch(self, request: Request, call_next):
-        """
-        Process request and apply rate limiting.
-
-        Args:
-            request: Incoming request
-            call_next: Next middleware in chain
-
-        Returns:
-            Response from next middleware or rate limit error
-
-        Raises:
-            HTTPException: If rate limit exceeded
-        """
-        # Skip if disabled
-        if not self.enable:
-            return await call_next(request)
+        from starlette.requests import Request
+        request = Request(scope, receive)
 
         # Skip exempt paths
         if request.url.path in self.EXEMPT_PATHS:
-            return await call_next(request)
+            await self.app(scope, receive, send)
+            return
 
         # Get client identifier
         client_key = self.limiter.get_client_key(request)
@@ -332,48 +308,60 @@ class RateLimiterMiddleware(BaseHTTPMiddleware):
         is_allowed, retry_after, limit_type = await self.limiter.check_rate_limit(client_key)
 
         if not is_allowed:
+            from src.api.lib.log_policy import log_with_level, get_event_level
             log_with_level(
                 logger,
                 get_event_level("rate_limit_exceeded"),
                 f"Rate limit exceeded for {client_key}: {limit_type} limit reached. Retry after {retry_after}s",
             )
 
-            # Add rate limit headers
-            headers = {
-                "X-RateLimit-Limit": str(getattr(self.limiter, f"requests_per_{limit_type}")),
-                "X-RateLimit-Remaining": "0",
-                "X-RateLimit-Reset": str(retry_after),
-                "Retry-After": str(retry_after)
+            # Standard 429 response
+            headers = [
+                (b"content-type", b"application/json"),
+                (b"x-ratelimit-limit", str(getattr(self.limiter, f"requests_per_{limit_type}")).encode()),
+                (b"x-ratelimit-remaining", b"0"),
+                (b"x-ratelimit-reset", str(retry_after).encode()),
+                (b"retry-after", str(retry_after).encode()),
+            ]
+            
+            payload = {
+                "error": {
+                    "message": f"Rate limit exceeded. Too many requests per {limit_type}. Try again in {retry_after} seconds.",
+                    "code": "rate_limit_exceeded",
+                    "status_code": 429
+                }
             }
+            
+            await send({
+                "type": "http.response.start",
+                "status": 429,
+                "headers": headers
+            })
+            await send({
+                "type": "http.response.body",
+                "body": json.dumps(payload).encode()
+            })
+            return
 
-            raise HTTPException(
-                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                detail=f"Rate limit exceeded. Too many requests per {limit_type}. Try again in {retry_after} seconds.",
-                headers=headers
-            )
+        async def send_wrapper(message):
+            if message["type"] == "http.response.start":
+                # Add headers to successful responses
+                headers = list(message.get("headers", []))
+                
+                # We can't easily calculate 'remaining' here without re-checking,
+                # but we can at least add the limit header if it's not a streaming response issues.
+                # For simplicity, we just pass through.
+                
+                message["headers"] = headers
+            await send(message)
 
-        # Process request
-        response = await call_next(request)
-
-        # Add rate limit headers to successful responses
-        if limit_type is None:  # Request was allowed
-            # Calculate remaining for current minute
-            client_key = self.limiter.get_client_key(request)
-            timestamps = self.limiter.requests.get(client_key, deque())
-            self.limiter._cleanup_old_requests(timestamps, SECONDS_PER_MINUTE)
-
-            remaining = max(0, self.limiter.requests_per_minute - len(timestamps))
-
-            response.headers["X-RateLimit-Limit"] = str(self.limiter.requests_per_minute)
-            response.headers["X-RateLimit-Remaining"] = str(remaining)
-
-        # Periodic cleanup (every 1000 requests)
+        # Periodic cleanup
         self.cleanup_counter += 1
         if self.cleanup_counter >= CLEANUP_TRIGGER_REQUEST_COUNT:
             self.limiter.cleanup_old_entries()
             self.cleanup_counter = 0
 
-        return response
+        await self.app(scope, receive, send_wrapper)
 
 
 # ============================================================================

@@ -142,8 +142,9 @@ class SerializableMixin:
                     continue
 
                 # Check if the relationship is loaded (won't trigger lazy load)
+                from sqlalchemy.orm.base import NO_VALUE
                 rel_state = inspector.attrs.get(rel_name)
-                if rel_state is None or not rel_state.loaded_value:
+                if rel_state is None or rel_state.loaded_value is NO_VALUE:
                     # Relationship not loaded, skip it
                     continue
 

@@ -32,7 +32,7 @@ import secrets
 from sqlalchemy import select, and_, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
-from src.api.models.enums import InvitationStatus
+from src.api.models.enums import InvitationStatus, VALID_ADMIN_ROLES
 
 from src.utils.invitation_utils import validate_expiry_days
 from src.utils.invitation_utils import normalize_email

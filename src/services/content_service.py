@@ -98,6 +98,7 @@ class ContentService:
                 seo_details=data.seo_data.seo_details
             )
             self.db.add(seo_record)
+            content.seo_data = seo_record  # Link relationship to avoid lazy loading later
 
         # Save Media links
         if data.media_items:
@@ -287,6 +288,16 @@ class ContentService:
 
         # Prepare content data for publisher
         seo_data = None
+        
+        # Ensure seo_data is loaded to avoid MissingGreenlet error
+        from sqlalchemy.orm.base import NO_VALUE
+        from sqlalchemy import inspect as sa_inspect
+        if sa_inspect(content).attrs.seo_data.loaded_value is NO_VALUE:
+            seo_result = await self.db.execute(
+                select(ContentSEOData).where(ContentSEOData.content_id == content.id)
+            )
+            content.seo_data = seo_result.scalar_one_or_none()
+
         if content.seo_data:
             seo_data = ContentSEODataSchema(
                 meta_title=content.seo_data.meta_title,

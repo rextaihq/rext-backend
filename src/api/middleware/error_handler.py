@@ -22,7 +22,6 @@ from typing import Callable, Dict, Any, Optional
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import ValidationError
-from starlette.middleware.base import BaseHTTPMiddleware
 
 from src.api.schema.response_schemas import (
     ErrorResponse,
@@ -45,13 +44,11 @@ except ImportError:
     SENTRY_AVAILABLE = False
 
 
-class ErrorHandlerMiddleware(BaseHTTPMiddleware):
+
+class ErrorHandlerMiddleware:
     """
     Middleware for handling all exceptions and converting them to standardized responses.
-
-    This middleware catches all exceptions that occur during request processing
-    and converts them into consistent error responses. It also handles logging,
-    request tracking, and security filtering of error details.
+    Using pure ASGI interface to avoid BaseHTTPMiddleware issues with streaming responses.
     """
 
     def __init__(
@@ -62,43 +59,59 @@ class ErrorHandlerMiddleware(BaseHTTPMiddleware):
         filter_sensitive_data: bool = True,
         max_error_details: int = 10
     ):
-        """
-        Initialize the error handler middleware.
-
-        Args:
-            app: FastAPI application instance
-            include_debug_info: Include debug information in responses (dev only)
-            log_full_traceback: Whether to log full tracebacks
-            filter_sensitive_data: Whether to filter sensitive data from responses
-            max_error_details: Maximum number of error details to include
-        """
-        super().__init__(app)
+        self.app = app
         self.include_debug_info = include_debug_info
         self.log_full_traceback = log_full_traceback
         self.filter_sensitive_data = filter_sensitive_data
         self.max_error_details = max_error_details
 
-    async def dispatch(self, request: Request, call_next: Callable) -> JSONResponse:
-        """
-        Process request with comprehensive error handling.
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
 
-        Args:
-            request: Incoming request
-            call_next: Next middleware/handler in chain
+        from starlette.requests import Request
+        request = Request(scope, receive)
+        
+        # Try to get start time from state (RequestTracker might have set it)
+        request_start_time = None
+        if hasattr(request.state, '_start_time'):
+            request_start_time = request.state._start_time
 
-        Returns:
-            JSONResponse: Either normal response or standardized error response
-        """
-        request_start_time = getattr(request.state, '_start_time', None)
+        headers_sent = False
+
+        async def send_wrapper(message):
+            nonlocal headers_sent
+            if message["type"] == "http.response.start":
+                headers_sent = True
+            await send(message)
 
         try:
-            # Process the request normally
-            response = await call_next(request)
-            return response
-
+            await self.app(scope, receive, send_wrapper)
         except Exception as exc:
+            if headers_sent:
+                # If headers are already sent, we cannot send a new JSONResponse.
+                # Log the error and let it propagate or let the connection close.
+                logger.error(
+                    f"Unhandled exception after headers sent: {type(exc).__name__}: {exc}",
+                    exc_info=True,
+                    extra={"request_id": get_request_id(request)}
+                )
+                raise exc
+
             # Handle the exception and return standardized error response
-            return await self._handle_exception(request, exc, request_start_time)
+            response = await self._handle_exception(request, exc, request_start_time)
+            
+            # Send the response manually via ASGI
+            await send({
+                "type": "http.response.start",
+                "status": response.status_code,
+                "headers": list(response.headers.raw)
+            })
+            await send({
+                "type": "http.response.body",
+                "body": response.body
+            })
 
     async def _handle_exception(
         self,
