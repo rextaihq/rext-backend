@@ -11,8 +11,61 @@ from sqlalchemy import select, func, and_
 from sqlalchemy.exc import IntegrityError, OperationalError
 from datetime import datetime, timezone, timedelta
 import logging
+from dataclasses import dataclass, field
 
 logger = logging.getLogger(__name__)
+
+# ==============================
+# NOTIFICATION CONFIGURATION
+# ==============================
+@dataclass
+class NotificationConfig:
+    notification_type: str
+    title: str
+    status: str = "success"
+    pref_column: Optional[str] = None
+
+    def __getitem__(self, key: str):
+        # Support both config.notification_type and config['type']
+        if key == 'type':
+            return self.notification_type
+        return getattr(self, key)
+
+# Single source of truth for all notification flags.
+# Keys are pref_flag values passed to schedule_if_allowed().
+# "pref_column" is the actual column on NotificationPreferences to check.
+# If pref_column matches the flag name, it's a "real" column.
+# If pref_column differs, it's a "virtual" flag mapped to a real column.
+NOTIFICATION_REGISTRY: dict[str, NotificationConfig] = {
+    # System & Profile
+    "in_app_notifications": NotificationConfig(notification_type="system", title="Profile Update", status="info"),
+    "avatar_uploaded": NotificationConfig(notification_type="system", title="Avatar Updated", status="success"),
+    
+    # Workspace
+    "ws_invite_received": NotificationConfig(notification_type="workspace", title="Workspace Invite", status="info"),
+    "ws_invite_accepted": NotificationConfig(notification_type="workspace", title="Invite Accepted", status="success"),
+    "ws_role_changed": NotificationConfig(notification_type="workspace", title="Role Changed", status="info"),
+    "ws_member_removed": NotificationConfig(notification_type="workspace", title="Member Removed", status="warning"),
+
+    # Content Generation
+    "gen_started": NotificationConfig(notification_type="generation", title="Generation Started", status="info"),
+    "gen_completed": NotificationConfig(notification_type="generation", title="Generation Completed", status="success"),
+    "gen_failed": NotificationConfig(notification_type="generation", title="Generation Failed", status="error"),
+    "gen_published": NotificationConfig(notification_type="generation", title="Content Published", status="success"),
+
+    # Billing
+    "billing_payment_success": NotificationConfig(notification_type="billing", title="Payment Successful", status="success"),
+    "billing_payment_failed": NotificationConfig(notification_type="billing", title="Payment Failed", status="error"),
+    "billing_subscription_cancelled": NotificationConfig(notification_type="billing", title="Subscription Cancelled", status="warning"),
+    "billing_subscription_expiring": NotificationConfig(notification_type="billing", title="Subscription Expiring", status="warning"),
+    "billing_trial_ending": NotificationConfig(notification_type="billing", title="Trial Ending", status="info"),
+    "billing_usage_limit_warning": NotificationConfig(notification_type="billing", title="Usage Limit Warning", status="warning"),
+    "billing_usage_limit_exceeded": NotificationConfig(notification_type="billing", title="Usage Limit Exceeded", status="error"),
+
+    # Knowledge Base
+    "kb_processing_completed": NotificationConfig(notification_type="kb", title="Knowledge Base Processed", status="success"),
+    "kb_processing_failed": NotificationConfig(notification_type="kb", title="Knowledge Base Failed", status="error"),
+}
 
 DEDUP_WINDOW_SECONDS = 60  # Suppress duplicate notifications within this window
 
@@ -58,14 +111,6 @@ async def _recheck_preference_enabled(
     Re-read the user's notification preferences with a row-level lock
     (SELECT ... FOR UPDATE) immediately before creating a notification.
 
-# ==============================
-# NOTIFICATION CONFIGURATION
-# ==============================
-# Single source of truth for all notification flags.
-# Keys are pref_flag values passed to schedule_if_allowed().
-# "pref_column" is the actual column on NotificationPreferences to check.
-# If pref_column matches the flag name, it's a "real" column.
-# If pref_column differs, it's a "virtual" flag mapped to a real column.
 
     Returns True if the notification should proceed, False otherwise.
     """
@@ -216,7 +261,6 @@ async def schedule_if_allowed(
 
     # 4.7 Deduplication check — prevent duplicate notifications within time window
     from src.api.models.notification.notification_model import Notification
-    from datetime import datetime, timezone
 
     dedup_cutoff = datetime.now(timezone.utc) - timedelta(seconds=DEDUP_WINDOW_SECONDS)
     dedup_conditions = [
@@ -242,12 +286,10 @@ async def schedule_if_allowed(
         return
 
     # 5. Create notification record in database
-    from src.api.models.notification.notification_model import Notification
-    from datetime import datetime, timezone
 
     notification = Notification(
-        user_id=UUID(user_id),
-        workspace_id=UUID(workspace_id) if workspace_id else None,
+        user_id=user_uuid,
+        workspace_id=workspace_uuid,
         title=config["title"],
         message=message,
         type=config["type"],

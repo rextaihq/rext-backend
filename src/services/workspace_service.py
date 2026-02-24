@@ -753,7 +753,7 @@ class WorkspaceService:
             .where(
                 UserRole.user_id == user_id,
                 UserRole.workspace_id == workspace_id,
-                Role.hierarchy_level >= 80, # workspace_owner or higher
+                Role.hierarchy_level >= 60, # workspace_owner or higher (60 is workspace_owner)
             )
         )
         
