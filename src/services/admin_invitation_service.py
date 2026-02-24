@@ -28,12 +28,14 @@ from typing import Optional, List
 from uuid import UUID
 from datetime import datetime, timezone, timedelta
 import secrets
-import hashlib
 
-from sqlalchemy import select, and_
+from sqlalchemy import select, and_, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
+from src.api.models.enums import InvitationStatus
 
+from src.utils.invitation_utils import validate_expiry_days
+from src.utils.invitation_utils import normalize_email
 from src.api.models.admin_models.admin_invitations import PlatformAdminInvitations
 from src.api.models.user_models.users import Users
 from src.api.models.user_models.roles import Role
@@ -65,15 +67,13 @@ class AdminInvitationService:
         Generate a secure admin invitation token.
 
         Args:
-            email: Invitee email
+            email: Invitee email (unused — kept for API compatibility)
 
         Returns:
             Secure token string
         """
-        random_part = secrets.token_urlsafe(48)  # Longer for admin invitations
-        combined = f"{email}:{random_part}:{datetime.now(timezone.utc).timestamp()}"
-        token_hash = hashlib.sha256(combined.encode()).hexdigest()
-        return token_hash
+        from src.utils.invitation_utils import generate_invitation_token
+        return generate_invitation_token(nbytes=48)
 
     async def _verify_super_admin(self, user_id: UUID) -> None:
         """
@@ -113,15 +113,14 @@ class AdminInvitationService:
             )
 
         # Verify it's an admin role (you may want to add a flag to Role model)
-        valid_admin_roles = ['super_admin', 'support_admin', 'platform_admin']
-        if admin_role not in valid_admin_roles:
+        if admin_role not in VALID_ADMIN_ROLES:
             raise RextValidationException(
                 message=f"'{admin_role}' is not a valid admin role",
                 field_errors={"admin_role": [
-                    f"Must be one of: {', '.join(valid_admin_roles)}"
+                    f"Must be one of: {', '.join(sorted(VALID_ADMIN_ROLES))}"
                 ]}
             )
-
+               
         return role
 
     async def create_admin_invitation(
@@ -164,14 +163,10 @@ class AdminInvitationService:
         await self._verify_super_admin(invited_by_admin_id)
 
         # Validate expiry_days
-        if not 1 <= expiry_days <= 30:
-            raise RextValidationException(
-                message="Expiry days must be between 1 and 30",
-                field_errors={"expiry_days": ["Must be between 1 and 30 days"]}
-            )
+        validate_expiry_days(expiry_days)
 
         # Normalize email
-        email = email.lower().strip()
+        email = normalize_email(email)
 
         # Validate admin role
         await self._validate_admin_role(admin_role)
@@ -181,7 +176,7 @@ class AdminInvitationService:
             select(PlatformAdminInvitations).where(
                 and_(
                     PlatformAdminInvitations.email == email,
-                    PlatformAdminInvitations.status == 'pending'
+                    PlatformAdminInvitations.status == InvitationStatus.PENDING
                 )
             )
         )
@@ -226,7 +221,7 @@ class AdminInvitationService:
             admin_role=admin_role,
             invited_by_admin_id=invited_by_admin_id,
             invitation_token=token,
-            status="pending",
+            status=InvitationStatus.PENDING,
             message=message,
             permissions=permissions,
             expires_at=expires_at
@@ -302,6 +297,54 @@ class AdminInvitationService:
 
         return invitation
 
+    async def get_all_invitations_paginated(
+        self,
+        status: Optional[str] = None,
+        limit: int = 100,
+        offset: int = 0
+    ) -> tuple[List[PlatformAdminInvitations], int]:
+        """
+        Get paginated admin invitations with total count (super_admin only).
+
+        Args:
+            status: Optional status filter (pending/accepted/revoked/expired)
+            limit: Maximum results
+            offset: Results to skip
+
+        Returns:
+            Tuple of (List[PlatformAdminInvitations], total_count)
+        """
+        # Base filter
+        base_filter = []
+        if status:
+            base_filter.append(PlatformAdminInvitations.status == status)
+
+        # Count total matching rows
+        count_query = select(func.count(PlatformAdminInvitations.id))
+        if base_filter:
+            count_query = count_query.where(and_(*base_filter))
+        
+        total_result = await self.db.execute(count_query)
+        total_count = int(total_result.scalar() or 0)
+
+        # Get page data
+        query = select(PlatformAdminInvitations).options(
+            selectinload(PlatformAdminInvitations.invited_by),
+            selectinload(PlatformAdminInvitations.accepted_by)
+        )
+
+        if base_filter:
+            query = query.where(and_(*base_filter))
+
+        query = query.order_by(
+            PlatformAdminInvitations.created_at.desc()
+        ).limit(limit).offset(offset)
+
+        result = await self.db.execute(query)
+        rows = list(result.scalars().all())
+        
+        return rows, total_count
+
     async def get_all_invitations(
         self,
         status: Optional[str] = None,
@@ -310,29 +353,14 @@ class AdminInvitationService:
     ) -> List[PlatformAdminInvitations]:
         """
         Get all admin invitations (super_admin only).
-
-        Args:
-            status: Optional status filter (pending/accepted/revoked/expired)
-            limit: Maximum results
-            offset: Results to skip
-
-        Returns:
-            List of PlatformAdminInvitations
+        Maintained for backward compatibility.
         """
-        query = select(PlatformAdminInvitations).options(
-            selectinload(PlatformAdminInvitations.invited_by),
-            selectinload(PlatformAdminInvitations.accepted_by)
+        invitations, _ = await self.get_all_invitations_paginated(
+            status=status,
+            limit=limit,
+            offset=offset
         )
-
-        if status:
-            query = query.where(PlatformAdminInvitations.status == status)
-
-        query = query.order_by(
-            PlatformAdminInvitations.created_at.desc()
-        ).limit(limit).offset(offset)
-
-        result = await self.db.execute(query)
-        return list(result.scalars().all())
+        return invitations
 
     async def accept_admin_invitation(
         self,
@@ -363,7 +391,7 @@ class AdminInvitationService:
         invitation = await self.get_invitation_by_token(token)
 
         # Check status
-        if invitation.status != 'pending':
+        if invitation.status != InvitationStatus.PENDING:
             raise BusinessRuleViolationException(
                 message=f"Invitation has already been {invitation.status}",
                 rule_name="invitation_already_processed"
@@ -371,7 +399,7 @@ class AdminInvitationService:
 
         # Check expiry
         if invitation.is_expired():
-            invitation.status = 'expired'
+            invitation.status = InvitationStatus.EXPIRED
             raise BusinessRuleViolationException(
                 message="Invitation has expired",
                 rule_name="invitation_expired"
@@ -390,7 +418,7 @@ class AdminInvitationService:
             )
 
         # Verify email match (security)
-        if user.email.lower() != invitation.email.lower():
+        if normalize_email(user.email) != normalize_email(invitation.email):
             raise BusinessRuleViolationException(
                 message=f"This invitation is for {invitation.email}",
                 rule_name="email_mismatch"
@@ -438,7 +466,7 @@ class AdminInvitationService:
         self.db.add(user_role)
 
         # Update invitation
-        invitation.status = 'accepted'
+        invitation.status = InvitationStatus.ACCEPTED
         invitation.accepted_at = datetime.now(timezone.utc)
         invitation.accepted_by_user_id = user_id
 
@@ -477,14 +505,14 @@ class AdminInvitationService:
         invitation = await self.get_invitation_by_id(invitation_id)
 
         # Check if already processed
-        if invitation.status != 'pending':
+        if invitation.status != InvitationStatus.PENDING:
             raise BusinessRuleViolationException(
                 message=f"Cannot revoke: invitation is {invitation.status}",
                 rule_name="invitation_already_processed"
             )
 
         # Revoke invitation
-        invitation.status = 'revoked'
+        invitation.status = InvitationStatus.REVOKED
         invitation.revoked_at = datetime.now(timezone.utc)
         invitation.revoked_by_admin_id = revoked_by_admin_id
         invitation.revoked_reason = reason
@@ -518,14 +546,14 @@ class AdminInvitationService:
         invitation = await self.get_invitation_by_token(token)
 
         # Check if already processed
-        if invitation.status != 'pending':
+        if invitation.status != InvitationStatus.PENDING:
             raise BusinessRuleViolationException(
                 message=f"Cannot decline: invitation is {invitation.status}",
                 rule_name="invitation_already_processed"
             )
 
         # Decline invitation
-        invitation.status = 'declined'
+        invitation.status = InvitationStatus.DECLINED
         invitation.declined_at = datetime.now(timezone.utc)
         invitation.declined_reason = reason
 
@@ -544,6 +572,10 @@ class AdminInvitationService:
         """
         Resend (refresh) an admin invitation with new token and expiry.
 
+        The old token is overwritten in the database, which means any
+        previously sent email links will no longer work. This is by design —
+        only the most recent token is valid at any time.
+
         Args:
             invitation_id: Invitation UUID
             resent_by_admin_id: Admin resending the invitation
@@ -561,29 +593,39 @@ class AdminInvitationService:
         await self._verify_super_admin(resent_by_admin_id)
 
         # Validate expiry
-        if not 1 <= expiry_days <= 30:
-            raise RextValidationException(
-                message="Expiry days must be between 1 and 30",
-                field_errors={"expiry_days": ["Must be between 1 and 30 days"]}
-            )
+        validate_expiry_days(expiry_days)
 
         # Get invitation
         invitation = await self.get_invitation_by_id(invitation_id)
 
         # Can only resend pending or expired invitations
-        if invitation.status not in ['pending', 'expired']:
+        if invitation.status not in [InvitationStatus.PENDING, InvitationStatus.EXPIRED]:
             raise BusinessRuleViolationException(
                 message=f"Cannot resend: invitation is {invitation.status}",
                 rule_name="invitation_cannot_be_resent"
             )
 
+        # Store old token hash for audit trail (do not log the full token)
+        old_token_prefix = invitation.invitation_token[:8] if invitation.invitation_token else "none"
+
         # Generate new token and expiry
+        # This overwrites the old token in the database, effectively
+        # invalidating any previously sent email links
         invitation.invitation_token = self._generate_invitation_token(invitation.email)
         invitation.expires_at = datetime.now(timezone.utc) + timedelta(days=expiry_days)
-        invitation.status = 'pending'
+        invitation.status = InvitationStatus.PENDING
 
         logger.info(
-            f"Admin invitation resent: {invitation.email} by admin {resent_by_admin_id}"
+            "Admin invitation token rotated on resend",
+            extra={
+                "invitation_id": str(invitation.id),
+                "email": invitation.email,
+                "old_token_prefix": old_token_prefix,
+                "new_token_prefix": invitation.invitation_token[:8],
+                "new_expires_at": invitation.expires_at.isoformat(),
+                "event_type": "admin_token_rotation",
+                "resent_by": str(resent_by_admin_id),
+            }
         )
 
         return invitation

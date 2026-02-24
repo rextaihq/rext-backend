@@ -5,6 +5,7 @@ from datetime import datetime
 from unittest.mock import AsyncMock, patch
 from src.api.server import app
 from src.api.security.dependencies import get_current_user
+from src.constants.onboarding_steps import OnboardingStep
 
 @pytest.mark.asyncio
 async def test_update_onboarding_permissions(client):
@@ -19,7 +20,7 @@ async def test_update_onboarding_permissions(client):
     
     # Valid payload for update
     payload = {
-        "step": 0,
+        "step": OnboardingStep.CONTENT_STRATEGY.value,
         "action": "complete"
     }
 
@@ -38,7 +39,7 @@ async def test_update_onboarding_permissions(client):
                 "id": str(uuid4()), 
                 "user_id": str(user_id), 
                 "completed": False,
-                "current_step": 0, 
+                "current_step": OnboardingStep.CONTENT_STRATEGY.value, 
                 "completed_steps": [],
                 "skipped_steps": [],
                 "user_industry": None,

@@ -36,6 +36,7 @@ from src.services.audit_logger import audit_logger
 from .shared.auth import require_super_admin
 from src.api.config import settings
 from src.config.payment_config import payment_settings
+from fastapi import HTTPException
 
 
 router = APIRouter()
@@ -47,11 +48,14 @@ router = APIRouter()
 
 async def get_lemonsqueezy_provider() -> LemonSqueezyProvider:
     """Get LemonSqueezy provider instance."""
+    if not payment_settings.lemonsqueezy_api_key or not payment_settings.lemonsqueezy_store_id:
+        raise HTTPException(status_code=503, detail="Payment provider is not configured")
+
     return LemonSqueezyProvider(
         api_key=payment_settings.lemonsqueezy_api_key,
         store_id=payment_settings.lemonsqueezy_store_id,
         webhook_secret=payment_settings.lemonsqueezy_webhook_secret,
-        sandbox_mode=payment_settings.payment_sandbox_mode
+        sandbox_mode=payment_settings.payment_sandbox_mode,
     )
 
 

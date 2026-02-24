@@ -39,6 +39,7 @@ async def get_webhook_events(
     processed: Optional[bool] = Query(None, description="Filter by processed status"),
     start_date: Optional[datetime] = Query(None, description="Start date filter"),
     end_date: Optional[datetime] = Query(None, description="End date filter"),
+    include_payload: bool = Query(False, description="Include redacted payload body"),
     db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user)
 ):
@@ -117,7 +118,7 @@ async def get_webhook_events(
     # Format events
     events_data = []
     for event in events:
-        event_dict = event.to_dict()
+        event_dict = event.to_dict(include_payload=include_payload)
         # Add status indicator
         if event.processed:
             event_dict["status"] = "processed"
@@ -150,6 +151,7 @@ async def get_failed_webhook_events(
     page: int = Query(1, ge=1, description="Page number"),
     per_page: int = Query(50, ge=1, le=200, description="Items per page"),
     hours: int = Query(24, ge=1, le=720, description="Look back hours (default 24, max 720/30 days)"),
+    include_payload: bool = Query(False, description="Include redacted payload body"),
     db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user)
 ):
@@ -224,7 +226,7 @@ async def get_failed_webhook_events(
     # Format failed events
     events_data = []
     for event in failed_events:
-        event_dict = event.to_dict()
+        event_dict = event.to_dict(include_payload=include_payload)
         event_dict["status"] = "failed"
         # Include time since failure
         if event.created_at:

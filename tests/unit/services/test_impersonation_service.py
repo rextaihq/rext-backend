@@ -61,14 +61,12 @@ async def test_start_impersonation_successful_flow():
     admin_user = Users(
         id=admin_id,
         email="admin@example.com",
-        username="admin",
         password_hash="hash",
     )
     admin_user.status = "active"
     target_user = Users(
         id=target_id,
         email="target@example.com",
-        username="target",
         password_hash="hash",
     )
     target_user.status = "active"
@@ -80,7 +78,7 @@ async def test_start_impersonation_successful_flow():
     service._build_context_from_user = AsyncMock(return_value={
         "user_id": str(target_id),
         "email": "target@example.com",
-        "username": "target",
+        "full_name": "Target Full Name",
         "display_name": "Target Name",
         "roles": ["admin"],
         "permissions": ["user.impersonate"],
@@ -105,7 +103,6 @@ async def test_start_impersonation_prevents_self_impersonation():
     admin_user = Users(
         id=admin_id,
         email="admin@example.com",
-        username="admin",
         password_hash="hash",
     )
 
@@ -127,14 +124,12 @@ async def test_start_impersonation_requires_permission():
     admin_user = Users(
         id=admin_id,
         email="admin@example.com",
-        username="admin",
         password_hash="hash",
     )
     admin_user.status = "active"
     target_user = Users(
         id=target_id,
         email="target@example.com",
-        username="target",
         password_hash="hash",
     )
     target_user.status = "active"
@@ -178,13 +173,11 @@ async def test_get_impersonation_status_includes_impersonator_details():
     user = Users(
         id=uuid4(),
         email="user@example.com",
-        username="user",
         password_hash="hash",
     )
     impersonator = Users(
         id=uuid4(),
         email="admin@example.com",
-        username="admin",
         password_hash="hash",
     )
 
@@ -268,7 +261,6 @@ async def test_get_user_context_aggregates_user_and_auth_data():
     user = Users(
         id=uuid4(),
         email="user@example.com",
-        username="user",
         password_hash="hash",
     )
     user.display_name = "User Example"

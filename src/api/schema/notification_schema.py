@@ -2,11 +2,6 @@ from pydantic import BaseModel, Field
 from typing import Literal, Optional, Dict
 
 
-class NotificationCategories(BaseModel):
-    """Category-specific notification preferences."""
-    workspace_invites: Optional[bool] = None
-
-
 class NotificationPreferencesResponse(BaseModel):
     """Response schema for notification preferences matching API spec."""
     email_enabled: bool
@@ -33,14 +28,10 @@ class UpdateNotificationPreferencesRequest(BaseModel):
     """Request schema for updating notification preferences.
 
     Supports partial updates - all fields are optional.
-    When a category is set, it applies to both email and in-app channels.
     """
     # GLOBAL
     email_enabled: Optional[bool] = Field(None, alias="email_notifications")
     in_app_enabled: Optional[bool] = Field(None, alias="in_app_notifications")
-
-    # CATEGORIES (Simplified UI-facing updates)
-    categories: Optional[NotificationCategories] = None
 
 
     # WORKSPACE
