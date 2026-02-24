@@ -21,23 +21,24 @@ from src.utils.logger import logger
 class EmailAnalyticsService:
     """Service for email analytics calculations with multi-tenancy support"""
 
+    _DATE_RANGE_DAYS = {
+        "7d": 7,
+        "30d": 30,
+        "90d": 90,
+    }
+
     def __init__(self, db: AsyncSession):
         self.db = db
         self.log = logger.bind(service="EmailAnalyticsService")
 
     def _parse_date_range(self, date_range: str) -> datetime:
-        """Parse date range string to start date"""
+        """Parse allowed date range string to start date."""
         now = utc_now()
 
-        if date_range.endswith('d'):
-            days = int(date_range[:-1])
-            return now - timedelta(days=days)
-        elif date_range.endswith('h'):
-            hours = int(date_range[:-1])
-            return now - timedelta(hours=hours)
-        else:
-            # Default to 30 days
-            return now - timedelta(days=30)
+        if date_range not in self._DATE_RANGE_DAYS:
+            raise ValueError(f"Unsupported date_range: {date_range}")
+
+        return now - timedelta(days=self._DATE_RANGE_DAYS[date_range])
 
     def _build_base_filters(
         self,
