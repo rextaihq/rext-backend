@@ -159,7 +159,7 @@ class Settings(BaseSettings):
     # File Security - MIME Type Whitelist
     from src.config.storage_config import get_all_allowed_types
     ALLOWED_MIME_TYPES: str = Field(
-        default=get_all_allowed_types(),
+        default=",".join(get_all_allowed_types()),
         description="Comma-separated list of allowed MIME types for file uploads"
     )
 
