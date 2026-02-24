@@ -5,6 +5,9 @@ Storage Configuration
 Configuration for file storage backends (Cloudflare R2, Local).
 """
 
+from pathlib import Path
+from typing import Literal
+from pydantic import field_validator
 from typing import Literal, Optional
 from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -12,6 +15,7 @@ from pydantic import field_validator, model_validator
 
 
 StorageBackendType = Literal["r2", "local"]
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 
 class StorageSettings(BaseSettings):
@@ -27,8 +31,16 @@ class StorageSettings(BaseSettings):
     r2_public_domain: Optional[str] = None  # Optional: Custom domain for public files
 
     # Local storage configuration
-    local_storage_path: str = "./media"
+    local_storage_path: Path = PROJECT_ROOT / "media"
     local_storage_url_base: str = "/media"
+
+    @field_validator("local_storage_path", mode="before")
+    @classmethod
+    def normalize_local_storage_path(cls, value: str | Path) -> Path:
+        path = Path(value).expanduser() if value else (PROJECT_ROOT / "media")
+        if not path.is_absolute():
+            path = (PROJECT_ROOT / path).resolve()
+        return path
 
     # File upload limits (in bytes)
     max_file_size: int = 20 * 1024 * 1024  # 20MB default
