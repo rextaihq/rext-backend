@@ -202,7 +202,7 @@ async def unsubscribe(
             new_values["email_notifications"] = False
             prefs.email_notifications = False
     else:
-        # Map email types to NotificationPreferences columns
+        # Map email types to NotificationPreferences preference keys
         type_mapping = {
             "workspace_invitation": "ws_invite_received",
             "invitation_accepted": "ws_invite_accepted",
@@ -214,7 +214,7 @@ async def unsubscribe(
             "content_published": "gen_published",
             "payment_succeeded": "billing_payment_success",
             "payment_failed": "billing_payment_failed",
-            "subscription_cancelled": "billing_subscription_canceled",
+            "subscription_cancelled": "billing_subscription_cancelled",
             "subscription_expiring_soon": "billing_subscription_expiring",
             "trial_ending_soon": "billing_trial_ending",
             "usage_limit_warning": "billing_usage_limit_warning",
@@ -223,6 +223,8 @@ async def unsubscribe(
             "kb_processing_failed": "kb_processing_failed",
             "marketing": "marketing_updates",
         }
+
+        _COLUMN_FIELDS = {"marketing_updates"}
 
         # Disable specified email types
         for email_type in unsubscribe_data.email_types:
