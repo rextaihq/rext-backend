@@ -28,7 +28,7 @@ def create_seo_engine() -> CompiledStateGraph:
     graph.add_node("seo_entry", lambda state: state)
 
     graph.add_node(
-    "compute_keyword_difficulty",
+    "keyword_difficulty_node",
     compute_keyword_difficulty
     )
 
@@ -39,12 +39,13 @@ def create_seo_engine() -> CompiledStateGraph:
     graph.add_node("keyword_recommendation", keyword_recommendation)
 
     graph.add_edge(START, "seo_entry")
-    graph.add_edge("seo_entry", "compute_keyword_difficulty")
+    graph.add_edge("seo_entry", "keyword_difficulty_node")
     graph.add_edge("seo_entry", "competitors_gap")
     graph.add_edge("seo_entry", "seo_opportunity")
     graph.add_edge("seo_entry", "relevance_keyword_finder")
 
-    graph.add_edge("compute_keyword_difficulty", "keyword_recommendation")
+    # ✅ FIX 2: All paths converge to keyword_recommendation
+    graph.add_edge("keyword_difficulty_node", "keyword_recommendation")
     graph.add_edge("competitors_gap", "keyword_recommendation")
     graph.add_edge("seo_opportunity", "keyword_recommendation")
     graph.add_edge("relevance_keyword_finder", "keyword_recommendation")

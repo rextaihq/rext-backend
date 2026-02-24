@@ -41,9 +41,9 @@ async def get_onboarding_status(
             message="Authentication required"
         )
 
-    user_id = current_user.get("identity")
+    user_id = UUID(current_user["identity"])
     onboarding = await OnboardingService.get_or_create_onboarding(db, user_id)
-    return onboarding
+    return OnboardingResponse.model_validate(onboarding).model_dump()
 
 
 @router.post("/update", response_model=OnboardingResponse, status_code=status.HTTP_200_OK)
@@ -77,7 +77,7 @@ async def update_onboarding_step(
             validation_errors={"action": "Invalid action value"}
         )
 
-    return onboarding
+    return OnboardingResponse.model_validate(onboarding).model_dump()
 
 
 @router.post("/complete", response_model=OnboardingResponse, status_code=status.HTTP_200_OK)
@@ -97,7 +97,7 @@ async def complete_onboarding(
     user_id = UUID(current_user["identity"])
     onboarding = await OnboardingService.complete_onboarding(db, user_id)
     logger.info(f"[Onboarding] User {user_id} completed onboarding")
-    return onboarding
+    return OnboardingResponse.model_validate(onboarding).model_dump()
 
 
 @router.post("/reset", response_model=OnboardingResponse, status_code=status.HTTP_200_OK)
@@ -124,7 +124,7 @@ async def reset_onboarding(
     user_id = UUID(current_user["identity"])
     onboarding = await OnboardingService.reset_onboarding(db, user_id)
     logger.info(f"[Onboarding] User {user_id} reset onboarding")
-    return onboarding
+    return OnboardingResponse.model_validate(onboarding).model_dump()
 
 
 @router.get("/should-show", status_code=status.HTTP_200_OK)
@@ -144,7 +144,7 @@ async def should_show_onboarding(
     if not current_user:
         return {"should_show": False}
 
-    user_id = current_user.get("identity")
+    user_id = UUID(current_user["identity"])
     should_show = await OnboardingService.should_show_onboarding(db, user_id)
     return {"should_show": should_show}
 
@@ -173,6 +173,6 @@ async def update_marketing_data(
         heard_from=marketing_data.heard_from,
     )
     logger.info(f"[Onboarding] Marketing data updated for user {user_id}")
-    return onboarding
+    return OnboardingResponse.model_validate(onboarding).model_dump()
 
 

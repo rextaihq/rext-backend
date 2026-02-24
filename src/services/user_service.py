@@ -18,7 +18,7 @@ Does NOT:
 
 from typing import Optional, Dict, Any, List
 from uuid import UUID
-from datetime import datetime, timezone as dt_timezone
+from datetime import datetime, timezone
 import bcrypt
 
 from sqlalchemy import select
@@ -147,7 +147,8 @@ class UserService:
             f"User profile updated: {user_id}",
             extra={"user_id": str(user_id), "updated_fields": list(kwargs.keys())}
         )
-
+        self.db.add(user)
+        await self.db.commit()
         return user
 
     async def change_password(
@@ -214,7 +215,8 @@ class UserService:
             f"User password changed: {user_id}",
             extra={"user_id": str(user_id)}
         )
-
+        self.db.add(user)
+        await self.db.commit()
         return user
 
     async def deactivate_account(
@@ -245,7 +247,8 @@ class UserService:
             f"User account deactivated: {user_id}",
             extra={"user_id": str(user_id)}
         )
-
+        self.db.add(user)
+        await self.db.commit()
         return user
 
     async def reactivate_account(
@@ -276,7 +279,8 @@ class UserService:
             f"User account reactivated: {user_id}",
             extra={"user_id": str(user_id)}
         )
-
+        self.db.add(user)
+        await self.db.commit()
         return user
 
     async def change_user_status(
@@ -323,7 +327,8 @@ class UserService:
                 "new_status": new_status,
             }
         )
-
+        self.db.add(user)
+        await self.db.commit()
         return user, old_status
 
     async def cleanup_deactivated_accounts(self) -> int:
@@ -372,6 +377,8 @@ class UserService:
         user.login_count = (user.login_count or 0) + 1
         user.failed_login_attempts = 0  # Reset failed attempts on successful login
 
+        self.db.add(user)
+        await self.db.commit()
         logger.info(
             f"User last login updated: {user_id}",
             extra={"user_id": str(user_id), "login_count": user.login_count}
@@ -455,7 +462,7 @@ class UserService:
 
         user = await self.get_user_by_id(user_id)
 
-        if user.deleted_at:
+        if user.is_deleted:
             raise RextValidationException("User already deleted")
 
         user.deleted_at = datetime.now(dt_timezone.utc)
@@ -567,6 +574,9 @@ class UserService:
         user.updated_at = datetime.now(dt_timezone.utc)
 
         logger.info(f"User {user_id} updated successfully")
+
+        self.db.add(user)
+        await self.db.commit()
         return user
 
     async def set_reset_token(
@@ -591,6 +601,9 @@ class UserService:
         user.reset_token = reset_token
 
         logger.info(f"Reset token set for user {user_id}")
+
+        self.db.add(user)
+        await self.db.commit()
         return user
 
     async def reset_password_with_token(
@@ -630,6 +643,8 @@ class UserService:
         user.password_changed_at = datetime.now(dt_timezone.utc)
 
         logger.info(f"Password reset successfully for user {user.id}")
+        self.db.add(user)
+        await self.db.commit()
         return user
 
     async def verify_user_password(
@@ -683,7 +698,7 @@ class UserService:
         query = select(Users).where(Users.email == email.lower())
 
         if exclude_deleted:
-            query = query.where(Users.deleted_at.is_(None))
+            query = query.where(Users.active())
 
         result = await self.db.execute(query)
         user = result.scalar_one_or_none()
@@ -708,7 +723,7 @@ class UserService:
             user_ids: List of user UUIDs
 
         Returns:
-            Dict mapping user_id -> Users object
+            Dict mapping user_id -> Users object   
         """
         if not user_ids:
             return {}

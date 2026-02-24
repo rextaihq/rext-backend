@@ -268,7 +268,10 @@ def normalize_freshness(date_str):
 
     try:
         dt = datetime.fromisoformat(date_str)
-        days = (datetime.now() - dt).days
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        
+        days = (datetime.now(timezone.utc) - dt).days
 
         if days <= 30:
             return 1.0

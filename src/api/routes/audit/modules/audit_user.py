@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Request, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import func, select
+from sqlalchemy import select
 from typing import Optional
 
 from src.api.database.async_database import get_async_db
@@ -48,8 +48,8 @@ async def get_my_audit_logs(
     """
     user_id = current_user.get("identity")
 
-    # Build query with user filter
-    query = await build_audit_query(
+    # Build query with user filter (returns both data query and count query)
+    query, count_query = await build_audit_query(
         db=db,
         user_id=user_id,
         action=action,
@@ -59,10 +59,6 @@ async def get_my_audit_logs(
     )
 
     # Get total count
-    count_query = select(func.count()).select_from(AuditLog)
-    # Apply same filters for count
-    for whereclause in query.whereclause.clauses if hasattr(query.whereclause, 'clauses') else [query.whereclause] if query.whereclause is not None else []:
-        count_query = count_query.where(whereclause)
     count_result = await db.execute(count_query)
     total_count = count_result.scalar() or 0
 
@@ -75,7 +71,7 @@ async def get_my_audit_logs(
     logs_data = [format_audit_log(log, include_details=False) for log in logs]
 
     return {
-        "logs": logs_data,
+        "items": logs_data,
         "total": total_count,
         "limit": limit,
         "offset": offset,
