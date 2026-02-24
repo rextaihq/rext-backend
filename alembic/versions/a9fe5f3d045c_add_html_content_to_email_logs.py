@@ -20,7 +20,8 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     """Upgrade schema: add html_content to email_logs."""
-    op.add_column('email_logs', sa.Column('html_content', sa.Text(), nullable=True))
+    # op.add_column('email_logs', sa.Column('html_content', sa.Text(), nullable=True))
+    pass
 
 
 def downgrade() -> None:

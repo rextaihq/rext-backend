@@ -7,11 +7,7 @@ Provides webhook event tracking and monitoring capabilities:
 - Retry failed webhooks
 - Get webhook statistics
 """
-<<<<<<< fix/task-378-customer-sort-by-allowlist
 from datetime import datetime, timezone, timedelta
-=======
-from datetime import datetime, timedelta, timezone
->>>>>>> merge_tasks
 from typing import Dict, List, Optional, Any
 from copy import deepcopy
 import re
@@ -257,13 +253,8 @@ class WebhookMonitoringService:
                     "retry_count": event.retry_count,
                     "created_at": event.created_at.isoformat() if event.created_at else None,
                     "updated_at": event.updated_at.isoformat() if event.updated_at else None,
-<<<<<<< fix/task-378-customer-sort-by-allowlist
                     "payload_summary": self._summarize_payload(event_payload),
                     "payload": self._redact_payload(event_payload) if include_payload else None
-=======
-                    # Redact PII from payload before including in response
-                    "payload": self._redact_payload_pii(event.payload) if event.payload else None
->>>>>>> merge_tasks
                 })
 
             logger.info(
@@ -545,13 +536,8 @@ class WebhookMonitoringService:
             if "attributes" in data:
                 attrs = data["attributes"]
                 summary["status"] = attrs.get("status")
-<<<<<<< fix/task-378-customer-sort-by-allowlist
-                summary["user_email_masked"] = self._mask_email(attrs.get("user_email"))
-                summary["customer_id"] = attrs.get("customer_id")
-=======
                 summary["user_email_masked"] = _mask_email(attrs.get("user_email"))
                 summary["has_customer_id"] = bool(attrs.get("customer_id"))
->>>>>>> merge_tasks
 
         # Include meta information
         if "meta" in payload:

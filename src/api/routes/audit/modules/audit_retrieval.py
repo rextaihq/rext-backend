@@ -62,11 +62,7 @@ async def list_audit_logs(
     query, count_query = await build_audit_query(
         db=db,
         user_id=user_id,
-<<<<<<< task-413
-        full_name=username,
-=======
         full_name=full_name,
->>>>>>> merge_tasks
         user_email=user_email,
         action=action,
         resource_type=resource_type,

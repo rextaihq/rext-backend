@@ -138,12 +138,6 @@ class ImageProcessingService:
                     return file
 
                 # Handle EXIF orientation (rotate based on EXIF data)
-                img = ImageOps.exif_transpose(img)
-
-        try:
-            with Image.open(file) as img:
-                # Handle EXIF orientation (rotate based on EXIF data)
-                # Handle EXIF orientation (rotate based on EXIF data)
                 # This applies the rotation physically, so the EXIF orientation tag
                 # is no longer needed. When saving below, EXIF data is NOT written
                 # to the output, effectively stripping all EXIF metadata including
@@ -228,11 +222,6 @@ class ImageProcessingService:
                     )
                     # Continue with normal thumbnail logic (first frame only is acceptable for thumbnails)
 
-                # Handle EXIF orientation
-                img = ImageOps.exif_transpose(img)
-
-        try:
-            with Image.open(file) as img:
                 # Handle EXIF orientation — applied physically, then EXIF is
                 # stripped from thumbnail output (Pillow doesn't write EXIF by
                 # default when saving without exif= parameter).
@@ -413,7 +402,8 @@ class ImageProcessingService:
         """
         quality = quality or self.quality
 
-        with Image.open(file) as img:
+        try:
+            with Image.open(file) as img:
                 # Validate WEBP support for target format
                 if target_format.upper() == 'WEBP' and not self.webp_supported:
                     raise ValueError(
@@ -421,11 +411,6 @@ class ImageProcessingService:
                         "Install libwebp and reinstall Pillow."
                     )
 
-                # Handle EXIF orientation
-                img = ImageOps.exif_transpose(img)
-
-        try:
-            with Image.open(file) as img:
                 # Handle EXIF orientation
                 img = ImageOps.exif_transpose(img)
 

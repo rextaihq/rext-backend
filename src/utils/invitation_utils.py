@@ -30,8 +30,6 @@ def is_invitation_expired(invitation: UserInvitations) -> bool:
     if expires_at.tzinfo is None:
         expires_at = expires_at.replace(tzinfo=timezone.utc)
 
-51
-
     return now > expires_at
 
 def generate_invitation_token(nbytes: int = 32) -> str:

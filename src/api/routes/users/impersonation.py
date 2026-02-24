@@ -76,17 +76,9 @@ async def start_impersonation(
         metadata={
             "admin_user_email": impersonation_context["impersonated_by_email"],
             "target_user_email": impersonation_context["target_email"],
-<<<<<<< fix/task-378-customer-sort-by-allowlist
-            "target_user_name": (
-                impersonation_context["target_display_name"]
-                or impersonation_context["target_full_name"]
-            ),
-            "session_id": session_id
-=======
             "target_user_name": impersonation_context["target_display_name"]
             or impersonation_context["target_full_name"],
             "session_id": session_id,
->>>>>>> merge_tasks
         },
     )
 
@@ -102,15 +94,8 @@ async def start_impersonation(
         "original_user_id": str(admin_user_id),
         "impersonated_user_id": impersonation_context["target_user_id"],
         "impersonated_user_email": impersonation_context["target_email"],
-<<<<<<< fix/task-378-customer-sort-by-allowlist
-        "impersonated_user_name": (
-            impersonation_context["target_display_name"]
-            or impersonation_context["target_full_name"]
-        ),
-=======
         "impersonated_user_name": impersonation_context["target_display_name"]
         or impersonation_context["target_full_name"],
->>>>>>> merge_tasks
         "roles": impersonation_context["roles"],
         "permissions": impersonation_context["permissions"],
         "access_token": access_token,

@@ -1,5 +1,6 @@
 """Error Log model for system monitoring."""
 
+from enum import Enum
 from datetime import datetime, timezone
 from uuid import uuid4
 

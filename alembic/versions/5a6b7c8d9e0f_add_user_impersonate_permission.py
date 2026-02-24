@@ -59,7 +59,7 @@ def upgrade() -> None:
             description="Allows impersonating other users for support and debugging",
             resource="user",
             action="impersonate",
-            created_at=datetime.now(timezone.utc)
+            created_at=datetime.now(timezone.utc).replace(tzinfo=None)
         )
         session.add(perm)
         session.flush()
@@ -81,7 +81,7 @@ def upgrade() -> None:
                 id=uuid.uuid4(),
                 role_id=super_admin_role.id,
                 permission_id=perm_id,
-                created_at=datetime.now(timezone.utc)
+                created_at=datetime.now(timezone.utc).replace(tzinfo=None)
             )
             session.add(role_perm)
 

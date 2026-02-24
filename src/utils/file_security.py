@@ -19,8 +19,10 @@ Usage:
 import io
 import logging
 import subprocess
+import os
+import shutil
 from dataclasses import dataclass
-from typing import Optional, Tuple
+from typing import Optional, Tuple,List
 from pathlib import Path
 
 import filetype
@@ -497,73 +499,74 @@ class FileSecurityValidator:
             return self._scan_unavailable_result(f"VirusTotal error: {e}", filename)
 
 
-    # Convenience function for quick validation
-    async def validate_file_upload(
-        db: AsyncSession,
-        settings: Settings,
-        file_bytes: bytes,
-        filename: str,
-        user_id: str,
-        workspace_id: Optional[str] = None,
-        subscription_tier: str = "free"
-    ) -> ValidationResult:
-        """
-        Convenience function for file upload validation.
+# Convenience function for quick validation
+async def validate_file_upload(
+    db: AsyncSession,
+    settings: Settings,
+    file_bytes: bytes,
+    filename: str,
+    user_id: str,
+    workspace_id: Optional[str] = None,
+    subscription_tier: str = "free"
+) -> ValidationResult:
+    """
+    Convenience function for file upload validation.
 
-        Args:
-            db: Database session
-            settings: Application settings
-            file_bytes: File content
-            filename: Original filename
-            user_id: User ID
-            workspace_id: Optional workspace ID
-            subscription_tier: Subscription tier
+    Args:
+        db: Database session
+        settings: Application settings
+        file_bytes: File content
+        filename: Original filename
+        user_id: User ID
+        workspace_id: Optional workspace ID
+        subscription_tier: Subscription tier
 
-        Returns:
-            ValidationResult
-        """
-        validator = FileSecurityValidator(db, settings)
-        return await validator.validate_upload(
-            file_bytes, filename, user_id, workspace_id, subscription_tier
-        )
+    Returns:
+        ValidationResult
+    """
+    validator = FileSecurityValidator(db, settings)
+    return await validator.validate_upload(
+        file_bytes, filename, user_id, workspace_id, subscription_tier
+    )
 
-    async def validate_upload(
-        db,
-        file_bytes: bytes,
-        filename: str,
-        user_id: str,
-        workspace_id: str,
-        subscription_tier: str,
-        allowed_categories: Optional[List[str]] = None,
-    ) -> ValidationResult:
-        """
-        Unified file upload validation entry point.
+async def validate_upload(
+    db,
+    file_bytes: bytes,
+    filename: str,
+    user_id: str,
+    workspace_id: str,
+    subscription_tier: str,
+    allowed_categories: Optional[List[str]] = None,
+) -> ValidationResult:
+    """
+    Unified file upload validation entry point.
 
-        Validates MIME type, file size, storage quota, and virus scanning
-        using the centralized security pipeline.
+    Validates MIME type, file size, storage quota, and virus scanning
+    using the centralized security pipeline.
 
-        Args:
-            db: Database session
-            file_bytes: Raw file bytes
-            filename: Original filename
-            user_id: User performing the upload
-            workspace_id: Target workspace
-            subscription_tier: User's subscription tier
-            allowed_categories: Optional list of allowed categories
-                (e.g., ["document", "spreadsheet"]) to restrict types.
-                If None, all configured types are allowed.
+    Args:
+        db: Database session
+        file_bytes: Raw file bytes
+        filename: Original filename
+        user_id: User performing the upload
+        workspace_id: Target workspace
+        subscription_tier: User's subscription tier
+        allowed_categories: Optional list of allowed categories
+            (e.g., ["document", "spreadsheet"]) to restrict types.
+            If None, all configured types are allowed.
 
-        Returns:
-            ValidationResult with validation outcome
-        """
-        settings = get_settings()
-        return await validate_file_upload(
-            db=db,
-            settings=settings,
-            file_bytes=file_bytes,
-            filename=filename,
-            user_id=user_id,
-            workspace_id=workspace_id,
-            subscription_tier=subscription_tier,
-        )
+    Returns:
+        ValidationResult with validation outcome
+    """
+    from src.api.config import get_settings
+    settings = get_settings()
+    return await validate_file_upload(
+        db=db,
+        settings=settings,
+        file_bytes=file_bytes,
+        filename=filename,
+        user_id=user_id,
+        workspace_id=workspace_id,
+        subscription_tier=subscription_tier,
+    )
 

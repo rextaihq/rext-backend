@@ -514,18 +514,9 @@ REGISTRATION_REQUESTS_PER_HOUR = 3
 REGISTRATION_WINDOW_MINUTES = 60
 
 
-def registration_rate_limit() -> "EndpointRateLimiter":
-    """
-    Rate limiter for registration endpoint.
-
 def email_verification_rate_limit() -> EndpointRateLimiter:
     """
-    return EndpointRateLimiter(
-        requests=REGISTRATION_REQUESTS_PER_HOUR,
-        window_minutes=REGISTRATION_WINDOW_MINUTES,
-        description="registration",
-    )
-
+    Rate limiter for email verification attempts.
 
     Limit: 5 attempts per 10 minutes per user.
     """

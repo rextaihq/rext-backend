@@ -6,6 +6,7 @@ for super admin operations.
 """
 
 from fastapi import Depends, HTTPException, status
+from sqlalchemy.ext.asyncio import AsyncSession
 from src.api.database.async_database import get_async_db
 from src.api.security.dependencies import get_current_user
 

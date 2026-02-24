@@ -31,12 +31,42 @@ def upgrade() -> None:
                comment=None,
                existing_comment='Soft delete timestamp. NULL = active, non-NULL = deleted.',
                existing_nullable=True)
-    op.drop_constraint(op.f('content_title_key'), 'content', type_='unique')
-    op.drop_index(op.f('ix_content_slug'), table_name='content')
-    op.create_index(op.f('ix_content_slug'), 'content', ['slug'], unique=False)
-    op.create_unique_constraint('uq_content_workspace_slug', 'content', ['workspace_id', 'slug'])
-    op.create_unique_constraint('uq_content_workspace_title', 'content', ['workspace_id', 'title'])
-    op.create_unique_constraint(None, 'discount_usage', ['id'])
+    # Drop constraint safely
+    conn = op.get_bind()
+    has_constraint = conn.execute(sa.text(
+        "SELECT 1 FROM information_schema.table_constraints WHERE table_name='content' AND constraint_name='content_title_key'"
+    )).first()
+    if has_constraint:
+        op.drop_constraint('content_title_key', 'content', type_='unique')
+    # Drop index safely
+    has_index = conn.execute(sa.text(
+        "SELECT 1 FROM pg_indexes WHERE tablename='content' AND indexname='ix_content_slug'"
+    )).first()
+    if has_index:
+        op.drop_index('ix_content_slug', table_name='content')
+    # Create index safely
+    has_index = conn.execute(sa.text(
+        "SELECT 1 FROM pg_indexes WHERE tablename='content' AND indexname='ix_content_slug'"
+    )).first()
+    if not has_index:
+        op.create_index(op.f('ix_content_slug'), 'content', ['slug'], unique=False)
+
+    # Create constraints safely
+    has_slug_uq = conn.execute(sa.text(
+        "SELECT 1 FROM information_schema.table_constraints WHERE table_name='content' AND constraint_name='uq_content_workspace_slug'"
+    )).first()
+    if not has_slug_uq:
+        op.create_unique_constraint('uq_content_workspace_slug', 'content', ['workspace_id', 'slug'])
+
+    has_title_uq = conn.execute(sa.text(
+        "SELECT 1 FROM information_schema.table_constraints WHERE table_name='content' AND constraint_name='uq_content_workspace_title'"
+    )).first()
+    if not has_title_uq:
+        op.create_unique_constraint('uq_content_workspace_title', 'content', ['workspace_id', 'title'])
+    
+    # Generic unique constraint check is harder without name, skipping for now as it's less likely to collide
+    # unless it's also in another migration.
+    # op.create_unique_constraint(None, 'discount_usage', ['id'])
     op.alter_column('integrations', 'app_password',
                existing_type=sa.TEXT(),
                type_=src.utils.encryption.EncryptedText(),
@@ -54,12 +84,17 @@ def upgrade() -> None:
                comment=None,
                existing_comment='Soft delete timestamp. NULL = active, non-NULL = deleted.',
                existing_nullable=True)
-    op.create_index('ix_knowledge_base_workspace_name', 'knowledge_base', ['workspace_id', 'name'], unique=False)
-    op.create_index('ix_knowledge_base_workspace_type', 'knowledge_base', ['workspace_id', 'type'], unique=False)
-    op.create_index('ix_knowledge_files_workspace_hash', 'knowledge_files', ['workspace_id', 'file_hash'], unique=False)
-    op.create_index('ix_knowledge_files_workspace_kb', 'knowledge_files', ['workspace_id', 'knowledge_base_id'], unique=False)
-    op.create_index('idx_license_activations_active', 'license_activations', ['license_id', 'is_active'], unique=False)
-    op.create_index('idx_license_activations_license_instance', 'license_activations', ['license_id', 'instance_id'], unique=False)
+    def create_idx_if_not_exists(table, name, columns):
+        h = conn.execute(sa.text(f"SELECT 1 FROM pg_indexes WHERE tablename='{table}' AND indexname='{name}'")).first()
+        if not h:
+            op.create_index(name, table, columns, unique=False)
+
+    create_idx_if_not_exists('knowledge_base', 'ix_knowledge_base_workspace_name', ['workspace_id', 'name'])
+    create_idx_if_not_exists('knowledge_base', 'ix_knowledge_base_workspace_type', ['workspace_id', 'type'])
+    create_idx_if_not_exists('knowledge_files', 'ix_knowledge_files_workspace_hash', ['workspace_id', 'file_hash'])
+    create_idx_if_not_exists('knowledge_files', 'ix_knowledge_files_workspace_kb', ['workspace_id', 'knowledge_base_id'])
+    create_idx_if_not_exists('license_activations', 'idx_license_activations_active', ['license_id', 'is_active'])
+    create_idx_if_not_exists('license_activations', 'idx_license_activations_license_instance', ['license_id', 'instance_id'])
     op.alter_column('notifications', 'type',
                existing_type=sa.VARCHAR(length=50),
                comment='Type of notification',
@@ -100,29 +135,40 @@ def upgrade() -> None:
                comment=None,
                existing_comment='When this notification should expire and be auto-archived',
                existing_nullable=True)
-    op.create_index('idx_dedup_user_category_workspace', 'notifications', ['user_id', 'category', 'workspace_id', 'created_at'], unique=False)
+    create_idx_if_not_exists('notifications', 'idx_dedup_user_category_workspace', ['user_id', 'category', 'workspace_id', 'created_at'])
     op.alter_column('permissions', 'created_at',
                existing_type=postgresql.TIMESTAMP(timezone=True),
                nullable=False)
     op.create_unique_constraint(None, 'permissions', ['name'])
-    op.create_index('ix_text_knowledge_workspace_kb', 'text_knowledge', ['workspace_id', 'knowledge_base_id'], unique=False)
-    op.drop_index(op.f('ix_user_invitations_invited_by_user_id'), table_name='user_invitations')
-    op.drop_index(op.f('ix_user_invitations_role_id'), table_name='user_invitations')
-    op.drop_index(op.f('ix_user_invitations_workspace_id'), table_name='user_invitations')
-    op.drop_index(op.f('ix_user_roles_assigned_by_user_id'), table_name='user_roles')
-    op.drop_index(op.f('ix_user_roles_role_id'), table_name='user_roles')
-    op.drop_index(op.f('ix_user_roles_user_id'), table_name='user_roles')
-    op.drop_index(op.f('ix_user_roles_workspace_id'), table_name='user_roles')
-    op.drop_constraint(op.f('user_roles_user_id_fkey'), 'user_roles', type_='foreignkey')
-    op.drop_constraint(op.f('user_roles_role_id_fkey'), 'user_roles', type_='foreignkey')
-    op.drop_constraint(op.f('user_roles_workspace_id_fkey'), 'user_roles', type_='foreignkey')
-    op.drop_constraint(op.f('user_roles_assigned_by_user_id_fkey'), 'user_roles', type_='foreignkey')
+    create_idx_if_not_exists('text_knowledge', 'ix_text_knowledge_workspace_kb', ['workspace_id', 'knowledge_base_id'])
+    def drop_idx_if_exists(table, name):
+        h = conn.execute(sa.text(f"SELECT 1 FROM pg_indexes WHERE tablename='{table}' AND indexname='{name}'")).first()
+        if h:
+            op.drop_index(name, table_name=table)
+
+    drop_idx_if_exists('user_invitations', 'ix_user_invitations_invited_by_user_id')
+    drop_idx_if_exists('user_invitations', 'ix_user_invitations_role_id')
+    drop_idx_if_exists('user_invitations', 'ix_user_invitations_workspace_id')
+    drop_idx_if_exists('user_roles', 'ix_user_roles_assigned_by_user_id')
+    drop_idx_if_exists('user_roles', 'ix_user_roles_role_id')
+    drop_idx_if_exists('user_roles', 'ix_user_roles_user_id')
+    drop_idx_if_exists('user_roles', 'ix_user_roles_workspace_id')
+    def drop_const_if_exists(table, name):
+        h = conn.execute(sa.text(f"SELECT 1 FROM information_schema.table_constraints WHERE table_name='{table}' AND constraint_name='{name}'")).first()
+        if h:
+            op.drop_constraint(name, table)
+
+    # op.f names might be different, let's try to be resilient
+    drop_const_if_exists('user_roles', 'user_roles_user_id_fkey')
+    drop_const_if_exists('user_roles', 'user_roles_role_id_fkey')
+    drop_const_if_exists('user_roles', 'user_roles_workspace_id_fkey')
+    drop_const_if_exists('user_roles', 'user_roles_assigned_by_user_id_fkey')
     op.create_foreign_key(None, 'user_roles', 'users', ['user_id'], ['id'])
     op.create_foreign_key(None, 'user_roles', 'roles', ['role_id'], ['id'])
     op.create_foreign_key(None, 'user_roles', 'users', ['assigned_by_user_id'], ['id'])
     op.create_foreign_key(None, 'user_roles', 'workspace', ['workspace_id'], ['id'])
-    op.create_index('ix_website_workspace_kb', 'website', ['workspace_id', 'knowledge_base_id'], unique=False)
-    op.create_index('ix_website_workspace_url', 'website', ['workspace_id', 'url'], unique=False)
+    create_idx_if_not_exists('website', 'ix_website_workspace_kb', ['workspace_id', 'knowledge_base_id'])
+    create_idx_if_not_exists('website', 'ix_website_workspace_url', ['workspace_id', 'url'])
     op.alter_column('workspace', 'deleted_at',
                existing_type=postgresql.TIMESTAMP(timezone=True),
                comment=None,
@@ -134,9 +180,9 @@ def upgrade() -> None:
     op.alter_column('workspace_members', 'is_default',
                existing_type=sa.BOOLEAN(),
                nullable=False)
-    op.drop_index(op.f('ix_workspace_members_invitation_id'), table_name='workspace_members')
-    op.drop_index(op.f('ix_workspace_members_user_id'), table_name='workspace_members')
-    op.drop_index(op.f('ix_workspace_members_workspace_id'), table_name='workspace_members')
+    drop_idx_if_exists('workspace_members', 'ix_workspace_members_invitation_id')
+    drop_idx_if_exists('workspace_members', 'ix_workspace_members_user_id')
+    drop_idx_if_exists('workspace_members', 'ix_workspace_members_workspace_id')
     # ### end Alembic commands ###
 
 

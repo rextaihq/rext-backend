@@ -17,11 +17,11 @@ from src.api.security.token_utils import decode_and_verify_token, is_token_black
 from src.utils.logger import logger
 
 # Lazy import to avoid circular dependency
-if TYPE_CHECKING:
-    from src.api.middleware.exceptions import (
-        RextAuthenticationException,
-        TokenExpiredException,
-    )
+# if TYPE_CHECKING:
+from src.api.middleware.exceptions import (
+    RextAuthenticationException,
+    TokenExpiredException,
+)
 
 
 async def get_current_user(

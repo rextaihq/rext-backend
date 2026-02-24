@@ -390,17 +390,13 @@ class MediaService:
                         workspace_id,
                         user_id
                     )
-<<<<<<< task-413
-                    thumbnail_url = await self.storage.get_file_url(thumbnail_path)
-=======
                     if is_public:
                         thumbnail_url = await self.storage.get_public_file_url(thumbnail_path)
                     else:
                         thumbnail_url = await self.storage.get_file_url(
                             thumbnail_path,
-                        expires_in=storage_settings.thumbnail_url_expiration
+                            expires_in=storage_settings.thumbnail_url_expiration
                         )
->>>>>>> merge_tasks
 
                 except Exception as e:
                     logger.error(f"Failed to create thumbnail: {e}")

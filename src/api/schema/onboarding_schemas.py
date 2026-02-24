@@ -22,14 +22,14 @@ class OnboardingStepUpdate(BaseModel):
 
 ONBOARDING_STEPS = [
     {
-        "id": OnboardingStep.STRATEGY.value,
+        "id": OnboardingStep.CONTENT_STRATEGY.value,
         "name": "content_strategy",
         "title": "Welcome to Rext",
         "description": "Choose your content strategy foundation",
         "required": True,
     },
     {
-        "id": OnboardingStep.MARKETING.value,
+        "id": OnboardingStep.MARKETING_QUESTIONS.value,
         "name": "marketing_questions",
         "title": "Tell Us About Yourself",
         "description": "Help us personalize your experience",
@@ -85,22 +85,3 @@ class OnboardingReset(BaseModel):
     """Schema for resetting onboarding."""
 
     confirm: bool = Field(..., description="Confirmation to reset onboarding")
-
-
-# Onboarding step definitions (for frontend reference)
-ONBOARDING_STEPS = [
-    {
-        "id": OnboardingStep.CONTENT_STRATEGY.value,
-        "name": "marketing_questions",
-        "title": "Tell Us About Yourself",
-        "description": "Help us personalize your experience",
-        "required": True,
-    },
-    {
-        "id": OnboardingStep.MARKETING_QUESTIONS.value,
-        "name": "complete",
-        "title": "You're All Set!",
-        "description": "Start creating amazing content",
-        "required": True,
-    },
-]
