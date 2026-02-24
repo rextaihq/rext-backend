@@ -7,12 +7,14 @@ including listing, filtering, viewing details, performing actions, and adding no
 All endpoints require admin permissions.
 """
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Literal, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Request
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from src.api.middleware.exceptions import RextValidationException
 
 from src.api.database.async_database import get_async_db
 from src.api.security.dependencies import get_current_user
@@ -44,6 +46,40 @@ class CustomerActionRequest(BaseModel):
     reason: str = Field(..., min_length=1, max_length=500)
     metadata: Dict[str, Any] = Field(default_factory=dict)
 
+    @model_validator(mode="after")
+    def validate_action_metadata(self) -> "CustomerActionRequest":
+        """Validate metadata based on action."""
+        if self.action == "cancel_subscription":
+            # Ensure cancel_immediately is bool if provided, default to True
+            cancel_imm = self.metadata.get("cancel_immediately")
+            if cancel_imm is not None and not isinstance(cancel_imm, bool):
+                raise RextValidationException(
+                    message="cancel_immediately must be a boolean",
+                    field_errors={"metadata.cancel_immediately": ["Must be a boolean"]}
+                )
+        
+        elif self.action == "extend_trial":
+            # Ensure days is integer between 1 and 90
+            days = self.metadata.get("days")
+            if days is None:
+                # Default to 7 if not provided (matching service logic but making it explicit)
+                self.metadata["days"] = 7
+                days = 7
+            
+            if not isinstance(days, int):
+                raise RextValidationException(
+                    message="Trial extension days must be an integer",
+                    field_errors={"metadata.days": ["Must be an integer"]}
+                )
+            
+            if days < 1 or days > 90:
+                raise RextValidationException(
+                    message="Trial extension must be between 1 and 90 days",
+                    field_errors={"metadata.days": ["Must be between 1 and 90"]}
+                )
+                
+        return self
+
 
 # ============================================================================
 # ENDPOINTS
@@ -59,7 +95,10 @@ async def list_customers(
     search: Optional[str] = Query(None, description="Search by name or email"),
     status: Optional[str] = Query(None, description="Filter by subscription status"),
     plan_id: Optional[str] = Query(None, description="Filter by plan ID"),
-    sort_by: str = Query("created_at", description="Sort field"),
+    sort_by: Literal["created_at", "email", "display_name", "last_login_at"] = Query(
+        "created_at",
+        description="Sort field (created_at, email, display_name, last_login_at)"
+    ),
     sort_order: str = Query("desc", pattern="^(asc|desc)$", description="Sort order"),
     db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user),
@@ -112,39 +151,13 @@ async def list_customers(
 @db_transaction_handler("get customer detail", auto_commit=False)
 async def get_customer_detail(
     request: Request,
-    user_id: str,
+    user_id: UUID,
     db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user),
-    _: bool = Depends(is_admin)
+    _: bool = Depends(is_admin),
 ):
-    """
-    Get detailed customer information.
-
-    **Security: Requires admin or super_admin role**
-
-    This endpoint exposes comprehensive customer data including billing information,
-    subscription details, usage metrics, and audit logs. Access is restricted to
-    platform administrators only.
-
-    Path Parameters:
-    - user_id: User ID
-
-    Returns:
-    - User details
-    - Subscription details
-    - Workspaces list
-    - Usage metrics
-    - Activity summary
-    - Recent audit events
-    - Customer notes
-
-    Raises:
-        HTTPException: 401 if not authenticated, 403 if not admin
-    """
-    # Use service
     service = CustomerAdminService(db)
-    customer_data = await service.get_customer_detail(UUID(user_id))
-
+    customer_data = await service.get_customer_detail(user_id)
     return {
         "data": customer_data,
         "message": "Customer details retrieved successfully"
@@ -155,11 +168,11 @@ async def get_customer_detail(
 @db_transaction_handler("perform customer action", auto_commit=True)
 async def perform_customer_action(
     request: Request,
-    user_id: str,
+    user_id: UUID,
     action_request: CustomerActionRequest,
     db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user),
-    _: bool = Depends(is_admin)
+    _: bool = Depends(is_admin),
 ):
     """
     Perform admin actions on customer account.
@@ -177,9 +190,10 @@ async def perform_customer_action(
     - action: deactivate, activate, reset_usage, extend_trial, cancel_subscription
     - reason: Reason for the action (required for audit trail)
     - metadata: Additional metadata
+        - cancel_immediately (bool, optional): For cancel_subscription, default True.
 
     Returns:
-    - Action result
+    - Action result with status and state details
     - Updated user/subscription state
 
     Raises:
@@ -190,11 +204,11 @@ async def perform_customer_action(
     # Use service
     service = CustomerAdminService(db)
     result = await service.perform_customer_action(
-        user_id=UUID(user_id),
+        user_id=user_id,
         action=action_request.action,
         reason=action_request.reason,
         metadata=action_request.metadata,
-        admin_user_id=admin_user_id
+        admin_user_id=admin_user_id,
     )
 
     return {
@@ -207,11 +221,11 @@ async def perform_customer_action(
 @db_transaction_handler("add customer note", auto_commit=True)
 async def add_customer_note(
     request: Request,
-    user_id: str,
+    user_id: UUID,
     note_request: CustomerNoteRequest,
     db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user),
-    _: bool = Depends(is_admin)
+    _: bool = Depends(is_admin),
 ):
     """
     Add internal note to customer account.

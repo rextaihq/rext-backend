@@ -20,6 +20,30 @@ class OnboardingStepUpdate(BaseModel):
     action: str = Field(..., description="Action: complete, skip, or set_current")
 
 
+ONBOARDING_STEPS = [
+    {
+        "id": OnboardingStep.STRATEGY.value,
+        "name": "content_strategy",
+        "title": "Welcome to Rext",
+        "description": "Choose your content strategy foundation",
+        "required": True,
+    },
+    {
+        "id": OnboardingStep.MARKETING.value,
+        "name": "marketing_questions",
+        "title": "Tell Us About Yourself",
+        "description": "Help us personalize your experience",
+        "required": True,
+    },
+    {
+        "id": OnboardingStep.COMPLETE.value,
+        "name": "complete",
+        "title": "You're All Set!",
+        "description": "Start creating amazing content",
+        "required": True,
+    },
+]
+
 class OnboardingMarketingData(BaseModel):
     """Schema for marketing data collected during onboarding."""
 

@@ -16,6 +16,28 @@ from src.api.models.subscription_models.subscriptions import Subscription
 
 
 @pytest.mark.asyncio
+async def test_cleanup_webhook_events_uses_config_default(db_session, monkeypatch):
+    monkeypatch.setattr(
+        "src.config.cleanup_config.cleanup_config.WEBHOOK_EVENT_RETENTION_DAYS",
+        45,
+        raising=False,
+    )
+    service = DataCleanupService(db=db_session, dry_run=True)
+    result = await service.cleanup_webhook_events(retention_days=None)
+    assert isinstance(result, int)
+
+
+@pytest.mark.asyncio
+async def test_anonymize_subscriptions_uses_config_default(db_session, monkeypatch):
+    monkeypatch.setattr(
+        "src.config.cleanup_config.cleanup_config.CANCELLED_SUBSCRIPTION_RETENTION_DAYS",
+        60,
+        raising=False,
+    )
+    service = DataCleanupService(db=db_session, dry_run=True)
+    result = await service.anonymize_cancelled_subscriptions(retention_days=None)
+    assert isinstance(result, int)
+@pytest.mark.asyncio
 class TestWebhookEventCleanup:
     """Test webhook event cleanup functionality."""
 

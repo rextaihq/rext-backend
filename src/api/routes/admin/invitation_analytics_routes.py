@@ -12,14 +12,15 @@ from sqlalchemy import and_, case, distinct, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.database.async_database import get_async_db
-from src.api.middleware.exceptions import ResourceNotFoundException
+from src.api.middleware.exceptions import ResourceNotFoundException, RextAuthorizationException
 from src.api.models.user_models.invitations import UserInvitations
 from src.api.models.user_models.roles import Role
 from src.api.models.user_models.users import Users
 from src.api.models.workspace_models.workspace_model import WorkspaceModel
-from src.api.security.dependencies import get_current_user
-from src.utils.auth_utils import verify_current_user
+from src.api.security.dependencies import get_current_active_user, get_current_user
 from src.utils.logger import logger
+from src.utils.logger import logger
+from src.utils.rbac_utils import check_all_permissions
 from src.utils.response_utils import success
 from src.utils.route_decorators import db_transaction_handler, require_permissions
 
@@ -28,7 +29,7 @@ router = APIRouter(prefix="/invitations", tags=["admin-analytics"])
 
 @router.get("/analytics", summary="Get invitation analytics")
 @db_transaction_handler("get invitation analytics", auto_commit=False)
-@require_permissions("audit.read")
+@require_permissions("audit.read", workspace_scoped=False)
 async def get_invitation_analytics(
     request: Request,
     workspace_id: Optional[str] = Query(
@@ -37,6 +38,7 @@ async def get_invitation_analytics(
     days: int = Query(30, description="Number of days to analyze", ge=1, le=365),
     db: AsyncSession = Depends(get_async_db),
     user: dict = Depends(get_current_user),
+    current_db_user: Users = Depends(get_current_active_user),
 ):
     """
     Get comprehensive invitation analytics.
@@ -54,12 +56,27 @@ async def get_invitation_analytics(
         days: Number of days to analyze (default 30)
         db: Database session
         user: Current user
+        current_db_user: Current authenticated user row
 
     Returns:
         Comprehensive invitation analytics
     """
-    user_uuid = UUID(str(user.get("identity")))
-    await verify_current_user(db, str(user_uuid))
+    user_uuid = current_db_user.id
+
+    # Add explicit workspace authorization guard if workspace_id is provided
+    if workspace_id:
+        workspace_uuid = UUID(workspace_id)
+        has_workspace_audit_access = await check_all_permissions(
+            db,
+            user_uuid,
+            ["audit.read"],
+            workspace_uuid,
+        )
+        if not has_workspace_audit_access:
+            raise RextAuthorizationException(
+                message="Missing required permission: audit.read",
+                context={"workspace_id": str(workspace_uuid), "required_permissions": ["audit.read"]},
+            )
 
     # Calculate date range
     end_date = datetime.now(timezone.utc)
@@ -278,7 +295,7 @@ async def get_invitation_analytics(
     logger.info(
         f"Invitation analytics generated: {total_invitations} invitations in {days} days",
         extra={
-            "user_id": str(user_uuid),
+            "user_id": str(current_db_user.id),
             "workspace_id": workspace_id,
             "days": days,
             "total_invitations": total_invitations,

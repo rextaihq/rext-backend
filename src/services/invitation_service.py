@@ -22,11 +22,12 @@ from typing import Optional, List, Dict, Any
 from uuid import UUID
 from datetime import datetime, timezone, timedelta,timezone
 import secrets
-import hashlib
 
 from sqlalchemy import select, and_, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.utils.invitation_utils import validate_expiry_days
+from src.utils.invitation_utils import normalize_email
 from src.api.models.user_models.invitations import UserInvitations
 from src.api.models.workspace_models.workspace_model import WorkspaceModel
 from src.api.models.user_models.users import Users
@@ -58,16 +59,14 @@ class InvitationService:
         Generate a secure invitation token.
 
         Args:
-            email: Invitee email
-            workspace_id: Workspace UUID
+            email: Invitee email (unused — kept for API compatibility)
+            workspace_id: Workspace UUID (unused — kept for API compatibility)
 
         Returns:
             Secure token string
         """
-        random_part = secrets.token_urlsafe(32)
-        combined = f"{email}:{workspace_id}:{random_part}:{datetime.now(timezone.utc).timestamp()}"
-        token_hash = hashlib.sha256(combined.encode()).hexdigest()
-        return token_hash
+        from src.utils.invitation_utils import generate_invitation_token
+        return generate_invitation_token(nbytes=32)
 
     async def create_invitation(
         self,
@@ -105,14 +104,10 @@ class InvitationService:
             RextValidationException: If expiry_days invalid
         """
         # Validate expiry_days
-        if not 1 <= expiry_days <= 30:
-            raise RextValidationException(
-                message="Expiry days must be between 1 and 30",
-                field_errors={"expiry_days": ["Must be between 1 and 30 days"]}
-            )
+        validate_expiry_days(expiry_days)
 
         # Normalize email
-        email = email.lower().strip()
+        email = normalize_email(email)
 
         # Verify workspace exists
         result = await self.db.execute(
@@ -152,8 +147,7 @@ class InvitationService:
             select(UserInvitations).where(
                 and_(
                     UserInvitations.email == email,
-                    UserInvitations.workspace_id == workspace_id,
-                    # UserInvitations.status == "pending"
+                    UserInvitations.workspace_id == workspace_id
                 )
             )
         )
@@ -294,7 +288,7 @@ class InvitationService:
             List of UserInvitations objects
         """
         # Normalize email for case-insensitive comparison
-        email = email.lower().strip()
+        email = normalize_email(email)
 
         query = select(UserInvitations).where(
             UserInvitations.email == email
@@ -395,7 +389,7 @@ class InvitationService:
                 resource_id=str(user_id)
             )
 
-        if user.email.lower() != invitation.email.lower():
+        if normalize_email(user.email) != normalize_email(invitation.email):
             raise BusinessRuleViolationException(
                 message="User email does not match invitation email",
                 rule_name="email_must_match"
@@ -595,7 +589,7 @@ class InvitationService:
 
         return invitation
 
-    # remvove invitation if exists
+    # Remove invitation if it exists
     async def remove_invitation_if_exists(
         self,
         workspace_id: UUID,
@@ -610,7 +604,7 @@ class InvitationService:
         Returns:
             None
         """
-        email = email.lower().strip()
+        email = normalize_email(email)
         result = await self.db.execute(
             select(UserInvitations).where(
                 and_(

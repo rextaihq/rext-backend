@@ -89,8 +89,8 @@ def upgrade() -> None:
                 description="Review and approve content created by editors. Cannot create or edit content themselves.",
                 hierarchy_level=20,  # Between editor (30) and viewer (10)
                 is_system_role=True,
-                created_at=datetime.now(timezone.utc),
-                updated_at=datetime.now(timezone.utc)
+                created_at=datetime.now(timezone.utc).replace(tzinfo=None),
+                updated_at=datetime.now(timezone.utc).replace(tzinfo=None)
             )
             session.add(reviewer_role)
             session.flush()
@@ -147,7 +147,7 @@ def upgrade() -> None:
                 id=uuid.uuid4(),
                 role_id=reviewer_role.id,
                 permission_id=permission.id,
-                created_at=datetime.now(timezone.utc)
+                created_at=datetime.now(timezone.utc).replace(tzinfo=None)
             )
             session.add(role_perm)
             assigned_count += 1

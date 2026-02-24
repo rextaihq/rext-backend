@@ -168,8 +168,8 @@ The Rext Team''',
                 'template_type': template['template_type'],
                 'subject': template['subject'],
                 'body': template['body'],
-                'created_at': datetime.now(timezone.utc),
-                'updated_at': datetime.now(timezone.utc),
+                'created_at': datetime.now(timezone.utc).replace(tzinfo=None),
+                'updated_at': datetime.now(timezone.utc).replace(tzinfo=None),
             }
         )
 

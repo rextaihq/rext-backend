@@ -35,6 +35,7 @@ from src.api.schema.response_schemas import (
 from src.api.middleware.exceptions import RextAPIException
 from src.api.middleware.request_tracker import get_request_id, get_processing_time_ms
 from src.utils.logger import logger
+from src.api.lib.log_policy import get_severity_level, log_with_level
 
 # Sentry integration (optional)
 try:
@@ -208,6 +209,7 @@ class ErrorHandlerMiddleware(BaseHTTPMiddleware):
         )
 
     def _handle_http_exception(
+        self,
         exception: HTTPException,
         request_id: str,
         processing_time_ms: Optional[int] = None
@@ -497,14 +499,18 @@ def setup_exception_handlers(app: FastAPI) -> None:
             context=exc.context
         )
 
-        logger.error(
+        log_level = get_severity_level(exc.severity.value)
+        log_with_level(
+            logger,
+            log_level,
             f"Rext API Exception: {exc.message}",
             extra={
                 "request_id": request_id,
                 "error_code": exc.error_code.value,
                 "status_code": exc.status_code,
-                "exception_type": type(exc).__name__
-            }
+                "severity": exc.severity.value,
+                "exception_type": type(exc).__name__,
+            },
         )
 
         return JSONResponse(
