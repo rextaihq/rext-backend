@@ -4,8 +4,6 @@ from functools import lru_cache
 from langchain.chat_models import init_chat_model
 from langchain_community.callbacks.manager import get_openai_callback
 from src.states.schemas import RewriterTitle, QueryDecomposer
-from sentence_transformers import SentenceTransformer
-from src.states.schemas import BasicTopicGenerationList
 from langsmith import trace, traceable, Client
 from src.api.config import get_settings
 
@@ -66,12 +64,10 @@ def load_content_model():
 
 def topic_generation_model():
     """
-    Initializes a chat model with structured output for BasicTopicGenerationList.
-    Cached as singleton — reuses the same instance across all calls.
+    Initializes a chat model for topic generation with appropriate token limits.
 
     Returns:
-        BaseStructuredChatModel: A chat model that returns outputs conforming
-        to the `BasicTopicGenerationList` schema.
+        BaseChatModel: A chat model configured for topic generation.
     """
     model = init_chat_model(
         "gpt-4o-mini",
@@ -79,5 +75,5 @@ def topic_generation_model():
         api_key=settings.OPENAI_API_KEY,
         max_tokens=TOPIC_GENERATION_MAX_TOKENS,
     )
-    return model.with_structured_output(BasicTopicGenerationList)
+    return model
 
