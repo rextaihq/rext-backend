@@ -228,6 +228,20 @@ class AdminInvitationService:
         )
 
         self.db.add(invitation)
+        
+        try:
+            # Flush to catch integrity constraints early (e.g. race conditions)
+            await self.db.flush()
+        except IntegrityError as exc:
+            # Check if this is a uniqueness violation for the pending invitation index
+            if "uq_admin_invitation_email_pending" in str(exc.orig):
+                raise DuplicateResourceException(
+                    resource_type="AdminInvitation",
+                    identifier=f"email={email}",
+                    message=f"Pending admin invitation already exists for {email}"
+                ) from exc
+            raise
+
         logger.info(
             f"Admin invitation created: {email} for role {admin_role} "
             f"by admin {invited_by_admin_id}"
