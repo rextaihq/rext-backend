@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime, timezone
 from sqlalchemy import (
-    Column, String, Boolean, DateTime, ForeignKey, Text, Index
+    Column, String, Boolean, DateTime, ForeignKey, Text, Index, text
 )
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import relationship
@@ -131,10 +131,40 @@ class Notification(Base, SerializableMixin, SoftDeleteMixin):
     # INDEXES
     # ==============================
     __table_args__ = (
-        Index('idx_user_read_deleted', 'user_id', 'is_read', 'deleted_at'),
-        Index('idx_user_created', 'user_id', 'created_at'),
-        Index('idx_user_type_created', 'user_id', 'type', 'created_at'),
-        Index('idx_workspace_created', 'workspace_id', 'created_at'),
+        # Primary listing query: user's active (non-deleted, non-archived) notifications
+        # Covers: get_notifications base query, clear_notifications, get_notification_by_id
+        Index(
+            'idx_notif_user_active_created',
+            'user_id', 'created_at',
+            postgresql_where=text("is_deleted = false AND is_archived = false"),
+        ),
+        # Unread count + unread filter (most frequent — badge counter polling)
+        # Covers: get_unread_count, get_notifications(unread_only=True), mark_notifications_as_read
+        Index(
+            'idx_notif_user_unread',
+            'user_id',
+            postgresql_where=text("is_deleted = false AND is_archived = false AND is_read = false"),
+        ),
+        # Type filter: get_notifications with ?type= parameter
+        Index(
+            'idx_notif_user_type_created',
+            'user_id', 'type', 'created_at',
+            postgresql_where=text("is_deleted = false AND is_archived = false"),
+        ),
+        # Category filter: get_notifications with ?category= parameter
+        Index(
+            'idx_notif_user_category_created',
+            'user_id', 'category', 'created_at',
+            postgresql_where=text("is_deleted = false AND is_archived = false"),
+        ),
+        # Workspace filter: get_notifications with ?workspace_id= parameter
+        Index(
+            'idx_notif_user_workspace_created',
+            'user_id', 'workspace_id', 'created_at',
+            postgresql_where=text("is_deleted = false AND is_archived = false"),
+        ),
+        # Mark-as-read queries filter on is_read; keep a non-partial index for that path
+        Index('idx_user_read_deleted', 'user_id', 'is_read', 'is_deleted'),
     )
 
     # ✅ FIXED to_dict (TASK-054 compliant)

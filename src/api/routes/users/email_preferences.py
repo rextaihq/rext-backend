@@ -129,11 +129,23 @@ async def update_preferences(
     pref_service = NotificationPreferencesService(db)
     prefs = await pref_service.get_or_create(user_id)
 
+    # Fields stored as dedicated DB columns (not in JSONB)
+    _COLUMN_FIELDS = {
+        "email_notifications",
+        "in_app_notifications",
+        "digest_enabled",
+        "digest_frequency",
+        "marketing_updates",
+    }
+
     # Apply updates
     for field, value in update_data.items():
         mapped_field = field_mapping.get(field, field)
-        if hasattr(prefs, mapped_field):
+        if mapped_field in _COLUMN_FIELDS:
             setattr(prefs, mapped_field, value)
+        else:
+            # JSONB category preference — use set_preference()
+            prefs.set_preference(mapped_field, value)
 
     await db.flush()
 
@@ -168,7 +180,7 @@ async def unsubscribe(
     if not unsubscribe_data.email_types:
         prefs.email_notifications = False
     else:
-        # Map email types to NotificationPreferences columns
+        # Map email types to NotificationPreferences preference keys
         type_mapping = {
             "workspace_invitation": "ws_invite_received",
             "invitation_accepted": "ws_invite_accepted",
@@ -180,7 +192,7 @@ async def unsubscribe(
             "content_published": "gen_published",
             "payment_succeeded": "billing_payment_success",
             "payment_failed": "billing_payment_failed",
-            "subscription_cancelled": "billing_subscription_canceled",
+            "subscription_cancelled": "billing_subscription_cancelled",
             "subscription_expiring_soon": "billing_subscription_expiring",
             "trial_ending_soon": "billing_trial_ending",
             "usage_limit_warning": "billing_usage_limit_warning",
@@ -190,12 +202,16 @@ async def unsubscribe(
             "marketing": "marketing_updates",
         }
 
+        _COLUMN_FIELDS = {"marketing_updates"}
+
         # Disable specified email types
         for email_type in unsubscribe_data.email_types:
             if email_type in type_mapping:
                 field_name = type_mapping[email_type]
-                if hasattr(prefs, field_name):
+                if field_name in _COLUMN_FIELDS:
                     setattr(prefs, field_name, False)
+                else:
+                    prefs.set_preference(field_name, False)
 
     await db.flush()
 

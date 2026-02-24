@@ -364,27 +364,41 @@ async def update_notification_preferences(
     # Update preferences dynamically from the request
     update_data = preferences_update.model_dump(exclude_unset=True)
 
+    # Fields stored as dedicated DB columns (not in JSONB)
+    _COLUMN_FIELDS = {
+        "email_notifications",
+        "in_app_notifications",
+        "digest_enabled",
+        "digest_frequency",
+        "marketing_updates",
+    }
+
     # Handle simplified categories if provided
     if "categories" in update_data:
         categories = update_data.pop("categories")
         if isinstance(categories, dict):
-            # Mapping of categories to DB fields
+            # Mapping of categories to JSONB preference keys
             mapping = {
                 "workspace_invites": ["ws_invite_received"],
             }
 
             for cat, value in categories.items():
                 if cat in mapping:
-                    for db_field in mapping[cat]:
-                        if hasattr(preferences, db_field):
-                            setattr(preferences, db_field, value)
-                            logger.debug(f"Updated category preference '{cat}' -> '{db_field}' to {value}")
+                    for pref_key in mapping[cat]:
+                        preferences.set_preference(pref_key, value)
+                        logger.debug(f"Updated category preference '{cat}' -> '{pref_key}' to {value}")
 
     # Handle all other fields directly
     for field, value in update_data.items():
-        if hasattr(preferences, field):
-            setattr(preferences, field, value)
+        column_name = alias_to_column.get(field, field)
+        if column_name in _COLUMN_FIELDS:
+            # Dedicated DB column — use setattr
+            setattr(preferences, column_name, value)
             logger.debug(f"Updated notification preference '{field}' for user {user_id}")
+        elif column_name not in ("categories",):
+            # JSONB category preference — use set_preference()
+            preferences.set_preference(column_name, value)
+            logger.debug(f"Updated category preference '{field}' for user {user_id}")
 
     await db.flush()
 

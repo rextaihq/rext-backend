@@ -76,7 +76,13 @@ async def _recheck_preference_enabled(
     if pref_flag in ["profile_update_failed", "avatar_uploaded", "avatar_upload_failed"]:
         real_pref_column = "in_app_notifications"
 
-    flag_enabled = getattr(pref, real_pref_column, False)
+    # Dedicated column (in_app_notifications) — access via attribute.
+    # Category preferences live in JSONB — use get_preference().
+    if real_pref_column == "in_app_notifications":
+        flag_enabled = pref.in_app_notifications
+    else:
+        flag_enabled = pref.get_preference(real_pref_column)
+
     if not flag_enabled:
         logger.debug(
             f"[recheck] User {user_id} has {real_pref_column}=False – "
@@ -160,7 +166,13 @@ async def schedule_if_allowed(
     if pref_flag in ["profile_update_failed", "avatar_uploaded", "avatar_upload_failed"]:
         real_pref_column = "in_app_notifications"
 
-    flag_enabled = getattr(pref, real_pref_column, False)
+    # Dedicated column (in_app_notifications) — access via attribute.
+    # Category preferences live in JSONB — use get_preference().
+    if real_pref_column == "in_app_notifications":
+        flag_enabled = pref.in_app_notifications
+    else:
+        flag_enabled = pref.get_preference(real_pref_column)
+
     if not flag_enabled:
         logger.debug(
             f"User {user_id} has preference {real_pref_column}=False – skipping notification."
