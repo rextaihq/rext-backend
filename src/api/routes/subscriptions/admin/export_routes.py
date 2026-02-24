@@ -26,6 +26,7 @@ from src.api.models.subscription_models.plans import SubscriptionPlan
 from src.api.models.user_models.users import Users
 from src.utils.route_decorators import db_transaction_handler, require_permissions
 from .shared.auth import require_super_admin
+from src.api.routes.subscriptions.admin.shared.auth import require_super_admin_user
 
 
 router = APIRouter()
@@ -44,7 +45,7 @@ async def export_subscriptions_csv(
     start_date: Optional[datetime] = Query(None, description="Filter by start date"),
     end_date: Optional[datetime] = Query(None, description="Filter by end date"),
     db: AsyncSession = Depends(get_async_db),
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(require_super_admin_user)
 ):
     """
     Export subscriptions as CSV (super admin only).
@@ -165,7 +166,7 @@ async def export_invoices_csv(
     start_date: Optional[datetime] = Query(None, description="Filter by invoice date (from)"),
     end_date: Optional[datetime] = Query(None, description="Filter by invoice date (to)"),
     db: AsyncSession = Depends(get_async_db),
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(require_super_admin_user)
 ):
     """
     Export invoices as CSV (super admin only).
@@ -200,7 +201,7 @@ async def export_revenue_summary_csv(
     start_date: Optional[datetime] = Query(None, description="Filter by date (from)"),
     end_date: Optional[datetime] = Query(None, description="Filter by date (to)"),
     db: AsyncSession = Depends(get_async_db),
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(require_super_admin_user)
 ):
     """
     Export revenue summary as CSV (super admin only).
@@ -337,7 +338,7 @@ async def export_trial_conversions_csv(
     start_date: Optional[datetime] = Query(None, description="Filter by trial start date (from)"),
     end_date: Optional[datetime] = Query(None, description="Filter by trial start date (to)"),
     db: AsyncSession = Depends(get_async_db),
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(require_super_admin_user)
 ):
     """
     Export trial conversion data as CSV (super admin only).

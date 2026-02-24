@@ -143,3 +143,12 @@ async def setup_factories(db_session: AsyncSession):
     }
 
     # Cleanup is handled by db_session rollback
+
+
+@pytest.fixture
+def allow_permissions(monkeypatch):
+    async def _allow(*args, **kwargs):
+        return True
+
+    monkeypatch.setattr("src.utils.rbac_utils.check_all_permissions", _allow)
+    monkeypatch.setattr("src.utils.rbac_utils.check_any_permission", _allow)
