@@ -2,13 +2,19 @@
 
 from datetime import datetime, timezone
 from typing import Optional
-from src.api.models.enums import InvitationStatus
+import secrets
+
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from src.api.models.user_models.invitations import UserInvitations
 from src.utils.logger import logger
-from src.utils.invitation_serializers import serialize_invitation_summary
+from src.api.middleware.exceptions import RextValidationException
+
+
+
+MIN_EXPIRY_DAYS = 1
+MAX_EXPIRY_DAYS = 30
 
 # ------------------------------------------------------------------
 # CHECK EXPIRY (NO DB → stays sync)
@@ -24,8 +30,29 @@ def is_invitation_expired(invitation: UserInvitations) -> bool:
     if expires_at.tzinfo is None:
         expires_at = expires_at.replace(tzinfo=timezone.utc)
 
+51
+
     return now > expires_at
 
+def generate_invitation_token(nbytes: int = 32) -> str:
+    """
+    Generate a cryptographically secure invitation token.
+
+    Uses Python's secrets module which provides access to the most secure
+    source of randomness available on the OS. The token is URL-safe
+    Base64-encoded, suitable for use in invitation URLs.
+
+    Args:
+        nbytes: Number of random bytes. Defaults to 32 (produces ~43 char token).
+                Use 48 for higher-security tokens (~64 chars).
+
+    Returns:
+        URL-safe token string.
+
+    Reference:
+        https://docs.python.org/3.11/library/secrets.html#secrets.token_urlsafe
+    """
+    return secrets.token_urlsafe(nbytes)
 
 # ------------------------------------------------------------------
 # CLEANUP EXPIRED INVITATIONS
@@ -97,9 +124,61 @@ async def get_invitation_with_details(
 
     invitation, workspace, role, invited_by = row
 
-    return serialize_invitation_summary(
-        invitation=invitation,
-        workspace=workspace,
-        role=role,
-        invited_by=invited_by,
+    invited_by_result = await db.execute(
+        select(Users).where(Users.id == invitation.invited_by_user_id)
     )
+    invited_by = invited_by_result.scalar_one_or_none()
+
+    return {
+        "id": str(invitation.id),
+        "email": invitation.email,
+        "workspace_id": str(invitation.workspace_id),
+        "workspace_name": workspace.name if workspace else None,
+        "role_id": str(invitation.role_id),
+        "role_name": role.name if role else None,
+        "invited_by_user_id": str(invitation.invited_by_user_id),
+        "invited_by_name": invited_by.full_name if invited_by else None,
+        "status": invitation.status,
+        "created_at": invitation.created_at.isoformat() if invitation.created_at else None,
+        "expires_at": invitation.expires_at.isoformat() if invitation.expires_at else None,
+        "is_expired": is_invitation_expired(invitation),
+    }
+
+
+def validate_expiry_days(expiry_days: int) -> None:
+    """
+    Validate that invitation expiry days is within the allowed range.
+
+    Args:
+        expiry_days: Number of days until invitation expires.
+
+    Raises:
+        RextValidationException: If expiry_days is not between
+            MIN_EXPIRY_DAYS and MAX_EXPIRY_DAYS (inclusive).
+    """
+    if not MIN_EXPIRY_DAYS <= expiry_days <= MAX_EXPIRY_DAYS:
+        raise RextValidationException(
+            message=f"Expiry days must be between {MIN_EXPIRY_DAYS} and {MAX_EXPIRY_DAYS}",
+            field_errors={
+                "expiry_days": [
+                    f"Must be between {MIN_EXPIRY_DAYS} and {MAX_EXPIRY_DAYS} days"
+                ]
+            }
+        )
+
+
+def normalize_email(email: str) -> str:
+    """
+    Normalize an email address for consistent comparison and storage.
+
+    Applies lowercase and whitespace trimming. Per RFC 5321, the domain
+    part is case-insensitive. While the local part is technically
+    case-sensitive, all major providers treat it as case-insensitive.
+
+    Args:
+        email: Email address to normalize.
+
+    Returns:
+        Normalized email address (lowercase, trimmed).
+    """
+    return email.lower().strip()

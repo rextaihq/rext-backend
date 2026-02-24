@@ -82,7 +82,7 @@ def normalize_serp_results(state: REXT) -> Dict[str, Any]:
 
 
     # Freshness Analysis
-    current_year = datetime.now().year
+    current_year = datetime.now(timezone.utc).year
     freshness = {
         "recent": year_counter.get(str(current_year), 0),
         "older": sum(year_counter.values()) - year_counter.get(str(current_year), 0),

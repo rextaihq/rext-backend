@@ -22,6 +22,12 @@ from src.api.models.knowledge_models.knowledge_model import (
     Website
 )
 from src.utils.logger import logger
+from src.api.config import get_settings
+
+# Default limits for free tier when no subscription plan is found
+FREE_MAX_WORKSPACES = 1
+FREE_MAX_KNOWLEDGE_ITEMS = 10
+FREE_MAX_API_CALLS = 100
 
 
 class UsageTrackingService:
@@ -271,12 +277,12 @@ class UsageTrackingService:
             }
 
         usage_data = {
-            "workspaces": build_metric(workspace_count, free_max_workspaces),
+            "workspaces": build_metric(workspace_count, FREE_MAX_WORKSPACES),
             "members": build_metric(member_count, 3), # Default free limit if not in plan
             "topics": build_metric(0, 5), # Default free limit
-            "knowledge_items": build_metric(knowledge_count, free_max_knowledge_items),
+            "knowledge_items": build_metric(knowledge_count, FREE_MAX_KNOWLEDGE_ITEMS),
             "api_calls": {
-                **build_metric(0, free_max_api_calls),
+                **build_metric(0, FREE_MAX_API_CALLS),
                 "reset_date": None
             },
             "meta": {

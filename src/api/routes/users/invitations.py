@@ -18,6 +18,7 @@ from datetime import datetime, timezone
 from src.utils.response_utils import success, error
 from src.api.models.enums import InvitationStatus
 
+from src.utils.invitation_utils import is_invitation_expired, normalize_email
 from src.api.database.async_database import get_async_db
 from src.api.security.dependencies import get_current_user
 from src.api.models.user_models.invitations import UserInvitations
@@ -117,7 +118,7 @@ async def get_pending_invitations(
             resource_id=str(user_id)
         )
 
-    user_email = user.email.lower()
+    user_email = normalize_email(user.email)
 
     # Query pending invitations for this email with eager loading
     query = (
@@ -247,7 +248,7 @@ async def decline_invitation(
             resource_id=str(user_id)
         )
 
-    user_email = user.email.lower()
+    user_email = normalize_email(user.email)
 
     # Get invitation
     invitation_service = InvitationService(db)
@@ -261,7 +262,7 @@ async def decline_invitation(
         )
 
     # Verify invitation belongs to current user's email
-    if invitation.email.lower() != user_email:
+    if normalize_email(invitation.email) != user_email:
         raise BusinessRuleViolationException(
             message="This invitation is not for your email address",
             rule_name="invitation_email_must_match_user"
