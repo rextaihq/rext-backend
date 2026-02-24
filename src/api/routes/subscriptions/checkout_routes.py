@@ -57,7 +57,7 @@ class PortalSessionResponse(BaseModel):
 # NOTE: /checkout endpoint is in subscription_routes.py (uses service layer with rate limiting)
 
 @router.get("/portal", response_model=dict, status_code=status.HTTP_200_OK)
-@require_permissions("billing.read")
+@require_permissions("billing.read", workspace_scoped=False)
 @db_transaction_handler("create portal session", auto_commit=False)
 async def create_portal_session(
     request: Request,
@@ -191,7 +191,7 @@ async def get_subscription_status_v2(
 
 
 @router.get("/usage", response_model=dict, status_code=status.HTTP_200_OK)
-@require_permissions("usage.read")
+@require_permissions("usage.read", workspace_scoped=False)
 @db_transaction_handler("get usage metrics", auto_commit=False)
 async def get_usage_metrics(
     request: Request,
@@ -222,7 +222,7 @@ async def get_usage_metrics(
 
 
 @router.delete("/cancel", response_model=dict, status_code=status.HTTP_200_OK)
-@require_permissions("subscription.manage")
+@require_permissions("subscription.manage", workspace_scoped=False)
 @db_transaction_handler("cancel subscription")
 async def cancel_subscription(
     request: Request,

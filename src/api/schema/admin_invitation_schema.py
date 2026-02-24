@@ -7,6 +7,7 @@ Separate from workspace invitation schemas for clarity and type safety.
 from pydantic import BaseModel, EmailStr, Field, field_validator
 from typing import Optional, List, Dict, Any
 from datetime import datetime, timezone
+from src.utils.invitation_utils import MIN_EXPIRY_DAYS, MAX_EXPIRY_DAYS
 
 
 class CreateAdminInvitationRequest(BaseModel):
@@ -34,9 +35,9 @@ class CreateAdminInvitationRequest(BaseModel):
     )
     expiry_days: Optional[int] = Field(
         7,
-        ge=1,
-        le=30,
-        description="Days until invitation expires (1-30, default 7)"
+        ge=MIN_EXPIRY_DAYS,
+        le=MAX_EXPIRY_DAYS,
+        description=f"Days until invitation expires ({MIN_EXPIRY_DAYS}-{MAX_EXPIRY_DAYS}, default 7)"
     )
 
     @field_validator('admin_role')
@@ -120,9 +121,9 @@ class ResendAdminInvitationRequest(BaseModel):
     """Schema for resending an admin invitation (super_admin only)."""
     expiry_days: Optional[int] = Field(
         7,
-        ge=1,
-        le=30,
-        description="Days until new invitation expires (1-30, default 7)"
+        ge=MIN_EXPIRY_DAYS,
+        le=MAX_EXPIRY_DAYS,
+        description=f"Days until new invitation expires ({MIN_EXPIRY_DAYS}-{MAX_EXPIRY_DAYS}, default 7)"
     )
 
     model_config = {

@@ -505,10 +505,22 @@ def notification_write_rate_limit() -> EndpointRateLimiter:
     """
     return _build_endpoint_limiter(NOTIFICATION_WRITE_LIMIT)
 
+REGISTRATION_REQUESTS_PER_HOUR = 3
+REGISTRATION_WINDOW_MINUTES = 60
+
+
+def registration_rate_limit() -> "EndpointRateLimiter":
+    """
+    Rate limiter for registration endpoint.
 
 def email_verification_rate_limit() -> EndpointRateLimiter:
     """
-    Rate limiter for email verification resend.
+    return EndpointRateLimiter(
+        requests=REGISTRATION_REQUESTS_PER_HOUR,
+        window_minutes=REGISTRATION_WINDOW_MINUTES,
+        description="registration",
+    )
+
 
     Limit: 5 attempts per 10 minutes per user.
     """
@@ -525,6 +537,18 @@ def _build_endpoint_limiter(profile: EndpointLimitProfile) -> EndpointRateLimite
 def login_rate_limit() -> EndpointRateLimiter:
     return _build_endpoint_limiter(LOGIN_LIMIT)
 
+def media_upload_rate_limit():
+    """
+    Rate limiter for media upload endpoint.
+
+    Limit: 10 uploads per minute per user.
+    Prevents storage abuse and server resource exhaustion.
+    """
+    return EndpointRateLimiter(
+        requests=10,
+        window_minutes=1,
+        description="media upload"
+    )
 
 def password_reset_rate_limit() -> EndpointRateLimiter:
     return _build_endpoint_limiter(PASSWORD_RESET_LIMIT)
@@ -536,6 +560,35 @@ def registration_rate_limit() -> EndpointRateLimiter:
 
 def oauth_rate_limit() -> EndpointRateLimiter:
     return _build_endpoint_limiter(OAUTH_LIMIT)
+
+def invitation_creation_rate_limit():
+    """
+    Rate limiter for invitation creation endpoints.
+
+    Limit: 10 invitations per 5 minutes per user.
+    Prevents email spam and quota exhaustion while allowing
+    reasonable batch invitation workflows.
+    """
+    return EndpointRateLimiter(
+        requests=10,
+        window_minutes=5,
+        description="invitation creation"
+    )
+
+
+def admin_invitation_rate_limit():
+    """
+    Rate limiter for admin invitation creation endpoints.
+
+    Limit: 5 admin invitations per 5 minutes per user.
+    More restrictive than workspace invitations because admin
+    invitations grant platform-level privileges.
+    """
+    return EndpointRateLimiter(
+        requests=5,
+        window_minutes=5,
+        description="admin invitation creation"
+    )
 
 
 
@@ -892,4 +945,21 @@ def license_revoke_rate_limit() -> EndpointRateLimiter:
     Limit: 10 attempts per minute per admin.
     Prevents mass license revocation abuse.
     """
-    return _build_endpoint_limiter(LICENSE_REVOKE_LIMIT)
+    return EndpointRateLimiter(
+        requests=10,
+        window_minutes=1,
+        description="license revocation"
+    )
+
+def audit_export_rate_limit():
+    """
+    Rate limiter for audit log export endpoint.
+
+    Limit: 5 export requests per 5 minutes per user.
+    Prevents rapid bulk data exfiltration and resource exhaustion.
+    """
+    return EndpointRateLimiter(
+        requests=5,
+        window_minutes=5,
+        description="audit export"
+    )

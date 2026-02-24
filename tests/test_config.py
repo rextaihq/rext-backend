@@ -307,3 +307,70 @@ DEBUG=false
 
         with pytest.raises(ValidationError):
             Settings()
+
+
+class TestPaymentSettingsValidation:
+    """Test validation and normalization in PaymentSettings."""
+
+    def test_payment_settings_blank_credentials_normalize_to_none(self, monkeypatch):
+        """Test that blank credential strings are normalized to None."""
+        from src.config.payment_config import PaymentSettings
+        
+        monkeypatch.setenv("LEMONSQUEEZY_API_KEY", "   ")
+        monkeypatch.setenv("LEMONSQUEEZY_STORE_ID", "")
+        monkeypatch.setenv("LEMONSQUEEZY_WEBHOOK_SECRET", "\t")
+        
+        # In sandbox mode, it shouldn't raise ValidationError even if missing
+        settings = PaymentSettings(payment_sandbox_mode=True)
+
+        assert settings.lemonsqueezy_api_key is None
+        assert settings.lemonsqueezy_store_id is None
+        assert settings.lemonsqueezy_webhook_secret is None
+
+    def test_payment_settings_requires_credentials_when_not_sandbox(self, monkeypatch):
+        """Test that missing credentials raise ValidationError in non-sandbox mode."""
+        from src.config.payment_config import PaymentSettings
+        
+        monkeypatch.delenv("LEMONSQUEEZY_API_KEY", raising=False)
+        monkeypatch.delenv("LEMONSQUEEZY_STORE_ID", raising=False)
+        monkeypatch.delenv("LEMONSQUEEZY_WEBHOOK_SECRET", raising=False)
+
+        with pytest.raises(ValidationError) as exc_info:
+            PaymentSettings(payment_sandbox_mode=False)
+            
+        assert "Missing required LemonSqueezy credentials" in str(exc_info.value)
+
+
+class TestStorageSettingsValidation:
+    """Test validation and normalization in StorageSettings."""
+
+    def test_storage_settings_blank_credentials_normalize_to_none(self, monkeypatch):
+        """Test that blank storage credential strings are normalized to None."""
+        from src.config.storage_config import StorageSettings
+        
+        monkeypatch.setenv("R2_BUCKET", "   ")
+        monkeypatch.setenv("R2_ACCOUNT_ID", "")
+        monkeypatch.setenv("R2_ACCESS_KEY_ID", "\t")
+        monkeypatch.setenv("R2_SECRET_ACCESS_KEY", "")
+        
+        # When backend is local, it shouldn't raise ValidationError even if missing
+        settings = StorageSettings(storage_backend="local")
+
+        assert settings.r2_bucket is None
+        assert settings.r2_account_id is None
+        assert settings.r2_access_key_id is None
+        assert settings.r2_secret_access_key is None
+
+    def test_storage_settings_requires_credentials_when_r2_backend(self, monkeypatch):
+        """Test that missing credentials raise ValidationError when R2 backend is selected."""
+        from src.config.storage_config import StorageSettings
+        
+        monkeypatch.delenv("R2_BUCKET", raising=False)
+        monkeypatch.delenv("R2_ACCOUNT_ID", raising=False)
+        monkeypatch.delenv("R2_ACCESS_KEY_ID", raising=False)
+        monkeypatch.delenv("R2_SECRET_ACCESS_KEY", raising=False)
+
+        with pytest.raises(ValidationError) as exc_info:
+            StorageSettings(storage_backend="r2")
+            
+        assert "Missing required R2 storage credentials" in str(exc_info.value)

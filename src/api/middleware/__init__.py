@@ -11,6 +11,7 @@ from .rate_limiter import (
     password_reset_rate_limit,
     registration_rate_limit,
     email_verification_rate_limit,
+    media_upload_rate_limit,
 )
 from .permissions import (
     PermissionChecker,
@@ -47,6 +48,7 @@ __all__ = [
     "password_reset_rate_limit",
     "registration_rate_limit",
     "email_verification_rate_limit",
+    "media_upload_rate_limit",
 
     # Permission checking
     "PermissionChecker",
