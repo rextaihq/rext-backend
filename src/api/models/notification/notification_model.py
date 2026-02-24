@@ -12,6 +12,13 @@ from src.api.models.base import SerializableMixin, SoftDeleteMixin
 class Notification(Base, SerializableMixin, SoftDeleteMixin):
     """
     Notification model for storing user notifications.
+
+    Lifecycle states:
+    - is_read / read_at: whether the user has seen the notification
+    - is_deleted / deleted_at: soft delete via SoftDeleteMixin (cleared notifications)
+
+    Note: Archive functionality was removed as it had no consumers.
+    Use soft delete (clear) for removing notifications from the user's view.
     """
     __tablename__ = "notifications"
 
@@ -85,11 +92,9 @@ class Notification(Base, SerializableMixin, SoftDeleteMixin):
     is_read = Column(Boolean, default=False, nullable=False, index=True)
     read_at = Column(DateTime(timezone=True), nullable=True)
 
-    is_archived = Column(Boolean, default=False, nullable=False, index=True)
-    archived_at = Column(DateTime(timezone=True), nullable=True)
-
-    is_deleted = Column(Boolean, default=False, nullable=False, index=True)
-    deleted_at = Column(DateTime(timezone=True), nullable=True)
+    # Note: is_deleted and deleted_at are provided by SoftDeleteMixin.
+    # Do NOT redeclare them here — the mixin's hybrid property handles both
+    # Python-side and SQL-side is_deleted checks via deleted_at.
 
     # ==============================
     # ADDITIONAL DATA
@@ -132,23 +137,29 @@ class Notification(Base, SerializableMixin, SoftDeleteMixin):
     # INDEXES
     # ==============================
     __table_args__ = (
-        Index('idx_user_read_deleted', 'user_id', 'is_read', 'is_deleted'),
+        Index('idx_user_read_deleted', 'user_id', 'is_read', 'deleted_at'),
         Index('idx_user_created', 'user_id', 'created_at'),
         Index('idx_user_type_created', 'user_id', 'type', 'created_at'),
         Index('idx_workspace_created', 'workspace_id', 'created_at'),
+        # Deduplication index — supports the time-windowed duplicate check
+        Index('idx_dedup_user_category_workspace', 'user_id', 'category', 'workspace_id', 'created_at'),
     )
 
-    # ✅ FIXED to_dict (TASK-054 compliant)
     def to_dict(self, **kwargs):
-        """Return only fields required by the frontend/UI."""
+        """Return notification data for the frontend/UI.
+
+        Exposes all user-facing fields including priority, action buttons,
+        payload, and read timestamp. Excludes internal state tracking
+        (soft delete, archive) and delivery channel metadata.
+        """
         if 'exclude' not in kwargs:
             kwargs['exclude'] = [
+                # Internal state — not needed by frontend
                 'is_archived', 'archived_at',
                 'is_deleted', 'deleted_at',
-                'payload', 'action_url', 'action_label',
+                # Delivery channel tracking — internal metadata
                 'sent_via_email', 'sent_via_sse',
                 'email_sent_at', 'sse_sent_at',
-                'expires_at', 'read_at', 'priority',
             ]
         return super().to_dict(**kwargs)
 
@@ -163,18 +174,3 @@ class Notification(Base, SerializableMixin, SoftDeleteMixin):
         self.is_read = False
         self.read_at = None
 
-    def archive(self):
-        self.is_archived = True
-        self.archived_at = datetime.now(timezone.utc)
-
-    def unarchive(self):
-        self.is_archived = False
-        self.archived_at = None
-
-    def soft_delete(self):
-        self.is_deleted = True
-        self.deleted_at = datetime.now(timezone.utc)
-
-    def restore(self):
-        self.is_deleted = False
-        self.deleted_at = None

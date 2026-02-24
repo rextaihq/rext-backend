@@ -286,12 +286,12 @@ async def create_bulk_invitations(
             ))
             successful += 1
 
-        except Exception as e:
-            logger.error(f"Error creating invitation for {email}: {str(e)}")
+        except Exception:
+            logger.error("Error creating invitation", exc_info=True, extra={"email": email})
             results.append(BulkInvitationResult(
                 email=email,
                 success=False,
-                error_message=str(e)
+                error_message="Failed to create invitation"
             ))
             failed += 1
 

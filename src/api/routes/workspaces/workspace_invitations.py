@@ -2,8 +2,9 @@
 from datetime import datetime
 from typing import Dict, List, Optional
 from uuid import UUID
-
+from src.utils.invitation_serializers import serialize_invitation_summary
 from fastapi import APIRouter, BackgroundTasks, Depends, Request, status
+from sqlalchemy import select, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.database.async_database import get_async_db
@@ -14,7 +15,9 @@ from src.api.middleware.exceptions import (
     ResourceNotFoundException,
     RextValidationException,
 )
+from sqlalchemy.orm import selectinload
 from src.api.middleware.usage_limiter import check_member_limit
+from src.api.middleware.rate_limiter import invitation_creation_rate_limit
 from src.api.models.user_models.invitations import UserInvitations
 from src.api.models.user_models.roles import Role
 from src.api.models.user_models.users import Users
@@ -31,7 +34,7 @@ from src.services.role_service import RoleService
 from src.services.user_service import UserService
 from src.utils.audit_helper import create_audit_log_async
 from src.utils.auth_utils import verify_current_user
-from src.utils.invitation_utils import is_invitation_expired
+from src.utils.invitation_utils import is_invitation_expired, normalize_email
 from src.utils.logger import logger
 from src.utils.response_utils import created, success
 from src.utils.route_decorators import db_transaction_handler, require_permissions
@@ -40,6 +43,9 @@ from src.utils.email_template_utils import render_workspace_email
 
 
 router = APIRouter(tags=["workspace-invitations"])
+
+# Singular router for frontend parity (TASK-336)
+singular_router = APIRouter(tags=["workspace-invitations"])
 
 
 # Get settings instance
@@ -159,7 +165,7 @@ async def list_workspace_invitations(
     inviters = await user_service.get_users_by_ids(list(inviter_ids))
 
     payload = [
-        _serialize_invitation(inv, roles.get(inv.role_id), inviters.get(inv.invited_by_user_id))
+        serialize_invitation_summary(inv, roles.get(inv.role_id), inviters.get(inv.invited_by_user_id))
         for inv in invitations
     ]
 
@@ -188,6 +194,7 @@ async def create_workspace_invitation(
     db: AsyncSession = Depends(get_async_db),
     user: dict = Depends(get_current_user),
     _: None = Depends(check_member_limit()),
+    __: None = Depends(invitation_creation_rate_limit()),  # Add rate limiting
 ):
     """Create an invitation tied to the workspace."""
     user_uuid = UUID(str(user.get("identity")))
@@ -340,6 +347,7 @@ async def create_bulk_workspace_invitations(
     db: AsyncSession = Depends(get_async_db),
     user: dict = Depends(get_current_user),
     _: None = Depends(check_member_limit()),
+    __: None = Depends(invitation_creation_rate_limit()),  # Add rate limiting
 ):
     """Create invitations for multiple recipients."""
     user_uuid = UUID(str(user.get("identity")))
@@ -495,6 +503,7 @@ async def resend_workspace_invitation(
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_async_db),
     user: dict = Depends(get_current_user),
+    __: None = Depends(invitation_creation_rate_limit()),
 ):
     """Resend a pending invitation with a new token and extended expiry."""
     user_uuid = UUID(str(user.get("identity")))
@@ -632,7 +641,7 @@ async def revoke_workspace_invitation(
             resource_id=invitation_id,
         )
 
-    if invitation.status != "pending":
+    if invitation.status != InvitationStatus.PENDING:
         raise RextValidationException(
             message="Only pending invitations can be revoked",
             field_errors={"status": ["Invitation is not pending"]},
@@ -649,9 +658,9 @@ async def revoke_workspace_invitation(
         action="invitation.revoke",
         resource_type="invitation",
         resource_id=invitation_id,
-        old_values={"status": "pending"},
+        old_values={"status": InvitationStatus.PENDING},
         new_values={
-            "status": "revoked",
+            "status": InvitationStatus.REVOKED,
             "reason": payload.reason if payload else None,
         },
         request=request,
@@ -668,7 +677,91 @@ async def revoke_workspace_invitation(
     )
 
     return success(
-        data={"invitation_id": invitation_id, "status": "revoked"},
+        data={"invitation_id": invitation_id, "status": InvitationStatus.REVOKED},
         request=request,
         message="Invitation revoked successfully",
+    )
+
+
+
+@singular_router.get("/invitations/received")
+@router.get("/invitations/received") # Also keep plural for consistency
+@require_permissions("member.read", workspace_scoped=False)
+@db_transaction_handler("get received invitations", auto_commit=False)
+async def get_received_invitations(
+    request: Request,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Get all received (pending) invitations for the current user.
+
+    This endpoint mirrors /api/v1/user/invitations/pending but is mounted
+    at a path the frontend expects. Returns invitations where the email
+    matches the current user and status is 'pending'.
+    """
+    from src.api.models.user_models.users import Users
+    from src.api.models.user_models.invitations import UserInvitations
+
+    user_id = UUID(current_user.get("identity"))
+
+    # Get current user's email
+    user_result = await db.execute(
+        select(Users).where(Users.id == user_id)
+    )
+    user = user_result.scalar_one_or_none()
+
+    if not user:
+        raise ResourceNotFoundException(
+            resource_type="User",
+            resource_id=str(user_id)
+        )
+
+    user_email = normalize_email(user.email)
+
+    # Query pending invitations for this email with eager loading
+    query = (
+        select(UserInvitations)
+        .options(
+            selectinload(UserInvitations.workspace),
+            selectinload(UserInvitations.role),
+            selectinload(UserInvitations.invited_by),
+        )
+        .where(
+            and_(
+                UserInvitations.email == user_email,
+                UserInvitations.status == "pending"
+            )
+        )
+        .order_by(UserInvitations.created_at.desc())
+    )
+
+    result = await db.execute(query)
+    invitations = result.scalars().all()
+
+    # Filter out expired invitations
+    from src.utils.invitation_utils import is_invitation_expired
+
+    active_invitations = [
+        inv for inv in invitations if not is_invitation_expired(inv)
+    ]
+
+    invitation_list = []
+    for inv in active_invitations:
+        invitation_list.append({
+            "id": str(inv.id),
+            "workspace_id": str(inv.workspace_id),
+            "workspace_name": inv.workspace.name if inv.workspace else None,
+            "role_id": str(inv.role_id),
+            "status": inv.status,
+            "expires_at": inv.expires_at.isoformat() if inv.expires_at else None,
+            "created_at": inv.created_at.isoformat() if inv.created_at else None,
+        })
+
+    return success(
+        data={
+            "invitations": invitation_list,
+            "total_count": len(invitation_list)
+        },
+        message="Received invitations retrieved"
     )

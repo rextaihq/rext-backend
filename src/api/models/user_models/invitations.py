@@ -1,9 +1,9 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import Column, String, Boolean, DateTime, ForeignKey, UniqueConstraint
+from sqlalchemy import Column, String, Boolean, DateTime, ForeignKey, UniqueConstraint, Index
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
-
+from src.api.models.enums import InvitationStatus
 from src.api.database.base import Base
 from src.api.models.base import SerializableMixin
 from src.api.models.mixins import UUIDPrimaryKeyMixin
@@ -19,7 +19,7 @@ class UserInvitations(Base, SerializableMixin, UUIDPrimaryKeyMixin):
     invited_by_user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
 
     invitation_token = Column(String(255), unique=True, nullable=False)
-    status = Column(String(50), default="pending")  # pending, accepted, revoked
+    status = Column(String(50), default=InvitationStatus.PENDING)
 
     created_at = Column(
         DateTime(timezone=True),
@@ -36,6 +36,7 @@ class UserInvitations(Base, SerializableMixin, UUIDPrimaryKeyMixin):
 
     __table_args__ = (
         UniqueConstraint('email', 'workspace_id', name='uq_email_workspace'),
+        Index('ix_user_invitations_email_status', 'email', 'status'),
     )
 
     # Relationships

@@ -17,7 +17,80 @@ from src.services.image_processing_service import ImageProcessingService
 from src.config.storage_config import storage_settings
 from src.utils.response_utils import success, created, error
 from src.utils.route_decorators import db_transaction_handler, require_permissions
+from src.api.middleware.rate_limiter import media_upload_rate_limit
 from src.utils.logger import logger
+
+# File: src/api/routes/media/media_routes.py
+# Add this function before the route definitions, after the imports (around line 21):
+
+import re
+
+
+MAX_TAGS = 20
+MAX_TAG_LENGTH = 50
+TAG_PATTERN = re.compile(r'^[a-zA-Z0-9][a-zA-Z0-9_\- ]*$')
+
+
+def parse_and_validate_tags(tags_string: Optional[str]) -> List[str]:
+    """
+    Parse comma-separated tags string and validate each tag.
+
+    Rules:
+    - Maximum 20 tags per media item
+    - Maximum 50 characters per tag
+    - Tags must start with an alphanumeric character
+    - Only alphanumeric characters, hyphens, underscores, and spaces are allowed
+    - Tags are lowercased and trimmed
+    - Empty tags and duplicates are removed
+
+    Args:
+        tags_string: Comma-separated tags string from user input
+
+    Returns:
+        List of validated, deduplicated tag strings
+
+    Raises:
+        ValueError: If any tag contains invalid characters
+    """
+    if not tags_string:
+        return []
+
+    raw_tags = tags_string.split(',')
+    validated_tags = []
+    seen = set()
+
+    for raw_tag in raw_tags:
+        # Strip whitespace
+        tag = raw_tag.strip()
+
+        # Skip empty tags
+        if not tag:
+            continue
+
+        # Enforce max length (truncate silently)
+        if len(tag) > MAX_TAG_LENGTH:
+            tag = tag[:MAX_TAG_LENGTH].rstrip()
+
+        # Lowercase for consistency
+        tag = tag.lower()
+
+        # Validate allowed characters
+        if not TAG_PATTERN.match(tag):
+            raise ValueError(
+                f"Invalid tag '{tag[:20]}': tags may only contain "
+                "alphanumeric characters, hyphens, underscores, and spaces"
+            )
+
+        # Deduplicate
+        if tag not in seen:
+            seen.add(tag)
+            validated_tags.append(tag)
+
+    # Enforce max tag count
+    if len(validated_tags) > MAX_TAGS:
+        validated_tags = validated_tags[:MAX_TAGS]
+
+    return validated_tags
 
 
 router = APIRouter(
@@ -75,7 +148,8 @@ async def upload_media(
     tags: Optional[str] = Form(None),  # Comma-separated
     is_public: bool = Form(False),
     db: AsyncSession = Depends(get_async_db),
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
+    _rate_limit: None = Depends(media_upload_rate_limit()),
 ):
     """
     Upload media file to workspace.
@@ -108,7 +182,7 @@ async def upload_media(
     user_id = current_user.get("identity")
 
     # Parse tags
-    tag_list = [t.strip() for t in tags.split(',')] if tags else []
+    tag_list = parse_and_validate_tags(tags)
 
     try:
         # Get service
@@ -128,12 +202,24 @@ async def upload_media(
             is_public=is_public
         )
 
+        media_data = media.to_dict()
+
+        # Surface processing warnings to the client
+        warnings = media_data.get("file_metadata", {}).get("processing_warnings", [])
+
+        response_data = {
+            **media_data,
+        }
+        if warnings:
+            response_data["warnings"] = warnings
+
         logger.info(f"Media uploaded successfully: {media.id}")
 
         return created(
-            data=media.to_dict(),
+            data=response_data,
             request=request,
             message=f"File '{file.filename}' uploaded successfully"
+            + (f" (with {len(warnings)} warning(s))" if warnings else "")
         )
 
     except ValueError as e:
@@ -186,7 +272,19 @@ async def list_media(
         Paginated list of media objects
     """
     # Parse tags
-    tag_list = [t.strip() for t in tags.split(',')] if tags else None
+    # Validate tags in filter (Step 5)
+    if tags:
+        try:
+            tag_list = parse_and_validate_tags(tags)
+        except ValueError as e:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid tag in filter: {str(e)}"
+            )
+    else:
+        tag_list = None
+
+    
 
     # Get service
     service = get_media_service(db)
@@ -217,6 +315,80 @@ async def list_media(
         },
         message=f"Found {result['total']} media files"
     )
+
+
+@router.post("/bulk-delete", response_model=dict)
+@db_transaction_handler("bulk delete media")
+@require_permissions("media.delete")
+async def bulk_delete_media(
+    request: Request,
+    workspace_id: str,
+    media_ids: list[str],
+    permanent: bool = Query(False, description="Permanently delete from storage"),
+    db: AsyncSession = Depends(get_async_db),
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Delete multiple media files at once.
+
+    By default, performs soft delete (sets deleted_at).
+    Use permanent=true to remove from storage and database.
+
+    Args:
+        workspace_id: Workspace UUID
+        media_ids: List of media UUIDs to delete
+        permanent: If true, permanently delete
+
+    Returns:
+        Bulk delete results with counts
+    """
+    # Get service
+    service = get_media_service(db)
+
+    # Bulk delete media
+    result = await service.bulk_delete_media(
+        media_ids=media_ids,
+        workspace_id=workspace_id,
+        permanent=permanent
+    )
+
+    delete_type = "permanently deleted" if permanent else "moved to trash"
+    message = f"{result['deleted']} media files {delete_type}"
+    if result['failed'] > 0:
+        message += f", {result['failed']} failed"
+
+    return success(
+        data=result,
+        message=message
+    )
+
+
+@router.get("/usage/stats", response_model=dict)
+@db_transaction_handler("get storage usage")
+@require_permissions("media.read")
+async def get_storage_usage(
+    request: Request,
+    workspace_id: str,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Get storage usage statistics for workspace.
+
+    Returns:
+        Usage statistics including file counts and storage size
+    """
+    # Get service
+    service = get_media_service(db)
+
+    # Get usage stats
+    usage = await service.get_workspace_storage_usage(workspace_id)
+
+    return success(
+        data=usage,
+        message="Storage usage retrieved successfully"
+    )
+
 
 
 @router.get("/{media_id}", response_model=dict)
@@ -292,7 +464,7 @@ async def update_media_metadata(
         Updated media object
     """
     # Parse tags
-    tag_list = [t.strip() for t in tags.split(',')] if tags else None
+    tag_list = parse_and_validate_tags(tags) if tags is not None else None
 
     # Get service
     service = get_media_service(db)
@@ -369,51 +541,6 @@ async def delete_media(
     )
 
 
-@router.post("/bulk-delete", response_model=dict)
-@db_transaction_handler("bulk delete media")
-@require_permissions("media.delete")
-async def bulk_delete_media(
-    request: Request,
-    workspace_id: str,
-    media_ids: list[str],
-    permanent: bool = Query(False, description="Permanently delete from storage"),
-    db: AsyncSession = Depends(get_async_db),
-    current_user: dict = Depends(get_current_user)
-):
-    """
-    Delete multiple media files at once.
-
-    By default, performs soft delete (sets deleted_at).
-    Use permanent=true to remove from storage and database.
-
-    Args:
-        workspace_id: Workspace UUID
-        media_ids: List of media UUIDs to delete
-        permanent: If true, permanently delete
-
-    Returns:
-        Bulk delete results with counts
-    """
-    # Get service
-    service = get_media_service(db)
-
-    # Bulk delete media
-    result = await service.bulk_delete_media(
-        media_ids=media_ids,
-        workspace_id=workspace_id,
-        permanent=permanent
-    )
-
-    delete_type = "permanently deleted" if permanent else "moved to trash"
-    message = f"{result['deleted']} media files {delete_type}"
-    if result['failed'] > 0:
-        message += f", {result['failed']} failed"
-
-    return success(
-        data=result,
-        message=message
-    )
-
 
 @router.get("/{media_id}/usage", response_model=dict)
 @db_transaction_handler("get media usage")
@@ -447,31 +574,4 @@ async def get_media_usage_info(
     return success(
         data=usage,
         message="Media usage retrieved successfully"
-    )
-
-
-@router.get("/usage/stats", response_model=dict)
-@db_transaction_handler("get storage usage")
-@require_permissions("media.read")
-async def get_storage_usage(
-    request: Request,
-    workspace_id: str,
-    db: AsyncSession = Depends(get_async_db),
-    current_user: dict = Depends(get_current_user)
-):
-    """
-    Get storage usage statistics for workspace.
-
-    Returns:
-        Usage statistics including file counts and storage size
-    """
-    # Get service
-    service = get_media_service(db)
-
-    # Get usage stats
-    usage = await service.get_workspace_storage_usage(workspace_id)
-
-    return success(
-        data=usage,
-        message="Storage usage retrieved successfully"
     )
