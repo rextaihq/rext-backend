@@ -2,7 +2,7 @@
 from datetime import datetime
 from typing import Dict, List, Optional
 from uuid import UUID
-
+from src.utils.invitation_serializers import serialize_invitation_summary
 from fastapi import APIRouter, BackgroundTasks, Depends, Request, status
 from sqlalchemy import select, and_
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -165,7 +165,7 @@ async def list_workspace_invitations(
     inviters = await user_service.get_users_by_ids(list(inviter_ids))
 
     payload = [
-        _serialize_invitation(inv, roles.get(inv.role_id), inviters.get(inv.invited_by_user_id))
+        serialize_invitation_summary(inv, roles.get(inv.role_id), inviters.get(inv.invited_by_user_id))
         for inv in invitations
     ]
 
@@ -641,7 +641,7 @@ async def revoke_workspace_invitation(
             resource_id=invitation_id,
         )
 
-    if invitation.status != "pending":
+    if invitation.status != InvitationStatus.PENDING:
         raise RextValidationException(
             message="Only pending invitations can be revoked",
             field_errors={"status": ["Invitation is not pending"]},
@@ -658,9 +658,9 @@ async def revoke_workspace_invitation(
         action="invitation.revoke",
         resource_type="invitation",
         resource_id=invitation_id,
-        old_values={"status": "pending"},
+        old_values={"status": InvitationStatus.PENDING},
         new_values={
-            "status": "revoked",
+            "status": InvitationStatus.REVOKED,
             "reason": payload.reason if payload else None,
         },
         request=request,
@@ -677,7 +677,7 @@ async def revoke_workspace_invitation(
     )
 
     return success(
-        data={"invitation_id": invitation_id, "status": "revoked"},
+        data={"invitation_id": invitation_id, "status": InvitationStatus.REVOKED},
         request=request,
         message="Invitation revoked successfully",
     )

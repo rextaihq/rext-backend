@@ -5,8 +5,7 @@ from typing import List, Optional
 from uuid import UUID
 
 from pydantic import BaseModel, Field
-from src.constants.onboarding_steps import OnboardingStep
-
+from src.constants.onboarding_steps import ALL_STEPS, OnboardingStep
 
 
 class OnboardingStepUpdate(BaseModel):
@@ -14,9 +13,9 @@ class OnboardingStepUpdate(BaseModel):
 
     step: int = Field(
         ...,
-        ge=OnboardingStep.STRATEGY.value,
-        le=OnboardingStep.COMPLETE.value,
-        description="Step number (0-2)",
+        ge=min(ALL_STEPS),
+        le=max(ALL_STEPS),
+        description=f"Step number ({min(ALL_STEPS)}-{max(ALL_STEPS)})"
     )
     action: str = Field(..., description="Action: complete, skip, or set_current")
 
@@ -91,14 +90,14 @@ class OnboardingReset(BaseModel):
 # Onboarding step definitions (for frontend reference)
 ONBOARDING_STEPS = [
     {
-        "id": 0,
+        "id": OnboardingStep.CONTENT_STRATEGY.value,
         "name": "marketing_questions",
         "title": "Tell Us About Yourself",
         "description": "Help us personalize your experience",
         "required": True,
     },
     {
-        "id": 1,
+        "id": OnboardingStep.MARKETING_QUESTIONS.value,
         "name": "complete",
         "title": "You're All Set!",
         "description": "Start creating amazing content",

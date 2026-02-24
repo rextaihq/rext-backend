@@ -154,7 +154,7 @@ class InvitationService:
         existing_invitation = result.scalar_one_or_none()
         if existing_invitation:
             # check the invitation status if status is revoked or expired, allow new invitation creation
-            if existing_invitation.status in ("revoked", "expired"):
+            if existing_invitation.status in (InvitationStatus.REVOKED, InvitationStatus.EXPIRED):
                 # Generate token and create invitation
                 token = self._generate_invitation_token(email, workspace_id)
                 expires_at = datetime.now(timezone.utc) + timedelta(days=expiry_days)
@@ -163,11 +163,11 @@ class InvitationService:
                 existing_invitation.invitation_token = token
                 existing_invitation.role_id = role_id
                 existing_invitation.invited_by_user_id = invited_by_user_id
-                existing_invitation.status = "pending"
+                existing_invitation.status = InvitationStatus.PENDING
                 existing_invitation.expires_at = expires_at
                 await self.db.flush()
                 return existing_invitation
-            elif existing_invitation.status == "pending":
+            elif existing_invitation.status == InvitationStatus.PENDING:
                 raise DuplicateResourceException(
                     resource_type="Invitation",
                     conflicting_field="email",
@@ -206,7 +206,7 @@ class InvitationService:
             role_id=role_id,
             invited_by_user_id=invited_by_user_id,
             invitation_token=token,
-            status="pending",
+            status=InvitationStatus.PENDING,
             expires_at=expires_at
         )
 
@@ -363,7 +363,7 @@ class InvitationService:
         invitation = await self.get_invitation_by_id(invitation_id)
 
         # Check status
-        if invitation.status != "pending":
+        if invitation.status != InvitationStatus.PENDING:
             raise BusinessRuleViolationException(
                 message=f"Invitation is {invitation.status}, cannot accept",
                 rule_name="invitation_must_be_pending"
@@ -371,7 +371,7 @@ class InvitationService:
 
         # Check expiry
         if invitation.expires_at < datetime.now(timezone.utc):
-            invitation.status = "expired"
+            invitation.status = InvitationStatus.EXPIRED
             await self.db.flush()
             raise BusinessRuleViolationException(
                 message="Invitation has expired",
@@ -407,7 +407,7 @@ class InvitationService:
         existing_member = result.scalar_one_or_none()
         if existing_member:
             # Update invitation status even if already member
-            invitation.status = "accepted"
+            invitation.status = InvitationStatus.ACCEPTED
             await self.db.flush()
             raise BusinessRuleViolationException(
                 message="User is already a member of this workspace",
@@ -437,7 +437,7 @@ class InvitationService:
         self.db.add(user_role)
 
         # Update invitation status
-        invitation.status = "accepted"
+        invitation.status = InvitationStatus.ACCEPTED
         await self.db.flush()
         await self.db.refresh(member)
 
@@ -478,13 +478,13 @@ class InvitationService:
         """
         invitation = await self.get_invitation_by_id(invitation_id)
 
-        if invitation.status != "pending":
+        if invitation.status != InvitationStatus.PENDING:
             raise BusinessRuleViolationException(
                 message=f"Cannot revoke invitation with status: {invitation.status}",
                 rule_name="can_only_revoke_pending"
             )
 
-        invitation.status = "revoked"
+        invitation.status = InvitationStatus.REVOKED
 
         logger.info(
             f"Invitation revoked: {invitation.email}",
@@ -496,6 +496,56 @@ class InvitationService:
 
         return invitation
 
+    async def decline_invitation_by_token(
+    self,
+    token: str,
+    reason: Optional[str] = None
+    ) -> UserInvitations:
+        """
+        Decline a workspace invitation by token.
+
+        Args:
+            token: Invitation token from email link
+            reason: Optional decline reason
+
+        Returns:
+            Updated UserInvitations object
+
+        Raises:
+            ResourceNotFoundException: If invitation not found
+            BusinessRuleViolationException: If invitation not pending
+        """
+        invitation = await self.get_invitation_by_token(token)
+
+        if invitation.status != "pending":
+            raise BusinessRuleViolationException(
+                message=f"Cannot decline: invitation is {invitation.status}",
+                rule_name="invitation_must_be_pending_to_decline"
+            )
+
+        # Check if expired
+        if invitation.expires_at < datetime.now(timezone.utc):
+            invitation.status = "expired"
+            await self.db.flush()
+            raise BusinessRuleViolationException(
+                message="Invitation has expired",
+                rule_name="invitation_not_expired"
+            )
+
+        invitation.status = "declined"
+        await self.db.flush()
+
+        logger.info(
+            f"Invitation declined via token: {invitation.email}",
+            extra={
+                "invitation_id": str(invitation.id),
+                "workspace_id": str(invitation.workspace_id),
+                "reason": reason
+            }
+        )
+
+        return invitation
+        
     async def expire_old_invitations(
         self,
         batch_size: int = 100
@@ -513,7 +563,7 @@ class InvitationService:
         result = await self.db.execute(
             select(UserInvitations).where(
                 and_(
-                    UserInvitations.status == "pending",
+                    UserInvitations.status == InvitationStatus.PENDING,
                     UserInvitations.expires_at < datetime.now(timezone.utc)
                 )
             ).limit(batch_size)
@@ -522,7 +572,7 @@ class InvitationService:
 
         count = 0
         for invitation in expired_invitations:
-            invitation.status = "expired"
+            invitation.status = InvitationStatus.EXPIRED
             count += 1
 
         if count > 0:
@@ -556,7 +606,7 @@ class InvitationService:
         """
         invitation = await self.get_invitation_by_id(invitation_id)
 
-        if invitation.status != "pending":
+        if invitation.status != InvitationStatus.PENDING:
             raise BusinessRuleViolationException(
                 message=f"Cannot resend invitation with status: {invitation.status}",
                 rule_name="can_only_resend_pending"

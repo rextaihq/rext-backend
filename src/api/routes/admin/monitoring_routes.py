@@ -15,6 +15,7 @@ from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.database.async_database import get_async_db
+from src.api.models.admin_models.error_log import ErrorLogSeverity
 from src.api.security.dependencies import get_current_user
 from src.services.monitoring_service import MonitoringService
 from src.utils.route_decorators import db_transaction_handler, require_permissions
@@ -64,7 +65,7 @@ async def get_error_logs(
     request: Request,
     page: int = Query(1, ge=1, description="Page number"),
     per_page: int = Query(50, ge=1, le=100, description="Items per page"),
-    severity: Optional[str] = Query(None, description="Filter by severity"),
+    severity: Optional[ErrorLogSeverity] = Query(None, description="Filter by severity (error, warning, critical)"),
     start_date: Optional[datetime] = Query(None, description="Start date filter"),
     end_date: Optional[datetime] = Query(None, description="End date filter"),
     include_stack_trace: bool = Query(
@@ -80,7 +81,7 @@ async def get_error_logs(
     Query Parameters:
     - page: Page number (default 1)
     - per_page: Items per page (default 50, max 100)
-    - severity: Filter by severity (error, warning, critical)
+    - severity: Filter by severity — must be one of: error, warning, critical
     - start_date: Start date filter (ISO format)
     - end_date: End date filter (ISO format)
     - include_stack_trace: Include redacted stack traces in response (default false)
@@ -94,7 +95,7 @@ async def get_error_logs(
     result = await service.get_error_logs(
         page=page,
         per_page=per_page,
-        severity=severity,
+        severity=severity.value if severity else None,
         start_date=start_date,
         end_date=end_date,
         include_stack_trace=include_stack_trace

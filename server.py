@@ -1,9 +1,12 @@
-# # Assumes the FastAPI app from above is already defined
-# from fastmcp import FastMCP
-# from src.api.server import app
+"""Convenience entrypoint for local API startup."""
 
-# # Convert to MCP server
-# mcp = FastMCP.from_fastapi(app=app)
+import uvicorn
 
-# if __name__ == "__main__":
-#     mcp.run()
+
+if __name__ == "__main__":
+    uvicorn.run(
+        "src.api.server:app",
+        host="0.0.0.0",
+        port=2024,
+        reload=True,
+    )

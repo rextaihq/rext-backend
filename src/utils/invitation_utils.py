@@ -6,7 +6,7 @@ import secrets
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-
+from sqlalchemy.orm import selectinload
 from src.api.models.user_models.invitations import UserInvitations
 from src.utils.logger import logger
 from src.api.middleware.exceptions import RextValidationException
@@ -29,6 +29,8 @@ def is_invitation_expired(invitation: UserInvitations) -> bool:
     expires_at = invitation.expires_at
     if expires_at.tzinfo is None:
         expires_at = expires_at.replace(tzinfo=timezone.utc)
+
+51
 
     return now > expires_at
 
@@ -65,7 +67,7 @@ async def cleanup_expired_invitations(db: AsyncSession) -> int:
         # Async SELECT
         result = await db.execute(
             select(UserInvitations).where(
-                UserInvitations.status == "pending",
+                UserInvitations.status == InvitationStatus.PENDING,
                 UserInvitations.expires_at < now,
             )
         )
@@ -74,7 +76,7 @@ async def cleanup_expired_invitations(db: AsyncSession) -> int:
 
         count = 0
         for invitation in expired_invitations:
-            invitation.status = "expired"
+            invitation.status = InvitationStatus.EXPIRED
             count += 1
 
         if count > 0:
@@ -99,30 +101,28 @@ async def get_invitation_with_details(
 ) -> Optional[dict]:
     """
     Get invitation with workspace and role details.
+
+    Uses a single query with eager loading instead of 4 separate queries
+    to avoid unnecessary round-trips to the database.
     """
     from src.api.models.workspace_models.workspace_model import WorkspaceModel
     from src.api.models.user_models.roles import Role
     from src.api.models.user_models.users import Users
 
-    # Get invitation
+    # Single query with joins
     result = await db.execute(
-        select(UserInvitations).where(UserInvitations.id == invitation_id)
+        select(UserInvitations, WorkspaceModel, Role, Users)
+        .outerjoin(WorkspaceModel, WorkspaceModel.id == UserInvitations.workspace_id)
+        .outerjoin(Role, Role.id == UserInvitations.role_id)
+        .outerjoin(Users, Users.id == UserInvitations.invited_by_user_id)
+        .where(UserInvitations.id == invitation_id)
     )
-    invitation = result.scalar_one_or_none()
+    row = result.first()
 
-    if not invitation:
+    if not row:
         return None
 
-    # Fetch related entities (async)
-    workspace_result = await db.execute(
-        select(WorkspaceModel).where(WorkspaceModel.id == invitation.workspace_id)
-    )
-    workspace = workspace_result.scalar_one_or_none()
-
-    role_result = await db.execute(
-        select(Role).where(Role.id == invitation.role_id)
-    )
-    role = role_result.scalar_one_or_none()
+    invitation, workspace, role, invited_by = row
 
     invited_by_result = await db.execute(
         select(Users).where(Users.id == invitation.invited_by_user_id)

@@ -274,15 +274,9 @@ class LocalStorageBackend(StorageBackend):
     For development and self-hosted deployments.
     """
 
-    def __init__(self, base_path: str = "./media", public_url_base: str = "/media"):
-        """
-        Initialize local storage backend.
-
-        Args:
-            base_path: Base directory for file storage
-            public_url_base: Base URL path for accessing files
-        """
-        self.base_path = str(PathLib(base_path).resolve())
+    def __init__(self, base_path: str, public_url_base: str = "/media"):
+        resolved_base = PathLib(base_path).expanduser().resolve()
+        self.base_path = str(resolved_base)
         self.public_url_base = public_url_base
         os.makedirs(self.base_path, exist_ok=True)
         os.chmod(base_path, stat.S_IRWXU | stat.S_IRGRP | stat.S_IXGRP)
@@ -602,9 +596,13 @@ def create_storage_service(
             public_domain=kwargs.get("public_domain")
         )
     elif backend_type == "local":
+        base_path = kwargs.get("base_path")
+        if not base_path:
+            raise ValueError("base_path is required when backend_type='local'")
+
         backend = LocalStorageBackend(
-            base_path=kwargs.get("base_path", "./media"),
-            public_url_base=kwargs.get("public_url_base", "/media")
+            base_path=str(base_path),
+            public_url_base=kwargs.get("public_url_base", "/media"),
         )
     else:
         raise ValueError(f"Unknown backend type: {backend_type}")

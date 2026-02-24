@@ -2,7 +2,7 @@
 API Configuration Settings
 
 Centralized configuration using environment variables with Pydantic validation.
-Note: dotenv is loaded in server.py before importing this module.
+Note: dotenv is loaded in src/api/server.py before importing this module.
 """
 from typing import List, Optional
 from pathlib import Path
@@ -56,6 +56,10 @@ class Settings(BaseSettings):
     ALLOWED_ORIGINS: str = Field(
         default="http://localhost:3000,http://127.0.0.1:3000",
         description="Comma-separated CORS allowed origins"
+    )
+    CORS_ALLOWED_HEADERS: str = Field(
+        default="Authorization,Content-Type,Accept,X-Request-ID,X-API-Key",
+        description="Comma-separated list of allowed CORS request headers",
     )
 
     # ============================================================================
@@ -202,6 +206,18 @@ class Settings(BaseSettings):
     TIER_PRO_MAX_STORAGE_MB: int = Field(default=1024, description="Pro tier: max total storage in MB (1GB)", ge=1)
     TIER_ENTERPRISE_MAX_STORAGE_MB: int = Field(default=10240, description="Enterprise tier: max total storage in MB (10GB)", ge=1)
 
+    @field_validator("ALLOWED_ORIGINS")
+    @classmethod
+    def validate_allowed_origins(cls, v: str) -> str:
+        """Reject '*' when credentials are enabled."""
+        origins = [origin.strip() for origin in v.split(",") if origin.strip()]
+        if "*" in origins:
+            raise ValueError(
+                "ALLOWED_ORIGINS cannot include '*' when credentialed CORS is enabled. "
+                "Provide explicit origins."
+            )
+        return ",".join(origins)
+
     @field_validator('SECRET_KEY', 'REFRESH_SECRET_KEY')
     @classmethod
     def validate_secret_strength(cls, v: str, info) -> str:
@@ -259,6 +275,11 @@ class Settings(BaseSettings):
     def allowed_origins_list(self) -> List[str]:
         """Parse comma-separated ALLOWED_ORIGINS into a list."""
         return [origin.strip() for origin in self.ALLOWED_ORIGINS.split(',') if origin.strip()]
+
+    @property
+    def cors_allowed_headers_list(self) -> List[str]:
+        """Parse comma-separated CORS_ALLOWED_HEADERS into a list."""
+        return [header.strip() for header in self.CORS_ALLOWED_HEADERS.split(",") if header.strip()]
 
     @property
     def database_url(self) -> str:
