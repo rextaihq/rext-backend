@@ -15,6 +15,7 @@ from src.api.middleware.exceptions import ResourceNotFoundException
 from src.api.models.user_models.notification_preferences import NotificationPreferences
 from src.utils.response_utils import success
 from src.utils.logger import logger
+from src.utils.audit_helper import create_audit_log
 
 router = APIRouter(
     prefix="/user/email-preferences",
@@ -129,13 +130,39 @@ async def update_preferences(
     pref_service = NotificationPreferencesService(db)
     prefs = await pref_service.get_or_create(user_id)
 
+    # Track changes for audit log
+    old_values = {}
+    new_values = {}
+
     # Apply updates
     for field, value in update_data.items():
         mapped_field = field_mapping.get(field, field)
         if hasattr(prefs, mapped_field):
-            setattr(prefs, mapped_field, value)
+            current_value = getattr(prefs, mapped_field)
+            if current_value != value:
+                old_values[mapped_field] = current_value
+                new_values[mapped_field] = value
+                setattr(prefs, mapped_field, value)
 
     await db.flush()
+
+    # Create audit log if values changed
+    if old_values:
+        await create_audit_log(
+            db=db,
+            user_id=user_id,
+            action="email_preferences.update",
+            resource_type="notification_preferences",
+            resource_id=str(prefs.id),
+            old_values=old_values,
+            new_values=new_values,
+            request=request,
+            metadata={
+                "fields_changed": list(new_values.keys()),
+                "total_changes": len(new_values),
+                "source": "email_preferences_endpoint",
+            },
+        )
 
     return success(
         data=prefs.to_dict(),
@@ -164,9 +191,16 @@ async def unsubscribe(
     if not prefs:
         raise HTTPException(status_code=404, detail="Invalid unsubscribe token")
 
+    # Track changes for audit log
+    old_values = {}
+    new_values = {}
+
     # If no specific email types provided, disable all email notifications
     if not unsubscribe_data.email_types:
-        prefs.email_notifications = False
+        if prefs.email_notifications is not False:
+            old_values["email_notifications"] = prefs.email_notifications
+            new_values["email_notifications"] = False
+            prefs.email_notifications = False
     else:
         # Map email types to NotificationPreferences columns
         type_mapping = {
@@ -195,9 +229,32 @@ async def unsubscribe(
             if email_type in type_mapping:
                 field_name = type_mapping[email_type]
                 if hasattr(prefs, field_name):
-                    setattr(prefs, field_name, False)
+                    current_value = getattr(prefs, field_name)
+                    if current_value is not False:
+                        old_values[field_name] = current_value
+                        new_values[field_name] = False
+                        setattr(prefs, field_name, False)
 
     await db.flush()
+
+    # Create audit log if values changed
+    if old_values:
+        await create_audit_log(
+            db=db,
+            user_id=prefs.user_id,
+            action="email_preferences.unsubscribe",
+            resource_type="notification_preferences",
+            resource_id=str(prefs.id),
+            old_values=old_values,
+            new_values=new_values,
+            request=request,
+            metadata={
+                "fields_changed": list(new_values.keys()),
+                "total_changes": len(new_values),
+                "is_unsubscribe": True,
+                "token_used": unsubscribe_data.token[:8] + "...", # Mask token
+            },
+        )
 
     email_types_str = ", ".join(unsubscribe_data.email_types) if unsubscribe_data.email_types else "all emails"
 

@@ -26,6 +26,8 @@ from sqlalchemy import select
 import time
 import imghdr
 
+from src.utils.audit_helper import create_audit_log
+
 router = APIRouter()
 
 # Avatar upload directory - stored in media directory for consistent static file serving
@@ -365,6 +367,23 @@ async def update_notification_preferences(
     # Update preferences dynamically from the request
     update_data = preferences_update.model_dump(exclude_unset=True)
 
+    if not update_data:
+        return success(
+            data=preferences.to_dict(),
+            request=request,
+            message="No preferences to update"
+        )
+
+    # Capture old values before applying changes
+    old_values = {}
+    new_values = {}
+
+    # Map aliased field names to model column names
+    alias_to_column = {
+        "email_enabled": "email_notifications",
+        "in_app_enabled": "in_app_notifications",
+    }
+
     # Handle simplified categories if provided
     if "categories" in update_data:
         categories = update_data.pop("categories")
@@ -378,16 +397,42 @@ async def update_notification_preferences(
                 if cat in mapping:
                     for db_field in mapping[cat]:
                         if hasattr(preferences, db_field):
-                            setattr(preferences, db_field, value)
-                            logger.debug(f"Updated category preference '{cat}' -> '{db_field}' to {value}")
+                            current_value = getattr(preferences, db_field)
+                            if current_value != value:
+                                old_values[db_field] = current_value
+                                new_values[db_field] = value
+                                setattr(preferences, db_field, value)
+                                logger.debug(f"Updated category preference '{cat}' -> '{db_field}' to {value}")
 
     # Handle all other fields directly
     for field, value in update_data.items():
-        if hasattr(preferences, field):
-            setattr(preferences, field, value)
-            logger.debug(f"Updated notification preference '{field}' for user {user_id}")
+        column_name = alias_to_column.get(field, field)
+        if hasattr(preferences, column_name):
+            current_value = getattr(preferences, column_name)
+            if current_value != value:
+                old_values[column_name] = current_value
+                new_values[column_name] = value
+                setattr(preferences, column_name, value)
+                logger.debug(f"Updated notification preference '{field}' for user {user_id}")
 
     await db.flush()
+
+    # Create audit log entry if any values actually changed
+    if old_values:
+        await create_audit_log(
+            db=db,
+            user_id=user_id,
+            action="notification_preferences.update",
+            resource_type="notification_preferences",
+            resource_id=str(preferences.id),
+            old_values=old_values,
+            new_values=new_values,
+            request=request,
+            metadata={
+                "fields_changed": list(new_values.keys()),
+                "total_changes": len(new_values),
+            },
+        )
 
     # Schedule notification
     await schedule_if_allowed(
