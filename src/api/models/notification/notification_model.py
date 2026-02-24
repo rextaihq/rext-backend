@@ -137,40 +137,45 @@ class Notification(Base, SerializableMixin, SoftDeleteMixin):
     # INDEXES
     # ==============================
     __table_args__ = (
-        # Primary listing query: user's active (non-deleted, non-archived) notifications
+        # Primary listing query: user's active (non-deleted) notifications sorted by date
         # Covers: get_notifications base query, clear_notifications, get_notification_by_id
         Index(
             'idx_notif_user_active_created',
             'user_id', 'created_at',
-            postgresql_where=text("is_deleted = false AND is_archived = false"),
+            postgresql_where=text("deleted_at IS NULL"),
         ),
         # Unread count + unread filter (most frequent — badge counter polling)
         # Covers: get_unread_count, get_notifications(unread_only=True), mark_notifications_as_read
         Index(
             'idx_notif_user_unread',
             'user_id',
-            postgresql_where=text("is_deleted = false AND is_archived = false AND is_read = false"),
+            postgresql_where=text("deleted_at IS NULL AND is_read = false"),
         ),
         # Type filter: get_notifications with ?type= parameter
         Index(
             'idx_notif_user_type_created',
             'user_id', 'type', 'created_at',
-            postgresql_where=text("is_deleted = false AND is_archived = false"),
+            postgresql_where=text("deleted_at IS NULL"),
         ),
         # Category filter: get_notifications with ?category= parameter
         Index(
             'idx_notif_user_category_created',
             'user_id', 'category', 'created_at',
-            postgresql_where=text("is_deleted = false AND is_archived = false"),
+            postgresql_where=text("deleted_at IS NULL"),
         ),
         # Workspace filter: get_notifications with ?workspace_id= parameter
         Index(
             'idx_notif_user_workspace_created',
             'user_id', 'workspace_id', 'created_at',
-            postgresql_where=text("is_deleted = false AND is_archived = false"),
+            postgresql_where=text("deleted_at IS NULL"),
         ),
-        # Mark-as-read queries filter on is_read; keep a non-partial index for that path
-        Index('idx_user_read_deleted', 'user_id', 'is_read', 'is_deleted'),
+        # Deduplication index (covers schedule_if_allowed check)
+        Index(
+            'idx_dedup_user_category_workspace',
+            'user_id', 'category', 'workspace_id', 'created_at'
+        ),
+        # Mark-as-read queries filter on is_read and user_id
+        Index('idx_user_read_deleted', 'user_id', 'is_read', 'deleted_at'),
     )
 
     # ✅ FIXED to_dict (TASK-054 compliant)

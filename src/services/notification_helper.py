@@ -244,7 +244,17 @@ async def schedule_if_allowed(
         )
         return
 
-    # 4️⃣ Use resolved notification metadata
+    # 4️⃣ Resolve notification configuration
+    config = NOTIFICATION_REGISTRY.get(pref_flag)
+    if not config:
+        logger.error(
+            "Notification flag %r not found in NOTIFICATION_REGISTRY – "
+            "skipping notification for user %s",
+            pref_flag,
+            user_id,
+        )
+        return
+
     notification_type = config.notification_type
     notification_status = config.status
     notification_title = config.title
