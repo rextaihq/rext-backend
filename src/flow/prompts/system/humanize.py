@@ -34,7 +34,7 @@ E-E-A-T INJECTION (Writer Personality):
 - What You're Biased Toward (your stance): [e.g., "boring + reliable"]
 - What You Avoid (and why): [e.g., "too many plugins", "premature microservices"]
 - Boundaries/Limits: [what you don't know / assumptions you're making]
-- Bio / Credibility Line: {persona_bio}
+- Bio / Credibility Line: {persona_bio} + If relevant, include 1–2 credibility lines early (NOT a full bio wall).
 - Behaviors / Style Guidance: {persona_behaviors}
 - Personal Tone: {persona_tone_of_voice} 
 
@@ -56,6 +56,7 @@ QUALITY CHECK BEFORE FINAL:
 - Delete generic lines that could fit any blog.
 - Replace vague claims with specifics.
 - If a section feels template-y, rewrite it in a more natural voice.
+- write short and too long sentences.
 
 Now write the article.
 """

@@ -64,17 +64,15 @@ async def humanize_content(state: REXT) -> dict:
         
         # 2️⃣ Fetch Persona data from DB
         workspace_id = state.get("serp_payload", {}).get("workspace_id")
-        
-        # Initialize with user-requested fallbacks
         persona_data = {
-            "persona_full_name": "[Writer name]",
-            "persona_professional_title": "[e.g., WordPress dev, Security engineer, SaaS founder]",
-            "persona_areas_of_expertise": "[e.g., WP-CLI, Git, Nginx, Cloudflare, Woo, etc]",
-            "persona_bio": "[A short professional bio]",
-            "persona_tone_of_voice": "Personal Tone",
-            "persona_description": "[Writer persona details]",
-            "persona_goals": "[what they should know/do after]",
-            "persona_behaviors": "[Behaviors]",
+            "persona_full_name": "Writer",
+            "persona_professional_title": "Subject Matter Expert",
+            "persona_areas_of_expertise": "Industry Expertise",
+            "persona_bio": "A seasoned professional with deep industry knowledge.",
+            "persona_tone_of_voice": "Professional and authoritative",
+            "persona_description": "Expert writer",
+            "persona_goals": "Provide high-quality, actionable insights",
+            "persona_behaviors": "Conversational, direct, and insightful",
         }
 
         if workspace_id:
@@ -87,16 +85,16 @@ async def humanize_content(state: REXT) -> dict:
                     persona = result.scalars().first()
                     
                     if persona:
-                        # Override defaults ONLY if persona fields are not None/empty
-                        persona_data["persona_full_name"] = persona.full_name or persona.name or persona_data["persona_full_name"]
-                        persona_data["persona_professional_title"] = persona.professional_title or persona_data["persona_professional_title"]
-                        persona_data["persona_areas_of_expertise"] = persona.areas_of_expertise or persona_data["persona_areas_of_expertise"]
-                        persona_data["persona_bio"] = persona.bio or persona_data["persona_bio"]
-                        persona_data["persona_tone_of_voice"] = persona.tone_of_voice or persona_data["persona_tone_of_voice"]
-                        persona_data["persona_description"] = persona.description or persona_data["persona_description"]
-                        persona_data["persona_goals"] = persona.goals or persona_data["persona_goals"]
-                        persona_data["persona_behaviors"] = persona.behaviors or persona_data["persona_behaviors"]
-                        
+                        persona_data = {
+                            "persona_full_name": persona.full_name or persona.name or "Writer",
+                            "persona_professional_title": persona.professional_title or "Subject Matter Expert",
+                            "persona_areas_of_expertise": persona.areas_of_expertise or "Industry Expertise",
+                            "persona_bio": persona.bio or "A seasoned professional with deep industry knowledge.",
+                            "persona_tone_of_voice": persona.tone_of_voice or "Professional and authoritative",
+                            "persona_description": persona.description or "Expert writer",
+                            "persona_goals": persona.goals or "Provide high-quality, actionable insights",
+                            "persona_behaviors": persona.behaviors or "Conversational, direct, and insightful",
+                        }
                         logger.info(f"Loaded persona '{persona_data['persona_full_name']}' for humanization (Workspace: {workspace_id})")
                     else:
                         logger.info(f"No persona found for workspace {workspace_id}. Using defaults.")
@@ -105,18 +103,26 @@ async def humanize_content(state: REXT) -> dict:
             except Exception as db_exc:
                 logger.error(f"Database error fetching persona: {db_exc}. Using defaults.")
 
-        # 3️⃣ Prepare prompt data with safe fallbacks
+        # 3️⃣ Prepare prompt data
         prompt_data = {
             "title": title,
             "introduction": final_content.get("introduction", ""),
             "body_markdown": body_markdown,
-            "selected_topic": content_state.get("selected_topic") or title,
-            "content_type": content_state.get("content_type") or "Article",
+            "selected_topic": content_state.get("selected_topic", ""),
+            "content_type": content_state.get("content_type", ""),
             "word_count": final_content.get("word_count") or "[word count]",
             "target_audience": content_outline.get("target_audience") or "[exact persona + skill level]",
             "content_tone": content_outline.get("tone") or "[casual/direct/spicy/calm]",
             **persona_data # Inject persona fields
         }
+
+        # Apply fallbacks for persona fields if they are missing
+        prompt_data["persona_full_name"] = prompt_data.get("persona_full_name") or "[Writer name]"
+        prompt_data["persona_professional_title"] = prompt_data.get("persona_professional_title") or "[e.g., WordPress dev, Security engineer, SaaS founder]"
+        prompt_data["persona_areas_of_expertise"] = prompt_data.get("persona_areas_of_expertise") or "[e.g., WP-CLI, Git, Nginx, Cloudflare, Woo, etc]"
+        prompt_data["persona_goals"] = prompt_data.get("persona_goals") or "[what they should know/do after]"
+        prompt_data["persona_behaviors"] = prompt_data.get("persona_behaviors") or "[Behaviors]"
+        prompt_data["persona_tone_of_voice"] = prompt_data.get("persona_tone_of_voice") or "Personal Tone"
         
         # 3️⃣ Load model and prepare messages
         # model = load_model().with_structured_output(GeneratedHumanizeContent)
