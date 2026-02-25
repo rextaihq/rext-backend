@@ -150,7 +150,7 @@ async def get_member_workspace_permissions(
     await require_permission(
         db,
         current_user_id,
-        "workspace:manage_members",
+        "workspace.manage_members",
         workspace_uuid,
         "workspace members"
     )
