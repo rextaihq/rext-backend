@@ -165,7 +165,7 @@ async def create_admin_invitation(
     invitation = await service.create_admin_invitation(
         email=data.email,
         admin_role=data.admin_role,
-        invited_by_admin_id=UUID(current_user["id"]),
+        invited_by_admin_id=UUID(current_user["identity"]),
         message=data.message,
         permissions=data.permissions,
         expiry_days=data.expiry_days or 7,
@@ -272,7 +272,7 @@ async def resend_admin_invitation(
 
     invitation = await service.resend_admin_invitation(
         invitation_id=invitation_id,
-        resent_by_admin_id=UUID(current_user["id"]),
+        resent_by_admin_id=UUID(current_user["identity"]),
         expiry_days=data.expiry_days or 7,
     )
 
@@ -312,7 +312,7 @@ async def revoke_admin_invitation(
 
     invitation = await service.revoke_admin_invitation(
         invitation_id=invitation_id,
-        revoked_by_admin_id=UUID(current_user["id"]),
+        revoked_by_admin_id=UUID(current_user["identity"]),
         reason=data.reason,
     )
 
@@ -400,7 +400,7 @@ async def accept_admin_invitation(
 
     invitation = await service.accept_admin_invitation(
         token=token,
-        user_id=UUID(current_user["id"]),
+        user_id=UUID(current_user["identity"]),
     )
 
     logger.info(
