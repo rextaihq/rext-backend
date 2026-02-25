@@ -3,12 +3,12 @@
 from src.flow.engines.rext import create_rext_engine
 
 
-def get_graph():
-    """Return a compiled Rext graph instance."""
-    return create_rext_engine()
+# def get_graph():
+#     """Return a compiled Rext graph instance."""
+#     return create_rext_engine()
 
 
-graph = get_graph()
+graph = create_rext_engine()
 
 
 if __name__ == "__main__":

@@ -22,6 +22,7 @@ from src.api.models.user_models.users import Users
 from src.api.models.user_models.roles import Role
 from src.api.models.workspace_models.workspace_model import WorkspaceModel
 from src.api.models.workspace_models.workspace_member import WorkspaceMembers
+from src.api.models.enums import InvitationStatus
 from src.api.middleware.exceptions import (
     ResourceNotFoundException,
     BusinessRuleViolationException,
@@ -120,21 +121,12 @@ async def validate_invitation(
         except ResourceNotFoundException:
             pass  # Inviter might have been deleted
 
-    # Eagerly load all attributes we need (avoid lazy loading issues)
-    invitation_id = str(invitation.id)
-    invitation_email = invitation.email
-    invitation_expires_at = invitation.expires_at.isoformat()
-    invitation_status = invitation.status
-    workspace_id = str(workspace.id)
-    workspace_name = workspace.name
-    workspace_slug = workspace.slug
-    role_id = str(role.id)
-    role_name = role.display_name or role.name
-    inviter_display_name = inviter.display_name if inviter else None
-    inviter_username = inviter.display_name or inviter.email if inviter else "Unknown"
-    inviter_first_name = inviter.first_name if inviter and hasattr(inviter, 'first_name') else ""
-    inviter_last_name = inviter.last_name if inviter and hasattr(inviter, 'last_name') else ""
-    inviter_id = str(inviter.id) if inviter else None
+    invitation_data = serialize_invitation_detail(
+        invitation=invitation,
+        workspace=workspace,
+        role=role,
+        invited_by=inviter
+    )
 
     return success(
         data={"invitation": invitation_data},

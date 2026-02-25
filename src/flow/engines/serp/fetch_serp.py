@@ -14,12 +14,12 @@ from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_excep
 AUTH_HEADER = os.getenv("DATAFORSEO_AUTH_HEADER")
 DATAFORSEO_SERP_URL = os.getenv("DATAFORSEO_SERP_URL")
 
-@retry(
-    stop=stop_after_attempt(3),
-    wait=wait_exponential(multiplier=1, min=4, max=10),
-    retry=retry_if_exception_type((httpx.RequestError, httpx.TimeoutException)),
-    reraise=True
-)
+# @retry(
+#     stop=stop_after_attempt(3),
+#     wait=wait_exponential(multiplier=1, min=4, max=10),
+#     retry=retry_if_exception_type((httpx.RequestError, httpx.TimeoutException)),
+#     reraise=True
+# )
 async def _do_fetch_serp(
     client: httpx.AsyncClient,
     query: str,
@@ -28,7 +28,8 @@ async def _do_fetch_serp(
     auth_header: str = AUTH_HEADER
 ) -> Dict[str, Any]:
 
-    if country == "Global":
+    # Default to United States for Global or missing country
+    if not country or country.lower() == "global":
         country = "United States"
 
     payload = [
@@ -44,13 +45,13 @@ async def _do_fetch_serp(
         "Content-Type": "application/json"
     }
 
-    logger.debug(f"Sending request to DataForSEO (live) for query: {query}")
+    logger.debug(f"Sending request to DataForSEO (live) for query: {query} with location: {country}")
 
     response = await client.post(
         serp_url,
         json=payload,
         headers=headers,
-        # timeout=30.0
+        timeout=30.0
     )
 
     if response.status_code != 200:
@@ -63,9 +64,35 @@ async def _do_fetch_serp(
 
 
 def _parse_serp_response(raw_data: Dict[str, Any]) -> SERPEngineState:
-    task = raw_data.get("tasks", [{}])[0]
-    result = task.get("result", [{}])[0]
-    items = result.get("items", [])
+    tasks = raw_data.get("tasks", [])
+    if not tasks:
+        logger.warning("DataForSEO returned no tasks")
+        return {
+            "search_params": {},
+            "organic_results": [],
+            "people_ask": [],
+            "related_searches": [],
+            "total_results": 0
+        }
+    
+    task = tasks[0]
+    status_code = task.get("status_code")
+    if status_code != 20000:
+        logger.error(f"DataForSEO task failed with status {status_code}: {task.get('status_message')}")
+        # We still try to extract what we can, but likely it's empty
+    
+    result = task.get("result", [{}])
+    if not result or not result[0]:
+        return {
+            "search_params": task.get("data", {}),
+            "organic_results": [],
+            "people_ask": [],
+            "related_searches": [],
+            "total_results": 0
+        }
+        
+    main_result = result[0]
+    items = main_result.get("items", [])
 
     serp_state: SERPEngineState = {
         "search_params": task.get("data", {}),
@@ -77,13 +104,16 @@ def _parse_serp_response(raw_data: Dict[str, Any]) -> SERPEngineState:
         "total_results": 0
     }
 
+    item_types = [item.get("type") for item in items]
+    logger.debug(f"DataForSEO returned {len(items)} items. Types: {item_types}")
+
     for item in items:
         item_type = item.get("type")
 
         # ----------------------------
-        # ORGANIC
+        # ORGANIC & FEATURED SNIPPET
         # ----------------------------
-        if item_type == "organic":
+        if item_type in ("organic", "featured_snippet"):
             serp_state["organic_results"].append({
                 "position": item.get("rank_group", ""),
                 "absolute_position": item.get("rank_absolute", ""),
@@ -95,7 +125,7 @@ def _parse_serp_response(raw_data: Dict[str, Any]) -> SERPEngineState:
                 "is_image": item.get("is_image", False),
                 "is_video": item.get("is_video", False),
                 "faqs": item.get("faqs", False),
-                "is_featured_snippet": item.get("is_featured_snippet", False),
+                "is_featured_snippet": item.get("is_featured_snippet", True) if item_type == "featured_snippet" else item.get("is_featured_snippet", False),
             })
 
         # ----------------------------
@@ -139,10 +169,15 @@ async def fetch_serp_results(state: REXT) -> Dict[str, Any]:
     query = serp_payload.get("query")
     country = serp_payload.get("country", "Pakistan")
     
-    # Handle invalid country codes and global
-    if country == "global" or country not in VALID_COUNTRY_CODES:
-        logger.info(f"Using global SERP (no location) for query: '{query}'")
-        country = None
+    # Normalize country for validation
+    if country:
+        # Check if country exists in VALID_COUNTRY_CODES (case insensitive-ish check if needed, but the list is capitalized)
+        # For simplicity, if it's not exactly in the set, we check common variations
+        if country.lower() == "global":
+            country = "United States"
+        elif country not in VALID_COUNTRY_CODES:
+            logger.warning(f"Country '{country}' not in valid list, defaulting to None (Global strategy)")
+            country = None
 
     if not query:
         logger.error("No query provided in serp_payload")
@@ -164,8 +199,8 @@ async def fetch_serp_results(state: REXT) -> Dict[str, Any]:
             raw_data = await _do_fetch_serp(client, query, country, DATAFORSEO_SERP_URL)
             serp_data = _parse_serp_response(raw_data)
 
-            # Log counts for each SERP type
-            logger.info(f"Fetched SERP for query '{query}': {serp_data}")
+            # Log summary for debugging
+            logger.info(f"Fetched SERP for query '{query}': Found {len(serp_data['organic_results'])} organic results, {len(serp_data['related_searches'])} related searches, {len(serp_data['people_ask'])} questions.")
 
             return {"serp_result": serp_data}
 

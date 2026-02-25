@@ -6,21 +6,30 @@ INTENT_TO_CONTENT_TYPES ={
         "pillar-content",
         "checklist",
         "tutorial",
-        "faq"
+        "faq",
+        "white-paper",
+        "case-study",
+        "glossary",
+        "resource-list"
     ],
     "COMMERCIAL": [
         "comparison",
         "best-tools",
         "alternatives",
         "in-depth-review",
-        "pros-cons"
+        "pros-cons",
+        "product-roundup",
+        "buying-guide"
     ],
     "NAVIGATIONAL": [
         "brand-page",
         "product-homepage",
         "feature-overview",
         "documentation",
-        "login-guide"
+        "login-guide",
+        "contact-us",
+        "about-us",
+        "help-center"
     ],
     "TRANSACTIONAL": [
         "sales-page",
@@ -28,6 +37,8 @@ INTENT_TO_CONTENT_TYPES ={
         "signup-page",
         "demo-page",
         "coupon-page",
-        "checkout-page"
+        "checkout-page",
+        "landing-page",
+        "service-page"
     ]
 }

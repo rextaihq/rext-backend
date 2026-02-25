@@ -48,81 +48,54 @@ class WorkspacePermissionService:
                 resource_id=str(workspace_id),
             )
 
-        from src.utils.rbac_utils import is_user_admin
+        from src.utils.rbac_utils import get_user_roles, get_user_permissions, ADMIN_HIERARCHY_THRESHOLD
 
-        # Check if user has admin-level role (hierarchy_level >= 90)
-        # This covers both admin and super_admin roles
-        is_admin = await is_user_admin(db, user_id)
-
-        if is_admin:
-            # Get actual highest role name for the response
-            role_query = (
-                select(Role.name)
-                .join(UserRole, Role.id == UserRole.role_id)
-                .where(UserRole.user_id == user_id)
-                .order_by(Role.hierarchy_level.desc())
-                .limit(1)
-            )
-            role_result = await db.execute(role_query)
-            highest_role_name = role_result.scalar() or "admin"
-
-            # Admin gets all permissions
-            all_permissions_result = await db.execute(
-                select(Permission.name)
-                .where(Permission.resource.in_([
-                    'workspace', 'content', 'topic', 'knowledge', 'member'
-                ]))
-            )
-            all_permissions = [row[0] for row in all_permissions_result.all()]
-
-            return {
-                "workspace_id": str(workspace_id),
-                "workspace_slug": workspace.slug,
-                "user_role": highest_role_name,
-                "permissions": all_permissions,
-            }
-
-        # Workspace role
-        role_result = await db.execute(
-            select(UserRole, Role)
-            .join(Role, Role.id == UserRole.role_id)
-            .where(
-                UserRole.user_id == user_id,
-                UserRole.workspace_id == workspace_id,
-            )
-        )
-        role_data = role_result.first()
-
-        if not role_data:
+        # Get all roles the user has that apply to this workspace (global or scoped)
+        roles_with_context = await get_user_roles(db, user_id, workspace_id)
+        
+        if not roles_with_context:
             raise RextAuthorizationException(
                 message="User does not have access to workspace",
                 resource=f"workspace:{workspace_id}",
             )
 
-        user_role, role = role_data
+        # Sort by hierarchy level to find the highest role
+        roles_with_context.sort(key=lambda x: x[0].hierarchy_level, reverse=True)
+        highest_role = roles_with_context[0][0]
 
-        perms_result = await db.execute(
-            select(Permission.name)
-            .join(RolePermission, RolePermission.permission_id == Permission.id)
-            .where(RolePermission.role_id == role.id)
-            .distinct()
-        )
-        permissions = [row[0] for row in perms_result.all()]
+        # If highest role is admin level (>=80), return all system permissions
+        # This covers super_admin (100), support_admin (90), and platform_admin (80)
+        if highest_role.hierarchy_level >= ADMIN_HIERARCHY_THRESHOLD:
+            # Admin bypass - return all permissions in the system
+            all_permissions_result = await db.execute(select(Permission.name))
+            raw_perms = [row[0] for row in all_permissions_result.all()]
+            
+            # Global Permission Bridge: Ensure both dot and colon notation are supported.
+            permissions_list = list(raw_perms)
+            colon_perms = [p.replace('.', ':') for p in permissions_list if '.' in p]
+            if colon_perms:
+                permissions_list.extend(colon_perms)
+            permissions = sorted(list(set(permissions_list)))
+        else:
+            # Return union of permissions from all applicable roles
+            # (get_user_permissions already aggregates global + workspace-scoped and handles the bridge)
+            permissions = await get_user_permissions(db, user_id, workspace_id)
 
         logger.info(
             "Loaded workspace permissions",
             extra={
                 "user_id": str(user_id),
                 "workspace_id": str(workspace_id),
-                "role": role.name,
+                "highest_role": highest_role.name,
+                "permission_count": len(permissions),
             },
         )
 
         return {
             "workspace_id": str(workspace_id),
             "workspace_slug": workspace.slug,
-            "user_role": role.name,
-            "permissions": permissions,
+            "user_role": highest_role.name,
+            "permissions": list(permissions),
         }
 
     @staticmethod
