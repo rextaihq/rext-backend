@@ -91,17 +91,17 @@ def load_humanize_model():
         BaseChatModel: A chat model with 8192 max output tokens.
     """
 
+    # return init_chat_model(
+    # "gpt-5-mini", 
+    # model_provider="openai",
+    # api_key=settings.OPENAI_API_KEY,
+    # max_tokens=CONTENT_GENERATION_MAX_TOKENS,
+    # )   
+
     return init_chat_model(
-    "gpt-5-mini", 
+    "gpt-5.2",
     model_provider="openai",
     api_key=settings.OPENAI_API_KEY,
     max_tokens=CONTENT_GENERATION_MAX_TOKENS,
-    )   
-
-#     return init_chat_model(
-#     "gpt-5.2",
-#     model_provider="openai",
-#     api_key=settings.OPENAI_API_KEY,
-#     max_tokens=CONTENT_GENERATION_MAX_TOKENS,
-#     reasoning_effort="low",
-# )
+    reasoning_effort="low",
+)
