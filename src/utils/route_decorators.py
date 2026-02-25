@@ -28,6 +28,7 @@ Usage:
 """
 
 import functools
+import inspect
 from typing import Any, Callable, Optional
 from fastapi import HTTPException, Request
 from fastapi.responses import JSONResponse
@@ -418,7 +419,12 @@ def require_permissions(
                 ) from exc
 
             # Permission check passed - execute the route
-            return await func(*args, **kwargs)
+            # Filter kwargs to only include params that the original function accepts.
+            # This prevents 'current_user' (used internally by this decorator for
+            # permission extraction) from leaking into handlers that only declare 'user'.
+            valid_params = set(inspect.signature(func).parameters.keys())
+            filtered_kwargs = {k: v for k, v in kwargs.items() if k in valid_params}
+            return await func(*args, **filtered_kwargs)
 
         return wrapper
     return decorator
