@@ -94,7 +94,7 @@ def _parse_serp_response(raw_data: Dict[str, Any]) -> SERPEngineState:
     main_result = result[0]
     items = main_result.get("items", [])
 
-    serp_state: SERPEngineState = {
+    serp_state: SERPEngineState = { 
         "search_params": task.get("data", {}),
 
         "organic_results": [],

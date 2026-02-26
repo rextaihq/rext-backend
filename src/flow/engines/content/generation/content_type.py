@@ -24,6 +24,13 @@ def content_type(state: REXT) -> REXT:
     
     # get the selected topic from the state
     content_state = state.get("content", {})
+
+    seo_result = state.get("seo_result", {})
+    serp_backlinks = seo_result.get("serp_backlinks", {})
+    logger.info("serp_backlinks", serp_backlinks)
+
+    seach_intent = serp_backlinks.get("main_intent")
+
     # Check for upstream errors — skip processing if prior node failed
     if content_state.get("error"):
         logger.warning(
@@ -32,21 +39,6 @@ def content_type(state: REXT) -> REXT:
         )
         return {"content": content_state}
     selected_topic = content_state.get("selected_topic", "")
-    
-    # get the intent from the state - aggregate intent distribution across all competitors
-    competitors = state.get("competitors", [])
-    
-    # Aggregate intent distributions from all competitors
-    aggregated_intent: Dict[str, int] = {}
-    for competitor in competitors:
-        intent_distribution = competitor.get("intent_distribution", {})
-        for intent, count in intent_distribution.items():
-            aggregated_intent[intent] = aggregated_intent.get(intent, 0) + count
-    
-    # Find the intent with maximum distribution
-    max_intent = None
-    if aggregated_intent:
-        max_intent = max(aggregated_intent, key=aggregated_intent.get)
 
     if not selected_topic:
         logger.warning("No selected topic found in state")
@@ -56,7 +48,7 @@ def content_type(state: REXT) -> REXT:
     selected_content_type = interrupt({
         "instruction": "Select a content type for your topic",
         "topic": selected_topic,
-        "content_types": INTENT_TO_CONTENT_TYPES.get(max_intent, []),
+        "content_types": INTENT_TO_CONTENT_TYPES.get(seach_intent.lower(), []),
         "type": "content_type"
     })
 

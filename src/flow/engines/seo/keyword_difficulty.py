@@ -10,7 +10,10 @@ def keyword_difficulty_node(state: REXT) -> Dict[str, SEORESULT]:
     keyword = (state.get("serp_payload") or {}).get("query", "").lower()
     results = serp.get("normalize_results", [])[:10]
     normalized_results = serp.get("normalize_results", [])
-    dataforseo_data = state.get("serp_backlinks", {})
+    
+    # Access serp_backlinks from seo_result
+    seo_result = state.get("seo_result", {})
+    dataforseo_data = seo_result.get("serp_backlinks", {})
 
     # 1. LINK DIFFICULTY (PROXY) – 0–20
     
@@ -145,17 +148,19 @@ def keyword_difficulty_node(state: REXT) -> Dict[str, SEORESULT]:
         "seo_result": {
             "keyword_difficulty": {
                 "keyword": keyword,
-                "monthly_search_volume": monthly_search_volume,
-                "main_intent": main_intent,
                 "difficulty_score": score,
                 "difficulty_level": level,
-                "difficulty_signals": {
-                    "link_difficulty": link_difficulty,
-                    "serp_feature_pressure": serp_feature_pressure,
+                "breakdown": {
+                    "link_score": link_difficulty,
+                    "serp_score": serp_feature_pressure,
                     "freshness_pressure": freshness_pressure,
                     "onpage_pressure": onpage_pressure,
                     "brand_dominance": brand_dominance,
                 },
+                "notes": [
+                    f"Main intent: {main_intent}",
+                    f"Monthly search volume: {monthly_search_volume}"
+                ]
             }
         }
     }

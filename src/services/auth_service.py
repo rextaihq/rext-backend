@@ -513,10 +513,13 @@ class AuthService:
                 context={"reason": "Token blacklisted"}
             )
 
-        # Get user
+        # Get user (eagerly load relationships to avoid lazy loading)
         user_id = payload.get("id")
+        from sqlalchemy.orm import selectinload
         result = await self.db.execute(
-            select(Users).where(Users.id == user_id)
+            select(Users)
+            .options(selectinload(Users.user_roles).selectinload(UserRole.role))
+            .where(Users.id == user_id)
         )
         db_user = result.scalar_one_or_none()
 

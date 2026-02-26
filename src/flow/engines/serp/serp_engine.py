@@ -17,7 +17,6 @@ def create_serp_engine() -> StateGraph:
         StateGraph: The configured LangGraph StateGraph for the SERP flow.
     """
     from src.flow.engines.serp.fetch_serp import fetch_serp_results
-    from src.flow.engines.serp.fetch_dataforseo_backlinks import fetch_dataforseo_backlinks
     from src.flow.engines.serp.normalization import normalize_serp_results
     from src.flow.engines.serp.competitor import extract_competitors_from_serp
     from src.flow.engines.scrape.scrape_engine import create_scrape_engine
@@ -26,17 +25,14 @@ def create_serp_engine() -> StateGraph:
 
     # Add nodes
     serp_flow.add_node("fetch_serp", fetch_serp_results)
-    serp_flow.add_node("serp_backlinks", fetch_dataforseo_backlinks)
     serp_flow.add_node("normalize_serp", normalize_serp_results)
     serp_flow.add_node("extract_competitor", extract_competitors_from_serp)
     serp_flow.add_node("scrape_flow", create_scrape_engine())
 
     # Add edges
     serp_flow.add_edge(START, "fetch_serp") 
-    serp_flow.add_edge(START, "serp_backlinks")
 
     serp_flow.add_edge("fetch_serp", "normalize_serp")
-    serp_flow.add_edge("serp_backlinks", "normalize_serp")
 
 
     serp_flow.add_edge("normalize_serp", "extract_competitor")

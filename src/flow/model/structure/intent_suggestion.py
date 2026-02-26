@@ -1,5 +1,5 @@
 INTENT_TO_CONTENT_TYPES ={
-    "INFORMATIONAL": [
+    "informational": [
         "blog",
         "how-to-guide",
         "explainer",
@@ -12,7 +12,7 @@ INTENT_TO_CONTENT_TYPES ={
         "glossary",
         "resource-list"
     ],
-    "COMMERCIAL": [
+    "commercial": [
         "comparison",
         "best-tools",
         "alternatives",
@@ -21,7 +21,7 @@ INTENT_TO_CONTENT_TYPES ={
         "product-roundup",
         "buying-guide"
     ],
-    "NAVIGATIONAL": [
+    "navigational": [
         "brand-page",
         "product-homepage",
         "feature-overview",
@@ -31,7 +31,7 @@ INTENT_TO_CONTENT_TYPES ={
         "about-us",
         "help-center"
     ],
-    "TRANSACTIONAL": [
+    "transactional": [
         "sales-page",
         "pricing-page",
         "signup-page",

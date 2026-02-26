@@ -7,7 +7,7 @@ from typing import Dict, Any, List
 from src.flow.states.rext import REXT
 import httpx
 from src.flow.states.countries import VALID_COUNTRY_CODES
-from src.flow.states.rext import SERPBacklinks
+from src.flow.states.seo_state import SERPBacklinks
 
 load_dotenv()
 
@@ -69,17 +69,19 @@ async def get_dataforseo_data(
 
             serp_item_types = serp_info.get("serp_item_types", []) or []
 
+            # Cast metrics to int as per SERPBacklinks TypedDict
+            # Note: avg_backlinks_info contains averages which are floats from DataForSEO
             return {
                 "keyword": item.get("keyword", keyword),
 
                 # Core metrics
-                "search_volume": keyword_info.get("search_volume", 0),
-                "keyword_difficulty": keyword_props.get("keyword_difficulty", 0),
+                "search_volume": int(keyword_info.get("search_volume", 0)),
+                "keyword_difficulty": int(keyword_props.get("keyword_difficulty", 0)),
 
                 # Link metrics
-                "backlinks": backlinks_info.get("backlinks", 0),
-                "referring_domains": backlinks_info.get("referring_domains", 0),
-                "dofollow_links": backlinks_info.get("dofollow", 0),
+                "backlinks": int(backlinks_info.get("backlinks", 0)),
+                "referring_domains": int(backlinks_info.get("referring_domains", 0)),
+                "dofollow_links": int(backlinks_info.get("dofollow", 0)),
 
                 # SERP features (bool)
                 "images": True if "images" in serp_item_types else False,
@@ -88,7 +90,7 @@ async def get_dataforseo_data(
 
                 # Intent
                 "main_intent": intent_info.get("main_intent", "unknown"),
-                "foreign_intent": intent_info.get("foreign_intent", "unknown"),
+                "foreign_intent": ", ".join(intent_info.get("foreign_intent", [])) if isinstance(intent_info.get("foreign_intent"), list) else intent_info.get("foreign_intent", "unknown"),
             }
     except Exception as e:
         logger.error(f"Error fetching DataForSEO data: {e}")
@@ -96,23 +98,23 @@ async def get_dataforseo_data(
 
 async def fetch_dataforseo_backlinks(state: REXT) -> Dict[str, Any]:
     serp_payload = state.get("serp_payload")
-    default_backlinks = {
-        "keyword": "",
-        "search_volume": 0,
-        "keyword_difficulty": 0,
-        "backlinks": 0,
-        "referring_domains": 0,
-        "dofollow_links": 0,
-        "images": False,
-        "videos": False,
-        "discussions_and_forums": False,
-        "main_intent": "unknown",
-        "foreign_intent": "unknown",
-    }
+    default_backlinks = {}
+    #     "keyword": "",
+    #     "search_volume": 0,
+    #     "keyword_difficulty": 0,
+    #     "backlinks": 0,
+    #     "referring_domains": 0,
+    #     "dofollow_links": 0,
+    #     "images": False,
+    #     "videos": False,
+    #     "discussions_and_forums": False,
+    #     "main_intent": "unknown",
+    #     "foreign_intent": "unknown",
+    # }
 
-    if not serp_payload:
-        logger.error("No serp_payload found in state")
-        return {"serp_backlinks": default_backlinks}
+    # if not serp_payload:
+    #     logger.error("No serp_payload found in state")
+    #     return {"seo_result": {"serp_backlinks": default_backlinks}}
 
     query = serp_payload.get("query")
     country = serp_payload.get("country", "Pakistan")
@@ -126,7 +128,7 @@ async def fetch_dataforseo_backlinks(state: REXT) -> Dict[str, Any]:
 
     if not query:
         logger.error("No query provided in serp_payload")
-        return {"serp_backlinks": default_backlinks}
+        return {"seo_result": {"serp_backlinks": default_backlinks}}
     
     default_backlinks["keyword"] = query
 
@@ -135,21 +137,33 @@ async def fetch_dataforseo_backlinks(state: REXT) -> Dict[str, Any]:
     workspace_id = serp_payload.get("workspace_id")
     if not user_id or not workspace_id:
         logger.error("No user_id or workspace_id found in serp_payload")
-        return {"serp_backlinks": default_backlinks}
+        return {"seo_result": {"serp_backlinks": default_backlinks}}
 
     if not DATAFORSEO_BACKLINKS_URL:
         logger.error("DATAFORSEO_BACKLINKS_URL not found in environment variables")
-        return {"serp_backlinks": default_backlinks}
+        return {"seo_result": {"serp_backlinks": default_backlinks}}
 
     try:
         backlinks_data = await get_dataforseo_data(query, country)
         if not backlinks_data:
-            return {"serp_backlinks": default_backlinks}
+            logger.warning(f"No DataForSEO data found for query '{query}'")
+            return {
+                "seo_result":{
+                    "serp_backlinks": default_backlinks
+                }
+            }
 
-        # Log counts for each SERP type
-        logger.info(f"Fetched SERP for query '{query}': {backlinks_data}")
-        return {"serp_backlinks": backlinks_data}
+        logger.info(f"Successfully fetched SERP backlinks for query '{query}'")
+        return {
+            "seo_result":{
+                "serp_backlinks": backlinks_data
+            }
+        }
 
     except Exception as e:
         logger.exception(f"Failed to fetch SERP results for query '{query}': {str(e)}")
-        return {"serp_backlinks": default_backlinks}
+        return {
+            "seo_result":{
+                "serp_backlinks": default_backlinks
+            }
+        }

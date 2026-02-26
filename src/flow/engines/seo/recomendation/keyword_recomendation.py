@@ -1,6 +1,6 @@
+from PIL.Image import logger
 from typing import Dict, Any, Literal
 from src.flow.states.rext import REXT
-from src.services.keyword_service import KeywordExtractor
 from langgraph.types import interrupt, Command
 from langgraph.graph import END
 
@@ -23,28 +23,17 @@ def keyword_recommendation(state: REXT) -> Dict[str, Any] | Command:
     """
     serp_normalized = state.get("serp_normalized")
     seo_result = state.get("seo_result", {})
+    serp_backlinks = seo_result.get("serp_backlinks", {})
+    logger.info("serp_backlinks", serp_backlinks)
+
+    recommendations = serp_normalized.get("related_topics", [])
+    seach_intent = serp_backlinks.get("main_intent")
+    volume = serp_backlinks.get("search_volume")
+    keyword_difficulty = serp_backlinks.get("keyword_difficulty")
+    backlinks = serp_backlinks.get("backlinks")
+    referring_domains = serp_backlinks.get("referring_domains")
 
     competitors = state.get("competitors", [])
-    
-    # Calculate dominant intent from competitors
-    intent_aggregation = {}
-    for competitor in competitors:
-        intent_dist = competitor.get("intent_distribution", {})
-        for intent_type, count in intent_dist.items():
-            if intent_type not in intent_aggregation:
-                intent_aggregation[intent_type] = []
-            intent_aggregation[intent_type].append(count)
-    
-    # Calculate mean for each intent and find the one with highest mean
-    dominant_intent = None
-    max_mean = 0
-    
-    if intent_aggregation:
-        for intent_type, counts in intent_aggregation.items():
-            mean_count = sum(counts) / len(counts)
-            if mean_count > max_mean:
-                max_mean = mean_count
-                dominant_intent = intent_type
     
     # Scrape Data from SERP
     original_query = serp_normalized.get("query", "") if serp_normalized else ""
@@ -66,51 +55,19 @@ def keyword_recommendation(state: REXT) -> Dict[str, Any] | Command:
             }
         }
     
-    # From relevance_keyword_finder node
-    extracted_keywords = seo_result.get("extracted_keywords", {}).get("all", [])
-    
-    # From compute_keyword_difficulty node
-    keyword_difficulty = seo_result.get("keyword_difficulty", {})
-    
-    # From seo_opportunity_node
-    seo_opportunity = seo_result.get("seo_opportunity", {})
-    
-    # From competitors_gap_node
-    competitors_gap = seo_result.get("content_gaps", {})
-    
-    # ==================================
-    # GENERATE SMART RECOMMENDATIONS
-    # ==================================
-    extractor = KeywordExtractor()
-    title_result = extractor.keyword_recommendation(
-        serp_normalized=serp_normalized,
-        extracted_keywords=extracted_keywords,
-        seo_opportunity=seo_opportunity,
-        competitors_gap=competitors_gap,
-        keyword_difficulty=keyword_difficulty,
-        top_n=10
-    )
-    
-    # ==================================
-    # PREPARE RICH INTERRUPT DATA
-    # ==================================
-    recommendations = title_result.get("recommendations", [])
-    seo_context = title_result.get("seo_context", {})
-    
-    # Extract just the keywords for user selection
-    keyword_options = [rec.get("keyword") for rec in recommendations if rec.get("keyword")]
-    
     # Interrupt for user selection - simple keyword list
     user_selection = interrupt({
         "instruction": "Select a keyword for your content",
         "type": "keyword Selection",
         "Primary Keyword": original_query,
-        "Recommendations": keyword_options,
+        "Recommendations": recommendations,
         "seo_state": {
             # Full KeywordDifficultyState object
-            "keyword_difficulty": keyword_difficulty.get("kd", {}),
-            "intent": dominant_intent if dominant_intent else "informational",
-            "volume": "50"  
+            "keyword_difficulty": keyword_difficulty,
+            "intent": seach_intent if seach_intent else "informational",
+            "volume": volume,  
+            "backlinks": backlinks,
+            "referring_domains": referring_domains
         }
     })
     
@@ -132,10 +89,6 @@ def keyword_recommendation(state: REXT) -> Dict[str, Any] | Command:
                     "original_title": original_query,
                     "selected_keyword": primary_keyword,
                     "recommendations": recommendations,
-                    "patterns_found": title_result.get("patterns_found", {}),
-                    "seo_context": seo_context,
-                    "top_keywords_used": title_result.get("top_keywords_used", []),
-                    "total_competitors_analyzed": title_result.get("total_competitors_analyzed", 0),
                     "error": None,
                     "is_changed": False
                 }
@@ -154,13 +107,8 @@ def keyword_recommendation(state: REXT) -> Dict[str, Any] | Command:
                     "original_title": original_query,
                     "selected_keyword": primary_keyword,
                     "recommendations": recommendations,
-                    "patterns_found": title_result.get("patterns_found", {}),
-                    "seo_context": seo_context,
-                    "top_keywords_used": title_result.get("top_keywords_used", []),
-                    "total_competitors_analyzed": title_result.get("total_competitors_analyzed", 0),
                     "error": None,
                     "is_changed": True,
-                    "keyword_iteration_count": state.get("seo_result", {}).get("keyword_iteration_count", 0) + 1,
                 }
             },
             "serp_normalized": {
