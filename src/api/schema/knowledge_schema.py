@@ -84,9 +84,9 @@ class BrandSchema(BaseModel):
         description="List of competitors",
         example=["Patagonia", "Everlane"]
     )
-    content_strategy: List[str] = Field(
+    content_pillar: List[str] = Field(
         default_factory=list,
-        description="Main content strategy themes or pillars",
+        description="Main content pillars or strategy themes",
         example=["Sustainability", "Fashion Trends", "Eco-lifestyle"]
     )
     

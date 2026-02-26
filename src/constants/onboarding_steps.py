@@ -4,20 +4,20 @@ from typing import Final
 
 class OnboardingStep(IntEnum):
     """Enumeration of onboarding steps."""
-    CONTENT_STRATEGY = 0
+    CONTENT_PILLAR = 0
     MARKETING_QUESTIONS = 1
     COMPLETE = 2
 
 
 # Steps that require specific user actions/input
 ACTIONABLE_STEPS: Final[tuple[int, ...]] = (
-    OnboardingStep.CONTENT_STRATEGY.value,
+    OnboardingStep.CONTENT_PILLAR.value,
     OnboardingStep.MARKETING_QUESTIONS.value,
 )
 
 # All possible step values including the terminal state
 ALL_STEPS: Final[tuple[int, ...]] = (
-    OnboardingStep.CONTENT_STRATEGY.value,
+    OnboardingStep.CONTENT_PILLAR.value,
     OnboardingStep.MARKETING_QUESTIONS.value,
     OnboardingStep.COMPLETE.value,
 )

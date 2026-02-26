@@ -20,7 +20,7 @@ async def test_update_onboarding_permissions(client):
     
     # Valid payload for update
     payload = {
-        "step": OnboardingStep.CONTENT_STRATEGY.value,
+        "step": OnboardingStep.CONTENT_PILLAR.value,
         "action": "complete"
     }
 
@@ -39,7 +39,7 @@ async def test_update_onboarding_permissions(client):
                 "id": str(uuid4()), 
                 "user_id": str(user_id), 
                 "completed": False,
-                "current_step": OnboardingStep.CONTENT_STRATEGY.value, 
+                "current_step": OnboardingStep.CONTENT_PILLAR.value, 
                 "completed_steps": [],
                 "skipped_steps": [],
                 "user_industry": None,

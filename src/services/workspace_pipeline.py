@@ -352,7 +352,7 @@ class WorkspacePipeline:
                 existing.target_audience = data.get("target_audience") or []
                 existing.brand_voice = data.get("brand_voice") or []
                 existing.competitors = data.get("competitors") or []
-                existing.content_strategy = data.get("content_strategy") or []
+                existing.content_pillar = data.get("content_pillar") or []
                 brand_voice_record = existing
             else:
                 brand_voice_record = BrandVoice(
@@ -363,7 +363,7 @@ class WorkspacePipeline:
                     target_audience=data.get("target_audience") or [],
                     brand_voice=data.get("brand_voice") or [],
                     competitors=data.get("competitors") or [],
-                    content_strategy=data.get("content_strategy") or [],
+                    content_pillar=data.get("content_pillar") or [],
                 )
                 self.db.add(brand_voice_record)
 

@@ -599,7 +599,7 @@ class WorkspaceService:
                 "target_audience": brand_voice.target_audience,
                 "brand_voice": brand_voice.brand_voice,
                 "competitors": brand_voice.competitors,
-                "content_strategy": brand_voice.content_strategy,
+                "content_pillar": brand_voice.content_pillar,
                 "created_at": (
                     brand_voice.created_at.isoformat()
                     if brand_voice.created_at
@@ -1135,7 +1135,7 @@ class WorkspaceService:
                 target_audience=brand_data.target_audience,
                 brand_voice=brand_data.brand_voice,
                 competitors=brand_data.competitors,
-                content_strategy=brand_data.content_pillar,
+                content_pillar=brand_data.content_pillar,
             )
             self.db.add(brand_voice)
             await self.db.flush()

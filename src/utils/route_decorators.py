@@ -419,12 +419,7 @@ def require_permissions(
                 ) from exc
 
             # Permission check passed - execute the route
-            # Filter kwargs to only include params that the original function accepts.
-            # This prevents 'current_user' (used internally by this decorator for
-            # permission extraction) from leaking into handlers that only declare 'user'.
-            valid_params = set(inspect.signature(func).parameters.keys())
-            filtered_kwargs = {k: v for k, v in kwargs.items() if k in valid_params}
-            return await func(*args, **filtered_kwargs)
+            return await func(*args, **kwargs)
 
         return wrapper
     return decorator
