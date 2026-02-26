@@ -372,10 +372,14 @@ class AuthService:
             extra={"email": email, "session_id": str(new_session.id)}
         )
 
+        from src.api.config import get_settings
+        settings = get_settings()
+        
         tokens = {
             "access_token": access_token,
             "refresh_token": refresh_token,
             "token_type": "bearer",
+            "expires_in": settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
             "permissions": global_permissions,  # Include permissions for route response
             "roles": global_role_names  # Include roles for route response
         }
@@ -581,10 +585,14 @@ class AuthService:
             extra={"old_jti": jti}
         )
 
+        from src.api.config import get_settings
+        settings = get_settings()
+
         return {
             "access_token": new_access_token,
             "refresh_token": new_refresh_token,
-            "token_type": "bearer"
+            "token_type": "bearer",
+            "expires_in": settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60
         }
 
     async def logout_user(self, user_id: UUID, jti: str, exp: int) -> None:
