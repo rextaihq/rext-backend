@@ -599,7 +599,8 @@ class WorkspaceService:
                 "target_audience": brand_voice.target_audience,
                 "brand_voice": brand_voice.brand_voice,
                 "competitors": brand_voice.competitors,
-                "content_pillar": brand_voice.content_pillar,
+                "content_pillar": brand_voice.content_pillar or [],
+                "content_strategy": brand_voice.content_pillar or [], # Backward compatibility alias
                 "created_at": (
                     brand_voice.created_at.isoformat()
                     if brand_voice.created_at

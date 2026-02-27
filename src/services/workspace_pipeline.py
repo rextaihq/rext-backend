@@ -494,6 +494,15 @@ class WorkspacePipeline:
             
             system_prompt = """You are an expert at analyzing website content and extracting brand information and personas.
 
+IMPORTANT INSTRUCTIONS FOR BRAND INFORMATION:
+- Extract 'about': A brief summary of what the brand/business does.
+- Extract 'customer_profile': Who their ideal customers are.
+- Extract 'selling_position': Their unique value proposition (what makes them different).
+- Extract 'target_audience': Specific segments or demographics they target.
+- Extract 'brand_voice': The characteristics of their communication style (Friendly, Professional, etc.).
+- Extract 'competitors': Other businesses mentioned or implied as competitors.
+- Extract 'content_pillar': The main themes or categories they create content about (e.g., sustainability, tech tips, lifestyle).
+
 IMPORTANT INSTRUCTIONS FOR PERSONAS:
 - Extract AUTHOR/EXPERT personas (real people who create content, run the business, or are mentioned as experts)
 - DO NOT extract customer/user personas or target audience segments

@@ -418,6 +418,26 @@ def require_permissions(
                     },
                 ) from exc
 
+            if not has_permission:
+                # Permission check failed - user lacks required permissions
+                logger.warning(
+                    f"Access denied: user {user_id} lacks permissions {list(permissions)} for workspace {workspace_uuid}",
+                    extra={
+                        "operation": func.__name__,
+                        "user_id": str(user_id),
+                        "workspace_id": str(workspace_uuid) if workspace_uuid else None,
+                        "required_permissions": list(permissions)
+                    }
+                )
+                raise RextAuthorizationException(
+                    message="You do not have permission to perform this action",
+                    context={
+                        "required_permissions": list(permissions),
+                        "workspace_id": str(workspace_uuid) if workspace_uuid else None,
+                        "logic": "AND" if require_all else "OR"
+                    }
+                )
+
             # Permission check passed - execute the route
             return await func(*args, **kwargs)
 
