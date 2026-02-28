@@ -29,7 +29,7 @@ def content_type(state: REXT) -> REXT:
     serp_backlinks = seo_result.get("serp_backlinks", {})
     logger.info("serp_backlinks", serp_backlinks)
 
-    seach_intent = serp_backlinks.get("main_intent")
+    search_intent = serp_backlinks.get("main_intent") or "informational"
 
     # Check for upstream errors — skip processing if prior node failed
     if content_state.get("error"):
@@ -48,7 +48,7 @@ def content_type(state: REXT) -> REXT:
     selected_content_type = interrupt({
         "instruction": "Select a content type for your topic",
         "topic": selected_topic,
-        "content_types": INTENT_TO_CONTENT_TYPES.get(seach_intent.lower(), []),
+        "content_types": INTENT_TO_CONTENT_TYPES.get(search_intent.lower(), []),
         "type": "content_type"
     })
 
