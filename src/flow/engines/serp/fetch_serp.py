@@ -156,11 +156,14 @@ def _parse_serp_response(raw_data: Dict[str, Any]) -> SERPEngineState:
     serp_state["total_results"] = len(serp_state["organic_results"])
     return serp_state
 
-async def fetch_serp_results(state: REXT) -> Dict[str, Any]:
+async def fetch_serp_results(state: REXT, config, *, runtime):
     """
     Fetch Google SERP results for a given keyword using DataForSEO API.
     Handles global queries, logs all SERP type counts, and returns enriched SERPEngineState.
     """
+    # Access the store from runtime
+    store = runtime.store
+    
     serp_payload = state.get("serp_payload")
     if not serp_payload:
         logger.error("No serp_payload found in state")
