@@ -34,7 +34,7 @@ services:
 
     # Postgres Databases and also add some other secrets
     postgres:
-        image: pgvector/pgvector:17-alpine
+        image: pgvector/pgvector:pg17
         environment:
             POSTGRES_USER: exec
             POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-rextserver}
