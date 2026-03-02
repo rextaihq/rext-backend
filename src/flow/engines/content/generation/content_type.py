@@ -27,7 +27,7 @@ def content_type(state: REXT) -> REXT:
 
     seo_result = state.get("seo_result", {})
     serp_backlinks = seo_result.get("serp_backlinks", {})
-    logger.info("serp_backlinks", serp_backlinks)
+    logger.info(f"serp_backlinks: {serp_backlinks}")
 
     search_intent = serp_backlinks.get("main_intent") or "informational"
 
@@ -52,10 +52,21 @@ def content_type(state: REXT) -> REXT:
         "type": "content_type"
     })
 
+    # Handle user selection (can be string or dict)
+    final_selection = ""
+    if isinstance(selected_content_type, str):
+        final_selection = selected_content_type
+    elif isinstance(selected_content_type, dict):
+        final_selection = (
+            selected_content_type.get("content_type") or 
+            selected_content_type.get("Selected Content Type") or 
+            ""
+        )
+    
     # Save the selected content type to the state
-    content_state["content_type"] = selected_content_type
+    content_state["content_type"] = final_selection or "article"
     state["content"] = content_state
     
-    logger.info(f"Content type selected: {selected_content_type}")
+    logger.info(f"Content type selected: {content_state['content_type']}")
     
     return state

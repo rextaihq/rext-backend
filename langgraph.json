@@ -5,12 +5,12 @@
   "graphs": {
     "agent": "main:graph"
   },
-  "http": {
-    "app": "src/api/server.py:app"
-  },
   "env": ".env",
   "image_distro": "wolfi",
   "pip_installer": "uv",
+  "http": {
+    "app": "src/api/server.py:app"
+  },
   "checkpointer": {
     "ttl": {
       "default_ttl": 259200,

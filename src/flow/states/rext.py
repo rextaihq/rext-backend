@@ -85,6 +85,7 @@ class SERPPAYLOAD(TypedDict, total=False):
     workspace_id: uuid.UUID
     query: str
     country: SUPPORTED_COUNTRIES
+    is_library:bool=False
 
 
 

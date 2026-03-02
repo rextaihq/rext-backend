@@ -37,7 +37,8 @@ async def keyword_recommendation(state: REXT, config, *, runtime) -> Dict[str, A
         print("❌ Missing user_id or workspace_id")
         return {"seo_result": seo_result}
 
-    namespace = f"library_{user_id}_{workspace_id}"
+    # Structured namespace for privacy and better search via prefix
+    namespace = ("library", str(user_id), str(workspace_id))
     print(f"   namespace: {namespace}")
 
     original_query = serp_payload.get("query", "") if serp_payload else ""
