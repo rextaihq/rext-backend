@@ -90,7 +90,7 @@ class MediaService:
             select(UserSubscription, SubscriptionPlan)
             .join(SubscriptionPlan, UserSubscription.plan_id == SubscriptionPlan.id)
             .where(
-                UserSubscription.user_id == uuid.UUID(user_id) if isinstance(user_id, str) else user_id,
+                UserSubscription.user_id == user_id,
                 UserSubscription.status.in_([SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIAL])
             )
         )
