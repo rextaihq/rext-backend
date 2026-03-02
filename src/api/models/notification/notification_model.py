@@ -100,7 +100,7 @@ class Notification(Base, SerializableMixin, SoftDeleteMixin):
     # ADDITIONAL DATA
     # ==============================
     payload = Column(JSONB, nullable=True)
-    action_url = Column(String(500), nullable=True)
+    action_url = Column(Text, nullable=True)
     action_label = Column(String(100), nullable=True)
 
     # ==============================
