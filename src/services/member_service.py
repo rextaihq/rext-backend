@@ -771,7 +771,7 @@ class MemberService(InvitationService):
             ))
             .join(Role, Role.id == UserRole.role_id)
             .where(WorkspaceMembers.workspace_id == workspace_id)
-            .where(Role.hierarchy_level >= 80) # 80 is workspace_owner
+            .where(Role.hierarchy_level >= 60) # 60 is workspace_owner
             .order_by(WorkspaceMembers.joined_at.asc())
         )
 

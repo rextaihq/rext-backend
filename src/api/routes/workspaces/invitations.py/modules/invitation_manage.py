@@ -207,14 +207,14 @@ async def revoke_invitation(
     # Check permission: must be invitation creator or workspace admin (route-level authorization)
     is_creator = str(invitation.invited_by_user_id) == str(user_id)
 
-    # Check if user has admin/owner role in the workspace (hierarchy >= 80)
+    # Check if user has admin/owner role in the workspace (hierarchy >= 60)
     result = await db.execute(
         select(UserRole)
         .join(Role, UserRole.role_id == Role.id)
         .where(
             UserRole.user_id == UUID(user_id),
             UserRole.workspace_id == invitation.workspace_id,
-            Role.hierarchy_level >= 80 # 80 is workspace_owner threshold
+            Role.hierarchy_level >= 60 # 60 is workspace_owner threshold
         )
     )
     is_authorized_by_role = result.first() is not None

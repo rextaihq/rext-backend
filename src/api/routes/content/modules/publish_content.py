@@ -28,8 +28,39 @@ router = APIRouter()
 
 
 # -------------------------
-# Helper: Publish to All Active Sites
+# 1. Save Only (New Content)
 # -------------------------
+@router.post("/save", response_model=ContentResponse)
+@db_transaction_handler("save content", "Content saved successfully")
+@require_permissions("content.create", workspace_scoped=True)
+async def save_content(
+    data: ContentCreate,
+    request: Request,
+    workspace_id: str,
+    db: AsyncSession = Depends(get_async_db),
+    user: dict = Depends(get_current_user)
+):
+    """
+    Save content as a draft WITHOUT publishing it to any WordPress sites.
+    """
+    user_id = user.get("identity")
+    workspace, _ = await resolve_and_verify_workspace(db, workspace_id, UUID(user_id))
+
+    # Save content via service
+    service = ContentService(db)
+    
+    # Ensure status is 'draft' for this endpoint
+    data.status = "draft"
+    
+    content = await service.create_content(
+        workspace_id=workspace.id,
+        user_id=UUID(user_id),
+        data=data
+    )
+    
+    return content.to_dict(include_relationships=["seo_data"])
+
+
 # -------------------------
 # 2. Save & Publish (New Content)
 # -------------------------

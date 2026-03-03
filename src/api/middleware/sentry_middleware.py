@@ -6,9 +6,7 @@ to the Sentry scope for all error reports in that request.
 """
 
 import logging
-from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
-from starlette.responses import Response
 from typing import Callable
 
 from src.api.lib.sentry_config import set_user_context, clear_user_context, add_breadcrumb
@@ -17,25 +15,25 @@ from src.api.security.token_utils import decode_and_verify_token
 logger = logging.getLogger(__name__)
 
 
-class SentryUserContextMiddleware(BaseHTTPMiddleware):
+
+class SentryUserContextMiddleware:
     """
     Middleware to enrich Sentry events with user context.
-
-    Extracts user information from Authorization header and adds it to
-    Sentry scope for better error tracking and user impact analysis.
+    Using pure ASGI interface to avoid BaseHTTPMiddleware issues with streaming responses.
     """
+    def __init__(self, app):
+        self.app = app
 
-    async def dispatch(self, request: Request, call_next: Callable) -> Response:
-        """
-        Extract user from JWT and add to Sentry context.
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
 
-        Args:
-            request: Incoming HTTP request
-            call_next: Next middleware in chain
+        # Use starlette Request to help with header extraction if needed,
+        # but try to avoid reading body.
+        from starlette.requests import Request
+        request = Request(scope, receive)
 
-        Returns:
-            HTTP response
-        """
         try:
             # Extract JWT token from Authorization header
             auth_header = request.headers.get("Authorization", "")
@@ -71,13 +69,11 @@ class SentryUserContextMiddleware(BaseHTTPMiddleware):
             # Never crash the request due to Sentry middleware
             logger.warning(f"Sentry user context middleware error: {e}")
 
-        # Process request
-        response = await call_next(request)
-
-        # Clear user context after request (prevent leakage)
         try:
-            clear_user_context()
-        except Exception:
-            pass
-
-        return response
+            await self.app(scope, receive, send)
+        finally:
+            # Clear user context after request (prevent leakage)
+            try:
+                clear_user_context()
+            except Exception:
+                pass

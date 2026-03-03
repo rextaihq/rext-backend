@@ -48,7 +48,7 @@ from src.api.lib.logger import auto_logger
 
 logger = auto_logger()
 
-ADMIN_HIERARCHY_THRESHOLD = 90
+ADMIN_HIERARCHY_THRESHOLD = 80
 SUPER_ADMIN_HIERARCHY_THRESHOLD = 100
 
 async def check_permission(
@@ -389,7 +389,7 @@ async def is_user_admin(
     Check if a user has an admin-level role based on hierarchy_level.
 
     A user is considered an admin if they have any role with
-    hierarchy_level >= ADMIN_HIERARCHY_THRESHOLD (90).
+    hierarchy_level >= ADMIN_HIERARCHY_THRESHOLD (80).
 
     Args:
         db: Async database session
