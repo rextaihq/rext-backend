@@ -60,6 +60,7 @@ services:
             -c max_parallel_maintenance_workers=2
             -c huge_pages=off
             -c jit=off
+            -c max_connections=100
             -c statement_timeout=60000
             -c idle_in_transaction_session_timeout=300000
             -c log_min_duration_statement=1000
