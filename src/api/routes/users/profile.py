@@ -85,7 +85,6 @@ async def get_profile(
         raise
 
 
-@require_permissions("user.update")
 @router.patch("/profile")
 @require_permissions("user.update", workspace_scoped=False)
 @db_transaction_handler("update profile", auto_commit=True)

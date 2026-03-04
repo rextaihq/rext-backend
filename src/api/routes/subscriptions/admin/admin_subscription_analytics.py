@@ -25,7 +25,7 @@ router = APIRouter()
 # ============================================================================
 
 @router.get("/stats/overview", response_model=dict)
-@require_permissions("subscription.read")
+@require_permissions("subscription.read", workspace_scoped=False)
 @db_transaction_handler("get subscription stats", auto_commit=False)
 async def get_subscription_stats(
     request: Request,
@@ -51,7 +51,7 @@ async def get_subscription_stats(
 
 
 @router.get("/stats/revenue", response_model=dict)
-@require_permissions("subscription.read")
+@require_permissions("subscription.read", workspace_scoped=False)
 @db_transaction_handler("get revenue metrics", auto_commit=False)
 async def get_revenue_metrics(
     request: Request,
@@ -74,7 +74,7 @@ async def get_revenue_metrics(
 
 
 @router.get("/stats/churn", response_model=dict)
-@require_permissions("subscription.read")
+@require_permissions("subscription.read", workspace_scoped=False)
 @db_transaction_handler("get churn analysis", auto_commit=False)
 async def get_churn_analysis(
     request: Request,
@@ -99,7 +99,7 @@ async def get_churn_analysis(
 
 
 @router.get("/stats/trial-conversion", response_model=dict)
-@require_permissions("subscription.read")
+@require_permissions("subscription.read", workspace_scoped=False)
 @db_transaction_handler("get trial conversion metrics", auto_commit=False)
 async def get_trial_conversion_metrics(
     request: Request,
@@ -124,7 +124,7 @@ async def get_trial_conversion_metrics(
 
 
 @router.get("/analytics/overview", response_model=dict)
-@require_permissions("subscription.read")
+@require_permissions("subscription.read", workspace_scoped=False)
 @db_transaction_handler("get analytics overview", auto_commit=False)
 async def get_analytics_overview(
     request: Request,
@@ -148,7 +148,7 @@ async def get_analytics_overview(
 
 
 @router.get("/analytics/revenue-history", response_model=dict)
-@require_permissions("subscription.read")
+@require_permissions("subscription.read", workspace_scoped=False)
 @db_transaction_handler("get revenue history", auto_commit=False)
 async def get_revenue_history(
     request: Request,
@@ -173,7 +173,7 @@ async def get_revenue_history(
 
 
 @router.get("/analytics/plan-distribution", response_model=dict)
-@require_permissions("subscription.read")
+@require_permissions("subscription.read", workspace_scoped=False)
 @db_transaction_handler("get plan distribution", auto_commit=False)
 async def get_plan_distribution(
     request: Request,
@@ -194,7 +194,7 @@ async def get_plan_distribution(
 
 
 @router.get("/analytics/cohort-retention", response_model=dict)
-@require_permissions("subscription.read")
+@require_permissions("subscription.read", workspace_scoped=False)
 @db_transaction_handler("get cohort retention", auto_commit=False)
 async def get_cohort_retention(
     request: Request,
