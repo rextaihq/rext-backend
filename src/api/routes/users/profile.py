@@ -85,7 +85,6 @@ async def get_profile(
         raise
 
 
-@require_permissions("user.update")
 @router.patch("/profile")
 @require_permissions("user.update", workspace_scoped=False)
 @db_transaction_handler("update profile", auto_commit=True)
@@ -181,8 +180,9 @@ async def upload_avatar(
     # 1. Format validation using MAGIC BYTES
     file_content = await file.read()
     kind = filetype.guess(file_content)
-    
-    ALLOWED_MIME_TYPES = {"image/jpeg", "image/png", "image/gif", "image/webp"}
+    from src.config.storage_config import get_allowed_types_by_category
+
+    ALLOWED_MIME_TYPES = set(get_allowed_types_by_category("image"))
     
     if kind is None or kind.mime not in ALLOWED_MIME_TYPES:
         logger.warning(

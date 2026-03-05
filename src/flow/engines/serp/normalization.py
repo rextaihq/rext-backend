@@ -10,7 +10,7 @@ from dateutil import parser
 
 logger = logging.getLogger(__name__)
 
-def normalize_serp_results(state: REXT) -> Dict[str, Any]:
+def normalize_serp_results(state: REXT, config, *, runtime) -> Dict[str, Any]:
     """
     Normalize raw SERP results into a structured format for further analysis.
 
@@ -20,6 +20,8 @@ def normalize_serp_results(state: REXT) -> Dict[str, Any]:
     Returns:
         Dict[str, Any]: A dictionary containing the normalized SERP data.
     """
+    # Access the store from runtime
+    store = runtime.store
     logger.info("Starting SERP normalization")
     serp_payload = state.get("serp_payload", {})
     query = serp_payload.get("query", "")
@@ -82,7 +84,7 @@ def normalize_serp_results(state: REXT) -> Dict[str, Any]:
 
 
     # Freshness Analysis
-    current_year = datetime.now().year
+    current_year = datetime.now(timezone.utc).year
     freshness = {
         "recent": year_counter.get(str(current_year), 0),
         "older": sum(year_counter.values()) - year_counter.get(str(current_year), 0),

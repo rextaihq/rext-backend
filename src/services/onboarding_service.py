@@ -9,7 +9,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.middleware.exceptions import ResourceNotFoundException, RextValidationException
 from src.api.models.user_models.onboarding import UserOnboarding
+from src.api.models.workspace_models.workspace_member import WorkspaceMembers
 from src.api.models.user_models.users import Users
+from src.api.models.user_models.roles import Role
+from src.api.models.user_models.user_roles import UserRole
+from src.constants.onboarding_steps import ACTIONABLE_STEPS, ALL_STEPS, LAST_ACTIONABLE_STEP, OnboardingStep
+
 
 class OnboardingService:
     """Service for managing user onboarding."""
@@ -54,7 +59,7 @@ class OnboardingService:
                 id=uuid4(),
                 user_id=user_id,
                 completed=False,
-                current_step=0,
+                current_step=OnboardingStep.CONTENT_STRATEGY.value,
                 completed_steps=[],
                 skipped_steps=[],
             )
@@ -104,7 +109,7 @@ class OnboardingService:
             onboarding.skipped_steps = [s for s in onboarding.skipped_steps if s != step]
 
         # Update current step to next incomplete step
-        all_steps = [0, 1]  # Updated to 2 steps
+        all_steps = list(ACTIONABLE_STEPS)
         next_step = None
         for s in all_steps:
             if s not in onboarding.completed_steps and s not in onboarding.skipped_steps:
@@ -115,7 +120,7 @@ class OnboardingService:
             onboarding.current_step = next_step
         else:
             # All steps completed or skipped
-            onboarding.current_step = 1  # Last step
+            onboarding.current_step = LAST_ACTIONABLE_STEP
             onboarding.completed = True
             onboarding.completed_at = datetime.now(timezone.utc)
 
@@ -138,8 +143,8 @@ class OnboardingService:
         """
         onboarding = await OnboardingService.get_or_create_onboarding(db, user_id)
 
-        # Don't allow skipping required steps (0, 1)
-        required_steps = [0, 1]
+        # Don't allow skipping required steps
+        required_steps = list(ACTIONABLE_STEPS)
         if step in required_steps:
             raise RextValidationException(f"Cannot skip required step {step}")
 
@@ -152,7 +157,7 @@ class OnboardingService:
             onboarding.completed_steps = [s for s in onboarding.completed_steps if s != step]
 
         # Update current step to next incomplete step
-        all_steps = [0, 1]
+        all_steps = list(ACTIONABLE_STEPS)
         next_step = None
         for s in all_steps:
             if s not in onboarding.completed_steps and s not in onboarding.skipped_steps:
@@ -163,7 +168,7 @@ class OnboardingService:
             onboarding.current_step = next_step
         else:
             # All steps completed or skipped
-            onboarding.current_step = 1
+            onboarding.current_step = LAST_ACTIONABLE_STEP
             onboarding.completed = True
             onboarding.completed_at = datetime.now(timezone.utc)
 
@@ -184,6 +189,9 @@ class OnboardingService:
         Returns:
             Updated UserOnboarding object
         """
+        if step not in ALL_STEPS:
+            raise ValueError(f"Invalid onboarding step: {step}")
+
         onboarding = await OnboardingService.get_or_create_onboarding(db, user_id)
         onboarding.current_step = step
         await db.flush()
@@ -205,10 +213,10 @@ class OnboardingService:
         onboarding = await OnboardingService.get_or_create_onboarding(db, user_id)
         onboarding.completed = True
         onboarding.completed_at = datetime.now(timezone.utc)
-        onboarding.current_step = 2
+        onboarding.current_step = OnboardingStep.COMPLETE.value
 
         # Mark all required steps as completed if not already
-        required_steps = [0, 2]
+        required_steps = list(ACTIONABLE_STEPS)
         for step in required_steps:
             if step not in onboarding.completed_steps:
                 onboarding.completed_steps = onboarding.completed_steps + [step]
@@ -231,7 +239,7 @@ class OnboardingService:
         """
         onboarding = await OnboardingService.get_or_create_onboarding(db, user_id)
         onboarding.completed = False
-        onboarding.current_step = 0
+        onboarding.current_step = OnboardingStep.CONTENT_STRATEGY.value
         onboarding.completed_steps = []
         onboarding.skipped_steps = []
         onboarding.completed_at = None
@@ -253,11 +261,8 @@ class OnboardingService:
             user_id: User ID
 
         Returns:
-            True if onboarding should be shown, False otherwise
+            True if onboarding should be shown, False otherwise 
         """
-        from src.api.models.workspace_models.workspace_member import WorkspaceMembers
-        from src.api.models.user_models.user_roles import UserRole
-        from src.api.models.user_models.roles import Role
 
         # Check if user is an invited user (has workspace membership with invitation_id)
         result = await db.execute(
@@ -333,4 +338,3 @@ class OnboardingService:
         await db.flush()
         await db.refresh(onboarding)
         return onboarding
-

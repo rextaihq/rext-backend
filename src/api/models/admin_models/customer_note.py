@@ -1,7 +1,7 @@
 """Customer Note model for admin internal notes."""
 
 from datetime import datetime, timezone
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 from sqlalchemy import Column, DateTime, ForeignKey, String, Text
 from sqlalchemy.dialects.postgresql import UUID as PostgresUUID

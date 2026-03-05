@@ -10,8 +10,8 @@ from sqlalchemy import select
 from src.flow.states.rext import REXT
 from src.api.database.async_database import get_sync_db
 from src.api.models.knowledge_models.persona_model import Persona
-from src.flow.model.llm_manager import load_model, load_humanize_model
-from src.flow.model.structure.content import GeneratedContent, GeneratedHumanizeContent
+from src.flow.model.llm_manager import load_humanize_model
+from src.flow.model.structure.content import GeneratedContent
 from src.flow.prompts.human.humanize import get_humanize_prompt
 
 logger = logging.getLogger(__name__)
@@ -45,9 +45,10 @@ async def humanize_content(state: REXT) -> dict:
     try:
         # 1️⃣ Get content from state
         content_state = state.get("content", {})
-        content_outline = content_state.get("outline", {})
 
         final_content = content_state.get("final_content", {})
+        content_outline = content_state.get("outline", {})
+
         
         if not final_content:
             logger.warning("No final_content found in state. Skipping humanization.")
@@ -55,6 +56,7 @@ async def humanize_content(state: REXT) -> dict:
         
         title = final_content.get("title", "")
         body_markdown = final_content.get("body_markdown", "")
+        html_content = final_content.get("html_content", "")
         
         if not body_markdown:
             logger.warning("No body content found. Skipping humanization.")
@@ -108,6 +110,7 @@ async def humanize_content(state: REXT) -> dict:
             "title": title,
             "introduction": final_content.get("introduction", ""),
             "body_markdown": body_markdown,
+            "html_content":html_content,
             "selected_topic": content_state.get("selected_topic", ""),
             "content_type": content_state.get("content_type", ""),
             "word_count": final_content.get("word_count") or "[word count]",
@@ -126,7 +129,7 @@ async def humanize_content(state: REXT) -> dict:
         
         # 3️⃣ Load model and prepare messages
         # model = load_model().with_structured_output(GeneratedHumanizeContent)
-        model = load_humanize_model().with_structured_output(GeneratedHumanizeContent)
+        model = load_humanize_model().with_structured_output(GeneratedContent)
         messages = get_humanize_prompt().format_messages(**prompt_data)
         
         # 4️⃣ Invoke LLM for humanization
@@ -142,14 +145,19 @@ async def humanize_content(state: REXT) -> dict:
                 **content_state,
                 "final_content": {
                     **final_content,
-                    # "humanized_content":humanized_content
-                    "humanized_title": humanized_dict.get("title", title),
-                    "humanized_introduction": humanized_dict.get("introduction", final_content.get("introduction", "")),
-                    "humanized_body_markdown": humanized_dict.get("body_markdown", body_markdown),
+                    "title": humanized_dict.get("title", title),
+                    "introduction": humanized_dict.get("introduction", final_content.get("introduction", "")),
+                    "body_markdown": humanized_dict.get("body_markdown", body_markdown),
+                    "html_content": humanized_dict.get("html_content", html_content),
+                    "word_count": humanized_dict.get("word_count", final_content.get("word_count", 0)),
+                    "meta_title": humanized_dict.get("meta_title", final_content.get("meta_title", "")),
+                    "meta_description": humanized_dict.get("meta_description", final_content.get("meta_description", "")),
+                    "tags": humanized_dict.get("tags", final_content.get("tags", [])),
                 },
                 "status": "humanized"
             }
         }
+        
         
     except Exception as e:
         logger.exception(f"Error humanizing content: {str(e)}")
@@ -159,3 +167,5 @@ async def humanize_content(state: REXT) -> dict:
                 "error": f"Humanization failed: {str(e)}"
             }
         }
+
+

@@ -13,7 +13,7 @@ from src.api.models.knowledge_models.persona_model import Persona
 from src.api.schema.persona_schema import PersonaCreate, PersonaUpdate
 from src.api.middleware.exceptions import ResourceNotFoundException
 from src.utils.route_decorators import db_transaction_handler, require_permissions
-from src.utils.workspace_utils import resolve_workspace_for_route
+from src.utils.workspace_utils import resolve_workspace_for_route 
 from src.utils.response_utils import created, no_content
 from src.utils.logger import logger
 

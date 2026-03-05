@@ -36,6 +36,7 @@ from src.services.audit_logger import audit_logger
 from .shared.auth import require_super_admin
 from src.api.config import settings
 from src.config.payment_config import payment_settings
+from fastapi import HTTPException
 
 
 router = APIRouter()
@@ -47,11 +48,14 @@ router = APIRouter()
 
 async def get_lemonsqueezy_provider() -> LemonSqueezyProvider:
     """Get LemonSqueezy provider instance."""
+    if not payment_settings.lemonsqueezy_api_key or not payment_settings.lemonsqueezy_store_id:
+        raise HTTPException(status_code=503, detail="Payment provider is not configured")
+
     return LemonSqueezyProvider(
         api_key=payment_settings.lemonsqueezy_api_key,
         store_id=payment_settings.lemonsqueezy_store_id,
         webhook_secret=payment_settings.lemonsqueezy_webhook_secret,
-        sandbox_mode=payment_settings.payment_sandbox_mode
+        sandbox_mode=payment_settings.payment_sandbox_mode,
     )
 
 
@@ -60,7 +64,7 @@ async def get_lemonsqueezy_provider() -> LemonSqueezyProvider:
 # ============================================================================
 
 @router.get("/refunds", response_model=dict)
-@require_permissions("subscription.read")
+@require_permissions("subscription.read", workspace_scoped=False)
 @db_transaction_handler("list refunds", auto_commit=False)
 async def list_refunds(
     request: Request,
@@ -113,7 +117,7 @@ async def list_refunds(
 
 
 @router.get("/refunds/{refund_id}", response_model=dict)
-@require_permissions("subscription.read")
+@require_permissions("subscription.read", workspace_scoped=False)
 @db_transaction_handler("get refund", auto_commit=False)
 async def get_refund(
     request: Request,
@@ -149,7 +153,7 @@ async def get_refund(
 
 
 @router.post("/refunds/create", response_model=dict)
-@require_permissions("subscription.manage")
+@require_permissions("subscription.manage", workspace_scoped=False)
 @db_transaction_handler("create refund")
 async def create_refund(
     request: Request,

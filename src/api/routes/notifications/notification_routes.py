@@ -58,7 +58,6 @@ async def get_notifications(
         base_conditions = [
             Notification.user_id == user_id,
             Notification.active(),
-            Notification.is_archived.is_(False),
         ]
         
         # Add optional filters
@@ -95,7 +94,6 @@ async def get_notifications(
                 Notification.user_id == user_id,
                 Notification.is_read.is_(False),
                 Notification.active(),
-                Notification.is_archived.is_(False),
             )
         )
         unread_result = await db.execute(unread_query)
@@ -413,7 +411,6 @@ async def get_unread_count(
                 Notification.user_id == user_id,
                 Notification.is_read.is_(False),
                 Notification.active(),
-                Notification.is_archived.is_(False),
             )
         )
         result = await db.execute(query)

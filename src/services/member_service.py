@@ -50,20 +50,23 @@ class MemberService(InvitationService):
         self,
         workspace_id: UUID,
         user_id: UUID,
+        role_id: Optional[UUID] = None,
         invitation_id: Optional[UUID] = None,
         status: str = "active"
     ) -> WorkspaceMembers:
         """
-        Add a member to a workspace.
+        Add a member to a workspace and assign a role.
 
         Business Rules:
         - Workspace must exist
         - User must not already be a member
-        - Status defaults to 'active' unless specified
+        - Every member MUST have a role in the workspace
+        - Defaults to 'viewer' role if no role_id provided
 
         Args:
             workspace_id: Workspace UUID
             user_id: User UUID to add
+            role_id: Optional Role UUID to assign
             invitation_id: Optional invitation UUID
             status: Member status (active/pending/inactive)
 
@@ -71,9 +74,12 @@ class MemberService(InvitationService):
             Created WorkspaceMembers object
 
         Raises:
-            ResourceNotFoundException: If workspace doesn't exist
+            ResourceNotFoundException: If workspace or role doesn't exist
             DuplicateResourceException: If user is already a member
         """
+        from src.api.models.user_models.roles import Role
+        from src.api.models.user_models.user_roles import UserRole
+
         # Verify workspace exists
         result = await self.db.execute(
             select(WorkspaceModel).where(WorkspaceModel.id == workspace_id)
@@ -103,7 +109,29 @@ class MemberService(InvitationService):
                 context={"workspace_id": str(workspace_id)}
             )
 
-        # Create new member
+        # Handle role assignment
+        if not role_id:
+            # Default to viewer role
+            result = await self.db.execute(
+                select(Role).where(Role.name == "viewer", Role.is_workspace_role == True)
+            )
+            role = result.scalar_one_or_none()
+            if not role:
+                # Fallback to any role named viewer if is_workspace_role flag is inconsistent
+                result = await self.db.execute(
+                    select(Role).where(func.lower(Role.name) == "viewer")
+                )
+                role = result.scalar_one_or_none()
+            
+            if not role:
+                logger.error("Default 'viewer' role not found in database")
+                raise ResourceNotFoundException(
+                    message="Default role 'viewer' not found. Roles must be seeded.",
+                    resource_type="role"
+                )
+            role_id = role.id
+
+        # Create new member record
         new_member = WorkspaceMembers(
             workspace_id=workspace_id,
             user_id=user_id,
@@ -113,14 +141,33 @@ class MemberService(InvitationService):
             last_activity_at=datetime.now(timezone.utc)
         )
         self.db.add(new_member)
+
+        # Create role assignment
+        # Check if they already have *any* role in this workspace to avoid duplicates
+        role_result = await self.db.execute(
+            select(UserRole).where(
+                UserRole.user_id == user_id,
+                UserRole.workspace_id == workspace_id
+            )
+        )
+        if not role_result.first():
+            user_role = UserRole(
+                user_id=user_id,
+                role_id=role_id,
+                workspace_id=workspace_id,
+                is_primary=True
+            )
+            self.db.add(user_role)
+
         await self.db.flush()
         await self.db.refresh(new_member)
 
         logger.info(
-            f"Member added to workspace: user={user_id}, workspace={workspace_id}",
+            f"Member added to workspace with role: user={user_id}, workspace={workspace_id}, role={role_id}",
             extra={
                 "user_id": str(user_id),
                 "workspace_id": str(workspace_id),
+                "role_id": str(role_id),
                 "status": status
             }
         )
@@ -771,7 +818,7 @@ class MemberService(InvitationService):
             ))
             .join(Role, Role.id == UserRole.role_id)
             .where(WorkspaceMembers.workspace_id == workspace_id)
-            .where(Role.hierarchy_level >= 80) # 80 is workspace_owner
+            .where(Role.hierarchy_level >= 60) # 60 is workspace_owner
             .order_by(WorkspaceMembers.joined_at.asc())
         )
 

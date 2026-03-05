@@ -51,7 +51,7 @@ from src.utils.helper import web_page_scraper
 from src.utils.vector_store import add_to_vector_store, delete_vectors
 from src.api.cache.decorators import cached
 from src.utils.logger import logger
-from src.api.database.async_database import get_async_db
+from src.api.database.async_database import get_async_db, get_async_db_context
 from src.services.workspace_pipeline import run_workspace_pipeline
 from src.services.sse_service import event_stream_manager
 from langsmith import traceable, trace
@@ -149,7 +149,7 @@ class WorkspaceService:
                 name="Run Workspace Pipeline",
                 inputs={"operation_id": operation_id, "url": url},
             ):
-                async for bg_db in get_async_db():
+                async with get_async_db_context() as bg_db:
                     try:
                         await run_workspace_pipeline(
                             db=bg_db,
@@ -169,7 +169,6 @@ class WorkspaceService:
                             exc_info=True,
                         )
                         raise
-                    break
 
         task = create_task(run_pipeline())
         _background_tasks.add(task)
@@ -243,7 +242,7 @@ class WorkspaceService:
         await event_stream_manager.set_operation_owner(operation_id, user_id)
 
         async def run_pipeline() -> None:
-            async for bg_db in get_async_db():
+            async with get_async_db_context() as bg_db:
                 try:
                     await run_workspace_pipeline(
                         db=bg_db,
@@ -263,7 +262,6 @@ class WorkspaceService:
                         exc_info=True,
                     )
                     raise
-                break
 
         task = create_task(run_pipeline())
 
@@ -753,7 +751,7 @@ class WorkspaceService:
             .where(
                 UserRole.user_id == user_id,
                 UserRole.workspace_id == workspace_id,
-                Role.hierarchy_level >= 80, # workspace_owner or higher
+                Role.hierarchy_level >= 60, # workspace_owner or higher (60 is workspace_owner)
             )
         )
         

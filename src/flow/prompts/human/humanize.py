@@ -27,14 +27,16 @@ def get_humanize_prompt() -> ChatPromptTemplate:
     
     Returns:
         ChatPromptTemplate configured for humanization (90% human-written target)
-    """
+    """ 
     return ChatPromptTemplate.from_messages([
         ("system", HUMANIZE_SYSTEM_PROMPT),
         ("human", """
 Must follow system prompt rules. 
-Rewrite the Title, Introduction and Body Based on the system prompt.
+Rewrite the Title, Introduction, Body (Markdown), and HTML_Content based on the system prompt.
 Title: {title}
 Introduction: {introduction}
-Body: {body_markdown}
+Body (Markdown): {body_markdown}
+HTML_Content: {html_content}
+
 """)
     ])

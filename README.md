@@ -127,13 +127,15 @@ REDIS_URI = redis://langgraph-redis:6379
 Run the main application:
 
 ```bash
-langgraph up
+python server.py                                  # starts API via uvicorn
+uvicorn src.api.server:app --reload --port 2024   # direct uvicorn alternative
+langgraph up                                       # graph runtime
 ```
-- It can build a docker image and run the application in the containr.
+- It can build a docker image and run the application in the container.
 
 We can access the api doc on this url
 ```bash
-http://localhost:8123/docs
+http://localhost:2024/docs
 ```
 
 **Run the streamlit app**
@@ -141,9 +143,9 @@ http://localhost:8123/docs
 streamlit run app.py
 ```
 
-- In steamlit app set the configration for the blog **(done)**.
-- Afer Seting the config working on blog generation part.
-- `Note` Make sure that before running the streamit app first run the backend api by running this command `http://localhost:8123/docs`
+- In streamlit app set the configuration for the blog **(done)**.
+- After Setting the config working on blog generation part.
+- `Note` Make sure that before running the streamlit app first run the backend api by running this command `http://localhost:2024/docs`
 ## Data Storage
 
 The project uses both CSV and database storage:
@@ -295,6 +297,17 @@ Package management: Using `uv` (lock file: `uv.lock`)
 - Editorial tools for content teams with LLMs
 - Newsletter and content repurposing bots
 - LLM-based writing assistants with human control
+
+---
+
+## Datetime Convention
+
+All datetime objects in the Rext backend MUST be timezone-aware. Use `datetime.now(timezone.utc)` instead of the deprecated `datetime.utcnow()`.
+
+- **Model columns:** Use `DateTime(timezone=True)` with `default=lambda: datetime.now(timezone.utc)`
+- **Application code:** Use `datetime.now(timezone.utc)` for current time
+- **Date parsing:** Always ensure parsed datetimes have tzinfo set; assume UTC if not provided
+- **ISO formatting:** Use `.isoformat()` which includes timezone offset for aware datetimes
 
 ---
 

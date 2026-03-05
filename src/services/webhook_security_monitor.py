@@ -91,6 +91,10 @@ class WebhookSecurityMonitor:
                     "Redis unavailable for webhook security monitoring — failure not tracked",
                     extra={"ip_address": ip_address}
                 )
+                sentry_sdk.capture_message(
+                    "WebhookSecurityMonitor: Redis unavailable, failure tracking disabled",
+                    level="warning"
+                )
                 return
         except Exception as e:
             logger.error(
