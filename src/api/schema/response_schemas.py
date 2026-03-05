@@ -32,7 +32,9 @@ Usage:
 
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Union, TypeVar, Generic
+
+T = TypeVar("T")
 from uuid import uuid4
 
 from pydantic import BaseModel, Field, field_validator, model_serializer
@@ -205,14 +207,14 @@ class BaseResponse(BaseModel):
     )
 
 
-class SuccessResponse(BaseResponse):
+class SuccessResponse(BaseResponse, Generic[T]):
     """Standardized success response format"""
 
     success: bool = Field(
         default=True,
         description="Always true for success responses"
     )
-    data: Any = Field(
+    data: T = Field(
         ...,
         description="The response payload data"
     )
@@ -320,7 +322,7 @@ class GenericResponse(BaseModel):
 # TYPE UNIONS
 # ============================================================================
 
-StandardResponse = Union[SuccessResponse, ErrorResponse]
+StandardResponse = Union[SuccessResponse[Any], ErrorResponse]
 
 
 # ============================================================================
@@ -335,11 +337,11 @@ def generate_request_id() -> str:
 
 
 def create_success_response(
-    data: Any,
+    data: T,
     request_id: Optional[str] = None,
     processing_time_ms: Optional[int] = None,
     server_id: Optional[str] = None
-) -> SuccessResponse:
+) -> SuccessResponse[T]:
     """
     Create a standardized success response.
 
