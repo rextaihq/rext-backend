@@ -14,7 +14,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from uuid import UUID 
 from src.api.database.async_database import get_async_db
 from src.api.security.dependencies import get_current_user
+from src.api.schema.response_schemas import SuccessResponse
 from src.services.webhook_monitoring_service import WebhookMonitoringService
+from src.utils.response_utils import success
 from src.utils.route_decorators import db_transaction_handler, require_permissions
 
 
@@ -25,10 +27,9 @@ router = APIRouter()
 # WEBHOOK MONITORING ENDPOINTS
 # ============================================================================
 
-@router.get("/webhooks/events", response_model=dict)
+@router.get("/webhooks/events", response_model=SuccessResponse[dict])
 @require_permissions("audit.webhooks", workspace_scoped=False)
 @db_transaction_handler("get webhook events", auto_commit=False)
-@require_permissions("audit.webhooks", workspace_scoped=False)
 async def get_webhook_events(
     request: Request,
     limit: int = Query(50, ge=1, le=100, description="Maximum events to return"),
@@ -62,19 +63,22 @@ async def get_webhook_events(
         hours=hours
     )
     # Normalize to consistent pagination shape
-    return {
-        "items": result.get("events", []),
-        "total": result.get("total", 0),
-        "limit": limit,
-        "offset": offset,
-        "has_more": (offset + limit) < result.get("total", 0)
-    }
+    return success(
+        data={
+            "items": result.get("events", []),
+            "total": result.get("total", 0),
+            "limit": limit,
+            "offset": offset,
+            "has_more": (offset + limit) < result.get("total", 0)
+        },
+        request=request,
+        message="Webhook events retrieved successfully"
+    )
 
 
-@router.get("/webhooks/failed", response_model=dict)
+@router.get("/webhooks/failed", response_model=SuccessResponse[dict])
 @require_permissions("audit.webhooks", workspace_scoped=False)
 @db_transaction_handler("get failed webhooks", auto_commit=False)
-@require_permissions("audit.webhooks", workspace_scoped=False)
 async def get_failed_webhooks(
     request: Request,
     limit: int = Query(50, ge=1, le=100, description="Maximum events to return"),
@@ -106,19 +110,22 @@ async def get_failed_webhooks(
         hours=hours,
         include_payload=include_payload
     )
-    return {
-        "items": result.get("events", []),
-        "total": result.get("total", 0),
-        "limit": limit,
-        "offset": offset,
-        "has_more": (offset + limit) < result.get("total", 0)
-    }
+    return success(
+        data={
+            "items": result.get("events", []),
+            "total": result.get("total", 0),
+            "limit": limit,
+            "offset": offset,
+            "has_more": (offset + limit) < result.get("total", 0)
+        },
+        request=request,
+        message="Failed webhook events retrieved successfully"
+    )
 
 
-@router.post("/webhooks/{webhook_id}/retry", response_model=dict)
+@router.post("/webhooks/{webhook_id}/retry", response_model=SuccessResponse[dict])
 @require_permissions("audit.webhooks", workspace_scoped=False)
 @db_transaction_handler("retry webhook", auto_commit=True)
-@require_permissions("audit.webhooks", workspace_scoped=False)
 async def retry_webhook(
     request: Request,
     webhook_id: UUID = Path(..., description="Webhook event ID to retry"),
@@ -143,13 +150,16 @@ async def retry_webhook(
     result = await service.retry_webhook(webhook_id)
     if not result.get("success"):
         raise HTTPException(status_code=400, detail=result.get("message", "Retry failed"))
-    return {"event": result.get("event")}
+    return success(
+        data={"event": result.get("event")},
+        request=request,
+        message="Webhook retried successfully"
+    )
 
 
-@router.get("/webhooks/statistics", response_model=dict)
+@router.get("/webhooks/statistics", response_model=SuccessResponse[dict])
 @require_permissions("audit.webhooks", workspace_scoped=False)
 @db_transaction_handler("get webhook statistics", auto_commit=False)
-@require_permissions("audit.webhooks", workspace_scoped=False)
 async def get_webhook_statistics(
     request: Request,
     hours: int = Query(24, ge=1, le=720, description="Statistics period in hours"),
@@ -170,4 +180,5 @@ async def get_webhook_statistics(
     - Recent errors for troubleshooting
     """
     service = WebhookMonitoringService(db)
-    return await service.get_webhook_statistics(hours=hours)
+    stats = await service.get_webhook_statistics(hours=hours)
+    return success(data=stats, request=request, message="Webhook statistics retrieved successfully")

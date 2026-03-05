@@ -18,7 +18,7 @@ from src.api.models.user_models.roles import Role
 from src.api.models.user_models.users import Users
 from src.api.models.workspace_models.workspace_model import WorkspaceModel
 from src.api.security.dependencies import get_current_active_user, get_current_user
-from src.utils.logger import logger
+from src.api.schema.response_schemas import SuccessResponse
 from src.utils.logger import logger
 from src.utils.rbac_utils import check_all_permissions
 from src.utils.response_utils import success
@@ -27,7 +27,7 @@ from src.utils.route_decorators import db_transaction_handler, require_permissio
 router = APIRouter(prefix="/invitations", tags=["admin-analytics"])
 
 
-@router.get("/analytics", summary="Get invitation analytics")
+@router.get("/analytics", summary="Get invitation analytics", response_model=SuccessResponse[dict])
 @db_transaction_handler("get invitation analytics", auto_commit=False)
 @require_permissions("audit.read", workspace_scoped=False)
 async def get_invitation_analytics(

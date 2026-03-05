@@ -12,7 +12,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.api.database.async_database import get_async_db
 from src.api.security.dependencies import get_current_user
 from src.services.email_analytics_service import EmailAnalyticsService
-from src.utils.response_utils import success
+from src.api.schema.response_schemas import SuccessResponse
+from src.utils.response_utils import success, error
 from src.utils.route_decorators import db_transaction_handler, require_permissions
 
 
@@ -22,7 +23,7 @@ router = APIRouter(
 )
 
 
-@router.get("/overview")
+@router.get("/overview", response_model=SuccessResponse[dict])
 @db_transaction_handler("get email analytics overview", auto_commit=False)
 @require_permissions("audit.admin", workspace_scoped=False)
 async def get_email_analytics_overview(
@@ -76,7 +77,7 @@ async def get_email_analytics_overview(
     )
 
 
-@router.get("/by-template")
+@router.get("/by-template", response_model=SuccessResponse[dict])
 @db_transaction_handler("get email analytics by template", auto_commit=False)
 @require_permissions("audit.admin", workspace_scoped=False)
 async def get_email_analytics_by_template(
@@ -128,7 +129,7 @@ async def get_email_analytics_by_template(
     )
 
 
-@router.get("/timeline")
+@router.get("/timeline", response_model=SuccessResponse[dict])
 @db_transaction_handler("get email timeline", auto_commit=False)
 @require_permissions("audit.admin", workspace_scoped=False)
 async def get_email_timeline(
@@ -182,7 +183,7 @@ async def get_email_timeline(
     )
 
 
-@router.get("/failures")
+@router.get("/failures", response_model=SuccessResponse[dict])
 @db_transaction_handler("get email failures", auto_commit=False)
 @require_permissions("audit.admin", workspace_scoped=False)
 async def get_email_failures(

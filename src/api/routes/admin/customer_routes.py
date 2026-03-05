@@ -20,7 +20,9 @@ from src.api.database.async_database import get_async_db
 from src.api.security.dependencies import get_current_user
 from src.api.middleware.permissions import is_admin
 from src.services.customer_admin_service import CustomerAdminService
+from src.api.schema.response_schemas import SuccessResponse
 from src.utils.route_decorators import db_transaction_handler
+from src.utils.response_utils import success, created
 
 
 router = APIRouter(prefix="/customers", tags=["Admin - Customers"])
@@ -86,7 +88,7 @@ class CustomerActionRequest(BaseModel):
 # ============================================================================
 
 
-@router.get("", response_model=dict)
+@router.get("", response_model=SuccessResponse[dict])
 @db_transaction_handler("list customers", auto_commit=False)
 async def list_customers(
     request: Request,
@@ -140,14 +142,17 @@ async def list_customers(
         sort_order=sort_order
     )
 
-    return {
-        "data": result["customers"],
-        "pagination": result["pagination"],
-        "message": "Customers retrieved successfully"
-    }
+    return success(
+        data={
+            "customers": result["customers"],
+            "pagination": result["pagination"],
+        },
+        request=request,
+        message="Customers retrieved successfully"
+    )
 
 
-@router.get("/{user_id}", response_model=dict)
+@router.get("/{user_id}", response_model=SuccessResponse[dict])
 @db_transaction_handler("get customer detail", auto_commit=False)
 async def get_customer_detail(
     request: Request,
@@ -158,13 +163,10 @@ async def get_customer_detail(
 ):
     service = CustomerAdminService(db)
     customer_data = await service.get_customer_detail(user_id)
-    return {
-        "data": customer_data,
-        "message": "Customer details retrieved successfully"
-    }
+    return success(data=customer_data, request=request, message="Customer details retrieved successfully")
 
 
-@router.post("/{user_id}/actions", response_model=dict)
+@router.post("/{user_id}/actions", response_model=SuccessResponse[dict])
 @db_transaction_handler("perform customer action", auto_commit=True)
 async def perform_customer_action(
     request: Request,
@@ -211,13 +213,14 @@ async def perform_customer_action(
         admin_user_id=admin_user_id,
     )
 
-    return {
-        "data": result,
-        "message": f"Action '{action_request.action}' performed successfully"
-    }
+    return success(
+        data=result,
+        request=request,
+        message=f"Action '{action_request.action}' performed successfully"
+    )
 
 
-@router.post("/{user_id}/notes", response_model=dict)
+@router.post("/{user_id}/notes", response_model=SuccessResponse[dict])
 @db_transaction_handler("add customer note", auto_commit=True)
 async def add_customer_note(
     request: Request,
@@ -259,7 +262,4 @@ async def add_customer_note(
         category=note_request.category
     )
 
-    return {
-        "data": note_data,
-        "message": "Note added successfully"
-    }
+    return created(data=note_data, request=request, message="Note added successfully")

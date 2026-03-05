@@ -5,7 +5,7 @@ Endpoints for querying and managing failed emails.
 """
 from typing import List, Optional
 from uuid import UUID
-from fastapi import APIRouter, Depends, Query, HTTPException
+from fastapi import APIRouter, Depends, Query, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_, func
 from datetime import datetime, timezone, timedelta
@@ -15,6 +15,7 @@ from src.api.models.email_models.email_log import EmailLog
 from src.api.schema.admin_email_schema import AdminEmailLogResponse, ResendEmailRequest
 from src.services.email_service import EmailService
 from src.api.lib.logger import auto_logger
+from src.api.schema.response_schemas import SuccessResponse
 from src.utils.response_utils import success, error
 from src.utils.route_decorators import require_permissions
 
@@ -26,9 +27,10 @@ router = APIRouter(prefix="/api/v1/admin/emails", tags=["Admin - Emails"])
 # ENDPOINTS
 # ============================================================================
 
-@router.get("/failed")
+@router.get("/failed", response_model=SuccessResponse[dict])
 @require_permissions("audit.admin", workspace_scoped=False)
 async def get_failed_emails(
+    request: Request,
     db: AsyncSession = Depends(get_async_db),
     limit: int = Query(default=50, le=200),
     offset: int = Query(default=0, ge=0),
@@ -86,6 +88,7 @@ async def get_failed_emails(
                 "offset": offset,
                 "days_back": days_back
             },
+            request=request,
             message=f"Found {total_count} failed emails in the last {days_back} days"
         )
 
@@ -97,9 +100,10 @@ async def get_failed_emails(
         )
 
 
-@router.post("/{email_log_id}/resend")
+@router.post("/{email_log_id}/resend", response_model=SuccessResponse[dict])
 @require_permissions("email.resend", workspace_scoped=False)
 async def resend_single_email(
+    request: Request,
     email_log_id: UUID,
     db: AsyncSession = Depends(get_async_db)
 ):
@@ -163,6 +167,7 @@ async def resend_single_email(
                 "new_status": new_email_log.status,
                 "retry_count": new_email_log.retry_count
             },
+            request=request,
             message=f"Email resent successfully with status: {new_email_log.status}"
         )
 
@@ -176,10 +181,11 @@ async def resend_single_email(
         )
 
 
-@router.post("/resend-batch")
+@router.post("/resend-batch", response_model=SuccessResponse[dict])
 @require_permissions("email.resend", workspace_scoped=False)
 async def resend_batch_emails(
-    request: ResendEmailRequest,
+    request: Request,
+    email_request: ResendEmailRequest,
     db: AsyncSession = Depends(get_async_db)
 ):
     """
@@ -194,7 +200,7 @@ async def resend_batch_emails(
         Results of batch resend operation
     """
     try:
-        if len(request.email_log_ids) > 100:
+        if len(email_request.email_log_ids) > 100:
             raise HTTPException(status_code=400, detail="Maximum 100 emails can be resent at once")
 
         results = {
@@ -204,7 +210,7 @@ async def resend_batch_emails(
 
         email_service = EmailService(db)
 
-        for email_log_id in request.email_log_ids:
+        for email_log_id in email_request.email_log_ids:
             try:
                 # Get original email log
                 stmt = select(EmailLog).where(EmailLog.id == email_log_id)
@@ -262,7 +268,8 @@ async def resend_batch_emails(
 
         return success(
             data=results,
-            message=f"Resent {len(results['successful'])}/{len(request.email_log_ids)} emails successfully"
+            request=request,
+            message=f"Resent {len(results['successful'])}/{len(email_request.email_log_ids)} emails successfully"
         )
 
     except HTTPException:
