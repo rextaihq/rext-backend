@@ -146,7 +146,7 @@ class TestLemonSqueezyWebhookSecurity:
     # @pytest.mark.skipif(
         condition=False  # LemonSqueezy webhook IS implemented
         reason="LemonSqueezy webhook not yet implemented"
-    )
+    
     def test_lemonsqueezy_webhook_rejects_missing_signature(
         self,
         client: TestClient,
@@ -166,7 +166,7 @@ class TestLemonSqueezyWebhookSecurity:
     # @pytest.mark.skipif(
         condition=True,
         reason="LemonSqueezy webhook not yet implemented"
-    )
+    
     def test_lemonsqueezy_webhook_rejects_invalid_signature(
         self,
         client: TestClient,
@@ -186,7 +186,7 @@ class TestLemonSqueezyWebhookSecurity:
     # @pytest.mark.skipif(
         condition=True,
         reason="LemonSqueezy webhook not yet implemented"
-    )
+    
     @patch('src.api.config.settings.LEMONSQUEEZY_WEBHOOK_SECRET', WEBHOOK_SECRET)
     def test_lemonsqueezy_webhook_accepts_valid_signature(
         self,
@@ -214,7 +214,7 @@ class TestLemonSqueezyWebhookSecurity:
     # @pytest.mark.skipif(
         condition=True,
         reason="LemonSqueezy webhook not yet implemented"
-    )
+    
     def test_lemonsqueezy_webhook_rejects_replay_attack(
         self,
         client: TestClient,
@@ -257,7 +257,7 @@ class TestLemonSqueezyWebhookSecurity:
     # @pytest.mark.skipif(
         condition=True,
         reason="LemonSqueezy webhook not yet implemented"
-    )
+    
     def test_lemonsqueezy_webhook_production_requires_secret(
         self,
         client: TestClient,

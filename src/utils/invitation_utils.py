@@ -1,105 +1,132 @@
-"""Utility functions for invitation management."""
+"""Utility functions for invitation management (Async version)."""
+
 from datetime import datetime, timezone
 from typing import Optional
-from sqlalchemy.orm import Session
+import secrets
+
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 from src.api.models.user_models.invitations import UserInvitations
+from src.api.models.enums import InvitationStatus
 from src.utils.logger import logger
+from src.api.middleware.exceptions import RextValidationException
 
 
+
+MIN_EXPIRY_DAYS = 1
+MAX_EXPIRY_DAYS = 30
+
+# ------------------------------------------------------------------
+# CHECK EXPIRY (NO DB → stays sync)
+# ------------------------------------------------------------------
 def is_invitation_expired(invitation: UserInvitations) -> bool:
-    """
-    Check if an invitation has expired.
-
-    Args:
-        invitation: UserInvitations model instance
-
-    Returns:
-        bool: True if expired, False otherwise
-    """
+    """Check if an invitation has expired."""
     if not invitation.expires_at:
         return False
 
     now = datetime.now(timezone.utc)
 
-    # Handle both timezone-aware and naive datetimes
     expires_at = invitation.expires_at
     if expires_at.tzinfo is None:
         expires_at = expires_at.replace(tzinfo=timezone.utc)
 
     return now > expires_at
 
-
-def cleanup_expired_invitations(db: Session) -> int:
+def generate_invitation_token(nbytes: int = 32) -> str:
     """
-    Mark all expired pending invitations as 'expired'.
+    Generate a cryptographically secure invitation token.
+
+    Uses Python's secrets module which provides access to the most secure
+    source of randomness available on the OS. The token is URL-safe
+    Base64-encoded, suitable for use in invitation URLs.
 
     Args:
-        db: Database session
+        nbytes: Number of random bytes. Defaults to 32 (produces ~43 char token).
+                Use 48 for higher-security tokens (~64 chars).
 
     Returns:
-        int: Number of invitations marked as expired
+        URL-safe token string.
+
+    Reference:
+        https://docs.python.org/3.11/library/secrets.html#secrets.token_urlsafe
+    """
+    return secrets.token_urlsafe(nbytes)
+
+# ------------------------------------------------------------------
+# CLEANUP EXPIRED INVITATIONS
+# ------------------------------------------------------------------
+async def cleanup_expired_invitations(db: AsyncSession) -> int:
+    """
+    Mark all expired pending invitations as 'expired'.
     """
     try:
         now = datetime.now(timezone.utc)
 
-        # Find all pending invitations that have expired
-        expired_invitations = db.query(UserInvitations).filter(
-            UserInvitations.status == "pending",
-            UserInvitations.expires_at < now
-        ).all()
+        # Async SELECT
+        result = await db.execute(
+            select(UserInvitations).where(
+                UserInvitations.status == InvitationStatus.PENDING,
+                UserInvitations.expires_at < now,
+            )
+        )
+
+        expired_invitations = result.scalars().all()
 
         count = 0
         for invitation in expired_invitations:
-            invitation.status = "expired"
+            invitation.status = InvitationStatus.EXPIRED
             count += 1
 
-        db.commit()
-
         if count > 0:
+            await db.commit()
             logger.info(f"Marked {count} expired invitations as 'expired'")
+        else:
+            logger.info("No expired invitations found")
 
         return count
 
     except Exception as e:
         logger.error(f"Error cleaning up expired invitations: {str(e)}")
-        db.rollback()
+        await db.rollback()
         return 0
 
 
-def get_invitation_with_details(db: Session, invitation_id: str) -> Optional[dict]:
+# ------------------------------------------------------------------
+# GET INVITATION WITH DETAILS
+# ------------------------------------------------------------------
+async def get_invitation_with_details(
+    db: AsyncSession, invitation_id: str
+) -> Optional[dict]:
     """
     Get invitation with workspace and role details.
 
-    Args:
-        db: Database session
-        invitation_id: Invitation ID
-
-    Returns:
-        dict: Invitation details with related entities, or None if not found
+    Uses a single query with eager loading instead of 4 separate queries
+    to avoid unnecessary round-trips to the database.
     """
     from src.api.models.workspace_models.workspace_model import WorkspaceModel
     from src.api.models.user_models.roles import Role
     from src.api.models.user_models.users import Users
 
-    invitation = db.query(UserInvitations).filter(
-        UserInvitations.id == invitation_id
-    ).first()
+    # Single query with joins
+    result = await db.execute(
+        select(UserInvitations, WorkspaceModel, Role, Users)
+        .outerjoin(WorkspaceModel, WorkspaceModel.id == UserInvitations.workspace_id)
+        .outerjoin(Role, Role.id == UserInvitations.role_id)
+        .outerjoin(Users, Users.id == UserInvitations.invited_by_user_id)
+        .where(UserInvitations.id == invitation_id)
+    )
+    row = result.first()
 
-    if not invitation:
+    if not row:
         return None
 
-    # Get related entities
-    workspace = db.query(WorkspaceModel).filter(
-        WorkspaceModel.id == invitation.workspace_id
-    ).first()
+    invitation, workspace, role, invited_by = row
 
-    role = db.query(Role).filter(
-        Role.id == invitation.role_id
-    ).first()
-
-    invited_by = db.query(Users).filter(
-        Users.id == invitation.invited_by_user_id
-    ).first()
+    invited_by_result = await db.execute(
+        select(Users).where(Users.id == invitation.invited_by_user_id)
+    )
+    invited_by = invited_by_result.scalar_one_or_none()
 
     return {
         "id": str(invitation.id),
@@ -109,9 +136,48 @@ def get_invitation_with_details(db: Session, invitation_id: str) -> Optional[dic
         "role_id": str(invitation.role_id),
         "role_name": role.name if role else None,
         "invited_by_user_id": str(invitation.invited_by_user_id),
-        "invited_by_name": invited_by.username if invited_by else None,
+        "invited_by_name": invited_by.full_name if invited_by else None,
         "status": invitation.status,
         "created_at": invitation.created_at.isoformat() if invitation.created_at else None,
         "expires_at": invitation.expires_at.isoformat() if invitation.expires_at else None,
-        "is_expired": is_invitation_expired(invitation)
+        "is_expired": is_invitation_expired(invitation),
     }
+
+
+def validate_expiry_days(expiry_days: int) -> None:
+    """
+    Validate that invitation expiry days is within the allowed range.
+
+    Args:
+        expiry_days: Number of days until invitation expires.
+
+    Raises:
+        RextValidationException: If expiry_days is not between
+            MIN_EXPIRY_DAYS and MAX_EXPIRY_DAYS (inclusive).
+    """
+    if not MIN_EXPIRY_DAYS <= expiry_days <= MAX_EXPIRY_DAYS:
+        raise RextValidationException(
+            message=f"Expiry days must be between {MIN_EXPIRY_DAYS} and {MAX_EXPIRY_DAYS}",
+            field_errors={
+                "expiry_days": [
+                    f"Must be between {MIN_EXPIRY_DAYS} and {MAX_EXPIRY_DAYS} days"
+                ]
+            }
+        )
+
+
+def normalize_email(email: str) -> str:
+    """
+    Normalize an email address for consistent comparison and storage.
+
+    Applies lowercase and whitespace trimming. Per RFC 5321, the domain
+    part is case-insensitive. While the local part is technically
+    case-sensitive, all major providers treat it as case-insensitive.
+
+    Args:
+        email: Email address to normalize.
+
+    Returns:
+        Normalized email address (lowercase, trimmed).
+    """
+    return email.lower().strip()

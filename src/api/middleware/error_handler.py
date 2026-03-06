@@ -6,7 +6,7 @@ converting all exceptions into standardized error responses that match the
 frontend expectations.
 
 Features:
-- Automatic exception to error response conversion
+- Automatic exception  to error response conversion
 - Request ID correlation for error tracking
 - Detailed error logging with context
 - Security-conscious error message filtering
@@ -16,13 +16,12 @@ Features:
 
 import json
 import traceback
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Callable, Dict, Any, Optional
 
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import ValidationError
-from starlette.middleware.base import BaseHTTPMiddleware
 
 from src.api.schema.response_schemas import (
     ErrorResponse,
@@ -32,9 +31,10 @@ from src.api.schema.response_schemas import (
     get_error_code_for_http_status,
     get_severity_for_http_status,
 )
-from src.api.middleware.exceptions import WrextAPIException
+from src.api.middleware.exceptions import RextAPIException
 from src.api.middleware.request_tracker import get_request_id, get_processing_time_ms
 from src.utils.logger import logger
+from src.api.lib.log_policy import get_severity_level, log_with_level
 
 # Sentry integration (optional)
 try:
@@ -44,13 +44,11 @@ except ImportError:
     SENTRY_AVAILABLE = False
 
 
-class ErrorHandlerMiddleware(BaseHTTPMiddleware):
+
+class ErrorHandlerMiddleware:
     """
     Middleware for handling all exceptions and converting them to standardized responses.
-
-    This middleware catches all exceptions that occur during request processing
-    and converts them into consistent error responses. It also handles logging,
-    request tracking, and security filtering of error details.
+    Using pure ASGI interface to avoid BaseHTTPMiddleware issues with streaming responses.
     """
 
     def __init__(
@@ -61,43 +59,59 @@ class ErrorHandlerMiddleware(BaseHTTPMiddleware):
         filter_sensitive_data: bool = True,
         max_error_details: int = 10
     ):
-        """
-        Initialize the error handler middleware.
-
-        Args:
-            app: FastAPI application instance
-            include_debug_info: Include debug information in responses (dev only)
-            log_full_traceback: Whether to log full tracebacks
-            filter_sensitive_data: Whether to filter sensitive data from responses
-            max_error_details: Maximum number of error details to include
-        """
-        super().__init__(app)
+        self.app = app
         self.include_debug_info = include_debug_info
         self.log_full_traceback = log_full_traceback
         self.filter_sensitive_data = filter_sensitive_data
         self.max_error_details = max_error_details
 
-    async def dispatch(self, request: Request, call_next: Callable) -> JSONResponse:
-        """
-        Process request with comprehensive error handling.
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
 
-        Args:
-            request: Incoming request
-            call_next: Next middleware/handler in chain
+        from starlette.requests import Request
+        request = Request(scope, receive)
+        
+        # Try to get start time from state (RequestTracker might have set it)
+        request_start_time = None
+        if hasattr(request.state, '_start_time'):
+            request_start_time = request.state._start_time
 
-        Returns:
-            JSONResponse: Either normal response or standardized error response
-        """
-        request_start_time = getattr(request.state, '_start_time', None)
+        headers_sent = False
+
+        async def send_wrapper(message):
+            nonlocal headers_sent
+            if message["type"] == "http.response.start":
+                headers_sent = True
+            await send(message)
 
         try:
-            # Process the request normally
-            response = await call_next(request)
-            return response
-
+            await self.app(scope, receive, send_wrapper)
         except Exception as exc:
+            if headers_sent:
+                # If headers are already sent, we cannot send a new JSONResponse.
+                # Log the error and let it propagate or let the connection close.
+                logger.error(
+                    f"Unhandled exception after headers sent: {type(exc).__name__}: {exc}",
+                    exc_info=True,
+                    extra={"request_id": get_request_id(request)}
+                )
+                raise exc
+
             # Handle the exception and return standardized error response
-            return await self._handle_exception(request, exc, request_start_time)
+            response = await self._handle_exception(request, exc, request_start_time)
+            
+            # Send the response manually via ASGI
+            await send({
+                "type": "http.response.start",
+                "status": response.status_code,
+                "headers": list(response.headers.raw)
+            })
+            await send({
+                "type": "http.response.body",
+                "body": response.body
+            })
 
     async def _handle_exception(
         self,
@@ -125,8 +139,8 @@ class ErrorHandlerMiddleware(BaseHTTPMiddleware):
             processing_time_ms = get_processing_time_ms(start_time)
 
         # Handle different exception types
-        if isinstance(exception, WrextAPIException):
-            error_response = self._handle_wrext_exception(
+        if isinstance(exception, RextAPIException):
+            error_response = self._handle_rext_exception(
                 exception, request_id, processing_time_ms
             )
         elif isinstance(exception, HTTPException):
@@ -150,17 +164,17 @@ class ErrorHandlerMiddleware(BaseHTTPMiddleware):
             content=json.loads(error_response.json())
         )
 
-    def _handle_wrext_exception(
+    def _handle_rext_exception(
         self,
-        exception: WrextAPIException,
+        exception: RextAPIException,
         request_id: str,
         processing_time_ms: Optional[int] = None
     ) -> ErrorResponse:
         """
-        Handle custom Wrext API exceptions.
+        Handle custom Rext API exceptions.
 
         Args:
-            exception: WrextAPIException instance
+            exception: RextAPIException instance
             request_id: Request ID for correlation
             processing_time_ms: Processing time in milliseconds
 
@@ -181,7 +195,7 @@ class ErrorHandlerMiddleware(BaseHTTPMiddleware):
                     level="error" if exception.severity == "high" else "fatal",
                     tags={
                         "error_code": exception.error_code.value,
-                        "error_type": "wrext_api_exception",
+                        "error_type": "rext_api_exception",
                     }
                 )
             except Exception as sentry_error:
@@ -208,6 +222,7 @@ class ErrorHandlerMiddleware(BaseHTTPMiddleware):
         )
 
     def _handle_http_exception(
+        self,
         exception: HTTPException,
         request_id: str,
         processing_time_ms: Optional[int] = None
@@ -372,7 +387,7 @@ class ErrorHandlerMiddleware(BaseHTTPMiddleware):
         filtered_details = []
         sensitive_fields = {
             'password', 'token', 'secret', 'key', 'authorization',
-            'cookie', 'session', 'credential', 'private'
+            'cookie', 'session', 'credential', 'private', 'conflicting_value'
         }
 
         for detail in details:
@@ -411,7 +426,7 @@ class ErrorHandlerMiddleware(BaseHTTPMiddleware):
         filtered_context = {}
         sensitive_keys = {
             'password', 'token', 'secret', 'key', 'authorization',
-            'cookie', 'session', 'credential', 'private', 'api_key'
+            'cookie', 'session', 'credential', 'private', 'api_key', 'conflicting_value'
         }
 
         for key, value in context.items():
@@ -466,7 +481,7 @@ class ErrorHandlerMiddleware(BaseHTTPMiddleware):
             logger.warning(
                 f"Handled error in {request.method} {request.url.path}: {error_response.error['message']}",
                 extra=log_context,
-                exc_info=isinstance(exception, WrextAPIException) and self.log_full_traceback
+                exc_info=isinstance(exception, RextAPIException) and self.log_full_traceback
             )
         else:  # low severity
             logger.info(
@@ -482,9 +497,9 @@ def setup_exception_handlers(app: FastAPI) -> None:
     Args:
         app: FastAPI application instance
     """
-    @app.exception_handler(WrextAPIException)
-    async def wrext_exception_handler(request: Request, exc: WrextAPIException):
-        """Handle custom Wrext API exceptions."""
+    @app.exception_handler(RextAPIException)
+    async def rext_exception_handler(request: Request, exc: RextAPIException):
+        """Handle custom Rext API exceptions."""
         request_id = get_request_id(request)
 
         error_response = create_error_response(
@@ -497,14 +512,18 @@ def setup_exception_handlers(app: FastAPI) -> None:
             context=exc.context
         )
 
-        logger.error(
-            f"Wrext API Exception: {exc.message}",
+        log_level = get_severity_level(exc.severity.value)
+        log_with_level(
+            logger,
+            log_level,
+            f"Rext API Exception: {exc.message}",
             extra={
                 "request_id": request_id,
                 "error_code": exc.error_code.value,
                 "status_code": exc.status_code,
-                "exception_type": type(exc).__name__
-            }
+                "severity": exc.severity.value,
+                "exception_type": type(exc).__name__,
+            },
         )
 
         return JSONResponse(

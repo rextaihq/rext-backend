@@ -1,21 +1,27 @@
 """
 Media Model
 
-Handles file uploads, storage, and management for the WREXT platform.
+Handles file uploads, storage, and management for the REXT platform.
 Supports images, documents, videos with metadata, tagging, and organization.
 """
 
 import uuid
-from datetime import datetime
-from sqlalchemy import Column, String, Integer, BigInteger, Boolean, TIMESTAMP, ForeignKey, ARRAY, Text
+from datetime import datetime, timezone
+from sqlalchemy import Column, String, Integer, BigInteger, Boolean, DateTime, ForeignKey, ARRAY, Text
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import relationship
 
 from src.api.database.base import Base
-from src.api.models.base import SerializableMixin
+from src.api.models.base import SerializableMixin, SoftDeleteMixin
+from enum import Enum
 
+class AccessLevel(str, Enum):
+    """Media file access levels."""
+    PUBLIC = "public"
+    PRIVATE = "private"
+    WORKSPACE = "workspace"
 
-class Media(Base, SerializableMixin):
+class Media(Base, SerializableMixin, SoftDeleteMixin):
     """
     Media file model for managing uploaded files.
 
@@ -56,9 +62,8 @@ class Media(Base, SerializableMixin):
     storage_backend = Column(String(20), default="r2", comment="Storage backend: r2 (Cloudflare), local")
     storage_path = Column(String(500), nullable=False, comment="R2 key or local path")
     storage_bucket = Column(String(100), comment="R2 bucket name")
-    cdn_url = Column(String(500), comment="CDN URL if available")
     public_url = Column(String(500), comment="Public access URL")
-
+    
     # Metadata
     title = Column(String(255), comment="User-provided title")
     description = Column(Text, comment="User-provided description")
@@ -74,12 +79,34 @@ class Media(Base, SerializableMixin):
     tags = Column(ARRAY(String), default=list, comment="Tags for search and organization")
 
     # Access control
-    is_public = Column(Boolean, default=False, comment="Whether file is publicly accessible")
+    is_public = Column(Boolean, default=False, comment="Whether file is publicly accessible — derived from access_level")
     access_level = Column(
         String(20),
-        default="private",
+        default=AccessLevel.PRIVATE.value,
         comment="Access level: public, private, workspace"
     )
+
+    def set_access_level(self, level: str) -> None:
+        """
+        Set access level and synchronize is_public flag.
+
+        Args:
+            level: One of 'public', 'private', 'workspace'
+
+        Raises:
+            ValueError: If level is not a valid AccessLevel
+        """
+        # Validate the level
+        try:
+            validated = AccessLevel(level)
+        except ValueError:
+            raise ValueError(
+                f"Invalid access level '{level}'. "
+                f"Must be one of: {', '.join(al.value for al in AccessLevel)}"
+            )
+
+        self.access_level = validated.value
+        self.is_public = (validated == AccessLevel.PUBLIC)
 
     # Image-specific fields (nullable for non-images)
     thumbnail_path = Column(String(500), comment="Thumbnail storage path")
@@ -97,14 +124,13 @@ class Media(Base, SerializableMixin):
     processing_error = Column(Text, comment="Error message if processing failed")
 
     # Timestamps
-    created_at = Column(TIMESTAMP, default=datetime.utcnow, nullable=False)
-    updated_at = Column(TIMESTAMP, default=datetime.utcnow, onupdate=datetime.utcnow)
-    deleted_at = Column(TIMESTAMP, comment="Soft delete timestamp")
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
+    updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
     # Relationships
     workspace = relationship("WorkspaceModel", back_populates="media")
     user = relationship("Users", back_populates="media")
-
+    used_in_content = relationship("ContentMedia", back_populates="media", cascade="all, delete-orphan", passive_deletes=True)
     def __repr__(self) -> str:
         return f"<Media(id={self.id}, filename={self.filename}, type={self.file_type})>"
 
@@ -126,10 +152,6 @@ class Media(Base, SerializableMixin):
         """Check if media is a video"""
         return self.file_type.startswith("video/")
 
-    def is_audio(self) -> bool:
-        """Check if media is audio"""
-        return self.file_type.startswith("audio/")
-
     def get_file_size_mb(self) -> float:
         """Get file size in megabytes"""
         return round(self.file_size / (1024 * 1024), 2) if self.file_size else 0.0
@@ -143,6 +165,5 @@ class Media(Base, SerializableMixin):
         data["is_image"] = self.is_image()
         data["is_document"] = self.is_document()
         data["is_video"] = self.is_video()
-        data["is_audio"] = self.is_audio()
 
         return data

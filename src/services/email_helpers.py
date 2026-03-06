@@ -47,7 +47,7 @@ async def send_auth_email(
         from src.services.email_preferences_service import EmailPreferencesService
 
         prefs_service = EmailPreferencesService(db)
-        prefs = await prefs_service.get_or_create_preferences(user_id, db)
+        prefs = await prefs_service.get_or_create_preferences(user_id)
         unsubscribe_token = prefs.unsubscribe_token
 
         # Import templates
@@ -66,7 +66,7 @@ async def send_auth_email(
                 frontend_url=frontend_url,
                 unsubscribe_token=unsubscribe_token
             )
-            subject = "Verify Your Email Address - WREXT"
+            subject = "Verify Your Email Address - REXT"
 
         elif email_type == "password_reset":
             html = create_password_reset_email(
@@ -76,7 +76,7 @@ async def send_auth_email(
                 frontend_url=frontend_url,
                 unsubscribe_token=unsubscribe_token
             )
-            subject = "Reset Your Password - WREXT"
+            subject = "Reset Your Password - REXT"
 
         elif email_type == "password_changed":
             html = create_password_changed_email(
@@ -87,7 +87,7 @@ async def send_auth_email(
                 frontend_url=frontend_url,
                 unsubscribe_token=unsubscribe_token
             )
-            subject = "Your Password Has Been Changed - WREXT"
+            subject = "Your Password Has Been Changed - REXT"
 
         elif email_type == "welcome":
             html = create_welcome_email(
@@ -95,7 +95,7 @@ async def send_auth_email(
                 frontend_url=frontend_url,
                 unsubscribe_token=unsubscribe_token
             )
-            subject = "Welcome to WREXT!"
+            subject = "Welcome to REXT!"
 
         else:
             raise ValueError(f"Unknown email type: {email_type}")
@@ -141,7 +141,7 @@ async def send_auth_email(
 
 async def send_workspace_email(
     db: AsyncSession,
-    email_type: Literal["invitation", "invitation_accepted", "role_changed", "member_removed"],
+    email_type: Literal["invitation", "invitation_accepted", "role_changed", "member_removed", "workspace_deleted"],
     workspace_id: UUID,
     recipient_email: str,
     user_id: UUID = None,
@@ -172,7 +172,7 @@ async def send_workspace_email(
             prefs_service = EmailPreferencesService(db)
 
             # Check email preferences
-            can_send = await prefs_service.check_can_send(user_id, email_type, db)
+            can_send = await prefs_service.check_can_send(user_id, email_type)
             if not can_send:
                 logger.info(f"Email blocked by user preferences", extra={
                     "user_id": str(user_id),
@@ -181,7 +181,7 @@ async def send_workspace_email(
                 return False
 
             # Get unsubscribe token
-            prefs = await prefs_service.get_or_create_preferences(user_id, db)
+            prefs = await prefs_service.get_or_create_preferences(user_id)
             unsubscribe_token = prefs.unsubscribe_token
 
         # Add unsubscribe token to context for templates
@@ -204,10 +204,10 @@ async def send_workspace_email(
 
             # Fallback to Python templates
             from emails.templates.workspace import (
-                create_workspace_invitation_email,
                 create_invitation_accepted_email,
                 create_role_changed_email,
-                create_member_removed_email
+                create_member_removed_email,
+                create_workspace_deleted_email
             )
 
             if email_type == "invitation":
@@ -222,6 +222,9 @@ async def send_workspace_email(
             elif email_type == "member_removed":
                 html = create_member_removed_email(**context_with_token)
                 subject = f"You've been removed from {context.get('workspace_name', 'a workspace')}"
+            elif email_type == "workspace_deleted":
+                html = create_workspace_deleted_email(**context_with_token)
+                subject = f"Workspace '{context.get('workspace_name', 'your workspace')}' deleted"
             else:
                 raise ValueError(f"Unknown workspace email type: {email_type}")
 

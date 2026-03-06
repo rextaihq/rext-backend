@@ -1,4 +1,5 @@
 import logging
+import os
 from typing import Optional, Union
 from crawl4ai.markdown_generation_strategy import DefaultMarkdownGenerator
 from crawl4ai import LinkPreviewConfig
@@ -68,7 +69,7 @@ class MarkdownGeneratorFactory:
         max_links: int = 100,
         concurrency: int = 20,
         timeout: int = 10,
-        verbose: bool = False,
+        verbose: bool = os.getenv("DEBUG", "false").lower() == "true",
     ) -> LinkPreviewConfig:
         """
         Configure link preview and scoring settings.

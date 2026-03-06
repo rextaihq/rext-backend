@@ -20,7 +20,7 @@ Public Endpoints (no auth):
 
 from typing import Optional
 from uuid import UUID
-from datetime import datetime
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, Query, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -28,6 +28,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.api.database.async_database import get_async_db
 from src.api.security.dependencies import get_current_user
 from src.services.admin_invitation_service import AdminInvitationService
+from src.api.middleware.rate_limiter import admin_invitation_rate_limit, invitation_creation_rate_limit
 from src.api.schema.admin_invitation_schema import (
     CreateAdminInvitationRequest,
     AcceptAdminInvitationRequest,
@@ -39,9 +40,14 @@ from src.api.schema.admin_invitation_schema import (
     ValidateAdminInvitationResponse,
     AdminInvitationStatsResponse,
 )
+from src.api.middleware.exceptions import (
+    ResourceNotFoundException,
+    BusinessRuleViolationException,
+)
 from src.api.schema.response_schemas import GenericResponse
 from src.utils.route_decorators import db_transaction_handler, require_permissions
 from src.utils.logger import logger
+from src.api.middleware.exceptions import ResourceNotFoundException, RextValidationException
 
 
 # Admin routes (authenticated, super_admin only)
@@ -64,7 +70,7 @@ public_router = APIRouter(
 
 def _invitation_to_response(invitation) -> AdminInvitationResponse:
     """Convert invitation model to response schema."""
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     days_until_expiry = None
 
     if invitation.status == 'pending' and not invitation.is_expired():
@@ -107,6 +113,20 @@ def _invitation_to_response(invitation) -> AdminInvitationResponse:
     )
 
 
+def _invalid_invitation_validation_response() -> ValidateAdminInvitationResponse:
+    """Return a client-safe response for invalid/unavailable admin invitation tokens."""
+    return ValidateAdminInvitationResponse(
+        valid=False,
+        email="",
+        admin_role="",
+        expires_at=datetime.now(timezone.utc).isoformat(),
+        is_expired=True,
+        status="invalid",
+        error_message="Invitation is invalid or expired",
+    )
+
+
+
 # ============================================================================
 # ADMIN ENDPOINTS (super_admin only)
 # ============================================================================
@@ -120,6 +140,7 @@ async def create_admin_invitation(
     data: CreateAdminInvitationRequest,
     db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user),
+    _: None = Depends(admin_invitation_rate_limit()),  # Add rate limiting
 ):
     """
     Create a new platform admin invitation.
@@ -144,7 +165,7 @@ async def create_admin_invitation(
     invitation = await service.create_admin_invitation(
         email=data.email,
         admin_role=data.admin_role,
-        invited_by_admin_id=UUID(current_user["id"]),
+        invited_by_admin_id=UUID(current_user["identity"]),
         message=data.message,
         permissions=data.permissions,
         expiry_days=data.expiry_days or 7,
@@ -163,7 +184,7 @@ async def create_admin_invitation(
 
 @admin_router.get("", response_model=AdminInvitationListResponse)
 @db_transaction_handler("list admin invitations", auto_commit=False)
-@require_permissions("audit.read", workspace_scoped=False)
+@require_permissions("audit.admin", workspace_scoped=False)
 async def list_admin_invitations(
     request: Request,
     status: Optional[str] = Query(None, description="Filter by status (pending/accepted/revoked/expired/declined)"),
@@ -185,7 +206,7 @@ async def list_admin_invitations(
     """
     service = AdminInvitationService(db)
 
-    invitations = await service.get_all_invitations(
+    invitations, total_count = await service.get_all_invitations_paginated(
         status=status,
         limit=limit,
         offset=offset,
@@ -195,7 +216,7 @@ async def list_admin_invitations(
 
     return AdminInvitationListResponse(
         invitations=invitation_responses,
-        total_count=len(invitation_responses),
+        total_count=total_count,
         status_filter=status,
         limit=limit,
         offset=offset,
@@ -204,7 +225,7 @@ async def list_admin_invitations(
 
 @admin_router.get("/{invitation_id}", response_model=AdminInvitationResponse)
 @db_transaction_handler("get admin invitation", auto_commit=False)
-@require_permissions("audit.read", workspace_scoped=False)
+@require_permissions("audit.admin", workspace_scoped=False)
 async def get_admin_invitation(
     request: Request,
     invitation_id: UUID,
@@ -233,6 +254,7 @@ async def resend_admin_invitation(
     data: ResendAdminInvitationRequest,
     db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user),
+    __: None = Depends(admin_invitation_rate_limit()),
 ):
     """
     Resend (refresh) an admin invitation with new token and expiry.
@@ -250,7 +272,7 @@ async def resend_admin_invitation(
 
     invitation = await service.resend_admin_invitation(
         invitation_id=invitation_id,
-        resent_by_admin_id=UUID(current_user["id"]),
+        resent_by_admin_id=UUID(current_user["identity"]),
         expiry_days=data.expiry_days or 7,
     )
 
@@ -290,7 +312,7 @@ async def revoke_admin_invitation(
 
     invitation = await service.revoke_admin_invitation(
         invitation_id=invitation_id,
-        revoked_by_admin_id=UUID(current_user["id"]),
+        revoked_by_admin_id=UUID(current_user["identity"]),
         reason=data.reason,
     )
 
@@ -317,18 +339,10 @@ async def validate_admin_invitation_token(
     token: str,
     db: AsyncSession = Depends(get_async_db),
 ):
-    """
-    Validate an admin invitation token (public endpoint).
+    """Validate an admin invitation token (public endpoint)."""
+    service = AdminInvitationService(db)
 
-    **Purpose:**
-    - Show invitation details before acceptance
-    - Check if invitation is still valid
-    - Used by frontend to display invitation info
-
-    **No authentication required** - token serves as proof of invitation.
-    """
     try:
-        service = AdminInvitationService(db)
         invitation = await service.get_invitation_by_token(token)
 
         return ValidateAdminInvitationResponse(
@@ -339,26 +353,23 @@ async def validate_admin_invitation_token(
             message=invitation.message,
             invited_by_name=(
                 f"{invitation.invited_by.first_name} {invitation.invited_by.last_name}"
-                if invitation.invited_by else None
+                if invitation.invited_by
+                else None
             ),
             expires_at=invitation.expires_at.isoformat(),
             is_expired=invitation.is_expired(),
             status=invitation.status,
-            error_message=None if invitation.can_be_accepted() else (
-                "Invitation has expired" if invitation.is_expired()
-                else f"Invitation is {invitation.status}"
-            ),
+            error_message=None
+            if invitation.can_be_accepted()
+            else ("Invitation has expired" if invitation.is_expired() else "Invitation is no longer pending"),
         )
-    except Exception as e:
-        return ValidateAdminInvitationResponse(
-            valid=False,
-            email="",
-            admin_role="",
-            expires_at=datetime.utcnow().isoformat(),
-            is_expired=True,
-            status="invalid",
-            error_message=str(e),
-        )
+    except (ResourceNotFoundException, RextValidationException):
+        logger.info("Admin invitation token validation failed", extra={"reason": "invalid_or_not_found"})
+        return _invalid_invitation_validation_response()
+    except Exception:
+        logger.exception("Unexpected error validating admin invitation token")
+        return _invalid_invitation_validation_response()
+
 
 
 @public_router.post("/{token}/accept", response_model=AdminInvitationResponse)
@@ -389,7 +400,7 @@ async def accept_admin_invitation(
 
     invitation = await service.accept_admin_invitation(
         token=token,
-        user_id=UUID(current_user["id"]),
+        user_id=UUID(current_user["identity"]),
     )
 
     logger.info(

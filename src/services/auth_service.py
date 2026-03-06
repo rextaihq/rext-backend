@@ -21,7 +21,8 @@ Does NOT:
 
 from typing import Tuple, Dict, Any, Optional
 from uuid import UUID
-from datetime import datetime, timedelta
+from datetime import datetime, timezone, timedelta, timezone
+from src.utils.password_utils import validate_password_strength
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, or_
@@ -45,7 +46,7 @@ from src.api.security.token_utils import (
     create_access_token,
     create_refresh_token,
     create_verification_token,
-    verify_token,
+    decode_and_verify_token,
     verify_refresh_token,
     is_token_blacklisted
 )
@@ -54,18 +55,22 @@ from src.services.notification_helper import schedule_if_allowed
 from src.utils.logger import logger
 from src.api.middleware.exceptions import (
     DuplicateResourceException,
-    WrextAuthenticationException,
+    RextAuthenticationException,
     ResourceNotFoundException,
     BusinessRuleViolationException
 )
-default_permissions = [
-            "user.update",
-            "user.read",
-            "workspace.create",
-            "subscription.read"
-        ]
 class AuthService:
     """Service for authentication business logic"""
+
+    # Default permissions assigned to new users during registration
+    # Using tuple to prevent accidental mutation
+    DEFAULT_PERMISSIONS: tuple[str, ...] = (
+        "user.update",
+        "user.read",
+        "workspace.create",
+        "subscription.read",
+    )
+
     def __init__(self, db: AsyncSession):
         """
         Initialize AuthService.
@@ -78,16 +83,14 @@ class AuthService:
     async def register_user(
         self,
         email: str,
-        username: str,
         password: str,
-        first_name: str,
-        last_name: str
+        full_name: str
     ) -> Tuple[Users, str]:
         """
         Register new user with role assignment and trial subscription.
 
         Business Rules:
-        - Email and username must be unique
+        - Email must be unique
         - Password is hashed before storage
         - Default 'user' role is assigned
         - Trial subscription is auto-assigned (14 days)
@@ -95,52 +98,40 @@ class AuthService:
 
         Args:
             email: User email
-            username: Username
             password: Plain text password
-            first_name: First name
-            last_name: Last name
+            full_name: Full name
 
         Returns:
             Tuple of (User object, verification_token)
 
         Raises:
-            DuplicateResourceException: If email or username exists
+            DuplicateResourceException: If email exists
         """
         # Check if user exists
         result = await self.db.execute(
-            select(Users).where(
-                or_(Users.email == email, Users.username == username)
-            )
+            select(Users).where(Users.email == email)
         )
         existing_user = result.scalar_one_or_none()
 
         if existing_user:
-            if existing_user.email == email:
-                raise DuplicateResourceException(
-                    message="A user with this email already exists",
-                    resource_type="user",
-                    conflicting_field="email",
-                    conflicting_value=email
-                )
-            else:
-                raise DuplicateResourceException(
-                    message="A user with this username already exists",
-                    resource_type="user",
-                    conflicting_field="username",
-                    conflicting_value=username
-                )
+            raise DuplicateResourceException(
+                message="A user with this email already exists",
+                resource_type="user",
+                conflicting_field="email"
+            )
+        
+        # Validate password strength
+        validate_password_strength(password)
 
         # Hash password
         hashed_pwd = hash_password(password)
 
         # Create user
         new_user = Users(
-            first_name=first_name,
-            last_name=last_name,
-            username=username,
+            full_name=full_name,
             email=email,
             password_hash=hashed_pwd,
-            created_at=datetime.utcnow()
+            created_at=datetime.now(timezone.utc)
         )
         self.db.add(new_user)
         await self.db.flush()
@@ -153,7 +144,7 @@ class AuthService:
             role_id=default_role.id,
             workspace_id=None,
             is_primary=True,
-            assigned_at=datetime.utcnow(),
+            assigned_at=datetime.now(timezone.utc),
             assigned_by_user_id=new_user.id
         )
         self.db.add(user_role)
@@ -166,7 +157,7 @@ class AuthService:
         # Create trial subscription (auto-assigned on signup)
         trial_plan = await self._get_trial_plan()
         if trial_plan:
-            trial_start = datetime.utcnow()
+            trial_start = datetime.now(timezone.utc)
             trial_end = trial_start + timedelta(days=14)
 
             trial_subscription = UserSubscription(
@@ -193,7 +184,7 @@ class AuthService:
 
         logger.info(
             f"User registered: {new_user.id}",
-            extra={"email": email, "username": username, "has_trial": trial_plan is not None}
+            extra={"email": email, "has_trial": trial_plan is not None}
         )
 
         return new_user, verification_token
@@ -225,11 +216,11 @@ class AuthService:
             Tuple of (User object, tokens dict with access_token, refresh_token, token_type)
 
         Raises:
-            WrextAuthenticationException: If credentials invalid or account locked
+            RextAuthenticationException: If credentials invalid or account locked
         """
         # Find user (eagerly load relationships to avoid lazy loading in async context)
         from sqlalchemy.orm import selectinload
-        global  default_permissions
+
         result = await self.db.execute(
             select(Users)
             .options(selectinload(Users.user_roles).selectinload(UserRole.role))
@@ -238,14 +229,14 @@ class AuthService:
         db_user = result.scalar_one_or_none()
 
         if not db_user:
-            raise WrextAuthenticationException(
+            raise RextAuthenticationException(
                 message="Invalid email or password",
                 context={"login_attempt": email}
             )
 
         # Check if account is locked
-        if db_user.locked_until and db_user.locked_until > datetime.utcnow():
-            raise WrextAuthenticationException(
+        if db_user.locked_until and db_user.locked_until > datetime.now(timezone.utc):
+            raise RextAuthenticationException(
                 message="Account is temporarily locked due to multiple failed login attempts. Please try again later.",
                 context={"locked_until": db_user.locked_until.isoformat()}
             )
@@ -264,18 +255,18 @@ class AuthService:
             lockout_hours = settings.AUTH_LOCKOUT_DURATION_HOURS
 
             if db_user.failed_login_attempts >= max_attempts:
-                db_user.locked_until = datetime.utcnow() + timedelta(hours=lockout_hours)
+                db_user.locked_until = datetime.now(timezone.utc) + timedelta(hours=lockout_hours)
 
             await self.db.flush()
 
-            raise WrextAuthenticationException(
+            raise RextAuthenticationException(
                 message="Invalid email or password",
                 context={"login_attempt": email}
             )
 
         # Successful login - reset failed attempts
         db_user.failed_login_attempts = 0
-        db_user.last_login_at = datetime.utcnow()
+        db_user.last_login_at = datetime.now(timezone.utc)
         db_user.login_count = (db_user.login_count or 0) + 1
         await self.db.flush()
 
@@ -295,8 +286,12 @@ class AuthService:
             subscription = sub_result.scalar_one_or_none()
             
             if subscription and subscription.trial_end_date:
-                if subscription.trial_end_date < datetime.utcnow():
-                     await schedule_if_allowed(
+                trial_end = subscription.trial_end_date
+                if trial_end.tzinfo is None:
+                    trial_end = trial_end.replace(tzinfo=timezone.utc)
+                    
+                if trial_end < datetime.now(timezone.utc):
+                    await schedule_if_allowed(
                         db=self.db,
                         user_id=str(db_user.id),
                         background_tasks=background_tasks,
@@ -318,7 +313,7 @@ class AuthService:
             .join(UserRole, UserRole.role_id == Role.id)
             .where(UserRole.user_id == db_user.id)
             .where(UserRole.workspace_id.is_(None))
-            .where(UserRole.is_primary == True)
+            .where(UserRole.is_primary.is_(True))
         )
         global_role_names = list(global_roles_result.scalars().all())
         
@@ -330,7 +325,7 @@ class AuthService:
             .join(UserRole, UserRole.role_id == Role.id)
             .where(UserRole.user_id == db_user.id)
             .where(UserRole.workspace_id.is_(None))  # global roles only
-            .where(UserRole.is_primary == True)
+            .where(UserRole.is_primary.is_(True))
             .distinct()
         )
         global_permissions = list(result.scalars().all())
@@ -342,7 +337,6 @@ class AuthService:
         # Workspace permissions will be loaded separately via /workspaces/{id}/permissions endpoint
         token_data = {
             "id": str(db_user.id),
-            "username": db_user.username,
             "email": db_user.email,
             "roles": global_role_names,
             "permissions": global_permissions  # Only platform-level permissions
@@ -353,10 +347,10 @@ class AuthService:
         refresh_token = create_refresh_token(data=token_data)
 
         # Create session
-        access_payload = verify_token(access_token)
+        access_payload = decode_and_verify_token(access_token)
         jti = access_payload.get("jti")
         exp_timestamp = access_payload.get("exp")
-        expires_at = datetime.utcfromtimestamp(exp_timestamp) if exp_timestamp else datetime.utcnow() + timedelta(hours=24)
+        expires_at = datetime.fromtimestamp(exp_timestamp, tz=timezone.utc) if exp_timestamp else datetime.now(timezone.utc) + timedelta(hours=24)
 
         new_session = UserSession(
             user_id=db_user.id,
@@ -366,8 +360,8 @@ class AuthService:
             user_agent=device_info.get("user_agent", "Unknown"),
             ip_address=device_info.get("ip_address", "Unknown"),
             is_active=True,
-            created_at=datetime.utcnow(),
-            last_activity_at=datetime.utcnow(),
+            created_at=datetime.now(timezone.utc),
+            last_activity_at=datetime.now(timezone.utc),
             expires_at=expires_at
         )
         self.db.add(new_session)
@@ -378,10 +372,14 @@ class AuthService:
             extra={"email": email, "session_id": str(new_session.id)}
         )
 
+        from src.api.config import get_settings
+        settings = get_settings()
+        
         tokens = {
             "access_token": access_token,
             "refresh_token": refresh_token,
             "token_type": "bearer",
+            "expires_in": settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
             "permissions": global_permissions,  # Include permissions for route response
             "roles": global_role_names  # Include roles for route response
         }
@@ -399,13 +397,13 @@ class AuthService:
             User object
 
         Raises:
-            WrextAuthenticationException: If token invalid or user not found
+            RextAuthenticationException: If token invalid or user not found
         """
-        payload = verify_token(token)
+        payload = decode_and_verify_token(token)
         user_id = payload.get("user_id")
 
         if not user_id:
-            raise WrextAuthenticationException(
+            raise RextAuthenticationException(
                 message="Invalid token payload",
                 context={"error": "Missing user_id"}
             )
@@ -423,7 +421,7 @@ class AuthService:
 
         if not user.email_verified:
             user.email_verified = True
-            user.email_verified_at = datetime.utcnow()
+            user.email_verified_at = datetime.now(timezone.utc)
             await self.db.flush()
 
         logger.info(
@@ -450,7 +448,7 @@ class AuthService:
 
         Raises:
             ResourceNotFoundException: If user not found
-            WrextAuthenticationException: If email already verified
+            RextAuthenticationException: If email already verified
         """
         # Find user by email
         result = await self.db.execute(
@@ -466,7 +464,7 @@ class AuthService:
 
         # Check if already verified
         if user.email_verified:
-            raise WrextAuthenticationException(
+            raise RextAuthenticationException(
                 message="Email is already verified",
                 context={"email": email}
             )
@@ -500,7 +498,7 @@ class AuthService:
             Dict with new access_token, refresh_token, token_type
 
         Raises:
-            WrextAuthenticationException: If token invalid, blacklisted, or user not active
+            RextAuthenticationException: If token invalid, blacklisted, or user not active
         """
         # Verify refresh token
         payload = verify_refresh_token(refresh_token)
@@ -508,32 +506,35 @@ class AuthService:
         # Check if blacklisted
         jti = payload.get("jti")
         if not jti:
-            raise WrextAuthenticationException(
+            raise RextAuthenticationException(
                 message="Token missing JTI",
                 context={"note": "Old token format not supported"}
             )
 
         if await is_token_blacklisted(jti, self.db):
-            raise WrextAuthenticationException(
+            raise RextAuthenticationException(
                 message="Refresh token has been revoked",
                 context={"reason": "Token blacklisted"}
             )
 
-        # Get user
+        # Get user (eagerly load relationships to avoid lazy loading)
         user_id = payload.get("id")
+        from sqlalchemy.orm import selectinload
         result = await self.db.execute(
-            select(Users).where(Users.id == user_id)
+            select(Users)
+            .options(selectinload(Users.user_roles).selectinload(UserRole.role))
+            .where(Users.id == user_id)
         )
         db_user = result.scalar_one_or_none()
 
         if not db_user:
-            raise WrextAuthenticationException(
+            raise RextAuthenticationException(
                 message="User not found",
                 context={"user_id": user_id}
             )
 
         if db_user.status != "active":
-            raise WrextAuthenticationException(
+            raise RextAuthenticationException(
                 message="User account is not active",
                 context={"status": db_user.status}
             )
@@ -552,7 +553,7 @@ class AuthService:
             .join(UserRole, UserRole.role_id == RolePermission.role_id)
             .where(UserRole.user_id == db_user.id)
             .where(UserRole.workspace_id == None)  # Only global role assignments
-            .where(UserRole.is_primary == True)     # Only primary roles
+            .where(UserRole.is_primary.is_(True))     # Only primary roles
             .distinct()
         )
         global_permissions = [row[0] for row in result.all()]
@@ -560,7 +561,6 @@ class AuthService:
         # Create new token pair with ONLY global permissions
         token_data = {
             "id": str(db_user.id),
-            "username": db_user.username,
             "email": db_user.email,
             "roles": global_role_names,
             "permissions": global_permissions
@@ -573,8 +573,8 @@ class AuthService:
             jti=jti,
             token_type="refresh",
             user_id=db_user.id,
-            revoked_at=datetime.utcnow(),
-            expires_at=datetime.utcfromtimestamp(payload.get("exp")),
+            revoked_at=datetime.now(timezone.utc),
+            expires_at=datetime.fromtimestamp(payload.get("exp"), tz=timezone.utc),
             reason="refresh"
         )
         self.db.add(blacklist_entry)
@@ -585,10 +585,14 @@ class AuthService:
             extra={"old_jti": jti}
         )
 
+        from src.api.config import get_settings
+        settings = get_settings()
+
         return {
             "access_token": new_access_token,
             "refresh_token": new_refresh_token,
-            "token_type": "bearer"
+            "token_type": "bearer",
+            "expires_in": settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60
         }
 
     async def logout_user(self, user_id: UUID, jti: str, exp: int) -> None:
@@ -601,10 +605,10 @@ class AuthService:
             exp: Token expiration timestamp
 
         Raises:
-            WrextAuthenticationException: If token missing JTI
+            RextAuthenticationException: If token missing JTI
         """
         if not jti:
-            raise WrextAuthenticationException(
+            raise RextAuthenticationException(
                 message="Token missing JTI",
                 context={"note": "Old token format not supported"}
             )
@@ -619,8 +623,8 @@ class AuthService:
             jti=jti,
             token_type="access",
             user_id=user_id,
-            revoked_at=datetime.utcnow(),
-            expires_at=datetime.utcfromtimestamp(exp),
+            revoked_at=datetime.now(timezone.utc),
+            expires_at=datetime.fromtimestamp(exp, tz=timezone.utc),
             reason="logout"
         )
         self.db.add(blacklist_entry)
@@ -629,14 +633,14 @@ class AuthService:
         result = await self.db.execute(
             select(UserSession).where(
                 UserSession.jti == jti,
-                UserSession.is_active == True
+                UserSession.is_active.is_(True)
             )
         )
         session = result.scalar_one_or_none()
 
         if session:
             session.is_active = False
-            session.revoked_at = datetime.utcnow()
+            session.revoked_at = datetime.now(timezone.utc)
 
         await self.db.flush()
 
@@ -667,8 +671,8 @@ class AuthService:
                 resource_id=email
             )
 
-        # Generate reset token (valid 1 hour)
-        reset_token = create_verification_token({"user_id": str(user.id)})
+        # Generate reset token (valid 30 minutes)
+        reset_token = create_reset_token({"user_id": str(user.id), "email": user.email})
 
         logger.info(
             f"Password reset initiated for user: {user.id}",
@@ -689,14 +693,14 @@ class AuthService:
             User object
 
         Raises:
-            WrextAuthenticationException: If token invalid
+            RextAuthenticationException: If token invalid
             ResourceNotFoundException: If user not found
         """
-        payload = verify_token(token)
+        payload = decode_and_verify_token(token)
         user_id = payload.get("user_id")
 
         if not user_id:
-            raise WrextAuthenticationException(
+            raise RextAuthenticationException(
                 message="Invalid token payload",
                 context={"error": "Missing user_id"}
             )
@@ -711,6 +715,9 @@ class AuthService:
                 resource_type="User",
                 resource_id=user_id
             )
+
+        # Validate password strength
+        validate_password_strength(new_password)
 
         # Hash and update password
         hashed_pwd = hash_password(new_password)
@@ -748,7 +755,7 @@ class AuthService:
                 hierarchy_level=1,
                 is_system_role=True,
                 is_workspace_role=False,  # Platform role, not workspace role
-                created_at=datetime.utcnow()
+                created_at=datetime.now(timezone.utc)
             )
             self.db.add(default_role)
             await self.db.flush()
@@ -764,7 +771,7 @@ class AuthService:
         Args:
             role: Role object
         """
-        global default_permissions
+
 
         # Get existing permissions for the role to avoid adding duplicates
         existing_perms_result = await self.db.execute(
@@ -774,7 +781,7 @@ class AuthService:
         )
         existing_perms = {p_name for p_name, in existing_perms_result}
 
-        permissions_to_add_names = [p for p in default_permissions if p not in existing_perms]
+        permissions_to_add_names = [p for p in self.DEFAULT_PERMISSIONS if p not in existing_perms]
 
         if not permissions_to_add_names:
             logger.debug(f"Role '{role.name}' already has all default permissions.")
@@ -803,7 +810,7 @@ class AuthService:
         result = await self.db.execute(
             select(SubscriptionPlan).where(
                 SubscriptionPlan.name == "trial",
-                SubscriptionPlan.is_active == True
+                SubscriptionPlan.is_active.is_(True)
             )
         )
         trial_plan = result.scalar_one_or_none()
@@ -910,7 +917,7 @@ class AuthService:
                         payload = {
                             "user_id": str(user.id),
                             "invitation_id": str(invitation.id),
-                            "user_existed": user_exists
+                            "user_existed": True
                         },
                         workspace_id=str(invitation.workspace_id),
                     )

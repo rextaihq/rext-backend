@@ -8,13 +8,13 @@ Provides CSV export functionality for:
 """
 import csv
 import io
-from datetime import datetime, timedelta
+from datetime import datetime, timezone, timedelta
 from typing import List, Dict, Any, Optional
-from sqlalchemy import and_, or_, desc, func
+from sqlalchemy import and_, or_, desc, func, case
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
-from src.api.models.subscription_models.subscriptions import UserSubscription
+from src.api.models.subscription_models.subscriptions import UserSubscription, BillingPeriod
 from src.api.models.subscription_models.plans import SubscriptionPlan
 # Note: Invoice model does not exist - invoice export functionality is not implemented
 # from src.api.models.subscription_models.invoices import Invoice
@@ -58,7 +58,7 @@ class SubscriptionExportService:
                 conditions.append(UserSubscription.status == status)
 
             if plan_id:
-                conditions.append(UserSubscription.subscription_plan_id == plan_id)
+                conditions.append(UserSubscription.plan_id == plan_id)
 
             if start_date:
                 conditions.append(UserSubscription.created_at >= start_date)
@@ -72,14 +72,14 @@ class SubscriptionExportService:
                 Users.email,
                 Users.display_name,
                 SubscriptionPlan.name.label('plan_name'),
-                SubscriptionPlan.monthly_price,
-                SubscriptionPlan.annual_price
+                SubscriptionPlan.price_monthly,
+                SubscriptionPlan.price_yearly
             ).join(
                 Users,
                 UserSubscription.user_id == Users.id
             ).join(
                 SubscriptionPlan,
-                UserSubscription.subscription_plan_id == SubscriptionPlan.id
+                UserSubscription.plan_id == SubscriptionPlan.id
             ).order_by(desc(UserSubscription.created_at))
 
             if conditions:
@@ -103,8 +103,8 @@ class SubscriptionExportService:
                 'Monthly Price',
                 'Annual Price',
                 'Trial End Date',
-                'Current Period Start',
-                'Current Period End',
+                'Start Date',
+                'End Date',
                 'Cancelled At',
                 'Created At',
                 'Updated At',
@@ -131,8 +131,8 @@ class SubscriptionExportService:
                     f"${monthly_price:.2f}" if monthly_price else '',
                     f"${annual_price:.2f}" if annual_price else '',
                     subscription.trial_end_date.isoformat() if subscription.trial_end_date else '',
-                    subscription.current_period_start.isoformat() if subscription.current_period_start else '',
-                    subscription.current_period_end.isoformat() if subscription.current_period_end else '',
+                    subscription.start_date.isoformat() if subscription.start_date else '',
+                    subscription.end_date.isoformat() if subscription.end_date else '',
                     subscription.cancelled_at.isoformat() if subscription.cancelled_at else '',
                     subscription.created_at.isoformat() if subscription.created_at else '',
                     subscription.updated_at.isoformat() if subscription.updated_at else '',
@@ -223,15 +223,15 @@ class SubscriptionExportService:
                 Users.email,
                 Users.display_name,
                 SubscriptionPlan.name.label('plan_name'),
-                SubscriptionPlan.max_users,
+                SubscriptionPlan.max_members_per_workspace,
                 SubscriptionPlan.max_workspaces,
-                SubscriptionPlan.max_content_items
+                SubscriptionPlan.max_knowledge_items
             ).join(
                 Users,
                 UserSubscription.user_id == Users.id
             ).join(
                 SubscriptionPlan,
-                UserSubscription.subscription_plan_id == SubscriptionPlan.id
+                UserSubscription.plan_id == SubscriptionPlan.id
             ).order_by(Users.email, desc(UserSubscription.created_at))
 
             if conditions:
@@ -250,14 +250,14 @@ class SubscriptionExportService:
                 'User Name',
                 'Subscription ID',
                 'Plan Name',
-                'Plan Max Users',
+                'Plan Max Members/Workspace',
                 'Plan Max Workspaces',
-                'Plan Max Content Items',
+                'Plan Max Knowledge Items',
                 'Subscription Status',
                 'Subscription Start',
                 'Subscription End',
-                'Current Period Start',
-                'Current Period End',
+                'Start Date',
+                'End Date',
                 'Days Active'
             ])
 
@@ -267,29 +267,34 @@ class SubscriptionExportService:
                 user_email = row[1]
                 user_name = row[2]
                 plan_name = row[3]
-                max_users = row[4]
+                max_members = row[4]
                 max_workspaces = row[5]
-                max_content_items = row[6]
+                max_knowledge_items = row[6]
 
                 # Calculate days active
                 days_active = 0
                 if subscription.created_at:
-                    end_date_calc = subscription.cancelled_at or datetime.utcnow()
-                    days_active = (end_date_calc - subscription.created_at).days
+                    from datetime import timezone
+                    end_date_calc = subscription.cancelled_at or datetime.now(timezone.utc)
+                    if subscription.created_at.tzinfo is None:
+                        # Handle naive datetime if necessary
+                        days_active = (end_date_calc.replace(tzinfo=None) - subscription.created_at).days
+                    else:
+                        days_active = (end_date_calc - subscription.created_at).days
 
                 writer.writerow([
                     user_email,
                     user_name or '',
                     str(subscription.id),
                     plan_name,
-                    max_users if max_users else 'Unlimited',
+                    max_members if max_members else 'Unlimited',
                     max_workspaces if max_workspaces else 'Unlimited',
-                    max_content_items if max_content_items else 'Unlimited',
+                    max_knowledge_items if max_knowledge_items else 'Unlimited',
                     subscription.status.value if subscription.status else '',
                     subscription.created_at.isoformat() if subscription.created_at else '',
                     subscription.cancelled_at.isoformat() if subscription.cancelled_at else '',
-                    subscription.current_period_start.isoformat() if subscription.current_period_start else '',
-                    subscription.current_period_end.isoformat() if subscription.current_period_end else '',
+                    subscription.current_period_start.isoformat() if hasattr(subscription, 'current_period_start') and subscription.current_period_start else '',
+                    subscription.current_period_end.isoformat() if hasattr(subscription, 'current_period_end') and subscription.current_period_end else '',
                     days_active
                 ])
 
@@ -339,7 +344,7 @@ class SubscriptionExportService:
             ])
 
             # Calculate for each month
-            current_date = datetime.utcnow()
+            current_date = datetime.now(timezone.utc)
 
             for i in range(months - 1, -1, -1):
                 month_date = current_date - timedelta(days=30 * i)
@@ -378,13 +383,68 @@ class SubscriptionExportService:
                 result_active = await self.db.execute(stmt_active)
                 active_subs = result_active.scalar() or 0
 
+                # Calculate actual average revenue from plan prices
+                stmt_avg = select(func.avg(SubscriptionPlan.price_monthly)).join(
+                    UserSubscription,
+                    UserSubscription.plan_id == SubscriptionPlan.id
+                ).where(
+                    UserSubscription.created_at < next_month,
+                    or_(
+                        UserSubscription.cancelled_at.is_(None),
+                        UserSubscription.cancelled_at >= next_month
+                    )
+                )
+                result_avg = await self.db.execute(stmt_avg)
+                avg_price = float(result_avg.scalar() or 0)
                 # Calculate new revenue (simplified - would need plan price joins)
-                new_revenue = new_subs * 29.0  # Placeholder average
+                stmt_new_revenue = (
+                    select(
+                        func.coalesce(
+                            func.sum(
+                                case(
+                                    (UserSubscription.billing_period == BillingPeriod.MONTHLY, SubscriptionPlan.price_monthly),
+                                    (UserSubscription.billing_period == BillingPeriod.YEARLY, SubscriptionPlan.price_yearly / 12),
+                                    else_=0,
+                                )
+                            ),
+                            0,
+                        )
+                    )
+                    .join(SubscriptionPlan, UserSubscription.plan_id == SubscriptionPlan.id)
+                    .where(
+                        UserSubscription.created_at >= month_start,
+                        UserSubscription.created_at < next_month,
+                    )
+                )
+                result_new_rev = await self.db.execute(stmt_new_revenue)
+                new_revenue = float(result_new_rev.scalar() or 0)
 
                 # Calculate churned revenue (simplified)
-                churned_revenue = cancelled_subs * 29.0  # Placeholder average
+                stmt_churned_revenue = (
+                    select(
+                        func.coalesce(
+                            func.sum(
+                                case(
+                                    (UserSubscription.billing_period == BillingPeriod.MONTHLY, SubscriptionPlan.price_monthly),
+                                    (UserSubscription.billing_period == BillingPeriod.YEARLY, SubscriptionPlan.price_yearly / 12),
+                                    else_=0,
+                                )
+                            ),
+                            0,
+                        )
+                    )
+                    .join(SubscriptionPlan, UserSubscription.plan_id == SubscriptionPlan.id)
+                    .where(
+                        UserSubscription.cancelled_at >= month_start,
+                        UserSubscription.cancelled_at < next_month,
+                    )
+                )
+                result_churned_rev = await self.db.execute(stmt_churned_revenue)
+                churned_revenue = float(result_churned_rev.scalar() or 0)
 
-                # Net revenue change
+                # Calculate revenue using actual average
+                new_revenue = new_subs * avg_price
+                churned_revenue = cancelled_subs * avg_price
                 net_change = new_revenue - churned_revenue
 
                 writer.writerow([

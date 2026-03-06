@@ -10,9 +10,9 @@ from emails.utils.renderer import compose_email
 
 def render_welcome_email(
     user_name: str,
-    dashboard_url: str = "https://app.wrext.com/dashboard",
-    help_url: str = "https://help.wrext.com",
-    frontend_url: str = "https://app.wrext.com"
+    dashboard_url: str = "https://app.rext.com/dashboard",
+    help_url: str = "https://help.rext.com",
+    frontend_url: str = "https://app.rext.com"
 ) -> str:
     """
     Render welcome email template.
@@ -31,7 +31,7 @@ def render_welcome_email(
     Example:
         >>> html = render_welcome_email(
         ...     user_name="John",
-        ...     dashboard_url="https://app.wrext.com/dashboard"
+        ...     dashboard_url="https://app.rext.com/dashboard"
         ... )
     """
     email_html = compose_email([
@@ -43,16 +43,16 @@ def render_welcome_email(
         """,
         """
         <p style="color: #374151; font-size: 16px; line-height: 24px; margin: 0 0 24px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
-            Your email has been verified and your account is now active! We're thrilled to have you as part of the WREXT community.
+            Your email has been verified and your account is now active! We're thrilled to have you as part of the REXT community.
         </p>
         """,
         """
         <div style="margin: 32px 0; padding: 24px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 8px;">
             <h2 style="color: #ffffff; font-size: 20px; font-weight: 600; margin: 0 0 16px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
-                🚀 Get Started with WREXT
+                🚀 Get Started with REXT
             </h2>
             <p style="color: #ffffff; font-size: 15px; line-height: 22px; margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
-                WREXT helps you create, collaborate, and manage content efficiently. Here's what you can do:
+                REXT helps you create, collaborate, and manage content efficiently. Here's what you can do:
             </p>
         </div>
         """,
@@ -128,7 +128,7 @@ def render_welcome_email(
         </div>
         """,
         simple_footer()
-    ], preview_text=f"Welcome to WREXT, {user_name}! Your account is ready.")
+    ], preview_text=f"Welcome to REXT, {user_name}! Your account is ready.")
 
     return email_html
 
@@ -136,7 +136,7 @@ def render_welcome_email(
 # Convenience function for use with EmailService
 def create_welcome_email(
     user_name: str,
-    frontend_url: str = "https://app.wrext.com",
+    frontend_url: str = "https://app.rext.com",
     unsubscribe_token: Optional[str] = None
 ) -> str:
     """
@@ -175,16 +175,16 @@ def create_welcome_email(
         """,
         """
         <p style="color: #374151; font-size: 16px; line-height: 24px; margin: 0 0 24px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
-            Your email has been verified and your account is now active! We're thrilled to have you as part of the WREXT community.
+            Your email has been verified and your account is now active! We're thrilled to have you as part of the REXT community.
         </p>
         """,
         """
         <div style="margin: 32px 0; padding: 24px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 8px;">
             <h2 style="color: #ffffff; font-size: 20px; font-weight: 600; margin: 0 0 16px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
-                🚀 Get Started with WREXT
+                🚀 Get Started with REXT
             </h2>
             <p style="color: #ffffff; font-size: 15px; line-height: 22px; margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
-                WREXT helps you create, collaborate, and manage content efficiently. Here's what you can do:
+                REXT helps you create, collaborate, and manage content efficiently. Here's what you can do:
             </p>
         </div>
         """,
@@ -259,6 +259,6 @@ def create_welcome_email(
         """,
         unsubscribe_html,
         simple_footer()
-    ], preview_text=f"Welcome to WREXT, {user_name}! Your account is ready.")
+    ], preview_text=f"Welcome to REXT, {user_name}! Your account is ready.")
 
     return email_html

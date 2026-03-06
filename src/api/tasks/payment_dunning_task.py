@@ -18,7 +18,7 @@ Usage:
 """
 
 import asyncio
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, Any
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -50,11 +50,11 @@ class PaymentDunningTask:
             Dict with processing statistics
         """
         logger.info("=== Payment Dunning Task Started ===")
-        logger.info(f"Execution time: {datetime.utcnow().isoformat()}")
+        logger.info(f"Execution time: {datetime.now(timezone.utc).isoformat()}")
 
         try:
             stats = {
-                "execution_time": datetime.utcnow().isoformat(),
+                "execution_time": datetime.now(timezone.utc).isoformat(),
                 "day_1": {},
                 "day_3": {},
                 "day_6": {},

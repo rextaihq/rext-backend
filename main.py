@@ -1,20 +1,15 @@
-import asyncio
-import os
-# from src.flow.flow import create_workflow
-from src.flow.engines.wrext import create_wrext_engine
+"""Convenience entrypoint for building the Rext LangGraph engine."""
 
-# workflow = create_workflow()
-# graph = workflow.compile()
+from src.flow.engines.rext import create_rext_engine
 
-graph = create_wrext_engine()
 
-# result = asyncio.run(graph.ainvoke(
-#     {
-#         "serp_payload": {
-#             "query": "wordpress security service",
-#             "country": "us"
-#         }
-#     }
-# ))
+# def get_graph():
+#     """Return a compiled Rext graph instance."""
+#     return create_rext_engine()
 
-# print(result)
+
+graph = create_rext_engine()
+
+
+if __name__ == "__main__":
+    print("Graph built successfully:", type(graph).__name__)

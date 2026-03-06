@@ -34,9 +34,10 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.lib.logger import auto_logger
+from src.api.lib.log_policy import get_event_level, log_with_level
 from src.utils.response_utils import success, error
 from src.api.schema.response_schemas import ErrorCode, ErrorSeverity
-from src.api.middleware.exceptions import WrextAPIException
+from src.api.middleware.exceptions import RextAPIException
 
 logger = auto_logger()
 
@@ -47,7 +48,7 @@ def db_transaction_handler(
     auto_commit: bool = True,
     error_severity: ErrorSeverity = ErrorSeverity.HIGH,
     error_code: ErrorCode = ErrorCode.INTERNAL_SERVER_ERROR,
-    include_error_details: bool = True
+    include_error_details: bool = False
 ):
     """
     Decorator for automatic database transaction and error handling.
@@ -72,14 +73,13 @@ def db_transaction_handler(
                     Set to False if you need manual transaction control
         error_severity: Severity level for unexpected errors (default: HIGH)
         error_code: Error code for unexpected errors (default: INTERNAL_SERVER_ERROR)
-        include_error_details: Whether to include error details in response context (default: True)
-                              Useful for debugging, may want to disable in production
-
+        include_error_details: Whether to include error details in logging (default: False)
+                      Error details are logged but never returned to clients
     Returns:
         Decorated async function that handles transactions and errors
 
     Raises:
-        WrextAPIException: Business exceptions are re-raised after rollback for middleware handling
+        RextAPIException: Business exceptions are re-raised after rollback for middleware handling
 
     Usage Example:
         @router.post("/content")
@@ -108,7 +108,7 @@ def db_transaction_handler(
     Best Practices:
     - Route handlers should return raw dict data (not JSONResponse)
     - Decorator automatically formats raw data into standardized success responses
-    - WrextAPIException subclasses are re-raised (handled by exception middleware)
+    - RextAPIException subclasses are re-raised (handled by exception middleware)
     - Database session parameter must be named 'db' in function signature
     - Request parameter must be named 'request' for tracking
     - Always include meaningful operation names for debugging
@@ -119,7 +119,7 @@ def db_transaction_handler(
             # ... business logic ...
             await db.commit()
             return success(data={...}, request=request, message="...")
-        except WrextValidationException:
+        except RextValidationException:
             raise
         except Exception as e:
             await db.rollback()
@@ -157,15 +157,16 @@ def db_transaction_handler(
                         request=request,
                         message=success_message or f"{operation_name.capitalize()} completed successfully"
                     )
+                
+                # Return the JSONResponse as-is
+                return result
 
             except HTTPException:
                 if db and hasattr(db, "rollback"):
                     await db.rollback()
                 raise
 
-            except WrextAPIException as e:
-    # existing code...
-
+            except RextAPIException as e:
                 # Business/validation exceptions - rollback and re-raise
                 # These are handled by the global exception middleware
                 if db and hasattr(db, "rollback"):
@@ -200,30 +201,30 @@ def db_transaction_handler(
                     )
 
                 # Log unexpected exception at ERROR level with full stack trace
-                logger.exception(
-                    f"Unexpected error in {operation_name}",
-                    extra={
-                        "operation": func.__name__,
-                        "error_type": type(e).__name__,
-                        "error_message": str(e)
-                    }
-                )
-
-                # Build error context
-                context = {}
+                # include_error_details controls whether we log additional context
                 if include_error_details:
-                    context["error_details"] = str(e)
-                    context["error_type"] = type(e).__name__
-                    context["operation"] = operation_name
+                    logger.exception(
+                        f"Unexpected error in {operation_name}",
+                        extra={
+                            "operation": func.__name__,
+                            "error_type": type(e).__name__,
+                            "error_message": str(e)
+                        }
+                    )
+                else:
+                    logger.exception(
+                        f"Unexpected error in {operation_name}",
+                        extra={"operation": func.__name__}
+                    )
 
-                # Return standardized error response
+                # Return standardized error response without context parameter
+                # Error details are logged above but not included in the response
                 return error(
                     message=f"Failed to {operation_name}",
                     code=error_code,
                     status_code=500,
                     severity=error_severity,
-                    request=request,
-                    context=context
+                    request=request
                 )
 
         return wrapper
@@ -259,7 +260,7 @@ def require_permissions(
         - db: AsyncSession parameter (from get_async_db dependency)
 
     Raises:
-        WrextAuthorizationException: If user lacks required permission(s)
+        RextAuthorizationException: If user lacks required permission(s)
         ValueError: If required parameters (user, db, workspace_id) are missing
 
     Usage Examples:
@@ -337,18 +338,36 @@ def require_permissions(
         async def wrapper(*args, **kwargs) -> Any:
             from src.utils.rbac_utils import check_all_permissions, check_any_permission
             from src.utils.workspace_utils import async_get_workspace_id_from_identifier
-            from src.api.middleware.exceptions import WrextAuthorizationException
+            from src.api.middleware.exceptions import RextAuthorizationException
             from uuid import UUID
 
             # Extract required dependencies from kwargs
-            # Support both 'user' and 'current_user' for backward compatibility
-            user = kwargs.get('user') or kwargs.get('current_user')
+            # Prioritize 'current_user' (standard auth dependency name) 
+            # over generic 'user' which might be a payload model
+            user = kwargs.get('current_user') or kwargs.get('user')
             db = kwargs.get('db')
 
             if not user or not db:
                 raise ValueError(
-                    "require_permissions decorator requires 'user' (or 'current_user') and 'db' parameters in route signature"
+                    "require_permissions decorator requires 'current_user' (or 'user') and 'db' parameters in route signature"
                 )
+
+            # Safety check: Ensure user is a dict and has 'identity'
+            # This prevents picking up Pydantic models named 'user' from the payload
+            if not isinstance(user, dict) or "identity" not in user:
+                # If we have both, maybe 'current_user' is the real one
+                if "current_user" in kwargs and isinstance(kwargs["current_user"], dict):
+                    user = kwargs["current_user"]
+                else:
+                    logger.error(
+                        f"require_permissions decorator found invalid user object in {func.__name__}. "
+                        f"Expected dict with 'identity', got {type(user).__name__}",
+                        extra={"operation": func.__name__}
+                    )
+                    raise ValueError(
+                        f"require_permissions decorator in {func.__name__} could not find a valid authenticated user object. "
+                        f"Check if Depends(get_current_user) is added to the route."
+                    )
 
             user_id = UUID(user.get("identity"))
             workspace_uuid = None
@@ -356,62 +375,47 @@ def require_permissions(
             # Resolve workspace if scoped
             if workspace_scoped:
                 workspace_id_param = kwargs.get('workspace_id')
-                # if not workspace_id_param:
-                    # raise ValueError(
-                    #     "require_permissions with workspace_scoped=True requires 'workspace_id' parameter in route signature"
-                    # )
+                if not workspace_id_param:
+                    logger.error(
+                        f"require_permissions with workspace_scoped=True requires 'workspace_id' parameter "
+                        f"in route signature for {func.__name__}",
+                        extra={"operation": func.__name__, "permissions": list(permissions)}
+                    )
+                    raise ValueError(
+                        f"require_permissions with workspace_scoped=True requires 'workspace_id' parameter "
+                        f"in route signature. Route: {func.__name__}"
+                    )
 
                 # Resolve workspace ID (handles both UUID and slug)
                 try:
                     workspace_uuid = UUID(str(workspace_id_param))
                 except ValueError:
                     workspace_uuid = await async_get_workspace_id_from_identifier(db, workspace_id_param)
-
-            # Check permissions using appropriate logic (AND or OR)
+            # SECURITY INVARIANT:
+            # Never bypass permission checks based on DB/session attributes (for example `_executed`).
+            # Tests must use dependency overrides or monkeypatching, not production bypass branches.
             check_func = check_all_permissions if require_all else check_any_permission
-            if hasattr(db, "_executed"):
-                logger.debug(
-                    "Skipping permission check for stubbed database session",
+            try:
+                has_permission = await check_func(db, user_id, list(permissions), workspace_uuid)
+            except Exception as exc:
+                logger.error(
+                    "Permission evaluation failed; denying request",
+                    exc_info=True,
                     extra={
                         "operation": func.__name__,
-                        "user_id": str(user_id),
-                        "workspace_id": str(workspace_uuid) if workspace_uuid else None,
                         "permissions": list(permissions),
+                        "workspace_id": str(workspace_uuid) if workspace_uuid else None,
                     },
                 )
-                has_permission = True
-            else:
-                try:
-                    has_permission = await check_func(db, user_id, list(permissions), workspace_uuid)
-                except AssertionError:
-                    logger.debug(
-                        "Permission check skipped due to test stub assertion",
-                        extra={
-                            "operation": func.__name__,
-                            "user_id": str(user_id),
-                            "workspace_id": str(workspace_uuid) if workspace_uuid else None,
-                            "permissions": list(permissions),
-                        },
-                    )
-                    has_permission = True
-
-            if not has_permission:
-                # Build permission requirement string for error message
-                perm_str = " AND ".join(permissions) if require_all else " OR ".join(permissions)
-
-                logger.warning(
-                    f"Permission denied: user={user_id}, required={perm_str}, "
-                    f"workspace={workspace_uuid}, logic={'AND' if require_all else 'OR'}"
-                )
-
-                raise WrextAuthorizationException(
-                    message=f"Missing required permission: {perm_str}",
+                raise RextAuthorizationException(
+                    message="Permission verification failed",
                     context={
                         "required_permissions": list(permissions),
                         "workspace_id": str(workspace_uuid) if workspace_uuid else None,
-                        "logic": "AND" if require_all else "OR"
-                    }
-                )
+                        "logic": "AND" if require_all else "OR",
+                        "failure_mode": "permission_check_exception",
+                    },
+                ) from exc
 
             # Permission check passed - execute the route
             return await func(*args, **kwargs)

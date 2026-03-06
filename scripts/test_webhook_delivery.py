@@ -96,8 +96,8 @@ def get_webhook_payload(event_type: str, **kwargs) -> Dict[str, Any]:
     Returns:
         Dict containing webhook payload
     """
-    timestamp = datetime.utcnow().isoformat() + "Z"
-    event_id = kwargs.get("event_id", f"test_{event_type}_{int(datetime.utcnow().timestamp())}")
+    timestamp = datetime.now(timezone.utc).isoformat() + "Z"
+    event_id = kwargs.get("event_id", f"test_{event_type}_{int(datetime.now(timezone.utc).timestamp())}")
 
     # Common subscription attributes
     subscription_attrs = {
@@ -107,7 +107,7 @@ def get_webhook_payload(event_type: str, **kwargs) -> Dict[str, Any]:
         "order_item_id": 6385234,
         "product_id": int(kwargs.get("product_id", TEST_PRODUCT_ID)),
         "variant_id": int(kwargs.get("variant_id", TEST_VARIANT_ID)),
-        "product_name": kwargs.get("product_name", "Wrext Basic Plan"),
+        "product_name": kwargs.get("product_name", "Rext Basic Plan"),
         "variant_name": kwargs.get("variant_name", "Monthly"),
         "user_name": kwargs.get("user_name", "Mobeen"),
         "user_email": kwargs.get("user_email", "mobeen@revnix.com"),
@@ -408,7 +408,7 @@ def get_webhook_payload(event_type: str, **kwargs) -> Dict[str, Any]:
                         "order_id": int(kwargs.get("order_id", 9999999)),
                         "product_id": int(kwargs.get("product_id", TEST_PRODUCT_ID)),
                         "variant_id": int(kwargs.get("variant_id", TEST_VARIANT_ID)),
-                        "product_name": "Wrext Pro - Lifetime",
+                        "product_name": "Rext Pro - Lifetime",
                         "variant_name": "Lifetime License",
                         "price": 29900,
                         "created_at": timestamp,
@@ -707,7 +707,7 @@ def test_idempotency(url: str, secret: str, verbose: bool = False) -> Dict[str, 
     print("Testing Idempotency (Duplicate Events)")
     print(f"{'='*70}\n")
 
-    event_id = f"idempotency_test_{int(datetime.utcnow().timestamp())}"
+    event_id = f"idempotency_test_{int(datetime.now(timezone.utc).timestamp())}"
 
     # Send first webhook
     print("[1/2] Sending webhook first time...", end=" ")

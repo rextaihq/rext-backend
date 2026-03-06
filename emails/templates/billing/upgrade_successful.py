@@ -13,9 +13,9 @@ def render_upgrade_successful_email(
     new_plan_name: str,
     new_features: list[str],
     effective_date: str,
-    manage_url: str = "https://app.wrext.com/billing",
-    docs_url: str = "https://docs.wrext.com",
-    frontend_url: str = "https://app.wrext.com"
+    manage_url: str = "https://app.rext.com/billing",
+    docs_url: str = "https://docs.rext.com",
+    frontend_url: str = "https://app.rext.com"
 ) -> str:
     """
     Render upgrade successful email template.
@@ -94,7 +94,7 @@ def render_upgrade_successful_email(
         """.replace("{}", manage_url),
         """
         <p style="color: #6b7280; font-size: 14px; line-height: 20px; margin: 32px 0 0 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
-            Thank you for choosing WREXT. We're here to help you succeed!
+            Thank you for choosing REXT. We're here to help you succeed!
         </p>
         """,
         simple_footer()

@@ -8,7 +8,7 @@ from src.api.models.workspace_models.workspace_member import WorkspaceMembers
 from src.api.models.user_models.users import Users
 from src.api.models.user_models.roles import Role
 from src.api.models.user_models.user_roles import UserRole
-from src.api.middleware.exceptions import WrextAuthorizationException, ResourceNotFoundException
+from src.api.middleware.exceptions import RextAuthorizationException, ResourceNotFoundException
 from src.services.workspace_service import WorkspaceService
 
 
@@ -35,7 +35,7 @@ async def test_owner_can_delete_workspace(db_session):
         name="Owner Workspace", # Providing name as well since model has it
         timezone="UTC",
         user_id=user.id,
-        created_at=datetime.utcnow()
+        created_at=datetime.now(timezone.utc)
     )
     db_session.add(workspace)
     await db_session.flush()
@@ -98,7 +98,7 @@ async def test_non_owner_cannot_delete_workspace(db_session):
         name="Shared Workspace",
         timezone="UTC",
         user_id=owner.id,
-        created_at=datetime.utcnow()
+        created_at=datetime.now(timezone.utc)
     )
     db_session.add(workspace)
     await db_session.flush()
@@ -134,7 +134,7 @@ async def test_non_owner_cannot_delete_workspace(db_session):
     # Act & Assert
     service = WorkspaceService(db_session)
     
-    with pytest.raises(WrextAuthorizationException) as exc:
+    with pytest.raises(RextAuthorizationException) as exc:
         await service.delete_workspace(workspace.id, editor.id)
     
     assert "Only workspace owners can perform this action" in str(exc.value)
@@ -162,7 +162,7 @@ async def test_non_member_cannot_delete_workspace(db_session):
         name="Target Workspace",
         timezone="UTC",
         user_id=owner.id,
-        created_at=datetime.utcnow()
+        created_at=datetime.now(timezone.utc)
     )
     db_session.add(workspace)
     await db_session.commit()
@@ -173,7 +173,7 @@ async def test_non_member_cannot_delete_workspace(db_session):
     # Depending on implementation details, this might raise Forbidden or some other error.
     # verify_user_is_workspace_owner checks UserRole which won't exist.
     
-    with pytest.raises(WrextAuthorizationException) as exc:
+    with pytest.raises(RextAuthorizationException) as exc:
         await service.delete_workspace(workspace.id, stranger.id)
 
     assert "Only workspace owners can perform this action" in str(exc.value)

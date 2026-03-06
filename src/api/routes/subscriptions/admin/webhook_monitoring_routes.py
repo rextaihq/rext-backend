@@ -8,7 +8,7 @@ All endpoints require super admin permissions.
 """
 
 from typing import Optional
-from datetime import datetime, timedelta
+from datetime import datetime, timezone, timedelta
 
 from fastapi import APIRouter, Depends, Request, Query
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -39,6 +39,7 @@ async def get_webhook_events(
     processed: Optional[bool] = Query(None, description="Filter by processed status"),
     start_date: Optional[datetime] = Query(None, description="Start date filter"),
     end_date: Optional[datetime] = Query(None, description="End date filter"),
+    include_payload: bool = Query(False, description="Include redacted payload body"),
     db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user)
 ):
@@ -117,7 +118,7 @@ async def get_webhook_events(
     # Format events
     events_data = []
     for event in events:
-        event_dict = event.to_dict()
+        event_dict = event.to_dict(include_payload=include_payload)
         # Add status indicator
         if event.processed:
             event_dict["status"] = "processed"
@@ -150,6 +151,7 @@ async def get_failed_webhook_events(
     page: int = Query(1, ge=1, description="Page number"),
     per_page: int = Query(50, ge=1, le=200, description="Items per page"),
     hours: int = Query(24, ge=1, le=720, description="Look back hours (default 24, max 720/30 days)"),
+    include_payload: bool = Query(False, description="Include redacted payload body"),
     db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user)
 ):
@@ -173,7 +175,7 @@ async def get_failed_webhook_events(
     await require_super_admin(db, admin_user_id)
 
     # Calculate time filter
-    since_date = datetime.utcnow() - timedelta(hours=hours)
+    since_date = datetime.now(timezone.utc) - timedelta(hours=hours)
 
     # Build filters for failed events
     filters = [
@@ -224,11 +226,11 @@ async def get_failed_webhook_events(
     # Format failed events
     events_data = []
     for event in failed_events:
-        event_dict = event.to_dict()
+        event_dict = event.to_dict(include_payload=include_payload)
         event_dict["status"] = "failed"
         # Include time since failure
         if event.created_at:
-            minutes_ago = int((datetime.utcnow() - event.created_at).total_seconds() / 60)
+            minutes_ago = int((datetime.now(timezone.utc) - event.created_at).total_seconds() / 60)
             event_dict["minutes_since_failure"] = minutes_ago
         events_data.append(event_dict)
 
@@ -299,7 +301,7 @@ async def retry_failed_webhook(
     webhook_event.processed = False
     webhook_event.error_message = None  # Clear error to allow retry
     webhook_event.retry_count += 1
-    webhook_event.updated_at = datetime.utcnow()
+    webhook_event.updated_at = datetime.now(timezone.utc)
 
     await db.commit()
     await db.refresh(webhook_event)
@@ -335,7 +337,7 @@ async def get_webhook_statistics(
     await require_super_admin(db, admin_user_id)
 
     # Calculate time filter
-    since_date = datetime.utcnow() - timedelta(days=days)
+    since_date = datetime.now(timezone.utc) - timedelta(days=days)
 
     # Get overall statistics
     overall_query = select(

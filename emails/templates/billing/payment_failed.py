@@ -12,9 +12,9 @@ def render_payment_failed_email(
     plan_name: str,
     amount: str,
     retry_date: str,
-    update_payment_url: str = "https://app.wrext.com/settings/billing",
+    update_payment_url: str = "https://app.rext.com/settings/billing",
     customer_portal_url: str = None,
-    frontend_url: str = "https://app.wrext.com"
+    frontend_url: str = "https://app.rext.com"
 ) -> str:
     """
     Render payment failed email template.

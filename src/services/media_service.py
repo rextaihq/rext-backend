@@ -9,14 +9,18 @@ High-level service for media management that orchestrates:
 """
 
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_, func, or_
+from sqlalchemy import select, and_, func, or_, update, delete
 from typing import List, Optional, BinaryIO, Dict, Any
-from datetime import datetime
+from datetime import datetime, timezone
 from io import BytesIO
 import os
+import uuid 
 import filetype
+import asyncio
+from functools import partial
 
 from src.api.models.media_models.media import Media
+from src.api.models.workspace_models.workspace_model import WorkspaceModel
 from src.api.models.subscription_models.subscriptions import (
     UserSubscription,
     SubscriptionStatus
@@ -28,6 +32,7 @@ from src.config.storage_config import storage_settings
 from src.utils.file_security import validate_file_upload
 from src.api.config import get_settings
 import logging
+from src.api.cache.decorators import cached
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -63,9 +68,17 @@ class MediaService:
         self.storage = storage_service
         self.image = image_service
 
+    @cached(
+        key_prefix="user:subscription_tier",
+        ttl=300,
+        key_builder=lambda self, user_id: str(user_id),
+    )
     async def _get_user_subscription_tier(self, user_id: str) -> str:
         """
         Get user's subscription tier for limit enforcement.
+
+        Results are cached in Redis for 5 minutes to avoid redundant
+        database queries during batch uploads.
 
         Args:
             user_id: User UUID
@@ -77,7 +90,7 @@ class MediaService:
             select(UserSubscription, SubscriptionPlan)
             .join(SubscriptionPlan, UserSubscription.plan_id == SubscriptionPlan.id)
             .where(
-                UserSubscription.user_id == user_id,
+                UserSubscription.user_id == uuid.UUID(user_id) if isinstance(user_id, str) else user_id,
                 UserSubscription.status.in_([SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIAL])
             )
         )
@@ -96,6 +109,88 @@ class MediaService:
             return "pro"
         else:
             return "free"
+
+    # File: src/services/media_service.py
+# Add this method to the MediaService class, before upload_media():
+
+    @staticmethod
+    def _sanitize_folder_path(folder: Optional[str]) -> Optional[str]:
+        """
+        Sanitize user-provided folder path for safe storage.
+
+        Rules:
+        - Strip leading/trailing whitespace and slashes
+        - Remove directory traversal sequences (..)
+        - Remove null bytes and control characters
+        - Normalize multiple slashes to single
+        - Validate allowed characters (alphanumeric, hyphens, underscores, slashes, spaces)
+        - Enforce maximum depth and length limits
+        - Returns None if input is None or empty after sanitization
+
+        Args:
+            folder: Raw folder path from user input
+
+        Returns:
+            Sanitized folder path or None
+
+        Raises:
+            ValueError: If folder path contains invalid characters after sanitization
+        """
+        if not folder:
+            return None
+
+        import re
+
+        # Remove null bytes and control characters
+        folder = folder.replace("\x00", "")
+        folder = re.sub(r'[\x00-\x1f\x7f]', '', folder)
+
+        # Strip leading/trailing whitespace and slashes
+        folder = folder.strip().strip('/')
+
+        # Remove directory traversal sequences
+        # Handle various traversal patterns: .., ../, ..\, ....
+        while '..' in folder:
+            folder = folder.replace('..', '')
+
+        # Normalize multiple slashes to single
+        folder = re.sub(r'/+', '/', folder)
+
+        # Strip again after normalization (may have leading/trailing slashes)
+        folder = folder.strip('/')
+
+        # Return None if empty after sanitization
+        if not folder:
+            return None
+
+        # Validate allowed characters: alphanumeric, hyphens, underscores, slashes, spaces, dots (single)
+        if not re.match(r'^[a-zA-Z0-9_\-/ .]+$', folder):
+            raise ValueError(
+                "Invalid folder path: only alphanumeric characters, hyphens, "
+                "underscores, spaces, dots, and forward slashes are allowed"
+            )
+
+        # Enforce maximum segment count (depth limit)
+        segments = folder.split('/')
+        max_depth = 10
+        if len(segments) > max_depth:
+            raise ValueError(f"Folder path too deep: maximum {max_depth} levels allowed")
+
+        # Enforce maximum total length
+        max_length = 200
+        if len(folder) > max_length:
+            raise ValueError(f"Folder path too long: maximum {max_length} characters allowed")
+
+        # Enforce maximum segment length
+        max_segment_length = 50
+        for segment in segments:
+            if len(segment) > max_segment_length:
+                raise ValueError(
+                    f"Folder name '{segment[:20]}...' too long: "
+                    f"maximum {max_segment_length} characters per folder"
+                )
+
+        return folder
 
     async def upload_media(
         self,
@@ -138,11 +233,11 @@ class MediaService:
         Raises:
             ValueError: If file validation fails
         """
-        # Read file content
         file_content = file.read()
         file.seek(0)
 
-        # Detect MIME type using filetype (cross-platform)
+        folder=self._sanitize_folder_path(folder)
+
         kind = filetype.guess(file_content)
         if kind is None:
             # Fallback to checking file extension
@@ -183,7 +278,6 @@ class MediaService:
             logger.warning(f"File security validation failed: {validation_result.error_message}")
             raise ValueError(validation_result.error_message)
 
-        # Extract file extension
         _, ext = os.path.splitext(filename)
         ext = ext.lower()
 
@@ -195,29 +289,58 @@ class MediaService:
         thumbnail_url = None
         processing_status = "pending"
         processing_error = None
+        processing_warnings = []
 
         try:
             # Process image if applicable
             if mime_type.startswith('image/'):
                 file_io = BytesIO(file_content)
 
-                # Validate image
-                is_valid, error_msg = self.image.validate_image(
-                    file_io,
-                    max_size_mb=max_size / (1024 * 1024)
+                # Validate image (CPU-bound, offload to thread)
+                loop = asyncio.get_event_loop()
+                is_valid, error_msg = await loop.run_in_executor(
+                    None,
+                    partial(
+                        self.image.validate_image,
+                        file_io,
+                        max_size_mb=max_size / (1024 * 1024)
+                    )
                 )
                 if not is_valid:
                     raise ValueError(error_msg)
 
-                # Extract metadata
+                # Extract metadata (CPU-bound, offload to thread)
                 file_io.seek(0)
-                file_metadata = self.image.extract_metadata(file_io)
+                file_metadata = await loop.run_in_executor(
+                    None,
+                    partial(self.image.extract_metadata, file_io)
+                )
                 width = file_metadata.get('width')
                 height = file_metadata.get('height')
+                is_animated = file_metadata.get('is_animated', False)
+                frame_count = file_metadata.get('frame_count', 1)
 
-                # Optimize image
+                # Skip optimization for animated images to preserve frames
+                if not is_animated:
+                    # Optimize image
+                    file_io.seek(0)
+                    optimized = self.image.optimize_image(file_io)
+                    file_content = optimized.read()
+                    optimized.seek(0)
+                    # Update file size after optimization
+                    file_size = len(file_content)
+                else:
+                    logger.info(
+                        f"Preserving animated image without optimization: "
+                        f"{frame_count} frames, {filename}"
+                    )
+
+                # Optimize image (CPU-bound, offload to thread)
                 file_io.seek(0)
-                optimized = self.image.optimize_image(file_io)
+                optimized = await loop.run_in_executor(
+                    None,
+                    partial(self.image.optimize_image, file_io)
+                )
                 file_content = optimized.read()
                 optimized.seek(0)
 
@@ -250,8 +373,10 @@ class MediaService:
             if mime_type.startswith('image/'):
                 try:
                     file_io = BytesIO(file_content)
-                    thumbnail = self.image.create_thumbnail(file_io, size='medium')
-
+                    thumbnail = await loop.run_in_executor(
+                        None,
+                        partial(self.image.create_thumbnail, file_io, size='medium')
+                    )
                     # Generate thumbnail filename
                     thumb_filename = f"thumb_{generated_filename}"
                     if not thumb_filename.endswith('.jpg'):
@@ -265,13 +390,21 @@ class MediaService:
                         workspace_id,
                         user_id
                     )
-                    thumbnail_url = await self.storage.get_file_url(thumbnail_path)
+                    if is_public:
+                        thumbnail_url = await self.storage.get_public_file_url(thumbnail_path)
+                    else:
+                        thumbnail_url = await self.storage.get_file_url(
+                            thumbnail_path,
+                            expires_in=storage_settings.thumbnail_url_expiration
+                        )
 
                 except Exception as e:
                     logger.error(f"Failed to create thumbnail: {e}")
-                    # Continue without thumbnail
+                    processing_warnings.append(
+                        f"Thumbnail generation failed: {type(e).__name__}"
+                    )
 
-            processing_status = "completed"
+            processing_status = "completed_with_warnings" if processing_warnings else "completed"
 
         except Exception as e:
             logger.error(f"Error processing media: {e}")
@@ -307,11 +440,14 @@ class MediaService:
             thumbnail_url=thumbnail_url,
             processing_status=processing_status,
             processing_error=processing_error,
-            file_metadata=file_metadata
+            file_metadata={
+                **file_metadata,
+                **({"processing_warnings": processing_warnings} if processing_warnings else {})
+            }
         )
 
         self.db.add(media)
-        await self.db.commit()
+        await self.db.flush()
         await self.db.refresh(media)
 
         logger.info(f"Media uploaded: {media.id} ({media.original_filename})")
@@ -378,7 +514,9 @@ class MediaService:
 
         # Apply filters
         if folder:
-            query = query.where(Media.folder == folder)
+            sanitized_folder = self._sanitize_folder_path(folder)
+            if sanitized_folder:
+                query = query.where(Media.folder == sanitized_folder)
 
         if file_type:
             query = query.where(Media.file_type.startswith(file_type))
@@ -458,16 +596,36 @@ class MediaService:
         if alt_text is not None:
             media.alt_text = alt_text
         if folder is not None:
-            media.folder = folder
+            media.folder = self._sanitize_folder_path(folder)
         if tags is not None:
             media.tags = tags
-        if is_public is not None:
+        if is_public is not None and is_public != media.is_public:
             media.is_public = is_public
             media.access_level = "public" if is_public else "private"
+            
+            
+            # Update storage ACL
+            try:
+                await self.storage.update_file_acl(media.storage_path, is_public)
+                if media.thumbnail_path:
+                    await self.storage.update_file_acl(media.thumbnail_path, is_public)
+                
+                # Update public_url with permanent URL or presigned URL
+                if is_public:
+                    media.public_url = await self.storage.get_public_file_url(media.storage_path)
+                    if media.thumbnail_path:
+                        media.thumbnail_url = await self.storage.get_public_file_url(media.thumbnail_path)
+                else:
+                    media.public_url = await self.storage.get_file_url(media.storage_path)
+                    if media.thumbnail_path:
+                        media.thumbnail_url = await self.storage.get_file_url(media.thumbnail_path)
+            except Exception as e:
+                logger.error(f"Failed to update storage ACL for {media.id}: {e}")
+                # We still update the DB record, but log the storage error
 
-        media.updated_at = datetime.utcnow()
+        media.updated_at = datetime.now(timezone.utc)
 
-        await self.db.commit()
+        await self.db.flush()
         await self.db.refresh(media)
 
         logger.info(f"Media updated: {media.id}")
@@ -507,9 +665,9 @@ class MediaService:
             await self.db.delete(media)
         else:
             # Soft delete
-            media.deleted_at = datetime.utcnow()
+            media.deleted_at = datetime.now(timezone.utc)
 
-        await self.db.commit()
+        await self.db.flush()
 
         logger.info(f"Media deleted: {media.id} (permanent={permanent})")
         return True
@@ -521,7 +679,11 @@ class MediaService:
         permanent: bool = False
     ) -> Dict[str, Any]:
         """
-        Delete multiple media files.
+        Delete multiple media files using batched database operations.
+
+        For soft delete: executes a single UPDATE statement.
+        For permanent delete: fetches all records, deletes storage files
+        individually, then executes a single batch DELETE.
 
         Args:
             media_ids: List of media UUIDs to delete
@@ -531,22 +693,75 @@ class MediaService:
         Returns:
             Dictionary with deleted and failed counts
         """
-        deleted_count = 0
-        failed_count = 0
+        if not media_ids:
+            return {"deleted": 0, "failed": 0, "errors": []}
+
         errors = []
 
-        for media_id in media_ids:
-            try:
-                success = await self.delete_media(media_id, workspace_id, permanent)
-                if success:
-                    deleted_count += 1
-                else:
-                    failed_count += 1
-                    errors.append(f"Media {media_id} not found")
-            except Exception as e:
-                failed_count += 1
-                errors.append(f"Media {media_id}: {str(e)}")
-                logger.error(f"Error deleting media {media_id}: {e}")
+        # Fetch all matching media in a single query
+        result = await self.db.execute(
+            select(Media).where(
+                and_(
+                    Media.id.in_(media_ids),
+                    Media.workspace_id == workspace_id,
+                    Media.deleted_at.is_(None)
+                )
+            )
+        )
+        media_items = result.scalars().all()
+
+        # Identify which IDs were found vs not found
+        found_ids = {str(media.id) for media in media_items}
+        not_found_ids = [mid for mid in media_ids if mid not in found_ids]
+        for mid in not_found_ids:
+            errors.append(f"Media {mid} not found")
+
+        if not media_items:
+            return {
+                "deleted": 0,
+                "failed": len(not_found_ids),
+                "errors": errors
+            }
+
+        deleted_count = 0
+        failed_count = len(not_found_ids)
+
+        if permanent:
+            # Permanent delete: remove files from storage first, then batch DB delete
+            storage_errors = []
+            successfully_deleted_ids = []
+
+            for media in media_items:
+                try:
+                    await self.storage.delete_file(media.storage_path)
+                    if media.thumbnail_path:
+                        await self.storage.delete_file(media.thumbnail_path)
+                    successfully_deleted_ids.append(media.id)
+                except Exception as e:
+                    logger.error(f"Error deleting storage file for media {media.id}: {e}")
+                    storage_errors.append(f"Media {media.id}: storage delete failed - {str(e)}")
+                    # Still delete from DB even if storage delete fails
+                    successfully_deleted_ids.append(media.id)
+
+            errors.extend(storage_errors)
+
+            # Batch delete from database
+            if successfully_deleted_ids:
+                await self.db.execute(
+                    delete(Media).where(Media.id.in_(successfully_deleted_ids))
+                )
+                deleted_count = len(successfully_deleted_ids)
+        else:
+            # Soft delete: single UPDATE statement for all matching records
+            batch_ids = [media.id for media in media_items]
+            await self.db.execute(
+                update(Media)
+                .where(Media.id.in_(batch_ids))
+                .values(deleted_at=datetime.now(timezone.utc))
+            )
+            deleted_count = len(batch_ids)
+
+        await self.db.flush()
 
         logger.info(f"Bulk delete: {deleted_count} deleted, {failed_count} failed")
         return {
@@ -555,7 +770,10 @@ class MediaService:
             "errors": errors
         }
 
-    async def get_workspace_storage_usage(self, workspace_id: str) -> Dict[str, Any]:
+    async def get_workspace_storage_usage(
+        self,
+        workspace_id: str
+    ) -> Dict[str, Any]:
         """
         Calculate total storage usage for workspace with subscription limits.
 
@@ -570,9 +788,6 @@ class MediaService:
             - usage_percentage: Percentage of storage used
             - by_type: Breakdown by file type (image, document, video)
         """
-        # Import subscription models here to avoid circular imports
-        from src.api.models.subscription_models.subscriptions import UserSubscription
-        from src.api.models.subscription_models.plans import SubscriptionPlan
 
         # Get media usage
         result = await self.db.execute(
@@ -610,11 +825,23 @@ class MediaService:
         total_mb = float(total_bytes) / (1024 * 1024)
         total_gb = float(total_bytes) / (1024 * 1024 * 1024)
 
-        # Use generous default storage limit for now
-        # TODO: Link workspace to owner's subscription for accurate limits
-        # UserSubscription is per-user, not per-workspace, so we'd need to
-        # query workspace.owner_id -> user_subscriptions -> plan
-        storage_limit_bytes = 100 * 1024 * 1024 * 1024  # 100GB default
+        # Query workspace owner's subscription tier for accurate storage limit
+        workspace_result = await self.db.execute(
+            select(WorkspaceModel.user_id).where(
+                WorkspaceModel.id == workspace_id,
+                WorkspaceModel.deleted_at.is_(None)
+            )
+        )
+        owner_id = workspace_result.scalar_one_or_none()
+
+        if owner_id:
+            tier = await self._get_user_subscription_tier(str(owner_id))
+        else:
+            tier = "free"
+
+        # Get storage limit from settings based on tier (returns MB)
+        storage_limit_mb = settings.get_tier_storage_limit(tier)
+        storage_limit_bytes = storage_limit_mb * 1024 * 1024
 
         # Calculate usage percentage
         usage_percentage = (total_bytes / storage_limit_bytes * 100) if storage_limit_bytes > 0 else 0
@@ -623,6 +850,8 @@ class MediaService:
             "total_files": int(row.file_count or 0),
             "total_size": total_bytes,
             "storage_limit": storage_limit_bytes,
+            "storage_limit_mb": storage_limit_mb,
+            "subscription_tier": tier,
             "usage_percentage": round(usage_percentage, 2),
             "by_type": {
                 "image": {
@@ -665,59 +894,17 @@ class MediaService:
         else:
             return storage_settings.max_file_size
 
-    def _get_mime_from_extension(self, ext: str) -> str:
-        """
-        Get MIME type from file extension.
-        Fallback when filetype.guess() cannot detect the type.
+    from src.config.storage_config import get_mime_from_extension as _registry_get_mime
 
-        Args:
-            ext: File extension (with or without dot)
-
-        Returns:
-            MIME type string
-        """
-        ext = ext.lstrip('.')
-
-        # Common MIME type mappings
-        mime_map = {
-            # Images
-            'jpg': 'image/jpeg',
-            'jpeg': 'image/jpeg',
-            'png': 'image/png',
-            'gif': 'image/gif',
-            'webp': 'image/webp',
-            'svg': 'image/svg+xml',
-            'bmp': 'image/bmp',
-            'ico': 'image/x-icon',
-
-            # Documents
-            'pdf': 'application/pdf',
-            'doc': 'application/msword',
-            'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-            'xls': 'application/vnd.ms-excel',
-            'xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-            'ppt': 'application/vnd.ms-powerpoint',
-            'pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-            'txt': 'text/plain',
-            'md': 'text/markdown',
-            'csv': 'text/csv',
-            'json': 'application/json',
-            'xml': 'application/xml',
-
-            # Videos
-            'mp4': 'video/mp4',
-            'webm': 'video/webm',
-            'mov': 'video/quicktime',
-            'avi': 'video/x-msvideo',
-            'mkv': 'video/x-matroska',
-
-            # Audio
-            'mp3': 'audio/mpeg',
-            'wav': 'audio/wav',
-            'ogg': 'audio/ogg',
-        }
-
-        return mime_map.get(ext, 'application/octet-stream')
+def _get_mime_from_extension(self, ext: str) -> str:
+    """
+    Get MIME type from file extension using centralized registry.
+    Falls back to application/octet-stream for unknown extensions.
+    """
+    result = _registry_get_mime(ext)
+    if result is not None:
+        return result
+    return "application/octet-stream"
 
     async def get_media_usage(
         self,

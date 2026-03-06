@@ -8,10 +8,10 @@ Usage:
     python -m src.scripts.send_invitation_reminders
 
 Or with cron:
-    0 9 * * * cd /path/to/wrext-backend && /path/to/python -m src.scripts.send_invitation_reminders
+    0 9 * * * cd /path/to/rext-backend && /path/to/python -m src.scripts.send_invitation_reminders
 """
 import asyncio
-from datetime import datetime, timedelta
+from datetime import datetime, timezone, timedelta
 from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -37,7 +37,7 @@ async def send_invitation_reminders(db: AsyncSession):
         Number of reminders sent
     """
     settings = get_settings()
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     two_days_from_now = now + timedelta(days=2)
 
     # Query invitations that:

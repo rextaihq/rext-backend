@@ -11,6 +11,7 @@ jobs:
     if: github.event.pull_request.merged == true
     runs-on: ubuntu-latest
 
+    # ... (rest of the build job remains the same)
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
@@ -86,115 +87,19 @@ jobs:
       - name: Install LangGraph CLI
         run: pip install langgraph-cli
           
+      - name: Cleanup Docker (Pre-build)
+        run: |
+          docker system prune -af --volumes
+          df -h
+
       - name: Build Docker image with LangGraph
         run: langgraph build -t  ${{ secrets.DOCKER_USERNAME }}/wrext:dev
 
       - name: Push Docker image
         run: docker push ${{ secrets.DOCKER_USERNAME }}/wrext:dev
-  
-  deploy:
-    needs: docker_job
-    runs-on: self-hosted
 
-    env:
-      # Image tag for docker-compose
-      IMAGE_TAG: dev
-      
-      # Environment settings
-      ENVIRONMENT: development
-      DEBUG: "true"
-      
-      # Core API Keys
-      OPENAI_API_KEY: ${{ secrets.DEV_OPENAI_API_KEY }}
-      LANGSMITH_API_KEY: ${{ secrets.DEV_LANGSMITH_API_KEY }}
-      
-      # Database
-      POSTGRES_URI_CUSTOM: ${{ secrets.DEV_POSTGRES_URI_CUSTOM }}
-      DATABASE_URI: ${{ secrets.DEV_DATABASE_URI }}
-      REDIS_URI: ${{ secrets.DEV_REDIS_URI }}
-      REDIS_URL: ${{ secrets.DEV_REDIS_URL }}
-      
-      # Security
-      SECRET_KEY: ${{ secrets.DEV_SECRET_KEY }}
-      REFRESH_SECRET_KEY: ${{ secrets.DEV_REFRESH_SECRET_KEY }}
-      ALGORITHM: ${{ secrets.DEV_ALGORITHM }}
-      
-      # Frontend + CORS
-      FRONTEND_URL: ${{ secrets.DEV_FRONTEND_URL }}
-      ALLOWED_ORIGINS: ${{ secrets.DEV_ALLOWED_ORIGINS }}
-      
-      # Admin
-      SUPER_ADMIN_EMAIL: ${{ secrets.DEV_SUPER_ADMIN_EMAIL }}
-      SUPER_ADMIN_PASSWORD: ${{ secrets.DEV_SUPER_ADMIN_PASSWORD }}
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
-
-      - name: Deploy Docker to DEV
+      - name: Cleanup Docker (Post-build)
+        if: always()
         run: |
-          # Ensure correct working directory for DEV
-          DEPLOY_DIR=~/WREXT/dev/backend
-          mkdir -p $DEPLOY_DIR
-          cp -r $GITHUB_WORKSPACE/* $DEPLOY_DIR/
-          cd $DEPLOY_DIR
-
-          echo "🚀 Starting DEV deployment..."
-
-          # Create .env file dynamically from GitHub secrets
-          cat > .env <<EOF
-          IMAGE_TAG=dev
-          ENVIRONMENT=development
-          DEBUG=true
-
-          # Core API Keys
-          OPENAI_API_KEY=${{ secrets.DEV_OPENAI_API_KEY }}
-          LANGSMITH_API_KEY=${{ secrets.DEV_LANGSMITH_API_KEY }}
-
-          # Database
-          POSTGRES_URI_CUSTOM=${{ secrets.DEV_POSTGRES_URI_CUSTOM }}
-          DATABASE_URI=${{ secrets.DEV_DATABASE_URI }}
-          REDIS_URI=${{ secrets.DEV_REDIS_URI }}
-          REDIS_URL=${{ secrets.DEV_REDIS_URL }}
-
-          # Security
-          SECRET_KEY=${{ secrets.DEV_SECRET_KEY }}
-          REFRESH_SECRET_KEY=${{ secrets.DEV_REFRESH_SECRET_KEY }}
-          ALGORITHM=${{ secrets.DEV_ALGORITHM }}
-
-          # Frontend + CORS
-          FRONTEND_URL=${{ secrets.DEV_FRONTEND_URL }}
-          ALLOWED_ORIGINS=${{ secrets.DEV_ALLOWED_ORIGINS }}
-
-          # Admin
-          SUPER_ADMIN_EMAIL=${{ secrets.DEV_SUPER_ADMIN_EMAIL }}
-          SUPER_ADMIN_PASSWORD=${{ secrets.DEV_SUPER_ADMIN_PASSWORD }}
-
-          # LangGraph
-          SERPER_API_KEY=${{ secrets.DEV_SERPER_API_KEY }}
-          PERPLEXITY_API_KEY=${{ secrets.DEV_PERPLEXITY_API_KEY }}
-          PAYMENT_CANCEL_URL=${{ secrets.PAYMENT_CANCEL_URL }}
-          PAYMENT_SUCCESS_URL=${{ secrets.PAYMENT_SUCCESS_URL }}
-          EOF
-
-          echo ".env file created ✅"
-
-          # Log in to Docker
-          echo "${{ secrets.DOCKER_PASSWORD }}" | docker login -u "${{ secrets.DOCKER_USERNAME }}" --password-stdin
-
-          # Pull latest DEV image
-          docker pull ${{ secrets.DOCKER_USERNAME }}/wrext:dev
-
-          # Stop and remove old containers
-          docker compose down || true
-
-          # Start containers (Docker Compose will automatically load .env)
-          docker compose up -d
-
-          # Clean up old images
-          docker image prune -f
-
-          # Show running containers
-          docker ps
-
-          echo "✅ DEV Deployment completed successfully."
+          docker system prune -f
+          df -h

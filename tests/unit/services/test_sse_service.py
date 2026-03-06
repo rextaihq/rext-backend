@@ -153,3 +153,84 @@ async def test_cleanup_removes_completed_operation() -> None:
 
     active = await manager.active_operation_ids()
     assert operation_id not in active
+
+
+@pytest.mark.asyncio
+async def test_publish_rejects_unauthorized_user() -> None:
+    """Publish must raise OperationOwnershipError when publisher is not the owner."""
+    from src.services.sse_service import OperationOwnershipError
+    manager = EventStreamManager(cleanup_interval_seconds=0)
+    operation_id = "op-auth-test"
+    owner_id = uuid4()
+    attacker_id = uuid4()
+
+    await manager.set_operation_owner(operation_id, owner_id)
+
+    event = OperationEvent(
+        operation_id=operation_id,
+        scope="workspace",
+        step="scrape.started",
+        status="started",
+        message="Should be rejected",
+    )
+
+    with pytest.raises(OperationOwnershipError):
+        await manager.publish(event, publisher_user_id=attacker_id)
+
+
+@pytest.mark.asyncio
+async def test_publish_allows_owner() -> None:
+    """Publish must succeed when the publisher is the operation owner."""
+    manager = EventStreamManager(cleanup_interval_seconds=0)
+    operation_id = "op-owner-test"
+    owner_id = uuid4()
+
+    await manager.set_operation_owner(operation_id, owner_id)
+
+    event = OperationEvent(
+        operation_id=operation_id,
+        scope="workspace",
+        step="scrape.started",
+        status="started",
+        message="Should be accepted",
+    )
+
+    # Should not raise
+    await manager.publish(event, publisher_user_id=owner_id)
+
+
+@pytest.mark.asyncio
+async def test_publish_allows_none_user_id_for_internal_calls() -> None:
+    """Publish with publisher_user_id=None must skip ownership checks (backward compat)."""
+    manager = EventStreamManager(cleanup_interval_seconds=0)
+    operation_id = "op-internal-test"
+    owner_id = uuid4()
+
+    await manager.set_operation_owner(operation_id, owner_id)
+
+    event = OperationEvent(
+        operation_id=operation_id,
+        scope="system",
+        step="health.check",
+        status="started",
+        message="Internal event",
+    )
+
+    # Should not raise even though no user_id is provided
+    await manager.publish(event, publisher_user_id=None)
+
+
+@pytest.mark.asyncio
+async def test_set_operation_owner_first_write_wins() -> None:
+    """Only the first call to set_operation_owner should set the owner."""
+    manager = EventStreamManager(cleanup_interval_seconds=0)
+    operation_id = "op-first-wins"
+    first_user = uuid4()
+    second_user = uuid4()
+
+    await manager.set_operation_owner(operation_id, first_user)
+    await manager.set_operation_owner(operation_id, second_user)
+
+    # First user should remain the owner
+    assert await manager.verify_operation_ownership(operation_id, first_user) is True
+    assert await manager.verify_operation_ownership(operation_id, second_user) is False

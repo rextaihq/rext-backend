@@ -1,7 +1,7 @@
 """Audit log model for tracking sensitive operations."""
 import uuid
-from datetime import datetime
-from sqlalchemy import Column, String, Text, TIMESTAMP, ForeignKey, Index
+from datetime import datetime, timezone
+from sqlalchemy import Column, String, Text, DateTime, ForeignKey, Index
 from sqlalchemy.dialects.postgresql import UUID, JSONB, INET
 from src.api.database.base import Base
 from src.api.models.base import SerializableMixin
@@ -15,7 +15,7 @@ class AuditLog(Base, SerializableMixin):
 
     # Who performed the action
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
-    username = Column(String(100))  # Denormalized for historical record
+    full_name = Column(String(200))  # Denormalized for historical record
     user_email = Column(String(255))  # Denormalized for historical record
 
     # What action was performed
@@ -41,7 +41,7 @@ class AuditLog(Base, SerializableMixin):
     error_message = Column(Text)  # If status is failed
 
     # Timestamp
-    created_at = Column(TIMESTAMP, default=datetime.utcnow, nullable=False, index=True)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False, index=True)
 
     __table_args__ = (
         Index('idx_audit_logs_user_id', 'user_id'),

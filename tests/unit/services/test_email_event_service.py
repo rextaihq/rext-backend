@@ -12,6 +12,7 @@ Tests cover:
 import pytest
 from uuid import uuid4
 from datetime import datetime
+import hashlib
 from unittest.mock import Mock, AsyncMock, patch
 
 from src.services.email_event_service import EmailEventService
@@ -36,7 +37,7 @@ class TestEmailEventServiceProcessWebhook:
             subject="Test",
             status="sent",
             provider="resend",
-            from_email="noreply@wrext.com"
+            from_email="noreply@rext.com"
         )
 
         # Mock database queries
@@ -92,7 +93,7 @@ class TestEmailEventServiceProcessWebhook:
             subject="Test",
             status="sent",
             provider="resend",
-            from_email="noreply@wrext.com"
+            from_email="noreply@rext.com"
         )
 
         mock_log_result = Mock()
@@ -136,7 +137,7 @@ class TestEmailEventServiceProcessWebhook:
             subject="Test",
             status="delivered",
             provider="resend",
-            from_email="noreply@wrext.com"
+            from_email="noreply@rext.com"
         )
 
         mock_log_result = Mock()
@@ -178,7 +179,7 @@ class TestEmailEventServiceProcessWebhook:
             subject="Test",
             status="delivered",
             provider="resend",
-            from_email="noreply@wrext.com"
+            from_email="noreply@rext.com"
         )
 
         original_status = email_log.status
@@ -222,7 +223,7 @@ class TestEmailEventServiceProcessWebhook:
             subject="Test",
             status="delivered",
             provider="resend",
-            from_email="noreply@wrext.com"
+            from_email="noreply@rext.com"
         )
 
         original_status = email_log.status
@@ -243,7 +244,7 @@ class TestEmailEventServiceProcessWebhook:
             "data": {
                 "email_id": "msg_clicked",
                 "to": "clicker@example.com",
-                "link": "https://wrext.com/verify"
+                "link": "https://rext.com/verify"
             }
         }
 
@@ -265,15 +266,20 @@ class TestEmailEventServiceIdempotency:
         mock_db = AsyncMock()
 
         # Existing event (already processed)
+        # Calculate expected hash for consistency
+        content = "msg_123|email.delivered|2025-10-12T12:00:00"
+        hash_value = hashlib.sha256(content.encode('utf-8')).hexdigest()[:32]
+        expected_provider_event_id = f"evt_{hash_value}"
+
         existing_event = EmailEvent(
             id=uuid4(),
             email_log_id=uuid4(),
             provider="resend",
-            provider_event_id="msg_123_email.delivered_2025-10-12T12:00:00Z",
+            provider_event_id=expected_provider_event_id,
             provider_message_id="msg_123",
             event_type="email.delivered",
             event_data={},
-            created_at=datetime.utcnow()
+            created_at=datetime.now(timezone.utc)
         )
 
         mock_event_result = Mock()
@@ -302,6 +308,54 @@ class TestEmailEventServiceIdempotency:
         # Should NOT add new event to database
         mock_db.add.assert_not_called()
         mock_db.commit.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_timestamp_normalization(self):
+        """Should generate same hash for different timestamp formats of same time"""
+        mock_db = AsyncMock()
+        service = EmailEventService(mock_db)
+
+        email_id = "msg_123"
+        event_type = "email.delivered"
+        
+        # Format 1: With milliseconds
+        ts1 = "2025-10-12T12:00:00.123Z"
+        hash1 = service._generate_provider_event_id(email_id, event_type, ts1)
+        
+        # Format 2: Without milliseconds (same second)
+        ts2 = "2025-10-12T12:00:00Z"
+        hash2 = service._generate_provider_event_id(email_id, event_type, ts2)
+        
+        # Format 3: Different timezone notation but same UTC time
+        ts3 = "2025-10-12T12:00:00+00:00"
+        hash3 = service._generate_provider_event_id(email_id, event_type, ts3)
+
+        assert hash1 == hash2
+        assert hash2 == hash3
+        assert hash1.startswith("evt_")
+        assert len(hash1) == 36  # evt_ + 32 chars
+
+    @pytest.mark.asyncio
+    async def test_idempotency_key_consistency(self):
+        """Should generate consistent hash for same inputs"""
+        mock_db = AsyncMock()
+        service = EmailEventService(mock_db)
+
+        email_id = "msg_abc_123"  # Contains underscores
+        event_type = "email.bounced"
+        created_at = "2025-11-01T10:30:00Z"
+
+        # Generate hash multiple times
+        hash1 = service._generate_provider_event_id(email_id, event_type, created_at)
+        hash2 = service._generate_provider_event_id(email_id, event_type, created_at)
+
+        assert hash1 == hash2
+        
+        # Verify content used for hashing (manual check)
+        # Expected normalization: 2025-11-01T10:30:00
+        content = f"{email_id}|{event_type}|2025-11-01T10:30:00"
+        expected_hash = hashlib.sha256(content.encode('utf-8')).hexdigest()[:32]
+        assert hash1 == f"evt_{expected_hash}"
 
 
 class TestEmailEventServiceErrorHandling:
@@ -374,7 +428,7 @@ class TestEmailEventServiceErrorHandling:
             subject="Test",
             status="sent",
             provider="resend",
-            from_email="noreply@wrext.com"
+            from_email="noreply@rext.com"
         )
 
         mock_log_result = Mock()
@@ -437,8 +491,8 @@ class TestEmailEventServiceQueryMethods:
 
         email_log_id = uuid4()
         mock_events = [
-            EmailEvent(id=uuid4(), email_log_id=email_log_id, event_type="email.delivered", provider="resend", provider_message_id="msg_1", event_data={}, created_at=datetime.utcnow()),
-            EmailEvent(id=uuid4(), email_log_id=email_log_id, event_type="email.opened", provider="resend", provider_message_id="msg_1", event_data={}, created_at=datetime.utcnow()),
+            EmailEvent(id=uuid4(), email_log_id=email_log_id, event_type="email.delivered", provider="resend", provider_message_id="msg_1", event_data={}, created_at=datetime.now(timezone.utc)),
+            EmailEvent(id=uuid4(), email_log_id=email_log_id, event_type="email.opened", provider="resend", provider_message_id="msg_1", event_data={}, created_at=datetime.now(timezone.utc)),
         ]
 
         mock_result = Mock()
@@ -457,8 +511,8 @@ class TestEmailEventServiceQueryMethods:
         mock_db = AsyncMock()
 
         mock_events = [
-            EmailEvent(id=uuid4(), email_log_id=uuid4(), event_type="email.delivered", provider="resend", provider_message_id="msg_1", event_data={}, created_at=datetime.utcnow()),
-            EmailEvent(id=uuid4(), email_log_id=uuid4(), event_type="email.bounced", provider="resend", provider_message_id="msg_2", event_data={}, created_at=datetime.utcnow()),
+            EmailEvent(id=uuid4(), email_log_id=uuid4(), event_type="email.delivered", provider="resend", provider_message_id="msg_1", event_data={}, created_at=datetime.now(timezone.utc)),
+            EmailEvent(id=uuid4(), email_log_id=uuid4(), event_type="email.bounced", provider="resend", provider_message_id="msg_2", event_data={}, created_at=datetime.now(timezone.utc)),
         ]
 
         mock_result = Mock()

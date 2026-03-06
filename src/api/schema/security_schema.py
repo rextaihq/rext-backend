@@ -6,7 +6,7 @@ This module defines Pydantic models for security-related API operations.
 
 from pydantic import BaseModel, Field
 from typing import Optional, List, Dict, Any
-from datetime import datetime
+from datetime import datetime, timezone
 
 
 # ============================================================================
@@ -29,7 +29,7 @@ class FailedLoginResponse(BaseModel):
     """Schema for failed login attempt."""
     id: str = Field(..., description="User UUID")
     email: str = Field(..., description="User email")
-    username: str = Field(..., description="Username")
+    full_name: str = Field(..., description="Full name")
     failed_attempts: int = Field(..., description="Number of failed attempts")
     locked_until: Optional[str] = Field(None, description="Account locked until (ISO 8601)")
     last_failed_at: Optional[str] = Field(None, description="Last failed login attempt")
@@ -40,7 +40,7 @@ class FailedLoginResponse(BaseModel):
             "example": {
                 "id": "123e4567-e89b-12d3-a456-426614174000",
                 "email": "user@example.com",
-                "username": "john_doe",
+                "full_name": "john_doe",
                 "failed_attempts": 2,
                 "locked_until": None,
                 "last_failed_at": "2025-10-02T18:30:00Z",
@@ -53,7 +53,7 @@ class LockedAccountResponse(BaseModel):
     """Schema for locked account."""
     id: str = Field(..., description="User UUID")
     email: str = Field(..., description="User email")
-    username: str = Field(..., description="Username")
+    full_name: str = Field(..., description="Full name")
     locked_until: str = Field(..., description="Locked until (ISO 8601)")
     failed_attempts: int = Field(..., description="Failed login attempts")
     remaining_lock_time_minutes: int = Field(..., description="Minutes until unlock")
@@ -121,7 +121,7 @@ class SecurityStatsResponse(BaseModel):
 class LoginHistoryResponse(BaseModel):
     """Schema for user login history."""
     user_id: str = Field(..., description="User UUID")
-    username: str = Field(..., description="Username")
+    full_name: str = Field(..., description="Full name")
     email: str = Field(..., description="User email")
     total_logins: int = Field(..., description="Total login count")
     last_login_at: Optional[str] = Field(None, description="Last successful login")
@@ -159,7 +159,7 @@ class SuspiciousActivityResponse(BaseModel):
     """Schema for suspicious activity detection."""
     user_id: str = Field(..., description="User UUID")
     email: str = Field(..., description="User email")
-    username: str = Field(..., description="Username")
+    full_name: str = Field(..., description="Full name")
     risk_score: int = Field(..., description="Risk score (0-100)")
     risk_factors: List[str] = Field(..., description="List of risk factors")
     recent_events: List[Dict[str, Any]] = Field(..., description="Recent suspicious events")

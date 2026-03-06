@@ -13,7 +13,7 @@ This guide shows how to integrate workspace email templates with existing invita
 
 ### 1. Workspace Invitation
 
-**File:** `wrext-backend/src/api/routes/workspaces/workspace_invitations.py`
+**File:** `rext-backend/src/api/routes/workspaces/workspace_invitations.py`
 
 **Current Implementation:**
 ```python
@@ -199,7 +199,7 @@ background_tasks.add_task(
 
 ## Complete Example: Update Invitation Route
 
-**File:** `wrext-backend/src/api/routes/workspaces/workspace_invitations.py`
+**File:** `rext-backend/src/api/routes/workspaces/workspace_invitations.py`
 
 ```python
 from fastapi import APIRouter, Depends, BackgroundTasks
@@ -329,7 +329,7 @@ async def create_workspace_invitation(
 
 ### 1. Professional Appearance
 - Modern, branded design
-- Consistent with WREXT identity
+- Consistent with REXT identity
 - Better than plain text emails
 
 ### 2. Better User Experience
@@ -399,13 +399,13 @@ This generates all 4 workspace email examples for preview.
 Required in `.env`:
 
 ```env
-FRONTEND_URL=https://app.wrext.com
+FRONTEND_URL=https://app.rext.com
 
 # Email service (already configured in Phase 1)
 EMAIL_PROVIDER=resend
 RESEND_API_KEY=re_xxxxxxxxxxxxx
-RESEND_FROM_EMAIL=noreply@wrext.com
-RESEND_FROM_NAME=WREXT
+RESEND_FROM_EMAIL=noreply@rext.com
+RESEND_FROM_NAME=REXT
 ```
 
 ## Next Steps
@@ -430,6 +430,6 @@ After implementing workspace templates:
 
 For questions or issues:
 - Check [emails/README.md](../../README.md) for component docs
-- Review [EmailService docs](../../../wrext-backend/src/services/email_service.py)
+- Review [EmailService docs](../../../rext-backend/src/services/email_service.py)
 - Test templates using `emails/examples/workspace_templates_test.py`
 - Preview generated HTML files in browser

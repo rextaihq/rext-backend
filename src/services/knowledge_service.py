@@ -44,7 +44,8 @@ from fastapi import UploadFile
 
 from src.api.models.knowledge_models.knowledge_model import KnowledgeFiles, TextKnowledge, Website, KnowledgeBase
 from src.utils.logger import logger
-from src.utils.file_upload_utils import validate_and_store_file, delete_file
+from src.utils.file_security import validate_upload
+from src.utils.file_upload_utils import delete_file, _sanitize_filename
 from src.utils.utils import load_split_file_data
 from src.utils.splitter import split_data
 from src.utils.vector_store import add_to_vector_store, delete_vectors
@@ -52,9 +53,9 @@ from src.utils.helper import web_page_scraper
 from src.api.config import get_settings
 from src.api.middleware.exceptions import (
     ResourceNotFoundException,
-    WrextValidationException,
+    RextValidationException,
     DuplicateResourceException,
-    WrextExternalServiceException
+    RextExternalServiceException
 )
 from src.services.knowledge_base_service import KnowledgeBaseService
 
@@ -103,8 +104,8 @@ class KnowledgeService:
 
         Raises:
             DuplicateResourceException: If file already exists (by hash)
-            WrextValidationException: If file validation fails
-            WrextExternalServiceException: If vector store fails
+            RextValidationException: If file validation fails
+            RextExternalServiceException: If vector store fails
         """
         # Get or use default knowledge base
         if knowledge_base_id is None:
@@ -142,7 +143,7 @@ class KnowledgeService:
         chunks = load_split_file_data(file_metadata["secure_path"])
 
         if len(chunks) == 0:
-            raise WrextValidationException(
+            raise RextValidationException(
                 message="Failed to extract content from the file",
                 field_errors={"file": ["No content could be extracted from file"]}
             )
@@ -174,16 +175,16 @@ class KnowledgeService:
                 knowledge_type="file"
             )
             if not success_status:
-                raise WrextExternalServiceException(
+                raise RextExternalServiceException(
                     message="Failed to insert chunks into vector store",
                     service_name="vector_store",
                     service_error="Insertion returned False"
                 )
-        except WrextExternalServiceException:
+        except RextExternalServiceException:
             raise
         except Exception as e:
             logger.error(f"Error building vector store: {e}")
-            raise WrextExternalServiceException(
+            raise RextExternalServiceException(
                 message="Failed to build vector store from file content",
                 service_name="vector_store",
                 service_error=str(e)
@@ -249,12 +250,44 @@ class KnowledgeService:
             extra={"workspace_id": str(workspace_id)}
         )
 
-    async def list_file_knowledge(self, workspace_id: UUID) -> List[Dict[str, Any]]:
-        """Return all file knowledge entries for a workspace."""
-        result = await self.db.execute(
-            select(KnowledgeFiles).where(KnowledgeFiles.workspace_id == workspace_id)
+    async def list_file_knowledge(
+        self,
+        workspace_id: UUID,
+        limit: int = 20,
+        offset: int = 0,
+    ) -> tuple[List[Dict[str, Any]], int]:
+        """
+        Return paginated file knowledge entries for a workspace.
+
+        Args:
+            workspace_id: Workspace UUID
+            limit: Maximum number of items to return (default 20)
+            offset: Number of items to skip (default 0)
+
+        Returns:
+            Tuple of (list of file knowledge dicts, total count)
+        """
+        from sqlalchemy import func
+
+        # Get total count
+        count_result = await self.db.execute(
+            select(func.count()).select_from(KnowledgeFiles).where(
+                KnowledgeFiles.workspace_id == workspace_id
+            )
         )
-        return [knowledge.to_dict() for knowledge in result.scalars().all()]
+        total_count = count_result.scalar()
+
+        # Get paginated results
+        result = await self.db.execute(
+            select(KnowledgeFiles)
+            .where(KnowledgeFiles.workspace_id == workspace_id)
+            .order_by(KnowledgeFiles.created_at.desc())
+            .limit(limit)
+            .offset(offset)
+        )
+        items = [knowledge.to_dict() for knowledge in result.scalars().all()]
+
+        return items, total_count
 
     async def get_file_knowledge(self, workspace_id: UUID, file_id: UUID) -> Dict[str, Any]:
         """Return a single file knowledge entry."""
@@ -276,7 +309,7 @@ class KnowledgeService:
             name: New display name
         """
         knowledge = await self._get_file_knowledge_or_404(file_id, workspace_id)
-        knowledge.name = name
+        knowledge.file_name = name
         await self.db.flush()
         await self.db.refresh(knowledge)
 
@@ -296,7 +329,8 @@ class KnowledgeService:
         workspace_id: UUID,
         title: str,
         content: str,
-        knowledge_base_id: Optional[UUID] = None
+        knowledge_base_id: Optional[UUID] = None,
+        tags: Optional[List[str]] = None,
     ) -> TextKnowledge:
         """
         Add text knowledge to workspace.
@@ -306,9 +340,7 @@ class KnowledgeService:
             title: Knowledge title
             content: Knowledge content
             knowledge_base_id: Optional knowledge base UUID (uses default if None)
-
-        Returns:
-            Created TextKnowledge object
+            tags: Optional list of tags
         """
         # Get or use default knowledge base
         if knowledge_base_id is None:
@@ -316,8 +348,7 @@ class KnowledgeService:
             kb = await kb_service.get_default_knowledge_base(workspace_id)
             knowledge_base_id = kb.id
 
-        # Split content into chunks using proper text splitter
-        # This creates Document objects with page_content and metadata
+        # Split content into chunks
         chunks = split_data(
             documents=content,
             chunk_size=1000,
@@ -329,13 +360,14 @@ class KnowledgeService:
             workspace_id=workspace_id,
             knowledge_base_id=knowledge_base_id,
             title=title,
-            content=content
+            content=content,
+            tags=tags,
         )
         self.db.add(new_knowledge)
         await self.db.flush()
         await self.db.refresh(new_knowledge)
 
-        # Add to vector store with knowledge item metadata
+        # Add to vector store
         add_to_vector_store(
             blog_context=chunks,
             workspace_id=str(workspace_id),
@@ -351,12 +383,34 @@ class KnowledgeService:
 
         return new_knowledge
 
-    async def list_text_knowledge(self, workspace_id: UUID) -> List[Dict[str, Any]]:
-        """Return all text knowledge entries for a workspace."""
-        result = await self.db.execute(
-            select(TextKnowledge).where(TextKnowledge.workspace_id == workspace_id)
+    async def list_text_knowledge(
+        self,
+        workspace_id: UUID,
+        limit: int = 20,
+        offset: int = 0,
+    ) -> tuple[List[Dict[str, Any]], int]:
+        """Return paginated text knowledge entries for a workspace."""
+        from sqlalchemy import func
+
+        # Get total count
+        count_result = await self.db.execute(
+            select(func.count()).select_from(TextKnowledge).where(
+                TextKnowledge.workspace_id == workspace_id
+            )
         )
-        return [knowledge.to_dict() for knowledge in result.scalars().all()]
+        total_count = count_result.scalar()
+
+        # Get paginated results
+        result = await self.db.execute(
+            select(TextKnowledge)
+            .where(TextKnowledge.workspace_id == workspace_id)
+            .order_by(TextKnowledge.created_at.desc())
+            .limit(limit)
+            .offset(offset)
+        )
+        items = [knowledge.to_dict() for knowledge in result.scalars().all()]
+
+        return items, total_count
 
     async def get_text_knowledge(self, workspace_id: UUID, knowledge_id: UUID) -> Dict[str, Any]:
         """Return a single text knowledge entry."""
@@ -383,6 +437,7 @@ class KnowledgeService:
         *,
         title: Optional[str] = None,
         content: Optional[str] = None,
+        tags: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
         """
         Update metadata for a text knowledge entry.
@@ -392,6 +447,7 @@ class KnowledgeService:
             workspace_id: Workspace UUID
             title: Optional new title
             content: Optional new content
+            tags: Optional new tags list (replaces existing tags)
         """
         result = await self.db.execute(
             select(TextKnowledge).where(
@@ -412,6 +468,9 @@ class KnowledgeService:
 
         if content:
             knowledge.content = content
+
+        if tags is not None:
+            knowledge.tags = tags
 
         await self.db.flush()
         await self.db.refresh(knowledge)
@@ -469,12 +528,34 @@ class KnowledgeService:
             extra={"workspace_id": str(workspace_id)}
         )
 
-    async def list_web_knowledge(self, workspace_id: UUID) -> List[Dict[str, Any]]:
-        """Return all web knowledge entries for the workspace."""
-        result = await self.db.execute(
-            select(Website).where(Website.workspace_id == workspace_id)
+    async def list_web_knowledge(
+        self,
+        workspace_id: UUID,
+        limit: int = 20,
+        offset: int = 0,
+    ) -> tuple[List[Dict[str, Any]], int]:
+        """Return paginated web knowledge entries for the workspace."""
+        from sqlalchemy import func
+
+        # Get total count
+        count_result = await self.db.execute(
+            select(func.count()).select_from(Website).where(
+                Website.workspace_id == workspace_id
+            )
         )
-        return [knowledge.to_dict() for knowledge in result.scalars().all()]
+        total_count = count_result.scalar()
+
+        # Get paginated results
+        result = await self.db.execute(
+            select(Website)
+            .where(Website.workspace_id == workspace_id)
+            .order_by(Website.created_at.desc())
+            .limit(limit)
+            .offset(offset)
+        )
+        items = [knowledge.to_dict() for knowledge in result.scalars().all()]
+
+        return items, total_count
 
     async def get_web_knowledge(self, workspace_id: UUID, web_id: UUID) -> Dict[str, Any]:
         """Return a single web knowledge entry."""
@@ -512,7 +593,7 @@ class KnowledgeService:
         result_entry = results[0] if results else None
 
         if not result_entry or not getattr(result_entry, "success", False):
-            raise WrextValidationException(
+            raise RextValidationException(
                 message="Failed to scrape the provided URL",
                 field_errors={"url": ["URL could not be scraped or is inaccessible"]},
             )
@@ -544,16 +625,16 @@ class KnowledgeService:
                 knowledge_type="web"
             )
             if not success_status:
-                raise WrextExternalServiceException(
+                raise RextExternalServiceException(
                     message="Failed to insert chunks into vector store",
                     service_name="vector_store",
                     service_error="Insertion returned False",
                 )
-        except WrextExternalServiceException:
+        except RextExternalServiceException:
             raise
         except Exception as exc:  # noqa: BLE001
             logger.exception("Vector store insertion failed", exc_info=exc)
-            raise WrextExternalServiceException(
+            raise RextExternalServiceException(
                 message="Failed to process content in vector store",
                 service_name="vector_store",
                 service_error=str(exc),
@@ -682,13 +763,25 @@ class KnowledgeService:
                 logger.warning(f"Workspace {workspace_id} not found, skipping email")
                 return
 
-            # Fetch user who created the KB (owner)
+            # Fetch workspace owner to send email notification
+            from src.api.models.workspace_models.workspace_member import WorkspaceMembers
             result = await self.db.execute(
-                select(Users).where(Users.id == kb.created_by_user_id)
+                select(WorkspaceMembers).where(
+                    WorkspaceMembers.workspace_id == workspace_id,
+                    WorkspaceMembers.is_default == True,
+                )
+            )
+            owner_member = result.scalar_one_or_none()
+            if not owner_member:
+                logger.warning(f"No owner found for workspace {workspace_id}, skipping email")
+                return
+
+            result = await self.db.execute(
+                select(Users).where(Users.id == owner_member.user_id)
             )
             user = result.scalar_one_or_none()
             if not user:
-                logger.warning(f"User {kb.created_by_user_id} not found, skipping email")
+                logger.warning(f"User {owner_member.user_id} not found, skipping email")
                 return
 
             # Build URLs
@@ -697,7 +790,7 @@ class KnowledgeService:
             create_content_url = f"{frontend_url}/w/{workspace.slug}/content/new"
 
             # Render professional email
-            user_name = user.first_name or user.username or user.email.split("@")[0]
+            user_name = user.full_name or user.display_name or user.email.split("@")[0]
             html_content = render_kb_processing_completed_email(
                 user_name=user_name,
                 kb_name=kb.name,

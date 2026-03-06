@@ -16,27 +16,26 @@ Does NOT:
 - Create actual JWT tokens (that's token utils)
 """
 
-from typing import Dict, Any, Optional
+from datetime import datetime, timezone
+from typing import Any, Dict, Optional
 from uuid import UUID
-from datetime import datetime
 
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.api.models.user_models.users import Users
-from src.api.models.user_models.user_roles import UserRole
-from src.api.models.user_models.roles import Role
-from src.api.models.user_models.permissions import Permission
-from src.api.models.user_models.role_permissions import RolePermission
-from src.utils.logger import logger
 from src.api.middleware.exceptions import (
     ResourceNotFoundException,
-    WrextValidationException,
-    WrextAuthenticationException
+    RextAuthenticationException,
+    RextValidationException,
 )
-from datetime import datetime
-from sqlalchemy import select
 from src.api.models.user_models.impersonation_session import ImpersonationSession
+from src.api.models.user_models.permissions import Permission
+from src.api.models.user_models.role_permissions import RolePermission
+from src.api.models.user_models.roles import Role
+from src.api.models.user_models.user_roles import UserRole
+from src.api.models.user_models.users import Users
+from src.utils.logger import logger
+
 
 class ImpersonationService:
     """Service for user impersonation management"""
@@ -73,8 +72,8 @@ class ImpersonationService:
 
         Raises:
             ResourceNotFoundException: If users not found
-            WrextValidationException: If validation fails
-            WrextAuthenticationException: If permission denied
+            RextValidationException: If validation fails
+            RextAuthenticationException: If permission denied
         """
         # Get admin user
         admin_user = await self._get_user_or_404(admin_user_id)
@@ -84,7 +83,7 @@ class ImpersonationService:
 
         # Cannot impersonate yourself
         if admin_user_id == target_user_id:
-            raise WrextValidationException(
+            raise RextValidationException(
                 message="Cannot impersonate yourself",
                 field_errors={"target_user_id": ["Self-impersonation not allowed"]}
             )
@@ -93,14 +92,14 @@ class ImpersonationService:
         has_permission = await self._has_impersonation_permission(admin_user_id)
 
         if not has_permission:
-            raise WrextAuthenticationException(
+            raise RextAuthenticationException(
                 message="You do not have permission to impersonate users",
                 context={"admin_user_id": str(admin_user_id)}
             )
 
         # Check target user status
         if target_user.status != "active":
-            raise WrextValidationException(
+            raise RextValidationException(
                 message="Cannot impersonate inactive user",
                 field_errors={"target_user_id": ["User is not active"]}
             )
@@ -110,7 +109,7 @@ class ImpersonationService:
         target_max_hierarchy = await self._get_max_hierarchy_level(target_user_id)
 
         if target_max_hierarchy >= admin_max_hierarchy:
-            raise WrextAuthenticationException(
+            raise RextAuthenticationException(
                 message="Cannot impersonate user with equal or higher privilege level",
                 context={
                     "admin_hierarchy": admin_max_hierarchy,
@@ -133,11 +132,11 @@ class ImpersonationService:
         return {
             "target_user_id": target_context["user_id"],
             "target_email": target_context["email"],
-            "target_username": target_context["username"],
+            "target_full_name": target_context["full_name"],
             "target_display_name": target_context["display_name"],
             "impersonated_by": str(admin_user_id),
             "impersonated_by_email": admin_user.email,
-            "impersonation_started_at": datetime.utcnow().isoformat(),
+            "impersonation_started_at": datetime.now(timezone.utc).isoformat(),
             "roles": target_context["roles"],
             "permissions": target_context["permissions"],
         }
@@ -168,7 +167,7 @@ class ImpersonationService:
         return {
             "message": "Impersonation stopped",
             "admin_user_id": str(admin_user_id),
-            "impersonation_stopped_at": datetime.utcnow().isoformat()
+            "impersonation_stopped_at": datetime.now(timezone.utc).isoformat()
         }
 
     async def get_impersonation_status(
@@ -251,7 +250,7 @@ class ImpersonationService:
             .join(UserRole, UserRole.role_id == Role.id)
             .where(
                 UserRole.user_id == user_id,
-                Permission.name == "user.update"
+                Permission.name == "user.impersonate"
             )
         )
         permission = result.scalar_one_or_none()
@@ -320,11 +319,12 @@ class ImpersonationService:
         return {
             "user_id": str(user.id),
             "email": user.email,
-            "username": user.username,
+            "full_name": user.full_name,
             "display_name": user.display_name,
             "roles": auth_context["roles"],
             "permissions": auth_context["permissions"],
         }
+
     async def invalidate_session(self, session_id: str) -> bool:
         """
         Invalidate an impersonation session by session_id.
@@ -339,7 +339,7 @@ class ImpersonationService:
         try:
             invalidated_session = ImpersonationSession(
                 session_id=session_id,
-                invalidated_at=datetime.utcnow(),
+                invalidated_at=datetime.now(timezone.utc),
                 is_valid=False
             )
             self.db.add(invalidated_session)
@@ -367,7 +367,7 @@ class ImpersonationService:
         try:
             stmt = select(ImpersonationSession).where(
                 ImpersonationSession.session_id == session_id,
-                ImpersonationSession.is_valid == False
+                ImpersonationSession.is_valid.is_(False)
             )
             result = await self.db.execute(stmt)
             invalidated_session = result.scalar_one_or_none()

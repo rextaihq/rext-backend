@@ -20,7 +20,7 @@ Does NOT:
 
 from typing import List, Dict, Any, Optional
 from uuid import UUID
-from datetime import datetime, timedelta
+from datetime import datetime, timezone, timedelta,timezone
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_
@@ -30,7 +30,7 @@ from src.api.models.audit_models.audit_logs import AuditLog
 from src.utils.logger import logger
 from src.api.middleware.exceptions import (
     ResourceNotFoundException,
-    WrextValidationException
+    RextValidationException
 )
 
 
@@ -90,7 +90,7 @@ class SecurityService:
 
         # Format response
         users_data = []
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
 
         for user in users:
             is_locked = bool(user.locked_until and user.locked_until > now)
@@ -98,7 +98,7 @@ class SecurityService:
             users_data.append({
                 "id": str(user.id),
                 "email": user.email,
-                "username": user.username,
+                "full_name": user.full_name,
                 "failed_attempts": user.failed_login_attempts,
                 "locked_until": user.locked_until.isoformat() if user.locked_until else None,
                 "last_failed_at": user.updated_at.isoformat() if user.updated_at else None,
@@ -134,7 +134,7 @@ class SecurityService:
         query = select(Users).where(Users.locked_until.isnot(None))
 
         if not include_expired:
-            query = query.where(Users.locked_until > datetime.utcnow())
+            query = query.where(Users.locked_until > datetime.now(timezone.utc))
 
         query = query.order_by(Users.locked_until.desc())
 
@@ -150,7 +150,7 @@ class SecurityService:
 
         # Format response
         locked_accounts = []
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
 
         for user in users:
             if user.locked_until:
@@ -159,7 +159,7 @@ class SecurityService:
                 locked_accounts.append({
                     "id": str(user.id),
                     "email": user.email,
-                    "username": user.username,
+                    "full_name": user.full_name,
                     "locked_until": user.locked_until.isoformat(),
                     "failed_attempts": user.failed_login_attempts,
                     "remaining_lock_time_minutes": remaining_minutes
@@ -190,14 +190,14 @@ class SecurityService:
 
         Raises:
             ResourceNotFoundException: If user not found
-            WrextValidationException: If account not locked
+            RextValidationException: If account not locked
         """
         # Get user
         user = await self._get_user_or_404(user_id)
 
         # Check if account is actually locked
-        if not user.locked_until or user.locked_until <= datetime.utcnow():
-            raise WrextValidationException(
+        if not user.locked_until or user.locked_until <= datetime.now(timezone.utc):
+            raise RextValidationException(
                 message="Account is not currently locked",
                 field_errors={"user_id": ["Account not locked"]}
             )
@@ -205,7 +205,7 @@ class SecurityService:
         # Unlock account
         user.locked_until = None
         user.failed_login_attempts = 0
-        user.updated_at = datetime.utcnow()
+        user.updated_at = datetime.now(timezone.utc)
 
         await self.db.flush()
         await self.db.refresh(user)
@@ -237,7 +237,7 @@ class SecurityService:
 
         # Reset counter
         user.failed_login_attempts = 0
-        user.updated_at = datetime.utcnow()
+        user.updated_at = datetime.now(timezone.utc)
 
         await self.db.flush()
         await self.db.refresh(user)
@@ -250,7 +250,7 @@ class SecurityService:
         return {
             "user_id": str(user.id),
             "email": user.email,
-            "username": user.username,
+            "full_name": user.full_name,
             "failed_attempts": 0,
             "previous_attempts": old_attempts
         }
@@ -267,7 +267,7 @@ class SecurityService:
             - Account activity (registrations, verifications)
             - Top offenders by IP and user
         """
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         last_24h = now - timedelta(hours=24)
         last_7d = now - timedelta(days=7)
         last_30d = now - timedelta(days=30)
@@ -339,7 +339,8 @@ class SecurityService:
     async def get_user_login_history(
         self,
         user_id: UUID,
-        limit: int = 50
+        limit: int = 50,
+        offset: int = 0
     ) -> Dict[str, Any]:
         """
         Get login history for a specific user.
@@ -347,22 +348,33 @@ class SecurityService:
         Args:
             user_id: User UUID
             limit: Number of recent login events (1-100)
+            offset: Pagination offset
 
         Returns:
-            Dict with user info and login history
+            Dict with user info, login history, and pagination info
 
         Raises:
             ResourceNotFoundException: If user not found
         """
+        from sqlalchemy import func
+
         # Get user
         user = await self._get_user_or_404(user_id)
 
-        # Get login events from audit log
+        # Build base query for login events
+        base_query = select(AuditLog).where(
+            AuditLog.user_id == user_id,
+            AuditLog.action.like("auth.login%")
+        )
+
+        # Get total count
+        count_query = select(func.count()).select_from(base_query.subquery())
+        total_result = await self.db.execute(count_query)
+        total_count = total_result.scalar() or 0
+
+        # Get paginated login events
         events_result = await self.db.execute(
-            select(AuditLog).where(
-                AuditLog.user_id == user_id,
-                AuditLog.action.like("auth.login%")
-            ).order_by(AuditLog.created_at.desc()).limit(limit)
+            base_query.order_by(AuditLog.created_at.desc()).offset(offset).limit(limit)
         )
         login_events = events_result.scalars().all()
 
@@ -379,10 +391,13 @@ class SecurityService:
 
         return {
             "user_id": str(user.id),
-            "username": user.username,
+            "full_name": user.full_name,
             "email": user.email,
             "login_history": login_history,
-            "total_events": len(login_history)
+            "total": total_count,
+            "limit": limit,
+            "offset": offset,
+            "has_more": (offset + limit) < total_count
         }
 
     # ========================================================================
@@ -464,7 +479,7 @@ class SecurityService:
         # Get user
         user = await self._get_user_or_404(user_id)
 
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         is_locked = bool(user.locked_until and user.locked_until > now)
 
         # Get last successful login from audit logs
@@ -537,7 +552,7 @@ class SecurityService:
         """
         from src.api.models.user_models.user_sessions import UserSession
 
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         query = select(func.count(UserSession.id)).where(
             and_(
                 UserSession.user_id == user_id,
@@ -563,7 +578,7 @@ class SecurityService:
         Returns:
             Count of locked accounts
         """
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         result = await self.db.execute(
             select(func.count(Users.id)).where(
                 Users.locked_until.isnot(None),

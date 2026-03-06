@@ -131,7 +131,7 @@ async def test_create_web_knowledge_invokes_service_and_updates_title(
             assert received_workspace_id == workspace_id
             assert knowledge_id == self.created_id
             self.updated_title = title
-            return {"id": str(self.created_id), "url": "https://wrext.ai", "title": title}
+            return {"id": str(self.created_id), "url": "https://rext.ai", "title": title}
 
     stub = _KnowledgeServiceStub(_db=None)
     monkeypatch.setattr(
@@ -154,7 +154,7 @@ async def test_create_web_knowledge_invokes_service_and_updates_title(
         ) as client:
             response = await client.post(
                 f"/api/v1/workspaces/{workspace_id}/knowledge/web",
-                json={"url": "https://wrext.ai", "title": "Homepage"},
+                json={"url": "https://rext.ai", "title": "Homepage"},
             )
     finally:
         app.dependency_overrides.clear()
@@ -162,7 +162,7 @@ async def test_create_web_knowledge_invokes_service_and_updates_title(
     assert response.status_code == 201
     payload = response.json()["data"]["web_knowledge"]
     assert payload["title"] == "Homepage"
-    assert stub.created_url == "https://wrext.ai"
+    assert stub.created_url == "https://rext.ai"
     assert stub.updated_title == "Homepage"
 
 

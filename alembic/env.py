@@ -1,7 +1,7 @@
 from logging.config import fileConfig
 
-from sqlalchemy import engine_from_config
-from sqlalchemy import pool
+from sqlalchemy import engine_from_config, pool
+from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from alembic import context
@@ -20,23 +20,36 @@ load_dotenv()
 
 # Import SQLAlchemy Base and all models
 from src.api.database.base import Base
-from src.api.models.user_models.users import Users
-from src.api.models.user_models.roles import Role
-from src.api.models.user_models.permissions import Permission
-from src.api.models.user_models.user_roles import UserRole
-from src.api.models.user_models.role_permissions import RolePermission
-from src.api.models.user_models.invitations import UserInvitations
-from src.api.models.user_models.token_blacklist import TokenBlacklist
-from src.api.models.user_models.notification_preferences import NotificationPreferences
+
 from src.api.models.workspace_models.workspace_model import WorkspaceModel
 from src.api.models.workspace_models.workspace_member import WorkspaceMembers
+from src.api.models.workspace_models.workspace_integration import WorkspaceIntegration
 from src.api.models.knowledge_models.knowledge_model import (
     BrandVoice, Website, KnowledgeFiles, TextKnowledge
 )
-from src.api.models.topic_models.topic_models import TopicsModel
-from src.api.models.subscription_models.plans import SubscriptionPlan
-from src.api.models.subscription_models.subscriptions import UserSubscription
+from src.api.models.subscription_models import (
+    SubscriptionPlan, UserSubscription, PaymentMethod, WebhookEvent,
+    License, LicenseActivation, DiscountUsage, TrialConversion, Refund
+)
 from src.api.models.audit_models.audit_logs import AuditLog
+from src.api.models.content_models import (
+    Content, ContentSEOData, ContentMedia
+)
+from src.api.models.admin_models import (
+    CustomerNote, ErrorLog, PlatformAdminInvitations
+)
+from src.api.models.user_models import (
+    Users, Role, Permission, UserRole, RolePermission, 
+    UserInvitations, TokenBlacklist, NotificationPreferences,
+    UserSession, OAuthAccount, UserOnboarding, EmailPreferences,
+    UserPreferences
+)
+from src.api.models.user_models.impersonation_session import ImpersonationSession
+from src.api.models.media_models.media import Media
+from src.api.models.knowledge_models.persona_model import Persona
+from src.api.models.notification.notification_model import Notification
+from src.api.models.workspace_models.email_template import EmailTemplate
+from src.api.models.email_models import EmailLog, EmailEvent
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
@@ -94,8 +107,19 @@ def run_migrations_offline() -> None:
 
 async def run_async_migrations() -> None:
     """Run migrations in 'online' mode with async engine."""
+    # Parse and clean URL for asyncpg
+    url_obj = make_url(get_url())
+    query_dict = dict(url_obj.query)
+
+    # Remove unsupported params like sslmode
+    query_dict.pop("sslmode", None)
+    query_dict.pop("channel_binding", None)
+
+    # Rebuild URL safely
+    clean_url = url_obj._replace(query=query_dict)
+
     connectable = create_async_engine(
-        get_url(),
+        clean_url,
         poolclass=pool.NullPool,
     )
 

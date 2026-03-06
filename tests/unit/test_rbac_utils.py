@@ -17,7 +17,7 @@ from src.utils.rbac_utils import (
     get_user_permissions,
     get_user_roles
 )
-from src.api.middleware.exceptions import WrextAuthorizationException
+from src.api.middleware.exceptions import RextAuthorizationException
 from src.api.models.user_models.permissions import Permission
 from src.api.models.user_models.roles import Role
 
@@ -43,8 +43,11 @@ class TestCheckPermission:
             resource="content",
             action="create"
         )
+        # Mock permissions found in get_user_permissions
+        mock_scalars = MagicMock()
+        mock_scalars.all.return_value = [permission_name]
         mock_result = MagicMock()
-        mock_result.scalar_one_or_none.return_value = mock_permission
+        mock_result.scalars.return_value = mock_scalars
         mock_db.execute = AsyncMock(return_value=mock_result)
 
         # Act
@@ -64,8 +67,11 @@ class TestCheckPermission:
         workspace_id = uuid4()
 
         # Mock permission not found
+        # Mock no permissions found in get_user_permissions
+        mock_scalars = MagicMock()
+        mock_scalars.all.return_value = []
         mock_result = MagicMock()
-        mock_result.scalar_one_or_none.return_value = None
+        mock_result.scalars.return_value = mock_scalars
         mock_db.execute = AsyncMock(return_value=mock_result)
 
         # Act
@@ -92,8 +98,11 @@ class TestCheckPermission:
             resource="user",
             action="manage_roles"
         )
+        # Mock permissions found in get_user_permissions
+        mock_scalars = MagicMock()
+        mock_scalars.all.return_value = [permission_name]
         mock_result = MagicMock()
-        mock_result.scalar_one_or_none.return_value = mock_permission
+        mock_result.scalars.return_value = mock_scalars
         mock_db.execute = AsyncMock(return_value=mock_result)
 
         # Act
@@ -115,17 +124,13 @@ class TestCheckAnyPermission:
         permission_names = ["content.update", "content.publish"]
         workspace_id = uuid4()
 
-        # Mock: First permission fails, second succeeds
-        mock_result_1 = MagicMock()
-        mock_result_1.scalar_one_or_none.return_value = None  # No content.update
-
-        mock_result_2 = MagicMock()
-        mock_result_2.scalar_one_or_none.return_value = Permission(
-            id=uuid4(), name="content.publish", display_name="Publish Content",
-            description="Publish content", resource="content", action="publish"
-        )  # Has content.publish
-
-        mock_db.execute = AsyncMock(side_effect=[mock_result_1, mock_result_2])
+        # Mock get_user_permissions results
+        mock_scalars = MagicMock()
+        mock_scalars.all.return_value = ["content.publish"] # Only has second one
+        
+        mock_result = MagicMock()
+        mock_result.scalars.return_value = mock_scalars
+        mock_db.execute = AsyncMock(return_value=mock_result)
 
         # Act
         has_any = await check_any_permission(mock_db, user_id, permission_names, workspace_id)
@@ -143,8 +148,10 @@ class TestCheckAnyPermission:
         workspace_id = uuid4()
 
         # Mock: Both permissions fail
+        mock_scalars = MagicMock()
+        mock_scalars.all.return_value = []
         mock_result = MagicMock()
-        mock_result.scalar_one_or_none.return_value = None
+        mock_result.scalars.return_value = mock_scalars
         mock_db.execute = AsyncMock(return_value=mock_result)
 
         # Act
@@ -167,11 +174,10 @@ class TestCheckAllPermissions:
         workspace_id = uuid4()
 
         # Mock: Both permissions succeed
+        mock_scalars = MagicMock()
+        mock_scalars.all.return_value = permission_names
         mock_result = MagicMock()
-        mock_result.scalar_one_or_none.return_value = Permission(
-            id=uuid4(), name="mock", display_name="Mock", description="Mock",
-            resource="content", action="mock"
-        )
+        mock_result.scalars.return_value = mock_scalars
         mock_db.execute = AsyncMock(return_value=mock_result)
 
         # Act
@@ -189,17 +195,12 @@ class TestCheckAllPermissions:
         permission_names = ["content.read", "content.delete"]
         workspace_id = uuid4()
 
-        # Mock: First succeeds, second fails
-        mock_result_1 = MagicMock()
-        mock_result_1.scalar_one_or_none.return_value = Permission(
-            id=uuid4(), name="content.read", display_name="Read", description="Read",
-            resource="content", action="read"
-        )
-
-        mock_result_2 = MagicMock()
-        mock_result_2.scalar_one_or_none.return_value = None  # Missing content.delete
-
-        mock_db.execute = AsyncMock(side_effect=[mock_result_1, mock_result_2])
+        # Mock: First succeeds, second fails (delegated via get_user_permissions)
+        mock_scalars = MagicMock()
+        mock_scalars.all.return_value = ["content.read"]
+        mock_result = MagicMock()
+        mock_result.scalars.return_value = mock_scalars
+        mock_db.execute = AsyncMock(return_value=mock_result)
 
         # Act
         has_all = await check_all_permissions(mock_db, user_id, permission_names, workspace_id)
@@ -225,8 +226,11 @@ class TestRequirePermission:
             id=uuid4(), name=permission_name, display_name="Create", description="Create",
             resource="content", action="create"
         )
+        # Mock permission found (delegated via get_user_permissions)
+        mock_scalars = MagicMock()
+        mock_scalars.all.return_value = [permission_name]
         mock_result = MagicMock()
-        mock_result.scalar_one_or_none.return_value = mock_permission
+        mock_result.scalars.return_value = mock_scalars
         mock_db.execute = AsyncMock(return_value=mock_result)
 
         # Act - should not raise exception
@@ -236,20 +240,22 @@ class TestRequirePermission:
 
     @pytest.mark.asyncio
     async def test_require_permission_raises_exception(self):
-        """Test that require_permission raises WrextAuthorizationException when permission denied."""
+        """Test that require_permission raises RextAuthorizationException when permission denied."""
         # Arrange
         mock_db = AsyncMock(spec=AsyncSession)
         user_id = uuid4()
         permission_name = "content.delete"
         workspace_id = uuid4()
 
-        # Mock permission not found
+        # Mock permission not found (delegated via get_user_permissions)
+        mock_scalars = MagicMock()
+        mock_scalars.all.return_value = []
         mock_result = MagicMock()
-        mock_result.scalar_one_or_none.return_value = None
+        mock_result.scalars.return_value = mock_scalars
         mock_db.execute = AsyncMock(return_value=mock_result)
 
         # Act & Assert
-        with pytest.raises(WrextAuthorizationException) as exc_info:
+        with pytest.raises(RextAuthorizationException) as exc_info:
             await require_permission(mock_db, user_id, permission_name, workspace_id, resource_name="content")
 
         assert "You do not have permission" in exc_info.value.message

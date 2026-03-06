@@ -1,9 +1,9 @@
 from typing import Dict
-from src.flow.states.wrext import WREXT
+from src.flow.states.rext import REXT
 from src.flow.states.seo_state import SEORESULT
 
 
-def seo_opportunity_node(state: WREXT) -> Dict[str, SEORESULT]:
+def seo_opportunity_node(state: REXT) -> Dict[str, SEORESULT]:
     seo = state.get("seo_result", {})
 
     kd = seo.get("keyword_difficulty", {})
@@ -123,8 +123,8 @@ def seo_opportunity_node(state: WREXT) -> Dict[str, SEORESULT]:
                 "opportunity_score": score,
                 "opportunity_level": opportunity_level,
                 "key_drivers": {
-                    "missing_topics": len(missing_topics),
-                    "missing_questions": len(missing_questions),
+                    "missing_topics": (missing_topics),
+                    "missing_questions": (missing_questions),
                     "brand_pressure": breakdown.get("brand_dominance", 0),
                     "freshness_pressure": breakdown.get("freshness_pressure", 0),
                 },

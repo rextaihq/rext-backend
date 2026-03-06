@@ -19,8 +19,8 @@ class EmailConfig(BaseSettings):
     
     # Resend configuration
     resend_api_key: Optional[str] = None
-    resend_from_email: str = "noreply@wrext.com"
-    resend_from_name: str = "WREXT"
+    resend_from_email: str = "noreply@rext.com"
+    resend_from_name: str = "REXT"
     resend_webhook_secret: Optional[str] = None  # For webhook signature verification
     
     # SMTP configuration (fallback)
@@ -47,3 +47,17 @@ class EmailConfig(BaseSettings):
 
 # Global configuration instance
 email_config = EmailConfig()
+
+import os as _os
+import logging as _logging
+
+_startup_logger = _logging.getLogger("email_config")
+
+_env = _os.getenv("ENVIRONMENT", "development").lower()
+if _env in ("production", "staging", "prod") and not email_config.resend_webhook_secret:
+    _startup_logger.critical(
+        "RESEND_WEBHOOK_SECRET is not configured! "
+        "Webhook signature verification will reject all incoming webhooks in %s. "
+        "Set RESEND_WEBHOOK_SECRET in your environment variables.",
+        _env
+    )

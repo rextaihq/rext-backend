@@ -1,7 +1,8 @@
 from langchain_community.vectorstores import FAISS
-from  src.utils.embedding import get_hf_embedding
+from  src.utils.embedding import get_embedding
 from langchain_community.docstore.in_memory import InMemoryDocstore
 from langchain_core.documents import Document
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 from src.utils.logger import logger
 from uuid import uuid4
 from tqdm import tqdm
@@ -39,7 +40,7 @@ def load_yaml(file_path: str = "config/config.yaml") -> dict:
 
     with open(abs_path, "r") as f:
         content = yaml.safe_load(f) or {}
-        logger.info("✅ Loaded config from", path=abs_path)
+        logger.info("Loaded config from", path=abs_path)
         return content
 
 
@@ -103,7 +104,7 @@ def add_to_vector_store(
     if workspace_id is None:
         raise ValueError("workspace_id should not be None")
     # Determine embedding dimension
-    test_embedding = get_hf_embedding().embed_query("hello world")
+    test_embedding = get_embedding().embed_query("hello world")
     dimension = len(test_embedding)
 
     config = load_yaml()
@@ -116,7 +117,7 @@ def add_to_vector_store(
         logger.info(">> Loading existing FAISS index <<")
         vector_store = FAISS.load_local(
             vector_store_path,
-            get_hf_embedding(),
+            get_embedding(),
             allow_dangerous_deserialization=True
         )
     else:
@@ -125,7 +126,7 @@ def add_to_vector_store(
         os.makedirs(vector_store_path, exist_ok=True)
         index = faiss.IndexFlatL2(dimension)
         vector_store = FAISS(
-            embedding_function=get_hf_embedding(),
+            embedding_function=get_embedding(),
             index=index,
             docstore=InMemoryDocstore(),
             index_to_docstore_id={},
@@ -152,23 +153,35 @@ def add_to_vector_store(
     # Convert blog_context into LangChain Document objects
     uuids = [str(uuid4()) for _ in documents_with_metadata]
 
-    logger.info(f"\n📦 Preparing to insert {len(documents_with_metadata)} documents into FAISS...\n")
+    logger.info(f"\nPreparing to insert {len(documents_with_metadata)} documents into FAISS...\n")
 
-    for i in tqdm(range(0, len(documents_with_metadata), batch_size), desc="🔍 Embedding & Inserting", unit="batch"):
+    for i in tqdm(range(0, len(documents_with_metadata), batch_size), desc="Embedding & Inserting", unit="batch"):
         try:
             batch_docs = documents_with_metadata[i:i+batch_size]
             batch_ids = uuids[i:i+batch_size]
-            vector_store.add_documents(documents=batch_docs, ids=batch_ids)
+            _add_batch_with_retry(vector_store, batch_docs, batch_ids)
         except Exception as e:
-            logger.info(f"⚠️ Error during batch insertion: {str(e)}")
+            logger.error(f"Error during batch insertion after retries: {str(e)}", exc_info=True)
             return False
 
-    logger.info("✅ Documents successfully inserted into FAISS")
+    logger.info("Documents successfully inserted into FAISS")
 
     # Save index
     vector_store.save_local(vector_store_path)
-    logger.info(f"💾 Vector store saved at {vector_store_path}")
+    logger.info(f"Vector store saved at {vector_store_path}")
     return True
+
+@retry(
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1, min=2, max=30),
+    retry=retry_if_exception_type(Exception),
+    before_sleep=lambda retry_state: logger.warning(
+        f"Retrying embedding batch (attempt {retry_state.attempt_number})"
+    ),
+)
+def _add_batch_with_retry(vector_store, batch_docs, batch_ids):
+    """Add a batch of documents to the vector store with retry on failure."""
+    vector_store.add_documents(documents=batch_docs, ids=batch_ids)
 
 def load_vector_store(file_path: str = None) -> FAISS:
     """
@@ -206,10 +219,71 @@ def load_vector_store(file_path: str = None) -> FAISS:
 
     vector_store = FAISS.load_local(
         file_path,
-        get_hf_embedding(),
+        get_embedding(),
         allow_dangerous_deserialization=True
     )
     return vector_store
+
+def search_vector_store(
+    query: str,
+    workspace_id: str,
+    knowledge_base_id: str = None,
+    k: int = 10,
+    score_threshold: float = None,
+) -> list[dict]:
+    """
+    Search the FAISS vector store for documents similar to the query.
+
+    Performs semantic similarity search with workspace-level isolation
+    via metadata filtering.
+
+    Args:
+        query: The search query text.
+        workspace_id: Workspace ID for multi-tenant isolation (required).
+        knowledge_base_id: Optional KB ID to narrow search scope.
+        k: Maximum number of results to return (default 10).
+        score_threshold: Optional maximum L2 distance score. Lower is more similar.
+                        Results with score above this threshold are excluded.
+
+    Returns:
+        List of dicts with keys: content, metadata, score.
+    """
+    vector_store = load_vector_store()
+
+    # Build metadata filter for workspace isolation
+    filter_dict = {"workspace_id": workspace_id}
+    if knowledge_base_id:
+        filter_dict["knowledge_base_id"] = knowledge_base_id
+
+    results_with_scores = vector_store.similarity_search_with_score(
+        query=query,
+        k=k,
+        filter=filter_dict,
+    )
+
+    search_results = []
+    for doc, score in results_with_scores:
+        # If score_threshold is set, skip results above the threshold
+        if score_threshold is not None and score > score_threshold:
+            continue
+
+        search_results.append({
+            "content": doc.page_content,
+            "metadata": doc.metadata,
+            "score": round(float(score), 4),
+        })
+
+    logger.info(
+        f"Search completed",
+        extra={
+            "workspace_id": workspace_id,
+            "query_length": len(query),
+            "results_returned": len(search_results),
+            "k": k,
+        },
+    )
+
+    return search_results
 
 def delete_vectors(
     vector_id: str = None,

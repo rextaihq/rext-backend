@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import Literal
+from typing import Literal, List
 
 
 class SEOIntentOutput(BaseModel):
@@ -19,3 +19,9 @@ class SEOIntentOutput(BaseModel):
     is_brand: bool = Field(
         description="Whether the content is brand-focused or generic"
     )
+
+class SEOIntentResult(SEOIntentOutput):
+    domain: str = Field(description="The domain of the competitor")
+
+class BatchSEOIntentOutput(BaseModel):
+    results: List[SEOIntentResult] = Field(description="List of SEO intent classifications for competitors")

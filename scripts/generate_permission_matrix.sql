@@ -5,7 +5,7 @@
 -- permissions are assigned to each role.
 --
 -- Usage:
---   psql -d wrext_db -f scripts/generate_permission_matrix.sql > matrix.txt
+--   psql -d rext_db -f scripts/generate_permission_matrix.sql > matrix.txt
 --   OR
 --   Run via DBeaver, pgAdmin, or any PostgreSQL client
 --

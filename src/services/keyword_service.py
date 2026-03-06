@@ -1,5 +1,5 @@
 from typing import Dict, Any, List, Tuple
-from src.flow.states.wrext import WREXT
+from src.flow.states.rext import REXT
 from nltk.corpus import stopwords
 from nltk.tokenize import word_tokenize
 from nltk.util import ngrams
@@ -88,8 +88,13 @@ class KeywordExtractor:
             documents.append(titles)
         
         # Document 2: All snippets (medium weight - context and variations)
-        snippets = ' '.join([
-            result.get('snippet', '') 
+        # snippets = ' '.join([
+        #     result.get('snippet', '') 
+        #     for result in (normalize_results or [])
+        # ])
+
+        snippets = ' '.join([  
+            (result.get('snippet') or '')
             for result in (normalize_results or [])
         ])
         if snippets.strip():
@@ -210,7 +215,8 @@ class KeywordExtractor:
             return keyword_scores
             
         except Exception as e:
-            print(f"TF-IDF calculation error: {e}")
+            import logging
+            logging.getLogger(__name__).warning(f"TF-IDF calculation error: {e}")
             return {}
     
     def _boost_keyword_scores(
@@ -340,21 +346,30 @@ class KeywordExtractor:
         self,
         serp_normalized: Dict[str, Any],
         extracted_keywords: List[Dict[str, Any]] = None,
-        top_n: int = 5
+        seo_opportunity: Dict[str, Any] = None,
+        competitors_gap: Dict[str, Any] = None,
+        keyword_difficulty: Dict[str, Any] = None,
+        top_n: int = 10
     ) -> Dict[str, Any]:
         """
         Generate Google autocomplete-style keyword recommendations.
         
-        Uses related topics, questions, and high-value keywords from SERP data
-        to suggest better keyword variations.
+        Utilizes ALL SEO signals:
+        - Keyword Difficulty: Prioritize easier keywords
+        - SEO Opportunity: Boost high-opportunity topics
+        - Competitor Gaps: Surface missing topics/questions
+        - Extracted Keywords: TF-IDF ranked keywords
         
         Args:
             serp_normalized: SERP data containing query, normalize_results, related_topics
-            extracted_keywords: Pre-extracted keywords with scores
+            extracted_keywords: Pre-extracted keywords with TF-IDF scores
+            seo_opportunity: Opportunity analysis from seo_opportunity_node
+            competitors_gap: Gap analysis from competitors_gap_node
+            keyword_difficulty: Difficulty analysis from keyword_difficulty_node
             top_n: Number of recommendations to generate
             
         Returns:
-            Dict containing keyword recommendations
+            Dict containing ranked keyword recommendations with composite scores
         """
         query = serp_normalized.get("query", "")
         normalize_results = serp_normalized.get("normalize_results", [])
@@ -368,97 +383,263 @@ class KeywordExtractor:
         query_words = set(query_lower.split())
         query_word_count = len(query.split())
         
-        recommendations = []
+        # Extract SEO signals
+        difficulty_score = keyword_difficulty.get("difficulty_score", 50) if keyword_difficulty else 50
+        difficulty_level = keyword_difficulty.get("difficulty_level", "medium") if keyword_difficulty else "medium"
+        
+        opportunity = seo_opportunity or {}
+        opportunity_score = opportunity.get("opportunity_score", 50)
+        opportunity_level = opportunity.get("opportunity_level", "medium")
+        
+        gaps = competitors_gap or {}
+        missing_topics = gaps.get("missing_topics", [])
+        missing_questions = gaps.get("missing_questions", [])
+        weak_areas = gaps.get("weak_coverage_areas", [])
+        
+        # Candidate pool with source tracking
+        candidates = []
         seen_keywords = {query_lower}
         
-        # Priority 1: Related topics (best quality suggestions)
-        for i, topic in enumerate(related_topics):
+        # ==================================
+        # PRIORITY 1: Missing Topics (Gap Analysis)
+        # These are topics competitors cover but we could do better
+        # ==================================
+        for topic in missing_topics[:5]:
+            topic_clean = topic.strip() if isinstance(topic, str) else str(topic)
+            topic_lower = topic_clean.lower()
+            
+            if topic_lower in seen_keywords or not topic_clean:
+                continue
+            
+            seen_keywords.add(topic_lower)
+            candidates.append({
+                "keyword": topic_clean,
+                "source": "gap_topic",
+                "base_score": 95,  # High priority - competitors are missing this
+                "opportunity_boost": 20,  # High opportunity
+                "difficulty_modifier": 0,
+                "relevance_boost": 10 if any(w in topic_lower for w in query_words) else 0
+            })
+        
+        # ==================================
+        # PRIORITY 2: Missing Questions (PAA Gaps)
+        # Questions that appear in SERP but competitors don't answer
+        # ==================================
+        for question in missing_questions[:5]:
+            q_text = question.strip() if isinstance(question, str) else str(question)
+            q_lower = q_text.lower()
+            
+            if q_lower in seen_keywords or not q_text:
+                continue
+            
+            # Create keyword version of question
+            q_clean = self._clean_text(q_text)
+            question_prefixes = {"what", "how", "why", "when", "where", "who", "which", "is", "are", "do", "does", "can"}
+            filtered = [w for w in q_clean.split() if w not in question_prefixes]
+            keyword = " ".join(filtered[:query_word_count + 3])
+            
+            if keyword.lower() in seen_keywords or len(keyword) < 4:
+                continue
+            
+            seen_keywords.add(keyword.lower())
+            candidates.append({
+                "keyword": keyword,
+                "source": "gap_question",
+                "base_score": 90,
+                "opportunity_boost": 15,
+                "difficulty_modifier": 0,
+                "relevance_boost": 15 if any(w in keyword.lower() for w in query_words) else 5
+            })
+        
+        # ==================================
+        # PRIORITY 3: Weak Coverage Areas
+        # Topics with minimal competitor coverage (opportunity!)
+        # ==================================
+        for topic in weak_areas[:5]:
+            topic_clean = topic.strip() if isinstance(topic, str) else str(topic)
+            topic_lower = topic_clean.lower()
+            
+            if topic_lower in seen_keywords or not topic_clean:
+                continue
+            
+            seen_keywords.add(topic_lower)
+            candidates.append({
+                "keyword": topic_clean,
+                "source": "weak_coverage",
+                "base_score": 85,
+                "opportunity_boost": 25,  # Very high opportunity (weak competition)
+                "difficulty_modifier": -10,  # Likely easier to rank
+                "relevance_boost": 10 if any(w in topic_lower for w in query_words) else 0
+            })
+        
+        # ==================================
+        # PRIORITY 4: Related Topics (Google suggestions)
+        # These are from "People also search" - reliable signals
+        # ==================================
+        for topic in related_topics:
             topic_text = topic if isinstance(topic, str) else topic.get("topic", "")
-            if topic_text:
-                topic_clean = topic_text.strip()
-                topic_lower = topic_clean.lower()
-                
-                # Skip if same as query or already seen
-                if topic_lower in seen_keywords:
-                    continue
-                
-                # Check word count (max query + 2 words)
-                topic_word_count = len(topic_clean.split())
-                if topic_word_count <= query_word_count + 2:
-                    seen_keywords.add(topic_lower)
-                    recommendations.append({
-                        "keyword": topic_clean,
-                        "score": round(100 - (len(recommendations) * 5), 1),
-                        "rank": len(recommendations) + 1,
-                        "word_count": topic_word_count,
-                        "source": "related_topic"
-                    })
-                
-                if len(recommendations) >= top_n:
-                    break
+            if not topic_text:
+                continue
+            
+            topic_clean = topic_text.strip()
+            topic_lower = topic_clean.lower()
+            
+            if topic_lower in seen_keywords:
+                continue
+            
+            topic_word_count = len(topic_clean.split())
+            if topic_word_count > query_word_count + 3:
+                continue
+            
+            seen_keywords.add(topic_lower)
+            candidates.append({
+                "keyword": topic_clean,
+                "source": "related_topic",
+                "base_score": 80,
+                "opportunity_boost": 5,
+                "difficulty_modifier": 0,
+                "relevance_boost": 15 if any(w in topic_lower for w in query_words) else 0
+            })
         
-        # Priority 2: Questions (good for long-tail keywords)
-        if len(recommendations) < top_n:
-            for question in questions:
-                q_text = question if isinstance(question, str) else question.get("question", "")
-                if q_text:
-                    # Extract short version of question (remove question words)
-                    q_clean = self._clean_text(q_text)
-                    q_words = q_clean.split()
-                    
-                    # Remove question words and keep relevant part
-                    question_words = {"what", "how", "why", "when", "where", "who", "which", "is", "are", "do", "does", "can"}
-                    filtered_words = [w for w in q_words if w.lower() not in question_words]
-                    
-                    if filtered_words:
-                        keyword = " ".join(filtered_words[:query_word_count + 2])
-                        keyword_lower = keyword.lower()
-                        
-                        if keyword_lower not in seen_keywords and len(keyword) > 3:
-                            seen_keywords.add(keyword_lower)
-                            recommendations.append({
-                                "keyword": keyword,
-                                "score": round(80 - (len(recommendations) * 5), 1),
-                                "rank": len(recommendations) + 1,
-                                "word_count": len(keyword.split()),
-                                "source": "question"
-                            })
-                
-                if len(recommendations) >= top_n:
-                    break
+        # ==================================
+        # PRIORITY 5: PAA Questions (high intent)
+        # Questions from SERP - good for long-tail
+        # ==================================
+        for question in questions:
+            q_text = question if isinstance(question, str) else question.get("question", "")
+            if not q_text:
+                continue
+            
+            q_clean = self._clean_text(q_text)
+            question_prefixes = {"what", "how", "why", "when", "where", "who", "which", "is", "are", "do", "does", "can"}
+            filtered = [w for w in q_clean.split() if w not in question_prefixes]
+            keyword = " ".join(filtered[:query_word_count + 2])
+            keyword_lower = keyword.lower()
+            
+            if keyword_lower in seen_keywords or len(keyword) < 4:
+                continue
+            
+            seen_keywords.add(keyword_lower)
+            candidates.append({
+                "keyword": keyword,
+                "source": "paa_question",
+                "base_score": 75,
+                "opportunity_boost": 10,
+                "difficulty_modifier": 0,
+                "relevance_boost": 10 if any(w in keyword_lower for w in query_words) else 0
+            })
         
-        # Priority 3: Extracted keywords with good TF-IDF scores
-        if len(recommendations) < top_n and extracted_keywords:
-            for kw_data in extracted_keywords:
-                keyword = kw_data["keyword"]
+        # ==================================
+        # PRIORITY 6: Extracted Keywords (TF-IDF)
+        # High-frequency keywords from competitor content
+        # ==================================
+        if extracted_keywords:
+            for kw_data in extracted_keywords[:20]:  # Top 20 TF-IDF keywords
+                keyword = kw_data.get("keyword", "")
                 keyword_lower = keyword.lower()
-                keyword_word_count = len(keyword.split())
                 
-                # Skip if already seen or too long
                 if keyword_lower in seen_keywords:
                     continue
+                
+                keyword_word_count = len(keyword.split())
                 if keyword_word_count > query_word_count + 2:
                     continue
                 
-                # Check if shares words with query (relevance check)
+                tfidf_score = kw_data.get("score", 0)
                 kw_words = set(keyword_lower.split())
-                if kw_words.intersection(query_words) or kw_data["score"] > 50:
-                    seen_keywords.add(keyword_lower)
-                    recommendations.append({
-                        "keyword": keyword,
-                        "score": kw_data["score"],
-                        "rank": len(recommendations) + 1,
-                        "word_count": keyword_word_count,
-                        "source": "tfidf"
-                    })
                 
-                if len(recommendations) >= top_n:
-                    break
+                # Only include if relevant to query or high TF-IDF
+                if not kw_words.intersection(query_words) and tfidf_score < 50:
+                    continue
+                
+                seen_keywords.add(keyword_lower)
+                candidates.append({
+                    "keyword": keyword,
+                    "source": "tfidf",
+                    "base_score": min(70, tfidf_score * 0.7),
+                    "opportunity_boost": 0,
+                    "difficulty_modifier": 0,
+                    "relevance_boost": 20 if kw_words.intersection(query_words) else 0
+                })
+        
+        # ==================================
+        # CALCULATE FINAL COMPOSITE SCORES
+        # ==================================
+        recommendations = []
+        
+        # Apply global modifiers based on SEO signals
+        difficulty_bonus = {
+            "easy": 15,
+            "medium": 5,
+            "hard": -5,
+            "very_hard": -15
+        }.get(difficulty_level, 0)
+        
+        opportunity_bonus = {
+            "high": 15,
+            "medium": 5,
+            "low": -5
+        }.get(opportunity_level, 0)
+        
+        for candidate in candidates:
+            # Calculate composite score
+            composite_score = (
+                candidate["base_score"]
+                + candidate["opportunity_boost"]
+                + candidate["difficulty_modifier"]
+                + candidate["relevance_boost"]
+                + difficulty_bonus  # Global difficulty context
+                + opportunity_bonus  # Global opportunity context
+            )
+            
+            # Clamp to 0-100
+            composite_score = max(0, min(100, composite_score))
+            
+            recommendations.append({
+                "keyword": candidate["keyword"],
+                "score": round(composite_score, 1),
+                "source": candidate["source"],
+                "word_count": len(candidate["keyword"].split()),
+                "opportunity": self._get_opportunity_label(composite_score),
+                "difficulty": difficulty_level  # All inherit from main query for now
+            })
+        
+        # Sort by composite score descending
+        recommendations.sort(key=lambda x: x["score"], reverse=True)
+        
+        # Assign ranks
+        for i, rec in enumerate(recommendations[:top_n], 1):
+            rec["rank"] = i
         
         return {
             "original_title": query,
             "recommendations": recommendations[:top_n],
-            "patterns_found": {"sources_used": len(recommendations)},
+            "patterns_found": {
+                "gap_topics": len([c for c in candidates if c["source"] == "gap_topic"]),
+                "gap_questions": len([c for c in candidates if c["source"] == "gap_question"]),
+                "weak_areas": len([c for c in candidates if c["source"] == "weak_coverage"]),
+                "related_topics": len([c for c in candidates if c["source"] == "related_topic"]),
+                "paa_questions": len([c for c in candidates if c["source"] == "paa_question"]),
+                "tfidf_keywords": len([c for c in candidates if c["source"] == "tfidf"])
+            },
+            "seo_context": {
+                "query_difficulty": difficulty_level,
+                "query_difficulty_score": difficulty_score,
+                "opportunity_level": opportunity_level,
+                "opportunity_score": opportunity_score,
+                "content_gaps_detected": len(missing_topics) + len(missing_questions) + len(weak_areas)
+            },
             "top_keywords_used": [r["keyword"] for r in recommendations[:5]],
             "total_competitors_analyzed": len(normalize_results)
         }
+    
+    def _get_opportunity_label(self, score: float) -> str:
+        """Convert composite score to opportunity label."""
+        if score >= 85:
+            return "excellent"
+        elif score >= 70:
+            return "high"
+        elif score >= 50:
+            return "medium"
+        else:
+            return "low"

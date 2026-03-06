@@ -7,11 +7,6 @@ from typing import List, Optional
 def bool_score(value: Optional[bool]) -> int:
     return 1 if value else 0
 
-'''
-def list_score(value: Optional[List]) -> int:
-    return len(value) if value else 0
-
-'''
 
 def heading_complexity_score(value: Optional[str]) -> int:
     mapping = {"simple": 1, "moderate": 2, "complex": 3}

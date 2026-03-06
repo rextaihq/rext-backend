@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Database management script for wrext-backend
+Database management script for rext-backend
 
 Usage:
     python scripts/db.py reset    - Reset database (drops all data)
@@ -59,9 +59,12 @@ def run_migrations():
     else:  # macOS/Linux
         venv_alembic = project_root / ".venv" / "bin" / "alembic"
 
+    # Fallback to system alembic if venv one doesn't exist
+    alembic_cmd = str(venv_alembic) if venv_alembic.exists() else "alembic"
+
     try:
         result = subprocess.run(
-            [str(venv_alembic), "upgrade", "head"],
+            [alembic_cmd, "upgrade", "head"],
             cwd=project_root,
             capture_output=True,
             text=True,
@@ -87,9 +90,12 @@ def check_status():
     else:  # macOS/Linux
         venv_alembic = project_root / ".venv" / "bin" / "alembic"
 
+    # Fallback to system alembic if venv one doesn't exist
+    alembic_cmd = str(venv_alembic) if venv_alembic.exists() else "alembic"
+
     try:
         result = subprocess.run(
-            [str(venv_alembic), "current"],
+            [alembic_cmd, "current"],
             cwd=project_root,
             capture_output=True,
             text=True,
@@ -120,7 +126,7 @@ async def seed_database():
 
     print("\n✅ Database seeded successfully!")
     print("   Super admin credentials:")
-    print(f"   Email: {os.getenv('SUPER_ADMIN_EMAIL', 'admin@wrext.com')}")
+    print(f"   Email: {os.getenv('SUPER_ADMIN_EMAIL', 'admin@rext.com')}")
     print(f"   Password: {os.getenv('SUPER_ADMIN_PASSWORD', '[see .env]')}")
 
 

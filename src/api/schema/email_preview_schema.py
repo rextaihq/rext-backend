@@ -6,6 +6,7 @@ Request/response schemas for email preview endpoint.
 from pydantic import BaseModel, Field
 from typing import Optional, Dict, Any, Literal
 from uuid import UUID
+from src.utils.invitation_utils import MIN_EXPIRY_DAYS, MAX_EXPIRY_DAYS
 
 
 class AuthEmailPreviewRequest(BaseModel):
@@ -103,8 +104,8 @@ class WorkspaceEmailPreviewRequest(BaseModel):
     expiry_days: int = Field(
         default=7,
         description="Days until expiration",
-        ge=1,
-        le=30
+        ge=MIN_EXPIRY_DAYS,
+        le=MAX_EXPIRY_DAYS
     )
     reason: Optional[str] = Field(
         None,
@@ -157,8 +158,8 @@ class EmailPreviewResponse(BaseModel):
             "example": {
                 "html": "<!DOCTYPE html><html>...</html>",
                 "template_type": "verification",
-                "subject": "Verify Your Email Address - WREXT",
-                "preview_text": "Welcome to WREXT! Verify your email to get started.",
+                "subject": "Verify Your Email Address - REXT",
+                "preview_text": "Welcome to REXT! Verify your email to get started.",
                 "metadata": {
                     "template_name": "Email Verification",
                     "size_bytes": 8192

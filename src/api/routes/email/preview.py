@@ -7,9 +7,11 @@ Useful for testing and debugging email designs.
 from fastapi import APIRouter, HTTPException, Depends
 from fastapi.responses import HTMLResponse
 from typing import Literal
-import os
+import uuid
+
 
 from src.api.config import get_settings
+from src.api.database.async_database import AsyncSession, get_async_db
 from src.api.schema.email_preview_schema import (
     AuthEmailPreviewRequest,
     WorkspaceEmailPreviewRequest,
@@ -45,16 +47,16 @@ def get_subject_for_template(template_type: str, **kwargs) -> str:
     """Get suggested subject line for template type."""
     subjects = {
         # Auth templates
-        "verification": "Verify Your Email Address - WREXT",
-        "password_reset": "Reset Your Password - WREXT",
-        "welcome": "Welcome to WREXT!",
+        "verification": "Verify Your Email Address - REXT",
+        "password_reset": "Reset Your Password - REXT",
+        "welcome": "Welcome to REXT!",
         # Workspace templates
         "invitation": f"You've been invited to join {kwargs.get('workspace_name', 'a workspace')}",
         "invitation_accepted": f"New member joined {kwargs.get('workspace_name', 'your workspace')}",
         "role_changed": f"Your role in {kwargs.get('workspace_name', 'the workspace')} has been updated",
         "member_removed": f"Removed from {kwargs.get('workspace_name', 'workspace')}"
     }
-    return subjects.get(template_type, "Email from WREXT")
+    return subjects.get(template_type, "Email from REXT")
 
 
 def extract_preview_text(html: str) -> str:
@@ -68,10 +70,11 @@ def extract_preview_text(html: str) -> str:
 
 
 @router.post("/auth", response_model=EmailPreviewResponse)
-@require_permissions("user.read")
+@require_permissions("user.read", workspace_scoped=False)
 async def preview_auth_email(
     request: AuthEmailPreviewRequest,
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_async_db)
 ):
     """
     Preview auth email templates.
@@ -139,19 +142,33 @@ async def preview_auth_email(
             }
         )
 
+    except HTTPException:
+        raise  # Re-raise client errors (400, etc.) as-is
     except Exception as e:
-        logger.error(f"Failed to preview auth email: {str(e)}")
+        error_id = str(uuid.uuid4())[:8]
+        logger.error(
+            "Failed to preview auth email",
+            extra={
+                "error_id": error_id,
+                "error": str(e),
+                "error_type": type(e).__name__,
+                "template_type": request.template_type,
+                "user_id": current_user.get("identity")
+            },
+            exc_info=True
+        )
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to generate preview: {str(e)}"
+            detail=f"Preview generation failed. Error ID: {error_id}"
         )
 
 
 @router.post("/workspace", response_model=EmailPreviewResponse)
-@require_permissions("user.read")
+@require_permissions("user.read", workspace_scoped=False)
 async def preview_workspace_email(
     request: WorkspaceEmailPreviewRequest,
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_async_db)
 ):
     """
     Preview workspace email templates.
@@ -244,16 +261,30 @@ async def preview_workspace_email(
             }
         )
 
+    except HTTPException:
+        raise  # Re-raise client errors (400, etc.) as-is
     except Exception as e:
-        logger.error(f"Failed to preview workspace email: {str(e)}")
+        error_id = str(uuid.uuid4())[:8]
+        logger.error(
+            "Failed to preview workspace email",
+            extra={
+                "error_id": error_id,
+                "error": str(e),
+                "error_type": type(e).__name__,
+                "template_type": request.template_type,
+                "workspace_name": request.workspace_name,
+                "user_id": current_user.get("identity")
+            },
+            exc_info=True
+        )
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to generate preview: {str(e)}"
+            detail=f"Preview generation failed. Error ID: {error_id}"
         )
 
 
 @router.post("/auth/html", response_class=HTMLResponse)
-@require_permissions("user.read")
+@require_permissions("user.read", workspace_scoped=False)
 async def preview_auth_email_html(
     request: AuthEmailPreviewRequest,
     current_user: dict = Depends(get_current_user)
@@ -271,7 +302,7 @@ async def preview_auth_email_html(
 
 
 @router.post("/workspace/html", response_class=HTMLResponse)
-@require_permissions("user.read")
+@require_permissions("user.read", workspace_scoped=False)
 async def preview_workspace_email_html(
     request: WorkspaceEmailPreviewRequest,
     current_user: dict = Depends(get_current_user)

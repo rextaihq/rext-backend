@@ -22,7 +22,7 @@ from typing import Any, Dict, List, Optional
 from src.api.schema.response_schemas import ErrorCode, ErrorSeverity
 
 
-class WrextAPIException(Exception):
+class RextAPIException(Exception):
     """
     Base exception class for all API-related errors.
 
@@ -63,7 +63,7 @@ class WrextAPIException(Exception):
 # VALIDATION EXCEPTIONS (4xx)
 # ============================================================================
 
-class WrextValidationException(WrextAPIException):
+class RextValidationException(RextAPIException):
     """Exception for validation errors."""
 
     def __init__(
@@ -92,7 +92,7 @@ class WrextValidationException(WrextAPIException):
         )
 
 
-class InvalidFormatException(WrextValidationException):
+class InvalidFormatException(RextValidationException):
     """Exception for invalid data format errors."""
 
     def __init__(self, field_name: str, expected_format: str, received_value: Any = None):
@@ -114,20 +114,23 @@ class InvalidFormatException(WrextValidationException):
 # AUTHENTICATION & AUTHORIZATION EXCEPTIONS (401/403)
 # ============================================================================
 
-class WrextAuthenticationException(WrextAPIException):
+class RextAuthenticationException(RextAPIException):
     """Exception for authentication errors."""
 
     def __init__(self, message: str = "Authentication failed", **kwargs):
+        # Allow overriding error_code from subclasses (like TokenExpiredException)
+        error_code = kwargs.pop('error_code', ErrorCode.UNAUTHORIZED)
+        
         super().__init__(
             message=message,
-            error_code=ErrorCode.UNAUTHORIZED,
+            error_code=error_code,
             status_code=401,
             severity=ErrorSeverity.MEDIUM,
             **kwargs
         )
 
 
-class WrextAuthorizationException(WrextAPIException):
+class RextAuthorizationException(RextAPIException):
     """Exception for authorization errors."""
 
     def __init__(self, message: str = "Access forbidden", resource: str = None, **kwargs):
@@ -140,9 +143,12 @@ class WrextAuthorizationException(WrextAPIException):
         if required_permission:
             context['required_permission'] = required_permission
 
+        # Allow overriding error_code from subclasses (like WorkspaceAccessDeniedException)
+        error_code = kwargs.pop('error_code', ErrorCode.FORBIDDEN)
+
         super().__init__(
             message=message,
-            error_code=ErrorCode.FORBIDDEN,
+            error_code=error_code,
             status_code=403,
             severity=ErrorSeverity.MEDIUM,
             context=context,
@@ -150,7 +156,7 @@ class WrextAuthorizationException(WrextAPIException):
         )
 
 
-class TokenExpiredException(WrextAuthenticationException):
+class TokenExpiredException(RextAuthenticationException):
     """Exception for expired authentication tokens."""
 
     def __init__(self, message: str = "Authentication token has expired"):
@@ -161,7 +167,7 @@ class TokenExpiredException(WrextAuthenticationException):
         )
 
 
-class InvalidAPIKeyException(WrextAuthenticationException):
+class InvalidAPIKeyException(RextAuthenticationException):
     """Exception for invalid API key errors."""
 
     def __init__(self, message: str = "Invalid or missing API key"):
@@ -175,12 +181,12 @@ class InvalidAPIKeyException(WrextAuthenticationException):
 # BUSINESS LOGIC EXCEPTIONS (400/404/409)
 # ============================================================================
 
-class WrextBusinessException(WrextAPIException):
+class RextBusinessException(RextAPIException):
     """Base class for business logic related exceptions."""
     pass
 
 
-class ResourceNotFoundException(WrextBusinessException):
+class ResourceNotFoundException(RextBusinessException):
     """Exception for when a requested resource is not found."""
 
     def __init__(
@@ -212,7 +218,7 @@ class ResourceNotFoundException(WrextBusinessException):
         )
 
 
-class DuplicateResourceException(WrextBusinessException):
+class DuplicateResourceException(RextBusinessException):
     """Exception for when trying to create a resource that already exists."""
 
     def __init__(
@@ -246,7 +252,7 @@ class DuplicateResourceException(WrextBusinessException):
         )
 
 
-class BusinessRuleViolationException(WrextBusinessException):
+class BusinessRuleViolationException(RextBusinessException):
     """Exception for business rule violations."""
 
     def __init__(
@@ -269,7 +275,7 @@ class BusinessRuleViolationException(WrextBusinessException):
         )
 
 
-class QuotaExceededException(WrextBusinessException):
+class QuotaExceededException(RextBusinessException):
     """Exception for quota/limit exceeded errors."""
 
     def __init__(
@@ -297,7 +303,7 @@ class QuotaExceededException(WrextBusinessException):
         )
 
 
-class RateLimitExceededException(WrextBusinessException):
+class RateLimitExceededException(RextBusinessException):
     """Exception for rate limit exceeded errors."""
 
     def __init__(
@@ -325,7 +331,7 @@ class RateLimitExceededException(WrextBusinessException):
 # EXTERNAL SERVICE EXCEPTIONS (502/503)
 # ============================================================================
 
-class WrextExternalServiceException(WrextAPIException):
+class RextExternalServiceException(RextAPIException):
     """Exception for external service related errors."""
 
     def __init__(
@@ -341,9 +347,12 @@ class WrextExternalServiceException(WrextAPIException):
             "service_error": service_error
         })
 
+        # Allow overriding error_code from subclasses (like DatabaseConnectionException)
+        error_code = kwargs.pop('error_code', ErrorCode.EXTERNAL_SERVICE_ERROR)
+
         super().__init__(
             message=message,
-            error_code=ErrorCode.EXTERNAL_SERVICE_ERROR,
+            error_code=error_code,
             status_code=502,
             severity=ErrorSeverity.HIGH,
             context=context,
@@ -351,7 +360,7 @@ class WrextExternalServiceException(WrextAPIException):
         )
 
 
-class ExternalServiceTimeoutException(WrextExternalServiceException):
+class ExternalServiceTimeoutException(RextExternalServiceException):
     """Exception for external service timeout errors."""
 
     def __init__(
@@ -379,7 +388,7 @@ class ExternalServiceTimeoutException(WrextExternalServiceException):
         )
 
 
-class DatabaseConnectionException(WrextExternalServiceException):
+class DatabaseConnectionException(RextExternalServiceException):
     """Exception for database connection errors."""
 
     def __init__(
@@ -402,7 +411,7 @@ class DatabaseConnectionException(WrextExternalServiceException):
 # DOMAIN-SPECIFIC EXCEPTIONS
 # ============================================================================
 
-class TopicGenerationException(WrextBusinessException):
+class TopicGenerationException(RextBusinessException):
     """Exception for topic generation specific errors."""
 
     def __init__(
@@ -437,7 +446,7 @@ class WorkspaceNotFoundException(ResourceNotFoundException):
         )
 
 
-class WorkspaceAccessDeniedException(WrextAuthorizationException):
+class WorkspaceAccessDeniedException(RextAuthorizationException):
     """Exception for workspace access denied errors."""
 
     def __init__(self, workspace_id: str, user_id: str = None, **kwargs):
@@ -457,7 +466,7 @@ class WorkspaceAccessDeniedException(WrextAuthorizationException):
         )
 
 
-class KnowledgeProcessingException(WrextBusinessException):
+class KnowledgeProcessingException(RextBusinessException):
     """Exception for knowledge processing errors."""
 
     def __init__(
@@ -491,7 +500,7 @@ def create_exception_from_error_code(
     error_code: ErrorCode,
     message: str,
     **kwargs
-) -> WrextAPIException:
+) -> RextAPIException:
     """
     Create an appropriate exception instance based on error code.
 
@@ -501,12 +510,12 @@ def create_exception_from_error_code(
         **kwargs: Additional exception parameters
 
     Returns:
-        WrextAPIException: Appropriate exception instance
+        RextAPIException: Appropriate exception instance
     """
     exception_map = {
-        ErrorCode.VALIDATION_FAILED: WrextValidationException,
-        ErrorCode.UNAUTHORIZED: WrextAuthenticationException,
-        ErrorCode.FORBIDDEN: WrextAuthorizationException,
+        ErrorCode.VALIDATION_FAILED: RextValidationException,
+        ErrorCode.UNAUTHORIZED: RextAuthenticationException,
+        ErrorCode.FORBIDDEN: RextAuthorizationException,
         ErrorCode.TOKEN_EXPIRED: TokenExpiredException,
         ErrorCode.API_KEY_INVALID: InvalidAPIKeyException,
         ErrorCode.RESOURCE_NOT_FOUND: ResourceNotFoundException,
@@ -514,14 +523,14 @@ def create_exception_from_error_code(
         ErrorCode.BUSINESS_RULE_VIOLATION: BusinessRuleViolationException,
         ErrorCode.QUOTA_EXCEEDED: QuotaExceededException,
         ErrorCode.RATE_LIMIT_EXCEEDED: RateLimitExceededException,
-        ErrorCode.EXTERNAL_SERVICE_ERROR: WrextExternalServiceException,
+        ErrorCode.EXTERNAL_SERVICE_ERROR: RextExternalServiceException,
         ErrorCode.EXTERNAL_SERVICE_TIMEOUT: ExternalServiceTimeoutException,
         ErrorCode.DATABASE_CONNECTION_ERROR: DatabaseConnectionException,
         ErrorCode.TOPIC_GENERATION_FAILED: TopicGenerationException,
         ErrorCode.KNOWLEDGE_PROCESSING_FAILED: KnowledgeProcessingException,
     }
 
-    exception_class = exception_map.get(error_code, WrextAPIException)
+    exception_class = exception_map.get(error_code, RextAPIException)
 
     # Remove error_code from kwargs if present to avoid duplicate parameter
     kwargs.pop('error_code', None)

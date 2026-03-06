@@ -1,5 +1,5 @@
 """
-WREXT Email Templates Package
+REXT Email Templates Package
 
 Python-based email template system with reusable components.
 Generates HTML emails compatible with all major email clients.
@@ -13,7 +13,7 @@ Usage:
     html = compose_email([
         simple_header("My Workspace"),
         "<h1>Welcome!</h1>",
-        primary_button("Get Started", "https://app.wrext.com"),
+        primary_button("Get Started", "https://app.rext.com"),
         simple_footer()
     ])
 """

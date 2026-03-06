@@ -1,4 +1,5 @@
 import logging
+import os
 from typing import Optional, List, Union
 from crawl4ai.async_configs import BrowserConfig, CrawlerRunConfig
 from crawl4ai import CacheMode
@@ -29,9 +30,8 @@ class CrawlerConfiguration(MarkdownGeneratorFactory):
     def get_browser_config(
         self,
         headless: bool = True,
-        user_data_dir: Optional[str] = None,
         ignore_https_errors: bool = True,
-        verbose: bool = True,
+        verbose: bool = os.getenv("DEBUG", "false").lower() == "true",
     ) -> BrowserConfig:
         """
         Generate the browser configuration for scraping.
@@ -73,7 +73,7 @@ class CrawlerConfiguration(MarkdownGeneratorFactory):
             word_count_threshold=200,
             markdown_generator=self.get_markdown_generator(),
             remove_forms=True, # Optimization: remove forms
-            prettiify=True,
+            prettiify=True,  # NOTE: Intentional spelling — matches crawl4ai's parameter name
             parser_type="lxml",
             excluded_tags=[ # Scripts & styles
             "script",
@@ -138,9 +138,9 @@ class CrawlerConfiguration(MarkdownGeneratorFactory):
             adjust_viewport_to_content=True,
             cache_mode=cache_mode,
             score_links=True,
-            link_preview_config=self._get_link_score(
-                threshold=0.3,
-                max_links=10,
-                verbose=False
-            )
+            # link_preview_config=self._get_link_score(
+            #     threshold=0.3,
+            #     max_links=10,
+            #     verbose=False
+            # )
         )

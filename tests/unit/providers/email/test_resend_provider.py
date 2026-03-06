@@ -22,8 +22,8 @@ class TestResendEmailProviderInitialization:
     def test_initialization_success(self, mock_config):
         """Should initialize with valid API key"""
         mock_config.resend_api_key = "re_test_key_123"
-        mock_config.resend_from_email = "noreply@wrext.com"
-        mock_config.resend_from_name = "WREXT"
+        mock_config.resend_from_email = "noreply@rext.com"
+        mock_config.resend_from_name = "REXT"
 
         with patch('src.providers.email.resend_provider.resend') as mock_resend:
             provider = ResendEmailProvider()
@@ -58,12 +58,12 @@ class TestResendEmailProviderSendEmail:
         """Should send email successfully via Resend API"""
         # Setup
         mock_config.resend_api_key = "re_test_key"
-        mock_config.resend_from_email = "noreply@wrext.com"
-        mock_config.resend_from_name = "WREXT"
+        mock_config.resend_from_email = "noreply@rext.com"
+        mock_config.resend_from_name = "REXT"
 
         mock_resend.Emails.send.return_value = {
             "id": "msg_abc123",
-            "from": "WREXT <noreply@wrext.com>",
+            "from": "REXT <noreply@rext.com>",
             "to": ["test@example.com"],
             "created_at": "2025-10-12T00:00:00Z"
         }
@@ -74,8 +74,8 @@ class TestResendEmailProviderSendEmail:
             to=[EmailRecipient(email="test@example.com", name="Test User")],
             subject="Test Email",
             html="<p>Test Body</p>",
-            from_email="noreply@wrext.com",
-            from_name="WREXT"
+            from_email="noreply@rext.com",
+            from_name="REXT"
         )
 
         # Execute
@@ -90,7 +90,7 @@ class TestResendEmailProviderSendEmail:
         # Verify Resend API was called correctly
         mock_resend.Emails.send.assert_called_once()
         call_args = mock_resend.Emails.send.call_args[0][0]
-        assert call_args["from"] == "WREXT <noreply@wrext.com>"
+        assert call_args["from"] == "REXT <noreply@rext.com>"
         assert call_args["to"] == ["Test User <test@example.com>"]
         assert call_args["subject"] == "Test Email"
         assert call_args["html"] == "<p>Test Body</p>"
@@ -112,7 +112,7 @@ class TestResendEmailProviderSendEmail:
             ],
             subject="Test",
             html="<p>Test</p>",
-            from_email="from@wrext.com"
+            from_email="from@rext.com"
         )
 
         result = await provider.send_email(message)
@@ -138,7 +138,7 @@ class TestResendEmailProviderSendEmail:
             to=[EmailRecipient(email="to@example.com")],
             subject="Test",
             html="<p>Test</p>",
-            from_email="from@wrext.com",
+            from_email="from@rext.com",
             cc=[EmailRecipient(email="cc@example.com", name="CC User")],
             bcc=[EmailRecipient(email="bcc@example.com")]
         )
@@ -164,15 +164,15 @@ class TestResendEmailProviderSendEmail:
             to=[EmailRecipient(email="to@example.com")],
             subject="Test",
             html="<p>Test</p>",
-            from_email="from@wrext.com",
-            reply_to="reply@wrext.com"
+            from_email="from@rext.com",
+            reply_to="reply@rext.com"
         )
 
         result = await provider.send_email(message)
 
         assert result.success is True
         call_args = mock_resend.Emails.send.call_args[0][0]
-        assert call_args["reply_to"] == "reply@wrext.com"
+        assert call_args["reply_to"] == "reply@rext.com"
 
     @pytest.mark.asyncio
     @patch('src.providers.email.resend_provider.email_config')
@@ -188,7 +188,7 @@ class TestResendEmailProviderSendEmail:
             to=[EmailRecipient(email="to@example.com")],
             subject="Test",
             html="<p>Test</p>",
-            from_email="from@wrext.com",
+            from_email="from@rext.com",
             tags={"type": "auth", "action": "verify"}
         )
 
@@ -218,7 +218,7 @@ class TestResendEmailProviderSendEmail:
             to=[EmailRecipient(email="test@example.com")],  # No name
             subject="Test",
             html="<p>Test</p>",
-            from_email="from@wrext.com"
+            from_email="from@rext.com"
         )
 
         result = await provider.send_email(message)
@@ -245,7 +245,7 @@ class TestResendEmailProviderErrorHandling:
             to=[EmailRecipient(email="invalid@example.com")],
             subject="Test",
             html="<p>Test</p>",
-            from_email="from@wrext.com"
+            from_email="from@rext.com"
         )
 
         result = await provider.send_email(message)
@@ -268,7 +268,7 @@ class TestResendEmailProviderErrorHandling:
             to=[EmailRecipient(email="test@example.com")],
             subject="Test",
             html="<p>Test</p>",
-            from_email="from@wrext.com"
+            from_email="from@rext.com"
         )
 
         result = await provider.send_email(message)
@@ -290,7 +290,7 @@ class TestResendEmailProviderErrorHandling:
             to=[EmailRecipient(email="test@example.com")],
             subject="Test",
             html="<p>Test</p>",
-            from_email="from@wrext.com"
+            from_email="from@rext.com"
         )
 
         result = await provider.send_email(message)

@@ -1,3 +1,7 @@
+# NOTE: This seed migration is superseded by scripts/seeds/.
+# It remains in the migration chain for backward compatibility with existing databases.
+# For new environments, use: python -m scripts.seeds.run_all
+
 """seed005_default_email_templates
 
 Revision ID: seed005
@@ -6,7 +10,7 @@ Create Date: 2025-10-05 00:02:00.000000
 
 """
 from typing import Sequence, Union
-from datetime import datetime
+from datetime import datetime, timezone
 
 from alembic import op
 import sqlalchemy as sa
@@ -60,7 +64,7 @@ Click the link below to accept your invitation:
 This invitation will expire in 7 days.
 
 Best regards,
-The Wrext Team''',
+The Rext Team''',
         },
         {
             'template_type': 'invitation_accepted',
@@ -72,7 +76,7 @@ Good news! {invitee_name} ({invitee_email}) has accepted your invitation to join
 They now have {role_name} access to your workspace.
 
 Best regards,
-The Wrext Team''',
+The Rext Team''',
         },
         {
             'template_type': 'role_changed',
@@ -86,7 +90,7 @@ This change affects your permissions and access levels within the workspace.
 If you have any questions about your new role, please contact your workspace administrator.
 
 Best regards,
-The Wrext Team''',
+The Rext Team''',
         },
         {
             'template_type': 'member_removed',
@@ -100,7 +104,7 @@ You no longer have access to this workspace and its content.
 If you believe this was done in error, please contact the workspace administrator.
 
 Best regards,
-The Wrext Team''',
+The Rext Team''',
         },
         {
             'template_type': 'welcome',
@@ -119,7 +123,7 @@ You've been granted {role_name} access. Here's what you can do to get started:
 If you have any questions, don't hesitate to reach out to your workspace administrator.
 
 Best regards,
-The Wrext Team''',
+The Rext Team''',
         },
     ]
 
@@ -164,12 +168,12 @@ The Wrext Team''',
                 'template_type': template['template_type'],
                 'subject': template['subject'],
                 'body': template['body'],
-                'created_at': datetime.utcnow(),
-                'updated_at': datetime.utcnow(),
+                'created_at': datetime.now(timezone.utc).replace(tzinfo=None),
+                'updated_at': datetime.now(timezone.utc).replace(tzinfo=None),
             }
         )
 
-    print(f"✅ Created {len(templates)} system-wide email templates (global, not workspace-specific)")
+    print(f" Created {len(templates)} system-wide email templates (global, not workspace-specific)")
 
 
 def downgrade() -> None:

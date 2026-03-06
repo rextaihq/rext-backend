@@ -1,3 +1,7 @@
+# NOTE: This seed migration is superseded by scripts/seeds/.
+# It remains in the migration chain for backward compatibility with existing databases.
+# For new environments, use: python -m scripts.seeds.run_all
+
 """Seed comprehensive RBAC permissions
 
 Revision ID: seed009
@@ -21,7 +25,7 @@ Reference: roles-permissions-improvement-plan.md
 """
 from alembic import op
 import sqlalchemy as sa
-from datetime import datetime
+from datetime import datetime, timezone
 from uuid import uuid4
 
 
@@ -39,6 +43,7 @@ depends_on = None
 WORKSPACE_PERMISSIONS = [
     # Workspace Management
     ("workspace.read", "View Workspace", "workspace", "read", "View workspace details and settings"),
+    ("workspace.write", "Write Workspace", "workspace", "write", "Write workspace details and settings"),
     ("workspace.update", "Update Workspace", "workspace", "update", "Edit workspace settings"),
     ("workspace.delete", "Delete Workspace", "workspace", "delete", "Delete workspace permanently"),
     ("workspace.transfer", "Transfer Ownership", "workspace", "transfer", "Transfer workspace ownership to another user"),
@@ -129,7 +134,7 @@ ROLE_PERMISSION_ASSIGNMENTS = {
 
     "workspace_owner": [
         # Full workspace control including billing
-        "workspace.read", "workspace.update", "workspace.delete", "workspace.transfer",
+        "workspace.read", "workspace.write", "workspace.update", "workspace.delete", "workspace.transfer",
         "workspace.manage_members", "workspace.manage_roles", "workspace.invite",
 
         # BILLING & SUBSCRIPTION (OWNER ONLY!)
@@ -161,7 +166,7 @@ ROLE_PERMISSION_ASSIGNMENTS = {
 
     "workspace_admin": [
         # Workspace management (NO delete, NO transfer, NO billing)
-        "workspace.read", "workspace.update",
+        "workspace.read", "workspace.write", "workspace.update",
         "workspace.manage_members", "workspace.manage_roles", "workspace.invite",
 
         # NO BILLING/SUBSCRIPTION ACCESS!
@@ -244,7 +249,7 @@ ROLE_PERMISSION_ASSIGNMENTS = {
 
     "admin": [
         # Platform management (similar to super_admin but less destructive permissions)
-        "workspace.read", "workspace.update", "workspace.delete",
+        "workspace.read", "workspace.write", "workspace.update", "workspace.delete",
         "workspace.manage_members", "workspace.manage_roles", "workspace.invite",
 
         "subscription.read", "subscription.manage",
@@ -343,7 +348,7 @@ def upgrade():
                     'description': description,
                     'resource': resource,
                     'action': action,
-                    'created_at': datetime.utcnow()
+                    'created_at': datetime.now(timezone.utc).replace(tzinfo=None)
                 }
             )
             permission_map[name] = perm_id
@@ -402,7 +407,7 @@ def upgrade():
                         'id': str(uuid4()),
                         'role_id': role_id,
                         'permission_id': perm_id,
-                        'created_at': datetime.utcnow()
+                        'created_at': datetime.now(timezone.utc).replace(tzinfo=None)
                     }
                 )
                 assigned_count += 1

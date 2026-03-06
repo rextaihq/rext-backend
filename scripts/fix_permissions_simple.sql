@@ -1,5 +1,5 @@
 -- Simple permission fixes without complex DO blocks
--- Run directly in Docker: docker exec wrext-backend-langgraph-postgres-1 psql -U postgres -d postgres -f /tmp/fix.sql
+-- Run directly in Docker: docker exec rext-backend-langgraph-postgres-1 psql -U postgres -d postgres -f /tmp/fix.sql
 
 BEGIN;
 

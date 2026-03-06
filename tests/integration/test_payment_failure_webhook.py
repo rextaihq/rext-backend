@@ -50,7 +50,7 @@ async def test_payment_failure_sets_grace_period(db_session):
         lemonsqueezy_product_id="123456",
         lemonsqueezy_variant_id_monthly="var_monthly",
         lemonsqueezy_variant_id_yearly="var_yearly",
-        api_calls_limit=10000,
+        max_api_calls_per_month=10000,
         features={"feature1": True}
     )
     db_session.add(plan)
@@ -63,7 +63,7 @@ async def test_payment_failure_sets_grace_period(db_session):
         plan_id=plan.id,
         status=SubscriptionStatus.ACTIVE,
         billing_period=BillingPeriod.MONTHLY,
-        start_date=datetime.utcnow() - timedelta(days=30),
+        start_date=datetime.now(timezone.utc) - timedelta(days=30),
         lemonsqueezy_subscription_id="sub_12345",
         lemonsqueezy_customer_id="cus_12345",
         lemonsqueezy_variant_id="var_monthly"
@@ -104,7 +104,7 @@ async def test_payment_failure_sets_grace_period(db_session):
     }
 
     # Record time before webhook processing
-    time_before = datetime.utcnow()
+    time_before = datetime.now(timezone.utc)
 
     # Mock email service to prevent actual email sending
     with patch('src.services.webhook_handlers.subscription_handlers.BillingEmailService') as mock_email_service:
@@ -167,20 +167,20 @@ async def test_payment_failure_preserves_first_failure_timestamp(db_session):
         lemonsqueezy_product_id="123456",
         lemonsqueezy_variant_id_monthly="var_monthly",
         lemonsqueezy_variant_id_yearly="var_yearly",
-        api_calls_limit=10000,
+        max_api_calls_per_month=10000,
         features={}
     )
     db_session.add(plan)
 
     # First failure was 2 days ago
-    first_failure_time = datetime.utcnow() - timedelta(days=2)
+    first_failure_time = datetime.now(timezone.utc) - timedelta(days=2)
     subscription = UserSubscription(
         id=uuid4(),
         user_id=user.id,
         plan_id=plan.id,
         status=SubscriptionStatus.SUSPENDED,
         billing_period=BillingPeriod.MONTHLY,
-        start_date=datetime.utcnow() - timedelta(days=30),
+        start_date=datetime.now(timezone.utc) - timedelta(days=30),
         lemonsqueezy_subscription_id="sub_67890",
         lemonsqueezy_customer_id="cus_67890",
         lemonsqueezy_variant_id="var_monthly",
@@ -246,7 +246,7 @@ async def test_payment_failure_handles_missing_user_gracefully(db_session):
         lemonsqueezy_product_id="123456",
         lemonsqueezy_variant_id_monthly="var_monthly",
         lemonsqueezy_variant_id_yearly="var_yearly",
-        api_calls_limit=10000,
+        max_api_calls_per_month=10000,
         features={}
     )
     db_session.add(plan)
@@ -258,7 +258,7 @@ async def test_payment_failure_handles_missing_user_gracefully(db_session):
         plan_id=plan.id,
         status=SubscriptionStatus.ACTIVE,
         billing_period=BillingPeriod.MONTHLY,
-        start_date=datetime.utcnow(),
+        start_date=datetime.now(timezone.utc),
         lemonsqueezy_subscription_id="sub_orphan",
         lemonsqueezy_customer_id="cus_orphan",
         lemonsqueezy_variant_id="var_monthly"

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import datetime, timezone, timedelta
 from typing import Any, Dict
 from uuid import UUID
 
@@ -25,6 +25,7 @@ from src.api.schema.subscription import (
     AdminUsageResetRequest,
 )
 from src.utils.logger import logger
+from src.services.webhook_monitoring_service import _mask_email
 
 
 class SubscriptionManagementService:
@@ -45,20 +46,20 @@ class SubscriptionManagementService:
 
         trial_end = None
         if payload.trial_days and payload.trial_days > 0:
-            trial_end = datetime.utcnow() + timedelta(days=payload.trial_days)
+            trial_end = datetime.now(timezone.utc) + timedelta(days=payload.trial_days)
 
         subscription = UserSubscription(
             user_id=payload.user_id,
             plan_id=payload.plan_id,
             status=payload.status,
             billing_period=payload.billing_period,
-            start_date=datetime.utcnow(),
+            start_date=datetime.now(timezone.utc),
             trial_end_date=trial_end,
             current_api_calls=0,
-            usage_reset_date=datetime.utcnow() + timedelta(days=30),
+            usage_reset_date=datetime.now(timezone.utc) + timedelta(days=30),
             subscription_metadata={"assigned_by_admin": str(admin_user_id)},
-            created_at=datetime.utcnow(),
-            updated_at=datetime.utcnow(),
+            created_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(timezone.utc),
         )
 
         self.db.add(subscription)
@@ -78,11 +79,11 @@ class SubscriptionManagementService:
         response = subscription.to_dict()
         response["plan_name"] = plan.name
         response["plan_display_name"] = plan.display_name
-        response["user_username"] = user.username
-        response["user_email"] = user.email
+        response["user_full_name"] = user.full_name or user.display_name or "***"
+        response["user_email_masked"] = _mask_email(user.email)
         return {
             "subscription": response,
-            "message": f"Successfully assigned {plan.display_name} to user {user.username}",
+            "message": f"Successfully assigned {plan.display_name} to user {user.full_name or user.email}",
         }
 
     async def extend_subscription(
@@ -96,12 +97,12 @@ class SubscriptionManagementService:
         if subscription.end_date:
             subscription.end_date = subscription.end_date + timedelta(days=payload.extend_days)
         else:
-            subscription.end_date = datetime.utcnow() + timedelta(days=payload.extend_days)
+            subscription.end_date = datetime.now(timezone.utc) + timedelta(days=payload.extend_days)
 
         if subscription.status == SubscriptionStatus.TRIAL and subscription.trial_end_date:
             subscription.trial_end_date = subscription.trial_end_date + timedelta(days=payload.extend_days)
 
-        subscription.updated_at = datetime.utcnow()
+        subscription.updated_at = datetime.now(timezone.utc)
         await self.db.flush()
         await self.db.refresh(subscription)
 
@@ -130,9 +131,9 @@ class SubscriptionManagementService:
 
         if payload.reset_api_calls:
             subscription.current_api_calls = 0
-            subscription.usage_reset_date = datetime.utcnow() + timedelta(days=30)
+            subscription.usage_reset_date = datetime.now(timezone.utc) + timedelta(days=30)
 
-        subscription.updated_at = datetime.utcnow()
+        subscription.updated_at = datetime.now(timezone.utc)
         await self.db.flush()
         await self.db.refresh(subscription)
 
@@ -151,7 +152,7 @@ class SubscriptionManagementService:
         }
 
     # ------------------------------------------------------------------
-    # Helpers
+    # Helperss
     # ------------------------------------------------------------------
 
     async def _get_user_or_404(self, user_id: UUID) -> Users:

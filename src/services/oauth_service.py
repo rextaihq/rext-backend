@@ -16,7 +16,7 @@ Does NOT:
 
 from typing import Tuple, Dict, Any, Optional
 from uuid import UUID
-from datetime import datetime, timedelta
+from datetime import datetime, timezone, timedelta, timezone
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -41,7 +41,7 @@ from src.api.security.token_utils import (
 from src.utils.logger import logger
 from src.api.middleware.exceptions import (
     DuplicateResourceException,
-    WrextAuthenticationException,
+    RextAuthenticationException,
     ResourceNotFoundException
 )
 
@@ -93,7 +93,7 @@ class OAuthService:
             Tuple of (User object, tokens dict with access_token, refresh_token, token_type)
 
         Raises:
-            WrextAuthenticationException: If OAuth flow fails
+            RextAuthenticationException: If OAuth flow fails
         """
         # Check if this OAuth account already exists
         result = await self.db.execute(
@@ -117,11 +117,11 @@ class OAuthService:
             oauth_account.access_token = access_token
             oauth_account.refresh_token = refresh_token
             oauth_account.token_expires_at = token_expires_at
-            oauth_account.last_used_at = datetime.utcnow()
+            oauth_account.last_used_at = datetime.now(timezone.utc)
             await self.db.flush()
 
             # Update user's last login
-            user.last_login_at = datetime.utcnow()
+            user.last_login_at = datetime.now(timezone.utc)
             user.login_count = (user.login_count or 0) + 1
             await self.db.flush()
 
@@ -155,14 +155,14 @@ class OAuthService:
                     access_token=access_token,
                     refresh_token=refresh_token,
                     token_expires_at=token_expires_at,
-                    created_at=datetime.utcnow(),
-                    last_used_at=datetime.utcnow()
+                    created_at=datetime.now(timezone.utc),
+                    last_used_at=datetime.now(timezone.utc)
                 )
                 self.db.add(oauth_account)
                 await self.db.flush()
 
                 # Update user's last login
-                user.last_login_at = datetime.utcnow()
+                user.last_login_at = datetime.now(timezone.utc)
                 user.login_count = (user.login_count or 0) + 1
                 await self.db.flush()
 
@@ -173,33 +173,18 @@ class OAuthService:
                     extra={"provider": provider, "email": provider_email}
                 )
 
-                # Parse name into first and last
-                name_parts = provider_name.split(" ", 1)
-                first_name = name_parts[0] if name_parts else "User"
-                last_name = name_parts[1] if len(name_parts) > 1 else ""
-
-                # Generate username from email
-                username = provider_email.split("@")[0]
-
-                # Check if username exists, append number if needed
-                base_username = username
-                counter = 1
-                result = await self.db.execute(select(Users).where(Users.username == username))
-                while result.scalar_one_or_none():
-                    username = f"{base_username}{counter}"
-                    counter += 1
+                # Use provider_name as full_name
+                full_name = provider_name or "User"
 
                 # Create user (no password needed for OAuth-only users)
                 user = Users(
-                    first_name=first_name,
-                    last_name=last_name,
-                    username=username,
+                    full_name=full_name,
                     email=provider_email,
-                    password_hash="oauth_no_password",  # Placeholder - OAuth users don't need password
+                    password_hash=None,  # Placeholder - OAuth users don't need password
                     email_verified=True,  # OAuth email is pre-verified
-                    email_verified_at=datetime.utcnow(),
+                    email_verified_at=datetime.now(timezone.utc),
                     avatar_url=provider_avatar_url,
-                    created_at=datetime.utcnow()
+                    created_at=datetime.now(timezone.utc)
                 )
                 self.db.add(user)
                 await self.db.flush()
@@ -211,7 +196,7 @@ class OAuthService:
                     role_id=default_role.id,
                     workspace_id=None,
                     is_primary=True,
-                    assigned_at=datetime.utcnow(),
+                    assigned_at=datetime.now(timezone.utc),
                     assigned_by_user_id=user.id
                 )
                 self.db.add(user_role)
@@ -228,8 +213,8 @@ class OAuthService:
                     access_token=access_token,
                     refresh_token=refresh_token,
                     token_expires_at=token_expires_at,
-                    created_at=datetime.utcnow(),
-                    last_used_at=datetime.utcnow()
+                    created_at=datetime.now(timezone.utc),
+                    last_used_at=datetime.now(timezone.utc)
                 )
                 self.db.add(oauth_account)
                 await self.db.flush()
@@ -237,7 +222,7 @@ class OAuthService:
                 # Auto-assign trial subscription
                 trial_plan = await self._get_trial_plan()
                 if trial_plan:
-                    trial_start = datetime.utcnow()
+                    trial_start = datetime.now(timezone.utc)
                     trial_end = trial_start + timedelta(days=14)
 
                     trial_subscription = UserSubscription(
@@ -265,7 +250,7 @@ class OAuthService:
             select(UserRole)
             .options(selectinload(UserRole.role))
             .where(UserRole.user_id == user.id)
-            .where(UserRole.is_primary == True)
+            .where(UserRole.is_primary.is_(True))
         )
         user_roles = user_roles_result.scalars().all()
         role_names = [ur.role.name for ur in user_roles]
@@ -282,7 +267,6 @@ class OAuthService:
 
         token_data = {
             "id": str(user.id),
-            "username": user.username,
             "email": user.email,
             "roles": role_names,
             "permissions": permissions
@@ -369,7 +353,7 @@ class OAuthService:
             existing_oauth.access_token = access_token
             existing_oauth.refresh_token = refresh_token
             existing_oauth.token_expires_at = token_expires_at
-            existing_oauth.updated_at = datetime.utcnow()
+            existing_oauth.updated_at = datetime.now(timezone.utc)
             await self.db.flush()
             return existing_oauth
 
@@ -384,7 +368,7 @@ class OAuthService:
             access_token=access_token,
             refresh_token=refresh_token,
             token_expires_at=token_expires_at,
-            created_at=datetime.utcnow()
+            created_at=datetime.now(timezone.utc)
         )
         self.db.add(oauth_account)
         await self.db.flush()
@@ -448,7 +432,7 @@ class OAuthService:
                 hierarchy_level=1,
                 is_system_role=True,
                 is_workspace_role=False,  # Platform role, not workspace role
-                created_at=datetime.utcnow()
+                created_at=datetime.now(timezone.utc)
             )
             self.db.add(default_role)
             await self.db.flush()
@@ -461,7 +445,7 @@ class OAuthService:
         result = await self.db.execute(
             select(SubscriptionPlan).where(
                 SubscriptionPlan.name == "trial",
-                SubscriptionPlan.is_active == True
+                SubscriptionPlan.is_active.is_(True)
             )
         )
         trial_plan = result.scalar_one_or_none()

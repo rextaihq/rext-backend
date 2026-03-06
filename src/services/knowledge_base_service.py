@@ -27,7 +27,7 @@ from src.api.models.knowledge_models.knowledge_model import KnowledgeBase, Websi
 from src.utils.logger import logger
 from src.api.middleware.exceptions import (
     ResourceNotFoundException,
-    WrextValidationException,
+    RextValidationException,
     DuplicateResourceException
 )
 
@@ -101,38 +101,53 @@ class KnowledgeBaseService:
     async def list_knowledge_bases(
         self,
         workspace_id: UUID,
-        include_items_count: bool = True
-    ) -> List[Dict[str, Any]]:
+        include_items_count: bool = True,
+        limit: int = 20,
+        offset: int = 0,
+    ) -> tuple[List[Dict[str, Any]], int]:
         """
-        List all knowledge bases for a workspace.
+        List paginated knowledge bases for a workspace.
 
         Args:
             workspace_id: Workspace UUID
             include_items_count: Whether to include items count
+            limit: Maximum number of items to return (default 20)
+            offset: Number of items to skip (default 0)
 
         Returns:
-            List of knowledge base dictionaries with items count
+            Tuple of (list of knowledge base dicts, total count)
         """
+        from sqlalchemy import func
+
+        # Get total count
+        count_result = await self.db.execute(
+            select(func.count()).select_from(KnowledgeBase).where(
+                KnowledgeBase.workspace_id == workspace_id
+            )
+        )
+        total_count = count_result.scalar()
+
+        # Build query
+        query = (
+            select(KnowledgeBase)
+            .where(KnowledgeBase.workspace_id == workspace_id)
+            .order_by(KnowledgeBase.created_at.desc())
+            .limit(limit)
+            .offset(offset)
+        )
+
         if include_items_count:
-            # Query with relationships loaded for counting
-            result = await self.db.execute(
-                select(KnowledgeBase)
-                .where(KnowledgeBase.workspace_id == workspace_id)
-                .options(
-                    selectinload(KnowledgeBase.websites),
-                    selectinload(KnowledgeBase.knowledge_files),
-                    selectinload(KnowledgeBase.text_knowledge)
-                )
+            query = query.options(
+                selectinload(KnowledgeBase.websites),
+                selectinload(KnowledgeBase.knowledge_files),
+                selectinload(KnowledgeBase.text_knowledge)
             )
-            knowledge_bases = result.scalars().all()
-            return [kb.to_dict() for kb in knowledge_bases]
-        else:
-            # Simple query without relationships
-            result = await self.db.execute(
-                select(KnowledgeBase).where(KnowledgeBase.workspace_id == workspace_id)
-            )
-            knowledge_bases = result.scalars().all()
-            return [kb.to_dict() for kb in knowledge_bases]
+
+        result = await self.db.execute(query)
+        knowledge_bases = result.scalars().all()
+        items = [kb.to_dict() for kb in knowledge_bases]
+
+        return items, total_count
 
     async def get_knowledge_base(
         self,
@@ -205,7 +220,7 @@ class KnowledgeBaseService:
 
         Raises:
             ResourceNotFoundException: If knowledge base not found
-            WrextValidationException: If trying to update default knowledge base name
+            RextValidationException: If trying to update default knowledge base name
             DuplicateResourceException: If new name already exists
         """
         # Get knowledge base
@@ -225,7 +240,7 @@ class KnowledgeBaseService:
 
         # Prevent renaming default knowledge base
         if knowledge_base.type == "default" and name and name != knowledge_base.name:
-            raise WrextValidationException(
+            raise RextValidationException(
                 message="Cannot rename the default knowledge base",
                 field_errors={"name": ["Default knowledge base name cannot be changed"]}
             )
@@ -279,7 +294,7 @@ class KnowledgeBaseService:
 
         Raises:
             ResourceNotFoundException: If knowledge base not found
-            WrextValidationException: If trying to delete default knowledge base
+            RextValidationException: If trying to delete default knowledge base
         """
         # Get knowledge base
         result = await self.db.execute(
@@ -298,7 +313,7 @@ class KnowledgeBaseService:
 
         # Prevent deletion of default knowledge base
         if knowledge_base.type == "default":
-            raise WrextValidationException(
+            raise RextValidationException(
                 message="Cannot delete the default knowledge base",
                 field_errors={"knowledge_base_id": ["Default knowledge base cannot be deleted"]}
             )

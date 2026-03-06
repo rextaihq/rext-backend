@@ -13,7 +13,7 @@ Business Rules:
 """
 
 from typing import List, Optional, Dict, Any
-from datetime import datetime
+from datetime import datetime, timezone
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -25,9 +25,9 @@ from src.api.models.subscription_models.license_activations import LicenseActiva
 from src.utils.logger import logger
 from src.api.middleware.exceptions import (
     ResourceNotFoundException,
-    WrextValidationException,
+    RextValidationException,
     DuplicateResourceException,
-    WrextAuthorizationException as UnauthorizedException
+    RextAuthorizationException as UnauthorizedException
 )
 
 
@@ -55,7 +55,7 @@ class LicenseService:
 
         Raises:
             ResourceNotFoundException: If license not found
-            WrextValidationException: If license is invalid/expired/disabled
+            RextValidationException: If license is invalid/expired/disabled
         """
         # Find license by key
         stmt = select(License).where(License.license_key == license_key)
@@ -71,14 +71,20 @@ class LicenseService:
 
         # Check if license is disabled
         if license_obj.status == LicenseStatus.DISABLED:
-            raise WrextValidationException(
+            raise RextValidationException(
                 message="This license has been disabled",
                 field_errors={"license_key": ["License is disabled"]}
             )
 
+        if license_obj.status == LicenseStatus.REVOKED:
+            raise RextValidationException(
+                message="This license has been revoked",
+                field_errors={"license_key": ["License has been revoked by an administrator"]}
+            )
+
         # Check if license is expired
         if license_obj.is_expired:
-            raise WrextValidationException(
+            raise RextValidationException(
                 message="This license has expired",
                 field_errors={"license_key": ["License expired"]}
             )
@@ -109,7 +115,7 @@ class LicenseService:
 
         Raises:
             ResourceNotFoundException: If license not found
-            WrextValidationException: If license invalid or activation limit exceeded
+            RextValidationException: If license invalid or activation limit exceeded
             DuplicateResourceException: If instance already activated
         """
         # Validate license
@@ -126,7 +132,7 @@ class LicenseService:
         # If license isn't claimed yet, claim it
         if not license_obj.user_id:
             license_obj.user_id = user_id
-            license_obj.activated_at = datetime.utcnow()
+            license_obj.activated_at = datetime.now(timezone.utc)
             await self.db.flush()
 
         # Check if this instance is already activated
@@ -146,7 +152,7 @@ class LicenseService:
         # Check activation limits
         if not license_obj.can_activate:
             active_count = await self._count_active_activations(license_obj.id)
-            raise WrextValidationException(
+            raise RextValidationException(
                 message=f"Activation limit reached ({license_obj.activation_limit} max)",
                 field_errors={
                     "license_key": [
@@ -160,7 +166,7 @@ class LicenseService:
         if existing_activation:
             # Reactivate previously deactivated instance
             existing_activation.is_active = True
-            existing_activation.activated_at = datetime.utcnow()
+            existing_activation.activated_at = datetime.now(timezone.utc)
             existing_activation.deactivated_at = None
             if instance_name:
                 existing_activation.instance_name = instance_name
@@ -174,7 +180,7 @@ class LicenseService:
                 instance_id=instance_id,
                 instance_name=instance_name,
                 is_active=True,
-                activated_at=datetime.utcnow(),
+                activated_at=datetime.now(timezone.utc),
                 activation_metadata=metadata or {}
             )
             self.db.add(activation)
@@ -242,7 +248,7 @@ class LicenseService:
             )
 
         if not activation.is_active:
-            raise WrextValidationException(
+            raise RextValidationException(
                 message="This activation is already inactive",
                 field_errors={"instance_id": ["Activation already deactivated"]}
             )
@@ -359,7 +365,7 @@ class LicenseService:
         stmt = select(LicenseActivation).where(
             and_(
                 LicenseActivation.license_id == license_id,
-                LicenseActivation.is_active == True
+                LicenseActivation.is_active.is_(True)
             )
         )
         result = await self.db.execute(stmt)
@@ -369,7 +375,7 @@ class LicenseService:
             activation.deactivate()
 
         # Update license status
-        license_obj.status = LicenseStatus.DISABLED
+        license_obj.status = LicenseStatus.REVOKED
         license_obj.activation_count = 0
 
         await self.db.flush()
@@ -422,7 +428,7 @@ class LicenseService:
         stmt = select(func.count(LicenseActivation.id)).where(
             and_(
                 LicenseActivation.license_id == license_id,
-                LicenseActivation.is_active == True
+                LicenseActivation.is_active.is_(True)
             )
         )
         result = await self.db.execute(stmt)

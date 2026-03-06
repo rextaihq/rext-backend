@@ -19,7 +19,7 @@ Does NOT:
 
 from typing import Dict, Any, Optional, List
 from uuid import UUID
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta,timezone
 
 from fastapi import BackgroundTasks
 from src.services.notification_helper import schedule_if_allowed
@@ -28,6 +28,7 @@ from sqlalchemy import select, func, and_
 from sqlalchemy.orm import selectinload
 
 from src.api.models.subscription_models.plans import SubscriptionPlan
+from src.api.cache.decorators import invalidate_cache
 from src.api.models.subscription_models.subscriptions import (
     UserSubscription,
     SubscriptionStatus,
@@ -36,7 +37,6 @@ from src.api.models.subscription_models.subscriptions import (
 from src.api.models.user_models.users import Users
 from src.api.models.workspace_models.workspace_model import WorkspaceModel
 from src.api.models.workspace_models.workspace_member import WorkspaceMembers
-from src.api.models.topic_models.topic_models import TopicsModel
 from src.api.models.knowledge_models.knowledge_model import (
     KnowledgeFiles,
     TextKnowledge,
@@ -45,7 +45,7 @@ from src.api.models.knowledge_models.knowledge_model import (
 from src.utils.logger import logger
 from src.api.middleware.exceptions import (
     DuplicateResourceException,
-    WrextValidationException,
+    RextValidationException,
     ResourceNotFoundException
 )
 from src.providers.payment.provider_factory import get_payment_provider_singleton
@@ -121,17 +121,20 @@ class SubscriptionService:
             plan_id=plan_id,
             status=SubscriptionStatus.TRIAL if is_trial else SubscriptionStatus.ACTIVE,
             billing_period=billing_period,
-            start_date=datetime.utcnow(),
-            trial_end_date=datetime.utcnow() + timedelta(days=trial_days) if is_trial else None,
+            start_date=datetime.now(timezone.utc),
+            trial_end_date=datetime.now(timezone.utc) + timedelta(days=trial_days) if is_trial else None,
             current_api_calls=0,
-            usage_reset_date=datetime.utcnow() + timedelta(days=30),
-            created_at=datetime.utcnow(),
-            updated_at=datetime.utcnow()
+            usage_reset_date=datetime.now(timezone.utc) + timedelta(days=30),
+            created_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(timezone.utc)
         )
 
         self.db.add(new_subscription)
         await self.db.flush()
         await self.db.refresh(new_subscription)
+
+        # Invalidate subscription tier cache
+        await invalidate_cache(f"user:subscription_tier:{user_id}:*")
 
         logger.info(
             f"User {user_id} subscribed to plan: {plan.name} ({billing_period.value})",
@@ -194,7 +197,7 @@ class SubscriptionService:
         Raises:
             DuplicateResourceException: If user already has active subscription
             ResourceNotFoundException: If plan not found or inactive
-            WrextValidationException: If variant ID not configured for plan
+            RextValidationException: If variant ID not configured for plan
         """
         # Check if user already has an active subscription
         # Allow checkout if user is on free or trial plan (they can upgrade via checkout)
@@ -225,7 +228,7 @@ class SubscriptionService:
             variant_id = plan.lemonsqueezy_variant_id_yearly
 
         if not variant_id:
-            raise WrextValidationException(
+            raise RextValidationException(
                 message=f"Plan {plan.name} does not have a {billing_period.value} variant configured",
                 field_errors={"billing_period": [f"{billing_period.value} variant not available"]}
             )
@@ -249,13 +252,13 @@ class SubscriptionService:
 
         if not customer_id:
             # Create customer in payment provider
-            customer_name = f"{user.first_name} {user.last_name}".strip() or user.username
+            customer_name = user.full_name or user.display_name or user.email
             customer_id = await self.payment_provider.create_customer(
                 email=user.email,
                 name=customer_name,
                 metadata={
                     "user_id": str(user_id),
-                    "username": user.username
+                    "full_name": user.full_name
                 }
             )
 
@@ -342,7 +345,7 @@ class SubscriptionService:
 
         Raises:
             ResourceNotFoundException: If no active subscription or plan not found
-            WrextValidationException: If same plan or usage exceeds limits
+            RextValidationException: If same plan or usage exceeds limits
         """
         # Get current subscription
         current_subscription = await self.get_subscription_by_user(user_id)
@@ -362,7 +365,7 @@ class SubscriptionService:
             # Only billing period change
             if billing_period and billing_period != current_subscription.billing_period:
                 current_subscription.billing_period = billing_period
-                current_subscription.updated_at = datetime.utcnow()
+                current_subscription.updated_at = datetime.now(timezone.utc)
                 await self.db.flush()
                 await self.db.refresh(current_subscription)
 
@@ -373,7 +376,7 @@ class SubscriptionService:
 
                 return current_subscription
             else:
-                raise WrextValidationException(
+                raise RextValidationException(
                     message="Already subscribed to this plan",
                     field_errors={"new_plan_id": ["Same as current plan"]}
                 )
@@ -455,10 +458,13 @@ class SubscriptionService:
         if new_variant_id:
             current_subscription.lemonsqueezy_variant_id = new_variant_id
 
-        current_subscription.updated_at = datetime.utcnow()
+        current_subscription.updated_at = datetime.now(timezone.utc)
 
         await self.db.flush()
         await self.db.refresh(current_subscription)
+
+        # Invalidate subscription tier cache
+        await invalidate_cache(f"user:subscription_tier:{user_id}:*")
 
         action = "downgraded" if is_downgrade else "upgraded"
         logger.info(
@@ -512,7 +518,7 @@ class SubscriptionService:
 
         Raises:
             ResourceNotFoundException: If no active subscription
-            WrextValidationException: If usage exceeds new plan limits
+            RextValidationException: If usage exceeds new plan limits
         """
         # Downgrade uses same logic as upgrade (with validation)
         return await self.upgrade(user_id, new_plan_id, billing_period)
@@ -522,7 +528,8 @@ class SubscriptionService:
         user_id: UUID,
         reason: Optional[str] = None,
         cancel_immediately: bool = False,
-        background_tasks: Optional[BackgroundTasks] = None
+        background_tasks: Optional[BackgroundTasks] = None,
+        fail_on_provider_error: bool = False
     ) -> UserSubscription:
         """
         Cancel subscription.
@@ -538,12 +545,14 @@ class SubscriptionService:
             reason: Optional cancellation reason
             cancel_immediately: If True, cancel now; if False, at end of period
             background_tasks: Optional background tasks for notifications
+            fail_on_provider_error: If True, raise exception if payment provider call fails
 
         Returns:
             Updated UserSubscription object
 
         Raises:
             ResourceNotFoundException: If no active subscription
+            RextValidationException: If payment provider cancellation fails and fail_on_provider_error is True
         """
         # Get current subscription
         subscription = await self.get_subscription_by_user(user_id)
@@ -560,7 +569,7 @@ class SubscriptionService:
                 provider_sub_id = subscription.lemonsqueezy_subscription_id or subscription.provider_subscription_id
 
                 # Cancel with payment provider
-                cancelled_subscription = await self.payment_provider.cancel_subscription(
+                await self.payment_provider.cancel_subscription(
                     subscription_id=provider_sub_id,
                     at_period_end=not cancel_immediately
                 )
@@ -591,17 +600,27 @@ class SubscriptionService:
                     }
                 )
 
-                # Continue with local cancellation even if provider cancellation fails
+                if fail_on_provider_error:
+                    raise RextValidationException(
+                        message="Payment provider cancellation failed; local cancellation aborted",
+                        context={"user_id": str(user_id), "provider_error": str(e)}
+                    )
+
+                # Continue with local cancellation even if provider cancellation fails for non-admin paths
                 # This ensures we don't leave the user stuck
 
         # Update local subscription
-        subscription.cancelled_at = datetime.utcnow()
+        subscription.cancelled_at = datetime.now(timezone.utc)
+
+        # Store cancellation reason
+        if reason:
+            subscription.cancellation_reason = reason
+            logger.info(f"Cancellation reason stored for subscription {subscription.id}")
         subscription.cancel_at_period_end = not cancel_immediately
 
         if cancel_immediately:
             subscription.status = SubscriptionStatus.CANCELLED
-            subscription.end_date = datetime.utcnow()
-        else:
+            subscription.end_date = datetime.now(timezone.utc)
             # Calculate end of billing period
             if subscription.billing_period == BillingPeriod.MONTHLY:
                 subscription.end_date = subscription.usage_reset_date
@@ -610,10 +629,12 @@ class SubscriptionService:
             else:  # LIFETIME
                 subscription.end_date = None  # No end date for lifetime
 
-        subscription.updated_at = datetime.utcnow()
-
+        subscription.updated_at = datetime.now(timezone.utc)
         await self.db.flush()
         await self.db.refresh(subscription)
+
+        # Invalidate subscription tier cache
+        await invalidate_cache(f"user:subscription_tier:{user_id}:*")
 
         logger.info(
             f"User {user_id} cancelled subscription (immediately={cancel_immediately})",
@@ -688,14 +709,6 @@ class SubscriptionService:
         )
         members_count = members_result.scalar() or 0
 
-        # Count topics across all user's workspaces
-        topics_result = await self.db.execute(
-            select(func.count(TopicsModel.id))
-            .join(WorkspaceModel)
-            .where(WorkspaceModel.user_id == user_id)
-        )
-        topics_count = topics_result.scalar() or 0
-
         # Count knowledge files
         files_result = await self.db.execute(
             select(func.count(KnowledgeFiles.id))
@@ -726,7 +739,6 @@ class SubscriptionService:
         return {
             "workspaces": workspaces_count,
             "members": members_count,
-            "topics": topics_count,
             "knowledge_files": knowledge_files_count,
             "knowledge_text": knowledge_text_count,
             "knowledge_web": knowledge_web_count,
@@ -765,7 +777,7 @@ class SubscriptionService:
         trial_expired = False
 
         if is_trial and trial_end_date:
-            days_remaining = (trial_end_date - datetime.utcnow()).days
+            days_remaining = (trial_end_date - datetime.now(timezone.utc)).days
             trial_expired = days_remaining < 0
 
         return {
@@ -794,7 +806,7 @@ class SubscriptionService:
 
         Raises:
             ResourceNotFoundException: If no active subscription
-            WrextValidationException: If exceeds limits
+            RextValidationException: If exceeds limits
         """
         subscription = await self.get_subscription_by_user(user_id)
         if not subscription:
@@ -810,14 +822,13 @@ class SubscriptionService:
         # Map resource type to plan limit
         limit_map = {
             "workspace": (plan.max_workspaces, current_usage["workspaces"]),
-            "topic": (plan.max_topics, current_usage["topics"]),
             "knowledge": (plan.max_knowledge_items, current_usage["knowledge_items"])
         }
 
         if resource_type not in limit_map:
-            raise WrextValidationException(
+            raise RextValidationException(
                 message=f"Invalid resource type: {resource_type}",
-                field_errors={"resource_type": ["Must be workspace, topic, or knowledge"]}
+                field_errors={"resource_type": ["Must be workspace or knowledge"]}
             )
 
         max_allowed, current_count = limit_map[resource_type]
@@ -828,7 +839,7 @@ class SubscriptionService:
 
         new_count = current_count + increment
         if new_count > max_allowed:
-            raise WrextValidationException(
+            raise RextValidationException(
                 message=f"Plan limit exceeded: {resource_type}",
                 field_errors={
                     resource_type: [
@@ -1061,8 +1072,6 @@ class SubscriptionService:
                 "max_members_per_workspace": plan.max_members_per_workspace,
                 "max_topics": plan.max_topics,
                 "max_knowledge_items": plan.max_knowledge_items,
-                "max_content_per_month": plan.max_content_per_month,
-                "max_ai_generations_per_month": plan.max_ai_generations_per_month,
                 "is_active": plan.is_active,
                 "created_at": plan.created_at,
                 "updated_at": plan.updated_at
@@ -1098,7 +1107,6 @@ class SubscriptionService:
         # Usage-based check
         is_usage_downgrade = (
             (new_plan.max_workspaces != -1 and new_plan.max_workspaces < current_usage["workspaces"]) or
-            (new_plan.max_topics != -1 and new_plan.max_topics < current_usage["topics"]) or
             (new_plan.max_knowledge_items != -1 and new_plan.max_knowledge_items < current_usage["knowledge_items"])
         )
 
@@ -1117,25 +1125,18 @@ class SubscriptionService:
             current_usage: Current usage dict
 
         Raises:
-            WrextValidationException: If usage exceeds new plan limits
+            RextValidationException: If usage exceeds new plan limits
         """
         # Check workspace limit
         if new_plan.max_workspaces != -1 and current_usage["workspaces"] > new_plan.max_workspaces:
-            raise WrextValidationException(
+            raise RextValidationException(
                 message=f"Cannot downgrade: You have {current_usage['workspaces']} workspaces, new plan allows {new_plan.max_workspaces}",
                 field_errors={"new_plan_id": ["Workspace limit exceeded"]}
             )
 
-        # Check topic limit
-        if new_plan.max_topics != -1 and current_usage["topics"] > new_plan.max_topics:
-            raise WrextValidationException(
-                message=f"Cannot downgrade: You have {current_usage['topics']} topics, new plan allows {new_plan.max_topics}",
-                field_errors={"new_plan_id": ["Topic limit exceeded"]}
-            )
-
         # Check knowledge items limit
         if new_plan.max_knowledge_items != -1 and current_usage["knowledge_items"] > new_plan.max_knowledge_items:
-            raise WrextValidationException(
+            raise RextValidationException(
                 message=f"Cannot downgrade: You have {current_usage['knowledge_items']} knowledge items, new plan allows {new_plan.max_knowledge_items}",
                 field_errors={"new_plan_id": ["Knowledge items limit exceeded"]}
             )

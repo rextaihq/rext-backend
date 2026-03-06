@@ -1,10 +1,11 @@
 import uuid
-from sqlalchemy import Column, String, Boolean, TIMESTAMP, ForeignKey
+from sqlalchemy import Column, String, Boolean, DateTime, ForeignKey
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
-from datetime import datetime
+from datetime import datetime, timezone
 from src.api.database.base import Base
 from src.api.models.base import SerializableMixin
+import secrets
 
 
 class NotificationPreferences(Base, SerializableMixin):
@@ -65,15 +66,38 @@ class NotificationPreferences(Base, SerializableMixin):
     # MARKETING COMMUNICATIONS
     # ==============================
     marketing_updates = Column(Boolean, default=False, nullable=False)
-
+    
+    # ==============================
+    # EXPANDED CATEGORIES (Matched with DB)
+    # ==============================
+    email_team_activity = Column(Boolean, default=True, nullable=False)
+    in_app_team_activity = Column(Boolean, default=True, nullable=False)
+    email_security_alerts = Column(Boolean, default=True, nullable=False)
+    in_app_security_alerts = Column(Boolean, default=True, nullable=False)
+    email_billing_updates = Column(Boolean, default=True, nullable=False)
+    in_app_billing_updates = Column(Boolean, default=True, nullable=False)
+    email_product_updates = Column(Boolean, default=False, nullable=False)
+    in_app_product_updates = Column(Boolean, default=False, nullable=False)
+    email_content_updates = Column(Boolean, default=True, nullable=False)
+    in_app_content_updates = Column(Boolean, default=True, nullable=False)
+    email_mentions = Column(Boolean, default=True, nullable=False)
+    in_app_mentions = Column(Boolean, default=True, nullable=False)
+    email_comments = Column(Boolean, default=True, nullable=False)
+    in_app_comments = Column(Boolean, default=True, nullable=False)
+    unsubscribe_token = Column(
+        String,
+        unique=True,
+        nullable=False,
+        default=lambda: secrets.token_urlsafe(32)
+    )
     # ==============================
     # TIMESTAMPS
     # ==============================
-    created_at = Column(TIMESTAMP, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
     updated_at = Column(
-        TIMESTAMP,
-        default=datetime.utcnow,
-        onupdate=datetime.utcnow,
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
         nullable=False
     )
 
@@ -85,7 +109,10 @@ class NotificationPreferences(Base, SerializableMixin):
         data = super().to_dict(exclude=['id', 'user_id'], **kwargs)
 
         return {
-            # **data,
+            "email_enabled": self.email_notifications,
+            "in_app_enabled": self.in_app_notifications,
+            "digest_enabled": self.digest_enabled,
+            "digest_frequency": self.digest_frequency,
             "workspace_notifications": {
                 "invite_received": data["ws_invite_received"],
                 "invite_accepted": data["ws_invite_accepted"],
@@ -110,10 +137,6 @@ class NotificationPreferences(Base, SerializableMixin):
             "knowledge_base": {
                 "processing_completed": data["kb_processing_completed"],
                 "processing_failed": data["kb_processing_failed"],
-            },
-            "email_digest": {
-                "enabled": data["digest_enabled"],
-                "frequency": data["digest_frequency"],
             },
             "marketing": {
                 "marketing_updates": data["marketing_updates"]

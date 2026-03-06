@@ -11,7 +11,7 @@ Grace Period Flow:
 """
 
 from typing import List, Dict, Any
-from datetime import datetime
+from datetime import datetime, timezone
 from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_
@@ -46,7 +46,7 @@ class GracePeriodService:
         Returns:
             List of subscriptions past grace period
         """
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
 
         # Query for SUSPENDED subscriptions with expired grace period
         stmt = select(UserSubscription).where(
@@ -105,7 +105,7 @@ class GracePeriodService:
             plan = result.scalar_one_or_none()
 
             # Update subscription status
-            now = datetime.utcnow()
+            now = datetime.now(timezone.utc)
             subscription.status = SubscriptionStatus.EXPIRED
             subscription.end_date = now
             subscription.updated_at = now
@@ -128,9 +128,9 @@ class GracePeriodService:
             # Send suspension email
             try:
                 from src.services.billing_email_service import BillingEmailService
-                from emails.templates.billing import render_subscription_suspended_email
 
                 # Calculate outstanding amount
+                plan_name = plan.name if plan else "Unknown Plan"
                 if subscription.billing_period.value == "monthly":
                     amount_cents = plan.price_monthly if plan else 0
                 else:
@@ -140,23 +140,13 @@ class GracePeriodService:
                 # Format suspension date
                 suspension_date = now.strftime("%B %d, %Y")
 
-                # Render email
-                user_name = user.first_name or user.display_name or user.email
-                plan_name = plan.name if plan else "Your Plan"
-
-                html_content = render_subscription_suspended_email(
-                    user_name=user_name,
+                # Send email
+                email_service = BillingEmailService(self.db)
+                await email_service.send_subscription_suspended_email(
+                    user_id=user.id,
                     plan_name=plan_name,
                     amount=amount,
                     suspension_date=suspension_date
-                )
-
-                # Send email
-                email_service = BillingEmailService(self.db)
-                await email_service._send_email(
-                    to_email=user.email,
-                    subject=f"Your {plan_name} Subscription Has Been Suspended",
-                    html_content=html_content
                 )
 
                 logger.info(

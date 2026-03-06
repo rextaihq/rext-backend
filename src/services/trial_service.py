@@ -3,12 +3,13 @@ Trial management service.
 
 Handles trial expiration, reminders, conversions, and extensions.
 """
-from datetime import datetime, timedelta
+from datetime import datetime, timezone, timedelta
 from typing import List, Optional, Dict, Any
 from uuid import UUID
 from decimal import Decimal
 from sqlalchemy import select, and_, or_
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from src.api.models.subscription_models.subscriptions import (
     UserSubscription,
@@ -19,10 +20,11 @@ from src.api.models.subscription_models.plans import SubscriptionPlan
 from src.api.models.user_models.users import Users
 from src.api.middleware.exceptions import (
     ResourceNotFoundException,
-    WrextValidationException as ValidationException,
-    WrextAuthorizationException as UnauthorizedException
+    RextValidationException as ValidationException,
+    RextAuthorizationException as UnauthorizedException
 )
 from src.utils.logger import logger
+
 
 
 class TrialService:
@@ -45,15 +47,22 @@ class TrialService:
         Returns:
             List of subscriptions with trials expiring in N days
         """
-        target_date = datetime.utcnow() + timedelta(days=days_until_expiry)
+        target_date = datetime.now(timezone.utc) + timedelta(days=days_until_expiry)
         start_of_day = target_date.replace(hour=0, minute=0, second=0, microsecond=0)
         end_of_day = start_of_day + timedelta(days=1)
 
-        query = select(UserSubscription).where(
-            and_(
-                UserSubscription.status == SubscriptionStatus.TRIAL,
-                UserSubscription.trial_end_date >= start_of_day,
-                UserSubscription.trial_end_date < end_of_day
+        query = (
+            select(UserSubscription)
+            .options(
+                selectinload(UserSubscription.user).selectinload(Users.notification_preferences),
+                selectinload(UserSubscription.plan)
+            )
+            .where(
+                and_(
+                    UserSubscription.status == SubscriptionStatus.TRIAL,
+                    UserSubscription.trial_end_date >= start_of_day,
+                    UserSubscription.trial_end_date < end_of_day
+                )
             )
         )
 
@@ -67,14 +76,22 @@ class TrialService:
         Returns:
             List of expired trial subscriptions
         """
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
 
-        query = select(UserSubscription).where(
-            and_(
-                UserSubscription.status == SubscriptionStatus.TRIAL,
-                UserSubscription.trial_end_date < now
+        query = (
+            select(UserSubscription)
+            .options(
+                selectinload(UserSubscription.user).selectinload(Users.notification_preferences),
+                selectinload(UserSubscription.plan)
+            )
+            .where(
+                and_(
+                    UserSubscription.status == SubscriptionStatus.TRIAL,
+                    UserSubscription.trial_end_date < now
+                )
             )
         )
+
 
         result = await self.db.execute(query)
         return list(result.scalars().all())
@@ -117,8 +134,8 @@ class TrialService:
 
         # Update to expired
         subscription.status = SubscriptionStatus.EXPIRED
-        subscription.end_date = datetime.utcnow()
-        subscription.updated_at = datetime.utcnow()
+        subscription.end_date = datetime.now(timezone.utc)
+        subscription.updated_at = datetime.now(timezone.utc)
 
         await self.db.flush()
         await self.db.refresh(subscription)
@@ -168,7 +185,7 @@ class TrialService:
             subscription_id=subscription_id,
             trial_started_at=trial_started_at,
             trial_ended_at=trial_ended_at,
-            converted_at=datetime.utcnow(),
+            converted_at=datetime.now(timezone.utc),
             trial_duration_days=duration,
             conversion_plan_id=plan_id,
             conversion_billing_period=billing_period,
@@ -244,7 +261,7 @@ class TrialService:
         # Extend trial
         old_trial_end = subscription.trial_end_date
         subscription.trial_end_date = subscription.trial_end_date + timedelta(days=extension_days)
-        subscription.updated_at = datetime.utcnow()
+        subscription.updated_at = datetime.now(timezone.utc)
 
         # Track in metadata
         if not subscription.subscription_metadata:
@@ -259,7 +276,7 @@ class TrialService:
             "old_end_date": old_trial_end.isoformat() if old_trial_end else None,
             "new_end_date": subscription.trial_end_date.isoformat(),
             "reason": reason,
-            "extended_at": datetime.utcnow().isoformat()
+            "extended_at": datetime.now(timezone.utc).isoformat()
         })
 
         await self.db.flush()

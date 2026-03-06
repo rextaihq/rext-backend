@@ -21,7 +21,9 @@ Features:
 import functools
 from typing import Callable, Any
 from sqlalchemy.ext.asyncio import AsyncSession
-from src.utils.logger import logger
+from src.api.lib.logger import auto_logger
+
+logger = auto_logger()
 
 
 def transactional(func: Callable) -> Callable:

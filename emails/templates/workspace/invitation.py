@@ -84,7 +84,7 @@ def render_workspace_invitation_email(
     role_name: str = "Member",
     expiry_days: int = 7,
     workspace_description: Optional[str] = None,
-    frontend_url: str = "https://app.wrext.com"
+    frontend_url: str = "https://app.rext.com"
 ) -> str:
     """
     Render workspace invitation email template.
@@ -105,7 +105,7 @@ def render_workspace_invitation_email(
         >>> html = render_workspace_invitation_email(
         ...     workspace_name="Acme Inc",
         ...     inviter_name="John Doe",
-        ...     invitation_url="https://app.wrext.com/invitations/accept?token=abc123",
+        ...     invitation_url="https://app.rext.com/invitations/accept?token=abc123",
         ...     role_name="Editor"
         ... )
     """
@@ -185,7 +185,7 @@ def render_workspace_invitation_email(
         </div>
         """,
         simple_footer()
-    ], preview_text=f"You've been invited to join {workspace_name} on WREXT")
+    ], preview_text=f"You've been invited to join {workspace_name} on REXT")
 
     return email_html
 
@@ -198,7 +198,7 @@ def create_workspace_invitation_email(
     role_name: str = "Member",
     expiry_days: int = 7,
     workspace_description: Optional[str] = None,
-    frontend_url: str = "https://app.wrext.com",
+    frontend_url: str = "https://app.rext.com",
     unsubscribe_token: Optional[str] = None
 ) -> str:
     """
@@ -311,6 +311,6 @@ def create_workspace_invitation_email(
         """,
         unsubscribe_html,
         simple_footer()
-    ], preview_text=f"You've been invited to join {workspace_name} on WREXT")
+    ], preview_text=f"You've been invited to join {workspace_name} on REXT")
 
     return email_html

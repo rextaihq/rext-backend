@@ -7,46 +7,19 @@ from typing import List, Optional
 from uuid import UUID
 from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_
-from datetime import datetime, timedelta
+from sqlalchemy import select, and_, func
+from datetime import datetime, timezone, timedelta
 
 from src.api.database.async_database import get_async_db
 from src.api.models.email_models.email_log import EmailLog
+from src.api.schema.admin_email_schema import AdminEmailLogResponse, ResendEmailRequest
 from src.services.email_service import EmailService
 from src.api.lib.logger import auto_logger
 from src.utils.response_utils import success, error
 from src.utils.route_decorators import require_permissions
-from pydantic import BaseModel
 
 logger = auto_logger()
 router = APIRouter(prefix="/api/v1/admin/emails", tags=["Admin - Emails"])
-
-
-# ============================================================================
-# REQUEST/RESPONSE SCHEMAS
-# ============================================================================
-
-class EmailLogResponse(BaseModel):
-    """Email log response schema."""
-    id: UUID
-    to_email: str
-    from_email: str
-    subject: str
-    status: str
-    provider: str
-    retry_count: int
-    error_message: Optional[str]
-    created_at: datetime
-    sent_at: Optional[datetime]
-    failed_at: Optional[datetime]
-
-    class Config:
-        from_attributes = True
-
-
-class ResendEmailRequest(BaseModel):
-    """Request to resend failed email."""
-    email_log_ids: List[UUID]
 
 
 # ============================================================================
@@ -54,7 +27,7 @@ class ResendEmailRequest(BaseModel):
 # ============================================================================
 
 @router.get("/failed")
-@require_permissions("audit.read", workspace_scoped=False)
+@require_permissions("audit.admin", workspace_scoped=False)
 async def get_failed_emails(
     db: AsyncSession = Depends(get_async_db),
     limit: int = Query(default=50, le=200),
@@ -75,16 +48,18 @@ async def get_failed_emails(
         List of failed email logs
     """
     try:
-        cutoff_date = datetime.utcnow() - timedelta(days=days_back)
+        cutoff_date = datetime.now(timezone.utc) - timedelta(days=days_back)
 
+        # Define common filters
+        filters = and_(
+            EmailLog.status == "failed",
+            EmailLog.created_at >= cutoff_date
+        )
+
+        # Get page data
         stmt = (
             select(EmailLog)
-            .where(
-                and_(
-                    EmailLog.status == "failed",
-                    EmailLog.created_at >= cutoff_date
-                )
-            )
+            .where(filters)
             .order_by(EmailLog.created_at.desc())
             .limit(limit)
             .offset(offset)
@@ -93,18 +68,10 @@ async def get_failed_emails(
         result = await db.execute(stmt)
         failed_emails = result.scalars().all()
 
-        # Count total failed emails in this period
-        count_stmt = (
-            select(EmailLog)
-            .where(
-                and_(
-                    EmailLog.status == "failed",
-                    EmailLog.created_at >= cutoff_date
-                )
-            )
-        )
+        # Count total failed emails in this period as a scalar integer
+        count_stmt = select(func.count(EmailLog.id)).where(filters)
         count_result = await db.execute(count_stmt)
-        total_count = len(count_result.scalars().all())
+        total_count = int(count_result.scalar() or 0)
 
         logger.info(
             f"Retrieved {len(failed_emails)} failed emails",
@@ -113,7 +80,7 @@ async def get_failed_emails(
 
         return success(
             data={
-                "emails": [EmailLogResponse.model_validate(email).model_dump() for email in failed_emails],
+                "emails": [AdminEmailLogResponse.model_validate(email).model_dump() for email in failed_emails],
                 "total": total_count,
                 "limit": limit,
                 "offset": offset,
@@ -131,7 +98,7 @@ async def get_failed_emails(
 
 
 @router.post("/{email_log_id}/resend")
-@require_permissions("audit.read", workspace_scoped=False)
+@require_permissions("email.resend", workspace_scoped=False)
 async def resend_single_email(
     email_log_id: UUID,
     db: AsyncSession = Depends(get_async_db)
@@ -139,7 +106,7 @@ async def resend_single_email(
     """
     Resend a single failed email.
 
-    Requires permission: audit.read (admin monitoring)
+    Requires permission: email.resend (admin monitoring)
 
     Args:
         email_log_id: ID of the email log to resend
@@ -169,10 +136,17 @@ async def resend_single_email(
         email_service = EmailService(db)
 
         # Resend email (creates new log entry)
+        if not original_email.html_content:
+            raise HTTPException(
+                status_code=422,
+                detail="Original email content not available for resend. "
+                       "Only emails sent after the html_content migration can be resent."
+            )
+
         new_email_log = await email_service.send_email(
             to=original_email.to_email,
             subject=original_email.subject,
-            html="",  # Would need to store original HTML or regenerate
+            html=original_email.html_content,
             from_email=original_email.from_email,
             workspace_id=original_email.workspace_id,
             user_id=original_email.user_id,
@@ -203,7 +177,7 @@ async def resend_single_email(
 
 
 @router.post("/resend-batch")
-@require_permissions("audit.read", workspace_scoped=False)
+@require_permissions("email.resend", workspace_scoped=False)
 async def resend_batch_emails(
     request: ResendEmailRequest,
     db: AsyncSession = Depends(get_async_db)
@@ -211,7 +185,7 @@ async def resend_batch_emails(
     """
     Resend multiple failed emails in batch.
 
-    Requires permission: audit.read (admin only)
+    Requires permission: email.resend (admin only)
 
     Args:
         request: List of email log IDs to resend
@@ -245,10 +219,18 @@ async def resend_batch_emails(
                     continue
 
                 # Resend email
+                if not original_email.html_content:
+                    results["failed"].append({
+                        "id": str(email_log_id),
+                        "error": "Original email content not available for resend. "
+                               "Only emails sent after the html_content migration can be resent."
+                    })
+                    continue
+
                 new_email_log = await email_service.send_email(
                     to=original_email.to_email,
                     subject=original_email.subject,
-                    html="",  # Would need to store original HTML
+                    html=original_email.html_content,
                     from_email=original_email.from_email,
                     workspace_id=original_email.workspace_id,
                     user_id=original_email.user_id,

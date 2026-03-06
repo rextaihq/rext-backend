@@ -17,7 +17,7 @@ Features:
 import functools
 import json
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Union, Callable, TypeVar, Generic
 from uuid import uuid4, UUID
 
@@ -36,10 +36,10 @@ from src.api.schema.response_schemas import (
     create_validation_error_response,
 )
 from src.api.middleware.exceptions import (
-    WrextAPIException,
+    RextAPIException,
     ResourceNotFoundException,
     DuplicateResourceException,
-    WrextValidationException,
+    RextValidationException,
 )
 from src.api.middleware.request_tracker import get_request_id
 
@@ -603,15 +603,17 @@ def response_handler(
                         status_code=success_status
                     )
 
-            except WrextAPIException:
+            except RextAPIException:
                 # Re-raise custom exceptions to be handled by middleware
                 raise
             except HTTPException:
                 # Re-raise HTTP exceptions to be handled by middleware
                 raise
             except Exception as e:
-                # Convert unexpected exceptions to standardized error
-                message = f"{error_message}: {str(e)}" if error_message else str(e)
+                # Log unexpected exception for internal tracking
+                logger.exception(f"Unexpected error: {str(e)}", extra={"error_type": type(e).__name__})
+                # Convert unexpected exceptions to standardized error without leaking details
+                message = error_message or "An internal server error occurred"
                 return error(
                     message=message,
                     code=ErrorCode.INTERNAL_SERVER_ERROR,
@@ -688,13 +690,15 @@ def paginated_response(
                         message=success_message
                     )
 
-            except WrextAPIException:
+            except RextAPIException:
                 raise
             except HTTPException:
                 raise
             except Exception as e:
+                # Log unexpected exception for internal tracking
+                logger.exception(f"Pagination error: {str(e)}", extra={"error_type": type(e).__name__})
                 return error(
-                    message=f"Pagination error: {str(e)}",
+                    message="An error occurred during pagination",
                     code=ErrorCode.INTERNAL_SERVER_ERROR,
                     status_code=500,
                     severity=ErrorSeverity.HIGH,
@@ -718,13 +722,13 @@ def validate_required_fields(data: Dict[str, Any], required_fields: List[str]) -
         required_fields: List of required field names
 
     Raises:
-        WrextValidationException: If any required fields are missing
+        RextValidationException: If any required fields are missing
     """
     missing_fields = [field for field in required_fields if field not in data or data[field] is None]
 
     if missing_fields:
         field_errors = {field: ["This field is required"] for field in missing_fields}
-        raise WrextValidationException(
+        raise RextValidationException(
             message=f"Missing required fields: {', '.join(missing_fields)}",
             field_errors=field_errors
         )
@@ -743,7 +747,7 @@ def validate_field_length(
                     Format: {"field": {"min": 1, "max": 100}}
 
     Raises:
-        WrextValidationException: If any field length validation fails
+        RextValidationException: If any field length validation fails
     """
     field_errors = {}
 
@@ -763,7 +767,7 @@ def validate_field_length(
                 field_errors[field_name] = errors
 
     if field_errors:
-        raise WrextValidationException(
+        raise RextValidationException(
             message="Field length validation failed",
             field_errors=field_errors
         )

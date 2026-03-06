@@ -1,20 +1,8 @@
 """
 Content Service - Business Logic for Content Operations
 
-This service encapsulates all business logic related to content management,
-including creation, updates, deletion, publishing, and slug generation.
-
-Responsibilities:
-- Content CRUD operations
-- Slug generation and uniqueness validation
-- Metadata and SEO data management
-- Status transition validation
-- Business rule enforcement
-
-Does NOT:
-- Handle HTTP requests/responses (that's routes)
-- Commit transactions (that's decorators/routes)
-- Authentication/authorization (that's decorators)
+Handles multi-table persistence for content, SEO, and media.
+Strictly separates core content from SEO metadata.
 """
 
 from typing import List, Optional, Dict, Any
@@ -23,684 +11,354 @@ from uuid import uuid4
 from datetime import datetime, timezone
 import re
 
-from sqlalchemy import select, func
+from sqlalchemy import select, func, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from src.api.models.content_models.content import Content
 from src.api.models.content_models.content_seo_data import ContentSEOData
-# Note: ContentMetadata table dropped in migration 40fd95ca1e8d - now uses Content.metadata_json
-from src.api.schema.content_schema import ContentCreate, ContentUpdate
+from src.api.models.content_models.content_media import ContentMedia
 from src.utils.logger import logger
 from src.api.middleware.exceptions import (
-    WrextValidationException,
+    RextValidationException,
     ResourceNotFoundException,
     DuplicateResourceException
 )
-from src.services.sse_service import event_stream_manager
+from src.api.models.workspace_models.workspace_integration import WorkspaceIntegration
+from src.web.wordpress import WordPressPublisher
+from src.api.schema.content_schema import PublishResponse, ContentCreate, ContentUpdate, ContentSEODataSchema
+from src.utils.slug_utils import slugify, generate_unique_slug
+import asyncio
 
 
 class ContentService:
     """
     Service for content business logic.
-
-    Handles pure CRUD operations for content without any external dependencies.
-    For AI generation workflows, use LangGraphContentService in background tasks.
     """
 
     def __init__(self, db: AsyncSession):
-        """
-        Initialize ContentService.
-
-        Args:
-            db: Async database session
-        """
         self.db = db
 
     async def create_content(
         self, workspace_id: UUID, user_id: UUID, data: ContentCreate
     ) -> Content:
-        """
-        Create new content with metadata and SEO data.
+        """Create new content with nested SEO and Media data."""
+        # Check for duplicate title within the same workspace
+        existing_query = select(Content).where(
+            Content.workspace_id == workspace_id,
+            Content.title == data.title,
+            Content.deleted_at == None
+        )
+        existing_content = (await self.db.execute(existing_query)).scalar_one_or_none()
+        if existing_content:
+            raise DuplicateResourceException(
+                resource_type="Content",
+                conflicting_field="title",
+                conflicting_value=data.title
+            )
 
-        Business Rules:
-        - Slug is auto-generated from title and must be unique within workspace
-        - Creator and author are set to current user (unless author_id provided)
-        - Status defaults to 'draft'
-        - Metadata and SEO data are optional
+        base_slug = slugify(data.title)
+        unique_slug = await generate_unique_slug(self.db, base_slug, Content, workspace_id=workspace_id)
 
-        Args:
-            workspace_id: Workspace UUID
-            user_id: User UUID (creator)
-            data: Content creation data
-
-        Returns:
-            Created Content object with relationships loaded
-
-        Raises:
-            WrextValidationException: If validation fails
-        """
-        # Generate unique slug from title
-        base_slug = self._slugify(data.title)
-        unique_slug = await self._generate_unique_slug(workspace_id, base_slug)
-
-        # Generate thread ID locally (no external API call needed)
-        # The actual LangGraph workflow will use this thread_id for execution tracking
-        thread_id = uuid4()
-
-        # Create content entity
-        # If body_markdown is provided, status can be "draft" (manual content)
-        default_status = "generating" if not data.body_markdown else "draft"
-
+        # Create main content
         content = Content(
             workspace_id=workspace_id,
-            topic_id=data.topic_id,
             created_by_user_id=user_id,
-            assigned_to_user_id=data.assigned_to_user_id,
-            author_id=getattr(data, "author_id", None) or user_id,  # Default to creator
             title=data.title,
             slug=unique_slug,
+            introduction=data.introduction,
             body_markdown=data.body_markdown,
-            content_format=data.content_format or "Markdown",
-            status=data.status
-            or default_status,  # Auto-set to "generating" if no body provided
+            body_html=data.body_html,
+            status=data.status or "draft",
             content_language=data.content_language or "English",
-            langgraph_thread_id=thread_id,  # Store thread ID locally
+            tags=data.tags,
+            images_data=data.images_data,
+            links_data=data.links_data,
+            schema_markup=data.schema_markup,
             created_at=datetime.now(timezone.utc),
             updated_at=datetime.now(timezone.utc),
         )
+        
         self.db.add(content)
         await self.db.flush()
 
-        await event_stream_manager.set_operation_owner(str(content.id), user_id)
-
-        # Create metadata JSONB if provided (consolidated from content_metadata table)
-        if data.metadata:
-            content.metadata_json = {
-                "content_summary": data.metadata.content_summary,
-                "content_type": data.metadata.content_type,
-                "target_platform": data.metadata.target_platform,
-                "target_industry": data.metadata.target_industry,
-                "target_audience": data.metadata.target_audience,
-                "audience_size": data.metadata.audience_size,
-                "complexity_level": data.metadata.complexity_level,
-                "content_tone": data.metadata.content_tone,
-                "target_region": data.metadata.target_region,
-                "content_objectives": data.metadata.content_objectives,
-                "source_references": data.metadata.source_references,
-                "content_word_count": data.metadata.content_word_count,
-                "reading_time_minutes": data.metadata.reading_time_minutes,
-                "content_quality_scores": data.metadata.content_quality_scores,
-                "featured_image_prompt": data.metadata.featured_image_prompt,
-                "featured_image_alt_text": data.metadata.featured_image_alt_text,
-                "created_at": datetime.now(timezone.utc).isoformat(),
-                "updated_at": datetime.now(timezone.utc).isoformat(),
-            }
-
-        # Create SEO data if provided
+        # Save SEO data
         if data.seo_data:
-            seo_data = ContentSEOData(
+            seo_record = ContentSEOData(
                 content_id=content.id,
-                content_primary_keywords=data.seo_data.content_primary_keywords,
-                content_secondary_keywords=data.seo_data.content_secondary_keywords,
-                content_meta_description=data.seo_data.content_meta_description,
-                content_search_intent=data.seo_data.content_search_intent,
-                content_seo_score=data.seo_data.content_seo_score,
-                content_readability_score=data.seo_data.content_readability_score,
-                created_at=datetime.now(timezone.utc),
+                meta_title=data.seo_data.meta_title,
+                meta_description=data.seo_data.meta_description,
+                focus_keyphrase=data.seo_data.focus_keyphrase,
+                keyphrase_density=data.seo_data.keyphrase_density,
+                secondary_keywords=data.seo_data.secondary_keywords,
+                search_intent=data.seo_data.search_intent,
+                seo_score=data.seo_data.seo_score,
+                readability_score=data.seo_data.readability_score,
+                trust_score=data.seo_data.trust_score,
+                seo_details=data.seo_data.seo_details
             )
-            self.db.add(seo_data)
+            self.db.add(seo_record)
+            content.seo_data = seo_record  # Link relationship to avoid lazy loading later
+
+        # Save Media links
+        if data.media_items:
+            for item in data.media_items:
+                media_link = ContentMedia(
+                    content_id=content.id,
+                    media_id=item.media_id,
+                    usage_type=item.usage_type,
+                    position=item.position
+                )
+                self.db.add(media_link)
 
         await self.db.flush()
-
-        # Eagerly load relationships to avoid lazy loading in async context
-        # This prevents "greenlet_spawn has not been called" errors when to_dict() accesses relationships
-        query = (
-            select(Content)
-            .where(Content.id == content.id)
-            .options(selectinload(Content.seo_data))
-        )
-        result = await self.db.execute(query)
-        content = result.scalar_one()
-
-        logger.info(
-            f"Content created: {content.id}",
-            extra={
-                "workspace_id": str(workspace_id),
-                "user_id": str(user_id),
-                "title": data.title,
-            },
-        )
-
-        # Return content record
-        # Background generation (if needed) is triggered by the route layer
+        logger.info(f"Content created: {content.id}")
         return content
 
     async def update_content(
         self, content_id: UUID, workspace_id: UUID, user_id: UUID, data: ContentUpdate
     ) -> Content:
-        """
-        Update existing content.
+        """Update existing content and its nested relations."""
+        content = await self._get_content_or_404(content_id, workspace_id, include_seo=True)
 
-        Business Rules:
-        - Slug is regenerated if title changes
-        - Status transitions are validated (see _validate_status_transition)
-        - Publishing requires 'content.publish' permission (checked in route)
-        - Metadata and SEO data can be updated or created
-
-        Args:
-            content_id: Content UUID
-            workspace_id: Workspace UUID (for verification)
-            user_id: User UUID (for permission checks)
-            data: Content update data
-
-        Returns:
-            Updated Content object
-
-        Raises:
-            ResourceNotFoundException: If content not found
-            WrextValidationException: If validation fails
-        """
-        # Get content
-        content = await self._get_content_or_404(content_id, workspace_id)
-
-        # Update title and regenerate slug if title changed
-        if data.title is not None and data.title != content.title:
-            base_slug = self._slugify(data.title)
-            # Exclude current content from uniqueness check
-            unique_slug = await self._generate_unique_slug(
-                workspace_id, base_slug, exclude_id=content.id
+        if data.title and data.title != content.title:
+            # Check for duplicate title within the same workspace
+            existing_query = select(Content).where(
+                Content.workspace_id == workspace_id,
+                Content.title == data.title,
+                Content.deleted_at == None,
+                Content.id != content_id
             )
-            content.slug = unique_slug
+            existing_content = (await self.db.execute(existing_query)).scalar_one_or_none()
+            if existing_content:
+                raise DuplicateResourceException(
+                    resource_type="Content",
+                    conflicting_field="title",
+                    conflicting_value=data.title
+                )
+
+            content.slug = await generate_unique_slug(
+                self.db, slugify(data.title), Content, 
+                workspace_id=workspace_id, exclude_id=content.id
+            )
             content.title = data.title
 
-        # Update body fields
-        if data.body_markdown is not None:
-            content.body_markdown = data.body_markdown
-
-        if data.body_html is not None:
-            content.body_html = data.body_html
-
-        # Update status with validation
-        if data.status is not None:
+        if data.status and data.status != content.status:
             await self._validate_status_transition(content.status, data.status)
             content.status = data.status
 
-        # Update other fields
-        if data.content_language is not None:
-            content.content_language = data.content_language
+        # Update core fields
+        updatable_fields = [
+            "content_language", "introduction", "body_markdown", "body_html", 
+            "tags", "images_data", "links_data", "schema_markup", "langgraph_thread_id"
+        ]
+        for field in updatable_fields:
+            val = getattr(data, field, None)
+            if val is not None:
+                setattr(content, field, val)
 
-        if data.assigned_to_user_id is not None:
-            content.assigned_to_user_id = data.assigned_to_user_id
+        # Update SEO data
+        if data.seo_data:
+            seo = content.seo_data
+            if not seo:
+                seo = ContentSEOData(content_id=content.id)
+                self.db.add(seo)
+            
+            seo_fields = [
+                "meta_title", "meta_description", "focus_keyphrase", "keyphrase_density", 
+                "secondary_keywords", "search_intent", "seo_score", "readability_score", 
+                "trust_score", "seo_details"
+            ]
+            for field in seo_fields:
+                val = getattr(data.seo_data, field, None)
+                if val is not None:
+                    setattr(seo, field, val)
 
-        if data.topic_id is not None:
-            content.topic_id = data.topic_id
-
-        # Update LangGraph thread ID if provided
-        if (
-            hasattr(data, "langgraph_thread_id")
-            and data.langgraph_thread_id is not None
-        ):
-            content.langgraph_thread_id = data.langgraph_thread_id
+        # Update media links (simplified clear & re-add)
+        if data.media_items is not None:
+            # Note: In production you might want a more subtle diff approach
+            # Using execute() to avoid loading all objects
+            await self.db.execute(delete(ContentMedia).where(ContentMedia.content_id == content.id))
+            
+            for item in data.media_items:
+                self.db.add(ContentMedia(
+                    content_id=content.id, 
+                    media_id=item.media_id, 
+                    usage_type=item.usage_type, 
+                    position=item.position
+                ))
 
         content.updated_at = datetime.now(timezone.utc)
-
-        # Update metadata JSONB if provided (consolidated from content_metadata table)
-        if data.metadata:
-            # Get existing metadata_json or create new dict
-            metadata_json = content.metadata_json or {}
-
-            # Update only provided fields (partial update support)
-            if data.metadata.content_summary is not None:
-                metadata_json["content_summary"] = data.metadata.content_summary
-            if data.metadata.content_type is not None:
-                metadata_json["content_type"] = data.metadata.content_type
-            if data.metadata.target_platform is not None:
-                metadata_json["target_platform"] = data.metadata.target_platform
-            if data.metadata.target_industry is not None:
-                metadata_json["target_industry"] = data.metadata.target_industry
-            if data.metadata.target_audience is not None:
-                metadata_json["target_audience"] = data.metadata.target_audience
-            if data.metadata.content_word_count is not None:
-                metadata_json["content_word_count"] = data.metadata.content_word_count
-            if data.metadata.reading_time_minutes is not None:
-                metadata_json["reading_time_minutes"] = (
-                    data.metadata.reading_time_minutes
-                )
-            if data.metadata.audience_size is not None:
-                metadata_json["audience_size"] = data.metadata.audience_size
-            if data.metadata.complexity_level is not None:
-                metadata_json["complexity_level"] = data.metadata.complexity_level
-            if data.metadata.content_tone is not None:
-                metadata_json["content_tone"] = data.metadata.content_tone
-            if data.metadata.target_region is not None:
-                metadata_json["target_region"] = data.metadata.target_region
-            if data.metadata.content_objectives is not None:
-                metadata_json["content_objectives"] = data.metadata.content_objectives
-            if data.metadata.source_references is not None:
-                metadata_json["source_references"] = data.metadata.source_references
-            if data.metadata.content_quality_scores is not None:
-                metadata_json["content_quality_scores"] = (
-                    data.metadata.content_quality_scores
-                )
-            if data.metadata.featured_image_prompt is not None:
-                metadata_json["featured_image_prompt"] = (
-                    data.metadata.featured_image_prompt
-                )
-            if data.metadata.featured_image_alt_text is not None:
-                metadata_json["featured_image_alt_text"] = (
-                    data.metadata.featured_image_alt_text
-                )
-
-            metadata_json["updated_at"] = datetime.now(timezone.utc).isoformat()
-            content.metadata_json = metadata_json
-
-        # Update SEO data if provided
-        if data.seo_data:
-            result = await self.db.execute(
-                select(ContentSEOData).where(ContentSEOData.content_id == content_id)
-            )
-            seo_data = result.scalar_one_or_none()
-
-            if seo_data:
-                # Update existing SEO data
-                if data.seo_data.content_primary_keywords is not None:
-                    seo_data.content_primary_keywords = (
-                        data.seo_data.content_primary_keywords
-                    )
-                if data.seo_data.content_secondary_keywords is not None:
-                    seo_data.content_secondary_keywords = (
-                        data.seo_data.content_secondary_keywords
-                    )
-                if data.seo_data.content_meta_description is not None:
-                    seo_data.content_meta_description = (
-                        data.seo_data.content_meta_description
-                    )
-                if data.seo_data.content_seo_score is not None:
-                    seo_data.content_seo_score = data.seo_data.content_seo_score
-                if data.seo_data.content_readability_score is not None:
-                    seo_data.content_readability_score = (
-                        data.seo_data.content_readability_score
-                    )
-                seo_data.updated_at = datetime.now(timezone.utc)
-            else:
-                # Create new SEO data
-                seo_data = ContentSEOData(
-                    content_id=content.id,
-                    content_primary_keywords=data.seo_data.content_primary_keywords,
-                    content_meta_description=data.seo_data.content_meta_description,
-                    created_at=datetime.now(timezone.utc),
-                )
-                self.db.add(seo_data)
-
         await self.db.flush()
         await self.db.refresh(content)
-
-        logger.info(
-            f"Content updated: {content_id}",
-            extra={"workspace_id": str(workspace_id), "user_id": str(user_id)},
-        )
-
         return content
 
     async def delete_content(self, content_id: UUID, workspace_id: UUID) -> None:
-        """
-                Soft delete content by setting deleted_at timestamp.
-        /
-                Args:
-                    content_id: Content UUID
-                    workspace_id: Workspace UUID (for verification)
-
-                Raises:
-                    ResourceNotFoundException: If content not found
-        """
         content = await self._get_content_or_404(content_id, workspace_id)
-
         content.deleted_at = datetime.now(timezone.utc)
         await self.db.flush()
-        await self.db.refresh(content)
-        await self.db.commit()
 
-        logger.info(
-            f"Content deleted: {content_id}", extra={"workspace_id": str(workspace_id)}
+    async def list_content(self, workspace_id: UUID, status: Optional[str] = None, limit: int = 100, offset: int = 0) -> Dict[str, Any]:
+        query = (
+            select(Content)
+            .where(Content.workspace_id == workspace_id, Content.deleted_at == None)
+            .options(selectinload(Content.seo_data))
         )
-
-    async def publish_content(
-        self, content_id: UUID, workspace_id: UUID, user_id: UUID
-    ) -> Content:
-        """
-        Publish content (business logic for publishing).
-
-        Business Rules:
-        - Content must be in 'ready' status to publish
-        - Content must have body content (not empty)
-        - Permission check ('content.publish') handled in route decorator
-
-        Args:
-            content_id: Content UUID
-            workspace_id: Workspace UUID
-            user_id: User UUID (for logging)
-
-        Returns:
-            Published Content object
-
-        Raises:
-            WrextValidationException: If content not ready to publish
-        """
-        content = await self._get_content_or_404(content_id, workspace_id)
-
-        # Validate content is ready to publish
-        if content.status != "ready":
-            raise WrextValidationException(
-                message="Content must be in 'ready' status to publish",
-                field_errors={
-                    "status": [
-                        f"Cannot publish content with status '{content.status}'. Move to 'ready' first."
-                    ]
-                },
-            )
-
-        if not content.body_markdown or content.body_markdown.strip() == "":
-            raise WrextValidationException(
-                message="Cannot publish empty content",
-                field_errors={
-                    "body_markdown": ["Content body is required for publishing"]
-                },
-            )
-
-        # Publish
-        content.status = "published"
-        content.updated_at = datetime.now(timezone.utc)
-
-        logger.info(
-            f"Content published: {content_id}",
-            extra={"workspace_id": str(workspace_id), "user_id": str(user_id)},
-        )
-
-        return content
-
-    async def list_content(
-        self,
-        workspace_id: UUID,
-        status: Optional[str] = None,
-        include_metadata: bool = False,
-        include_seo: bool = False,
-        limit: int = 100,
-        offset: int = 0,
-    ) -> Dict[str, Any]:
-        """
-        List content for workspace with filtering and pagination.
-
-        Args:
-            workspace_id: Workspace UUID
-            status: Optional status filter
-            include_metadata: Include content metadata
-            include_seo: Include SEO data
-            limit: Maximum items to return
-            offset: Number of items to skip
-
-        Returns:
-            Dict with content list and total count
-        """
-        # Build query
-        query = select(Content).where(
-            Content.workspace_id == workspace_id, Content.deleted_at == None
-        )
-
-        # Filter by status if provided
-        if status:
-            query = query.where(Content.status == status)
-
-        # Eagerly load relationships to avoid lazy loading issues
-        # Note: metadata_json is now a JSONB column, no relationship to load
-        if include_seo:
-            query = query.options(selectinload(Content.seo_data))
-
-        # Get total count
+        if status: query = query.where(Content.status == status)
+        
         count_query = (
             select(func.count())
             .select_from(Content)
             .where(Content.workspace_id == workspace_id, Content.deleted_at == None)
         )
-        if status:
-            count_query = count_query.where(Content.status == status)
-
-        count_result = await self.db.execute(count_query)
-        total_count = count_result.scalar()
-
-        # Apply pagination and ordering
-        query = query.order_by(Content.created_at.desc()).offset(offset).limit(limit)
-        result = await self.db.execute(query)
-        content_items = result.scalars().all()
-
-        # Build relationships list
-        relationships = []
-        # Note: metadata now in JSONB column (metadata_json), not a relationship
-        if include_seo:
-            relationships.append("seo_data")
-
-        content_list = [
-            content.to_dict(
-                include_relationships=relationships if relationships else None
-            )
-            for content in content_items
-        ]
-
-        logger.info(
-            f"Listed {len(content_list)} content items for workspace {workspace_id}"
-        )
-
-        return {"content": content_list, "total_count": total_count}
-
-    async def get_content(
-        self,
-        content_id: UUID,
-        workspace_id: UUID,
-        include_metadata: bool = True,
-        include_seo: bool = True,
-    ) -> Dict[str, Any]:
-        """
-        Get single content item by ID.
-
-        Args:
-            content_id: Content UUID
-            workspace_id: Workspace UUID
-            include_metadata: Include content metadata
-            include_seo: Include SEO data
-
-        Returns:
-            Content dict with requested relationships
-
-        Raises:
-            ResourceNotFoundException: If content not found
-        """
-        # Build query with eager loading for requested relationships
-        query = select(Content).where(
-            Content.id == content_id,
-            Content.workspace_id == workspace_id,
-            Content.deleted_at == None,
-        )
-
-        # Eagerly load relationships to avoid lazy loading issues
-        # Note: metadata_json is now a JSONB column, no relationship to load
-        if include_seo:
-            query = query.options(selectinload(Content.seo_data))
-
-        result = await self.db.execute(query)
-        content = result.scalar_one_or_none()
-
-        if not content:
-            raise ResourceNotFoundException(
-                resource_type="Content", resource_id=str(content_id)
-            )
-
-        relationships = []
-        # Note: metadata now in JSONB column (metadata_json), not a relationship
-        if include_seo:
-            relationships.append("seo_data")
-
-        content_data = content.to_dict(
-            include_relationships=relationships if relationships else None,
-            include_nulls=True,  # Include body_markdown even if null
-        )
-
-        logger.info(f"Retrieved content {content_id} from workspace {workspace_id}")
-
-        return content_data
-
-    # ========================================================================
-    # Private Helper Methods
-    # ========================================================================
-
-    def _slugify(self, text: str) -> str:
-        """
-        Convert text to URL-safe slug.
-
-        Args:
-            text: Text to slugify
-
-        Returns:
-            URL-safe slug
-        """
-        # Convert to lowercase
-        text = text.lower()
-        # Replace spaces and underscores with hyphens
-        text = re.sub(r"[\s_]+", "-", text)
-        # Remove non-alphanumeric characters except hyphens
-        text = re.sub(r"[^a-z0-9-]", "", text)
-        # Remove multiple consecutive hyphens
-        text = re.sub(r"-+", "-", text)
-        # Strip hyphens from start and end
-        text = text.strip("-")
-        return text
-
-    async def _generate_unique_slug(
-        self, workspace_id: UUID, base_slug: str, exclude_id: Optional[UUID] = None
-    ) -> str:
-        """
-        Generate unique slug within workspace.
-
-        If slug exists, appends -1, -2, etc. until unique slug is found.
-
-        Args:
-            workspace_id: Workspace UUID
-            base_slug: Base slug to make unique
-            exclude_id: Content ID to exclude from uniqueness check (for updates)
-
-        Returns:
-            Unique slug
-        """
-        slug = base_slug
-        counter = 1
-
-        while True:
-            # Check if slug exists
-            query = select(Content).where(
-                Content.workspace_id == workspace_id,
-                Content.slug == slug,
-                Content.deleted_at == None,
-            )
-
-            if exclude_id:
-                query = query.where(Content.id != exclude_id)
-
-            result = await self.db.execute(query)
-            existing = result.scalar_one_or_none()
-
-            if not existing:
-                return slug
-
-            # Slug exists, try with counter
-            slug = f"{base_slug}-{counter}"
-            counter += 1
-
-    async def _get_content_or_404(
-        self, content_id: UUID, workspace_id: UUID
-    ) -> Content:
-        """
-        Get content by ID or raise 404.
-
-        Args:
-            content_id: Content UUID
-            workspace_id: Workspace UUID (for verification)
-
-        Returns:
-            Content object
-
-        Raises:
-            ResourceNotFoundException: If content not found or not in workspace
-        """
+        if status: count_query = count_query.where(Content.status == status)
+        
+        total_count = (await self.db.execute(count_query)).scalar()
         result = await self.db.execute(
-            select(Content).where(
-                Content.id == content_id,
-                Content.workspace_id == workspace_id,
-                Content.deleted_at == None,
-            )
+            query.order_by(Content.created_at.desc()).offset(offset).limit(limit)
         )
-        content = result.scalar_one_or_none()
-
-        if not content:
-            raise ResourceNotFoundException(
-                resource_type="Content", resource_id=str(content_id)
-            )
-
-        return content
-
-    async def get_content_by_id(
-        self, content_id: UUID, workspace_id: UUID
-    ) -> Optional[Content]:
-        """
-        Get content by ID, returns None if not found.
-
-        Args:
-            content_id: Content UUID
-            workspace_id: Workspace UUID (for verification)
-
-        Returns:
-            Content object or None if not found
-        """
-        result = await self.db.execute(
-            select(Content).where(
-                Content.id == content_id,
-                Content.workspace_id == workspace_id,
-                Content.deleted_at == None,
-            )
-        )
-        return result.scalar_one_or_none()
-
-    async def _validate_status_transition(self, current: str, new: str) -> None:
-        """
-        Validate status transition follows allowed flow.
-
-        Allowed transitions:
-        - draft → ready, archived
-        - ready → published, draft, archived
-        - published → archived
-        - archived → (no transitions allowed)
-
-        Args:
-            current: Current status
-            new: New status to transition to
-
-        Raises:
-            WrextValidationException: If transition not allowed
-        """
-        # Define allowed transitions
-        ALLOWED_TRANSITIONS = {
-            "draft": ["ready", "archived"],
-            "ready": ["published", "draft", "archived"],
-            "published": ["archived"],
-            "archived": [],  # Cannot transition from archived
+        items = result.scalars().all()
+        
+        return {
+            "content": [c.to_dict(include_relationships=["seo_data"]) for c in items],
+            "total_count": total_count,
+            "workspace_id": workspace_id,
+            "limit": limit,
+            "offset": offset
         }
 
-        allowed = ALLOWED_TRANSITIONS.get(current, [])
+    async def get_content(self, content_id: UUID, workspace_id: UUID) -> Dict[str, Any]:
+        content = await self._get_content_or_404(content_id, workspace_id, include_seo=True)
+        return content.to_dict(include_relationships=["seo_data"])
 
-        if new not in allowed:
-            raise WrextValidationException(
-                message=f"Invalid status transition: {current} → {new}",
-                field_errors={
-                    "status": [
-                        f"Cannot transition from '{current}' to '{new}'. Allowed: {', '.join(allowed) if allowed else 'none'}"
-                    ]
-                },
+    async def publish_content(self, content_id: UUID, workspace_id: UUID, user_id: UUID) -> Content:
+        content = await self._get_content_or_404(content_id, workspace_id)
+        if content.status != "ready": raise RextValidationException(message="Content must be 'ready' to publish")
+        if not content.body_markdown: raise RextValidationException(message="Cannot publish empty content")
+        content.status = "published"
+        content.updated_at = datetime.now(timezone.utc)
+        return content
+
+
+    async def _get_content_or_404(self, content_id: UUID, workspace_id: UUID, include_seo: bool = False) -> Content:
+        query = select(Content).where(
+            Content.id == content_id, 
+            Content.workspace_id == workspace_id, 
+            Content.deleted_at == None
+        )
+        if include_seo: query = query.options(selectinload(Content.seo_data))
+        content = (await self.db.execute(query)).scalar_one_or_none()
+        if not content: raise ResourceNotFoundException(resource_type="Content", resource_id=str(content_id))
+        return content
+
+    async def _validate_status_transition(self, current: str, new: str) -> None:
+        ALLOWED = {
+            "draft": ["generating", "ready", "archived"],
+            "generating": ["ready", "failed", "draft"],
+            "ready": ["published", "draft", "archived", "generating"],
+            "published": ["archived", "ready"],
+            "archived": ["draft"],
+            "failed": ["draft", "generating", "archived"],
+        }
+        if new not in ALLOWED.get(current, []):
+            raise RextValidationException(message=f"Invalid transition: {current} -> {new}")
+
+    async def publish_to_sites(
+        self,
+        content: Content,
+        workspace_id: UUID,
+        publish_status: str = "publish"
+    ) -> List[PublishResponse]:
+        """
+        Publish content to all active WordPress sites in the workspace.
+        """
+        # Fetch all active sites
+        sites_query = select(WorkspaceIntegration).where(
+            WorkspaceIntegration.workspace_id == workspace_id,
+            WorkspaceIntegration.is_active.is_(True)
+        )
+        sites_result = await self.db.execute(sites_query)
+        sites = sites_result.scalars().all()
+
+        if not sites:
+            logger.warning(f"No active sites found for workspace {workspace_id}")
+            raise RextValidationException(
+                message="No active WordPress sites found in this workspace. Please connect a site before publishing."
             )
+
+        # Prepare content data for publisher
+        seo_data = None
+        
+        # Ensure seo_data is loaded to avoid MissingGreenlet error
+        from sqlalchemy.orm.base import NO_VALUE
+        from sqlalchemy import inspect as sa_inspect
+        if sa_inspect(content).attrs.seo_data.loaded_value is NO_VALUE:
+            seo_result = await self.db.execute(
+                select(ContentSEOData).where(ContentSEOData.content_id == content.id)
+            )
+            content.seo_data = seo_result.scalar_one_or_none()
+
+        if content.seo_data:
+            seo_data = ContentSEODataSchema(
+                meta_title=content.seo_data.meta_title,
+                meta_description=content.seo_data.meta_description,
+                focus_keyphrase=content.seo_data.focus_keyphrase,
+                trust_score=content.seo_data.trust_score
+            )
+            
+        content_data = ContentCreate(
+            title=content.title,
+            introduction=content.introduction,
+            body_markdown=content.body_markdown,
+            body_html=content.body_html,
+            tags=content.tags,
+            seo_data=seo_data
+        )
+
+        async def publish_one(site):
+            try:
+                async with WordPressPublisher(
+                    site_url=site.site_url,
+                    api_endpoint=site.api_endpoint,
+                    username=site.username,
+                    app_password=site.app_password,
+                    api_key=site.api_key
+                ) as wp_publisher:
+                    wp_response = await wp_publisher.publish_post(
+                        data=content_data,
+                        status=publish_status
+                    )
+
+                return PublishResponse(
+                    site_id=site.id,
+                    site_url=site.site_url,
+                    success=True,
+                    wordpress_post_id=wp_response.get("post_id"),
+                    wordpress_url=wp_response.get("link")
+                )
+            except Exception as e:
+                logger.error(f"Failed to publish to {site.site_url}: {str(e)}")
+                return PublishResponse(
+                    site_id=site.id,
+                    site_url=site.site_url,
+                    success=False,
+                    error=str(e)
+                )
+
+        results = await asyncio.gather(*(publish_one(site) for site in sites))
+
+        # Update content with first successful publish info
+        successful_results = [r for r in results if r.success]
+        if successful_results:
+            first_success = successful_results[0]
+            content.wordpress_post_id = first_success.wordpress_post_id
+            content.wordpress_url = first_success.wordpress_url
+            content.wordpress_published_at = datetime.now(timezone.utc)
+            content.status = "published"
+        else:
+            content.status = "failed"
+            logger.error(f"Publishing failed for all sites for content {content.id}")
+
+        content.updated_at = datetime.now(timezone.utc)
+        await self.db.flush()
+        return results

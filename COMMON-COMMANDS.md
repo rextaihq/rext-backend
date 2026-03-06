@@ -36,7 +36,7 @@ Press `Ctrl+C` in the terminal running `langgraph dev`
 docker-compose stop
 
 # OR stop specific ones
-docker stop wrext-redis langgraph-redis wrext-backend-langgraph-postgres-1
+docker stop rext-redis langgraph-redis rext-backend-langgraph-postgres-1
 ```
 
 ### Complete Shutdown
@@ -69,8 +69,11 @@ python scripts/db.py seed
 # Apply migrations
 .venv/bin/alembic upgrade head
 
-# Create new migration
+# Create new migration (ID must follow Alembic conventions)
 .venv/bin/alembic revision -m "description"
+
+# Validate migration IDs
+python scripts/validate_migration_ids.py
 
 # Check current version
 .venv/bin/alembic current
@@ -127,7 +130,7 @@ docker-compose restart redis
 ### PostgreSQL Shell
 ```bash
 # Option 1: Via Docker
-docker exec -it wrext-backend-langgraph-postgres-1 psql -U postgres
+docker exec -it rext-backend-langgraph-postgres-1 psql -U postgres
 
 # Option 2: If psql installed locally
 psql -h localhost -p 5433 -U postgres -d postgres
@@ -156,13 +159,13 @@ SELECT COUNT(*) FROM users;
 ### Backup & Restore
 ```bash
 # Create backup
-docker exec wrext-backend-langgraph-postgres-1 pg_dump -U postgres postgres > backup.sql
+docker exec rext-backend-langgraph-postgres-1 pg_dump -U postgres postgres > backup.sql
 
 # Restore backup
-cat backup.sql | docker exec -i wrext-backend-langgraph-postgres-1 psql -U postgres postgres
+cat backup.sql | docker exec -i rext-backend-langgraph-postgres-1 psql -U postgres postgres
 
 # Backup with timestamp
-docker exec wrext-backend-langgraph-postgres-1 pg_dump -U postgres postgres > backup_$(date +%Y%m%d_%H%M%S).sql
+docker exec rext-backend-langgraph-postgres-1 pg_dump -U postgres postgres > backup_$(date +%Y%m%d_%H%M%S).sql
 ```
 
 ---
@@ -177,7 +180,7 @@ curl http://localhost:2024/health | python3 -m json.tool
 ### Check Database Connection
 ```bash
 # Quick test
-docker exec wrext-backend-langgraph-postgres-1 pg_isready -U postgres
+docker exec rext-backend-langgraph-postgres-1 pg_isready -U postgres
 
 # Test from Python
 python -c "from src.api.database.async_database import async_engine; import asyncio; asyncio.run(async_engine.connect())"
@@ -186,11 +189,11 @@ python -c "from src.api.database.async_database import async_engine; import asyn
 ### Check Redis Connection
 ```bash
 # From Docker
-docker exec wrext-redis redis-cli ping
+docker exec rext-redis redis-cli ping
 # Should return: PONG
 
 # Test connection
-docker exec wrext-redis redis-cli
+docker exec rext-redis redis-cli
 > ping
 > exit
 ```
@@ -236,7 +239,7 @@ python scripts/db.py seed
 
 **Quick Copy-Paste Settings:**
 ```
-Name:     Wrext Local (Docker)
+Name:     Rext Local (Docker)
 Host:     localhost
 Port:     5433          ⬅️ Important: NOT 5432!
 User:     postgres
@@ -253,7 +256,7 @@ Database: postgres
 # View specific variable
 echo $POSTGRES_URI_CUSTOM
 
-# Show all wrext-related variables
+# Show all rext-related variables
 env | grep -i "postgres\|redis\|secret"
 ```
 
@@ -334,7 +337,7 @@ python scripts/db.py seed
 | Reset database | `python scripts/db.py seed` |
 | View database | Open TablePlus → localhost:5433 |
 | Check logs | `docker-compose logs -f` |
-| Create backup | `docker exec wrext-backend-langgraph-postgres-1 pg_dump -U postgres postgres > backup.sql` |
+| Create backup | `docker exec rext-backend-langgraph-postgres-1 pg_dump -U postgres postgres > backup.sql` |
 
 ---
 

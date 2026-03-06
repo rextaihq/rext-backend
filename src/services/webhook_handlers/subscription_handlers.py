@@ -16,12 +16,15 @@ Handlers for subscription-related LemonSqueezy webhook events:
 Each handler:
 1. Extracts relevant data from webhook
 2. Updates database (creates/updates subscriptions)
-3. Sends email notifications
+3. Returns email task data (to be sent AFTER commit)
 4. Logs actions
+
+IMPORTANT: Email sending happens AFTER database commit to prevent orphaned notifications.
+Handlers return email task data instead of sending emails directly.
 """
 
-from typing import Dict, Any
-from datetime import datetime, timedelta
+from typing import Dict, Any, Optional
+from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -57,7 +60,7 @@ async def handle_subscription_created(
     webhook_data: Dict[str, Any],
     webhook_event: WebhookEvent,
     db: AsyncSession
-) -> None:
+) -> Optional[Dict[str, Any]]:
     """
     Handle subscription_created webhook event.
 
@@ -70,12 +73,15 @@ async def handle_subscription_created(
     3. Find subscription plan by variant_id
     4. Create UserSubscription record
     5. Update user's provider_customer_id
-    6. Send subscription_created email
+    6. Return email task data for sending after commit
 
     Args:
         webhook_data: Parsed webhook data
         webhook_event: Database record for this webhook
         db: Database session
+
+    Returns:
+        Email task dict or None
 
     Raises:
         Exception: If user not found, plan not found, or database error
@@ -216,7 +222,7 @@ async def handle_subscription_created(
         existing_sub.lemonsqueezy_customer_id = lemonsqueezy_customer_id
         existing_sub.lemonsqueezy_variant_id = lemonsqueezy_variant_id
         existing_sub.trial_end_date = datetime.fromisoformat(trial_ends_at).replace(tzinfo=None) if trial_ends_at else None
-        existing_sub.updated_at = datetime.utcnow()
+        existing_sub.updated_at = datetime.now(timezone.utc)
         await db.flush()
         subscription = existing_sub
     else:
@@ -241,9 +247,9 @@ async def handle_subscription_created(
                 }
             )
             old_sub.status = SubscriptionStatus.CANCELLED
-            old_sub.cancelled_at = datetime.utcnow()
-            old_sub.end_date = datetime.utcnow()
-            old_sub.updated_at = datetime.utcnow()
+            old_sub.cancelled_at = datetime.now(timezone.utc)
+            old_sub.end_date = datetime.now(timezone.utc)
+            old_sub.updated_at = datetime.now(timezone.utc)
         
         if existing_active_subs:
             await db.flush()
@@ -253,7 +259,7 @@ async def handle_subscription_created(
             )
         
         # Create new subscription
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         trial_end_date = datetime.fromisoformat(trial_ends_at).replace(tzinfo=None) if trial_ends_at else None
 
         subscription = UserSubscription(
@@ -312,7 +318,7 @@ async def handle_subscription_created(
             discount_amount_type="fixed",  # Will be updated based on actual data
             lemonsqueezy_discount_id=first_subscription_item.get("discount_id"),
             order_id=attributes.get("first_order_id"),
-            applied_at=datetime.utcnow(),
+            applied_at=datetime.now(timezone.utc),
             usage_metadata={
                 "subscription_id": lemonsqueezy_subscription_id,
                 "variant_id": lemonsqueezy_variant_id,
@@ -335,15 +341,8 @@ async def handle_subscription_created(
             }
         )
 
-    # TODO: Send subscription_created email (Task 1.5.1)
-    # This will be implemented when we update email templates
     logger.info(
-        f"Subscription created email would be sent to {user.email}",
-        extra={"user_id": str(user.id), "subscription_id": str(subscription.id)}
-    )
-
-    logger.info(
-        "Successfully processed subscription_created webhook",
+        f"Successfully processed subscription_created webhook",
         operation="webhook_subscription_created",
         event_id=webhook_data.get("event_id"),
         subscription_id=str(subscription.id),
@@ -353,12 +352,27 @@ async def handle_subscription_created(
         correlation_id=correlation_id
     )
 
+    # Return email task data for subscription_created email
+    return {
+        "send_email": True,
+        "email_type": "subscription_created",
+        "email_data": {
+            "user_id": str(user.id),
+            "user_email": user.email,
+            "plan_name": plan.name,
+            "plan_price": f"${(plan.price_yearly if billing_period == BillingPeriod.YEARLY else plan.price_monthly) / 100:.2f}",
+            "billing_period": billing_period.value,
+            "features": plan.features_list if hasattr(plan, 'features_list') else [],
+            "subscription_id": str(subscription.id),
+        }
+    }
+
 
 async def handle_subscription_updated(
     webhook_data: Dict[str, Any],
     webhook_event: WebhookEvent,
     db: AsyncSession
-) -> None:
+) -> Optional[Dict[str, Any]]:
     """
     Handle subscription_updated webhook event.
 
@@ -367,12 +381,15 @@ async def handle_subscription_updated(
     Actions:
     1. Find existing subscription by lemonsqueezy_subscription_id
     2. Update subscription fields (status, plan, billing_period, etc.)
-    3. Send notification if significant change
+    3. Return email task data if significant change occurred
 
     Args:
         webhook_data: Parsed webhook data
         webhook_event: Database record for this webhook
         db: Database session
+
+    Returns:
+        Email task dict or None
 
     Raises:
         Exception: If subscription not found or database error
@@ -479,15 +496,15 @@ async def handle_subscription_updated(
                 }
             )
             old_sub.status = SubscriptionStatus.CANCELLED
-            old_sub.cancelled_at = datetime.utcnow()
-            old_sub.end_date = datetime.utcnow()
-            old_sub.updated_at = datetime.utcnow()
+            old_sub.cancelled_at = datetime.now(timezone.utc)
+            old_sub.end_date = datetime.now(timezone.utc)
+            old_sub.updated_at = datetime.now(timezone.utc)
         
         if existing_active_subs:
             await db.flush()
 
         # Create subscription
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         trial_end_date = datetime.fromisoformat(trial_ends_at).replace(tzinfo=None) if trial_ends_at else None
 
         subscription = UserSubscription(
@@ -525,7 +542,7 @@ async def handle_subscription_updated(
             await db.flush()
 
         # Return early - subscription created, nothing to update
-        return
+        return None
 
     # Map status
     status_map = {
@@ -616,8 +633,8 @@ async def handle_subscription_updated(
     subscription.renews_at = datetime.fromisoformat(renews_at).replace(tzinfo=None) if renews_at else None
     subscription.end_date = datetime.fromisoformat(ends_at).replace(tzinfo=None) if ends_at else None
     subscription.trial_end_date = datetime.fromisoformat(trial_ends_at).replace(tzinfo=None) if trial_ends_at else None
-    subscription.cancelled_at = datetime.utcnow() if cancelled and not subscription.cancelled_at else subscription.cancelled_at
-    subscription.updated_at = datetime.utcnow()
+    subscription.cancelled_at = datetime.now(timezone.utc) if cancelled and not subscription.cancelled_at else subscription.cancelled_at
+    subscription.updated_at = datetime.now(timezone.utc)
 
     await db.flush()
 
@@ -631,12 +648,15 @@ async def handle_subscription_updated(
         }
     )
 
+    # Return None for now - email sending not implemented yet
+    return None
+
 
 async def handle_subscription_cancelled(
     webhook_data: Dict[str, Any],
     webhook_event: WebhookEvent,
     db: AsyncSession
-) -> None:
+) -> Optional[Dict[str, Any]]:
     """
     Handle subscription_cancelled webhook event.
 
@@ -646,12 +666,15 @@ async def handle_subscription_cancelled(
     1. Find subscription
     2. Update status to CANCELLED
     3. Set cancelled_at timestamp
-    4. Send cancellation email
+    4. Return email task data for cancellation email
 
     Args:
         webhook_data: Parsed webhook data
         webhook_event: Database record for this webhook
         db: Database session
+
+    Returns:
+        Email task dict or None
     """
     logger.info(
         "Processing subscription_cancelled webhook",
@@ -676,24 +699,27 @@ async def handle_subscription_cancelled(
 
     # Update subscription
     subscription.status = SubscriptionStatus.CANCELLED
-    subscription.cancelled_at = datetime.utcnow()
+    subscription.cancelled_at = datetime.now(timezone.utc)
     subscription.end_date = datetime.fromisoformat(ends_at).replace(tzinfo=None) if ends_at else None
-    subscription.updated_at = datetime.utcnow()
+    subscription.updated_at = datetime.now(timezone.utc)
 
     await db.flush()
 
-    # TODO: Send cancellation email (Task 1.5.2)
+    # TODO: Return email task data for cancellation email (Task 1.5.2)
     logger.info(
         f"Successfully cancelled subscription {subscription.id}",
         extra={"subscription_id": str(subscription.id)}
     )
+
+    # Return None for now - email sending not implemented yet
+    return None
 
 
 async def handle_subscription_expired(
     webhook_data: Dict[str, Any],
     webhook_event: WebhookEvent,
     db: AsyncSession
-) -> None:
+) -> Optional[Dict[str, Any]]:
     """
     Handle subscription_expired webhook event.
 
@@ -702,12 +728,15 @@ async def handle_subscription_expired(
     Actions:
     1. Find subscription
     2. Update status to EXPIRED
-    3. Send expiration email
+    3. Return email task data for expiration email
 
     Args:
         webhook_data: Parsed webhook data
         webhook_event: Database record for this webhook
         db: Database session
+
+    Returns:
+        Email task dict or None
     """
     logger.info(
         "Processing subscription_expired webhook",
@@ -731,23 +760,25 @@ async def handle_subscription_expired(
 
     # Update subscription
     subscription.status = SubscriptionStatus.EXPIRED
-    subscription.end_date = datetime.utcnow()
-    subscription.updated_at = datetime.utcnow()
-
+    subscription.end_date = datetime.now(timezone.utc)
+    subscription.updated_at = datetime.now(timezone.utc)
     await db.flush()
 
-    # TODO: Send expiration email
+    # TODO: Return email task data for expiration email
     logger.info(
         f"Successfully expired subscription {subscription.id}",
         extra={"subscription_id": str(subscription.id)}
     )
+
+    # Return None for now - email sending not implemented yet
+    return None
 
 
 async def handle_subscription_payment_success(
     webhook_data: Dict[str, Any],
     webhook_event: WebhookEvent,
     db: AsyncSession
-) -> None:
+) -> Optional[Dict[str, Any]]:
     """
     Handle subscription_payment_success webhook event.
 
@@ -758,12 +789,15 @@ async def handle_subscription_payment_success(
     2. Update status to ACTIVE (if was TRIAL or SUSPENDED)
     3. Reset usage counters for new billing cycle
     4. Update next renewal date
-    5. Send payment success email with receipt
+    5. Return email task data for payment success email with receipt
 
     Args:
         webhook_data: Parsed webhook data
         webhook_event: Database record for this webhook
         db: Database session
+
+    Returns:
+        Email task dict or None
     """
     logger.info(
         "Processing subscription_payment_success webhook",
@@ -789,7 +823,7 @@ async def handle_subscription_payment_success(
             extra={"event_type": "subscription_payment_success", "subscription_id": lemonsqueezy_subscription_id}
         )
         # Don't raise error - this is normal webhook ordering issue
-        return
+        return None
 
     # Update subscription - activate if was trial or suspended
     if subscription.status in [SubscriptionStatus.TRIAL, SubscriptionStatus.PAST_DUE]:
@@ -800,16 +834,10 @@ async def handle_subscription_payment_success(
 
     # Reset usage counters for new billing cycle
     subscription.current_api_calls = 0
-    subscription.usage_reset_date = datetime.utcnow() + timedelta(days=30)
-    subscription.updated_at = datetime.utcnow()
+    subscription.usage_reset_date = datetime.now(timezone.utc) + timedelta(days=30)
+    subscription.updated_at = datetime.now(timezone.utc)
 
     await db.flush()
-
-    # TODO: Send payment success email (Task 1.5.3)
-    logger.info(
-        f"Successfully processed payment for subscription {subscription.id}",
-        extra={"subscription_id": str(subscription.id)}
-    )
 
     # Audit log
     audit_logger.log_payment_succeeded(
@@ -821,12 +849,26 @@ async def handle_subscription_payment_success(
         metadata={"renews_at": renews_at}
     )
 
+    # Return email task data for payment success email
+    return {
+        "send_email": True,
+        "email_type": "payment_succeeded",
+        "email_data": {
+            "user_id": str(subscription.user_id),
+            "plan_name": subscription.plan.name if subscription.plan else "Your Plan",
+            "amount_cents": 0,  # Not available in webhook
+            "payment_date": datetime.now(timezone.utc).strftime("%B %d, %Y"),
+            "next_billing_date": subscription.renews_at.strftime("%B %d, %Y") if subscription.renews_at else "N/A",
+            "subscription_id": str(subscription.id),
+        }
+    }
+
 
 async def handle_subscription_payment_failed(
     webhook_data: Dict[str, Any],
     webhook_event: WebhookEvent,
     db: AsyncSession
-) -> None:
+) -> Optional[Dict[str, Any]]:
     """
     Handle subscription_payment_failed webhook event.
 
@@ -837,7 +879,7 @@ async def handle_subscription_payment_failed(
     2. Set status to SUSPENDED (grace period)
     3. Calculate and set grace period (7 days)
     4. Track payment failure timestamp
-    5. Send payment failed email immediately with retry instructions
+    5. Return email task data to be sent AFTER commit
 
     Grace Period Behavior:
     - User retains access during grace period (7 days)
@@ -849,6 +891,9 @@ async def handle_subscription_payment_failed(
         webhook_data: Parsed webhook data
         webhook_event: Database record for this webhook
         db: Database session
+
+    Returns:
+        Email task dict with email data to send after commit
     """
     logger.info(
         "Processing subscription_payment_failed webhook",
@@ -886,7 +931,7 @@ async def handle_subscription_payment_failed(
     plan = result.scalar_one_or_none()
 
     # Calculate grace period (7 days from now)
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     grace_period_days = 7
     grace_period_end = now + timedelta(days=grace_period_days)
 
@@ -921,63 +966,15 @@ async def handle_subscription_payment_failed(
         metadata={"grace_period_end": grace_period_end.isoformat()}
     )
 
-    # Send payment failed email immediately
-    try:
-        from src.services.billing_email_service import BillingEmailService
+    # Extract payment details from webhook for email
+    attributes = webhook_data.get("data", {}).get("attributes", {})
+    first_subscription_item = attributes.get("first_subscription_item", {})
 
-        # Extract payment details from webhook
-        attributes = webhook_data.get("data", {}).get("attributes", {})
-        first_subscription_item = attributes.get("first_subscription_item", {})
+    # Format amount
+    amount_cents = first_subscription_item.get("price", 0)
 
-        # Format amount
-        amount_cents = first_subscription_item.get("price", 0)
-        amount = f"${amount_cents / 100:.2f}" if amount_cents else "N/A"
-
-        # Calculate retry date (LemonSqueezy typically retries in 3 days)
-        retry_date = (now + timedelta(days=3)).strftime("%B %d, %Y")
-
-        # Send email
-        email_service = BillingEmailService(db)
-        await email_service.send_payment_failed_email(
-            user_id=user.id,
-            plan_name=plan.name if plan else "Your Plan",
-            amount=amount,
-            retry_date=retry_date
-        )
-
-        logger.info(
-            f"Payment failed email sent to {user.email}",
-            extra={
-                "user_id": str(user.id),
-                "subscription_id": str(subscription.id),
-                "amount": amount
-            }
-        )
-    except Exception as e:
-        # Log error but don't fail the webhook - email is non-critical
-        logger.error(
-            f"Failed to send payment failed email: {str(e)}",
-            extra={
-                "user_id": str(user.id),
-                "subscription_id": str(subscription.id),
-                "error": str(e)
-            },
-            exc_info=True
-        )
-
-        # Capture email failure to Sentry (Phase 4, Task 4.2.1)
-        # Non-critical but worth tracking
-        capture_payment_exception(
-            e,
-            operation="webhook_email_payment_failed",
-            user_id=str(user.id),
-            subscription_id=str(subscription.id),
-            level="warning",  # Non-critical
-            context={
-                "email_type": "payment_failed",
-                "plan_name": plan.name if plan else "Unknown",
-            }
-        )
+    # Calculate retry date (LemonSqueezy typically retries in 3 days)
+    retry_date = (now + timedelta(days=3)).strftime("%B %d, %Y")
 
     logger.warning(
         f"Payment failed for subscription {subscription.id} - user has access until {grace_period_end.isoformat()}",
@@ -988,12 +985,27 @@ async def handle_subscription_payment_failed(
         }
     )
 
+    # IMPORTANT: Return email data to be sent AFTER commit
+    # This prevents sending emails before database changes are committed
+    return {
+        "send_email": True,
+        "email_type": "payment_failed",
+        "email_data": {
+            "user_id": str(user.id),
+            "user_email": user.email,
+            "plan_name": plan.name if plan else "Your Plan",
+            "amount_cents": amount_cents,
+            "retry_date": retry_date,
+            "subscription_id": str(subscription.id),
+        }
+    }
+
 
 async def handle_subscription_payment_recovered(
     webhook_data: Dict[str, Any],
     webhook_event: WebhookEvent,
     db: AsyncSession
-) -> None:
+) -> Optional[Dict[str, Any]]:
     """
     Handle subscription_payment_recovered webhook event.
 
@@ -1004,18 +1016,21 @@ async def handle_subscription_payment_recovered(
     2. Restore status to ACTIVE
     3. Clear grace period tracking (payment resolved)
     4. Update renewal date
-    5. Send payment recovered email with celebration message
+    5. Return email task data to be sent AFTER commit
 
     Recovery Process:
     - Payment fails → SUSPENDED status with grace period
     - Dunning emails sent (days 1, 3, 6)
     - User updates payment method OR automatic retry succeeds
-    - This handler → Restore to ACTIVE, clear grace period, send success email
+    - This handler → Restore to ACTIVE, clear grace period, return email data
 
     Args:
         webhook_data: Parsed webhook data
         webhook_event: Database record for this webhook
         db: Database session
+
+    Returns:
+        Email task dict with email data to send after commit
     """
     logger.info(
         "Processing subscription_payment_recovered webhook",
@@ -1057,7 +1072,7 @@ async def handle_subscription_payment_recovered(
     previous_status = subscription.status
 
     # Update subscription - restore to ACTIVE
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     subscription.status = SubscriptionStatus.ACTIVE
     subscription.renews_at = datetime.fromisoformat(renews_at).replace(tzinfo=None) if renews_at else None
     subscription.updated_at = now
@@ -1078,76 +1093,47 @@ async def handle_subscription_payment_recovered(
         }
     )
 
-    # Send payment recovered email
-    try:
-        from src.services.billing_email_service import BillingEmailService
-        from emails.templates.billing import render_payment_recovered_email
+    # Extract payment details from webhook for email
+    attributes = webhook_data.get("data", {}).get("attributes", {})
+    first_subscription_item = attributes.get("first_subscription_item", {})
 
-        # Extract payment details from webhook
-        attributes = webhook_data.get("data", {}).get("attributes", {})
-        first_subscription_item = attributes.get("first_subscription_item", {})
+    # Format amount
+    amount_cents = first_subscription_item.get("price", 0)
+    
+    if not amount_cents and plan:
+        # Fallback to plan price
+        if subscription.billing_period.value == "monthly":
+            amount_cents = plan.price_monthly
+        else:
+            amount_cents = plan.price_yearly
 
-        # Format amount
-        amount_cents = first_subscription_item.get("price", 0)
-        if not amount_cents and plan:
-            # Fallback to plan price
-            if subscription.billing_period.value == "monthly":
-                amount_cents = plan.price_monthly
-            else:
-                amount_cents = plan.price_yearly
-        amount = f"${amount_cents / 100:.2f}" if amount_cents else "N/A"
+    # Format dates
+    recovery_date = now.strftime("%B %d, %Y")
+    next_billing_date = subscription.renews_at.strftime("%B %d, %Y") if subscription.renews_at else "N/A"
 
-        # Format dates
-        recovery_date = now.strftime("%B %d, %Y")
-        next_billing_date = subscription.renews_at.strftime("%B %d, %Y") if subscription.renews_at else "N/A"
-
-        # Render email
-        user_name = user.first_name or user.display_name or user.email
-        plan_name = plan.name if plan else "Your Plan"
-
-        html_content = render_payment_recovered_email(
-            user_name=user_name,
-            plan_name=plan_name,
-            amount=amount,
-            recovery_date=recovery_date,
-            next_billing_date=next_billing_date
-        )
-
-        # Send email
-        email_service = BillingEmailService(db)
-        await email_service._send_email(
-            to_email=user.email,
-            subject=f"Payment Successful - {plan_name} Reactivated!",
-            html_content=html_content
-        )
-
-        logger.info(
-            f"Payment recovered email sent to {user.email}",
-            extra={
-                "user_id": str(user.id),
-                "subscription_id": str(subscription.id),
-                "amount": amount
-            }
-        )
-
-    except Exception as e:
-        # Log error but don't fail the webhook - email is non-critical
-        logger.error(
-            f"Failed to send payment recovered email: {str(e)}",
-            extra={
-                "user_id": str(user.id),
-                "subscription_id": str(subscription.id),
-                "error": str(e)
-            },
-            exc_info=True
-        )
+    # IMPORTANT: Return email data to be sent AFTER commit
+    # This prevents sending emails before database changes are committed
+    return {
+        "send_email": True,
+        "email_type": "payment_recovered",
+        "email_data": {
+            "user_id": str(user.id),
+            "user_email": user.email,
+            "user_name": user.full_name or user.display_name or user.email,
+            "plan_name": plan.name if plan else "Your Plan",
+            "amount_cents": amount_cents,
+            "recovery_date": recovery_date,
+            "next_billing_date": next_billing_date,
+            "subscription_id": str(subscription.id),
+        }
+    }
 
 
 async def handle_subscription_paused(
     webhook_data: Dict[str, Any],
     webhook_event: WebhookEvent,
     db: AsyncSession
-) -> None:
+) -> Optional[Dict[str, Any]]:
     """
     Handle subscription_paused webhook event.
 
@@ -1156,12 +1142,15 @@ async def handle_subscription_paused(
     Actions:
     1. Find subscription
     2. Update status to PAUSED
-    3. Send paused notification email
+    3. Return email task data for paused notification email
 
     Args:
         webhook_data: Parsed webhook data
         webhook_event: Database record for this webhook
         db: Database session
+
+    Returns:
+        Email task dict or None
     """
     logger.info(
         "Processing subscription_paused webhook",
@@ -1186,11 +1175,11 @@ async def handle_subscription_paused(
 
     # Update subscription to PAUSED
     subscription.status = SubscriptionStatus.PAUSED
-    subscription.updated_at = datetime.utcnow()
+    subscription.updated_at = datetime.now(timezone.utc)
 
     await db.flush()
 
-    # TODO: Send subscription paused email
+    # TODO: Return email task data for subscription paused email
     logger.info(
         f"Successfully paused subscription {subscription.id}",
         extra={
@@ -1199,12 +1188,15 @@ async def handle_subscription_paused(
         }
     )
 
+    # Return None for now - email sending not implemented yet
+    return None
+
 
 async def handle_subscription_resumed(
     webhook_data: Dict[str, Any],
     webhook_event: WebhookEvent,
     db: AsyncSession
-) -> None:
+) -> Optional[Dict[str, Any]]:
     """
     Handle subscription_resumed webhook event.
 
@@ -1214,12 +1206,15 @@ async def handle_subscription_resumed(
     1. Find subscription
     2. Update status to ACTIVE
     3. Update renewal dates
-    4. Send resumed notification email
+    4. Return email task data for resumed notification email
 
     Args:
         webhook_data: Parsed webhook data
         webhook_event: Database record for this webhook
         db: Database session
+
+    Returns:
+        Email task dict or None
     """
     logger.info(
         "Processing subscription_resumed webhook",
@@ -1246,13 +1241,15 @@ async def handle_subscription_resumed(
     # Update subscription - resume to ACTIVE
     subscription.status = SubscriptionStatus.ACTIVE
     subscription.renews_at = datetime.fromisoformat(renews_at).replace(tzinfo=None) if renews_at else None
-    subscription.updated_at = datetime.utcnow()
+    subscription.updated_at = datetime.now(timezone.utc)
 
     await db.flush()
 
-    # TODO: Send subscription resumed email
+    # TODO: Return email task data for subscription resumed email
     logger.info(
         f"Successfully resumed subscription {subscription.id}",
         extra={"subscription_id": str(subscription.id)}
     )
 
+    # Return None for now - email sending not implemented yet
+    return None

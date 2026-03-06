@@ -14,9 +14,19 @@ from src.api.database.base import Base
 from src.api.server import app
 from src.api.database.async_database import get_async_db
 
-# Test database URL - using same database as production but will create/drop tables
-# In production, we should use a separate test database
-TEST_DATABASE_URL = "postgresql+asyncpg://localhost/mobeen"
+from src.api.config import get_settings
+
+# Get settings to find the database URL
+settings = get_settings()
+
+# Test database URL - priority to POSTGRES_URI_CUSTOM from environment
+_base_url = settings.POSTGRES_URI_CUSTOM or "postgresql://localhost/mobeen"
+
+# Ensure it's using the async driver for these tests
+if _base_url.startswith("postgresql://"):
+    TEST_DATABASE_URL = _base_url.replace("postgresql://", "postgresql+asyncpg://")
+else:
+    TEST_DATABASE_URL = _base_url
 
 
 @pytest_asyncio.fixture(scope="session", loop_scope="session")
@@ -100,7 +110,9 @@ async def setup_factories(db_session: AsyncSession):
     """
     from tests.factories import (
         UserFactory, WorkspaceFactory, WorkspaceMemberFactory,
-        ContentFactory, TopicFactory, RoleFactory, InvitationFactory
+        ContentFactory, RoleFactory, InvitationFactory,
+        KnowledgeBaseFactory, WebsiteFactory, KnowledgeFilesFactory, 
+        TextKnowledgeFactory, PersonaFactory
     )
 
     # Set session for all factories
@@ -108,18 +120,35 @@ async def setup_factories(db_session: AsyncSession):
     WorkspaceFactory._session = db_session
     WorkspaceMemberFactory._session = db_session
     ContentFactory._session = db_session
-    TopicFactory._session = db_session
     RoleFactory._session = db_session
     InvitationFactory._session = db_session
+    KnowledgeBaseFactory._session = db_session
+    WebsiteFactory._session = db_session
+    KnowledgeFilesFactory._session = db_session
+    TextKnowledgeFactory._session = db_session
+    PersonaFactory._session = db_session
 
     yield {
         "user": UserFactory,
         "workspace": WorkspaceFactory,
         "workspace_member": WorkspaceMemberFactory,
         "content": ContentFactory,
-        "topic": TopicFactory,
         "role": RoleFactory,
         "invitation": InvitationFactory,
+        "knowledge_base": KnowledgeBaseFactory,
+        "website": WebsiteFactory,
+        "knowledge_file": KnowledgeFilesFactory,
+        "text_knowledge": TextKnowledgeFactory,
+        "persona": PersonaFactory,
     }
 
     # Cleanup is handled by db_session rollback
+
+
+@pytest.fixture
+def allow_permissions(monkeypatch):
+    async def _allow(*args, **kwargs):
+        return True
+
+    monkeypatch.setattr("src.utils.rbac_utils.check_all_permissions", _allow)
+    monkeypatch.setattr("src.utils.rbac_utils.check_any_permission", _allow)

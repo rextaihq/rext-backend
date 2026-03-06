@@ -7,7 +7,7 @@ including health checks, error logs, and usage statistics.
 All endpoints require admin permissions.
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 from uuid import UUID
 
@@ -15,6 +15,7 @@ from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.database.async_database import get_async_db
+from src.api.models.admin_models.error_log import ErrorLogSeverity
 from src.api.security.dependencies import get_current_user
 from src.services.monitoring_service import MonitoringService
 from src.utils.route_decorators import db_transaction_handler, require_permissions
@@ -30,7 +31,7 @@ router = APIRouter(prefix="/monitoring", tags=["Admin - Monitoring"])
 
 @router.get("/system-health", response_model=dict)
 @db_transaction_handler("get system health", auto_commit=False)
-@require_permissions("audit.read", workspace_scoped=False)
+@require_permissions("audit.admin", workspace_scoped=False)
 async def get_system_health(
     request: Request,
     db: AsyncSession = Depends(get_async_db),
@@ -49,10 +50,7 @@ async def get_system_health(
     service = MonitoringService(db)
     health_data = await service.get_system_health()
 
-    return {
-        "data": health_data,
-        "message": "System health retrieved successfully"
-    }
+    return health_data
 
 
 # ============================================================================
@@ -61,15 +59,19 @@ async def get_system_health(
 
 
 @router.get("/error-logs", response_model=dict)
-@require_permissions("audit.read", workspace_scoped=False)
+@require_permissions("audit.admin", workspace_scoped=False)
 @db_transaction_handler("get error logs", auto_commit=False)
 async def get_error_logs(
     request: Request,
     page: int = Query(1, ge=1, description="Page number"),
     per_page: int = Query(50, ge=1, le=100, description="Items per page"),
-    severity: Optional[str] = Query(None, description="Filter by severity"),
+    severity: Optional[ErrorLogSeverity] = Query(None, description="Filter by severity (error, warning, critical)"),
     start_date: Optional[datetime] = Query(None, description="Start date filter"),
     end_date: Optional[datetime] = Query(None, description="End date filter"),
+    include_stack_trace: bool = Query(
+        False,
+        description="Include redacted stack traces in response (default false)"
+    ),
     db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user)
 ):
@@ -79,9 +81,10 @@ async def get_error_logs(
     Query Parameters:
     - page: Page number (default 1)
     - per_page: Items per page (default 50, max 100)
-    - severity: Filter by severity (error, warning, critical)
+    - severity: Filter by severity — must be one of: error, warning, critical
     - start_date: Start date filter (ISO format)
     - end_date: End date filter (ISO format)
+    - include_stack_trace: Include redacted stack traces in response (default false)
 
     Returns:
     - List of error logs with details
@@ -92,24 +95,24 @@ async def get_error_logs(
     result = await service.get_error_logs(
         page=page,
         per_page=per_page,
-        severity=severity,
+        severity=severity.value if severity else None,
         start_date=start_date,
-        end_date=end_date
+        end_date=end_date,
+        include_stack_trace=include_stack_trace
     )
 
     return {
-        "data": result["logs"],
-        "pagination": result["pagination"],
-        "message": "Error logs retrieved successfully"
+        "items": result["logs"],
+        "pagination": result["pagination"]
     }
 
 
 @router.patch("/error-logs/{log_id}/resolve", response_model=dict)
-@require_permissions("audit.read", workspace_scoped=False)
+@require_permissions("audit.write", workspace_scoped=False)
 @db_transaction_handler("resolve error log", auto_commit=True)
 async def resolve_error_log(
     request: Request,
-    log_id: str,
+    log_id: UUID,
     db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user)
 ):
@@ -127,15 +130,11 @@ async def resolve_error_log(
     # Use service
     service = MonitoringService(db)
     log_data = await service.resolve_error_log(
-        log_id=UUID(log_id),
+        log_id=log_id,
         admin_user_id=UUID(admin_user_id)
     )
 
-    return {
-        "data": log_data,
-        "message": "Error log marked as resolved"
-    }
-
+    return log_data
 
 # ============================================================================
 # USAGE STATISTICS ENDPOINTS
@@ -144,10 +143,10 @@ async def resolve_error_log(
 
 @router.get("/usage-stats", response_model=dict)
 @db_transaction_handler("get usage stats", auto_commit=False)
-@require_permissions("audit.read", workspace_scoped=False)
+@require_permissions("audit.admin", workspace_scoped=False)
 async def get_usage_stats(
     request: Request,
-    period: str = Query("24_hours", regex="^(24_hours|7_days|30_days)$", description="Time period"),
+    period: str = Query("24_hours", pattern="^(24_hours|7_days|30_days)$", description="Time period"),
     db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user)
 ):
@@ -166,15 +165,13 @@ async def get_usage_stats(
     service = MonitoringService(db)
     stats_data = await service.get_usage_stats(period=period)
 
-    return {
-        "data": stats_data,
-        "message": "Usage statistics retrieved successfully"
-    }
+    return stats_data
+
 
 
 @router.get("/usage-stats/trends", response_model=dict)
 @db_transaction_handler("get usage trends", auto_commit=False)
-@require_permissions("audit.read", workspace_scoped=False)
+@require_permissions("audit.admin", workspace_scoped=False)
 async def get_usage_trends(
     request: Request,
     days: int = Query(7, ge=1, le=30, description="Number of days"),

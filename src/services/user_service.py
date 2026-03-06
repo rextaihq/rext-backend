@@ -23,12 +23,13 @@ import bcrypt
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from src.utils.password_utils import validate_password_strength
 
 from src.api.models.user_models.users import Users
 from src.utils.logger import logger
 from src.api.middleware.exceptions import (
     ResourceNotFoundException,
-    WrextValidationException,
+    RextValidationException,
     DuplicateResourceException
 )
 from src.utils.account_cleanup import delete_deactivated_accounts, get_pending_deletions
@@ -104,7 +105,7 @@ class UserService:
 
         Args:
             user_id: User UUID
-            **kwargs: Fields to update (first_name, last_name, display_name, bio,
+            **kwargs: Fields to update (full_name, display_name, bio,
                      avatar_url, language, timezone)
 
         Returns:
@@ -112,16 +113,13 @@ class UserService:
 
         Raises:
             ResourceNotFoundException: If user not found
-            WrextValidationException: If validation fails
+            RextValidationException: If validation fails
         """
         user = await self.get_user_by_id(user_id)
 
         # Update only explicitly provided fields
-        if "first_name" in kwargs:
-            user.first_name = kwargs["first_name"]
-
-        if "last_name" in kwargs:
-            user.last_name = kwargs["last_name"]
+        if "full_name" in kwargs:
+            user.full_name = kwargs["full_name"]
 
         if "display_name" in kwargs:
             user.display_name = kwargs["display_name"]
@@ -130,7 +128,7 @@ class UserService:
             # Validate bio length at service layer
             bio = kwargs["bio"]
             if bio is not None and len(bio) > 500:
-                raise WrextValidationException("Bio must be 500 characters or less")
+                raise RextValidationException("Bio must be 500 characters or less")
             user.bio = bio
 
         if "avatar_url" in kwargs:
@@ -143,13 +141,14 @@ class UserService:
         if "timezone" in kwargs:
             user.timezone = kwargs["timezone"]
 
-        user.updated_at = datetime.utcnow()
+        user.updated_at = datetime.now(timezone.utc)
 
         logger.info(
             f"User profile updated: {user_id}",
             extra={"user_id": str(user_id), "updated_fields": list(kwargs.keys())}
         )
-
+        self.db.add(user)
+        await self.db.commit()
         return user
 
     async def change_password(
@@ -176,35 +175,48 @@ class UserService:
 
         Raises:
             ResourceNotFoundException: If user not found
-            WrextValidationException: If current password incorrect or passwords same
+            RextValidationException: If current password incorrect or passwords same
         """
+        from src.api.security.token_utils import verify_password, hash_password
+        
         user = await self.get_user_by_id(user_id)
 
+        # Handle OAuth users who don't have a password set
+        if user.password_hash is None:
+            raise RextValidationException(
+                message="Your account does not have a password set (OAuth-only). Please use the password reset flow to set a password for the first time.",
+                field_errors={"current_password": ["No password set for this account"]}
+            )
+
         # Verify current password
-        if not bcrypt.checkpw(current_password.encode('utf-8'), user.password_hash.encode('utf-8')):
-            raise WrextValidationException(
+        if not verify_password(current_password, user.password_hash):
+            raise RextValidationException(
                 message="Current password is incorrect",
                 field_errors={"current_password": ["Incorrect password"]}
             )
 
         # Ensure new password is different
-        if bcrypt.checkpw(new_password.encode('utf-8'), user.password_hash.encode('utf-8')):
-            raise WrextValidationException(
+        if verify_password(new_password, user.password_hash):
+            raise RextValidationException(
                 message="New password must be different from current password",
                 field_errors={"new_password": ["Password must be different"]}
             )
 
+        # Validate new password strength
+        validate_password_strength(new_password)
+
         # Hash new password
         new_hash = bcrypt.hashpw(new_password.encode('utf-8'), bcrypt.gensalt())
         user.password_hash = new_hash.decode('utf-8')
-        user.password_changed_at = datetime.utcnow()
-        user.updated_at = datetime.utcnow()
+        user.password_changed_at = datetime.now(timezone.utc)
+        user.updated_at = datetime.now(timezone.utc)
 
         logger.info(
             f"User password changed: {user_id}",
             extra={"user_id": str(user_id)}
         )
-
+        self.db.add(user)
+        await self.db.commit()
         return user
 
     async def deactivate_account(
@@ -228,14 +240,15 @@ class UserService:
         user = await self.get_user_by_id(user_id)
 
         user.status = "inactive"
-        user.deactivated_at = datetime.utcnow()
-        user.updated_at = datetime.utcnow()
+        user.deactivated_at = datetime.now(timezone.utc)
+        user.updated_at = datetime.now(timezone.utc)
 
         logger.info(
             f"User account deactivated: {user_id}",
             extra={"user_id": str(user_id)}
         )
-
+        self.db.add(user)
+        await self.db.commit()
         return user
 
     async def reactivate_account(
@@ -260,27 +273,91 @@ class UserService:
 
         user.status = "active"
         user.deactivated_at = None
-        user.updated_at = datetime.utcnow()
+        user.updated_at = datetime.now(timezone.utc)
 
         logger.info(
             f"User account reactivated: {user_id}",
             extra={"user_id": str(user_id)}
         )
-
+        self.db.add(user)
+        await self.db.commit()
         return user
 
+    async def change_user_status(
+        self,
+        user_id: UUID,
+        new_status: str,
+    ) -> tuple[Users, str]:
+        """
+        Change a user's status to a specified value.
+
+        Validates that the new status is one of the allowed values,
+        fetches the user, records the old status, and updates.
+
+        Args:
+            user_id: User UUID
+            new_status: New status value (e.g., "suspended", "banned", "active", "inactive")
+
+        Returns:
+            Tuple of (updated Users object, old_status string)
+
+        Raises:
+            ResourceNotFoundException: If user not found
+            RextValidationException: If new_status is not a valid status
+        """
+        valid_statuses = {"active", "inactive", "suspended", "banned"}
+        if new_status not in valid_statuses:
+            raise RextValidationException(
+                message=f"Invalid status: {new_status}. Must be one of: {', '.join(sorted(valid_statuses))}"
+            )
+
+        user = await self.get_user_by_id(user_id)
+        old_status = user.status
+
+        user.status = new_status
+        if new_status == "active":
+            user.deactivated_at = None
+        user.updated_at = datetime.now(timezone.utc)
+
+        logger.info(
+            f"User status changed: {user_id} ({old_status} -> {new_status})",
+            extra={
+                "user_id": str(user_id),
+                "old_status": old_status,
+                "new_status": new_status,
+            }
+        )
+        self.db.add(user)
+        await self.db.commit()
+        return user, old_status
+
     async def cleanup_deactivated_accounts(self) -> int:
-        """Permanently delete accounts deactivated for 14 or more days."""
-        return delete_deactivated_accounts(self.db.sync_session)
+        """
+        Permanently delete accounts deactivated for 14 or more days.
+        
+        Returns:
+            Number of accounts deleted
+        """
+        return await delete_deactivated_accounts(self.db)
 
     async def get_pending_deletions(self) -> list:
-        """Return accounts scheduled for deletion."""
-        return get_pending_deletions(self.db.sync_session)
+        """
+        Return accounts scheduled for deletion.
+        
+        Returns:
+            List of user dictionaries with deletion information
+        """
+        return await get_pending_deletions(self.db)
 
     async def cleanup_expired_tokens(self) -> int:
-        """Remove expired tokens from the blacklist."""
-        return cleanup_expired_tokens(self.db.sync_session)
-
+        """
+        Remove expired tokens from the blacklist.
+        
+        Returns:
+            Number of tokens cleaned up
+        """
+        return await cleanup_expired_tokens(self.db)
+    
     async def update_last_login(
         self,
         user_id: UUID
@@ -296,10 +373,12 @@ class UserService:
         """
         user = await self.get_user_by_id(user_id)
 
-        user.last_login_at = datetime.utcnow()
+        user.last_login_at = datetime.now(timezone.utc)
         user.login_count = (user.login_count or 0) + 1
         user.failed_login_attempts = 0  # Reset failed attempts on successful login
 
+        self.db.add(user)
+        await self.db.commit()
         logger.info(
             f"User last login updated: {user_id}",
             extra={"user_id": str(user_id), "login_count": user.login_count}
@@ -307,27 +386,28 @@ class UserService:
 
     async def get_users(
         self,
-        workspace_id: Optional[UUID] = None
-    ) -> list[Users]:
+        workspace_id: Optional[UUID] = None,
+        page: int = 1,
+        per_page: int = 50,
+    ) -> Dict[str, Any]:
         """
-        Get list of users, optionally filtered by workspace membership.
+        Get paginated list of users, optionally filtered by workspace membership.
 
         Args:
             workspace_id: Optional workspace ID to filter by
+            page: Page number (1-indexed)
+            per_page: Items per page
 
         Returns:
-            List of Users objects
-
-        Raises:
-            Exception: If query fails
+            Dict with users list and pagination metadata
         """
         from src.api.models.workspace_models.workspace_member import WorkspaceMembers
+        from sqlalchemy import func
 
-        query = select(Users)
+        base_query = select(Users)
 
         if workspace_id:
-            # Filter by workspace membership
-            query = query.join(WorkspaceMembers).where(
+            base_query = base_query.join(WorkspaceMembers).where(
                 WorkspaceMembers.workspace_id == workspace_id,
                 WorkspaceMembers.status == "active"
             )
@@ -335,11 +415,31 @@ class UserService:
         else:
             logger.info("Fetching all users")
 
-        result = await self.db.execute(query)
-        users = result.scalars().all()
+        # Get total count
+        count_query = select(func.count()).select_from(base_query.subquery())
+        count_result = await self.db.execute(count_query)
+        total = count_result.scalar() or 0
 
-        logger.info(f"Retrieved {len(users)} users")
-        return list(users)
+        # Apply pagination
+        offset = (page - 1) * per_page
+        paginated_query = base_query.offset(offset).limit(per_page)
+        result = await self.db.execute(paginated_query)
+        users = list(result.scalars().all())
+
+        total_pages = (total + per_page - 1) // per_page if total > 0 else 0
+
+        logger.info(f"Retrieved {len(users)} users (page {page}/{total_pages})")
+        return {
+            "users": users,
+            "pagination": {
+                "page": page,
+                "per_page": per_page,
+                "total": total,
+                "total_pages": total_pages,
+                "has_next": page < total_pages,
+                "has_prev": page > 1,
+            },
+        }
 
     async def delete_user(
         self,
@@ -356,16 +456,16 @@ class UserService:
 
         Raises:
             ResourceNotFoundException: If user not found
-            WrextValidationException: If user already deleted
+            RextValidationException: If user already deleted
         """
-        from src.api.middleware.exceptions import WrextValidationException
+        from src.api.middleware.exceptions import RextValidationException
 
         user = await self.get_user_by_id(user_id)
 
-        if user.deleted_at:
-            raise WrextValidationException("User already deleted")
+        if user.is_deleted:
+            raise RextValidationException("User already deleted")
 
-        user.deleted_at = datetime.utcnow()
+        user.deleted_at = datetime.now(timezone.utc)
 
         logger.info(f"User {user_id} soft deleted")
         return user
@@ -410,34 +510,35 @@ class UserService:
         self,
         user_id: UUID,
         email: Optional[str] = None,
-        username: Optional[str] = None,
-        first_name: Optional[str] = None,
-        last_name: Optional[str] = None,
+        full_name: Optional[str] = None,
         display_name: Optional[str] = None,
         language: Optional[str] = None,
-        timezone: Optional[str] = None
+        timezone: Optional[str] = None,
+        password: Optional[str] = None,
+        avatar_url: Optional[str] = None
     ) -> Users:
         """
-        Update user with email/username validation and profile fields.
+        Update user with email validation and profile fields.
 
         Args:
             user_id: User UUID
             email: New email (will check for duplicates)
-            username: New username (will check for duplicates)
-            first_name: First name
-            last_name: Last name
+            full_name: Full name
             display_name: Display name
             language: Language preference
             timezone: Timezone preference
+            password: New password (will be hashed)
+            avatar_url: Profile avatar URL
 
         Returns:
             Updated user object
 
         Raises:
             ResourceNotFoundException: If user not found
-            WrextValidationException: If email/username already exists
+            RextValidationException: If email already exists
         """
-        from src.api.middleware.exceptions import WrextValidationException
+        from src.api.middleware.exceptions import RextValidationException
+        from src.api.security.token_utils import hash_password
 
         user = await self.get_user_by_id(user_id)
 
@@ -449,35 +550,33 @@ class UserService:
             )
             result = await self.db.execute(query)
             if result.scalar_one_or_none():
-                raise WrextValidationException("Email already exists")
+                raise RextValidationException("Email already exists")
             user.email = email
 
-        # Check for duplicate username
-        if username and username != user.username:
-            query = select(Users).where(
-                Users.username == username,
-                Users.id != user_id
-            )
-            result = await self.db.execute(query)
-            if result.scalar_one_or_none():
-                raise WrextValidationException("Username already exists")
-            user.username = username
-
         # Update profile fields
-        if first_name is not None:
-            user.first_name = first_name
-        if last_name is not None:
-            user.last_name = last_name
+        if full_name is not None:
+            user.full_name = full_name
         if display_name is not None:
             user.display_name = display_name
         if language is not None:
             user.language = language
         if timezone is not None:
             user.timezone = timezone
+        if avatar_url is not None:
+            user.avatar_url = avatar_url
 
-        user.updated_at = datetime.utcnow()
+        # Handle password update
+        if password:
+            validate_password_strength(password)
+            user.password_hash = hash_password(password)
+            user.password_changed_at = datetime.now(timezone.utc)
+
+        user.updated_at = datetime.now(timezone.utc)
 
         logger.info(f"User {user_id} updated successfully")
+
+        self.db.add(user)
+        await self.db.commit()
         return user
 
     async def set_reset_token(
@@ -502,6 +601,9 @@ class UserService:
         user.reset_token = reset_token
 
         logger.info(f"Reset token set for user {user_id}")
+
+        self.db.add(user)
+        await self.db.commit()
         return user
 
     async def reset_password_with_token(
@@ -532,12 +634,17 @@ class UserService:
         if not user:
             raise ResourceNotFoundException("Invalid or expired reset token")
 
+        # Validate new password strength
+        validate_password_strength(new_password)
+
         # Update password
         user.password_hash = hash_password(new_password)
         user.reset_token = None
-        user.password_changed_at = datetime.utcnow()
+        user.password_changed_at = datetime.now(timezone.utc)
 
         logger.info(f"Password reset successfully for user {user.id}")
+        self.db.add(user)
+        await self.db.commit()
         return user
 
     async def verify_user_password(
@@ -561,6 +668,9 @@ class UserService:
         from src.api.security.token_utils import verify_password
 
         user = await self.get_user_by_id(user_id)
+
+        if user.password_hash is None:
+            return False
 
         is_valid = verify_password(password, user.password_hash)
         logger.debug(f"Password verification for user {user_id}: {is_valid}")
@@ -588,7 +698,7 @@ class UserService:
         query = select(Users).where(Users.email == email.lower())
 
         if exclude_deleted:
-            query = query.where(Users.deleted_at.is_(None))
+            query = query.where(Users.active())
 
         result = await self.db.execute(query)
         user = result.scalar_one_or_none()
@@ -613,7 +723,7 @@ class UserService:
             user_ids: List of user UUIDs
 
         Returns:
-            Dict mapping user_id -> Users object
+            Dict mapping user_id -> Users object   
         """
         if not user_ids:
             return {}

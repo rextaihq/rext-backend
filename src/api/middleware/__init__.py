@@ -11,6 +11,7 @@ from .rate_limiter import (
     password_reset_rate_limit,
     registration_rate_limit,
     email_verification_rate_limit,
+    media_upload_rate_limit,
 )
 from .permissions import (
     PermissionChecker,
@@ -19,12 +20,12 @@ from .permissions import (
 )
 from .exceptions import (
     # Base exceptions
-    WrextAPIException,
-    WrextBusinessException,
-    WrextValidationException,
-    WrextAuthenticationException,
-    WrextAuthorizationException,
-    WrextExternalServiceException,
+    RextAPIException,
+    RextBusinessException,
+    RextValidationException,
+    RextAuthenticationException,
+    RextAuthorizationException,
+    RextExternalServiceException,
 
     # Specific exceptions
     ResourceNotFoundException,
@@ -47,6 +48,7 @@ __all__ = [
     "password_reset_rate_limit",
     "registration_rate_limit",
     "email_verification_rate_limit",
+    "media_upload_rate_limit",
 
     # Permission checking
     "PermissionChecker",
@@ -54,12 +56,12 @@ __all__ = [
     "is_admin",
 
     # Exception classes
-    "WrextAPIException",
-    "WrextBusinessException",
-    "WrextValidationException",
-    "WrextAuthenticationException",
-    "WrextAuthorizationException",
-    "WrextExternalServiceException",
+    "RextAPIException",
+    "RextBusinessException",
+    "RextValidationException",
+    "RextAuthenticationException",
+    "RextAuthorizationException",
+    "RextExternalServiceException",
     "ResourceNotFoundException",
     "DuplicateResourceException",
     "QuotaExceededException",

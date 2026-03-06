@@ -6,7 +6,7 @@ This module defines Pydantic models for audit log API operations.
 
 from pydantic import BaseModel, Field, field_validator
 from typing import Optional, Dict, Any, List
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 
 
@@ -83,7 +83,7 @@ class AuditLogResponse(BaseModel):
     """Schema for audit log entry response."""
     id: str = Field(..., description="Audit log UUID")
     user_id: Optional[str] = Field(None, description="User who performed the action")
-    username: Optional[str] = Field(None, description="Username (denormalized)")
+    full_name: Optional[str] = Field(None, description="Full name (denormalized)")
     user_email: Optional[str] = Field(None, description="User email (denormalized)")
     action: str = Field(..., description="Action performed")
     resource_type: str = Field(..., description="Type of resource")
@@ -100,7 +100,7 @@ class AuditLogResponse(BaseModel):
             "example": {
                 "id": "123e4567-e89b-12d3-a456-426614174000",
                 "user_id": "123e4567-e89b-12d3-a456-426614174001",
-                "username": "john_doe",
+                "full_name": "John Doe",
                 "user_email": "john@example.com",
                 "action": "user.suspend",
                 "resource_type": "user",
@@ -119,7 +119,7 @@ class AuditLogDetailResponse(BaseModel):
     """Schema for detailed audit log entry with change tracking."""
     id: str = Field(..., description="Audit log UUID")
     user_id: Optional[str] = Field(None, description="User who performed the action")
-    username: Optional[str] = Field(None, description="Username (denormalized)")
+    full_name: Optional[str] = Field(None, description="Full name (denormalized)")
     user_email: Optional[str] = Field(None, description="User email (denormalized)")
     action: str = Field(..., description="Action performed")
     resource_type: str = Field(..., description="Type of resource")
@@ -140,7 +140,7 @@ class AuditLogDetailResponse(BaseModel):
             "example": {
                 "id": "123e4567-e89b-12d3-a456-426614174000",
                 "user_id": "123e4567-e89b-12d3-a456-426614174001",
-                "username": "admin_user",
+                "full_name": "Admin User",
                 "user_email": "admin@example.com",
                 "action": "user.suspend",
                 "resource_type": "user",
@@ -174,7 +174,7 @@ class AuditLogListResponse(BaseModel):
                     {
                         "id": "123e4567-e89b-12d3-a456-426614174000",
                         "user_id": "123e4567-e89b-12d3-a456-426614174001",
-                        "username": "john_doe",
+                        "full_name": "John Doe",
                         "user_email": "john@example.com",
                         "action": "user.suspend",
                         "resource_type": "user",
@@ -200,7 +200,7 @@ class AuditLogListResponse(BaseModel):
 class AuditLogFilterParams(BaseModel):
     """Query parameters for filtering audit logs."""
     user_id: Optional[str] = Field(None, description="Filter by user ID")
-    username: Optional[str] = Field(None, description="Filter by username (partial match)")
+    full_name: Optional[str] = Field(None, description="Filter by full name (partial match)")
     user_email: Optional[str] = Field(None, description="Filter by user email (partial match)")
     action: Optional[str] = Field(None, description="Filter by action (exact match or prefix)")
     resource_type: Optional[str] = Field(None, description="Filter by resource type")
@@ -296,7 +296,7 @@ class AuditLogStatsResponse(BaseModel):
                 "most_active_users": [
                     {
                         "user_id": "123e4567-e89b-12d3-a456-426614174001",
-                        "username": "admin_user",
+                        "full_name": "Admin User",
                         "action_count": 450
                     }
                 ],

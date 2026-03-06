@@ -1,9 +1,7 @@
 """Service for managing workspace-specific permissions."""
 
-from typing import List, Optional
 from uuid import UUID
-
-from sqlalchemy import select
+from sqlalchemy import select, distinct
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.models.user_models.permissions import Permission
@@ -11,6 +9,10 @@ from src.api.models.user_models.role_permissions import RolePermission
 from src.api.models.user_models.roles import Role
 from src.api.models.user_models.user_roles import UserRole
 from src.api.models.workspace_models.workspace_model import WorkspaceModel
+from src.api.middleware.exceptions import (
+    ResourceNotFoundException,
+    RextAuthorizationException,
+)
 from src.utils.logger import logger
 
 
@@ -26,136 +28,75 @@ class WorkspacePermissionService:
         """
         Get user's role and permissions for a specific workspace.
 
-        Args:
-            db: Database session
-            user_id: User ID
-            workspace_id: Workspace ID
-
-        Returns:
-            Dict with workspace_id, workspace_slug, user_role, and permissions list
-
         Raises:
-            ValueError: If workspace not found or user doesn't have access
+            ResourceNotFoundException: Workspace does not exist
+            RextAuthorizationException: User has no access
         """
-        # Check if workspace exists
-        workspace_result = await db.execute(
-            select(WorkspaceModel).where(WorkspaceModel.id == workspace_id)
+
+        # Check workspace exists
+        result = await db.execute(
+            select(WorkspaceModel).where(
+                WorkspaceModel.id == workspace_id,
+                WorkspaceModel.deleted_at.is_(None),
+            )
         )
-        workspace = workspace_result.scalar_one_or_none()
+        workspace = result.scalar_one_or_none()
 
         if not workspace:
-            raise ValueError(f"Workspace {workspace_id} not found")
-
-        # Check if user is super_admin FIRST (super_admin has access to all workspaces)
-        # This ensures super_admin role is always returned, even if user also has workspace-specific role
-        super_admin_check = await db.execute(
-            select(UserRole, Role)
-            .join(Role, Role.id == UserRole.role_id)
-            .where(UserRole.user_id == user_id)
-            .where(UserRole.workspace_id == None)
-            .where(Role.name == 'super_admin')
-        )
-        is_super_admin = super_admin_check.first() is not None
-
-        if is_super_admin:
-            # Super admin gets all permissions
-            all_permissions_result = await db.execute(
-                select(Permission.name)
-                .where(Permission.resource.in_([
-                    'workspace', 'content', 'topic', 'knowledge', 'member'
-                ]))
-            )
-            all_permissions = [row[0] for row in all_permissions_result.all()]
-
-            logger.info(
-                f"Super admin access granted for user {user_id} in workspace {workspace_id}",
-                extra={
-                    "user_id": str(user_id),
-                    "workspace_id": str(workspace_id),
-                    "role": "super_admin",
-                    "permission_count": len(all_permissions)
-                }
+            raise ResourceNotFoundException(
+                resource_type="workspace",
+                resource_id=str(workspace_id),
             )
 
-            return {
-                "workspace_id": str(workspace_id),
-                "workspace_slug": workspace.slug,
-                "user_role": "super_admin",
-                "permissions": all_permissions
-            }
+        from src.utils.rbac_utils import get_user_roles, get_user_permissions, ADMIN_HIERARCHY_THRESHOLD
 
-        # Get user's workspace-specific role
-        user_role_result = await db.execute(
-            select(UserRole, Role)
-            .join(Role, Role.id == UserRole.role_id)
-            .where(UserRole.user_id == user_id)
-            .where(UserRole.workspace_id == workspace_id)
-        )
-        user_role_data = user_role_result.first()
+        # Get all roles the user has that apply to this workspace (global or scoped)
+        roles_with_context = await get_user_roles(db, user_id, workspace_id)
+        
+        if not roles_with_context:
+            raise RextAuthorizationException(
+                message="User does not have access to workspace",
+                resource=f"workspace:{workspace_id}",
+            )
 
-        if not user_role_data:
-            raise ValueError(f"User {user_id} does not have access to workspace {workspace_id}")
+        # Sort by hierarchy level to find the highest role
+        roles_with_context.sort(key=lambda x: x[0].hierarchy_level, reverse=True)
+        highest_role = roles_with_context[0][0]
 
-        user_role, role = user_role_data
-
-        # Get permissions for the user's workspace role
-        permissions_result = await db.execute(
-            select(Permission.name)
-            .join(RolePermission, RolePermission.permission_id == Permission.id)
-            .where(RolePermission.role_id == role.id)
-            .distinct()
-        )
-        permissions = [row[0] for row in permissions_result.all()]
+        # If highest role is admin level (>=80), return all system permissions
+        # This covers super_admin (100), support_admin (90), and platform_admin (80)
+        if highest_role.hierarchy_level >= ADMIN_HIERARCHY_THRESHOLD:
+            # Admin bypass - return all permissions in the system
+            all_permissions_result = await db.execute(select(Permission.name))
+            raw_perms = [row[0] for row in all_permissions_result.all()]
+            
+            # Global Permission Bridge: Ensure both dot and colon notation are supported.
+            permissions_list = list(raw_perms)
+            colon_perms = [p.replace('.', ':') for p in permissions_list if '.' in p]
+            if colon_perms:
+                permissions_list.extend(colon_perms)
+            permissions = sorted(list(set(permissions_list)))
+        else:
+            # Return union of permissions from all applicable roles
+            # (get_user_permissions already aggregates global + workspace-scoped and handles the bridge)
+            permissions = await get_user_permissions(db, user_id, workspace_id)
 
         logger.info(
-            f"Loaded workspace permissions for user {user_id} in workspace {workspace_id}",
+            "Loaded workspace permissions",
             extra={
                 "user_id": str(user_id),
                 "workspace_id": str(workspace_id),
-                "role": role.name,
-                "permission_count": len(permissions)
-            }
+                "highest_role": highest_role.name,
+                "permission_count": len(permissions),
+            },
         )
 
         return {
             "workspace_id": str(workspace_id),
             "workspace_slug": workspace.slug,
-            "user_role": role.name,
-            "permissions": permissions
+            "user_role": highest_role.name,
+            "permissions": list(permissions),
         }
-
-    @staticmethod
-    async def get_user_workspace_permissions_by_slug(
-        db: AsyncSession,
-        user_id: UUID,
-        workspace_slug: str
-    ) -> dict:
-        """
-        Get user's permissions for workspace by slug.
-
-        Args:
-            db: Database session
-            user_id: User ID
-            workspace_slug: Workspace slug
-
-        Returns:
-            Dict with workspace permissions
-
-        Raises:
-            ValueError: If workspace not found or user doesn't have access
-        """
-        # Get workspace by slug
-        workspace_result = await db.execute(
-            select(WorkspaceModel).where(WorkspaceModel.slug == workspace_slug)
-        )
-        workspace = workspace_result.scalar_one_or_none()
-
-        if not workspace:
-            raise ValueError(f"Workspace with slug '{workspace_slug}' not found")
-
-        return await WorkspacePermissionService.get_user_workspace_permissions(
-            db, user_id, workspace.id
-        )
 
     @staticmethod
     async def check_user_permission(
@@ -165,21 +106,13 @@ class WorkspacePermissionService:
         permission: str
     ) -> bool:
         """
-        Check if user has specific permission in workspace.
+        Check if user has a specific permission.
 
-        Args:
-            db: Database session
-            user_id: User ID
-            workspace_id: Workspace ID
-            permission: Permission name (e.g., "topic.create")
-
-        Returns:
-            True if user has permission, False otherwise
+        Raises:
+            ResourceNotFoundException
+            RextAuthorizationException
         """
-        try:
-            perms = await WorkspacePermissionService.get_user_workspace_permissions(
-                db, user_id, workspace_id
-            )
-            return permission in perms["permissions"]
-        except ValueError:
-            return False
+        perms = await WorkspacePermissionService.get_user_workspace_permissions(
+            db, user_id, workspace_id
+        )
+        return permission in perms["permissions"]

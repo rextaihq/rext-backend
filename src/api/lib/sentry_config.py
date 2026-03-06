@@ -2,7 +2,7 @@
 Sentry Error Monitoring Configuration
 
 This module initializes and configures Sentry SDK for error tracking,
-performance monitoring, and alerting in the WREXT backend application.
+performance monitoring, and alerting in the REXT backend application.
 
 Features:
 - Automatic error capture and reporting
@@ -130,7 +130,7 @@ def init_sentry(settings: Settings) -> None:
         )
 
         # Set global tags for all events
-        sentry_sdk.set_tag("app", "wrext-backend")
+        sentry_sdk.set_tag("app", "rext-backend")
         sentry_sdk.set_tag("environment", settings.sentry_environment)
 
         logger.info(

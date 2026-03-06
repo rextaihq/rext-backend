@@ -13,9 +13,9 @@ def render_kb_processing_failed_email(
     error_message: str,
     workspace_name: str,
     items_attempted: int,
-    retry_url: str = "https://app.wrext.com/knowledge-base",
-    support_url: str = "https://app.wrext.com/support",
-    frontend_url: str = "https://app.wrext.com"
+    retry_url: str = "https://app.rext.com/knowledge-base",
+    support_url: str = "https://app.rext.com/support",
+    frontend_url: str = "https://app.rext.com"
 ) -> str:
     """
     Render knowledge base processing failed email template.

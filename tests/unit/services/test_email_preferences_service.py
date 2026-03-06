@@ -306,7 +306,7 @@ class TestGetUnsubscribeLink:
 
         # Call function
         service = EmailPreferencesService(mock_db)
-        frontend_url = "https://app.wrext.com"
+        frontend_url = "https://app.rext.com"
         link = await service.get_unsubscribe_link(sample_user_id, frontend_url, mock_db)
 
         # Assertions
@@ -324,7 +324,7 @@ class TestGetUnsubscribeLink:
 
         # Call function
         service = EmailPreferencesService(mock_db)
-        frontend_url = "https://app.wrext.com"
+        frontend_url = "https://app.rext.com"
         link = await service.get_unsubscribe_link(sample_user_id, frontend_url, mock_db)
 
         # Assertions

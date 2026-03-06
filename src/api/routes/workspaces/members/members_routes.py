@@ -3,7 +3,6 @@ from fastapi import (
 )
 from uuid import UUID
 from src.utils.logger import logger
-from src.api.schema.workspace_schema import WorkspaceSchema
 from src.api.models.workspace_models.workspace_model import WorkspaceModel
 from src.api.models.workspace_models.workspace_member import WorkspaceMembers
 from src.api.models.user_models.users import Users
@@ -21,10 +20,10 @@ from src.api.schema.response_schemas import ErrorCode, ErrorSeverity
 from src.api.middleware.exceptions import (
     DuplicateResourceException,
     ResourceNotFoundException,
-    WrextExternalServiceException,
-    WrextValidationException,
-    WrextAuthenticationException,
-    WrextAPIException
+    RextExternalServiceException,
+    RextValidationException,
+    RextAuthenticationException,
+    RextAPIException
 )
 from datetime import datetime, timezone
 from src.api.security.dependencies import get_current_user
@@ -37,7 +36,7 @@ router = APIRouter(
 )
 
 
-@router.post("/add", summary="Add a member to a workspace")
+@router.post("/{workspace_id}/add", summary="Add a member to a workspace")
 @db_transaction_handler("add member to workspace", auto_commit=True)
 @require_permissions("member.invite", workspace_scoped=True)
 async def add_member_to_workspace(
@@ -50,7 +49,7 @@ async def add_member_to_workspace(
     Add a member to a workspace - Thin controller using MemberService
     
     Args:
-        workspace_id: Workspace UUID (query parameter)
+        workspace_id: Workspace UUID (path parameter)
     """
     # Check if workspace exists
     result = await db.execute(
