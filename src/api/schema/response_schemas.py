@@ -32,7 +32,9 @@ Usage:
 
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Union, Generic, TypeVar
+
+T = TypeVar("T")
 from uuid import uuid4
 
 from pydantic import BaseModel, Field, field_validator, model_serializer
@@ -205,14 +207,14 @@ class BaseResponse(BaseModel):
     )
 
 
-class SuccessResponse(BaseResponse):
+class SuccessResponse(BaseResponse, Generic[T]):
     """Standardized success response format"""
 
     success: bool = Field(
         default=True,
         description="Always true for success responses"
     )
-    data: Any = Field(
+    data: T = Field(
         ...,
         description="The response payload data"
     )
