@@ -201,6 +201,10 @@ class BaseResponse(BaseModel):
         ...,
         description="Indicates whether the request was successful"
     )
+    message: Optional[str] = Field(
+        default=None,
+        description="Human-readable message describing the result"
+    )
     meta: ResponseMeta = Field(
         ...,
         description="Response metadata"
@@ -227,6 +231,7 @@ class SuccessResponse(BaseResponse, Generic[T]):
         json_schema_extra = {
             "example": {
                 "success": True,
+                "message": "Operation completed successfully",
                 "data": {
                     "users": [
                         {"id": "1", "name": "John Doe", "email": "john@example.com"}
@@ -322,7 +327,7 @@ class GenericResponse(BaseModel):
 # TYPE UNIONS
 # ============================================================================
 
-StandardResponse = Union[SuccessResponse, ErrorResponse]
+StandardResponse = Union[SuccessResponse[Any], ErrorResponse]
 
 
 # ============================================================================
@@ -337,16 +342,18 @@ def generate_request_id() -> str:
 
 
 def create_success_response(
-    data: Any,
+    data: T,
+    message: Optional[str] = None,
     request_id: Optional[str] = None,
     processing_time_ms: Optional[int] = None,
     server_id: Optional[str] = None
-) -> SuccessResponse:
+) -> SuccessResponse[T]:
     """
     Create a standardized success response.
 
     Args:
         data: The response payload data
+        message: Optional human-readable message
         request_id: Optional request ID (auto-generated if not provided)
         processing_time_ms: Optional processing time in milliseconds
         server_id: Optional server instance identifier
@@ -365,6 +372,7 @@ def create_success_response(
     """
     return SuccessResponse(
         data=data,
+        message=message,
         meta=ResponseMeta(
             request_id=request_id or generate_request_id(),
             processing_time_ms=processing_time_ms,
@@ -430,6 +438,7 @@ def create_error_response(
 
     return ErrorResponse(
         error=error_data,
+        message=message,
         meta=ResponseMeta(
             request_id=request_id or generate_request_id(),
             processing_time_ms=processing_time_ms,

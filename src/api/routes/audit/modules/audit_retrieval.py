@@ -12,12 +12,14 @@ from src.api.middleware.exceptions import ResourceNotFoundException, RextValidat
 from src.utils.logger import logger
 from src.utils.route_decorators import db_transaction_handler, require_permissions
 from .helpers import build_audit_query, format_audit_log
+from src.api.schema.response_schemas import SuccessResponse
+from src.api.schema.response.audit_responses import AuditLogsListResponse, AuditLogDetailedResponse
 
 
 router = APIRouter()
 
 
-@router.get("/", response_model=dict)
+@router.get("/", response_model=SuccessResponse[AuditLogsListResponse])
 @require_permissions("audit.admin", workspace_scoped=False)
 @db_transaction_handler("list audit logs", "Audit logs retrieved successfully", auto_commit=False)
 @require_permissions("audit.admin", workspace_scoped=False)
@@ -94,7 +96,7 @@ async def list_audit_logs(
     }
 
 
-@router.get("/{audit_log_id}", response_model=dict)
+@router.get("/{audit_log_id}", response_model=SuccessResponse[AuditLogDetailedResponse])
 @require_permissions("audit.admin", workspace_scoped=False)
 @db_transaction_handler("get audit log", "Audit log retrieved successfully", auto_commit=False)
 @require_permissions("audit.admin", workspace_scoped=False)

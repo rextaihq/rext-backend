@@ -17,7 +17,8 @@ from src.api.middleware.exceptions import (
     ResourceNotFoundException,
     RextValidationException,
 )
-from src.api.schema.workspace_schema import WorkspaceSchema, WorkspaceUpdateSchema
+from src.api.schema.workspace_schema import WorkspaceSchema, WorkspaceUpdateSchema, WorkspaceResponseSchema
+from src.api.schema.response_schemas import SuccessResponse
 from src.api.middleware.usage_limiter import check_workspace_limit
 from src.services.workspace_service import WorkspaceService
 from src.services.email_service import EmailService
@@ -237,7 +238,7 @@ async def get_available_roles(
 # -------------------------
 # Get workspace by ID or slug (RESTful)
 # -------------------------
-@router.get("/{workspace_id}")
+@router.get("/{workspace_id}", response_model=SuccessResponse[WorkspaceResponseSchema])
 @require_permissions("workspace.read")
 @db_transaction_handler("get workspace", success_message="Workspace retrieved successfully")
 async def get_workspace_detail(
@@ -245,7 +246,7 @@ async def get_workspace_detail(
     request: Request,
     db: AsyncSession = Depends(get_async_db),
     user: dict = Depends(get_current_user)
-) -> dict:
+) -> SuccessResponse[WorkspaceResponseSchema]:
     """
     Fetch comprehensive workspace details by ID or slug.
     
@@ -275,7 +276,7 @@ async def get_workspace_detail(
         }
     }
 
-    return {"workspace": workspace_data}
+    return success(data=workspace_data, request=request)
 
 
 # -------------------------
