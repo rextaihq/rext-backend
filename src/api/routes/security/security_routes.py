@@ -22,6 +22,14 @@ from src.api.schema.security_schema import (
     UnlockAccountRequest,
     ResetFailedAttemptsRequest
 )
+from src.api.schema.response_schemas import SuccessResponse
+from src.api.schema.user_schema import UserResponse
+from src.api.schema.response.security_responses import (
+    FailedLoginsListResponse,
+    LockedAccountsListResponse,
+    ResetAttemptsResponse,
+    UserLoginHistoryPaginatedResponse
+)
 from src.services.security_service import SecurityService
 from src.utils.route_decorators import db_transaction_handler, require_permissions
 
@@ -32,7 +40,7 @@ router = APIRouter(
 )
 
 
-@router.get("/failed-logins", response_model=dict)
+@router.get("/failed-logins", response_model=SuccessResponse[FailedLoginsListResponse])
 @db_transaction_handler("retrieve failed logins", auto_commit=False)
 async def get_failed_logins(
     request: Request,
@@ -56,7 +64,7 @@ async def get_failed_logins(
     return await service.get_failed_logins(limit=limit, offset=offset)
 
 
-@router.get("/locked-accounts", response_model=dict)
+@router.get("/locked-accounts", response_model=SuccessResponse[LockedAccountsListResponse])
 @db_transaction_handler("retrieve locked accounts", auto_commit=False)
 async def get_locked_accounts(
     request: Request,
@@ -86,7 +94,7 @@ async def get_locked_accounts(
     )
 
 
-@router.post("/{user_id}/unlock", response_model=dict)
+@router.post("/{user_id}/unlock", response_model=SuccessResponse[UserResponse])
 @db_transaction_handler("unlock account", auto_commit=True)
 @require_permissions("user.update", workspace_scoped=False)
 async def unlock_account(
@@ -112,15 +120,11 @@ async def unlock_account(
     admin_user_id = UUID(current_user.get("identity"))
     service = SecurityService(db)
 
-    return await service.unlock_account(
-        user_id=UUID(user_id),
-        admin_user_id=admin_user_id,
-        reason=unlock_data.reason,
-        request=request
-    )
+    user = await service.unlock_account(user_id=UUID(user_id))
+    return UserResponse.model_validate(user).model_dump()
 
 
-@router.post("/{user_id}/reset-failed-attempts", response_model=dict)
+@router.post("/{user_id}/reset-failed-attempts", response_model=SuccessResponse[ResetAttemptsResponse])
 @db_transaction_handler("reset failed login attempts", auto_commit=True)
 @require_permissions("user.update", workspace_scoped=False)
 async def reset_failed_attempts(
@@ -146,15 +150,10 @@ async def reset_failed_attempts(
     admin_user_id = UUID(current_user.get("identity"))
     service = SecurityService(db)
 
-    return await service.reset_failed_attempts(
-        user_id=UUID(user_id),
-        admin_user_id=admin_user_id,
-        reason=reset_data.reason,
-        request=request
-    )
+    return await service.reset_failed_attempts(user_id=UUID(user_id))
 
 
-@router.get("/stats", response_model=dict)
+@router.get("/stats", response_model=SuccessResponse[SecurityStatsResponse])
 @db_transaction_handler("retrieve security statistics", auto_commit=False)
 async def get_security_stats(
     request: Request,
@@ -177,7 +176,7 @@ async def get_security_stats(
     return await service.get_security_stats()
 
 
-@router.get("/login-history/{user_id}", response_model=dict)
+@router.get("/login-history/{user_id}", response_model=SuccessResponse[UserLoginHistoryPaginatedResponse])
 @db_transaction_handler("retrieve login history", auto_commit=False)
 async def get_user_login_history(
     request: Request,

@@ -14,6 +14,8 @@ from src.api.schema.audit_schema import AuditLogExportFormat
 from src.api.security.dependencies import get_current_user
 from src.services.audit_service import AuditService
 from src.utils.route_decorators import db_transaction_handler, require_permissions
+from src.api.schema.response_schemas import SuccessResponse
+from src.api.schema.response.audit_responses import AuditStatsOverviewResponse
 
 router = APIRouter()
 
@@ -141,7 +143,7 @@ async def export_audit_logs(
     )
 
 
-@router.get("/stats/overview", response_model=dict)
+@router.get("/stats/overview", response_model=SuccessResponse[AuditStatsOverviewResponse])
 @require_permissions("audit.admin", workspace_scoped=False)
 @db_transaction_handler("get audit statistics", auto_commit=False)
 @require_permissions("audit.admin", workspace_scoped=False)
