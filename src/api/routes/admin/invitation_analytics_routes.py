@@ -23,11 +23,12 @@ from src.utils.logger import logger
 from src.utils.rbac_utils import check_all_permissions
 from src.utils.response_utils import success
 from src.utils.route_decorators import db_transaction_handler, require_permissions
+from src.api.schema.invitation_analytics_schema import InvitationAnalyticsResponseSchema
 
 router = APIRouter(prefix="/invitations", tags=["admin-analytics"])
 
 
-@router.get("/analytics", summary="Get invitation analytics", response_model=SuccessResponse[dict])
+@router.get("/analytics", summary="Get invitation analytics", response_model=SuccessResponse[InvitationAnalyticsResponseSchema])
 @db_transaction_handler("get invitation analytics", auto_commit=False)
 @require_permissions("audit.read", workspace_scoped=False)
 async def get_invitation_analytics(
@@ -244,9 +245,10 @@ async def get_invitation_analytics(
 
     # Get daily trend (invitations per day)
     # Group by date for trend analysis
+    date_expr = func.date_trunc("day", UserInvitations.created_at)
     daily_trend_query = (
         select(
-            func.date_trunc("day", UserInvitations.created_at).label("date"),
+            date_expr.label("date"),
             func.count(UserInvitations.id).label("total"),
             func.count(
                 case((UserInvitations.status == "accepted", UserInvitations.id))
@@ -256,8 +258,8 @@ async def get_invitation_analytics(
             ).label("pending"),
         )
         .where(UserInvitations.created_at >= start_date)
-        .group_by(func.date_trunc("day", UserInvitations.created_at))
-        .order_by(func.date_trunc("day", UserInvitations.created_at))
+        .group_by(date_expr)
+        .order_by(date_expr)
     )
 
     if workspace_id:

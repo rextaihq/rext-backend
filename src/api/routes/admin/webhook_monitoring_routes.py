@@ -15,6 +15,11 @@ from uuid import UUID
 from src.api.database.async_database import get_async_db
 from src.api.security.dependencies import get_current_user
 from src.api.schema.response_schemas import SuccessResponse
+from src.api.schema.webhook_monitoring_schema import (
+    WebhookEventsResponseSchema,
+    WebhookRetryResponseSchema,
+    WebhookStatsResponseSchema
+)
 from src.services.webhook_monitoring_service import WebhookMonitoringService
 from src.utils.response_utils import success
 from src.utils.route_decorators import db_transaction_handler, require_permissions
@@ -27,7 +32,7 @@ router = APIRouter()
 # WEBHOOK MONITORING ENDPOINTS
 # ============================================================================
 
-@router.get("/webhooks/events", response_model=SuccessResponse[dict])
+@router.get("/webhooks/events", response_model=SuccessResponse[WebhookEventsResponseSchema])
 @require_permissions("audit.webhooks", workspace_scoped=False)
 @db_transaction_handler("get webhook events", auto_commit=False)
 async def get_webhook_events(
@@ -76,7 +81,7 @@ async def get_webhook_events(
     )
 
 
-@router.get("/webhooks/failed", response_model=SuccessResponse[dict])
+@router.get("/webhooks/failed", response_model=SuccessResponse[WebhookEventsResponseSchema])
 @require_permissions("audit.webhooks", workspace_scoped=False)
 @db_transaction_handler("get failed webhooks", auto_commit=False)
 async def get_failed_webhooks(
@@ -123,7 +128,7 @@ async def get_failed_webhooks(
     )
 
 
-@router.post("/webhooks/{webhook_id}/retry", response_model=SuccessResponse[dict])
+@router.post("/webhooks/{webhook_id}/retry", response_model=SuccessResponse[WebhookRetryResponseSchema])
 @require_permissions("audit.webhooks", workspace_scoped=False)
 @db_transaction_handler("retry webhook", auto_commit=True)
 async def retry_webhook(
@@ -157,7 +162,7 @@ async def retry_webhook(
     )
 
 
-@router.get("/webhooks/statistics", response_model=SuccessResponse[dict])
+@router.get("/webhooks/statistics", response_model=SuccessResponse[WebhookStatsResponseSchema])
 @require_permissions("audit.webhooks", workspace_scoped=False)
 @db_transaction_handler("get webhook statistics", auto_commit=False)
 async def get_webhook_statistics(

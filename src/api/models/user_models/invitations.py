@@ -32,6 +32,11 @@ class UserInvitations(Base, SerializableMixin, UUIDPrimaryKeyMixin):
         nullable=False
     )
 
+    accepted_at = Column(
+        DateTime(timezone=True),
+        nullable=True
+    )
+
     reminder_sent = Column(Boolean, default=False, nullable=False)
 
     __table_args__ = (
