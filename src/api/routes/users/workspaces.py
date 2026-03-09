@@ -19,6 +19,7 @@ from src.services.member_service import MemberService
 from src.utils.route_decorators import db_transaction_handler
 from src.api.schema.response_schemas import SuccessResponse
 from src.api.schema.response.user_workspace_responses import UserWorkspaceListResponse
+from src.utils.response_utils import success
 from src.utils.logger import logger
 
 router = APIRouter(prefix="/user/workspaces", tags=["User Workspaces"])
@@ -159,9 +160,13 @@ async def get_user_workspaces(
         }
     )
 
-    return {
-        "workspaces": enhanced_workspaces,
-        "total_count": len(enhanced_workspaces),
-        "owned_count": owned_count,
-        "member_count": member_count
-    }
+    return success(
+        data={
+            "workspaces": enhanced_workspaces,
+            "total_count": len(enhanced_workspaces),
+            "owned_count": owned_count,
+            "member_count": member_count
+        },
+        request=request,
+        message="User workspaces retrieved successfully"
+    )

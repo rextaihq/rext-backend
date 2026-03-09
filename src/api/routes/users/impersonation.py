@@ -230,7 +230,11 @@ async def get_impersonation_status(
             )
 
     if not is_impersonating:
-        return {"is_impersonating": False}
+        return success(
+            data={"is_impersonating": False},
+            request=request,
+            message="User is not impersonating"
+        )
 
     response = {
         "is_impersonating": True,

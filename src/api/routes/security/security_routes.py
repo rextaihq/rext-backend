@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Request, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List, Optional
 from uuid import UUID
+from src.utils.response_utils import success
 
 from src.api.database.async_database import get_async_db
 from src.api.security.dependencies import get_current_user
@@ -61,7 +62,12 @@ async def get_failed_logins(
     - List of users with failed login attempts
     """
     service = SecurityService(db)
-    return await service.get_failed_logins(limit=limit, offset=offset)
+    result = await service.get_failed_logins(limit=limit, offset=offset)
+    return success(
+        data=result,
+        request=request,
+        message="Failed logins retrieved successfully"
+    )
 
 
 @router.get("/locked-accounts", response_model=SuccessResponse[LockedAccountsListResponse])
@@ -87,10 +93,15 @@ async def get_locked_accounts(
     - List of locked accounts
     """
     service = SecurityService(db)
-    return await service.get_locked_accounts(
+    result = await service.get_locked_accounts(
         include_expired=include_expired,
         limit=limit,
         offset=offset
+    )
+    return success(
+        data=result,
+        request=request,
+        message="Locked accounts retrieved successfully"
     )
 
 
@@ -121,7 +132,11 @@ async def unlock_account(
     service = SecurityService(db)
 
     user = await service.unlock_account(user_id=UUID(user_id))
-    return UserResponse.model_validate(user).model_dump()
+    return success(
+        data=UserResponse.model_validate(user).model_dump(),
+        request=request,
+        message="Account unlocked successfully"
+    )
 
 
 @router.post("/{user_id}/reset-failed-attempts", response_model=SuccessResponse[ResetAttemptsResponse])
@@ -150,7 +165,12 @@ async def reset_failed_attempts(
     admin_user_id = UUID(current_user.get("identity"))
     service = SecurityService(db)
 
-    return await service.reset_failed_attempts(user_id=UUID(user_id))
+    result = await service.reset_failed_attempts(user_id=UUID(user_id))
+    return success(
+        data=result,
+        request=request,
+        message="Failed login attempts reset successfully"
+    )
 
 
 @router.get("/stats", response_model=SuccessResponse[SecurityStatsResponse])
@@ -173,7 +193,12 @@ async def get_security_stats(
       - Top offenders by IP and user
     """
     service = SecurityService(db)
-    return await service.get_security_stats()
+    result = await service.get_security_stats()
+    return success(
+        data=result,
+        request=request,
+        message="Security statistics retrieved successfully"
+    )
 
 
 @router.get("/login-history/{user_id}", response_model=SuccessResponse[UserLoginHistoryPaginatedResponse])
@@ -199,4 +224,9 @@ async def get_user_login_history(
     - User's login history from audit logs
     """
     service = SecurityService(db)
-    return await service.get_user_login_history(user_id=UUID(user_id), limit=limit)
+    result = await service.get_user_login_history(user_id=UUID(user_id), limit=limit)
+    return success(
+        data=result,
+        request=request,
+        message="User login history retrieved successfully"
+    )

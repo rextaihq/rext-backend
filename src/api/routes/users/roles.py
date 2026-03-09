@@ -22,6 +22,7 @@ from src.api.schema.response.user_role_responses import (
     RoleRevokeResponse,
     UserRolesListResponse
 )
+from src.utils.response_utils import success
 from src.utils.logger import logger
 
 router = APIRouter()
@@ -77,12 +78,16 @@ async def assign_role_to_user(
         workspace = ws_result.scalar_one_or_none()
         workspace_name = workspace.name if workspace else None
 
-    return {
-        "assignment": user_role.to_dict(),
-        "role_name": role.name,
-        "role_display_name": role.display_name,
-        "workspace_name": workspace_name
-    }
+    return success(
+        data={
+            "assignment": user_role.to_dict(),
+            "role_name": role.name,
+            "role_display_name": role.display_name,
+            "workspace_name": workspace_name
+        },
+        request=request,
+        message="Role assigned successfully"
+    )
 
 
 @router.delete("/{user_id}/roles/{role_id}", response_model=SuccessResponse[RoleRevokeResponse])
@@ -121,12 +126,16 @@ async def revoke_role_from_user(
         workspace_id=UUID(workspace_id) if workspace_id else None
     )
 
-    return {
-        "user_id": user_id,
-        "role_id": role_id,
-        "workspace_id": workspace_id,
-        "role_name": role.name
-    }
+    return success(
+        data={
+            "user_id": user_id,
+            "role_id": role_id,
+            "workspace_id": workspace_id,
+            "role_name": role.name
+        },
+        request=request,
+        message="Role revoked successfully"
+    )
 
 
 @router.get("/me/roles", response_model=SuccessResponse[UserRolesListResponse])
@@ -157,11 +166,15 @@ async def get_current_user_roles(
         workspace_id=UUID(workspace_id) if workspace_id else None
     )
 
-    return {
-        "user_id": user_id,
-        "roles": roles_data,
-        "count": len(roles_data)
-    }
+    return success(
+        data={
+            "user_id": user_id,
+            "roles": roles_data,
+            "count": len(roles_data)
+        },
+        request=request,
+        message="User roles retrieved successfully"
+    )
 @router.get("/{user_id}/roles", response_model=SuccessResponse[UserRolesListResponse])
 @db_transaction_handler("list user roles", auto_commit=False)
 async def list_user_roles(
@@ -200,7 +213,11 @@ async def list_user_roles(
         workspace_id=UUID(workspace_id) if workspace_id else None
     )
 
-    return {
-        "roles": roles_data,
-        "count": len(roles_data)
-    }
+    return success(
+        data={
+            "roles": roles_data,
+            "count": len(roles_data)
+        },
+        request=request,
+        message="User roles retrieved successfully"
+    )

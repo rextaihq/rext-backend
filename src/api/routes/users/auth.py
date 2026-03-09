@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.services.email_service import EmailService
 from src.api.database.async_database import get_async_db
 from src.utils.route_decorators import db_transaction_handler, require_permissions
+from src.utils.response_utils import success, error
 from src.api.middleware.exceptions import (
     DuplicateResourceException,
     RextAuthenticationException,
@@ -133,7 +134,7 @@ async def create_user(
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_async_db),
     _rate_limit: None = Depends(registration_rate_limit())
-) -> dict:
+):
     """
     Endpoint to create a new user.
     """
@@ -166,9 +167,13 @@ async def create_user(
         frontend_url=frontend_url
     )
     
-    return {
-        "user": UserResponse.model_validate(new_user).model_dump()
-    }
+    return success(
+        data={
+            "user": UserResponse.model_validate(new_user).model_dump()
+        },
+        request=request,
+        message="User registered successfully. Please check your email for verification link."
+    )
 
 
 
@@ -181,7 +186,7 @@ async def login_user(
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_async_db),
     _rate_limit: None = Depends(login_rate_limit())
-) -> dict:
+):
     """
     Endpoint to log in a user with device tracking and security persistence.
     """
@@ -215,17 +220,21 @@ async def login_user(
         await db.commit()
         
         # Build response using standardized schema
-        return {
-            "access_token": tokens["access_token"],
-            "refresh_token": tokens["refresh_token"],
-            "token_type": tokens.get("token_type", "bearer"),
-            "expires_in": tokens.get("expires_in", 3600),
-            "user": {
-                **UserResponse.model_validate(db_user).model_dump(),
-                "roles": tokens.get("roles", []),
-                "permissions": tokens.get("permissions", [])
-            }
-        }
+        return success(
+            data={
+                "access_token": tokens["access_token"],
+                "refresh_token": tokens["refresh_token"],
+                "token_type": tokens.get("token_type", "bearer"),
+                "expires_in": tokens.get("expires_in", 3600),
+                "user": {
+                    **UserResponse.model_validate(db_user).model_dump(),
+                    "roles": tokens.get("roles", []),
+                    "permissions": tokens.get("permissions", [])
+                }
+            },
+            request=request,
+            message="Login successful"
+        )
 
     except RextAuthenticationException as auth_error:
         # CRITICAL: Commit transaction to persist failed login attempts for account locking
@@ -239,7 +248,7 @@ async def refresh_access_token(
     request: Request,
     token_data: RefreshTokenRequest,
     db: AsyncSession = Depends(get_async_db)
-) -> dict:
+):
     """
     Refresh access token using refresh token.
     """
@@ -247,7 +256,11 @@ async def refresh_access_token(
     auth_service = AuthService(db)
     tokens = await auth_service.refresh_token(token_data.refresh_token)
 
-    return tokens
+    return success(
+        data=tokens,
+        request=request,
+        message="Token refreshed successfully"
+    )
 
 
 @router.post("/logout", response_model=SuccessResponse[GenericResponse])
@@ -258,7 +271,7 @@ async def logout_user(
     current_user: dict = Depends(get_current_user),
     authorization: str = Header(...),
     db: AsyncSession = Depends(get_async_db)
-) -> dict:
+):
     """
     Logout user by blacklisting their access token.
     """
@@ -275,7 +288,11 @@ async def logout_user(
     auth_service = AuthService(db)
     await auth_service.logout_user(user_id, jti, exp)
 
-    return {"message": "Logged out successfully"}
+    return success(
+        data={"message": "Logged out successfully"},
+        request=request,
+        message="Logout successful"
+    )
 
 
 @router.get("/verify-email", response_model=SuccessResponse[VerifyEmailResponse])
@@ -285,7 +302,7 @@ async def verify_email(
     request: Request,
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_async_db)
-) -> dict:
+):
     """
     Verify user's email using the provided token and send welcome email
     """
@@ -304,10 +321,14 @@ async def verify_email(
             frontend_url=frontend_url
         )
 
-    return {
-        "id": str(user.id),
-        "message": "Email verified successfully" if user.email_verified else "Email already verified"
-    }
+    return success(
+        data={
+            "id": str(user.id),
+            "message": "Email verified successfully" if user.email_verified else "Email already verified"
+        },
+        request=request,
+        message="Email verification result"
+    )
 
 
 @router.post("/resend-verification", response_model=SuccessResponse[GenericResponse])
@@ -318,7 +339,7 @@ async def resend_verification(
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_async_db),
     _rate_limit: None = Depends(registration_rate_limit())
-) -> dict:
+):
     """
     Resend email verification link.
     """
@@ -340,9 +361,13 @@ async def resend_verification(
     )
 
     logger.info(f"Verification email resent to: {user.email}")
-    return {
-        "message": "Verification email has been resent"
-    }
+    return success(
+        data={
+            "message": "Verification email has been resent"
+        },
+        request=request,
+        message="Verification email resent"
+    )
 
 
 @router.post("/oauth/login", response_model=SuccessResponse[AuthTokenResponse])
@@ -352,7 +377,7 @@ async def oauth_login(
     request: Request,
     db: AsyncSession = Depends(get_async_db),
     _rate_limit: None = Depends(oauth_rate_limit())
-) -> dict:
+):
     """
     Login or register user via OAuth provider.
     """
@@ -386,15 +411,19 @@ async def oauth_login(
     pref_service = NotificationPreferencesService(db)
     await pref_service.get_or_create(new_user.id)
 
-    return {
-        "access_token": tokens["access_token"],
-        "refresh_token": tokens["refresh_token"],
-        "token_type": tokens.get("token_type", "bearer"),
-        "expires_in": tokens.get("expires_in", 3600),
-        "user": UserResponse.model_validate(new_user).model_dump(),
-        "roles": tokens.get("roles", []),
-        "permissions": tokens.get("permissions", [])
-    }
+    return success(
+        data={
+            "access_token": tokens["access_token"],
+            "refresh_token": tokens["refresh_token"],
+            "token_type": tokens.get("token_type", "bearer"),
+            "expires_in": tokens.get("expires_in", 3600),
+            "user": UserResponse.model_validate(new_user).model_dump(),
+            "roles": tokens.get("roles", []),
+            "permissions": tokens.get("permissions", [])
+        },
+        request=request,
+        message="OAuth login successful"
+    )
 
 
 @router.post("/register-with-invitation", response_model=SuccessResponse[RegisterWithInvitationResponse])
@@ -405,7 +434,7 @@ async def register_with_invitation(
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_async_db),
     _rate_limit: None = Depends(registration_rate_limit())
-) -> dict:
+):
     """
     Create or use account via workspace invitation.
     """
@@ -461,10 +490,14 @@ async def register_with_invitation(
         payload={"user_id": str(existing_user.id), "workspace_id": str(invitation.workspace_id)}
     )
 
-    return {
-        "user": UserResponse.model_validate(existing_user).model_dump(),
-        "invitation_accepted": True
-    }
+    return success(
+        data={
+            "user": UserResponse.model_validate(existing_user).model_dump(),
+            "invitation_accepted": True
+        },
+        request=request,
+        message="Registration with invitation successful"
+    )
 
 
 @router.post("/oauth/link", response_model=SuccessResponse[dict])
@@ -475,7 +508,7 @@ async def link_oauth(
     request: Request,
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_async_db)
-) -> dict:
+):
     """
     Link OAuth account to current user.
     """
@@ -502,7 +535,11 @@ async def link_oauth(
         token_expires_at=token_expires_at
     )
 
-    return oauth_account.to_dict()
+    return success(
+        data=oauth_account.to_dict(),
+        request=request,
+        message="OAuth account linked successfully"
+    )
 
 
 @router.delete("/oauth/{provider}", response_model=SuccessResponse[UnlinkOAuthResponse])
@@ -513,7 +550,7 @@ async def unlink_oauth(
     request: Request,
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_async_db)
-) -> dict:
+):
     """
     Unlink OAuth account from current user.
     """
@@ -522,4 +559,8 @@ async def unlink_oauth(
     oauth_service = OAuthService(db)
     
     await oauth_service.unlink_oauth_account(user_id, provider)
-    return {"provider": provider, "status": "unlinked"}
+    return success(
+        data={"provider": provider, "status": "unlinked"},
+        request=request,
+        message=f"Successfully unlinked {provider} account"
+    )

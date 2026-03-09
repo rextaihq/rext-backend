@@ -26,6 +26,8 @@ from src.api.middleware.exceptions import (
     RextAuthenticationException
 )
 from src.services.user_service import UserService
+from src.utils.response_utils import success, error
+from src.api.schema.response_schemas import ErrorCode, ErrorSeverity
 from src.api.middleware.rate_limiter import password_reset_rate_limit
 from src.api.schema.user_schema import ForgotPasswordRequest, ResetPassword,ChangePasswordRequest
 
@@ -123,9 +125,13 @@ async def forgot_password(
         logger.info(f"Password reset initiated for user: {user.id}")
 
     # Always return the same generic message
-    return {
-        "message": generic_message
-    }
+    return success(
+        data={
+            "message": generic_message
+        },
+        request=request,
+        message=generic_message
+    )
 
     
 

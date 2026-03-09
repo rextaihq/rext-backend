@@ -193,10 +193,14 @@ async def get_pending_invitations(
         }
     )
 
-    return {
-        "invitations": invitation_list,
-        "count": len(invitation_list)
-    }
+    return success(
+        data={
+            "invitations": invitation_list,
+            "count": len(invitation_list)
+        },
+        request=request,
+        message="Pending invitations retrieved successfully"
+    )
 
 
 @router.post("/{invitation_id}/decline", response_model=SuccessResponse[UserDeclineInvitationResponse])

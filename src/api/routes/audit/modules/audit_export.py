@@ -16,6 +16,8 @@ from src.services.audit_service import AuditService
 from src.utils.route_decorators import db_transaction_handler, require_permissions
 from src.api.schema.response_schemas import SuccessResponse
 from src.api.schema.response.audit_responses import AuditStatsOverviewResponse
+from src.utils.response_utils import success
+from src.utils.audit_helper import create_audit_log
 
 router = APIRouter()
 
@@ -157,4 +159,8 @@ async def get_audit_stats(
     service = AuditService(db)
     stats = await service.get_statistics(days)
 
-    return stats
+    return success(
+        data=stats,
+        request=request,
+        message="Audit statistics retrieved successfully"
+    )

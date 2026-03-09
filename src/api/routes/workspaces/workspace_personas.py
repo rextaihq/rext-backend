@@ -48,10 +48,14 @@ async def list_workspace_personas(
     )
     personas = result.scalars().all()
     
-    return {
-        "personas": [p.to_dict() for p in personas],
-        "total_count": len(personas)
-    }
+    return success(
+        data={
+            "personas": [p.to_dict() for p in personas],
+            "total_count": len(personas)
+        },
+        request=request,
+        message="Workspace personas retrieved successfully"
+    )
 
 
 @router.get("/{workspace_id}/personas/{persona_id}", response_model=SuccessResponse[PersonaResponse])
@@ -82,7 +86,11 @@ async def get_persona(
             resource_id=persona_id,
         )
     
-    return persona.to_dict()
+    return success(
+        data=persona.to_dict(),
+        request=request,
+        message="Persona retrieved successfully"
+    )
 
 
 @router.post("/{workspace_id}/personas", status_code=status.HTTP_201_CREATED, response_model=SuccessResponse[PersonaResponse])
@@ -180,7 +188,11 @@ async def update_persona(
         },
     )
     
-    return persona.to_dict()
+    return success(
+        data=persona.to_dict(),
+        request=request,
+        message="Persona updated successfully"
+    )
 
 
 @router.delete("/{workspace_id}/personas/{persona_id}", status_code=status.HTTP_200_OK, response_model=SuccessResponse[GenericResponse])

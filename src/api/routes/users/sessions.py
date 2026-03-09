@@ -20,6 +20,7 @@ from src.api.security.token_utils import decode_and_verify_token
 from src.services.session_service import SessionService
 from src.utils.logger import logger
 from src.utils.route_decorators import db_transaction_handler, require_permissions
+from src.utils.response_utils import success
 from src.api.schema.response_schemas import SuccessResponse
 from src.api.schema.response.session_responses import (
     SessionListResponse,
@@ -65,11 +66,15 @@ async def list_user_sessions(
 
     logger.info("Retrieved sessions for user", extra={"user_id": str(user_uuid), "count": len(sessions)})
 
-    return {
-        "sessions": sessions,
-        "total_count": len(sessions),
-        "active_count": active_count,
-    }
+    return success(
+        data={
+            "sessions": sessions,
+            "total_count": len(sessions),
+            "active_count": active_count,
+        },
+        request=request,
+        message="User sessions retrieved successfully"
+    )
 
 
 @router.delete("/sessions/{session_id}", response_model=SuccessResponse[SessionRevokeResponse])
@@ -92,10 +97,14 @@ async def revoke_session(
         extra={"user_id": str(user_uuid), "session_id": session_id},
     )
 
-    return {
-        **result,
-        "session_id": session_id,
-    }
+    return success(
+        data={
+            **result,
+            "session_id": session_id,
+        },
+        request=request,
+        message="Session revoked successfully"
+    )
 
 
 @router.delete("/sessions", response_model=SuccessResponse[BulkSessionRevokeResponse])
@@ -140,10 +149,14 @@ async def revoke_all_sessions(
         extra={"user_id": str(user_uuid), "revoked_count": revoked_count},
     )
 
-    return {
-        "revoked_count": revoked_count,
-        "current_session_preserved": True,
-    }
+    return success(
+        data={
+            "revoked_count": revoked_count,
+            "current_session_preserved": True,
+        },
+        request=request,
+        message="All other sessions revoked successfully"
+    )
 
 
 @router.post("/sessions/revoke-all", deprecated=True, response_model=SuccessResponse[BulkSessionRevokeResponse])
@@ -180,4 +193,5 @@ async def revoke_all_sessions_post(
     )
 
     # Reuse the same logic as DELETE /sessions
+    # This returns the JSONResponse from success()
     return await revoke_all_sessions(request, current_user, authorization, db)

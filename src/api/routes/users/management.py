@@ -279,10 +279,14 @@ async def export_user_data(
         user_id=str(user_id)
     )
 
-    return DataExportResponse(
-        export_id=export_id,
-        user_id=str(user_id),
-        status="pending",
-        requested_at=datetime.now(timezone.utc).isoformat(),
-        message="Data export has been requested and will be sent to your email."
+    return success(
+        data=DataExportResponse(
+            export_id=export_id,
+            user_id=str(user_id),
+            status="pending",
+            requested_at=datetime.now(timezone.utc).isoformat(),
+            message="Data export has been requested and will be sent to your email."
+        ),
+        request=request,
+        message="Data export initiated"
     )

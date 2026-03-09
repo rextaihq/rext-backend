@@ -87,13 +87,17 @@ async def list_audit_logs(
     # Format response
     logs_data = [format_audit_log(log, include_details=False) for log in logs]
 
-    return {
-        "items": logs_data,
-        "total": total_count,
-        "limit": limit,
-        "offset": offset,
-        "has_more": (offset + limit) < total_count
-    }
+    return success(
+        data={
+            "items": logs_data,
+            "total": total_count,
+            "limit": limit,
+            "offset": offset,
+            "has_more": (offset + limit) < total_count
+        },
+        request=request,
+        message="Audit logs retrieved successfully"
+    )
 
 
 @router.get("/{audit_log_id}", response_model=SuccessResponse[AuditLogDetailedResponse])
@@ -130,4 +134,8 @@ async def get_audit_log(
     # Format with full details
     log_data = format_audit_log(log, include_details=True)
 
-    return log_data
+    return success(
+        data=log_data,
+        request=request,
+        message="Audit log details retrieved successfully"
+    )

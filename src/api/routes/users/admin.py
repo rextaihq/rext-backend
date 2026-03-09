@@ -8,6 +8,7 @@ from src.api.security.dependencies import get_current_user
 from src.services.user_service import UserService
 from src.utils.logger import logger
 from src.utils.route_decorators import db_transaction_handler
+from src.utils.response_utils import success
 from src.api.schema.response_schemas import SuccessResponse
 from src.api.schema.response.admin_responses import CleanupResponse, PendingDeletionsResponse
 
@@ -31,10 +32,14 @@ async def cleanup_deactivated_accounts_endpoint(
         extra={"admin_user_id": current_user.get("identity"), "deleted_count": deleted_count},
     )
 
-    return {
-        "deleted_count": deleted_count,
-        "message": f"Successfully deleted {deleted_count} deactivated account(s)"
-    }
+    return success(
+        data={
+            "deleted_count": deleted_count,
+            "message": f"Successfully deleted {deleted_count} deactivated account(s)"
+        },
+        request=request,
+        message="Deactivated account cleanup successful"
+    )
 
 
 @router.get("/admin/pending-deletions", response_model=SuccessResponse[PendingDeletionsResponse])
@@ -54,10 +59,14 @@ async def get_pending_deletions_endpoint(
         extra={"admin_user_id": current_user.get("identity"), "count": len(pending)},
     )
 
-    return {
-        "pending_deletions": pending,
-        "count": len(pending)
-    }
+    return success(
+        data={
+            "pending_deletions": pending,
+            "count": len(pending)
+        },
+        request=request,
+        message="Pending account deletions retrieved successfully"
+    )
 
 
 @router.post("/admin/cleanup-tokens", response_model=SuccessResponse[CleanupResponse])
@@ -77,7 +86,11 @@ async def cleanup_tokens_endpoint(
         extra={"admin_user_id": current_user.get("identity"), "deleted_count": deleted_count},
     )
 
-    return {
-        "deleted_count": deleted_count,
-        "message": f"Successfully cleaned up {deleted_count} expired tokens"
-    }
+    return success(
+        data={
+            "deleted_count": deleted_count,
+            "message": f"Successfully cleaned up {deleted_count} expired tokens"
+        },
+        request=request,
+        message="Expired token cleanup successful"
+    )

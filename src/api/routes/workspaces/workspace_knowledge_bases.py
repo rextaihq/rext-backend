@@ -14,6 +14,7 @@ from src.api.schema.knowledge_schema import (
 )
 from src.services.knowledge_base_service import KnowledgeBaseService
 from src.utils.logger import logger
+from src.utils.response_utils import success, created
 from src.api.schema.response_schemas import SuccessResponse
 from src.api.schema.response.kb_responses import (
     KnowledgeBaseListResponse,

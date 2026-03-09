@@ -41,9 +41,13 @@ router = APIRouter()
 # -------------------------
 @router.get("/", response_model=SuccessResponse[WorkspaceStatusResponse])
 @db_transaction_handler("get workspace status", success_message="Workspace service is operational")
-async def get_status(request: Request) -> dict:
+async def get_status(request: Request):
     """Health check for workspace service"""
-    return {"status": "operational", "service": "workspace_service"}
+    return success(
+        data={"status": "operational", "service": "workspace_service"},
+        request=request,
+        message="Workspace service is operational"
+    )
 
 
 # -------------------------
@@ -107,7 +111,7 @@ async def get_workspaces(
     request: Request,
     db: AsyncSession = Depends(get_async_db),
     user: dict = Depends(get_current_user)
-) -> dict:
+):
     """List all workspaces the current user has access to."""
     user_id = user.get("identity")
     await verify_current_user(db, user_id)
@@ -116,7 +120,11 @@ async def get_workspaces(
     workspace_service = WorkspaceService(db)
     workspace_data = await workspace_service.get_user_workspaces(UUID(user_id))
 
-    return {"workspaces": workspace_data, "total_count": len(workspace_data)}
+    return success(
+        data={"workspaces": workspace_data, "total_count": len(workspace_data)},
+        request=request,
+        message="Workspaces retrieved successfully"
+    )
 
 
 # -------------------------
@@ -130,7 +138,7 @@ async def get_workspace_by_slug(
     request: Request,
     db: AsyncSession = Depends(get_async_db),
     user: dict = Depends(get_current_user)
-) -> dict:
+):
     """Fetch workspace details by its URL slug."""
     user_id = user.get("identity")
     await verify_current_user(db, user_id)
@@ -156,7 +164,11 @@ async def get_workspace_by_slug(
         }
     }
 
-    return {"workspace": workspace_data}
+    return success(
+        data={"workspace": workspace_data},
+        request=request,
+        message="Workspace retrieved by slug"
+    )
 
 
 # -------------------------
@@ -170,7 +182,7 @@ async def get_workspace_by_id(
     request: Request,
     db: AsyncSession = Depends(get_async_db),
     user: dict = Depends(get_current_user)
-) -> dict:
+):
     """Legacy detail endpoint using query parameters."""
     user_id = user.get("identity")
     await verify_current_user(db, user_id)
@@ -194,7 +206,11 @@ async def get_workspace_by_id(
         }
     }
 
-    return {"workspace": workspace_data}
+    return success(
+        data={"workspace": workspace_data},
+        request=request,
+        message="Workspace details retrieved successfully"
+    )
 
 
 # -------------------------
@@ -330,7 +346,11 @@ async def update_workspace(
         extra={"workspace_id": str(workspace.id), "user_id": user_id}
     )
 
-    return {"workspace": updated_workspace}
+    return success(
+        data={"workspace": updated_workspace},
+        request=request,
+        message="Workspace updated successfully"
+    )
 
 
 # -------------------------
@@ -344,7 +364,7 @@ async def delete_workspace_endpoint(
     request: Request,
     db: AsyncSession = Depends(get_async_db),
     user: dict = Depends(get_current_user)
-) -> dict:
+):
     """
     Soft-delete a workspace (30-day recovery period).
     
@@ -390,11 +410,15 @@ async def delete_workspace_endpoint(
     except Exception as e:
         logger.error(f"Failed to send deletion confirmation email: {str(e)}")
 
-    return {
-        "message": "Workspace deleted successfully. You have 30 days to recover it if needed.",
-        "recovery_period_days": 30,
-        "remaining_workspaces": remaining_after_delete,
-        "is_last_workspace": remaining_after_delete == 0
-    }
+    return success(
+        data={
+            "message": "Workspace deleted successfully. You have 30 days to recover it if needed.",
+            "recovery_period_days": 30,
+            "remaining_workspaces": remaining_after_delete,
+            "is_last_workspace": remaining_after_delete == 0
+        },
+        request=request,
+        message="Workspace deleted successfully"
+    )
 
 
