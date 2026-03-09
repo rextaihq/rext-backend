@@ -1,0 +1,64 @@
+"""
+Standardized response schemas for Trial operations.
+"""
+
+from typing import List, Optional, Dict, Any
+from pydantic import BaseModel, Field
+from datetime import datetime
+from uuid import UUID
+
+
+class TrialEligibilityResponse(BaseModel):
+    """Response schema for trial eligibility checks."""
+    eligible: bool
+    has_active_trial: bool
+    has_previous_trial: bool
+    previous_trials_count: int
+    reason: Optional[str] = None
+
+
+class TrialExtensionResponse(BaseModel):
+    """Response schema for admin trial extensions."""
+    id: str
+    user_id: str
+    status: str
+    trial_end_date: Optional[str] = None
+    extension_days: int
+    extended_by: str
+    extension_reason: Optional[str] = None
+    trial_extensions: List[Dict[str, Any]] = Field(default_factory=list)
+
+
+class TrialAnalyticsResponse(BaseModel):
+    """Response schema for trial conversion analytics."""
+    total_conversions: int
+    average_trial_duration: float
+    average_conversion_time: float
+    total_revenue: float
+    conversion_by_period: Dict[str, int]
+    date_range: Dict[str, Optional[str]]
+
+
+class ExpiringTrial(BaseModel):
+    """Schema for a single expiring trial item."""
+    id: str
+    user_id: str
+    plan_id: str
+    status: str
+    trial_end_date: Optional[str] = None
+    created_at: str
+
+
+class ExpiringTrialsResponse(BaseModel):
+    """Response schema for listing expiring trials."""
+    trials: List[ExpiringTrial]
+    total: int
+    days_until_expiry: int
+
+
+class TrialStatusResponse(BaseModel):
+    """Response schema for user-facing trial status."""
+    is_trial: bool
+    trial_end_date: Optional[str] = None
+    days_remaining: Optional[int] = None
+    trial_expired: bool

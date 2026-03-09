@@ -32,7 +32,7 @@ Usage:
 
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any, Dict, List, Optional, Union, TypeVar, Generic
+from typing import Any, Dict, List, Optional, Union, Generic, TypeVar
 
 T = TypeVar("T")
 from uuid import uuid4
