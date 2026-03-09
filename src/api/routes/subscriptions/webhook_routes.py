@@ -138,6 +138,7 @@ async def _send_webhook_email(task_data: dict, db: AsyncSessionLocal) -> None:
 
 
 @router.post("/lemonsqueezy", status_code=status.HTTP_200_OK)
+# NOTE: Not migrated — acts as a webhook receiver (LemonSqueezy)
 async def handle_lemonsqueezy_webhook(
     request: Request,
     background_tasks: BackgroundTasks,
