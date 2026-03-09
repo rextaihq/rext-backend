@@ -12,13 +12,16 @@ from src.api.database.async_database import get_async_db
 from src.api.security.dependencies import get_current_user
 from src.utils.route_decorators import require_permissions, db_transaction_handler
 from src.api.schema.preferences_schema import UserPreferencesResponse, UpdateUserPreferencesRequest
+from src.api.schema.response_schemas import SuccessResponse
+from src.api.schema.__response__.user_preferences_responses import UserPreferencesWrappedResponse
+from src.utils.response_utils import success
 from src.utils.logger import logger
 from src.services.user_preferences_service import UserPreferencesService
 
 router = APIRouter()
 
 
-@router.get("/preferences", response_model=dict)
+@router.get("/preferences", response_model=SuccessResponse[UserPreferencesWrappedResponse])
 @require_permissions("user.read", workspace_scoped=False)
 @db_transaction_handler("get user preferences", auto_commit=False)
 async def get_user_preferences(
@@ -34,11 +37,15 @@ async def get_user_preferences(
 
     # Get or create preferences via service
     preferences = await service.get_or_create_preferences(user_id)
+    
+    return success(
+        data={"preferences": preferences.to_dict()},
+        request=request,
+        message="User preferences retrieved successfully"
+    )
 
-    return {"preferences": preferences.to_dict()}
 
-
-@router.patch("/preferences", response_model=dict)
+@router.patch("/preferences", response_model=SuccessResponse[UserPreferencesWrappedResponse])
 @require_permissions("user.update", workspace_scoped=False)
 @db_transaction_handler("update user preferences", auto_commit=True)
 async def update_user_preferences(
@@ -64,4 +71,8 @@ async def update_user_preferences(
         sidebar_collapsed=update_data.get("sidebar_collapsed")
     )
 
-    return {"preferences": preferences.to_dict()}
+    return success(
+        data={"preferences": preferences.to_dict()},
+        request=request,
+        message="User preferences updated successfully"
+    )
