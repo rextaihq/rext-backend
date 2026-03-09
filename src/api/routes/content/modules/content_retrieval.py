@@ -9,6 +9,8 @@ from src.api.database.async_database import get_async_db
 from src.api.security.dependencies import get_current_user
 from src.services.content_service import ContentService
 from src.utils.workspace_utils import resolve_and_verify_workspace
+from src.api.schema.response.content_responses import ContentListResponse, ContentDetailResponse
+from src.api.schema.response_schemas import SuccessResponse
 
 
 router = APIRouter()
@@ -17,7 +19,7 @@ router = APIRouter()
 # -------------------------
 # List Content for Workspace
 # -------------------------
-@router.get("/")
+@router.get("/", response_model=SuccessResponse[ContentListResponse])
 @require_permissions("content.read", workspace_scoped=True)
 @db_transaction_handler("list content", auto_commit=False)
 async def list_content(
@@ -66,7 +68,7 @@ async def list_content(
 # -------------------------
 # Get Single Content by ID
 # -------------------------
-@router.get("/{content_id}")
+@router.get("/{content_id}", response_model=SuccessResponse[ContentDetailResponse])
 @require_permissions("content.read", workspace_scoped=True)
 @db_transaction_handler("get content", "Content retrieved successfully", auto_commit=False)
 async def get_content(
