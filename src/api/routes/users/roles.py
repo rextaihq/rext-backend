@@ -24,9 +24,6 @@ from src.api.schema.response.user_role_responses import (
 )
 from src.utils.response_utils import success
 from src.utils.logger import logger
-from src.utils.response_utils import success
-from src.api.schema.response_schemas import SuccessResponse
-from src.api.schema.response.admin_responses import UserRoleAssignmentResponse, UserRoleListResponse
 
 router = APIRouter()
 
@@ -56,13 +53,22 @@ async def assign_role_to_user(
     role = await service.get_role_by_id(role_id)
 
     # Perform assignment
-    await service.assign_role_to_user(
+    user_role = await service.assign_role(
         user_id=target_user_id,
         role_id=role_id,
         workspace_id=workspace_id,
         is_primary=assignment_data.is_primary,
-        assigned_by=UUID(assigner_id)
+        assigned_by_user_id=UUID(assigner_id)
     )
+
+    # Get workspace name if applicable
+    workspace_name = None
+    if workspace_id:
+        ws_result = await db.execute(
+            select(WorkspaceModel).where(WorkspaceModel.id == workspace_id)
+        )
+        workspace = ws_result.scalar_one_or_none()
+        workspace_name = workspace.name if workspace else None
 
     return success(
         data={

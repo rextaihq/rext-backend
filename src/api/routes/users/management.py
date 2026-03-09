@@ -278,9 +278,3 @@ async def export_user_data(
         request=request,
         message="Data export initiated"
     )
-
-    return success(
-        data=response_data,
-        request=request,
-        message="Data export requested successfully"
-    )
