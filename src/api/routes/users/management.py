@@ -15,10 +15,10 @@ from src.services.email_service import EmailService
 from src.api.database.async_database import get_async_db
 from src.services.user_service import UserService
 from src.api.middleware.exceptions import ResourceNotFoundException, RextValidationException
-from src.utils.response_utils import success, error
-from src.api.schema.response_schemas import ErrorCode, ErrorSeverity
+from src.utils.response_utils import success
+from src.api.schema.response_schemas import SuccessResponse
+from src.api.schema.response.admin_responses import UserListResponse, UserResponseSchema, UserDeleteResponse
 from src.api.models.workspace_models.workspace_member import WorkspaceMembers
-from src.api.models.subscription_models.subscriptions import UserSubscription
 from src.api.models.user_models.users import Users
 from src.api.models.user_models.user_roles import UserRole
 from src.api.config import get_settings
@@ -51,6 +51,8 @@ async def send_data_export_email_task(
         async with get_async_db_context() as async_db:
             email_service = EmailService(async_db)
 
+            check_sym = '\u2713'
+            cross_sym = '\u2717'
             body_html = f"""
             <h2>Your Data Export is Ready</h2>
             <p>Hello {name},</p>
@@ -60,10 +62,10 @@ async def send_data_export_email_task(
 
             <h3>Export Contents:</h3>
             <ul>
-                <li>Profile Information: {'✓' if export_request_details.get('include_profile') else '✗'}</li>
-                <li>Role Assignments: {'✓' if export_request_details.get('include_roles') else '✗'}</li>
-                <li>Workspace Memberships: {'✓' if export_request_details.get('include_workspaces') else '✗'}</li>
-                <li>Activity Logs: {'✓' if export_request_details.get('include_activity') else '✗'}</li>
+                <li>Profile Information: {check_sym if export_request_details.get('include_profile') else cross_sym}</li>
+                <li>Role Assignments: {check_sym if export_request_details.get('include_roles') else cross_sym}</li>
+                <li>Workspace Memberships: {check_sym if export_request_details.get('include_workspaces') else cross_sym}</li>
+                <li>Activity Logs: {check_sym if export_request_details.get('include_activity') else cross_sym}</li>
             </ul>
 
             <p>Your data is included below as JSON.</p>
@@ -178,18 +180,7 @@ async def update_user(
     )
 
     return success(
-        data={
-            "user": {
-                "id": str(db_user.id),
-                "email": db_user.email,
-                "full_name": db_user.full_name,
-                "display_name": db_user.display_name,
-                "language": db_user.language,
-                "timezone": db_user.timezone,
-                "status": db_user.status,
-                "updated_at": db_user.updated_at.isoformat() if db_user.updated_at else None
-            }
-        },
+        data=db_user.to_dict(),
         request=request,
         message="User updated successfully"
     )
@@ -237,8 +228,6 @@ async def export_user_data(
 
     if export_request.include_roles:
         roles = []
-        # Assuming db_user.user_roles is loaded or needs fetching
-        # For simplicity in this route, we collect what's available
         for user_role in getattr(db_user, 'user_roles', []):
             roles.append({
                 "role_name": user_role.role.name if user_role.role else None,
@@ -258,7 +247,6 @@ async def export_user_data(
             })
         export_data["workspaces"] = workspaces
 
-    # Usage info as per Task 079 suggestion
     if export_request.include_usage:
         export_data["usage"] = {
             "account_age_days": (datetime.now(timezone.utc) - db_user.created_at.replace(tzinfo=timezone.utc)).days if db_user.created_at else 0
@@ -289,4 +277,10 @@ async def export_user_data(
         ),
         request=request,
         message="Data export initiated"
+    )
+
+    return success(
+        data=response_data,
+        request=request,
+        message="Data export requested successfully"
     )

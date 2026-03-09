@@ -12,11 +12,13 @@ from src.api.security.dependencies import get_current_user
 from src.services.permission_service import PermissionService
 from src.utils.response_utils import success
 from src.utils.route_decorators import db_transaction_handler, require_permissions
+from src.api.schema.response_schemas import SuccessResponse
+from src.api.schema.response.rbac_responses import AssignPermissionsData, RevokePermissionData
 
 router = APIRouter()
 
 
-@router.post("/{role_id}/permissions", response_model=dict)
+@router.post("/{role_id}/permissions", response_model=SuccessResponse[AssignPermissionsData])
 @require_permissions("role.manage_permissions", workspace_scoped=False)
 @db_transaction_handler("assign permissions to role", auto_commit=True)
 async def assign_permissions_to_role(
@@ -38,7 +40,7 @@ async def assign_permissions_to_role(
     )
 
 
-@router.delete("/{role_id}/permissions/{permission_id}", response_model=dict)
+@router.delete("/{role_id}/permissions/{permission_id}", response_model=SuccessResponse[RevokePermissionData])
 @db_transaction_handler("revoke permission from role", auto_commit=True)
 @require_permissions("role.manage_permissions", workspace_scoped=False)
 async def revoke_permission_from_role(
