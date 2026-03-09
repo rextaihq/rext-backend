@@ -92,7 +92,6 @@ class SERPPAYLOAD(TypedDict, total=False):
 class DocumentScrapeData(TypedDict):
     document: Document
     content_length: int
-    keywords: list[str]
     headings: list[str]
 
 
