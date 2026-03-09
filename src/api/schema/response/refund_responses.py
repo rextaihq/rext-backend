@@ -57,3 +57,8 @@ class RefundCreateData(BaseModel):
     success: bool
     refund: RefundAdminRow
     message: str
+
+
+# Aliases for non-admin contexts
+RefundResponse = RefundAdminRow
+RefundListResponse = RefundAdminListResponse

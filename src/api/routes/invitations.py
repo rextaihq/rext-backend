@@ -14,6 +14,7 @@ from fastapi import APIRouter, Depends, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from uuid import UUID
 from datetime import datetime, timezone
+from src.api.database.async_database import get_async_db
 from src.api.models.user_models.users import Users
 from src.api.models.user_models.roles import Role
 from src.api.models.workspace_models.workspace_model import WorkspaceModel

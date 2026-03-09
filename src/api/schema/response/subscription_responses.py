@@ -53,6 +53,19 @@ class SubscriptionUpgradeResponse(BaseModel):
     # and other fields as needed from to_dict
 
 
+class SubscriptionCancelResponse(BaseModel):
+    """Response schema for subscription cancellation. Returns the updated subscription dict."""
+    id: UUID
+    user_id: UUID
+    plan_id: UUID
+    status: str
+    billing_period: str
+    cancelled_at: Optional[datetime] = None
+    cancellation_reason: Optional[str] = None
+    end_date: Optional[datetime] = None
+    ends_at: Optional[datetime] = None
+
+
 class InvoiceItem(BaseModel):
     """Schema for a single invoice item."""
     id: Optional[str] = None

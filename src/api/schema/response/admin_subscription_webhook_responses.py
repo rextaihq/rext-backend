@@ -94,3 +94,40 @@ class WebhookStatisticsResponse(BaseModel):
     overall: WebhookStatsOverall
     by_event_type: List[WebhookStatsByType]
     message: Optional[str] = None
+
+
+class WebhookMonitorRow(BaseModel):
+    """Schema for a single webhook monitor row (simplified event view)."""
+    id: int
+    event_id: str
+    event_name: str
+    status: str
+    processed: bool
+    retry_count: int
+    error_message: Optional[str] = None
+    created_at: datetime
+
+
+class WebhookMonitorListResponse(BaseModel):
+    """Schema for the webhook monitor dashboard list."""
+    events: List[WebhookMonitorRow]
+    pagination: WebhookPagination
+    summary: WebhookEventSummary
+    message: Optional[str] = None
+
+
+class WebhookRetryResultResponse(BaseModel):
+    """Schema for a single webhook retry result."""
+    event_id: str
+    success: bool
+    message: str
+    retry_count: Optional[int] = None
+
+
+class WebhookRetryAllResponse(BaseModel):
+    """Schema for the bulk retry all failed webhooks response."""
+    total_retried: int
+    successful: int
+    failed: int
+    results: Optional[List[WebhookRetryResultResponse]] = None
+    message: Optional[str] = None

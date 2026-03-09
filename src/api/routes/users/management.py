@@ -17,7 +17,6 @@ from src.services.user_service import UserService
 from src.api.middleware.exceptions import ResourceNotFoundException, RextValidationException
 from src.utils.response_utils import success
 from src.api.schema.response_schemas import SuccessResponse
-from src.api.schema.response.admin_responses import UserListResponse, UserResponseSchema, UserDeleteResponse
 from src.api.models.workspace_models.workspace_member import WorkspaceMembers
 from src.api.models.user_models.users import Users
 from src.api.models.user_models.user_roles import UserRole
