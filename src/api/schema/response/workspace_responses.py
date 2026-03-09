@@ -33,3 +33,65 @@ class WorkspaceDeleteResponse(BaseModel):
     recovery_period_days: int
     remaining_workspaces: int
     is_last_workspace: bool
+
+class WorkspaceStatsResponse(BaseModel):
+    workspace_exists: bool
+    content_count: int
+    knowledge_items_count: int
+    members_count: int
+    has_content_builder: bool
+
+class EmailTemplateDeleteResponse(BaseModel):
+    template_id: str
+
+class DefaultEmailTemplateResponse(BaseModel):
+    template_type: str
+    subject: str
+    body: str
+
+class BrandVoiceResponse(BaseModel):
+    id: Optional[str] = None
+    workspace_id: str
+    about: Optional[str] = None
+    customer_profile: Optional[str] = None
+    selling_position: Optional[str] = None
+    target_audience: List[str] = []
+    brand_voice: List[str] = []
+    competitors: List[str] = []
+    content_strategy: List[str] = []
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
+
+class BrandVoiceWrapperResponse(BaseModel):
+    brand_voice: Optional[BrandVoiceResponse] = None
+
+class BrandVoiceStateResponse(BaseModel):
+    deleted: bool
+
+class BrandVoiceRefreshResponse(BaseModel):
+    operation_id: str
+
+class MyWorkspacePermissionsResponse(BaseModel):
+    workspace_id: str
+    workspace_slug: str
+    user_role: str
+    permissions: List[str]
+
+class CheckWorkspacePermissionResponse(BaseModel):
+    has_permission: bool
+    permission: str
+    workspace_id: str
+
+class WorkspaceRoleResponse(BaseModel):
+    name: str
+    display_name: str
+    workspace_scoped: bool
+    workspace_id: Optional[str] = None
+
+class MemberWorkspacePermissionsResponse(BaseModel):
+    user_id: str
+    workspace_id: str
+    roles: List[WorkspaceRoleResponse]
+    permissions: List[str]
+
+
