@@ -1,8 +1,7 @@
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
+from sqlalchemy import select
 from uuid import UUID
-from typing import List
 from datetime import datetime, timezone
 
 from src.utils.logger import logger
@@ -13,11 +12,16 @@ from src.api.middleware.exceptions import RextValidationException, ResourceNotFo
 from src.api.schema.content_schema import (
     WorkspaceIntegrationCreate, 
     WorkspaceIntegrationUpdate, 
-    WorkspaceIntegrationResponse,
-    WorkspaceIntegrationListResponse,
     PublishToSiteRequest,
     ContentCreate
 )
+from src.api.schema.response.content_responses import (
+    SiteResponse,
+    SiteListResponse,
+    SiteDeletedResponse,
+    WordPressPublishResult
+)
+from src.api.schema.response_schemas import SuccessResponse
 from src.api.models import WorkspaceIntegration, Content
 from src.web.wordpress import WordPressPublisher
 from src.utils.workspace_utils import resolve_and_verify_workspace
@@ -43,14 +47,14 @@ async def _get_site_or_404(
     return site
 
 
-@router.get("/list")
+@router.get("/list", response_model=SuccessResponse[SiteListResponse])
 @require_permissions("content.read", workspace_scoped=True)
 @db_transaction_handler("list connected sites")
 async def list_connected_sites(
     workspace_id: str,
     db: AsyncSession = Depends(get_async_db),
     user: dict = Depends(get_current_user)
-) -> dict:
+):
     """List all connected sites for a workspace"""
     user_id = user.get("identity")
     workspace, _ = await resolve_and_verify_workspace(db, workspace_id, UUID(user_id))
@@ -65,7 +69,7 @@ async def list_connected_sites(
         "workspace_id": str(workspace.id)
     }
 
-@router.post("/connect")
+@router.post("/connect", response_model=SuccessResponse[SiteResponse])
 @db_transaction_handler("connect site", "Site connected successfully")
 @require_permissions("content.create", workspace_scoped=True)
 async def connect_site(
@@ -112,7 +116,8 @@ async def connect_site(
     await db.flush()
     
     return {"site": new_site.to_dict()}
-@router.get("/{site_id}")
+
+@router.get("/{site_id}", response_model=SuccessResponse[SiteResponse])
 @require_permissions("content.read", workspace_scoped=True)
 @db_transaction_handler("get site details")
 async def get_site_details(
@@ -120,7 +125,7 @@ async def get_site_details(
     workspace_id: str,
     db: AsyncSession = Depends(get_async_db),
     user: dict = Depends(get_current_user)
-) -> dict:
+):
     """Get details of a specific connected site"""
     user_id = user.get("identity")
     workspace, _ = await resolve_and_verify_workspace(db, workspace_id, UUID(user_id))
@@ -129,7 +134,7 @@ async def get_site_details(
         
     return {"site": site.to_dict()}
 
-@router.patch("/{site_id}")
+@router.patch("/{site_id}", response_model=SuccessResponse[SiteResponse])
 @db_transaction_handler("update site", "Site connection updated successfully")
 @require_permissions("content.update", workspace_scoped=True)
 async def update_site(
@@ -155,7 +160,8 @@ async def update_site(
     if data.config_json is not None: site.config_json = data.config_json
     
     return {"site": site.to_dict()}
-@router.delete("/{site_id}")
+
+@router.delete("/{site_id}", response_model=SuccessResponse[SiteDeletedResponse])
 @db_transaction_handler("disconnect site", "Site disconnected successfully")
 @require_permissions("content.delete", workspace_scoped=True)
 async def delete_site(
@@ -174,7 +180,7 @@ async def delete_site(
     
     return {"site_id": str(site_id)}
 
-@router.post("/{site_id}/activate")
+@router.post("/{site_id}/activate", response_model=SuccessResponse[SiteResponse])
 @db_transaction_handler("activate site", "Site activated successfully")
 @require_permissions("content.update", workspace_scoped=True)
 async def activate_site(
@@ -192,7 +198,7 @@ async def activate_site(
     site.is_active = True
     return {"site": site.to_dict()}
 
-@router.post("/{site_id}/deactivate")
+@router.post("/{site_id}/deactivate", response_model=SuccessResponse[SiteResponse])
 @db_transaction_handler("deactivate site", "Site deactivated successfully")
 @require_permissions("content.update", workspace_scoped=True)
 async def deactivate_site(
@@ -210,7 +216,7 @@ async def deactivate_site(
     site.is_active = False
     return {"site": site.to_dict()}
 
-@router.post("/{site_id}/publish/{content_id}")
+@router.post("/{site_id}/publish/{content_id}", response_model=SuccessResponse[WordPressPublishResult])
 @db_transaction_handler("publish to site", "Content published successfully")
 @require_permissions("content.publish", workspace_scoped=True)
 async def publish_to_site(
