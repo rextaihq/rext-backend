@@ -17,8 +17,6 @@ def create_seo_engine() -> CompiledStateGraph:
         CompiledStateGraph: Compiled SEO engine subgraph.
     """
     from src.flow.engines.router.keyword_router import keyword_router
-    from src.flow.engines.seo.competitors_gap import competitors_gap_node
-    from src.flow.engines.seo.seo_opportunity import seo_opportunity_node
     from src.flow.engines.seo.fetch_dataforseo_backlinks import fetch_dataforseo_backlinks
     from src.flow.engines.seo.recomendation.keyword_recomendation import keyword_recommendation
 
