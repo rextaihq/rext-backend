@@ -11,6 +11,11 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 from typing import Dict, Any
+from src.api.schema.response.health_responses import (
+    BasicHealthResponse,
+    PaymentHealthResponse,
+    QuickPaymentHealthResponse
+)
 import httpx
 import time
 
@@ -23,7 +28,7 @@ from src.utils.logger import logger
 router = APIRouter(prefix="/health", tags=["health"])
 
 
-@router.get("")
+@router.get("", response_model=BasicHealthResponse)
 async def health_check():
     """
     Basic health check endpoint.
@@ -38,11 +43,11 @@ async def health_check():
     }
 
 
-@router.get("/payment")
+@router.get("/payment", response_model=PaymentHealthResponse)
 async def payment_health_check(
     db: AsyncSession = Depends(get_db_dependency),
     _: bool = Depends(is_admin)
-) -> Dict[str, Any]:
+) -> PaymentHealthResponse:
     """
     Comprehensive payment system health check (Phase 4, Task 4.2.5).
 
@@ -189,10 +194,10 @@ async def payment_health_check(
         raise HTTPException(status_code=503, detail=response)
 
 
-@router.get("/payment/quick")
+@router.get("/payment/quick", response_model=QuickPaymentHealthResponse)
 async def payment_quick_health_check(
     _: bool = Depends(is_admin)
-) -> Dict[str, Any]:
+) -> QuickPaymentHealthResponse:
     """
     Quick payment health check without external dependencies.
 

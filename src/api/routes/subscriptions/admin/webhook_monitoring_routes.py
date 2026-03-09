@@ -12,12 +12,20 @@ from datetime import datetime, timezone, timedelta
 
 from fastapi import APIRouter, Depends, Request, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_, or_, desc, func
+from sqlalchemy import select, and_, or_, desc, func, Integer
 
 from src.api.database.async_database import get_async_db
 from src.api.security.dependencies import get_current_user
+from src.api.schema.response_schemas import SuccessResponse
+from src.api.schema.__response__.admin_subscription_webhook_responses import (
+    WebhookEventListResponse,
+    FailedWebhookListResponse,
+    WebhookRetryResponse,
+    WebhookStatisticsResponse,
+)
 from src.api.models.subscription_models.webhooks import WebhookEvent
 from src.utils.route_decorators import db_transaction_handler, require_permissions
+from src.utils.response_utils import success
 from .shared.auth import require_super_admin
 
 
@@ -28,7 +36,7 @@ router = APIRouter()
 # WEBHOOK MONITORING ENDPOINTS
 # ============================================================================
 
-@router.get("/webhooks/events", response_model=dict)
+@router.get("/webhooks/events", response_model=SuccessResponse[WebhookEventListResponse])
 @require_permissions("subscription.manage", workspace_scoped=False)
 @db_transaction_handler("get webhook events", auto_commit=False)
 async def get_webhook_events(
@@ -128,22 +136,24 @@ async def get_webhook_events(
             event_dict["status"] = "pending"
         events_data.append(event_dict)
 
-    return {
-        "data": {
-            "events": events_data,
-            "pagination": {
-                "page": page,
-                "per_page": per_page,
-                "total": total_events,
-                "total_pages": (total_events + per_page - 1) // per_page,
-            },
-            "summary": summary,
+    result_data = {
+        "events": events_data,
+        "pagination": {
+            "page": page,
+            "per_page": per_page,
+            "total": total_events,
+            "total_pages": (total_events + per_page - 1) // per_page,
         },
-        "message": "Webhook events retrieved successfully"
+        "summary": summary,
     }
+    return success(
+        data=result_data,
+        request=request,
+        message="Webhook events retrieved successfully"
+    )
 
 
-@router.get("/webhooks/failed", response_model=dict)
+@router.get("/webhooks/failed", response_model=SuccessResponse[FailedWebhookListResponse])
 @require_permissions("subscription.manage", workspace_scoped=False)
 @db_transaction_handler("get failed webhook events", auto_commit=False)
 async def get_failed_webhook_events(
@@ -234,26 +244,28 @@ async def get_failed_webhook_events(
             event_dict["minutes_since_failure"] = minutes_ago
         events_data.append(event_dict)
 
-    return {
-        "data": {
-            "failed_events": events_data,
-            "pagination": {
-                "page": page,
-                "per_page": per_page,
-                "total": total_failed,
-                "total_pages": (total_failed + per_page - 1) // per_page,
-            },
-            "statistics": {
-                "total_failed": total_failed,
-                "time_period_hours": hours,
-                "failures_by_type": failure_stats,
-            },
+    result_data = {
+        "failed_events": events_data,
+        "pagination": {
+            "page": page,
+            "per_page": per_page,
+            "total": total_failed,
+            "total_pages": (total_failed + per_page - 1) // per_page,
         },
-        "message": f"Failed webhook events from last {hours} hours retrieved successfully"
+        "statistics": {
+            "total_failed": total_failed,
+            "time_period_hours": hours,
+            "failures_by_type": failure_stats,
+        },
     }
+    return success(
+        data=result_data,
+        request=request,
+        message=f"Failed webhook events from last {hours} hours retrieved successfully"
+    )
 
 
-@router.post("/webhooks/{event_id}/retry", response_model=dict)
+@router.post("/webhooks/{event_id}/retry", response_model=SuccessResponse[WebhookRetryResponse])
 @require_permissions("subscription.manage", workspace_scoped=False)
 @db_transaction_handler("retry failed webhook")
 async def retry_failed_webhook(
@@ -283,19 +295,27 @@ async def retry_failed_webhook(
     webhook_event = result.scalar_one_or_none()
 
     if not webhook_event:
-        return {
+        result_data = {
             "success": False,
             "data": None,
-            "message": f"Webhook event {event_id} not found",
         }
+        return success(
+            data=result_data,
+            request=request,
+            message=f"Webhook event {event_id} not found",
+        )
 
     # Check if already processed successfully
     if webhook_event.processed and not webhook_event.error_message:
-        return {
+        result_data = {
             "success": False,
             "data": webhook_event.to_dict(),
-            "message": "Webhook event already processed successfully - no retry needed",
         }
+        return success(
+            data=result_data,
+            request=request,
+            message="Webhook event already processed successfully - no retry needed",
+        )
 
     # Mark for retry by resetting processed flag and incrementing retry count
     webhook_event.processed = False
@@ -306,14 +326,18 @@ async def retry_failed_webhook(
     await db.commit()
     await db.refresh(webhook_event)
 
-    return {
+    result_data = {
         "success": True,
         "data": webhook_event.to_dict(),
-        "message": f"Webhook event {event_id} marked for retry (attempt {webhook_event.retry_count})",
     }
+    return success(
+        data=result_data,
+        request=request,
+        message=f"Webhook event {event_id} marked for retry (attempt {webhook_event.retry_count})",
+    )
 
 
-@router.get("/webhooks/stats", response_model=dict)
+@router.get("/webhooks/stats", response_model=SuccessResponse[WebhookStatisticsResponse])
 @require_permissions("subscription.manage", workspace_scoped=False)
 @db_transaction_handler("get webhook statistics", auto_commit=False)
 async def get_webhook_statistics(
@@ -397,22 +421,24 @@ async def get_webhook_statistics(
             "success_rate": round(success_rate_type, 2),
         })
 
-    return {
-        "data": {
-            "period": {
-                "days": days,
-                "since": since_date.isoformat(),
-            },
-            "overall": {
-                "total_events": total_events,
-                "processed": processed_events,
-                "failed": failed_events,
-                "pending": total_events - processed_events - failed_events,
-                "success_rate": round(success_rate, 2),
-                "failure_rate": round(failure_rate, 2),
-                "average_retries": round(avg_retries, 2),
-            },
-            "by_event_type": by_type_stats,
+    result_data = {
+        "period": {
+            "days": days,
+            "since": since_date.isoformat(),
         },
-        "message": f"Webhook statistics for last {days} days retrieved successfully"
+        "overall": {
+            "total_events": total_events,
+            "processed": processed_events,
+            "failed": failed_events,
+            "pending": total_events - processed_events - failed_events,
+            "success_rate": round(success_rate, 2),
+            "failure_rate": round(failure_rate, 2),
+            "average_retries": round(avg_retries, 2),
+        },
+        "by_event_type": by_type_stats,
     }
+    return success(
+        data=result_data,
+        request=request,
+        message=f"Webhook statistics for last {days} days retrieved successfully"
+    )

@@ -16,6 +16,13 @@ from src.api.security.dependencies import get_current_user
 from src.api.schema.user_role_schema import AssignUserRoleRequest
 from src.services.role_service import RoleService
 from src.utils.route_decorators import db_transaction_handler, require_permissions
+from src.api.schema.response_schemas import SuccessResponse
+from src.api.schema.response.user_role_responses import (
+    RoleAssignmentResponse,
+    RoleRevokeResponse,
+    UserRolesListResponse
+)
+from src.utils.response_utils import success
 from src.utils.logger import logger
 from src.utils.response_utils import success
 from src.api.schema.response_schemas import SuccessResponse
@@ -24,7 +31,7 @@ from src.api.schema.response.admin_responses import UserRoleAssignmentResponse, 
 router = APIRouter()
 
 
-@router.post("/{user_id}/roles", response_model=SuccessResponse[UserRoleAssignmentResponse])
+@router.post("/{user_id}/roles", response_model=SuccessResponse[RoleAssignmentResponse])
 @db_transaction_handler("assign role to user", auto_commit=True)
 @require_permissions("user.manage_roles", workspace_scoped=False)
 async def assign_role_to_user(
@@ -57,22 +64,19 @@ async def assign_role_to_user(
         assigned_by=UUID(assigner_id)
     )
 
-    logger.info(f"Role {role.name} assigned to user {user_id} by admin {assigner_id}")
-
     return success(
         data={
-            "user_id": user_id,
-            "role_id": str(role_id),
+            "assignment": user_role.to_dict(),
             "role_name": role.name,
-            "workspace_id": str(workspace_id) if workspace_id else None,
-            "is_primary": assignment_data.is_primary
+            "role_display_name": role.display_name,
+            "workspace_name": workspace_name
         },
         request=request,
-        message=f"Role '{role.display_name}' assigned to user successfully"
+        message="Role assigned successfully"
     )
 
 
-@router.delete("/{user_id}/roles/{role_id}", response_model=SuccessResponse[UserRoleAssignmentResponse])
+@router.delete("/{user_id}/roles/{role_id}", response_model=SuccessResponse[RoleRevokeResponse])
 @db_transaction_handler("revoke role from user", auto_commit=True)
 @require_permissions("user.manage_roles", workspace_scoped=False)
 async def revoke_user_role(
@@ -106,11 +110,11 @@ async def revoke_user_role(
             "role_name": role.name
         },
         request=request,
-        message="Role revoked from user successfully"
+        message="Role revoked successfully"
     )
 
 
-@router.get("/me/roles", response_model=SuccessResponse[UserRoleListResponse])
+@router.get("/me/roles", response_model=SuccessResponse[UserRolesListResponse])
 @require_permissions("role.read", workspace_scoped=False)
 @db_transaction_handler("get current user roles", auto_commit=False)
 async def get_current_user_roles(
@@ -137,11 +141,9 @@ async def get_current_user_roles(
             "count": len(roles_data)
         },
         request=request,
-        message="Current user roles retrieved successfully"
+        message="User roles retrieved successfully"
     )
-
-
-@router.get("/{user_id}/roles", response_model=SuccessResponse[UserRoleListResponse])
+@router.get("/{user_id}/roles", response_model=SuccessResponse[UserRolesListResponse])
 @db_transaction_handler("list user roles", auto_commit=False)
 async def list_user_roles(
     request: Request,
@@ -169,10 +171,9 @@ async def list_user_roles(
 
     return success(
         data={
-            "user_id": user_id,
             "roles": roles_data,
             "count": len(roles_data)
         },
         request=request,
-        message=f"Roles for user {user_id} retrieved successfully"
+        message="User roles retrieved successfully"
     )

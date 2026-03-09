@@ -12,8 +12,20 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.database.async_database import get_async_db
 from src.api.security.dependencies import get_current_user
+from src.api.schema.response_schemas import SuccessResponse
+from src.api.schema.__response__.admin_subscription_analytics_responses import (
+    SubscriptionStatsResponse,
+    RevenueMetricsResponse,
+    ChurnAnalysisResponse,
+    TrialConversionResponse,
+    AnalyticsOverviewResponse,
+    RevenueHistoryData,
+    PlanDistributionResponse,
+    CohortRetentionResponse,
+)
 from src.services.subscription_analytics_service import SubscriptionAnalyticsService
 from src.utils.route_decorators import db_transaction_handler, require_permissions
+from src.utils.response_utils import success
 from .shared.auth import require_super_admin
 
 
@@ -24,7 +36,7 @@ router = APIRouter()
 # ADMIN ANALYTICS ENDPOINTS
 # ============================================================================
 
-@router.get("/stats/overview", response_model=dict)
+@router.get("/stats/overview", response_model=SuccessResponse[SubscriptionStatsResponse])
 @require_permissions("subscription.read")
 @db_transaction_handler("get subscription stats", auto_commit=False)
 async def get_subscription_stats(
@@ -47,10 +59,15 @@ async def get_subscription_stats(
     await require_super_admin(db, admin_user_id)
 
     service = SubscriptionAnalyticsService(db)
-    return await service.get_subscription_stats()
+    result = await service.get_subscription_stats()
+    return success(
+        data=result["data"],
+        request=request,
+        message=result["message"]
+    )
 
 
-@router.get("/stats/revenue", response_model=dict)
+@router.get("/stats/revenue", response_model=SuccessResponse[RevenueMetricsResponse])
 @require_permissions("subscription.read")
 @db_transaction_handler("get revenue metrics", auto_commit=False)
 async def get_revenue_metrics(
@@ -70,10 +87,15 @@ async def get_revenue_metrics(
     await require_super_admin(db, admin_user_id)
 
     service = SubscriptionAnalyticsService(db)
-    return await service.get_revenue_metrics()
+    result = await service.get_revenue_metrics()
+    return success(
+        data=result["data"],
+        request=request,
+        message=result["message"]
+    )
 
 
-@router.get("/stats/churn", response_model=dict)
+@router.get("/stats/churn", response_model=SuccessResponse[ChurnAnalysisResponse])
 @require_permissions("subscription.read")
 @db_transaction_handler("get churn analysis", auto_commit=False)
 async def get_churn_analysis(
@@ -95,10 +117,15 @@ async def get_churn_analysis(
     await require_super_admin(db, admin_user_id)
 
     service = SubscriptionAnalyticsService(db)
-    return await service.get_churn_analysis(period_days)
+    result = await service.get_churn_analysis(period_days)
+    return success(
+        data=result["data"],
+        request=request,
+        message=result["message"]
+    )
 
 
-@router.get("/stats/trial-conversion", response_model=dict)
+@router.get("/stats/trial-conversion", response_model=SuccessResponse[TrialConversionResponse])
 @require_permissions("subscription.read")
 @db_transaction_handler("get trial conversion metrics", auto_commit=False)
 async def get_trial_conversion_metrics(
@@ -120,10 +147,15 @@ async def get_trial_conversion_metrics(
     await require_super_admin(db, admin_user_id)
 
     service = SubscriptionAnalyticsService(db)
-    return await service.get_trial_conversion_metrics(period_days)
+    result = await service.get_trial_conversion_metrics(period_days)
+    return success(
+        data=result["data"],
+        request=request,
+        message=result["message"]
+    )
 
 
-@router.get("/analytics/overview", response_model=dict)
+@router.get("/analytics/overview", response_model=SuccessResponse[AnalyticsOverviewResponse])
 @require_permissions("subscription.read")
 @db_transaction_handler("get analytics overview", auto_commit=False)
 async def get_analytics_overview(
@@ -144,10 +176,15 @@ async def get_analytics_overview(
     await require_super_admin(db, admin_user_id)
 
     service = SubscriptionAnalyticsService(db)
-    return await service.get_analytics_overview()
+    result = await service.get_analytics_overview()
+    return success(
+        data=result["data"],
+        request=request,
+        message=result["message"]
+    )
 
 
-@router.get("/analytics/revenue-history", response_model=dict)
+@router.get("/analytics/revenue-history", response_model=SuccessResponse[RevenueHistoryData])
 @require_permissions("subscription.read")
 @db_transaction_handler("get revenue history", auto_commit=False)
 async def get_revenue_history(
@@ -169,10 +206,15 @@ async def get_revenue_history(
     await require_super_admin(db, admin_user_id)
 
     service = SubscriptionAnalyticsService(db)
-    return await service.get_revenue_history(period)
+    result = await service.get_revenue_history(period)
+    return success(
+        data=result["data"],
+        request=request,
+        message=result["message"]
+    )
 
 
-@router.get("/analytics/plan-distribution", response_model=dict)
+@router.get("/analytics/plan-distribution", response_model=SuccessResponse[PlanDistributionResponse])
 @require_permissions("subscription.read")
 @db_transaction_handler("get plan distribution", auto_commit=False)
 async def get_plan_distribution(
@@ -190,10 +232,19 @@ async def get_plan_distribution(
     await require_super_admin(db, admin_user_id)
 
     service = SubscriptionAnalyticsService(db)
-    return await service.get_plan_distribution()
+    result = await service.get_plan_distribution()
+    data = {
+        "plan_data": result["data"],
+        "total_subscriptions": result["total_subscriptions"]
+    }
+    return success(
+        data=data,
+        request=request,
+        message=result["message"]
+    )
 
 
-@router.get("/analytics/cohort-retention", response_model=dict)
+@router.get("/analytics/cohort-retention", response_model=SuccessResponse[CohortRetentionResponse])
 @require_permissions("subscription.read")
 @db_transaction_handler("get cohort retention", auto_commit=False)
 async def get_cohort_retention(
@@ -215,4 +266,9 @@ async def get_cohort_retention(
     await require_super_admin(db, admin_user_id)
 
     service = SubscriptionAnalyticsService(db)
-    return await service.get_cohort_retention(cohort_months)
+    result = await service.get_cohort_retention(cohort_months)
+    return success(
+        data=result["data"],
+        request=request,
+        message=result["message"]
+    )

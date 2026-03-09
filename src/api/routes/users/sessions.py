@@ -20,12 +20,19 @@ from src.api.security.token_utils import decode_and_verify_token
 from src.services.session_service import SessionService
 from src.utils.logger import logger
 from src.utils.route_decorators import db_transaction_handler, require_permissions
+from src.utils.response_utils import success
+from src.api.schema.response_schemas import SuccessResponse
+from src.api.schema.response.session_responses import (
+    SessionListResponse,
+    SessionRevokeResponse,
+    BulkSessionRevokeResponse
+)
 
 
 router = APIRouter()
 
 
-@router.get("/sessions")
+@router.get("/sessions", response_model=SuccessResponse[SessionListResponse])
 @require_permissions("user.read", workspace_scoped=False)
 @db_transaction_handler("list user sessions", auto_commit=False)
 async def list_user_sessions(
@@ -33,7 +40,7 @@ async def list_user_sessions(
     current_user: dict = Depends(get_current_user),
     authorization: str = Header(...),
     db: AsyncSession = Depends(get_async_db)
-) -> dict:
+):
     """List all active sessions for the current user."""
     user_uuid = UUID(str(current_user.get("identity")))
 
@@ -59,14 +66,18 @@ async def list_user_sessions(
 
     logger.info("Retrieved sessions for user", extra={"user_id": str(user_uuid), "count": len(sessions)})
 
-    return {
-        "sessions": sessions,
-        "total_count": len(sessions),
-        "active_count": active_count,
-    }
+    return success(
+        data={
+            "sessions": sessions,
+            "total_count": len(sessions),
+            "active_count": active_count,
+        },
+        request=request,
+        message="User sessions retrieved successfully"
+    )
 
 
-@router.delete("/sessions/{session_id}")
+@router.delete("/sessions/{session_id}", response_model=SuccessResponse[SessionRevokeResponse])
 @require_permissions("user.update", workspace_scoped=False)
 @db_transaction_handler("revoke user session", auto_commit=True)
 async def revoke_session(
@@ -74,7 +85,7 @@ async def revoke_session(
     request: Request,
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_async_db)
-) -> dict:
+):
     """Revoke a specific user session (remote logout)."""
     user_uuid = UUID(str(current_user.get("identity")))
     service = SessionService(db)
@@ -86,13 +97,17 @@ async def revoke_session(
         extra={"user_id": str(user_uuid), "session_id": session_id},
     )
 
-    return {
-        **result,
-        "session_id": session_id,
-    }
+    return success(
+        data={
+            **result,
+            "session_id": session_id,
+        },
+        request=request,
+        message="Session revoked successfully"
+    )
 
 
-@router.delete("/sessions")
+@router.delete("/sessions", response_model=SuccessResponse[BulkSessionRevokeResponse])
 @require_permissions("user.update", workspace_scoped=False)
 @db_transaction_handler("revoke all user sessions", auto_commit=True)
 async def revoke_all_sessions(
@@ -100,7 +115,7 @@ async def revoke_all_sessions(
     current_user: dict = Depends(get_current_user),
     authorization: str = Header(...),
     db: AsyncSession = Depends(get_async_db)
-) -> dict:
+):
     """Revoke all sessions except the current one."""
     user_uuid = UUID(str(current_user.get("identity")))
 
@@ -134,13 +149,17 @@ async def revoke_all_sessions(
         extra={"user_id": str(user_uuid), "revoked_count": revoked_count},
     )
 
-    return {
-        "revoked_count": revoked_count,
-        "current_session_preserved": True,
-    }
+    return success(
+        data={
+            "revoked_count": revoked_count,
+            "current_session_preserved": True,
+        },
+        request=request,
+        message="All other sessions revoked successfully"
+    )
 
 
-@router.post("/sessions/revoke-all", deprecated=True)
+@router.post("/sessions/revoke-all", deprecated=True, response_model=SuccessResponse[BulkSessionRevokeResponse])
 @require_permissions("user.update", workspace_scoped=False)
 @db_transaction_handler("revoke all user sessions (POST)", auto_commit=True)
 async def revoke_all_sessions_post(
@@ -149,7 +168,7 @@ async def revoke_all_sessions_post(
     current_user: dict = Depends(get_current_user),
     authorization: str = Header(...),
     db: AsyncSession = Depends(get_async_db)
-) -> dict:
+):
     """
     Revoke all sessions except the current one.
 
@@ -174,4 +193,5 @@ async def revoke_all_sessions_post(
     )
 
     # Reuse the same logic as DELETE /sessions
+    # This returns the JSONResponse from success()
     return await revoke_all_sessions(request, current_user, authorization, db)

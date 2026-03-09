@@ -13,14 +13,17 @@ from src.api.models.knowledge_models.persona_model import Persona
 from src.api.schema.persona_schema import PersonaCreate, PersonaUpdate
 from src.api.middleware.exceptions import ResourceNotFoundException
 from src.utils.route_decorators import db_transaction_handler, require_permissions
+from src.utils.response_utils import success, created
 from src.utils.workspace_utils import resolve_workspace_for_route
-from src.utils.response_utils import created, no_content
+from src.api.schema.response_schemas import SuccessResponse
+from src.api.schema.response.generic import GenericResponse
+from src.api.schema.response.persona_responses import PersonaResponse, PersonaListResponse
 from src.utils.logger import logger
 
 router = APIRouter(tags=["workspace-personas"])
 
 
-@router.get("/{workspace_id}/personas")
+@router.get("/{workspace_id}/personas", response_model=SuccessResponse[PersonaListResponse])
 @require_permissions("workspace.read", workspace_scoped=True)
 @db_transaction_handler("get all workspace personas", auto_commit=False)
 async def list_workspace_personas(
@@ -45,13 +48,17 @@ async def list_workspace_personas(
     )
     personas = result.scalars().all()
     
-    return {
-        "personas": [p.to_dict() for p in personas],
-        "total_count": len(personas)
-    }
+    return success(
+        data={
+            "personas": [p.to_dict() for p in personas],
+            "total_count": len(personas)
+        },
+        request=request,
+        message="Workspace personas retrieved successfully"
+    )
 
 
-@router.get("/{workspace_id}/personas/{persona_id}")
+@router.get("/{workspace_id}/personas/{persona_id}", response_model=SuccessResponse[PersonaResponse])
 @require_permissions("workspace.read", workspace_scoped=True)
 @db_transaction_handler("get single persona", auto_commit=False)
 async def get_persona(
@@ -79,10 +86,14 @@ async def get_persona(
             resource_id=persona_id,
         )
     
-    return persona.to_dict()
+    return success(
+        data=persona.to_dict(),
+        request=request,
+        message="Persona retrieved successfully"
+    )
 
 
-@router.post("/{workspace_id}/personas", status_code=status.HTTP_201_CREATED)
+@router.post("/{workspace_id}/personas", status_code=status.HTTP_201_CREATED, response_model=SuccessResponse[PersonaResponse])
 @require_permissions("workspace.create", workspace_scoped=True)
 @db_transaction_handler("create persona", auto_commit=True)
 async def create_persona(
@@ -131,7 +142,7 @@ async def create_persona(
     )
 
 
-@router.put("/{workspace_id}/personas/{persona_id}")
+@router.put("/{workspace_id}/personas/{persona_id}", response_model=SuccessResponse[PersonaResponse])
 @require_permissions("workspace.update", workspace_scoped=True)
 @db_transaction_handler("update persona", auto_commit=True)
 async def update_persona(
@@ -177,10 +188,14 @@ async def update_persona(
         },
     )
     
-    return persona.to_dict()
+    return success(
+        data=persona.to_dict(),
+        request=request,
+        message="Persona updated successfully"
+    )
 
 
-@router.delete("/{workspace_id}/personas/{persona_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{workspace_id}/personas/{persona_id}", status_code=status.HTTP_200_OK, response_model=SuccessResponse[GenericResponse])
 @require_permissions("workspace.delete", workspace_scoped=True)
 @db_transaction_handler("delete persona", auto_commit=True)
 async def delete_persona(
@@ -217,7 +232,7 @@ async def delete_persona(
         },
     )
     
-    return no_content(request)
+    return success(request=request, message="Persona deleted successfully")
 
 
 __all__ = ["router"]

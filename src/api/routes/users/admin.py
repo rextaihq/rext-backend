@@ -10,16 +10,12 @@ from src.utils.logger import logger
 from src.utils.route_decorators import db_transaction_handler
 from src.utils.response_utils import success
 from src.api.schema.response_schemas import SuccessResponse
-from src.api.schema.response.admin_responses import (
-    CleanupAccountsData,
-    PendingDeletionsData,
-    CleanupTokensData,
-)
+from src.api.schema.response.admin_responses import CleanupResponse, PendingDeletionsResponse
 
 router = APIRouter()
 
 
-@router.post("/admin/cleanup-deactivated-accounts", response_model=SuccessResponse[CleanupAccountsData])
+@router.post("/admin/cleanup-deactivated-accounts", response_model=SuccessResponse[CleanupResponse])
 @db_transaction_handler("cleanup deactivated accounts", auto_commit=True)
 async def cleanup_deactivated_accounts_endpoint(
     request: Request,
@@ -42,11 +38,11 @@ async def cleanup_deactivated_accounts_endpoint(
             "message": f"Successfully deleted {deleted_count} deactivated account(s)"
         },
         request=request,
-        message="Cleanup completed successfully"
+        message="Deactivated account cleanup successful"
     )
 
 
-@router.get("/admin/pending-deletions", response_model=SuccessResponse[PendingDeletionsData])
+@router.get("/admin/pending-deletions", response_model=SuccessResponse[PendingDeletionsResponse])
 @db_transaction_handler("get pending account deletions", auto_commit=False)
 async def get_pending_deletions_endpoint(
     request: Request,
@@ -69,11 +65,11 @@ async def get_pending_deletions_endpoint(
             "count": len(pending)
         },
         request=request,
-        message="Pending deletions retrieved successfully"
+        message="Pending account deletions retrieved successfully"
     )
 
 
-@router.post("/admin/cleanup-tokens", response_model=SuccessResponse[CleanupTokensData])
+@router.post("/admin/cleanup-tokens", response_model=SuccessResponse[CleanupResponse])
 @db_transaction_handler("cleanup expired tokens", auto_commit=True)
 async def cleanup_tokens_endpoint(
     request: Request,
@@ -96,5 +92,5 @@ async def cleanup_tokens_endpoint(
             "message": f"Successfully cleaned up {deleted_count} expired tokens"
         },
         request=request,
-        message="Token cleanup completed successfully"
+        message="Expired token cleanup successful"
     )

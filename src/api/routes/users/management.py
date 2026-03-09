@@ -22,6 +22,13 @@ from src.api.models.workspace_models.workspace_member import WorkspaceMembers
 from src.api.models.user_models.users import Users
 from src.api.models.user_models.user_roles import UserRole
 from src.api.config import get_settings
+from src.api.schema.response_schemas import SuccessResponse
+from src.api.schema.response.user_management_responses import (
+    UserListResponse,
+    UserDeleteResponse,
+    UserUpdateResponse
+)
+from src.api.schema.user_schema import DataExportResponse
 
 router = APIRouter()
 settings = get_settings()
@@ -153,7 +160,8 @@ async def delete_user(
     )
 
 
-@router.put("/update/{user_id}", response_model=SuccessResponse[UserResponseSchema])
+@router.put("/update/{user_id}", response_model=SuccessResponse[UserUpdateResponse])
+@require_permissions("user.update", workspace_scoped=False) # Adding missing permission check
 @db_transaction_handler("update user", auto_commit=True)
 async def update_user(
     user_id: UUID,  # Changed from str to UUID for auto-validation (returns 422 on bad ID)
@@ -259,12 +267,16 @@ async def export_user_data(
         user_id=str(user_id)
     )
 
-    response_data = DataExportResponse(
-        export_id=export_id,
-        user_id=str(user_id),
-        status="pending",
-        requested_at=datetime.now(timezone.utc).isoformat(),
-        message="Data export has been requested and will be sent to your email."
+    return success(
+        data=DataExportResponse(
+            export_id=export_id,
+            user_id=str(user_id),
+            status="pending",
+            requested_at=datetime.now(timezone.utc).isoformat(),
+            message="Data export has been requested and will be sent to your email."
+        ),
+        request=request,
+        message="Data export initiated"
     )
 
     return success(
