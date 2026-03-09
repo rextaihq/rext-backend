@@ -100,7 +100,11 @@ async def subscribe_to_plan(
     response_data["plan_name"] = plan.name
     response_data["plan_display_name"] = plan.display_name
 
-    return response_data
+    return success(
+        data=response_data,
+        request=request,
+        message="Subscribed to plan successfully"
+    )
 
 
 
@@ -424,7 +428,11 @@ async def downgrade_subscription(
     response_data["plan_name"] = new_plan.name
     response_data["plan_display_name"] = new_plan.display_name
 
-    return response_data
+    return success(
+        data=response_data,
+        request=request,
+        message=f"Successfully downgraded to {new_plan.display_name}"
+    )
 
 @router.post("/cancel", response_model=SuccessResponse[SubscriptionCancelResponse])
 @require_permissions("subscription.manage", workspace_scoped=False)
