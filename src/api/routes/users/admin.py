@@ -8,11 +8,13 @@ from src.api.security.dependencies import get_current_user
 from src.services.user_service import UserService
 from src.utils.logger import logger
 from src.utils.route_decorators import db_transaction_handler
+from src.api.schema.response_schemas import SuccessResponse
+from src.api.schema.response.admin_responses import CleanupResponse, PendingDeletionsResponse
 
 router = APIRouter()
 
 
-@router.post("/admin/cleanup-deactivated-accounts")
+@router.post("/admin/cleanup-deactivated-accounts", response_model=SuccessResponse[CleanupResponse])
 @db_transaction_handler("cleanup deactivated accounts", auto_commit=True)
 async def cleanup_deactivated_accounts_endpoint(
     request: Request,
@@ -35,7 +37,7 @@ async def cleanup_deactivated_accounts_endpoint(
     }
 
 
-@router.get("/admin/pending-deletions")
+@router.get("/admin/pending-deletions", response_model=SuccessResponse[PendingDeletionsResponse])
 @db_transaction_handler("get pending account deletions", auto_commit=False)
 async def get_pending_deletions_endpoint(
     request: Request,
@@ -58,7 +60,7 @@ async def get_pending_deletions_endpoint(
     }
 
 
-@router.post("/admin/cleanup-tokens")
+@router.post("/admin/cleanup-tokens", response_model=SuccessResponse[CleanupResponse])
 @db_transaction_handler("cleanup expired tokens", auto_commit=True)
 async def cleanup_tokens_endpoint(
     request: Request,

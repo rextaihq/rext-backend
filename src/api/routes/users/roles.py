@@ -16,12 +16,18 @@ from src.api.security.dependencies import get_current_user
 from src.api.schema.user_role_schema import AssignUserRoleRequest
 from src.services.role_service import RoleService
 from src.utils.route_decorators import db_transaction_handler, require_permissions
+from src.api.schema.response_schemas import SuccessResponse
+from src.api.schema.response.user_role_responses import (
+    RoleAssignmentResponse,
+    RoleRevokeResponse,
+    UserRolesListResponse
+)
 from src.utils.logger import logger
 
 router = APIRouter()
 
 
-@router.post("/{user_id}/roles")
+@router.post("/{user_id}/roles", response_model=SuccessResponse[RoleAssignmentResponse])
 @db_transaction_handler("assign role to user", auto_commit=True)
 @require_permissions("user.manage_roles", workspace_scoped=False)
 async def assign_role_to_user(
@@ -79,7 +85,7 @@ async def assign_role_to_user(
     }
 
 
-@router.delete("/{user_id}/roles/{role_id}")
+@router.delete("/{user_id}/roles/{role_id}", response_model=SuccessResponse[RoleRevokeResponse])
 @db_transaction_handler("revoke role from user", auto_commit=True)
 @require_permissions("user.manage_roles", workspace_scoped=False)
 async def revoke_role_from_user(
@@ -123,7 +129,7 @@ async def revoke_role_from_user(
     }
 
 
-@router.get("/me/roles")
+@router.get("/me/roles", response_model=SuccessResponse[UserRolesListResponse])
 @require_permissions("role.read", workspace_scoped=False)
 @db_transaction_handler("get current user roles", auto_commit=False)
 async def get_current_user_roles(
@@ -156,7 +162,7 @@ async def get_current_user_roles(
         "roles": roles_data,
         "count": len(roles_data)
     }
-@router.get("/{user_id}/roles")
+@router.get("/{user_id}/roles", response_model=SuccessResponse[UserRolesListResponse])
 @db_transaction_handler("list user roles", auto_commit=False)
 async def list_user_roles(
     request: Request,

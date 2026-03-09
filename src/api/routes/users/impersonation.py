@@ -12,17 +12,23 @@ from src.api.schema.impersonation_schema import (
     ImpersonateStartRequest,
     ImpersonationStatusResponse,
 )
+from src.api.schema.response_schemas import SuccessResponse
+from src.api.schema.response.impersonation_responses import (
+    ImpersonationStartResponse,
+    ImpersonationStopResponse
+)
 from src.api.security.dependencies import get_current_user
 from src.api.security.token_utils import create_access_token, create_refresh_token
 from src.services.impersonation_service import ImpersonationService
 from src.utils.audit_helper import create_audit_log_async
 from src.utils.logger import logger
+from src.utils.response_utils import success
 from src.utils.route_decorators import db_transaction_handler, require_permissions
 
 router = APIRouter()
 
 
-@router.post("/impersonate/start", dependencies=[Depends(is_admin)])
+@router.post("/impersonate/start", dependencies=[Depends(is_admin)], response_model=SuccessResponse[ImpersonationStartResponse])
 @require_permissions("user.impersonate", workspace_scoped=False)
 @db_transaction_handler("start impersonation", auto_commit=False)
 async def start_impersonation(
@@ -30,7 +36,7 @@ async def start_impersonation(
     request: Request,
     db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user),
-) -> dict:
+):
     """Start impersonating another user and return new auth tokens."""
     admin_user_id = UUID(str(current_user.get("identity")))
     target_user_id = UUID(str(impersonate_request.user_id))
@@ -90,29 +96,33 @@ async def start_impersonation(
         },
     )
 
-    return {
-        "original_user_id": str(admin_user_id),
-        "impersonated_user_id": impersonation_context["target_user_id"],
-        "impersonated_user_email": impersonation_context["target_email"],
-        "impersonated_user_name": impersonation_context["target_display_name"]
-        or impersonation_context["target_full_name"],
-        "roles": impersonation_context["roles"],
-        "permissions": impersonation_context["permissions"],
-        "access_token": access_token,
-        "refresh_token": refresh_token,
-        "started_at": impersonation_context["impersonation_started_at"],
-        "session_id": session_id,
-    }
+    return success(
+        data={
+            "original_user_id": str(admin_user_id),
+            "impersonated_user_id": impersonation_context["target_user_id"],
+            "impersonated_user_email": impersonation_context["target_email"],
+            "impersonated_user_name": impersonation_context["target_display_name"]
+            or impersonation_context["target_full_name"],
+            "roles": impersonation_context["roles"],
+            "permissions": impersonation_context["permissions"],
+            "access_token": access_token,
+            "refresh_token": refresh_token,
+            "started_at": impersonation_context["impersonation_started_at"],
+            "session_id": session_id,
+        },
+        request=request,
+        message="Impersonation started successfully"
+    )
 
 
-@router.post("/impersonate/stop")
+@router.post("/impersonate/stop", response_model=SuccessResponse[ImpersonationStopResponse])
 @require_permissions("user.update", workspace_scoped=False)
 @db_transaction_handler("stop impersonation", auto_commit=True)
 async def stop_impersonation(
     request: Request,
     db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user),
-) -> dict:
+):
     """Stop impersonation and return tokens for the original user."""
     if not current_user.get("is_impersonating", False):
         raise RextValidationException(message="Not currently impersonating")
@@ -179,26 +189,30 @@ async def stop_impersonation(
         },
     )
 
-    return {
-        "message": "Impersonation stopped successfully",
-        "admin_user_id": original_context["user_id"],
-        "impersonation_stopped_at": stop_payload[
-            "impersonation_stopped_at"
-        ],
-        "access_token": access_token,
-        "refresh_token": refresh_token,
-        "roles": original_context["roles"],
-        "permissions": original_context["permissions"],
-    }
+    return success(
+        data={
+            "message": "Impersonation stopped successfully",
+            "admin_user_id": original_context["user_id"],
+            "impersonation_stopped_at": stop_payload[
+                "impersonation_stopped_at"
+            ],
+            "access_token": access_token,
+            "refresh_token": refresh_token,
+            "roles": original_context["roles"],
+            "permissions": original_context["permissions"],
+        },
+        request=request,
+        message="Impersonation stopped successfully"
+    )
 
 
-@router.get("/impersonate/status", response_model=ImpersonationStatusResponse)
+@router.get("/impersonate/status", response_model=SuccessResponse[ImpersonationStatusResponse])
 @require_permissions("user.read", workspace_scoped=False)
 async def get_impersonation_status(
     request: Request,
     db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user),
-) -> dict:
+):
     """
     Get the current impersonation status.
     """
@@ -237,4 +251,8 @@ async def get_impersonation_status(
         },
     )
 
-    return response
+    return success(
+        data=response,
+        request=request,
+        message="Impersonation status retrieved successfully"
+    )

@@ -22,6 +22,13 @@ from src.api.models.subscription_models.subscriptions import UserSubscription
 from src.api.models.user_models.users import Users
 from src.api.models.user_models.user_roles import UserRole
 from src.api.config import get_settings
+from src.api.schema.response_schemas import SuccessResponse
+from src.api.schema.response.user_management_responses import (
+    UserListResponse,
+    UserDeleteResponse,
+    UserUpdateResponse
+)
+from src.api.schema.user_schema import DataExportResponse
 
 router = APIRouter()
 settings = get_settings()
@@ -81,7 +88,7 @@ async def send_data_export_email_task(
         logger.error(f"Failed to send data export email to {email}: {str(e)}", exc_info=True)
 
 
-@router.get("/users")
+@router.get("/users", response_model=SuccessResponse[UserListResponse])
 @require_permissions("user.read", workspace_scoped=False)
 @db_transaction_handler("get users", auto_commit=False)
 async def get_users(
@@ -118,7 +125,7 @@ async def get_users(
     )
 
 
-@router.delete("/delete/{user_id}")
+@router.delete("/delete/{user_id}", response_model=SuccessResponse[UserDeleteResponse])
 @require_permissions("user.delete", workspace_scoped=False)
 @db_transaction_handler("delete user", auto_commit=True)
 async def delete_user(
@@ -151,7 +158,8 @@ async def delete_user(
     )
 
 
-@router.put("/update/{user_id}")
+@router.put("/update/{user_id}", response_model=SuccessResponse[UserUpdateResponse])
+@require_permissions("user.update", workspace_scoped=False) # Adding missing permission check
 @db_transaction_handler("update user", auto_commit=True)
 async def update_user(
     user_id: UUID,  # Changed from str to UUID for auto-validation (returns 422 on bad ID)
@@ -187,7 +195,7 @@ async def update_user(
     )
 
 
-@router.post("/export-data", response_model=DataExportResponse)
+@router.post("/export-data", response_model=SuccessResponse[DataExportResponse])
 @require_permissions("user.read", workspace_scoped=False)
 @db_transaction_handler("export user data", auto_commit=False)
 async def export_user_data(

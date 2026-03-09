@@ -40,8 +40,15 @@ from src.services.invitation_service import InvitationService
 from src.services.user_service import UserService
 from src.utils.invitation_utils import is_invitation_expired
 from uuid import UUID
-from src.utils.response_utils import success, error, created
-from src.api.schema.response_schemas import ErrorCode, ErrorSeverity
+from src.api.schema.response_schemas import SuccessResponse
+from src.api.schema.response.generic import GenericResponse
+from src.api.schema.response.auth_responses import (
+    RegisterResponse,
+    AuthTokenResponse,
+    VerifyEmailResponse,
+    RegisterWithInvitationResponse,
+    UnlinkOAuthResponse
+)
 
 router = APIRouter()
 
@@ -118,7 +125,7 @@ async def send_welcome_email_task(
         logger.error(f"Failed to send welcome email to {email}: {str(e)}", exc_info=True)
 
 
-@router.post("/register")
+@router.post("/register", response_model=SuccessResponse[RegisterResponse])
 @db_transaction_handler("user registration", auto_commit=False)
 async def create_user(
     user: RegisterUser,
@@ -166,7 +173,7 @@ async def create_user(
 
 
 
-@router.post("/login")
+@router.post("/login", response_model=SuccessResponse[AuthTokenResponse])
 @db_transaction_handler("user login", auto_commit=False)
 async def login_user(
     user: LoginUser,
@@ -226,7 +233,7 @@ async def login_user(
         raise auth_error
 
 
-@router.post("/refresh")
+@router.post("/refresh", response_model=SuccessResponse[AuthTokenResponse])
 @db_transaction_handler("token refresh", auto_commit=True)
 async def refresh_access_token(
     request: Request,
@@ -243,7 +250,7 @@ async def refresh_access_token(
     return tokens
 
 
-@router.post("/logout")
+@router.post("/logout", response_model=SuccessResponse[GenericResponse])
 @require_permissions("user.read", workspace_scoped=False)
 @db_transaction_handler("user logout", auto_commit=True)
 async def logout_user(
@@ -271,7 +278,7 @@ async def logout_user(
     return {"message": "Logged out successfully"}
 
 
-@router.get("/verify-email")
+@router.get("/verify-email", response_model=SuccessResponse[VerifyEmailResponse])
 @db_transaction_handler("email verification", auto_commit=True)
 async def verify_email(
     token: str,
@@ -303,7 +310,7 @@ async def verify_email(
     }
 
 
-@router.post("/resend-verification")
+@router.post("/resend-verification", response_model=SuccessResponse[GenericResponse])
 @db_transaction_handler("resend verification", auto_commit=True)
 async def resend_verification(
     request: Request,
@@ -338,7 +345,7 @@ async def resend_verification(
     }
 
 
-@router.post("/oauth/login")
+@router.post("/oauth/login", response_model=SuccessResponse[AuthTokenResponse])
 @db_transaction_handler("oauth login", auto_commit=True)
 async def oauth_login(
     oauth_data: OAuthLoginRequest,
@@ -390,7 +397,7 @@ async def oauth_login(
     }
 
 
-@router.post("/register-with-invitation")
+@router.post("/register-with-invitation", response_model=SuccessResponse[RegisterWithInvitationResponse])
 @db_transaction_handler("register with invitation", auto_commit=False)
 async def register_with_invitation(
     user_data: RegisterWithInvitation,
@@ -460,7 +467,7 @@ async def register_with_invitation(
     }
 
 
-@router.post("/oauth/link")
+@router.post("/oauth/link", response_model=SuccessResponse[dict])
 @require_permissions("user.read", workspace_scoped=False)
 @db_transaction_handler("link oauth account", auto_commit=True)
 async def link_oauth(
@@ -498,7 +505,7 @@ async def link_oauth(
     return oauth_account.to_dict()
 
 
-@router.delete("/oauth/{provider}")
+@router.delete("/oauth/{provider}", response_model=SuccessResponse[UnlinkOAuthResponse])
 @require_permissions("user.read", workspace_scoped=False)
 @db_transaction_handler("unlink oauth account", auto_commit=True)
 async def unlink_oauth(

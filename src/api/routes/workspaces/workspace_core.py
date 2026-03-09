@@ -19,6 +19,13 @@ from src.api.middleware.exceptions import (
 )
 from src.api.schema.workspace_schema import WorkspaceSchema, WorkspaceUpdateSchema, WorkspaceResponseSchema
 from src.api.schema.response_schemas import SuccessResponse
+from src.api.schema.response.workspace_responses import (
+    WorkspaceStatusResponse,
+    WorkspaceListResponse,
+    SingleWorkspaceResponse,
+    AvailableRolesResponse,
+    WorkspaceDeleteResponse
+)
 from src.api.middleware.usage_limiter import check_workspace_limit
 from src.services.workspace_service import WorkspaceService
 from src.services.email_service import EmailService
@@ -32,7 +39,7 @@ router = APIRouter()
 # -------------------------
 # Health Check
 # -------------------------
-@router.get("/")
+@router.get("/", response_model=SuccessResponse[WorkspaceStatusResponse])
 @db_transaction_handler("get workspace status", success_message="Workspace service is operational")
 async def get_status(request: Request) -> dict:
     """Health check for workspace service"""
@@ -45,6 +52,7 @@ async def get_status(request: Request) -> dict:
 @router.post(
     "/",
     dependencies=[Depends(RequireFeature("workspaces"))],
+    response_model=SuccessResponse[WorkspaceResponseSchema]
 )
 @require_permissions("workspace.create", workspace_scoped=False)
 @db_transaction_handler("create workspace", auto_commit=True)
@@ -92,7 +100,7 @@ async def create_workspace(
 # -------------------------
 # Get all workspaces for user
 # -------------------------
-@router.get("/all")
+@router.get("/all", response_model=SuccessResponse[WorkspaceListResponse])
 @require_permissions("workspace.read", workspace_scoped=False)
 @db_transaction_handler("get all workspaces", success_message="Workspaces retrieved successfully")
 async def get_workspaces(
@@ -114,7 +122,7 @@ async def get_workspaces(
 # -------------------------
 # Get workspace by slug
 # -------------------------
-@router.get("/slug/{workspace_slug}")
+@router.get("/slug/{workspace_slug}", response_model=SuccessResponse[SingleWorkspaceResponse])
 @require_permissions("workspace.read", workspace_scoped=False)
 @db_transaction_handler("get workspace by slug", success_message="Workspace retrieved by slug")
 async def get_workspace_by_slug(
@@ -154,7 +162,7 @@ async def get_workspace_by_slug(
 # -------------------------
 # Get workspace by ID (Query Param)
 # -------------------------
-@router.get("/detail")
+@router.get("/detail", response_model=SuccessResponse[SingleWorkspaceResponse])
 @require_permissions("workspace.read")
 @db_transaction_handler("get workspace details", success_message="Workspace details retrieved successfully")
 async def get_workspace_by_id(
@@ -192,7 +200,7 @@ async def get_workspace_by_id(
 # -------------------------
 # Get available roles
 # -------------------------
-@router.get("/available-roles")
+@router.get("/available-roles", response_model=SuccessResponse[AvailableRolesResponse])
 @db_transaction_handler("get available roles", auto_commit=False)
 async def get_available_roles(
     request: Request,
@@ -282,7 +290,7 @@ async def get_workspace_detail(
 # -------------------------
 # Update workspace
 # -------------------------
-@router.put("/{workspace_id}")
+@router.put("/{workspace_id}", response_model=SuccessResponse[SingleWorkspaceResponse])
 @require_permissions("workspace.update", workspace_scoped=True)
 @db_transaction_handler("update workspace", auto_commit=True)
 async def update_workspace(
@@ -328,7 +336,7 @@ async def update_workspace(
 # -------------------------
 # Delete workspace
 # -------------------------
-@router.delete("/{workspace_id}")
+@router.delete("/{workspace_id}", response_model=SuccessResponse[WorkspaceDeleteResponse])
 @require_permissions("workspace.delete", workspace_scoped=True)
 @db_transaction_handler("delete workspace", success_message="Workspace deleted successfully")
 async def delete_workspace_endpoint(
