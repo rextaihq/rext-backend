@@ -18,12 +18,18 @@ from src.utils.response_utils import success, created
 from src.utils.route_decorators import db_transaction_handler, require_permissions
 from src.utils.logger import logger
 from src.api.middleware.rate_limiter import role_management_rate_limit
+from src.api.schema.response_schemas import SuccessResponse
+from src.api.schema.response.rbac_responses import (
+    RoleListData,
+    RoleItemSchema,
+    DeleteRoleData,
+)
 from .helpers import check_role_permission
 
 router = APIRouter()
 
 
-@router.get("/", response_model=dict)
+@router.get("/", response_model=SuccessResponse[RoleListData])
 @require_permissions("role.read", workspace_scoped=False)
 @db_transaction_handler("list roles", auto_commit=False)
 async def list_roles(
@@ -57,7 +63,7 @@ async def list_roles(
     service = RoleService(db)
     result = await service.get_role_hierarchy(page=page, per_page=per_page)
 
-    # Format response
+    # Format role data
     if include_permissions:
         roles_data = []
         for role in result["roles"]:
@@ -66,13 +72,17 @@ async def list_roles(
     else:
         roles_data = [role.to_dict() for role in result["roles"]]
 
-    return {
-        "data": {"roles": roles_data, "count": len(roles_data), "pagination": result["pagination"]},
-        "message": f"Retrieved {len(roles_data)} roles"
-    }
+    return success(
+        data={
+            "roles": roles_data,
+            "count": len(roles_data),
+            "pagination": result["pagination"]
+        },
+        message=f"Retrieved {len(roles_data)} roles"
+    )
 
 
-@router.get("/{role_id}", response_model=dict)
+@router.get("/{role_id}", response_model=SuccessResponse[RoleItemSchema])
 @require_permissions("role.read", workspace_scoped=False)
 @db_transaction_handler("get role", auto_commit=False)
 async def get_role(
@@ -104,12 +114,13 @@ async def get_role(
         role = await service.get_role_by_id(UUID(role_id))
         role_data = role.to_dict()
 
-    return {
-        "data": {"role": role_data},
-        "message": "Role retrieved successfully"
-    }
+    return success(
+        data=role_data,
+        message="Role retrieved successfully"
+    )
 
-@router.post("/", response_model=dict, status_code=status.HTTP_201_CREATED)
+
+@router.post("/", response_model=SuccessResponse[RoleItemSchema], status_code=status.HTTP_201_CREATED)
 @db_transaction_handler("create role", auto_commit=True)
 @require_permissions("role.create", workspace_scoped=False)
 async def create_role(
@@ -191,13 +202,14 @@ async def create_role(
         }
     )
 
-    return {
-        "data": {"role": new_role.to_dict()},
-        "message": f"Role '{new_role.display_name}' created successfully"
-    }
+    return created(
+        data=new_role.to_dict(),
+        request=request,
+        message=f"Role '{new_role.display_name}' created successfully"
+    )
 
 
-@router.put("/{role_id}", response_model=dict)
+@router.put("/{role_id}", response_model=SuccessResponse[RoleItemSchema])
 @db_transaction_handler("update role", auto_commit=True)
 @require_permissions("role.update", workspace_scoped=False)
 async def update_role(
@@ -229,8 +241,6 @@ async def update_role(
     - Updated role details
 
     **Phase 2, Task HIGH-3: Audit Logging**
-    This endpoint logs role updates to the audit table for compliance tracking.
-
     **Phase 3, Task HIGH-4: Rate Limiting**
     Rate limit: 20 requests per minute per user
     """
@@ -254,14 +264,13 @@ async def update_role(
         hierarchy_level=role_data.hierarchy_level
     )
 
-    # Prepare new values for audit log
     new_values = {
         "display_name": updated_role.display_name,
         "description": updated_role.description,
         "hierarchy_level": updated_role.hierarchy_level
     }
 
-    # Create audit log (HIGH-3: Role Update Audit Logging)
+    # Create audit log
     await create_audit_log_async(
         db=db,
         user_id=UUID(user_id),
@@ -292,13 +301,13 @@ async def update_role(
         }
     )
 
-    return {
-        "data": {"role": updated_role.to_dict()},
-        "message": f"Role '{updated_role.display_name}' updated successfully"
-    }
+    return success(
+        data=updated_role.to_dict(),
+        message=f"Role '{updated_role.display_name}' updated successfully"
+    )
 
 
-@router.delete("/{role_id}", response_model=dict)
+@router.delete("/{role_id}", response_model=SuccessResponse[DeleteRoleData])
 @db_transaction_handler("delete role", auto_commit=True)
 @require_permissions("role.delete", workspace_scoped=False)
 async def delete_role(
@@ -324,8 +333,6 @@ async def delete_role(
     - Success message
 
     **Phase 2, Task HIGH-3: Audit Logging**
-    This endpoint logs role deletion to the audit table for compliance tracking.
-
     **Phase 3, Task HIGH-4: Rate Limiting**
     Rate limit: 20 requests per minute per user
     """
@@ -348,7 +355,7 @@ async def delete_role(
     # Delete the role
     await service.delete_role(role_id=UUID(role_id))
 
-    # Create audit log (HIGH-3: Role Deletion Audit Logging)
+    # Create audit log
     await create_audit_log_async(
         db=db,
         user_id=UUID(user_id),
@@ -375,7 +382,7 @@ async def delete_role(
         }
     )
 
-    return {
-        "data": {"role_id": role_id},
-        "message": f"Role '{role_name}' deleted successfully"
-    }
+    return success(
+        data={"role_id": role_id},
+        message=f"Role '{role_name}' deleted successfully"
+    )
