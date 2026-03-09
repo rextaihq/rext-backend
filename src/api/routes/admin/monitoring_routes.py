@@ -21,6 +21,13 @@ from src.api.schema.response_schemas import SuccessResponse
 from src.services.monitoring_service import MonitoringService
 from src.utils.response_utils import success
 from src.utils.route_decorators import db_transaction_handler, require_permissions
+from src.api.schema.monitoring_schema import (
+    SystemHealthResponseSchema,
+    ErrorLogsResponseSchema,
+    ErrorLogItemSchema,
+    UsageStatsResponseSchema,
+    UsageTrendsResponseSchema
+)
 
 
 router = APIRouter(prefix="/monitoring", tags=["Admin - Monitoring"])
@@ -31,7 +38,7 @@ router = APIRouter(prefix="/monitoring", tags=["Admin - Monitoring"])
 # ============================================================================
 
 
-@router.get("/system-health", response_model=SuccessResponse[dict])
+@router.get("/system-health", response_model=SuccessResponse[SystemHealthResponseSchema])
 @db_transaction_handler("get system health", auto_commit=False)
 @require_permissions("audit.admin", workspace_scoped=False)
 async def get_system_health(
@@ -60,7 +67,7 @@ async def get_system_health(
 # ============================================================================
 
 
-@router.get("/error-logs", response_model=SuccessResponse[dict])
+@router.get("/error-logs", response_model=SuccessResponse[ErrorLogsResponseSchema])
 @require_permissions("audit.admin", workspace_scoped=False)
 @db_transaction_handler("get error logs", auto_commit=False)
 async def get_error_logs(
@@ -113,7 +120,7 @@ async def get_error_logs(
     )
 
 
-@router.patch("/error-logs/{log_id}/resolve", response_model=SuccessResponse[dict])
+@router.patch("/error-logs/{log_id}/resolve", response_model=SuccessResponse[ErrorLogItemSchema])
 @require_permissions("audit.write", workspace_scoped=False)
 @db_transaction_handler("resolve error log", auto_commit=True)
 async def resolve_error_log(
@@ -147,7 +154,7 @@ async def resolve_error_log(
 # ============================================================================
 
 
-@router.get("/usage-stats", response_model=SuccessResponse[dict])
+@router.get("/usage-stats", response_model=SuccessResponse[UsageStatsResponseSchema])
 @db_transaction_handler("get usage stats", auto_commit=False)
 @require_permissions("audit.admin", workspace_scoped=False)
 async def get_usage_stats(
@@ -175,7 +182,7 @@ async def get_usage_stats(
 
 
 
-@router.get("/usage-stats/trends", response_model=SuccessResponse[dict])
+@router.get("/usage-stats/trends", response_model=SuccessResponse[UsageTrendsResponseSchema])
 @db_transaction_handler("get usage trends", auto_commit=False)
 @require_permissions("audit.admin", workspace_scoped=False)
 async def get_usage_trends(

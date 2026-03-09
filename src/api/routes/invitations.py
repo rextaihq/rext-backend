@@ -14,14 +14,12 @@ from fastapi import APIRouter, Depends, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from uuid import UUID
 from datetime import datetime, timezone
-from src.utils.invitation_serializers import serialize_invitation_detail
 from src.api.database.async_database import get_async_db
-from src.api.config import get_settings
-from src.api.models.user_models.invitations import UserInvitations
 from src.api.models.user_models.users import Users
 from src.api.models.user_models.roles import Role
 from src.api.models.workspace_models.workspace_model import WorkspaceModel
 from src.api.models.workspace_models.workspace_member import WorkspaceMembers
+from src.api.models.user_models.invitations import UserInvitations, InvitationStatus
 from src.api.middleware.exceptions import (
     ResourceNotFoundException,
     BusinessRuleViolationException,
@@ -36,13 +34,19 @@ from src.services.email_service import EmailService
 from src.utils.response_utils import success, created
 from src.utils.route_decorators import db_transaction_handler
 from src.utils.audit_helper import create_audit_log_async
+from src.api.schema.response_schemas import SuccessResponse
+from src.api.schema.response.public_invitation_responses import (
+    InvitationValidationResponse,
+    InvitationAcceptResponse,
+    InvitationDeclineResponse
+)
 from src.utils.invitation_utils import is_invitation_expired
 from src.utils.logger import logger
 
 router = APIRouter(prefix="/invitations", tags=["Invitations"])
 
 
-@router.get("/{token}/validate")
+@router.get("/{token}/validate", response_model=SuccessResponse[InvitationValidationResponse])
 @db_transaction_handler("validate invitation", auto_commit=False)
 async def validate_invitation(
     token: str,
@@ -131,10 +135,28 @@ async def validate_invitation(
     role_id = str(role.id)
     role_name = role.display_name or role.name
     inviter_display_name = inviter.display_name if inviter else None
-    inviter_username = inviter.display_name or inviter.email if inviter else "Unknown"
+    inviter_username = (inviter.display_name or inviter.email) if inviter else "Unknown"
     inviter_first_name = inviter.first_name if inviter and hasattr(inviter, 'first_name') else ""
     inviter_last_name = inviter.last_name if inviter and hasattr(inviter, 'last_name') else ""
     inviter_id = str(inviter.id) if inviter else None
+
+    # Build data for response
+    invitation_data = {
+        "id": invitation_id,
+        "email": invitation_email,
+        "expires_at": invitation_expires_at,
+        "status": invitation_status,
+        "workspace_id": workspace_id,
+        "workspace_name": workspace_name,
+        "workspace_slug": workspace_slug,
+        "role_id": role_id,
+        "role_name": role_name,
+        "inviter_display_name": inviter_display_name,
+        "inviter_username": inviter_username,
+        "inviter_first_name": inviter_first_name,
+        "inviter_last_name": inviter_last_name,
+        "inviter_id": inviter_id,
+    }
 
     return success(
         data={"invitation": invitation_data},
@@ -143,7 +165,7 @@ async def validate_invitation(
     )
 
 
-@router.post("/{token}/accept")
+@router.post("/{token}/accept", response_model=SuccessResponse[InvitationAcceptResponse], status_code=status.HTTP_201_CREATED)
 @db_transaction_handler("accept invitation", auto_commit=True)
 async def accept_invitation(
     token: str,
@@ -388,7 +410,7 @@ async def accept_invitation(
 from src.api.schema.invitation_schema import DeclineInvitationByTokenRequest
 
 
-@router.post("/{token}/decline")
+@router.post("/{token}/decline", response_model=SuccessResponse[InvitationDeclineResponse])
 @db_transaction_handler("decline invitation by token", auto_commit=True)
 async def decline_invitation_by_token(
     token: str,

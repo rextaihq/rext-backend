@@ -3,7 +3,6 @@ from functools import lru_cache
 
 from langchain.chat_models import init_chat_model
 from langchain_community.callbacks.manager import get_openai_callback
-from src.states.schemas import RewriterTitle, QueryDecomposer
 from langsmith import trace, traceable, Client
 from src.api.config import get_settings
 
@@ -39,6 +38,7 @@ def load_model(max_tokens: int = DEFAULT_MAX_TOKENS):
         model_provider="openai",
         api_key=settings.OPENAI_API_KEY,
         max_tokens=max_tokens,
+        streaming=True,
     )
     logger.info("Initialized LLM model gpt-4o-mini with max_tokens=%d", max_tokens)
     return model
@@ -59,6 +59,7 @@ def load_content_model():
         model_provider="openai",
         api_key=settings.OPENAI_API_KEY,
         max_tokens=CONTENT_GENERATION_MAX_TOKENS,
+        streaming=True,
     )
 
 
@@ -74,6 +75,7 @@ def topic_generation_model():
         model_provider="openai",
         api_key=settings.OPENAI_API_KEY,
         max_tokens=TOPIC_GENERATION_MAX_TOKENS,
+        streaming=True,
     )
     return model
 

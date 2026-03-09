@@ -80,9 +80,10 @@ async def get_current_user(
         # Re-raise authentication exceptions (including blacklist check)
         raise
     except Exception as e:
+        logger.error(f"Unexpected error in get_current_user: {str(e)}", exc_info=True)
         raise RextAuthenticationException(
             message="Token validation failed",
-            context={"error_details": "get_current_user"}
+            context={"error_details": "get_current_user", "original_error": str(e)}
         )
 
     # Extract user info from JWT payload
@@ -218,9 +219,10 @@ async def get_current_user_sse(
         # Re-raise authentication exceptions (including blacklist check)
         raise
     except Exception as e:
+        logger.error(f"Unexpected error in get_current_user_sse: {str(e)}", exc_info=True)
         raise RextAuthenticationException(
             message="Token validation failed",
-            context={"error_details": "Token validation failed"}
+            context={"error_details": "Token validation failed", "original_error": str(e)}
         )
 
     # Extract user info from JWT payload

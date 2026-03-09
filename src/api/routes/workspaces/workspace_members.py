@@ -26,7 +26,13 @@ from src.api.schema.workspace_schema import (
 )
 from src.services.notification_helper import schedule_if_allowed
 from src.api.security.dependencies import get_current_user
-from src.api.schema.response_schemas import ErrorCode, ErrorSeverity
+from src.api.schema.response_schemas import ErrorCode, ErrorSeverity, SuccessResponse
+from src.api.schema.response.member_responses import (
+    MemberListResponse,
+    SingleMemberResponse,
+    MemberRemoveResponse,
+    MemberUpdateRoleResponse
+)
 from src.services.member_service import MemberService
 from src.services.user_service import UserService
 from src.utils.auth_utils import verify_current_user
@@ -164,6 +170,7 @@ def _serialize_member(member: WorkspaceMembers, user: Users, role: Role = None) 
 @router.get(
     "/{workspace_id}/members",
     summary="List workspace members",
+    response_model=SuccessResponse[MemberListResponse]
 )
 @require_permissions("member.read", workspace_scoped=True)
 @db_transaction_handler("get workspace members", auto_commit=False)
@@ -197,6 +204,7 @@ async def list_workspace_members(
     "/{workspace_id}/members",
     status_code=status.HTTP_201_CREATED,
     summary="Add member to workspace",
+    response_model=SuccessResponse[SingleMemberResponse]
 )
 @db_transaction_handler("add workspace member", auto_commit=True)
 @require_permissions("member.invite", workspace_scoped=True)
@@ -245,6 +253,7 @@ async def add_workspace_member(
 @router.delete(
     "/{workspace_id}/members/{member_id}",
     summary="Remove workspace member",
+    response_model=SuccessResponse[MemberRemoveResponse]
 )
 @db_transaction_handler("remove workspace member", auto_commit=True)
 @require_permissions("member.remove", workspace_scoped=True)
@@ -355,6 +364,7 @@ async def remove_workspace_member(
 @router.patch(
     "/{workspace_id}/members/{member_id}/role",
     summary="Update workspace member role",
+    response_model=SuccessResponse[MemberUpdateRoleResponse]
 )
 @db_transaction_handler("change workspace member role", auto_commit=True)
 @require_permissions("member.update", workspace_scoped=True)

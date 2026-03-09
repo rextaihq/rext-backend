@@ -18,6 +18,11 @@ from src.api.lib.logger import auto_logger
 from src.api.schema.response_schemas import SuccessResponse
 from src.utils.response_utils import success, error
 from src.utils.route_decorators import require_permissions
+from src.api.schema.email_admin_response_schema import (
+    FailedEmailsResponseSchema,
+    ResendEmailResponseSchema,
+    BatchResendResponseSchema
+)
 
 logger = auto_logger()
 router = APIRouter(prefix="/api/v1/admin/emails", tags=["Admin - Emails"])
@@ -27,7 +32,7 @@ router = APIRouter(prefix="/api/v1/admin/emails", tags=["Admin - Emails"])
 # ENDPOINTS
 # ============================================================================
 
-@router.get("/failed", response_model=SuccessResponse[dict])
+@router.get("/failed", response_model=SuccessResponse[FailedEmailsResponseSchema])
 @require_permissions("audit.admin", workspace_scoped=False)
 async def get_failed_emails(
     request: Request,
@@ -100,7 +105,7 @@ async def get_failed_emails(
         )
 
 
-@router.post("/{email_log_id}/resend", response_model=SuccessResponse[dict])
+@router.post("/{email_log_id}/resend", response_model=SuccessResponse[ResendEmailResponseSchema])
 @require_permissions("email.resend", workspace_scoped=False)
 async def resend_single_email(
     request: Request,
@@ -181,7 +186,7 @@ async def resend_single_email(
         )
 
 
-@router.post("/resend-batch", response_model=SuccessResponse[dict])
+@router.post("/resend-batch", response_model=SuccessResponse[BatchResendResponseSchema])
 @require_permissions("email.resend", workspace_scoped=False)
 async def resend_batch_emails(
     request: Request,

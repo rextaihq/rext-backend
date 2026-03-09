@@ -23,6 +23,7 @@ from src.api.schema.__response__.user_onboarding_responses import (
 from src.utils.response_utils import success
 from src.api.middleware.exceptions import RextValidationException, RextAuthenticationException
 from src.services.onboarding_service import OnboardingService
+from src.api.models.user_models.roles import Role
 from src.utils.logger import logger
 from src.utils.route_decorators import require_permissions, db_transaction_handler
 

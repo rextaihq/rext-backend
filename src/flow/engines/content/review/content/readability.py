@@ -19,13 +19,6 @@ def calculate_readability(state: REXT):
         populated, or unchanged content state on failure.
     """
     content_state = state.get("content", {})
-    # Check for upstream errors — skip review if content generation failed
-    if content_state.get("error"):
-        logger.warning(
-            "Skipping readability calculation due to upstream error: %s",
-            content_state["error"],
-        )
-        return {}
     final_content = content_state.get("final_content", {})
     body_content = final_content.get("body_markdown", "")
 

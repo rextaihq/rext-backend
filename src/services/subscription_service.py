@@ -1072,8 +1072,6 @@ class SubscriptionService:
                 "max_members_per_workspace": plan.max_members_per_workspace,
                 "max_topics": plan.max_topics,
                 "max_knowledge_items": plan.max_knowledge_items,
-                "max_content_per_month": plan.max_content_per_month,
-                "max_ai_generations_per_month": plan.max_ai_generations_per_month,
                 "is_active": plan.is_active,
                 "created_at": plan.created_at,
                 "updated_at": plan.updated_at

@@ -28,6 +28,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.utils.invitation_utils import validate_expiry_days
 from src.utils.invitation_utils import normalize_email
+from src.api.models.enums import InvitationStatus
 from src.api.models.user_models.invitations import UserInvitations
 from src.api.models.workspace_models.workspace_model import WorkspaceModel
 from src.api.models.user_models.users import Users

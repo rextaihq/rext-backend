@@ -27,6 +27,7 @@ from src.services.subscription_analytics_service import SubscriptionAnalyticsSer
 from src.utils.response_utils import success
 from src.utils.route_decorators import db_transaction_handler, require_permissions
 from src.api.routes.subscriptions.admin.shared.auth import require_super_admin
+from src.api.schema.reports_schema import ReportsRevenueReportSchema, ReportsRevenueSummarySchema
 
 
 
@@ -38,7 +39,7 @@ router = APIRouter(prefix="/reports", tags=["Admin - Reports"])
 # ============================================================================
 
 
-@router.get("/revenue", response_model=SuccessResponse[RevenueReportResponse])
+@router.get("/revenue", response_model=SuccessResponse[ReportsRevenueReportSchema])
 @require_permissions("audit.admin", workspace_scoped=False)
 @db_transaction_handler("get revenue report", auto_commit=False)
 async def get_revenue_report(
@@ -235,7 +236,7 @@ async def export_revenue_report(
     )
 
 
-@router.get("/revenue/summary", response_model=SuccessResponse[RevenueSummaryResponse])
+@router.get("/revenue/summary", response_model=SuccessResponse[ReportsRevenueSummarySchema])
 @require_permissions("audit.admin", workspace_scoped=False)
 @db_transaction_handler("get revenue summary", auto_commit=False)
 async def get_revenue_summary(

@@ -13,16 +13,19 @@ from src.api.schema.content_schema import (
     ContentCreate, 
     ContentUpdate, 
     ContentResponse,
-    PublishToSiteRequest,
-    PublishResponse,
-    PublishToSitesResponse,
-    ContentSEODataSchema
+    PublishToSiteRequest
 )
+from src.api.schema.response.content_responses import (
+    SaveAndPublishResponse,
+    RetryContentResponse,
+    DeletedContentResponse
+)
+from src.api.schema.response_schemas import SuccessResponse
 from src.utils.workspace_utils import resolve_and_verify_workspace
+from src.utils.response_utils import success
 from src.services.content_service import ContentService
-from src.web.wordpress import WordPressPublisher
 from src.api.models.content_models import Content
-from src.api.models.workspace_models.workspace_integration import WorkspaceIntegration
+
 
 router = APIRouter()
 
@@ -30,7 +33,7 @@ router = APIRouter()
 # -------------------------
 # 1. Save Only (New Content)
 # -------------------------
-@router.post("/save", response_model=ContentResponse)
+@router.post("/save", response_model=SuccessResponse[ContentResponse])
 @db_transaction_handler("save content", "Content saved successfully")
 @require_permissions("content.create", workspace_scoped=True)
 async def save_content(
@@ -58,13 +61,17 @@ async def save_content(
         data=data
     )
     
-    return content.to_dict(include_relationships=["seo_data"])
+    return success(
+        data=content.to_dict(include_relationships=["seo_data"]),
+        request=request,
+        message="Content saved successfully"
+    )
 
 
 # -------------------------
 # 2. Save & Publish (New Content)
 # -------------------------
-@router.post("/publish")
+@router.post("/publish", response_model=SuccessResponse[SaveAndPublishResponse])
 @db_transaction_handler("publish content", "Content published successfully")
 @require_permissions("content.create", workspace_scoped=True)
 async def save_and_publish(
@@ -98,22 +105,27 @@ async def save_and_publish(
     
     successful_results = [r for r in results if r.success]
     
-    return {
-        "content": content.to_dict(),
-        "publish_results": {
-            "total_sites": len(results),
-            "successful": len(successful_results),
-            "failed": len(results) - len(successful_results),
-            "results": [r.model_dump() for r in results],
-            "all_failed": len(successful_results) == 0
-        }
-    }
+    return success(
+        data={
+            "content": content.to_dict(),
+            "publish_results": {
+                "content_id": str(content.id),
+                "total_sites": len(results),
+                "successful": len(successful_results),
+                "failed": len(results) - len(successful_results),
+                "results": [r.model_dump() for r in results],
+                "all_failed": len(successful_results) == 0
+            }
+        },
+        request=request,
+        message="Content published successfully"
+    )
 
 
 # -------------------------
 # 3. Publish Existing Content
 # -------------------------
-@router.post("/{content_id}/publish")
+@router.post("/{content_id}/publish", response_model=SuccessResponse[SaveAndPublishResponse])
 @db_transaction_handler("publish existing content", "Content published successfully")
 @require_permissions("content.create", workspace_scoped=True)
 async def publish_existing_content(
@@ -148,23 +160,27 @@ async def publish_existing_content(
     
     successful_results = [r for r in results if r.success]
     
-    return {
-        "content": content.to_dict(),
-        "publish_results": {
-            "content_id": str(content_id),
-            "total_sites": len(results),
-            "successful": len(successful_results),
-            "failed": len(results) - len(successful_results),
-            "results": [r.model_dump() for r in results],
-            "all_failed": len(successful_results) == 0
-        }
-    }
+    return success(
+        data={
+            "content": content.to_dict(),
+            "publish_results": {
+                "content_id": str(content_id),
+                "total_sites": len(results),
+                "successful": len(successful_results),
+                "failed": len(results) - len(successful_results),
+                "results": [r.model_dump() for r in results],
+                "all_failed": len(successful_results) == 0
+            }
+        },
+        request=request,
+        message="Content published successfully"
+    )
 
 
 # -------------------------
 # Retry Content Generation/Publishing
 # -------------------------
-@router.post("/{content_id}/retry")
+@router.post("/{content_id}/retry", response_model=SuccessResponse[RetryContentResponse])
 @db_transaction_handler("retry content", "Retry initiated")
 @require_permissions("content.create", workspace_scoped=True)
 async def retry_content(
@@ -196,12 +212,16 @@ async def retry_content(
             workspace_id=workspace.id
         )
         successful_results = [r for r in results if r.success]
-        return {
-            "content_id": str(content_id),
-            "status": content.status,
-            "retry_type": "publishing",
-            "successful": len(successful_results) > 0
-        }
+        return success(
+            data={
+                "content_id": str(content_id),
+                "status": content.status,
+                "retry_type": "publishing",
+                "successful": len(successful_results) > 0
+            },
+            request=request,
+            message="Retry initiated (publishing)"
+        )
     
     # Otherwise, it might have failed at generation or some other step
     # Reset to draft for now so it can be manually re-triggered or edited
@@ -209,16 +229,21 @@ async def retry_content(
     content.updated_at = datetime.now(timezone.utc)
     await db.flush()
     
-    return {
-        "content_id": str(content_id),
-        "status": content.status,
-        "retry_type": "unspecified_reset_to_draft"
-    }
+    return success(
+        data={
+            "content_id": str(content_id),
+            "status": content.status,
+            "retry_type": "unspecified_reset_to_draft"
+        },
+        request=request,
+        message="Retry initiated (reset to draft)"
+    )
+
 
 # -------------------------
 # 4. Update Content
 # -------------------------
-@router.patch("/{content_id}", response_model=ContentResponse)
+@router.patch("/{content_id}", response_model=SuccessResponse[ContentResponse])
 @db_transaction_handler("update content", "Content updated successfully")
 @require_permissions("content.update", workspace_scoped=True)
 async def update_content(
@@ -260,13 +285,17 @@ async def update_content(
         data=data
     )
 
-    return content.to_dict(include_relationships=["seo_data"])
+    return success(
+        data=content.to_dict(include_relationships=["seo_data"]),
+        request=request,
+        message="Content updated successfully"
+    )
 
 
 # -------------------------
 # 5. Delete Content
 # -------------------------
-@router.delete("/{content_id}")
+@router.delete("/{content_id}", response_model=SuccessResponse[DeletedContentResponse])
 @db_transaction_handler("delete content", "Content deleted successfully")
 @require_permissions("content.delete", workspace_scoped=True)
 async def delete_content(
@@ -290,4 +319,8 @@ async def delete_content(
         workspace_id=workspace.id
     )
 
-    return {"deleted_id": str(content_id)}
+    return success(
+        data={"deleted_id": str(content_id)},
+        request=request,
+        message="Content deleted successfully"
+    )

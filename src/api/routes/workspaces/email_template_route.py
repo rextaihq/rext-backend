@@ -20,6 +20,9 @@ from src.api.schema.email_template_schema import (
     PreviewEmailRequest,
     PreviewEmailResponse
 )
+from src.api.schema.response_schemas import SuccessResponse
+from src.utils.response_utils import success
+from src.api.schema.response.workspace_responses import EmailTemplateDeleteResponse, DefaultEmailTemplateResponse
 from src.services.email_template_service import EmailTemplateService
 
 router = APIRouter(
@@ -29,7 +32,7 @@ router = APIRouter(
 )
 
 
-@router.get("/variables/{template_type}")
+@router.get("/variables/{template_type}", response_model=SuccessResponse[TemplateVariablesResponse])
 @require_permissions("workspace.read")
 @db_transaction_handler("get template variables", auto_commit=False)
 async def get_template_variables(
@@ -43,10 +46,11 @@ async def get_template_variables(
     Returns the list of variables that can be used in email templates.
     """
     service = EmailTemplateService(db)
-    return await service.get_template_variables(template_type=template_type)
+    data = await service.get_template_variables(template_type=template_type)
+    return success(data=data, message="Template variables retrieved successfully")
 
 
-@router.post("/preview")
+@router.post("/preview", response_model=SuccessResponse[PreviewEmailResponse])
 @require_permissions("workspace.read")
 @db_transaction_handler("preview email template", auto_commit=False)
 async def preview_email_template(
@@ -60,14 +64,15 @@ async def preview_email_template(
     Renders the template with sample variable values to show what it will look like.
     """
     service = EmailTemplateService(db)
-    return await service.preview_template(
+    data = await service.preview_template(
         subject=preview_request.subject,
         body=preview_request.body,
         template_type=preview_request.template_type
     )
+    return success(data=data, message="Email template preview generated successfully")
 
 
-@router.get("/")
+@router.get("/", response_model=SuccessResponse[EmailTemplateListResponse])
 @db_transaction_handler("list email templates", auto_commit=False)
 async def list_email_templates(
     workspace_id: str,
@@ -88,14 +93,15 @@ async def list_email_templates(
     user_id = UUID(current_user.get("identity"))
     service = EmailTemplateService(db)
 
-    return await service.list_templates(
+    data = await service.list_templates(
         workspace_id=UUID(workspace_id),
         user_id=user_id,
         template_type=template_type
     )
+    return success(data=data, message="Email templates retrieved successfully")
 
 
-@router.post("/", status_code=status.HTTP_201_CREATED)
+@router.post("/", status_code=status.HTTP_201_CREATED, response_model=SuccessResponse[EmailTemplateResponse])
 @db_transaction_handler("create email template", auto_commit=True)
 @require_permissions("workspace.update", workspace_scoped=True)
 async def create_email_template(
@@ -120,10 +126,10 @@ async def create_email_template(
         body=template_data.body
     )
 
-    return template.to_dict()
+    return success(data=template.to_dict(), message="Email template created successfully")
 
 
-@router.put("/{template_id}")
+@router.put("/{template_id}", response_model=SuccessResponse[EmailTemplateResponse])
 @db_transaction_handler("update email template", auto_commit=True)
 @require_permissions("workspace.update", workspace_scoped=True)
 async def update_email_template(
@@ -149,10 +155,10 @@ async def update_email_template(
         is_active=template_data.is_active
     )
 
-    return template.to_dict()
+    return success(data=template.to_dict(), message="Email template updated successfully")
 
 
-@router.delete("/{template_id}")
+@router.delete("/{template_id}", response_model=SuccessResponse[EmailTemplateDeleteResponse])
 @db_transaction_handler("delete email template", auto_commit=True)
 @require_permissions("workspace.update", workspace_scoped=True)
 async def delete_email_template(
@@ -174,10 +180,10 @@ async def delete_email_template(
         user_id=user_id
     )
 
-    return {"template_id": template_id}
+    return success(data={"template_id": template_id}, message="Email template deleted successfully")
 
 
-@router.get("/defaults/{template_type}")
+@router.get("/defaults/{template_type}", response_model=SuccessResponse[DefaultEmailTemplateResponse])
 @require_permissions("workspace.read")
 @db_transaction_handler("get default template", auto_commit=False)
 async def get_default_template_for_type(
@@ -191,4 +197,5 @@ async def get_default_template_for_type(
     Useful for resetting or starting with a default template.
     """
     service = EmailTemplateService(db)
-    return await service.get_default_template(template_type=template_type)
+    data = await service.get_default_template(template_type=template_type)
+    return success(data=data, message="Default template retrieved successfully")
