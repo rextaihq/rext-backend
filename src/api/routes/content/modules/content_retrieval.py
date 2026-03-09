@@ -3,6 +3,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Optional
 from uuid import UUID
 
+from sqlalchemy.orm import selectinload
+from src.api.models.content_models.content import Content
 from src.utils.response_utils import success, error
 from src.utils.route_decorators import db_transaction_handler, require_permissions
 from src.api.database.async_database import get_async_db
@@ -55,14 +57,17 @@ async def list_content(
         offset=offset
     )
 
-    # Return raw data - decorator handles success response
-    return {
-        "content": result["content"],
-        "total_count": result["total_count"],
-        "workspace_id": str(workspace.id),
-        "limit": limit,
-        "offset": offset
-    }
+    # Return wrapped response
+    return success(
+        data={
+            "content": result["content"],
+            "total_count": result["total_count"],
+            "workspace_id": str(workspace.id),
+            "limit": limit,
+            "offset": offset
+        },
+        request=request
+    )
 
 
 # -------------------------
@@ -91,5 +96,9 @@ async def get_content(
         workspace_id=workspace.id
     )
 
-    # Return raw data - decorator handles success response
-    return {"content": content_data}
+    # Return wrapped response
+    return success(
+        data={"content": content_data},
+        request=request,
+        message="Content retrieved successfully"
+    )

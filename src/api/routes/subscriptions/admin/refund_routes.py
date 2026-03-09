@@ -25,14 +25,14 @@ from src.api.models.subscription_models.refunds import RefundStatus
 from src.api.schema.subscription.refund_schemas import (
     RefundCreateRequest,
     RefundCreateResponse,
-    RefundListResponse,
-    RefundResponse,
 )
 from src.api.schema.response_schemas import SuccessResponse
-from src.api.schema.__response__.refund_responses import (
+from src.api.schema.response.refund_responses import (
     RefundAdminRow,
     RefundAdminListResponse,
     RefundCreateData,
+    RefundResponse,
+    RefundListResponse,
 )
 from src.services.refund_service import RefundService
 from src.providers.payment.providers.lemonsqueezy import LemonSqueezyProvider

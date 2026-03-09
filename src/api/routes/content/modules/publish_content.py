@@ -22,6 +22,7 @@ from src.api.schema.response.content_responses import (
 )
 from src.api.schema.response_schemas import SuccessResponse
 from src.utils.workspace_utils import resolve_and_verify_workspace
+from src.utils.response_utils import success
 from src.services.content_service import ContentService
 from src.api.models.content_models import Content
 
@@ -60,7 +61,11 @@ async def save_content(
         data=data
     )
     
-    return content.to_dict(include_relationships=["seo_data"])
+    return success(
+        data=content.to_dict(include_relationships=["seo_data"]),
+        request=request,
+        message="Content saved successfully"
+    )
 
 
 # -------------------------
@@ -100,17 +105,21 @@ async def save_and_publish(
     
     successful_results = [r for r in results if r.success]
     
-    return {
-        "content": content.to_dict(),
-        "publish_results": {
-            "content_id": str(content.id),
-            "total_sites": len(results),
-            "successful": len(successful_results),
-            "failed": len(results) - len(successful_results),
-            "results": [r.model_dump() for r in results],
-            "all_failed": len(successful_results) == 0
-        }
-    }
+    return success(
+        data={
+            "content": content.to_dict(),
+            "publish_results": {
+                "content_id": str(content.id),
+                "total_sites": len(results),
+                "successful": len(successful_results),
+                "failed": len(results) - len(successful_results),
+                "results": [r.model_dump() for r in results],
+                "all_failed": len(successful_results) == 0
+            }
+        },
+        request=request,
+        message="Content published successfully"
+    )
 
 
 # -------------------------
@@ -151,17 +160,21 @@ async def publish_existing_content(
     
     successful_results = [r for r in results if r.success]
     
-    return {
-        "content": content.to_dict(),
-        "publish_results": {
-            "content_id": str(content_id),
-            "total_sites": len(results),
-            "successful": len(successful_results),
-            "failed": len(results) - len(successful_results),
-            "results": [r.model_dump() for r in results],
-            "all_failed": len(successful_results) == 0
-        }
-    }
+    return success(
+        data={
+            "content": content.to_dict(),
+            "publish_results": {
+                "content_id": str(content_id),
+                "total_sites": len(results),
+                "successful": len(successful_results),
+                "failed": len(results) - len(successful_results),
+                "results": [r.model_dump() for r in results],
+                "all_failed": len(successful_results) == 0
+            }
+        },
+        request=request,
+        message="Content published successfully"
+    )
 
 
 # -------------------------
@@ -199,12 +212,16 @@ async def retry_content(
             workspace_id=workspace.id
         )
         successful_results = [r for r in results if r.success]
-        return {
-            "content_id": str(content_id),
-            "status": content.status,
-            "retry_type": "publishing",
-            "successful": len(successful_results) > 0
-        }
+        return success(
+            data={
+                "content_id": str(content_id),
+                "status": content.status,
+                "retry_type": "publishing",
+                "successful": len(successful_results) > 0
+            },
+            request=request,
+            message="Retry initiated (publishing)"
+        )
     
     # Otherwise, it might have failed at generation or some other step
     # Reset to draft for now so it can be manually re-triggered or edited
@@ -212,11 +229,15 @@ async def retry_content(
     content.updated_at = datetime.now(timezone.utc)
     await db.flush()
     
-    return {
-        "content_id": str(content_id),
-        "status": content.status,
-        "retry_type": "unspecified_reset_to_draft"
-    }
+    return success(
+        data={
+            "content_id": str(content_id),
+            "status": content.status,
+            "retry_type": "unspecified_reset_to_draft"
+        },
+        request=request,
+        message="Retry initiated (reset to draft)"
+    )
 
 
 # -------------------------
@@ -264,7 +285,11 @@ async def update_content(
         data=data
     )
 
-    return content.to_dict(include_relationships=["seo_data"])
+    return success(
+        data=content.to_dict(include_relationships=["seo_data"]),
+        request=request,
+        message="Content updated successfully"
+    )
 
 
 # -------------------------
@@ -294,4 +319,8 @@ async def delete_content(
         workspace_id=workspace.id
     )
 
-    return {"deleted_id": str(content_id)}
+    return success(
+        data={"deleted_id": str(content_id)},
+        request=request,
+        message="Content deleted successfully"
+    )

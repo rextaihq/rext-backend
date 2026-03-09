@@ -25,6 +25,7 @@ from src.api.schema.response_schemas import SuccessResponse
 from src.api.models import WorkspaceIntegration, Content
 from src.web.wordpress import WordPressPublisher
 from src.utils.workspace_utils import resolve_and_verify_workspace
+from src.utils.response_utils import success
 
 router = APIRouter()
 
@@ -63,11 +64,15 @@ async def list_connected_sites(
     result = await db.execute(query)
     sites = result.scalars().all()
     
-    return {
-        "sites": [site.to_dict() for site in sites],
-        "total_count": len(sites),
-        "workspace_id": str(workspace.id)
-    }
+    return success(
+        data={
+            "sites": [site.to_dict() for site in sites],
+            "total_count": len(sites),
+            "workspace_id": str(workspace.id)
+        },
+        request=request,
+        message="Connected sites retrieved successfully"
+    )
 
 @router.post("/connect", response_model=SuccessResponse[SiteResponse])
 @db_transaction_handler("connect site", "Site connected successfully")
@@ -115,7 +120,11 @@ async def connect_site(
     db.add(new_site)
     await db.flush()
     
-    return {"site": new_site.to_dict()}
+    return success(
+        data={"site": new_site.to_dict()},
+        request=request,
+        message="Site connected successfully"
+    )
 
 @router.get("/{site_id}", response_model=SuccessResponse[SiteResponse])
 @require_permissions("content.read", workspace_scoped=True)
@@ -132,7 +141,11 @@ async def get_site_details(
     
     site = await _get_site_or_404(db, site_id, workspace.id)
         
-    return {"site": site.to_dict()}
+    return success(
+        data={"site": site.to_dict()},
+        request=request,
+        message="Site details retrieved successfully"
+    )
 
 @router.patch("/{site_id}", response_model=SuccessResponse[SiteResponse])
 @db_transaction_handler("update site", "Site connection updated successfully")
@@ -159,7 +172,11 @@ async def update_site(
     if data.api_key is not None: site.api_key = data.api_key
     if data.config_json is not None: site.config_json = data.config_json
     
-    return {"site": site.to_dict()}
+    return success(
+        data={"site": site.to_dict()},
+        request=request,
+        message="Site connection updated successfully"
+    )
 
 @router.delete("/{site_id}", response_model=SuccessResponse[SiteDeletedResponse])
 @db_transaction_handler("disconnect site", "Site disconnected successfully")
@@ -178,7 +195,11 @@ async def delete_site(
     
     await db.delete(site)
     
-    return {"site_id": str(site_id)}
+    return success(
+        data={"site_id": str(site_id)},
+        request=request,
+        message="Site disconnected successfully"
+    )
 
 @router.post("/{site_id}/activate", response_model=SuccessResponse[SiteResponse])
 @db_transaction_handler("activate site", "Site activated successfully")
@@ -196,7 +217,11 @@ async def activate_site(
     site = await _get_site_or_404(db, site_id, workspace.id)
     
     site.is_active = True
-    return {"site": site.to_dict()}
+    return success(
+        data={"site": site.to_dict()},
+        request=request,
+        message="Site activated successfully"
+    )
 
 @router.post("/{site_id}/deactivate", response_model=SuccessResponse[SiteResponse])
 @db_transaction_handler("deactivate site", "Site deactivated successfully")
@@ -214,7 +239,11 @@ async def deactivate_site(
     site = await _get_site_or_404(db, site_id, workspace.id)
     
     site.is_active = False
-    return {"site": site.to_dict()}
+    return success(
+        data={"site": site.to_dict()},
+        request=request,
+        message="Site deactivated successfully"
+    )
 
 @router.post("/{site_id}/publish/{content_id}", response_model=SuccessResponse[WordPressPublishResult])
 @db_transaction_handler("publish to site", "Content published successfully")
@@ -258,22 +287,32 @@ async def publish_to_site(
             
             async with WordPressPublisher(
                 site_url=site.site_url,
+                api_endpoint=site.api_endpoint,
                 username=site.username,
-                app_password=site.app_password
+                app_password=site.app_password,
+                api_key=site.api_key
             ) as wp_publisher:
                 result = await wp_publisher.publish_post(
                     data=content_data,
                     status=data.status
                 )
             
-            # Update content status
-            content.status = "published"
-            content.wordpress_published_at = datetime.now(timezone.utc)
+            # Update content status and persistence
+            if result.get("success"):
+                content.status = "published"
+                content.wordpress_post_id = result.get("post_id")
+                content.wordpress_url = result.get("link")
+                content.wordpress_published_at = datetime.now(timezone.utc)
+                await db.flush()
             
-            return {
-                "wordpress_result": result,
-                "content_id": str(content.id)
-            }
+            return success(
+                data={
+                    "wordpress_result": result,
+                    "content_id": str(content.id)
+                },
+                request=request,
+                message="Content published successfully"
+            )
         except Exception as e:
             logger.error(f"Failed to publish to WordPress: {e}")
             raise RextValidationException(message=f"Publishing failed: {str(e)}")
