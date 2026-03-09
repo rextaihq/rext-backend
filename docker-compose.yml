@@ -60,7 +60,7 @@ services:
             -c max_parallel_maintenance_workers=2
             -c huge_pages=off
             -c jit=off
-            -c max_connections=100
+            -c max_connections=200
             -c statement_timeout=60000
             -c idle_in_transaction_session_timeout=300000
             -c log_min_duration_statement=1000
@@ -200,6 +200,9 @@ services:
             LEMONSQUEEZY_API_KEY: ${LEMONSQUEEZY_API_KEY}
             LEMONSQUEEZY_SANDBOX_MODE: ${LEMONSQUEEZY_SANDBOX_MODE}
             LEMONSQUEEZY_STORE_ID: ${LEMONSQUEEZY_STORE_ID}
+            
+            # Encription
+            FIELD_ENCRYPTION_KEY: ${FIELD_ENCRYPTION_KEY}
 
 networks:
     rext-network:

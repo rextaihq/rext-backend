@@ -27,8 +27,8 @@ async_engine = create_async_engine(
     ASYNC_DATABASE_URL,
     echo=False,
     pool_pre_ping=False,   # Must be False — see above
-    pool_size=5,           # Reduced: server shares DB with LangGraph internals
-    max_overflow=5,        # Total max = 10 connections
+    pool_size=2,           # Reduced: server shares DB with LangGraph internals
+    max_overflow=3,        # Total max = 10 connections
     pool_recycle=1800,     # Recycle connections every 30 min
     pool_timeout=30,       # Wait up to 30s for a free connection
 )
