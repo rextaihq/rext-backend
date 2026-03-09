@@ -62,27 +62,42 @@ async def generate_content(state: REXT) -> dict:
         # 3️⃣ Get primary keyword from outline
         primary_keyword = outline.get("keywords_to_include", [""])[0] if outline.get("keywords_to_include") else topic
 
-        # Extract Competitor Insights
-        competitors = state.get("competitors", [])
-        competitor_insights = "No competitor data available."
-        # target_word_count = 1500  # Default fallback
+        # 4️⃣ Extract SEO & SERP Insights (CRITICAL)
+        seo_result = state.get("seo_result", {})
+        serp_backlinks = seo_result.get("serp_backlinks", {})
+        serp_normalized = state.get("serp_normalized", {})
+        
+        # SEO Metrics
+        backlink_volume = serp_backlinks.get("backlinks", 0)
+        referring_domains = serp_backlinks.get("referring_domains", 0)
+        intent = serp_backlinks.get("main_intent", "Informational")
+        
+        # SERP Data
+        top_results = serp_normalized.get("normalize_results", [])[:5]
+        questions = serp_normalized.get("questions", [])
+        related_topics = serp_normalized.get("related_topics", [])
 
-        # if competitors:            
-        #     scraped_docs = state.get("scrape_context", {}).get("documents", [])
-        #     if scraped_docs:
-        #         # scraped_docs is a list of dicts: {"document": Document, "content_length": int, ...}
-        #         lengths = [d.get("content_length", 0) for d in scraped_docs if d.get("content_length", 0) > 0]
-        #         if lengths:
-        #             avg_length = sum(lengths) / len(lengths)
-        #             target_word_count = int(avg_length * 1.1)  # Aim for 10% more than average
-            
-        #     competitor_insights = "\n".join([
-        #         f"- {c.get('domain')}: Rank {c.get('top_positions', ['?'])[0]}" 
-        #         for c in competitors[:5]
-        #     ])
-        # get tone from outline
+        # Format Competitor & SEO Insights
+        competitor_list = []
+        for res in top_results:
+            competitor_list.append(f"- {res['title']} (Position {res['position']}): {res['snippet']}")
+        
+        serp_insights = "\n".join(competitor_list)
+        seo_signals = (
+            f"SEO SIGNALS:\n"
+            f"- Primary Intent: {intent}\n"
+            f"- Average Backlink Volume: {backlink_volume}\n"
+            f"- Referring Domains: {referring_domains}\n"
+            f"- People Also Ask (Questions): {', '.join(questions[:5])}\n"
+            f"- Related SEO Topics: {', '.join(related_topics[:10])}"
+        )
+        
+        competitor_insights = f"TOP SERP COMPETITORS:\n{serp_insights}\n\n{seo_signals}"
+
+        # 5️⃣ Extract Tone & Metadata
         tone = outline.get("tone", "Professional")
         logger.info(f"Tone: {tone}")
+
         # Prepare prompt data
         prompt_data = {
             "content_type": content_type,
