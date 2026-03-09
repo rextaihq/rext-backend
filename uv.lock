@@ -556,6 +556,7 @@ dev = [
     { name = "pytest-asyncio" },
     { name = "pytest-cov" },
     { name = "ruff" },
+    { name = "ruff" },
 ]
 
 [package.metadata]

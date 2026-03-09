@@ -1,14 +1,14 @@
-name: PRODUCTION_CI_CD
+name: STAGE_CI_CD
 
 on:
   push:
     branches:
-      - main
+      - stage
+  workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
-
     steps:
       - name: Cleanup Runner (Pre-build)
         run: |
@@ -40,14 +40,6 @@ jobs:
       - name: Install dependencies
         run: uv sync
 
-      - name: Cache pip packages
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ hashFiles('**/uv.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-pip-
-
       - name: Install system dependencies
         run: |
           sudo apt-get update
@@ -61,8 +53,8 @@ jobs:
             libstdc++6 \
             && sudo apt-get clean
 
-      - name: Install uv and Python dependencies
-        run: pip install uv && uv pip install --system --no-cache-dir playwright crawl4ai
+      - name: Install playwright and crawl4ai
+        run: uv pip install --system --no-cache-dir playwright crawl4ai
 
       - name: Install Playwright browser
         run: playwright install chromium
@@ -72,18 +64,13 @@ jobs:
           crawl4ai-setup
           crawl4ai-doctor
 
-      - name: Install dev dependencies
-        run: uv sync --group dev
-
-
   docker_job:
     needs: build
     runs-on: ubuntu-latest
-
     steps:
       - name: Cleanup Runner (Pre-docker)
         run: |
-          sudo docker system prune -af --volumes
+          sudo docker system prune -af --volumes || true
           df -h
 
       - name: Checkout code
@@ -102,13 +89,13 @@ jobs:
         run: pip install langgraph-cli
 
       - name: Build Docker image with LangGraph
-        run: langgraph build -t ${{ secrets.DOCKER_USERNAME }}/wrext:latest
+        run: langgraph build -t ${{ secrets.DOCKER_USERNAME }}/wrext:stage
 
       - name: Push Docker image
-        run: docker push ${{ secrets.DOCKER_USERNAME }}/wrext:latest
+        run: docker push ${{ secrets.DOCKER_USERNAME }}/wrext:stage
 
       - name: Cleanup Docker (Post-build)
         if: always()
         run: |
-          docker system prune -f
+          sudo docker system prune -f
           df -h

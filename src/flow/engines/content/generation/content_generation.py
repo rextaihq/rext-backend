@@ -7,17 +7,15 @@ E-E-A-T injection and humanization are handled in separate nodes.
 
 import logging
 import json
-import asyncio
 from src.flow.states.rext import REXT
 from src.flow.model.llm_manager import load_content_model
 from src.flow.model.structure.content import GeneratedContent
 from src.flow.prompts.human.content import get_content_prompt
-from src.flow.store.rext_search import search_scraped_chunks
 
 logger = logging.getLogger(__name__)
 
 
-def generate_content(state: REXT) -> dict:
+async def generate_content(state: REXT) -> dict:
     """
     Generates SEO-optimized content using an LLM.
     
@@ -33,9 +31,6 @@ def generate_content(state: REXT) -> dict:
     try:
         # 1️⃣ Get content state, topic, and content type
         payload = state.get("serp_payload", {})
-        query = payload.get("query", "")
-        user_id = payload.get("user_id")
-        workspace_id = payload.get("workspace_id")
         content_state = state.get("content", {})
         topic = content_state.get("selected_topic", "")
         content_type = content_state.get("content_type", "article")
@@ -58,22 +53,10 @@ def generate_content(state: REXT) -> dict:
 
         logger.info(f"Outline extracted: {outline_str[:20]}...")
 
-        # 2️⃣ Get relevant context
-        relevant_context = state.get("relevant_context", [])
-        # page_content = "\n\n".join(
-        #     chunk.get("chunk", "") for chunk in relevant_context
-        # )
-        relevant_context = asyncio.run( search_scraped_chunks(
-            user_id,
-            workspace_id,
-            query,
-            limit=20
-        ))
-        page_content = relevant_context.get("text", "")
-        logger.info(f"Page content length: {len(page_content.split())} words")
-
-        meta_data = relevant_context.get("metadata", {})
-        logger.info(f"Metadata: {meta_data}")
+        # 2️⃣ Prepare Reference Content (If any)
+        # We are skipping semantic search for now as per requirements
+        page_content = ""
+        meta_data = {}
 
 
         # 3️⃣ Get primary keyword from outline
@@ -82,23 +65,21 @@ def generate_content(state: REXT) -> dict:
         # Extract Competitor Insights
         competitors = state.get("competitors", [])
         competitor_insights = "No competitor data available."
-        target_word_count = 1500  # Default fallback
+        # target_word_count = 1500  # Default fallback
 
-        if competitors:            
-            scraped_docs = state.get("scrape_context", {}).get("documents", [])
-            if scraped_docs:
-                # scraped_docs is a list of dicts: {"document": Document, "content_length": int, ...}
-                lengths = [d.get("content_length", 0) for d in scraped_docs if d.get("content_length", 0) > 0]
-                if lengths:
-                    avg_length = sum(lengths) / len(lengths)
-                    target_word_count = int(avg_length * 1.1)  # Aim for 10% more than average
+        # if competitors:            
+        #     scraped_docs = state.get("scrape_context", {}).get("documents", [])
+        #     if scraped_docs:
+        #         # scraped_docs is a list of dicts: {"document": Document, "content_length": int, ...}
+        #         lengths = [d.get("content_length", 0) for d in scraped_docs if d.get("content_length", 0) > 0]
+        #         if lengths:
+        #             avg_length = sum(lengths) / len(lengths)
+        #             target_word_count = int(avg_length * 1.1)  # Aim for 10% more than average
             
-            competitor_insights = "\n".join([
-                f"- {c.get('domain')}: Rank {c.get('top_positions', ['?'])[0]}" 
-                for c in competitors[:5]
-            ])
-
-        logger.info(f"Target word count: {target_word_count}")
+        #     competitor_insights = "\n".join([
+        #         f"- {c.get('domain')}: Rank {c.get('top_positions', ['?'])[0]}" 
+        #         for c in competitors[:5]
+        #     ])
         # get tone from outline
         tone = outline.get("tone", "Professional")
         logger.info(f"Tone: {tone}")
@@ -111,7 +92,7 @@ def generate_content(state: REXT) -> dict:
             "meta_data": meta_data,
             "primary_keyword": primary_keyword,
             "competitor_insights": competitor_insights,
-            "target_word_count": target_word_count,
+            "target_word_count": outline.get("target_word_count", 1500),
             "tone": tone,
         }
 
@@ -122,8 +103,9 @@ def generate_content(state: REXT) -> dict:
 
         # Invoke LLM
         logger.info("Invoking LLM for content generation...")
-        generated_content = content_model.invoke(messages)
+        generated_content = await content_model.ainvoke(messages)
         content_dict = generated_content.model_dump()
+
         logger.info(f"Content generated successfully. Word count: {content_dict.get('word_count', 0)}")
 
         # Return structured content

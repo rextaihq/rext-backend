@@ -11,14 +11,6 @@ async def calculate_eeat_trust(state: REXT):
     and LLM qualitative analysis.
     """
     content_state = state.get("content", {})
-    # Check for upstream errors — skip review if content generation failed
-    if content_state.get("error"):
-        logger.warning(
-            "Skipping E-E-A-T trust calculation due to upstream error: %s",
-            content_state["error"],
-        )
-        return {}
-
     final_content = content_state.get("final_content", {})
 
     title = final_content.get("title", "")

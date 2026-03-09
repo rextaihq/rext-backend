@@ -254,7 +254,17 @@ async def get_user_permissions(
 
     result = await db.execute(query)
     permissions = result.scalars().all()
+    
+    # Global Permission Bridge: Ensure both dot and colon notation are supported.
+    # Backend uses 'resource.action', FE sometimes uses 'resource:action'.
+    # We return the union of both to prevent desync issues.
     permissions_list = list(permissions)
+    colon_perms = [p.replace('.', ':') for p in permissions_list if '.' in p]
+    if colon_perms:
+        permissions_list.extend(colon_perms)
+    
+    # Ensure uniqueness and sort for stability
+    permissions_list = sorted(list(set(permissions_list)))
 
     logger.debug(
         f"Retrieved {len(permissions_list)} permissions for user={user_id}, workspace={workspace_id}"

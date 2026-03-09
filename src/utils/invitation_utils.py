@@ -8,6 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from src.api.models.user_models.invitations import UserInvitations
+from src.api.models.enums import InvitationStatus
 from src.utils.logger import logger
 from src.api.middleware.exceptions import RextValidationException
 

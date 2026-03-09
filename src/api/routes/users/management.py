@@ -241,7 +241,6 @@ async def export_user_data(
         for membership in getattr(db_user, 'workspace_memberships', []):
             workspaces.append({
                 "workspace_id": str(membership.workspace_id),
-                "role": membership.role,
                 "status": membership.status,
                 "joined_at": membership.joined_at.isoformat() if membership.joined_at else None
             })

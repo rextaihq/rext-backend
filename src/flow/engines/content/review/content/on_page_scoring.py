@@ -29,13 +29,6 @@ def calculate_on_page_seo(state: REXT) -> Dict:
 
     # ---- Safely extract content ----
     content_state = state.get("content", {})
-    # Check for upstream errors — skip review if content generation failed
-    if content_state.get("error"):
-        logger.warning(
-            "Skipping on-page SEO calculation due to upstream error: %s",
-            content_state["error"],
-        )
-        return {}
     content_type = content_state.get("content_type")
     final_content = content_state.get("final_content")
 
