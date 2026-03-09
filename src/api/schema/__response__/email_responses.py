@@ -1,3 +1,4 @@
+from pydantic import BaseModel
 from typing import Optional
 from src.api.schema.email_preview_schema import EmailPreviewResponse
 
