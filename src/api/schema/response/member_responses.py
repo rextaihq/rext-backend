@@ -37,3 +37,8 @@ class MemberRemoveResponse(BaseModel):
 
 class MemberUpdateRoleResponse(BaseModel):
     member: Dict[str, Any] # Can be more specific but it varies slightly
+
+class MemberAddResponse(BaseModel):
+    user_id: str
+    workspace_id: str
+
