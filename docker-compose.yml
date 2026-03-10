@@ -115,8 +115,8 @@ services:
             LANGSMITH_TRACING: ${LANGSMITH_TRACING:-true}
 
             # Database (Connect to host PostgreSQL)
-            POSTGRES_URI_CUSTOM: postgresql://exec:${POSTGRES_PASSWORD:-rextserver}@postgres:5432/rext
-            DATABASE_URI: postgresql://exec:${POSTGRES_PASSWORD:-rextserver}@postgres:5432/rext
+            POSTGRES_URI_CUSTOM: postgresql://exec:${POSTGRES_PASSWORD:-rextserver}@postgres:5432/${POSTGRES_DB:-rext}
+            DATABASE_URI: postgresql://exec:${POSTGRES_PASSWORD:-rextserver}@postgres:5432/${POSTGRES_DB:-rext}
             REDIS_URI: ${REDIS_URI:-redis://langgraph-redis:6379}
             REDIS_URL: ${REDIS_URL:-redis://redis:6379}
             CACHE_URL: ${CACHE_URL:-redis://redis:6379}
