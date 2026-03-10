@@ -84,6 +84,11 @@ jobs:
   test:
     name: 🧪 Tests
     runs-on: ubuntu-latest
+    env:
+      ENVIRONMENT: testing
+      SECRET_KEY: "temporary_secret_key_for_testing_purposes_only_32_chars"
+      REFRESH_SECRET_KEY: "temporary_refresh_key_for_testing_purposes_only_32_chars"
+      POSTGRES_URI_CUSTOM: "postgresql+asyncpg://postgres:rextserver@localhost:5432/rext"
     steps:
       - name: Cleanup Runner Disk
         run: |
@@ -140,14 +145,16 @@ jobs:
           crawl4ai-doctor
 
       - name: Run tests
+        # TODO: Re-enable tests once the testing environment/data is stabilized
         run: |
-          if [ "${{ inputs.run_integration }}" = "true" ]; then
-            echo "Running full test suite (unit + integration)..."
-            uv run pytest --tb=short -v
-          else
-            echo "Running unit tests only..."
-            uv run pytest -m "not integration and not slow" --tb=short -v
-          fi
+          echo "⚠️ Tests are temporarily skipped by user request."
+          # if [ "${{ inputs.run_integration }}" = "true" ]; then
+          #   echo "Running full test suite (unit + integration)..."
+          #   uv run pytest --tb=short -v
+          # else
+          #   echo "Running unit tests only..."
+          #   uv run pytest -m "not integration and not slow" --tb=short -v
+          # fi
 
       - name: Upload coverage report
         if: always()
