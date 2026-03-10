@@ -56,10 +56,10 @@ jobs:
         run: pip install langgraph-cli
 
       - name: Build Docker image with LangGraph
-        run: langgraph build -t ghcr.io/${{ github.repository_owner }}/wrext:stage
+        run: langgraph build -t ghcr.io/${{ github.repository_owner }}/rext-backend:stage
 
       - name: Push Docker image to GHCR
-        run: docker push ghcr.io/${{ github.repository_owner }}/wrext:stage
+        run: docker push ghcr.io/${{ github.repository_owner }}/rext-backend:stage
 
       - name: Cleanup Docker (Post-build)
         if: always()
@@ -78,9 +78,12 @@ jobs:
     steps:
       - name: Trigger Coolify Deployment
         run: |
+          # Clean the API URL: remove trailing slashes and redundant /api/v1
+          CLEAN_URL=$(echo "${{ secrets.COOLIFY_API_URL }}" | sed 's#/*$##; s#/api/v1$##')
+          
           echo "Triggering Coolify deployment for STAGE..."
           response=$(curl -s -w "\n%{http_code}" --get \
-            "${{ secrets.COOLIFY_API_URL }}/api/v1/deploy" \
+            "$CLEAN_URL/api/v1/deploy" \
             --data-urlencode "uuid=${{ secrets.COOLIFY_UUID_STAGE }}" \
             --data-urlencode "force=true" \
             -H "Authorization: Bearer ${{ secrets.COOLIFY_TOKEN }}")
@@ -160,4 +163,4 @@ jobs:
           echo "| 🚀 Coolify Deploy | \`${{ needs.deploy.result }}\` |" >> $GITHUB_STEP_SUMMARY
           echo "| ✅ Smoke Test | \`${{ needs.smoke_test.result }}\` |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Image:** \`ghcr.io/${{ github.repository_owner }}/wrext:stage\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Image:** \`ghcr.io/${{ github.repository_owner }}/wrext-backend:stage\`" >> $GITHUB_STEP_SUMMARY
