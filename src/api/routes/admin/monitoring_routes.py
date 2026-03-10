@@ -19,6 +19,7 @@ from src.api.models.admin_models.error_log import ErrorLogSeverity
 from src.api.security.dependencies import get_current_user
 from src.services.monitoring_service import MonitoringService
 from src.utils.route_decorators import db_transaction_handler, require_permissions
+from src.api.cache.decorators import cached
 
 
 router = APIRouter(prefix="/monitoring", tags=["Admin - Monitoring"])
@@ -32,6 +33,7 @@ router = APIRouter(prefix="/monitoring", tags=["Admin - Monitoring"])
 @router.get("/system-health", response_model=dict)
 @db_transaction_handler("get system health", auto_commit=False)
 @require_permissions("audit.admin", workspace_scoped=False)
+@cached(key_prefix="admin:monitoring:health", ttl=60)
 async def get_system_health(
     request: Request,
     db: AsyncSession = Depends(get_async_db),
@@ -61,6 +63,7 @@ async def get_system_health(
 @router.get("/error-logs", response_model=dict)
 @require_permissions("audit.admin", workspace_scoped=False)
 @db_transaction_handler("get error logs", auto_commit=False)
+@cached(key_prefix="admin:monitoring:errors", ttl=300)
 async def get_error_logs(
     request: Request,
     page: int = Query(1, ge=1, description="Page number"),
@@ -144,6 +147,7 @@ async def resolve_error_log(
 @router.get("/usage-stats", response_model=dict)
 @db_transaction_handler("get usage stats", auto_commit=False)
 @require_permissions("audit.admin", workspace_scoped=False)
+@cached(key_prefix="admin:monitoring:stats", ttl=300)
 async def get_usage_stats(
     request: Request,
     period: str = Query("24_hours", pattern="^(24_hours|7_days|30_days)$", description="Time period"),
@@ -172,6 +176,7 @@ async def get_usage_stats(
 @router.get("/usage-stats/trends", response_model=dict)
 @db_transaction_handler("get usage trends", auto_commit=False)
 @require_permissions("audit.admin", workspace_scoped=False)
+@cached(key_prefix="admin:monitoring:trends", ttl=300)
 async def get_usage_trends(
     request: Request,
     days: int = Query(7, ge=1, le=30, description="Number of days"),

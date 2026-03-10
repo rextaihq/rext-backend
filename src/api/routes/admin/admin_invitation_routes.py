@@ -46,6 +46,7 @@ from src.api.middleware.exceptions import (
 )
 from src.api.schema.response_schemas import GenericResponse
 from src.utils.route_decorators import db_transaction_handler, require_permissions
+from src.api.cache.decorators import cached, invalidate_cache, invalidate_cache_key
 from src.utils.logger import logger
 from src.api.middleware.exceptions import ResourceNotFoundException, RextValidationException
 
@@ -162,14 +163,11 @@ async def create_admin_invitation(
     """
     service = AdminInvitationService(db)
 
-    invitation = await service.create_admin_invitation(
-        email=data.email,
-        admin_role=data.admin_role,
-        invited_by_admin_id=UUID(current_user["identity"]),
-        message=data.message,
-        permissions=data.permissions,
         expiry_days=data.expiry_days or 7,
     )
+
+    # Invalidate cache
+    await invalidate_cache("admin:invitations:list:*")
 
     logger.info(
         f"Admin invitation created: {data.email} for {data.admin_role} "
@@ -182,9 +180,10 @@ async def create_admin_invitation(
     return _invitation_to_response(invitation)
 
 
-@admin_router.get("", response_model=AdminInvitationListResponse)
+@admin_router.get("")
 @db_transaction_handler("list admin invitations", auto_commit=False)
 @require_permissions("audit.admin", workspace_scoped=False)
+@cached(key_prefix="admin:invitations:list", ttl=300)
 async def list_admin_invitations(
     request: Request,
     status: Optional[str] = Query(None, description="Filter by status (pending/accepted/revoked/expired/declined)"),
@@ -226,6 +225,10 @@ async def list_admin_invitations(
 @admin_router.get("/{invitation_id}", response_model=AdminInvitationResponse)
 @db_transaction_handler("get admin invitation", auto_commit=False)
 @require_permissions("audit.admin", workspace_scoped=False)
+@cached(
+    key_prefix="admin:invitations:detail",
+    key_builder=lambda request, invitation_id, **kwargs: str(invitation_id)
+)
 async def get_admin_invitation(
     request: Request,
     invitation_id: UUID,
@@ -270,11 +273,12 @@ async def resend_admin_invitation(
     """
     service = AdminInvitationService(db)
 
-    invitation = await service.resend_admin_invitation(
-        invitation_id=invitation_id,
-        resent_by_admin_id=UUID(current_user["identity"]),
         expiry_days=data.expiry_days or 7,
     )
+
+    # Invalidate cache
+    await invalidate_cache("admin:invitations:list:*")
+    await invalidate_cache_key(f"admin:invitations:detail:{invitation_id}")
 
     logger.info(
         f"Admin invitation resent: {invitation.email} by {current_user['email']}"
@@ -310,11 +314,12 @@ async def revoke_admin_invitation(
     """
     service = AdminInvitationService(db)
 
-    invitation = await service.revoke_admin_invitation(
-        invitation_id=invitation_id,
-        revoked_by_admin_id=UUID(current_user["identity"]),
         reason=data.reason,
     )
+
+    # Invalidate cache
+    await invalidate_cache("admin:invitations:list:*")
+    await invalidate_cache_key(f"admin:invitations:detail:{invitation_id}")
 
     logger.info(
         f"Admin invitation revoked: {invitation.email} by {current_user['email']}"

@@ -21,6 +21,7 @@ from src.api.security.dependencies import get_current_user
 from src.api.middleware.permissions import is_admin
 from src.services.customer_admin_service import CustomerAdminService
 from src.utils.route_decorators import db_transaction_handler
+from src.api.cache.decorators import cached, invalidate_cache, invalidate_cache_key
 
 
 router = APIRouter(prefix="/customers", tags=["Admin - Customers"])
@@ -88,6 +89,7 @@ class CustomerActionRequest(BaseModel):
 
 @router.get("", response_model=dict)
 @db_transaction_handler("list customers", auto_commit=False)
+@cached(key_prefix="admin:customers:list", ttl=300)
 async def list_customers(
     request: Request,
     page: int = Query(1, ge=1, description="Page number"),
@@ -149,6 +151,10 @@ async def list_customers(
 
 @router.get("/{user_id}", response_model=dict)
 @db_transaction_handler("get customer detail", auto_commit=False)
+@cached(
+    key_prefix="admin:customers:detail",
+    key_builder=lambda request, user_id, **kwargs: str(user_id)
+)
 async def get_customer_detail(
     request: Request,
     user_id: UUID,
@@ -211,6 +217,10 @@ async def perform_customer_action(
         admin_user_id=admin_user_id,
     )
 
+    # Invalidate cache
+    await invalidate_cache("admin:customers:list:*")
+    await invalidate_cache_key(f"admin:customers:detail:{user_id}")
+
     return {
         "data": result,
         "message": f"Action '{action_request.action}' performed successfully"
@@ -258,6 +268,10 @@ async def add_customer_note(
         note=note_request.note,
         category=note_request.category
     )
+
+    # Invalidate cache
+    await invalidate_cache("admin:customers:list:*")
+    await invalidate_cache_key(f"admin:customers:detail:{user_id}")
 
     return {
         "data": note_data,
