@@ -232,11 +232,7 @@ class SuccessResponse(BaseResponse, Generic[T]):
             "example": {
                 "success": True,
                 "message": "Operation completed successfully",
-                "data": {
-                    "users": [
-                        {"id": "1", "name": "John Doe", "email": "john@example.com"}
-                    ]
-                },
+                "data": {},
                 "error": None,
                 "meta": {
                     "request_id": "req_1234567890_abc123",
