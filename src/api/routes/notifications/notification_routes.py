@@ -10,14 +10,21 @@ from src.api.security.dependencies import get_current_user
 from src.api.models.notification.notification_model import Notification
 from src.api.middleware.rate_limiter import notification_read_rate_limit, notification_write_rate_limit
 from src.utils.response_utils import success, error
-from src.api.schema.response_schemas import ErrorCode, ErrorSeverity
+from src.api.schema.response_schemas import SuccessResponse, ErrorCode, ErrorSeverity
+from src.api.schema.response.notification_responses import (
+    NotificationListResponse,
+    NotificationMarkReadResponse,
+    NotificationClearResponse,
+    NotificationUnreadCountResponse,
+    NotificationDetailResponse
+)
 from src.utils.route_decorators import require_permissions
 from src.utils.logger import logger
 
 router = APIRouter(prefix="/notifications", tags=["Notifications"])
 
 
-@router.get("", response_model=None)
+@router.get("", response_model=SuccessResponse[NotificationListResponse])
 @require_permissions("user.read", workspace_scoped=False)
 async def get_notifications(
     request: Request,
@@ -145,7 +152,7 @@ async def get_notifications(
         raise
 
 
-@router.post("/mark-as-read", response_model=None)
+@router.post("/mark-as-read", response_model=SuccessResponse[NotificationMarkReadResponse])
 @require_permissions("user.update", workspace_scoped=False)
 async def mark_notifications_as_read(
     request: Request,
@@ -266,7 +273,7 @@ async def mark_notifications_as_read(
         raise
 
 
-@router.post("/clear", response_model=None)
+@router.post("/clear", response_model=SuccessResponse[NotificationClearResponse])
 @require_permissions("user.update", workspace_scoped=False)
 async def clear_notifications(
     request: Request,
@@ -389,7 +396,7 @@ async def clear_notifications(
         raise
 
 
-@router.get("/unread-count", response_model=None)
+@router.get("/unread-count", response_model=SuccessResponse[NotificationUnreadCountResponse])
 @require_permissions("user.read", workspace_scoped=False)
 async def get_unread_count(
     request: Request,
@@ -429,7 +436,7 @@ async def get_unread_count(
         raise
 
 
-@router.get("/{notification_id}", response_model=None)
+@router.get("/{notification_id}", response_model=SuccessResponse[NotificationDetailResponse])
 @require_permissions("user.read", workspace_scoped=False)
 async def get_notification_by_id(
     notification_id: str,
