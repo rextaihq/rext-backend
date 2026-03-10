@@ -13,9 +13,9 @@ jobs:
   # ──────────────────────────────────────────────
   # 🔍 Lint & Format Check
   # ──────────────────────────────────────────────
-  lint:
-    name: 🔍 Lint & Format
-    runs-on: ubuntu-latest
+  # lint:
+  #   name: 🔍 Lint & Format
+  #   runs-on: ubuntu-latest
     # TODO: Remove continue-on-error once existing lint errors are fixed (~3700 remaining)
     # continue-on-error: true
     # steps:
