@@ -15,6 +15,9 @@ logger = logging.getLogger(__name__)
 import os
 
 MAX_SCRAPE_URLS = int(os.getenv("MAX_SCRAPE_URLS", "5"))  # Max URLs to scrape per workflow
+# Max characters of page content stored in graph state (prevents LangSmith payload overflow).
+# Full content is already indexed in the vector store; state only needs a summary for SEO analysis.
+MAX_DOCUMENT_CHARS = int(os.getenv("MAX_DOCUMENT_CHARS", "50000"))
 
 
 def _extract_headings(markdown_text: str) -> List[str]:
@@ -138,10 +141,7 @@ async def scrape_serp_content(state: REXT) -> Dict[str, Any]:
                 scrape_data_list.append({
                     "document": doc,
                     "content_length": 0,
-                    "keywords": [],
                     "headings": [],
-                    "chunks": [],
-                    "chunk_count": 0,
                 })
                 continue
 
@@ -184,16 +184,20 @@ async def scrape_serp_content(state: REXT) -> Dict[str, Any]:
                 },
             )
 
-            # 🔹 CHUNKING HAPPENS HERE
-            chunks = _chunk_document(doc)
+            # 🔹 CHUNKING HAPPENS HERE (chunks stored in vector store, not in graph state)
+            _chunk_document(doc)
+
+            # Truncate page_content stored in state to avoid LangSmith payload overflow.
+            # Full content is already indexed in the vector store.
+            truncated_doc = Document(
+                page_content=text[:MAX_DOCUMENT_CHARS],
+                metadata=doc.metadata,
+            )
 
             scrape_data_list.append({
-                "document": doc,
+                "document": truncated_doc,
                 "content_length": content_length,
-                "keywords": keywords,
                 "headings": headings,
-                "chunks": chunks,
-                "chunk_count": len(chunks),
             })
 
     except Exception as exc:

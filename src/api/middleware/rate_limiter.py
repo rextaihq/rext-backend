@@ -66,6 +66,7 @@ LICENSE_DEACTIVATE_LIMIT = EndpointLimitProfile(5, 1, "license deactivation")
 LICENSE_REVOKE_LIMIT = EndpointLimitProfile(10, 1, "license revocation")
 
 
+
 class RateLimiter:
     """
     Sliding window rate limiter.

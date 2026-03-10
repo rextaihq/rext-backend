@@ -110,6 +110,13 @@ Flow matters more than symmetry.
 
 ---
 
+### SEO DATA UTILIZATION (CRITICAL)
+You must utilize the provided SERP and SEO signals to guide the content depth and focus:
+1. **INTENT ALIGNMENT**: Strictly follow the 'Primary Intent' (e.g., Informational, Commercial). If it's Informational, focus on education and answering 'why'. If Commercial, focus on 'how-to' or comparisons.
+2. **BACKLINK & AUTHORITY CONTEXT**: The provided backlink volume and referring domain data indicate the competition level. High volume means you must provide more unique, high-value, and expert-level information to compete.
+3. **SERP GAP ANALYSIS**: Look at the top SERP competitors' snippets provided. Your content MUST cover everything they do PLUS the 'Related SEO Topics' and 'People Also Ask' questions. 
+4. **OUTPERFORMANCE**: Do not just summarize. Use the SERP data to ensure your headings (H2/H3) are more comprehensive than the current top-ranking pages.
+
 ### SEO (MANDATORY)
 You MUST follow these SEO rules strictly:
 1. PRIMARY KEYWORD PLACEMENT (Critical):

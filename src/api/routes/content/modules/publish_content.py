@@ -3,7 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from uuid import UUID
 from datetime import datetime, timezone
-from typing import List
+from typing import List,Optional
 
 from src.utils.logger import logger
 from src.utils.route_decorators import db_transaction_handler, require_permissions
@@ -79,11 +79,12 @@ async def save_and_publish(
     request: Request,
     workspace_id: str,
     publish_status: str = "publish",
+    site_id: Optional[UUID] = None,
     db: AsyncSession = Depends(get_async_db),
     user: dict = Depends(get_current_user)
 ):
     """
-    Save content AND publish to all active WordPress sites.
+    Save content AND publish to active WordPress site(s).
     """
     user_id = user.get("identity")
     workspace, _ = await resolve_and_verify_workspace(db, workspace_id, UUID(user_id))
@@ -96,10 +97,11 @@ async def save_and_publish(
         data=data
     )
     
-    # Publish to all active sites via service
+    # Publish to active sites via service
     results = await service.publish_to_sites(
         content=content,
         workspace_id=workspace.id,
+        site_id=site_id,
         publish_status=publish_status
     )
     
@@ -146,15 +148,20 @@ async def publish_existing_content(
     service = ContentService(db)
     content = await service._get_content_or_404(content_id, workspace.id, include_seo=True)
     
-    # Get publish status from request or default to "publish"
+    # Get publish status and site_id from request or defaults
     status = "publish"
-    if publish_data and publish_data.status:
-        status = publish_data.status
+    site_id = None
+    if publish_data:
+        if publish_data.status:
+            status = publish_data.status
+        if publish_data.site_id:
+            site_id = publish_data.site_id
     
-    # Publish to all active sites via service
+    # Publish to active sites via service
     results = await service.publish_to_sites(
         content=content,
         workspace_id=workspace.id,
+        site_id=site_id,
         publish_status=status
     )
     
@@ -186,12 +193,14 @@ async def publish_existing_content(
 async def retry_content(
     content_id: UUID,
     workspace_id: str,
+    site_id: Optional[UUID] = None,
     db: AsyncSession = Depends(get_async_db),
     user: dict = Depends(get_current_user)
 ):
     """
     Retry a failed content operation.
     
+    If site_id is provided, retry specifically for that site.
     If it was a publishing failure, attempts to re-publish.
     If it was a generation failure, transitions back to draft/generating.
     """
@@ -205,11 +214,13 @@ async def retry_content(
         raise HTTPException(status_code=400, detail=f"Only failed content can be retried. Current status: {content.status}")
     
     # If we have body content but no WP post ID, it likely failed at publishing
-    if content.body_markdown and not content.wordpress_post_id:
-        logger.info(f"Retrying publishing for content {content_id}")
+    # (Or if site_id is specified, we assume we want to retry publishing for that site)
+    if (content.body_markdown and not content.wordpress_post_id) or site_id:
+        logger.info(f"Retrying publishing for content {content_id} (site: {site_id or 'all'})")
         results = await service.publish_to_sites(
             content=content,
-            workspace_id=workspace.id
+            workspace_id=workspace.id,
+            site_id=site_id
         )
         successful_results = [r for r in results if r.success]
         return success(

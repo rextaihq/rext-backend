@@ -78,9 +78,11 @@ services:
 
     # Backend API Service
     rext-api:
-        image: revnixhq/wrext:${IMAGE_TAG:-latest}
+        image: ghcr.io/revnix/wrext-backend:${IMAGE_TAG:-latest}
+
         labels:
-            - "traefik.docker.network=d4wwgc0coow0888wogwc04gs"
+            - "traefik.enable=true"
+            - "traefik.docker.network=coolify"
         deploy:
             replicas: 1 # Set to 1 to avoid 'container name must be unique' error in Coolify
             resources:
@@ -91,10 +93,13 @@ services:
                     cpus: '0.5'
                     memory: 1.5G
         expose:
-            - "2024"
+            - "8001"
 
         # Traefik labels are managed by Coolify — do not uncomment these manually
         # See Coolify dashboard > Applications > rext-backend for routing config
+        networks:
+            - rext-network
+            - coolify
         depends_on:
             postgres:
                 condition: service_healthy
@@ -123,7 +128,7 @@ services:
 
             # Server
             HOST: ${HOST:-0.0.0.0}
-            PORT: ${PORT:-2024}
+            PORT: ${PORT:-8001}
 
             # Frontend + CORS
             FRONTEND_URL: ${FRONTEND_URL}

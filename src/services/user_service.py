@@ -30,7 +30,6 @@ from src.utils.logger import logger
 from src.api.middleware.exceptions import (
     ResourceNotFoundException,
     RextValidationException,
-    DuplicateResourceException
 )
 from src.utils.account_cleanup import delete_deactivated_accounts, get_pending_deletions
 from src.utils.token_cleanup import cleanup_expired_tokens
@@ -177,7 +176,7 @@ class UserService:
             ResourceNotFoundException: If user not found
             RextValidationException: If current password incorrect or passwords same
         """
-        from src.api.security.token_utils import verify_password, hash_password
+        from src.api.security.token_utils import verify_password
         
         user = await self.get_user_by_id(user_id)
 
