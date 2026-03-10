@@ -8,14 +8,10 @@ including checking expirations, converting trials, and notifying users.
 from datetime import datetime, timezone, timedelta
 from typing import List, Dict, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, delete, func
-
-from sqlalchemy import and_
-
+from sqlalchemy import select, func
 from src.api.models.subscription_models.subscriptions import (
     UserSubscription,
     SubscriptionStatus,
-    BillingPeriod
 )
 from src.api.models.subscription_models.plans import SubscriptionPlan
 from src.api.models.user_models.users import Users
@@ -208,7 +204,7 @@ async def extend_trial(
     if subscription.status != SubscriptionStatus.TRIAL:
         raise ValueError("Subscription not in trial")
 
-    old_end_date = subscription.trial_end_date
+    # old_end_date = subscription.trial_end_date
     subscription.trial_end_date += timedelta(days=extend_days)
     subscription.updated_at = datetime.now(timezone.utc)
 

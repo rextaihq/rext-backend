@@ -19,7 +19,6 @@ from src.api.cache.decorators import cached, invalidate_cache
 from src.api.models.subscription_models.plans import SubscriptionPlan
 from src.api.models.subscription_models.subscriptions import SubscriptionStatus, UserSubscription
 from src.api.models.user_models.roles import Role
-from src.api.models.user_models.user_roles import UserRole
 from src.api.schema.subscription.plan_schemas import SubscriptionPlanCreate, SubscriptionPlanUpdate
 from src.utils.logger import logger
 
