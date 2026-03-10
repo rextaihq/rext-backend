@@ -121,35 +121,25 @@ class GeneratedContent(BaseModel):
         description="Structured data/schema markup for the article."
     )
 
-    @model_validator(mode="after")
-    def warn_on_suboptimal_values(self) -> "GeneratedContent":
-        """Log warnings for values outside ideal ranges without rejecting the output."""
-        if not (0.5 <= self.keyphrase_density <= 2.5):
-            logger.warning(
-                "Keyphrase density %.2f%% is outside ideal range (0.5%%-2.5%%). "
-                "Consider adjusting content to improve SEO.",
-                self.keyphrase_density,
-            )
 
-        if len(self.introduction) < 150:
-            logger.warning(
-                "Introduction is %d characters, below the recommended 150 minimum.",
-                len(self.introduction),
-            )
+# class GeneratedHumanizeContent(BaseModel):
+#     """Validated output of the content humanization step with comprehensive SEO requirements."""
 
-        if len(self.body_markdown) < 800:
-            logger.warning(
-                "Body content is %d characters, below the recommended 800 minimum.",
-                len(self.body_markdown),
-            )
-
-        if not self.images:
-            logger.warning("No image suggestions were generated. Consider adding at least 1.")
-
-        if not self.internal_links:
-            logger.warning("No internal links were suggested.")
-
-        if not self.outbound_links:
-            logger.warning("No outbound links were suggested.")
-
-        return self
+#     # Core Content
+#     title: str = Field(description="Final SEO-optimized article title starting with the keyphrase.")
+  
+#     # Introduction
+#     introduction: str = Field(
+#         description="Opening paragraph(s) that introduce the topic and contain the keyphrase naturally (150-300 words in Markdown).",
+#         min_length=150,
+#         max_length=2000,
+#     )
+    
+#     # Main Content
+#     body_markdown: str = Field(
+#         description="Complete article body written in Markdown format (excluding introduction), following the approved outline. Must include subheadings with keyphrase variants.",
+#         min_length=800,
+#         max_length=30000,
+#     )
+    
+   

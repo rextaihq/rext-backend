@@ -5,11 +5,7 @@ logger = logging.getLogger(__name__)
 
 
 async def calculate_eeat_trust(state: REXT):
-    """Calculate E-E-A-T trust score for generated content.
-
-    Uses a hybrid approach combining regex signal extraction
-    and LLM qualitative analysis.
-    """
+    # get the content state form rext state
     content_state = state.get("content", {})
     final_content = content_state.get("final_content", {})
 
