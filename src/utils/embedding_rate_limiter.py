@@ -5,7 +5,6 @@ Implements per-user and global rate limiting using Redis
 to prevent cost overruns and API abuse.
 """
 
-import asyncio
 import time
 from typing import Optional
 

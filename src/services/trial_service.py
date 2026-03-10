@@ -10,26 +10,20 @@ from decimal import Decimal
 from sqlalchemy import select, and_, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
-
 from src.api.models.subscription_models.subscriptions import (
     UserSubscription,
     SubscriptionStatus
 )
 from src.api.models.subscription_models.trial_conversions import TrialConversion
-from src.api.models.subscription_models.plans import SubscriptionPlan
 from src.api.models.user_models.users import Users
 from src.api.middleware.exceptions import (
     ResourceNotFoundException,
-    RextValidationException as ValidationException,
-    RextAuthorizationException as UnauthorizedException
+    RextValidationException as ValidationException
 )
 from src.utils.logger import logger
 
-
-
 class TrialService:
     """Service for managing trials and conversions."""
-
     def __init__(self, db: AsyncSession):
         """Initialize trial service."""
         self.db = db

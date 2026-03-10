@@ -45,13 +45,11 @@ from src.services.audit_logger import audit_logger
 from src.utils.logger import logger
 from src.services.trial_service import TrialService
 from src.api.lib.sentry_config import (
-    capture_payment_exception,
     add_payment_breadcrumb,
     set_payment_context,
     alert_subscription_creation_failure,
 )
 from src.api.lib.logging_config import (
-    log_payment_timing,
     generate_payment_correlation_id,
 )
 
@@ -1224,7 +1222,6 @@ async def handle_subscription_resumed(
     sub_data = extract_subscription_data(webhook_data)
     lemonsqueezy_subscription_id = sub_data.get("subscription_id")
     renews_at = sub_data.get("renews_at")
-    status = sub_data.get("status", "active")
 
     # Find subscription
     stmt = select(UserSubscription).where(
