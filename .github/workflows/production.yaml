@@ -56,18 +56,18 @@ jobs:
         run: pip install langgraph-cli
 
       - name: Build Docker image with LangGraph
-        run: langgraph build -t ghcr.io/${{ github.repository_owner }}/wrext-backend:latest
+        run: langgraph build -t ghcr.io/${{ github.repository_owner }}/rext-backend:latest
 
       - name: Tag with commit SHA for rollback
         run: |
           docker tag \
-            ghcr.io/${{ github.repository_owner }}/wrext-backend:latest \
-            ghcr.io/${{ github.repository_owner }}/wrext-backend:sha-${{ github.sha }}
+            ghcr.io/${{ github.repository_owner }}/rext-backend:latest \
+            ghcr.io/${{ github.repository_owner }}/rext-backend:sha-${{ github.sha }}
 
       - name: Push Docker images to GHCR
         run: |
-          docker push ghcr.io/${{ github.repository_owner }}/wrext-backend:latest
-          docker push ghcr.io/${{ github.repository_owner }}/wrext-backend:sha-${{ github.sha }}
+          docker push ghcr.io/${{ github.repository_owner }}/rext-backend:latest
+          docker push ghcr.io/${{ github.repository_owner }}/rext-backend:sha-${{ github.sha }}
 
       - name: Cleanup Docker (Post-build)
         if: always()

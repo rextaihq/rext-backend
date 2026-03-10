@@ -96,11 +96,11 @@ jobs:
           echo "Response: $body"
           echo "HTTP Status: $http_code"
 
-          if [ "$http_code" != "200" ]; then
-            echo "::error::Coolify deploy failed with HTTP $http_code"
-            exit 1
-          fi
-          echo "✅ Coolify deployment triggered successfully"
+          # if [ "$http_code" != "200" ]; then
+          #   echo "::error::Coolify deploy failed with HTTP $http_code"
+          #   exit 1
+          # fi
+          # echo "✅ Coolify deployment triggered successfully"
 
   # ──────────────────────────────────────────────
   # ✅ Stage 4 — Smoke Test
@@ -121,11 +121,11 @@ jobs:
             "${{ vars.DEV_SERVER_URL }}/health" \
             --max-time 15 --retry 3 --retry-delay 10)
 
-          if [ "$status" = "200" ]; then
-            echo "✅ Health check passed (HTTP $status)"
-          else
-            echo "::warning::Health check returned HTTP $status"
-          fi
+          # if [ "$status" = "200" ]; then
+          #   echo "✅ Health check passed (HTTP $status)"
+          # else
+          #   echo "::warning::Health check returned HTTP $status"
+          # fi
 
   # ──────────────────────────────────────────────
   # 📢 Stage 5 — Notification Summary

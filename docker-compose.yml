@@ -36,9 +36,9 @@ services:
     postgres:
         image: pgvector/pgvector:pg17
         environment:
-            POSTGRES_USER: exec
+            POSTGRES_USER: ${POSTGRES_USER,exec}
             POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-rextserver}
-            POSTGRES_DB: rext
+            POSTGRES_DB: ${POSTGRES_DB,rext}
         volumes:
             - langgraph-data:/var/lib/postgresql/data
         command: >
@@ -93,7 +93,7 @@ services:
                     cpus: '0.5'
                     memory: 1.5G
         expose:
-            - "8001"
+            - ${PORT,2024}
 
         # Traefik labels are managed by Coolify — do not uncomment these manually
         # See Coolify dashboard > Applications > rext-backend for routing config
@@ -128,7 +128,7 @@ services:
 
             # Server
             HOST: ${HOST:-0.0.0.0}
-            PORT: ${PORT:-8001}
+            PORT: ${PORT:-2024}
 
             # Frontend + CORS
             FRONTEND_URL: ${FRONTEND_URL}
