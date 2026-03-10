@@ -78,7 +78,8 @@ services:
 
     # Backend API Service
     rext-api:
-        image: ghcr.io/revnix/wrext:${IMAGE_TAG:-latest}
+        image: ghcr.io/revnix/wrext-backend:${IMAGE_TAG:-latest}
+
         labels:
             - "traefik.enable=true"
             - "traefik.docker.network=coolify"
