@@ -10,8 +10,6 @@ Reference: https://cheatsheetseries.owasp.org/cheatsheets/Server_Side_Request_Fo
 import ipaddress
 import socket
 from urllib.parse import urlparse
-from typing import Optional
-
 from src.utils.logger import logger
 
 

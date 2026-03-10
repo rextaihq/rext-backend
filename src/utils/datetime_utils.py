@@ -1,5 +1,4 @@
 from datetime import datetime, timezone
-from typing import Optional
 
 def utc_now() -> datetime:
     """Get current UTC datetime (timezone-aware)."""
