@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, Request, BackgroundTasks, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, delete, and_
 from sqlalchemy.orm import selectinload
+from src.api.config import get_settings
 from uuid import UUID
 import uuid
 import json
@@ -15,13 +16,8 @@ from src.services.email_service import EmailService
 from src.api.database.async_database import get_async_db
 from src.services.user_service import UserService
 from src.api.middleware.exceptions import ResourceNotFoundException, RextValidationException
-from src.utils.response_utils import success
 from src.api.schema.response_schemas import SuccessResponse
 from src.api.models.workspace_models.workspace_member import WorkspaceMembers
-from src.api.models.user_models.users import Users
-from src.api.models.user_models.user_roles import UserRole
-from src.api.config import get_settings
-from src.api.schema.response_schemas import SuccessResponse
 from src.api.schema.response.user_management_responses import (
     UserListResponse,
     UserDeleteResponse,

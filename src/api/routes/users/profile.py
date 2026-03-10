@@ -14,8 +14,7 @@ from src.api.schema.user_schema import UpdateProfileRequest, UserResponse, Profi
 from src.api.schema.notification_schema import NotificationPreferencesResponse, UpdateNotificationPreferencesRequest
 from src.api.database.async_database import get_async_db
 from src.utils.response_utils import success, error
-from src.api.schema.response_schemas import ErrorCode, ErrorSeverity, SuccessResponse
-from src.api.schema.response.generic import GenericResponse
+from src.api.schema.response_schemas import ErrorCode, ErrorSeverity, SuccessResponse, GenericResponse
 from src.api.schema.response.user_related_responses import UpdateProfileResponse
 from src.api.middleware.exceptions import ResourceNotFoundException, RextValidationException
 from src.services.user_service import UserService

@@ -15,8 +15,7 @@ from src.api.middleware.exceptions import ResourceNotFoundException
 from src.utils.route_decorators import db_transaction_handler, require_permissions
 from src.utils.response_utils import success, created
 from src.utils.workspace_utils import resolve_workspace_for_route
-from src.api.schema.response_schemas import SuccessResponse
-from src.api.schema.response.generic import GenericResponse
+from src.api.schema.response_schemas import SuccessResponse, GenericResponse
 from src.api.schema.response.persona_responses import PersonaResponse, PersonaListResponse
 from src.utils.logger import logger
 

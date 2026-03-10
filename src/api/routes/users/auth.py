@@ -41,8 +41,7 @@ from src.services.invitation_service import InvitationService
 from src.services.user_service import UserService
 from src.utils.invitation_utils import is_invitation_expired
 from uuid import UUID
-from src.api.schema.response_schemas import SuccessResponse
-from src.api.schema.response.generic import GenericResponse
+from src.api.schema.response_schemas import SuccessResponse, GenericResponse
 from src.api.schema.response.auth_responses import (
     RegisterResponse,
     AuthTokenResponse,

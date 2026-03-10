@@ -11,8 +11,7 @@ from src.api.config import get_settings
 from src.api.schema.user_schema import (
     VerifyPasswordRequest
 )
-from src.api.schema.response_schemas import SuccessResponse
-from src.api.schema.response.generic import GenericResponse
+from src.api.schema.response_schemas import SuccessResponse, GenericResponse
 from src.api.schema.response.password_responses import (
     ResetPasswordResponse,
     ChangePasswordResponse,
