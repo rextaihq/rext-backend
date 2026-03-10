@@ -68,6 +68,7 @@ dependencies = [
     "flake8>=7.3.0",
     "radon>=6.0.1",
     "bandit>=1.9.4",
+    "sqlalchemy[asyncio]>=2.0.45",
 ]
 
 [project.scripts]
