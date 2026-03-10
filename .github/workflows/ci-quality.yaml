@@ -1,0 +1,139 @@
+name: CI Quality Gate
+
+on:
+  workflow_call:
+    inputs:
+      run_integration:
+        description: 'Run integration tests alongside unit tests'
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  # ──────────────────────────────────────────────
+  # 🔍 Lint & Format Check
+  # ──────────────────────────────────────────────
+  lint:
+    name: 🔍 Lint & Format
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install ruff
+        run: pip install "ruff>=0.13.0"
+
+      - name: Ruff lint check
+        run: ruff check . --output-format=github
+
+      - name: Ruff format check
+        run: ruff format --check .
+
+  # ──────────────────────────────────────────────
+  # 🔒 Dependency Security Scan
+  # ──────────────────────────────────────────────
+  security:
+    name: 🔒 Security Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install uv
+        run: pip install uv
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Install pip-audit
+        run: pip install pip-audit
+
+      - name: Run security audit
+        continue-on-error: true  # Non-blocking until existing vulns are fixed
+        run: |
+          echo "## 🔒 Security Audit Results" >> $GITHUB_STEP_SUMMARY
+          uv pip freeze --system 2>/dev/null | pip-audit -r /dev/stdin --desc 2>&1 | tee audit.txt || true
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          cat audit.txt >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+
+  # ──────────────────────────────────────────────
+  # 🧪 Tests + Coverage
+  # ──────────────────────────────────────────────
+  test:
+    name: 🧪 Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install uv
+        run: pip install uv
+
+      - name: Cache uv dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/uv
+          key: ${{ runner.os }}-uv-${{ hashFiles('**/uv.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-uv-
+
+      - name: Install dependencies
+        run: uv sync --group dev
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            chromium-browser \
+            libnss3 \
+            libfreetype6 \
+            libharfbuzz0b \
+            ca-certificates \
+            bash \
+            libstdc++6 \
+            && sudo apt-get clean
+
+      - name: Install playwright and crawl4ai
+        run: uv pip install --system --no-cache-dir playwright crawl4ai
+
+      - name: Install Playwright browser
+        run: playwright install chromium
+
+      - name: Setup Crawl4AI
+        run: |
+          crawl4ai-setup
+          crawl4ai-doctor
+
+      - name: Run tests
+        run: |
+          if [ "${{ inputs.run_integration }}" = "true" ]; then
+            echo "Running full test suite (unit + integration)..."
+            uv run pytest --tb=short -v
+          else
+            echo "Running unit tests only..."
+            uv run pytest -m "not integration and not slow" --tb=short -v
+          fi
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: htmlcov/
+          retention-days: 7
