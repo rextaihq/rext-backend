@@ -85,6 +85,7 @@ dev = [
 [tool.ruff]
 line-length = 100
 target-version = "py311"
+exclude = ["alembic/versions/"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I"]
@@ -92,3 +93,4 @@ select = ["E", "F", "I"]
 [tool.ruff.lint.per-file-ignores]
 "tests/**/*.py" = ["F401"]
 "scripts/**/*.py" = ["I001"]
+"alembic/env.py" = ["E402"]
