@@ -12,7 +12,7 @@ from uuid import UUID
 from src.api.database.async_database import get_async_db
 from src.api.security.dependencies import get_current_user
 from src.api.schema.response_schemas import SuccessResponse
-from src.api.schema.__response__.user_security_responses import (
+from src.api.schema.response.security_responses import (
     UserSecurityStatsResponse,
     UserLoginHistoryResponse,
     ActiveSessionsCountResponse,

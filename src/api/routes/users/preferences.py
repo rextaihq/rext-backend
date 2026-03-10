@@ -13,7 +13,7 @@ from src.api.security.dependencies import get_current_user
 from src.utils.route_decorators import require_permissions, db_transaction_handler
 from src.api.schema.preferences_schema import UserPreferencesResponse, UpdateUserPreferencesRequest
 from src.api.schema.response_schemas import SuccessResponse
-from src.api.schema.__response__.user_preferences_responses import UserPreferencesWrappedResponse
+from src.api.schema.response.preference_responses import UserPreferencesWrappedResponse
 from src.utils.response_utils import success
 from src.utils.logger import logger
 from src.services.user_preferences_service import UserPreferencesService

@@ -18,7 +18,7 @@ from src.api.schema.email_preview_schema import (
     EmailPreviewResponse
 )
 from src.api.schema.response_schemas import SuccessResponse
-from src.api.schema.__response__.email_responses import EmailPreviewWrappedResponse
+from src.api.schema.response.email_system_responses import EmailPreviewWrappedResponse
 from src.api.security.dependencies import get_current_user
 from src.utils.logger import logger
 from src.utils.response_utils import success

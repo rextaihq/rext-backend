@@ -6,7 +6,7 @@ This endpoint is used to test the timing attack fix in get_api_key.
 from fastapi import APIRouter, Depends, Request
 from src.api.security.auth import get_api_key
 from src.api.schema.response_schemas import SuccessResponse
-from src.api.schema.__response__.test_responses import APIKeyCheckResponse
+from src.api.schema.response.test_responses import APIKeyCheckResponse
 from src.utils.response_utils import success
 
 router = APIRouter(prefix="/test", tags=["Testing"])

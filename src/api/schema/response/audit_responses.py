@@ -1,13 +1,14 @@
 from pydantic import BaseModel
-from typing import List, Optional, Any, Dict
+from typing import List, Optional, Dict, Any
 
-class AuditLogBaseResponse(BaseModel):
+class AuditLogItem(BaseModel):
+    """Schema for a formatted audit log entry."""
     id: str
     user_id: Optional[str] = None
     full_name: Optional[str] = None
     user_email: Optional[str] = None
     action: str
-    resource_type: str
+    resource_type: Optional[str] = None
     resource_id: Optional[str] = None
     workspace_id: Optional[str] = None
     ip_address: Optional[str] = None
@@ -16,41 +17,66 @@ class AuditLogBaseResponse(BaseModel):
     status: str
     created_at: Optional[str] = None
 
-class AuditLogDetailedResponse(AuditLogBaseResponse):
+class AuditLogDetailItem(AuditLogItem):
+    """Schema for audit log entry with full details."""
     old_values: Optional[Dict[str, Any]] = None
     new_values: Optional[Dict[str, Any]] = None
     metadata: Optional[Dict[str, Any]] = None
     error_message: Optional[str] = None
 
+# Aliases for plural usage in admin routes
+AuditLogDetailedResponse = AuditLogDetailItem
+
+class AuditLogListResponse(BaseModel):
+    """Schema for paginated audit logs response (user scoped)."""
+    items: List[AuditLogItem]
+    total: int
+    limit: int
+    offset: int
+    has_more: bool
+    message: Optional[str] = None
+
 class AuditLogsListResponse(BaseModel):
-    items: List[AuditLogBaseResponse]
+    """Schema for paginated audit logs response (admin scoped)."""
+    items: List[AuditLogItem]
     total: int
     limit: int
     offset: int
     has_more: bool
 
-class LogsByActionSchema(BaseModel):
+class AuditLogDetailListResponse(BaseModel):
+    """Schema for paginated audit logs response with details (admin)."""
+    items: List[AuditLogDetailItem]
+    total: int
+    limit: int
+    offset: int
+    has_more: bool
+    message: Optional[str] = None
+
+class ActionCount(BaseModel):
     action: str
     count: int
 
-class LogsByResourceSchema(BaseModel):
+class ResourceCount(BaseModel):
     resource_type: str
     count: int
 
-class LogsByStatusSchema(BaseModel):
+class StatusCount(BaseModel):
     status: str
     count: int
 
-class MostActiveUserSchema(BaseModel):
+class MostActiveUser(BaseModel):
     user_id: str
     full_name: Optional[str] = None
     action_count: int
 
 class AuditStatsOverviewResponse(BaseModel):
+    """Schema for audit statistics response."""
     total_logs: int
-    logs_by_action: List[LogsByActionSchema]
-    logs_by_resource: List[LogsByResourceSchema]
-    logs_by_status: List[LogsByStatusSchema]
-    most_active_users: List[MostActiveUserSchema]
-    recent_failures: List[AuditLogBaseResponse]
+    logs_by_action: List[ActionCount]
+    logs_by_resource: List[ResourceCount]
+    logs_by_status: List[StatusCount]
+    most_active_users: List[MostActiveUser]
+    recent_failures: List[AuditLogItem]
     analysis_period_days: int
+    message: Optional[str] = None

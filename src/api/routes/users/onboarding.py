@@ -16,7 +16,7 @@ from src.api.schema.onboarding_schemas import (
     OnboardingMarketingData,
 )
 from src.api.schema.response_schemas import SuccessResponse
-from src.api.schema.__response__.user_onboarding_responses import (
+from src.api.schema.response.onboarding_responses import (
     UserOnboardingResponse,
     ShouldShowOnboardingResponse,
 )

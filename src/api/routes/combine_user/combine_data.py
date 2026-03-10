@@ -9,7 +9,7 @@ from src.api.models.workspace_models.workspace_member import WorkspaceMembers
 from src.api.models.content_models.content import Content
 from src.api.models.knowledge_models.persona_model import Persona
 from src.api.schema.response_schemas import SuccessResponse
-from src.api.schema.__response__.combine_user_responses import WorkspaceDashboardResponse
+from src.api.schema.response.dashboard_responses import WorkspaceDashboardResponse
 from src.utils.response_utils import success
 
 # ✅ define router ONCE

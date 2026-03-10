@@ -19,7 +19,7 @@ from src.api.database.async_database import get_async_db
 from src.services.email_event_service import EmailEventService
 from src.api.schema.webhook_schema import WebhookResponse, WebhookProcessingResult
 from src.api.schema.response_schemas import SuccessResponse
-from src.api.schema.__response__.email_responses import EmailWebhookHealthResponse
+from src.api.schema.response.email_system_responses import EmailWebhookHealthResponse
 from src.config.email_config import email_config
 from src.api.lib.logger import auto_logger
 from src.utils.response_utils import success

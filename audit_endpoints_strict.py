@@ -36,10 +36,11 @@ def analyze_endpoints_strict(directory):
                                         
                                         is_properly_refactored = False
                                         if response_model_keyword:
-                                            # Check if it's dict
+                                            # Check if it's NOT dict
                                             if isinstance(response_model_keyword.value, ast.Name) and response_model_keyword.value.id == 'dict':
-                                                pass
+                                                is_properly_refactored = False
                                             else:
+                                                # If it's SuccessResponse[T] or any other type, it's refactored
                                                 is_properly_refactored = True
                                         
                                         if is_properly_refactored:

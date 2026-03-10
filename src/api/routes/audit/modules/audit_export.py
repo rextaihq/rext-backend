@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.api.database.async_database import get_async_db
 from src.api.schema.audit_schema import AuditLogExportFormat
 from src.api.schema.response_schemas import SuccessResponse
-from src.api.schema.__response__.audit_responses import AuditStatsResponse
+from src.api.schema.response.audit_responses import AuditStatsOverviewResponse
 from src.api.security.dependencies import get_current_user
 from src.services.audit_service import AuditService
 from src.utils.response_utils import success
