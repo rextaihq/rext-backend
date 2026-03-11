@@ -5,6 +5,7 @@ from typing import Optional, List
 from uuid import UUID
 from datetime import datetime, timezone
 
+from src.utils.pagination import encode_cursor, decode_cursor
 from src.api.database.async_database import get_async_db
 from src.api.security.dependencies import get_current_user
 from src.api.models.notification.notification_model import Notification
@@ -33,6 +34,7 @@ async def get_notifications(
     _rate_limit=Depends(notification_read_rate_limit()),
     page: int = Query(1, ge=1, description="Page number"),
     limit: int = Query(20, ge=1, le=100, description="Items per page"),
+    cursor: Optional[str] = Query(None, description="Opaque cursor for keyset pagination. Overrides page parameter."),
     unread_only: bool = Query(False, description="Filter to only unread notifications"),
     type: Optional[str] = Query(None, description="Filter by notification type"),
     category: Optional[str] = Query(None, description="Filter by notification category"),
@@ -106,41 +108,99 @@ async def get_notifications(
         unread_result = await db.execute(unread_query)
         unread_count = unread_result.scalar()
         
-        # Calculate pagination
-        offset = (page - 1) * limit
-        total_pages = (total_count + limit - 1) // limit if total_count > 0 else 0
-        
-        # Get notifications with pagination
-        notifications_query = (
-            select(Notification)
-            .where(and_(*base_conditions))
-            .order_by(desc(Notification.created_at))
-            .offset(offset)
-            .limit(limit)
-        )
-        
+        use_cursor = cursor is not None
+        cursor_data = None
+
+        if use_cursor:
+            cursor_data = decode_cursor(cursor)
+            if cursor_data is None:
+                return error(
+                    message="Invalid cursor format",
+                    code=ErrorCode.INVALID_VALUE,
+                    status_code=400,
+                    severity=ErrorSeverity.LOW,
+                    request=request
+                )
+
+        if use_cursor and cursor_data:
+            cursor_created_at, cursor_id = cursor_data
+            # Keyset pagination: get rows older than the cursor
+            notifications_query = (
+                select(Notification)
+                .where(
+                    and_(
+                        *base_conditions,
+                        or_(
+                            Notification.created_at < cursor_created_at,
+                            and_(
+                                Notification.created_at == cursor_created_at,
+                                Notification.id < cursor_id,
+                            ),
+                        ),
+                    )
+                )
+                .order_by(desc(Notification.created_at), desc(Notification.id))
+                .limit(limit + 1)  # Fetch one extra to determine has_next
+            )
+        else:
+            # Offset-based pagination (backward compatible)
+            offset = (page - 1) * limit
+            notifications_query = (
+                select(Notification)
+                .where(and_(*base_conditions))
+                .order_by(desc(Notification.created_at), desc(Notification.id))
+                .offset(offset)
+                .limit(limit)
+            )
+
         result = await db.execute(notifications_query)
-        notifications = result.scalars().all()
-        
+        notifications = list(result.scalars().all())
+
+        # Build pagination metadata
+        if use_cursor:
+            has_next = len(notifications) > limit
+            if has_next:
+                notifications = notifications[:limit]  # Remove the extra item
+
+            next_cursor = None
+            if has_next and notifications:
+                last = notifications[-1]
+                next_cursor = encode_cursor(last.created_at, last.id)
+
+            pagination_meta = {
+                "limit": limit,
+                "has_next": has_next,
+                "next_cursor": next_cursor,
+            }
+        else:
+            # Existing offset response format
+            total_pages = (total_count + limit - 1) // limit if total_count > 0 else 0
+            pagination_meta = {
+                "page": page,
+                "limit": limit,
+                "total_count": total_count,
+                "total_pages": total_pages,
+                "has_next": page < total_pages,
+                "has_prev": page > 1,
+            }
+
         # Convert to dict
-        notifications_data = [notification.to_dict() for notification in notifications]
-        
-        logger.info(
+        notifications_data = [n.to_dict() for n in notifications]
+
+        # Log retrieval
+        log_msg = (
+            f"Retrieved {len(notifications_data)} notifications for user {user_id} "
+            f"(cursor, limit: {limit}, has_next: {pagination_meta.get('has_next', False)})"
+            if use_cursor else
             f"Retrieved {len(notifications_data)} notifications for user {user_id} "
             f"(page {page}, total: {total_count}, unread: {unread_count})"
         )
-        
+        logger.info(log_msg)
+
         return success(
             data={
                 "notifications": notifications_data,
-                "pagination": {
-                    "page": page,
-                    "limit": limit,
-                    "total_count": total_count,
-                    "total_pages": total_pages,
-                    "has_next": page < total_pages,
-                    "has_prev": page > 1,
-                },
+                "pagination": pagination_meta,
                 "unread_count": unread_count,
             },
             request=request,

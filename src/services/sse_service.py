@@ -60,13 +60,12 @@ class _OperationState:
     """Holds subscriber state and pending events for an operation."""
 
     subscribers: List[_Subscription] = field(default_factory=list)
-    pending_events: Deque[str] = field(default_factory=deque)
+    pending_events: Deque[str] = field(default_factory=deque)  # maxlen set post-init
     created_at: datetime = field(default_factory=_utcnow)
     last_event_at: datetime = field(default_factory=_utcnow)
     completed: bool = False
     completion_payload: Optional[Dict[str, Any]] = None
-    owner_user_id: Optional[UUID] = None  # Track who initiated the operation
-
+    owner_user_id: Optional[UUID] = None
 
 class OperationEvent(BaseModel):
     """Schema representing a single SSE payload."""
@@ -107,6 +106,12 @@ class EventStreamManager:
         self._lock = asyncio.Lock()
         self._cleanup_task: Optional[asyncio.Task[None]] = None
 
+    def _new_operation_state(self) -> _OperationState:
+        """Create a new _OperationState with a bounded pending_events deque."""
+        state = _OperationState()
+        state.pending_events = deque(maxlen=self._pending_event_limit)
+        return state
+
     async def subscribe(
         self,
         operation_id: str,
@@ -135,7 +140,7 @@ class EventStreamManager:
         async with self._lock:
             state = self._operations.get(operation_id)
             if state is None:
-                state = _OperationState()
+                state = self._new_operation_state()
                 self._operations[operation_id] = state
             state.subscribers.append(subscription)
             pending_events = list(state.pending_events)
@@ -186,7 +191,7 @@ class EventStreamManager:
         async with self._lock:
             state = self._operations.get(operation_id)
             if state is None:
-                state = _OperationState()
+                state = self._new_operation_state()
                 self._operations[operation_id] = state
             # Only set owner if not already set (first come, first served)
             if state.owner_user_id is None:
@@ -237,13 +242,11 @@ class EventStreamManager:
         async with self._lock:
             state = self._operations.get(operation_id)
             if state is None:
-                state = _OperationState()
+                state = self._new_operation_state()
                 self._operations[operation_id] = state
 
             state.last_event_at = datetime.now(timezone.utc)
             state.pending_events.append(formatted)
-            while len(state.pending_events) > self._pending_event_limit:
-                state.pending_events.popleft()
 
             # Store completion payload only on first completion (first-write-wins)
             if event.step == "pipeline.completed" and state.completion_payload is None:
