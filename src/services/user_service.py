@@ -21,8 +21,8 @@ from uuid import UUID
 from datetime import datetime, timezone
 import bcrypt
 
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from src.api.cache.decorators import cached, invalidate_cache_key
 from src.utils.password_utils import validate_password_strength
 
 from src.api.models.user_models.users import Users
@@ -76,6 +76,35 @@ class UserService:
             )
 
         return user
+
+    @cached(
+        key_prefix="user:profile",
+        ttl=300,
+        key_builder=lambda self, user_id: str(user_id)
+    )
+    async def get_cached_profile(self, user_id: UUID) -> Dict[str, Any]:
+        """
+        Get cached user profile as a dictionary.
+        Returns the dictionary representation of the user for immediate API response.
+        """
+        user = await self.get_user_by_id(user_id)
+        from src.api.schema.user_schema import ProfileResponse
+        
+        # We construct the same response dict as the route
+        return ProfileResponse(
+            id=str(user.id),
+            email=user.email,
+            full_name=user.full_name,
+            display_name=user.display_name,
+            bio=user.bio,
+            language=user.language or "en",
+            timezone=user.timezone or "UTC",
+            status=user.status,
+            email_verified=user.email_verified,
+            avatar_url=user.avatar_url,
+            created_at=user.created_at.isoformat() if user.created_at else None,
+            updated_at=user.updated_at.isoformat() if user.updated_at else None
+        ).model_dump()
 
     async def get_user_by_email(
         self,
@@ -148,6 +177,10 @@ class UserService:
             extra={"user_id": str(user_id), "updated_fields": list(kwargs.keys())}
         )
         self.db.add(user)
+        
+        # Invalidate cache for this user
+        await invalidate_cache_key(f"user:profile:{user_id}")
+        
         await self.db.commit()
         return user
 
@@ -467,6 +500,9 @@ class UserService:
 
         user.deleted_at = datetime.now(timezone.utc)
 
+        # Invalidate cache
+        await invalidate_cache_key(f"user:profile:{user_id}")
+
         logger.info(f"User {user_id} soft deleted")
         return user
 
@@ -574,6 +610,9 @@ class UserService:
         user.updated_at = datetime.now(timezone.utc)
 
         logger.info(f"User {user_id} updated successfully")
+
+        # Invalidate cache
+        await invalidate_cache_key(f"user:profile:{user_id}")
 
         self.db.add(user)
         await self.db.commit()

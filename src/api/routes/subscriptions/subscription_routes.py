@@ -168,34 +168,15 @@ async def get_my_subscription(
     user_id = current_user.get("identity")
     service = SubscriptionService(db)
 
-    subscription = await service.get_subscription_by_user(user_id)
+    # Use cached subscription method which directly returns dict with plan info
+    response_data = await service.get_cached_subscription(user_id)
 
-    if not subscription:
+    if not response_data:
         return success(
             data=None,
             request=request,
             message="No active subscription found"
         )
-
-    # Get plan details
-    plan = await service.get_plan_by_id(subscription.plan_id)
-
-    # Build response
-    response_data = subscription.to_dict()
-    response_data["plan_name"] = plan.name
-    response_data["plan_display_name"] = plan.display_name
-    response_data["plan_features"] = plan.features
-    response_data["plan_limits"] = {
-        "max_workspaces": plan.max_workspaces,
-        "max_members_per_workspace": plan.max_members_per_workspace,
-        "max_topics": plan.max_topics,
-        "max_knowledge_items": plan.max_knowledge_items,
-        "max_api_calls_per_month": plan.max_api_calls_per_month
-    }
-
-    # Add current_period_end as alias for renews_at (frontend compatibility)
-    if subscription.renews_at:
-        response_data["current_period_end"] = subscription.renews_at.isoformat() if hasattr(subscription.renews_at, 'isoformat') else subscription.renews_at
 
     # Add customer portal URL if subscription exists with payment provider
     portal_url = await service.get_customer_portal_url(
@@ -211,15 +192,20 @@ async def get_my_subscription(
             "workspaces": current_usage["workspaces"],
             "topics": current_usage["topics"],
             "knowledge_items": current_usage["knowledge_items"],
-            "api_calls": subscription.current_api_calls
+            "api_calls": response_data.get("current_api_calls", 0)
         }
 
     # Schedule expiring notification if renewal is near (within 3 days)
-    if subscription.renews_at:
-        from datetime import datetime, timezone, timedelta
+    if response_data.get("renews_at"):
+        from datetime import datetime, timezone
         
         # Ensure renews_at is timezone-aware for comparison
-        renews_at = subscription.renews_at
+        renews_at_str = response_data["renews_at"]
+        if isinstance(renews_at_str, str):
+            renews_at = datetime.fromisoformat(renews_at_str)
+        else:
+            renews_at = renews_at_str
+            
         if renews_at.tzinfo is None:
             renews_at = renews_at.replace(tzinfo=timezone.utc)
             
@@ -232,8 +218,9 @@ async def get_my_subscription(
                 background_tasks=background_tasks,
                 pref_flag="subscription_expiring",
                 message="Your subscription is about to expire.",
-                payload={"subscription_id": str(subscription.id), "renewal_date": subscription.renews_at.isoformat()},
+                payload={"subscription_id": response_data.get("id"), "renewal_date": response_data["renews_at"]},
             )
+            
     return success(
         data=response_data,
         request=request,

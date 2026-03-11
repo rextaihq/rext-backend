@@ -47,24 +47,8 @@ async def get_profile(
         user_id = current_user.get("identity")
         service = UserService(db)
 
-        # Get user via service
-        user = await service.get_user_by_id(user_id)
-
-        # Build profile response using schema
-        profile_data = ProfileResponse(
-            id=str(user.id),
-            email=user.email,
-            full_name=user.full_name,
-            display_name=user.display_name,
-            bio=user.bio,
-            language=user.language or "en",
-            timezone=user.timezone or "UTC",
-            status=user.status,
-            email_verified=user.email_verified,
-            avatar_url=user.avatar_url,
-            created_at=user.created_at.isoformat() if user.created_at else None,
-            updated_at=user.updated_at.isoformat() if user.updated_at else None
-        ).model_dump()
+        # Get cached user dictionary via service
+        profile_data = await service.get_cached_profile(user_id)
 
         return success(
             data={"profile": profile_data},
@@ -244,11 +228,16 @@ async def upload_avatar(
         except Exception as e:
             logger.warning(f"Could not delete old avatar: {str(e)}")
 
+    from src.api.cache.decorators import invalidate_cache_key
+
     # Update user via service
     updated_user = await service.update_profile(
         user_id=user_id,
         avatar_url=relative_path
     )
+    
+    # Invalidate cache
+    await invalidate_cache_key(f"user:profile:{user_id}")
 
     logger.info(f"Avatar updated for user {user_id}: {relative_path}")
 
@@ -303,11 +292,16 @@ async def delete_avatar(
             avatar_path.unlink()
     except Exception as e:
         logger.warning(f"Could not delete avatar file: {str(e)}")
+    from src.api.cache.decorators import invalidate_cache_key
+
     # Update user via service
     await service.update_profile(
         user_id=user_id,
         avatar_url=None
     )
+    
+    # Invalidate cache
+    await invalidate_cache_key(f"user:profile:{user_id}")
 
     logger.info(f"Avatar deleted for user {user_id}")
 
@@ -331,12 +325,12 @@ async def get_notification_preferences(
     """
     user_id = current_user.get("identity")
 
-    # Get or create preferences via service
+    # Get or create cached preferences via service
     service = NotificationPreferencesService(db)
-    preferences = await service.get_or_create(user_id)
+    preferences = await service.get_cached_preferences(user_id)
 
     return success(
-        data=preferences.to_dict(),
+        data=preferences,
         request=request,
         message="Notification preferences retrieved successfully"
     )
@@ -387,6 +381,9 @@ async def update_notification_preferences(
             logger.debug(f"Updated notification preference '{field}' for user {user_id}")
 
     await db.flush()
+
+    from src.api.cache.decorators import invalidate_cache_key
+    await invalidate_cache_key(f"user:preferences:{user_id}")
 
     # Schedule notification
     await schedule_if_allowed(

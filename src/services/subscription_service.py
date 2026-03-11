@@ -20,6 +20,8 @@ Does NOT:
 from typing import Dict, Any, Optional, List
 from uuid import UUID
 from datetime import datetime, timedelta,timezone
+print("Importing SubscriptionService dependencies...")
+
 
 from fastapi import BackgroundTasks
 from src.services.notification_helper import schedule_if_allowed
@@ -28,7 +30,7 @@ from sqlalchemy import select, func, and_
 from sqlalchemy.orm import selectinload
 
 from src.api.models.subscription_models.plans import SubscriptionPlan
-from src.api.cache.decorators import invalidate_cache
+from src.api.cache.decorators import cached, invalidate_cache
 from src.api.models.subscription_models.subscriptions import (
     UserSubscription,
     SubscriptionStatus,
@@ -55,7 +57,10 @@ from src.utils.logger import logger
 
 
 
+print("Dependencies imported. Defining SubscriptionService class...")
+
 class SubscriptionService:
+
     """Service for subscription business logic"""
 
     def __init__(self, db: AsyncSession):
@@ -135,6 +140,7 @@ class SubscriptionService:
 
         # Invalidate subscription tier cache
         await invalidate_cache(f"user:subscription_tier:{user_id}:*")
+        await invalidate_cache(f"user:subscription:{user_id}")
 
         logger.info(
             f"User {user_id} subscribed to plan: {plan.name} ({billing_period.value})",
@@ -465,6 +471,7 @@ class SubscriptionService:
 
         # Invalidate subscription tier cache
         await invalidate_cache(f"user:subscription_tier:{user_id}:*")
+        await invalidate_cache(f"user:subscription:{user_id}")
 
         action = "downgraded" if is_downgrade else "upgraded"
         logger.info(
@@ -635,6 +642,7 @@ class SubscriptionService:
 
         # Invalidate subscription tier cache
         await invalidate_cache(f"user:subscription_tier:{user_id}:*")
+        await invalidate_cache(f"user:subscription:{user_id}")
 
         logger.info(
             f"User {user_id} cancelled subscription (immediately={cancel_immediately})",
@@ -880,6 +888,42 @@ class SubscriptionService:
             ).limit(1)
         )
         return result.scalar_one_or_none()
+        
+    @cached(
+        key_prefix="user:subscription",
+        ttl=300,
+        key_builder=lambda self, user_id: str(user_id)
+    )
+    async def get_cached_subscription(self, user_id: UUID) -> Optional[Dict[str, Any]]:
+        """
+        Get cached active subscription for user.
+        Includes base plan details natively as a dictionary.
+        """
+        subscription = await self.get_subscription_by_user(user_id)
+        if not subscription:
+            return None
+            
+        # Get plan details
+        plan = await self.get_plan_by_id(subscription.plan_id)
+        
+        # Build response dictionary combining subscription and plan info
+        response_data = subscription.to_dict()
+        response_data["plan_name"] = plan.name
+        response_data["plan_display_name"] = plan.display_name
+        response_data["plan_features"] = plan.features
+        response_data["plan_limits"] = {
+            "max_workspaces": plan.max_workspaces,
+            "max_members_per_workspace": plan.max_members_per_workspace,
+            "max_topics": plan.max_topics,
+            "max_knowledge_items": plan.max_knowledge_items,
+            "max_api_calls_per_month": plan.max_api_calls_per_month
+        }
+        
+        # Add current_period_end as alias for renews_at (frontend compatibility)
+        if subscription.renews_at:
+            response_data["current_period_end"] = subscription.renews_at.isoformat() if hasattr(subscription.renews_at, 'isoformat') else subscription.renews_at
+            
+        return response_data
 
     async def get_plan_by_id(self, plan_id: UUID) -> SubscriptionPlan:
         """

@@ -16,6 +16,8 @@ Does NOT:
 from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from typing import Dict, Any
+from src.api.cache.decorators import cached
 from src.api.models.user_models.notification_preferences import NotificationPreferences
 from src.utils.logger import logger
 
@@ -62,3 +64,17 @@ class NotificationPreferencesService:
             logger.debug(f"Retrieved existing notification preferences for user {user_id}")
 
         return preferences
+
+    @cached(
+        key_prefix="user:preferences",
+        ttl=300,
+        key_builder=lambda self, user_id: str(user_id)
+    )
+    async def get_cached_preferences(self, user_id: UUID) -> Dict[str, Any]:
+        """
+        Get cached notification preferences as a dictionary.
+        Creates default preferences if they don't exist.
+        """
+        preferences = await self.get_or_create(user_id)
+        # Assuming to_dict() returns the serialized version matching the response schema
+        return preferences.to_dict()

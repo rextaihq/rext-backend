@@ -321,6 +321,11 @@ class WorkspaceService:
         await self.db.refresh(updated)
         return self._serialize_workspace(updated)
 
+    @cached(
+        key_prefix="user:workspaces",
+        ttl=300,
+        key_builder=lambda self, user_id: str(user_id)
+    )
     async def get_user_workspaces(self, user_id: UUID) -> List[Dict[str, Any]]:
         """
         Get all workspaces for a user with counts.
@@ -831,6 +836,9 @@ class WorkspaceService:
             "Workspace created",
             extra={"workspace_id": str(workspace.id), "user_id": str(user_id), "name": name},
         )
+        
+        from src.api.cache.decorators import invalidate_cache_key
+        await invalidate_cache_key(f"user:workspaces:{user_id}")
 
         return workspace
 
@@ -868,6 +876,9 @@ class WorkspaceService:
             "Added member to workspace",
             extra={"workspace_id": str(workspace_id), "user_id": str(user_id)},
         )
+
+        from src.api.cache.decorators import invalidate_cache_key
+        await invalidate_cache_key(f"user:workspaces:{user_id}")
 
         return member
 
@@ -916,6 +927,9 @@ class WorkspaceService:
             extra={"workspace_id": str(workspace_id)},
         )
 
+        from src.api.cache.decorators import invalidate_cache_key
+        await invalidate_cache_key(f"user:workspaces:{workspace.user_id}")
+
         return workspace
 
     async def delete_workspace(self, workspace_id: UUID, user_id: UUID) -> None:
@@ -949,6 +963,9 @@ class WorkspaceService:
             "Workspace soft deleted",
             extra={"workspace_id": str(workspace_id), "user_id": str(user_id)},
         )
+        
+        from src.api.cache.decorators import invalidate_cache_key
+        await invalidate_cache_key(f"user:workspaces:{user_id}")
 
     async def count_user_workspaces(self, user_id: UUID) -> int:
         """
