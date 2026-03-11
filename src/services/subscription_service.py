@@ -28,7 +28,6 @@ from src.services.notification_helper import schedule_if_allowed
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_
 from sqlalchemy.orm import selectinload
-
 from src.api.models.subscription_models.plans import SubscriptionPlan
 from src.api.cache.decorators import cached, invalidate_cache
 from src.api.models.subscription_models.subscriptions import (
@@ -53,8 +52,6 @@ from src.api.middleware.exceptions import (
 from src.providers.payment.provider_factory import get_payment_provider_singleton
 from src.services.audit_logger import audit_logger
 from src.api.lib.sentry_config import capture_payment_exception
-from src.utils.logger import logger
-
 
 
 print("Dependencies imported. Defining SubscriptionService class...")
@@ -412,7 +409,7 @@ class SubscriptionService:
                     provider_sub_id = current_subscription.lemonsqueezy_subscription_id or current_subscription.provider_subscription_id
 
                     # Update subscription with payment provider
-                    updated_provider_subscription = await self.payment_provider.update_subscription(
+                    await self.payment_provider.update_subscription(
                         subscription_id=provider_sub_id,
                         price_id=new_variant_id
                     )

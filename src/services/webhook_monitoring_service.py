@@ -8,9 +8,8 @@ Provides webhook event tracking and monitoring capabilities:
 - Get webhook statistics
 """
 from datetime import datetime, timezone, timedelta
-from typing import Dict, List, Optional, Any
+from typing import Dict, Optional, Any
 from copy import deepcopy
-import re
 from sqlalchemy import func, and_, or_, desc, Integer
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select

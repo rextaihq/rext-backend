@@ -22,7 +22,7 @@ import subprocess
 import os
 import shutil
 from dataclasses import dataclass
-from typing import Optional, Tuple,List
+from typing import Optional, List
 from pathlib import Path
 
 import filetype
@@ -236,7 +236,7 @@ class FileSecurityValidator:
             return ValidationResult(
                 is_valid=False,
                 error_message=f"File type '{detected_mime}' is not allowed. "
-                             f"Allowed types: {', '.join(self.allowed_mime_types)}",
+                            f"Allowed types: {', '.join(self.allowed_mime_types)}",
                 error_code="INVALID_MIME_TYPE"
             )
 
@@ -264,7 +264,7 @@ class FileSecurityValidator:
             return ValidationResult(
                 is_valid=False,
                 error_message=f"File size ({file_size_mb:.2f}MB) exceeds your tier limit ({max_size_mb}MB). "
-                             f"Upgrade to upload larger files.",
+                            f"Upgrade to upload larger files.",
                 error_code="FILE_TOO_LARGE",
                 file_size_mb=file_size_mb
             )
@@ -319,8 +319,8 @@ class FileSecurityValidator:
             return ValidationResult(
                 is_valid=False,
                 error_message=f"Storage quota exceeded. You're using {current_storage_mb:.2f}MB "
-                             f"of {max_storage_mb}MB. This file would put you at "
-                             f"{projected_storage_mb:.2f}MB. Upgrade for more storage.",
+                            f"of {max_storage_mb}MB. This file would put you at "
+                            f"{projected_storage_mb:.2f}MB. Upgrade for more storage.",
                 error_code="STORAGE_QUOTA_EXCEEDED",
                 current_storage_mb=current_storage_mb,
                 file_size_mb=new_file_size_mb

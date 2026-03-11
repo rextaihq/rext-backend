@@ -24,7 +24,6 @@ from asyncio import create_task
 
 from sqlalchemy import select, func, distinct, case
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.sql import expression
 from src.api.models.workspace_models.workspace_model import WorkspaceModel
 from src.api.models.workspace_models.workspace_member import WorkspaceMembers
 from src.api.models.knowledge_models.knowledge_model import (
@@ -1255,3 +1254,4 @@ class WorkspaceService:
 
             slug = f"{base_slug}-{counter}"
             counter += 1
+            

@@ -1,23 +1,23 @@
-name: PRODUCTION_CI_CD
+name: STAGE_CI_CD
 
 on:
   push:
     branches:
-      - main
+      - stage
+  workflow_dispatch:
 
-# Production: NEVER cancel in-progress deployments — queue instead
 concurrency:
-  group: production
-  cancel-in-progress: false
+  group: stage-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   # ──────────────────────────────────────────────
-  # 🔍 Stage 1 — Quality Gate (lint + security + FULL tests)
+  # 🔍 Stage 1 — Quality Gate (lint + security + tests)
   # ──────────────────────────────────────────────
   quality:
     uses: ./.github/workflows/ci-quality.yaml
     with:
-      run_integration: true
+      run_integration: false
 
   # ──────────────────────────────────────────────
   # 🐳 Stage 2 — Build & Push Docker Image to GHCR
@@ -56,18 +56,10 @@ jobs:
         run: pip install langgraph-cli
 
       - name: Build Docker image with LangGraph
-        run: langgraph build -t ghcr.io/${{ github.repository_owner }}/rext-backend:latest
+        run: langgraph build -t ghcr.io/${{ github.repository_owner }}/rext-backend:stage
 
-      - name: Tag with commit SHA for rollback
-        run: |
-          docker tag \
-            ghcr.io/${{ github.repository_owner }}/rext-backend:latest \
-            ghcr.io/${{ github.repository_owner }}/rext-backend:sha-${{ github.sha }}
-
-      - name: Push Docker images to GHCR
-        run: |
-          docker push ghcr.io/${{ github.repository_owner }}/rext-backend:latest
-          docker push ghcr.io/${{ github.repository_owner }}/rext-backend:sha-${{ github.sha }}
+      - name: Push Docker image to GHCR
+        run: docker push ghcr.io/${{ github.repository_owner }}/rext-backend:stage
 
       - name: Cleanup Docker (Post-build)
         if: always()
@@ -89,10 +81,10 @@ jobs:
           # Clean the API URL: remove trailing slashes and redundant /api/v1
           CLEAN_URL=$(echo "${{ secrets.COOLIFY_API_URL }}" | sed 's#/*$##; s#/api/v1$##')
           
-          echo "Triggering Coolify deployment for PRODUCTION..."
+          echo "Triggering Coolify deployment for STAGE..."
           response=$(curl -s -w "\n%{http_code}" --get \
             "$CLEAN_URL/api/v1/deploy" \
-            --data-urlencode "uuid=${{ secrets.COOLIFY_UUID_PROD }}" \
+            --data-urlencode "uuid=${{ secrets.COOLIFY_UUID_STAGE }}" \
             --data-urlencode "force=true" \
             -H "Authorization: Bearer ${{ secrets.COOLIFY_TOKEN }}")
 
@@ -118,35 +110,32 @@ jobs:
 
     steps:
       - name: Wait for container startup
-        run: sleep 60
+        run: sleep 45
 
       - name: Health check
         run: |
-          echo "Checking PRODUCTION server health..."
+          echo "Checking STAGE server health..."
           status=$(curl -s -o /dev/null -w "%{http_code}" \
-            "${{ vars.PROD_SERVER_URL }}/health" \
-            --max-time 20 --retry 5 --retry-delay 15)
+            "${{ vars.STAGE_SERVER_URL }}/health" \
+            --max-time 15 --retry 3 --retry-delay 10)
 
           if [ "$status" = "200" ]; then
             echo "✅ Health check passed (HTTP $status)"
           else
-            echo "::error::PRODUCTION health check FAILED with HTTP $status"
-            exit 1
+            echo "::warning::Health check returned HTTP $status"
           fi
 
       - name: Readiness check
         run: |
-          echo "Checking PRODUCTION server readiness..."
-          response=$(curl -s "${{ vars.PROD_SERVER_URL }}/health/ready" \
-            --max-time 20 --retry 5 --retry-delay 15)
+          echo "Checking STAGE server readiness..."
+          status=$(curl -s -o /dev/null -w "%{http_code}" \
+            "${{ vars.STAGE_SERVER_URL }}/health/ready" \
+            --max-time 15 --retry 3 --retry-delay 10)
 
-          status=$(echo "$response" | jq -r '.status // "unknown"' 2>/dev/null || echo "unknown")
-
-          if [ "$status" = "ready" ]; then
-            echo "✅ Readiness check passed — all dependencies healthy"
+          if [ "$status" = "200" ]; then
+            echo "✅ Readiness check passed (HTTP $status)"
           else
-            echo "::warning::Readiness check returned status: $status"
-            echo "Response: $response"
+            echo "::warning::Readiness check returned HTTP $status (database may be unavailable)"
           fi
 
   # ──────────────────────────────────────────────
@@ -161,9 +150,9 @@ jobs:
     steps:
       - name: Generate deployment summary
         run: |
-          echo "## 🚀 PRODUCTION Pipeline Summary" >> $GITHUB_STEP_SUMMARY
+          echo "## 🚀 STAGE Pipeline Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Branch:** \`main\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Branch:** \`stage\`" >> $GITHUB_STEP_SUMMARY
           echo "**Commit:** \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
           echo "**Triggered by:** ${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
@@ -174,11 +163,4 @@ jobs:
           echo "| 🚀 Coolify Deploy | \`${{ needs.deploy.result }}\` |" >> $GITHUB_STEP_SUMMARY
           echo "| ✅ Smoke Test | \`${{ needs.smoke_test.result }}\` |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Image:** \`ghcr.io/${{ github.repository_owner }}/wrext-backend:latest\`" >> $GITHUB_STEP_SUMMARY
-          echo "**Rollback tag:** \`ghcr.io/${{ github.repository_owner }}/wrext-backend:sha-${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
-
-      - name: Fail pipeline on critical failures
-        if: needs.quality.result == 'failure' || needs.docker_job.result == 'failure' || needs.deploy.result == 'failure'
-        run: |
-          echo "::error::Production pipeline had critical failures. Check the summary above."
-          exit 1
+          echo "**Image:** \`ghcr.io/${{ github.repository_owner }}/wrext-backend:stage\`" >> $GITHUB_STEP_SUMMARY

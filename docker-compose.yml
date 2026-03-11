@@ -36,9 +36,9 @@ services:
     postgres:
         image: pgvector/pgvector:pg17
         environment:
-            POSTGRES_USER: exec
+            POSTGRES_USER: ${POSTGRES_USER,exec}
             POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-rextserver}
-            POSTGRES_DB: rext
+            POSTGRES_DB: ${POSTGRES_DB,rext}
         volumes:
             - langgraph-data:/var/lib/postgresql/data
         command: >
@@ -60,7 +60,7 @@ services:
             -c max_parallel_maintenance_workers=2
             -c huge_pages=off
             -c jit=off
-            -c max_connections=100
+            -c max_connections=200
             -c statement_timeout=60000
             -c idle_in_transaction_session_timeout=300000
             -c log_min_duration_statement=1000
@@ -78,9 +78,11 @@ services:
 
     # Backend API Service
     rext-api:
-        image: revnixhq/wrext:${IMAGE_TAG:-latest}
+        image: ghcr.io/revnix/wrext-backend:${IMAGE_TAG:-latest}
+
         labels:
-            - "traefik.docker.network=d4wwgc0coow0888wogwc04gs"
+            - "traefik.enable=true"
+            - "traefik.docker.network=coolify"
         deploy:
             replicas: 1 # Set to 1 to avoid 'container name must be unique' error in Coolify
             resources:
@@ -91,10 +93,13 @@ services:
                     cpus: '0.5'
                     memory: 1.5G
         expose:
-            - "2024"
+            - ${PORT,2024}
 
         # Traefik labels are managed by Coolify — do not uncomment these manually
         # See Coolify dashboard > Applications > rext-backend for routing config
+        networks:
+            - rext-network
+            - coolify
         depends_on:
             postgres:
                 condition: service_healthy
@@ -200,6 +205,9 @@ services:
             LEMONSQUEEZY_API_KEY: ${LEMONSQUEEZY_API_KEY}
             LEMONSQUEEZY_SANDBOX_MODE: ${LEMONSQUEEZY_SANDBOX_MODE}
             LEMONSQUEEZY_STORE_ID: ${LEMONSQUEEZY_STORE_ID}
+            
+            # Encription
+            FIELD_ENCRYPTION_KEY: ${FIELD_ENCRYPTION_KEY}
 
 networks:
     rext-network:

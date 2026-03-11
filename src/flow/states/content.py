@@ -119,7 +119,8 @@ class FinalContent(TypedDict):
     title: str
     html_content: str
     body_markdown: str
-
+    introduction: str
+    
     meta_title: str
     meta_description: str
     tags: list[str]
@@ -127,6 +128,7 @@ class FinalContent(TypedDict):
     primary_keyword: Optional[str]
     secondary_keywords: Optional[list[str]]
     word_count: int
+    
     status: Literal["approved", "rejected", "draft"]
     rejected_reason: Optional[str]
 
