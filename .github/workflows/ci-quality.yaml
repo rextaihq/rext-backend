@@ -148,11 +148,11 @@ jobs:
       - name: Run tests
         run: |
           if [ "${{ inputs.run_integration }}" = "true" ]; then
-            echo "Running full test suite (unit + integration)..."
-            uv run pytest tests --tb=short -v
+            echo "Running full test suite (unit + integration) on src..."
+            uv run pytest src --tb=short -v
           else
-            echo "Running unit tests only..."
-            uv run pytest tests -m "not integration and not slow" --tb=short -v
+            echo "Running unit tests only on src..."
+            uv run pytest src -m "not integration and not slow" --tb=short -v
           fi
 
       - name: Upload coverage report
