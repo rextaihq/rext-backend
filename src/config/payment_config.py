@@ -22,17 +22,17 @@ class PaymentSettings(BaseSettings):
     payment_provider: PaymentProviderType = "lemonsqueezy"
 
     # Sandbox/test mode toggle
-    payment_sandbox_mode: bool = True
+    payment_sandbox_mode: bool = os.getenv("LEMONSQUEEZY_SANDBOX_MODE", "true").lower() == "true"
 
     # Generic settings
-    payment_currency: str = "USD"
-    payment_success_url: str = "http://localhost:3000/checkout/success"
-    payment_cancel_url: str = "http://localhost:3000/pricing"
+    payment_currency: str = os.getenv("PAYMENT_CURRENCY", "USD")
+    payment_success_url: str = os.getenv("PAYMENT_SUCCESS_URL", "http://localhost:3000/subscription/success")
+    payment_cancel_url: str = os.getenv("PAYMENT_CANCEL_URL", "http://localhost:3000/subscription/cancel")
 
     # LemonSqueezy configuration
-    lemonsqueezy_api_key: Optional[str] = None
-    lemonsqueezy_store_id: Optional[str] = None
-    lemonsqueezy_webhook_secret: Optional[str] = None
+    lemonsqueezy_api_key: Optional[str] = os.getenv("LEMONSQUEEZY_API_KEY")
+    lemonsqueezy_store_id: Optional[str] = os.getenv("LEMONSQUEEZY_STORE_ID")
+    lemonsqueezy_webhook_secret: Optional[str] = os.getenv("LEMONSQUEEZY_WEBHOOK_SECRET")
 
     # Webhook Security
     webhook_ip_validation_enabled: bool = True

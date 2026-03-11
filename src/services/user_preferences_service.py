@@ -14,13 +14,11 @@ Does NOT:
 - Commit transactions (that's decorators/routes)
 """
 
-from typing import Optional, Dict, Any
+from typing import Optional
 from uuid import UUID
 from datetime import datetime, timezone
-
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-
 from src.api.models.user_models.user_preferences import UserPreferences
 from src.utils.logger import logger
 

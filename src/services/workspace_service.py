@@ -24,7 +24,6 @@ from asyncio import create_task
 
 from sqlalchemy import select, func, distinct, case
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.sql import expression
 from src.api.models.workspace_models.workspace_model import WorkspaceModel
 from src.api.models.workspace_models.workspace_member import WorkspaceMembers
 from src.api.models.knowledge_models.knowledge_model import (
@@ -51,7 +50,7 @@ from src.utils.helper import web_page_scraper
 from src.utils.vector_store import add_to_vector_store, delete_vectors
 from src.api.cache.decorators import cached
 from src.utils.logger import logger
-from src.api.database.async_database import get_async_db
+from src.api.database.async_database import get_async_db, get_async_db_context
 from src.services.workspace_pipeline import run_workspace_pipeline
 from src.services.sse_service import event_stream_manager
 from langsmith import traceable, trace
@@ -149,7 +148,7 @@ class WorkspaceService:
                 name="Run Workspace Pipeline",
                 inputs={"operation_id": operation_id, "url": url},
             ):
-                async for bg_db in get_async_db():
+                async with get_async_db_context() as bg_db:
                     try:
                         await run_workspace_pipeline(
                             db=bg_db,
@@ -169,7 +168,6 @@ class WorkspaceService:
                             exc_info=True,
                         )
                         raise
-                    break
 
         task = create_task(run_pipeline())
         _background_tasks.add(task)
@@ -243,7 +241,7 @@ class WorkspaceService:
         await event_stream_manager.set_operation_owner(operation_id, user_id)
 
         async def run_pipeline() -> None:
-            async for bg_db in get_async_db():
+            async with get_async_db_context() as bg_db:
                 try:
                     await run_workspace_pipeline(
                         db=bg_db,
@@ -263,7 +261,6 @@ class WorkspaceService:
                         exc_info=True,
                     )
                     raise
-                break
 
         task = create_task(run_pipeline())
 
@@ -1241,3 +1238,4 @@ class WorkspaceService:
 
             slug = f"{base_slug}-{counter}"
             counter += 1
+            

@@ -6,100 +6,39 @@ on:
       - closed
     branches:
       - dev
+
+concurrency:
+  group: dev-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  build:
+  # ──────────────────────────────────────────────
+  # 🔍 Stage 1 — Quality Gate (lint + security + tests)
+  # ──────────────────────────────────────────────
+  quality:
     if: github.event.pull_request.merged == true
-    runs-on: ubuntu-latest
+    uses: ./.github/workflows/ci-quality.yaml
+    with:
+      run_integration: false
 
-    # ... (rest of the build job remains the same)
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
-        
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.11'
-      
-      - name: Install uv
-        run: pip install uv
-      
-      - name: Cache uv dependencies
-        uses: actions/cache@v3
-        with:
-          path: ~/.cache/uv
-          key: ${{ runner.os }}-uv-${{ hashFiles('**/uv.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-uv-
-
-      - name: Install dependencies
-        run: uv sync
-
-      - name: Cache pip packages
-        uses: actions/cache@v3
-        with:
-          path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ hashFiles('**/uv.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-pip-
-     
-      - name: Install system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            chromium-browser \
-            libnss3 \
-            libfreetype6 \
-            libharfbuzz0b \
-            ca-certificates \
-            bash \
-            libstdc++6 \
-            && sudo apt-get clean
-
-      - name: Install uv and Python dependencies
-        run: pip install uv && uv pip install --system --no-cache-dir playwright crawl4ai
-
-      - name: Install Playwright browser
-        run: playwright install chromium
-
-      - name: Setup Crawl4AI
-        run: |
-          crawl4ai-setup
-          crawl4ai-doctor
-
-  docker_job:
-    needs: build
+  # ──────────────────────────────────────────────
+  # 📢 Stage 5 — Notification Summary
+  # ──────────────────────────────────────────────
+  notify:
+    name: 📢 Summary
+    needs: [quality]
+    if: always()
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Log into Docker Hub
-        uses: docker/login-action@v2
-        with:
-          username: ${{ secrets.DOCKER_USERNAME }}
-          password: ${{ secrets.DOCKER_PASSWORD }}
-
-      - name: Install LangGraph CLI
-        run: pip install langgraph-cli
-          
-      - name: Cleanup Docker (Pre-build)
+      - name: Generate deployment summary
         run: |
-          docker system prune -af --volumes
-          df -h
-
-      - name: Build Docker image with LangGraph
-        run: langgraph build -t  ${{ secrets.DOCKER_USERNAME }}/wrext:dev
-
-      - name: Push Docker image
-        run: docker push ${{ secrets.DOCKER_USERNAME }}/wrext:dev
-
-      - name: Cleanup Docker (Post-build)
-        if: always()
-        run: |
-          docker system prune -f
-          df -h
+          echo "## 🚀 DEV Pipeline Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Branch:** \`${{ github.head_ref }}\` → \`dev\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Commit:** \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Triggered by:** ${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Stage | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|---|---|" >> $GITHUB_STEP_SUMMARY
+          echo "| 🔍 Quality Gate | \`${{ needs.quality.result }}\` |" >> $GITHUB_STEP_SUMMARY

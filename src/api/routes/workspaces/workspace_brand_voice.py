@@ -11,6 +11,12 @@ from src.services.workspace_service import WorkspaceService
 from src.utils.response_utils import success
 from src.utils.route_decorators import db_transaction_handler, require_permissions
 from src.utils.workspace_utils import resolve_workspace_for_route
+from src.api.schema.response_schemas import SuccessResponse
+from src.api.schema.response.workspace_responses import (
+    BrandVoiceWrapperResponse,
+    BrandVoiceStateResponse,
+    BrandVoiceRefreshResponse,
+)
 
 router = APIRouter(tags=["workspace-brand-voice"])
 
@@ -54,7 +60,7 @@ async def _update_brand_voice(
     return {"brand_voice": _serialize_brand_voice(brand_voice)}
 
 
-@router.put("/{workspace_id}/brand-voice")
+@router.put("/{workspace_id}/brand-voice", response_model=SuccessResponse[BrandVoiceWrapperResponse])
 @db_transaction_handler("update brand voice", "Brand voice updated successfully")
 @require_permissions("workspace.update", workspace_scoped=True)
 async def update_brand_voice_restful(
@@ -65,15 +71,16 @@ async def update_brand_voice_restful(
     user: dict = Depends(get_current_user),
 ):
     """RESTful endpoint: Update brand voice via path parameter workspace_id."""
-    return await _update_brand_voice(
+    data = await _update_brand_voice(
         db=db,
         brand_data=brand_data,
         workspace_identifier=workspace_id,
         user=user,
     )
+    return success(data=data, message="Brand voice updated successfully")
 
 
-@router.get("/{workspace_id}/brand-voice")
+@router.get("/{workspace_id}/brand-voice", response_model=SuccessResponse[BrandVoiceWrapperResponse])
 @db_transaction_handler("get brand voice", "Brand voice retrieved successfully")
 @require_permissions("workspace.read", workspace_scoped=True)
 async def get_brand_voice(
@@ -106,7 +113,7 @@ async def get_brand_voice(
     )
 
 
-@router.delete("/{workspace_id}/brand-voice")
+@router.delete("/{workspace_id}/brand-voice", response_model=SuccessResponse[BrandVoiceStateResponse])
 @db_transaction_handler("delete brand voice", "Brand voice deleted successfully")
 @require_permissions("workspace.update", workspace_scoped=True)
 async def delete_brand_voice(
@@ -139,7 +146,7 @@ async def delete_brand_voice(
     )
 
 
-@router.post("/{workspace_id}/brand-voice/refresh")
+@router.post("/{workspace_id}/brand-voice/refresh", response_model=SuccessResponse[BrandVoiceRefreshResponse])
 @db_transaction_handler("refresh brand voice", "Brand voice refresh initiated", auto_commit=True)
 @require_permissions("workspace.update", workspace_scoped=True)
 async def refresh_brand_voice(

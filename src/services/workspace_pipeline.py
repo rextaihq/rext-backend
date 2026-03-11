@@ -5,7 +5,6 @@ from dataclasses import dataclass
 from typing import Any, Awaitable, Callable, Dict, List, Optional, Sequence, Tuple
 from uuid import UUID
 
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import delete, select
 
@@ -504,37 +503,26 @@ IMPORTANT INSTRUCTIONS FOR BRAND INFORMATION:
 - Extract 'content_pillar': The main themes or categories they create content about (e.g., sustainability, tech tips, lifestyle).
 
 IMPORTANT INSTRUCTIONS FOR PERSONAS:
-- Extract AUTHOR/EXPERT personas (real people who create content, run the business, or are mentioned as experts)
-- DO NOT extract customer/user personas or target audience segments
-- Look for:
-  * Blog authors and their names
-  * Company founders or leadership team members
-  * Experts, consultants, or professionals mentioned on the site
-  * Team members with "About" or "Team" pages
-  * People with professional credentials or expertise
-  
-EXAMPLES OF CORRECT PERSONAS:
-✓ "Dr. Sarah Mitchell" - Board-Certified Dermatologist
-✓ "Mobheen Abdullah" - Founder & CEO
-✓ "John Smith" - Senior Software Engineer & Tech Blogger
+- ONLY extract REAL INDIVIDUALS mentioned on the website (Authors, Founders, Team Members, or Experts).
+- DO NOT generate hypothetical or dummy "User" or "Customer" personas.
+- DO NOT create audience segments as personas.
 
-EXAMPLES OF INCORRECT PERSONAS (DO NOT EXTRACT):
-✗ "Eco-Conscious Shopper" - this is a customer, not an author
-✗ "Tech-Savvy Professional" - this is a target audience, not a real person
-✗ "Busy Executive" - this is a user persona, not an expert/author
+Look for:
+- People with names (e.g., founders, leadership team, blog authors).
+- Professionals with specific roles or credentials described on the site.
 
-For personas, fill in:
-- name: The person's actual name (e.g., "Mobheen Abdullah")
-- full_name: Their complete professional name
-- professional_title: Their job title or credentials
-- areas_of_expertise: What they specialize in
-- tone_of_voice: How they communicate
-- bio: Their professional background
-- linkedin_url: If available on the website
+For each PERSONA extracted, provide:
+- name: The person's actual name (e.g., "Mobheen Abdullah").
+- full_name: Their complete professional name.
+- professional_title: Job title or credentials found on the site.
+- areas_of_expertise: What they specialize in based on the content.
+- tone_of_voice: Their unique writing or communication style.
+- bio: A professional background summary extracted from the text.
+- linkedin_url: Their social link if provided.
 
-If no real people/authors are found on the website, return an empty personas list.
+If no specific real individuals are found, return an empty personas list.
 
-Now analyze the following website content and extract brand information:"""
+Now analyze the following website content and extract brand information and real professional personas (NO DUMMY PERSONAS):"""
             
             messages = [
                 SystemMessage(content=system_prompt),

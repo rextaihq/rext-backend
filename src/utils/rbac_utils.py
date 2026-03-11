@@ -255,7 +255,17 @@ async def get_user_permissions(
 
     result = await db.execute(query)
     permissions = result.scalars().all()
+    
+    # Global Permission Bridge: Ensure both dot and colon notation are supported.
+    # Backend uses 'resource.action', FE sometimes uses 'resource:action'.
+    # We return the union of both to prevent desync issues.
     permissions_list = list(permissions)
+    colon_perms = [p.replace('.', ':') for p in permissions_list if '.' in p]
+    if colon_perms:
+        permissions_list.extend(colon_perms)
+    
+    # Ensure uniqueness and sort for stability
+    permissions_list = sorted(list(set(permissions_list)))
 
     # WORKSPACE OWNER FALLBACK:
     # If a user is the primary owner of the workspace record, they must ALWAYS 

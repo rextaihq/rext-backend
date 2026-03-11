@@ -267,16 +267,20 @@ class ContentService:
         self,
         content: Content,
         workspace_id: UUID,
+        site_id: Optional[UUID] = None,
         publish_status: str = "publish"
     ) -> List[PublishResponse]:
         """
-        Publish content to all active WordPress sites in the workspace.
+        Publish content to active WordPress site(s) in the workspace.
         """
-        # Fetch all active sites
+        # Fetch active sites (optionally filtered by site_id)
         sites_query = select(WorkspaceIntegration).where(
             WorkspaceIntegration.workspace_id == workspace_id,
             WorkspaceIntegration.is_active.is_(True)
         )
+        if site_id:
+            sites_query = sites_query.where(WorkspaceIntegration.id == site_id)
+
         sites_result = await self.db.execute(sites_query)
         sites = sites_result.scalars().all()
 

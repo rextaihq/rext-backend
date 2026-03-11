@@ -35,7 +35,6 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.lib.logger import auto_logger
-from src.api.lib.log_policy import get_event_level, log_with_level
 from src.utils.response_utils import success, error
 from src.api.schema.response_schemas import ErrorCode, ErrorSeverity
 from src.api.middleware.exceptions import RextAPIException
@@ -397,7 +396,7 @@ def require_permissions(
             # Tests must use dependency overrides or monkeypatching, not production bypass branches.
             check_func = check_all_permissions if require_all else check_any_permission
             try:
-                has_permission = await check_func(db, user_id, list(permissions), workspace_uuid)
+                await check_func(db, user_id, list(permissions), workspace_uuid)
             except Exception as exc:
                 logger.error(
                     "Permission evaluation failed; denying request",

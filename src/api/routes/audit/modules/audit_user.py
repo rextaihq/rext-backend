@@ -6,6 +6,8 @@ from typing import Optional
 from src.api.database.async_database import get_async_db
 from src.api.security.dependencies import get_current_user
 from src.api.models.audit_models.audit_logs import AuditLog
+from src.api.schema.response_schemas import SuccessResponse
+from src.api.schema.response.audit_responses import AuditLogListResponse
 from src.utils.response_utils import success
 from src.api.middleware.exceptions import RextValidationException
 from src.utils.logger import logger
@@ -16,7 +18,7 @@ from .helpers import build_audit_query, format_audit_log
 router = APIRouter()
 
 
-@router.get("/user/my-logs", response_model=dict)
+@router.get("/user/my-logs", response_model=SuccessResponse[AuditLogListResponse])
 @require_permissions("audit.read", workspace_scoped=False)
 @db_transaction_handler("get user audit logs", "User audit logs retrieved successfully", auto_commit=False)
 async def get_my_audit_logs(
@@ -70,10 +72,14 @@ async def get_my_audit_logs(
     # Format response (no sensitive details for users)
     logs_data = [format_audit_log(log, include_details=False) for log in logs]
 
-    return {
-        "items": logs_data,
-        "total": total_count,
-        "limit": limit,
-        "offset": offset,
-        "has_more": (offset + limit) < total_count
-    }
+    return success(
+        data={
+            "items": logs_data,
+            "total": total_count,
+            "limit": limit,
+            "offset": offset,
+            "has_more": (offset + limit) < total_count
+        },
+        request=request,
+        message="User audit logs retrieved successfully"
+    )

@@ -1,40 +1,7 @@
 from __future__ import annotations
 
-from typing_extensions import Any, Literal, Optional, TypedDict
-
-
-# 1. Search Intent Analysis
-
-class SearchIntentState(TypedDict):
-    primary_intent: Literal[
-        "informational",
-        "commercial",
-        "transactional",
-        "navigational"
-    ]
-    secondary_intents: list[str]
-    confidence: float
-    intent_signals: dict[str, int]  # keyword → frequency
-
-
-# 2. Keyword Difficulty (Unified)
-
-class KDBreakdown(TypedDict, total=False):
-    link_score: float
-    serp_score: float
-    content_score: float
-    context_modifier: float
-    # Extended signals for Opportunity calculation
-    brand_dominance: float
-    freshness_pressure: float
-
-
-class KeywordDifficultyState(TypedDict):
-    keyword: str
-    difficulty_score: float
-    difficulty_level: Literal["easy", "medium", "hard", "very_hard"]
-    breakdown: KDBreakdown
-    notes: list[str]
+from typing_extensions import Annotated, Any, Literal, Optional, TypedDict
+from src.flow.states.reducers.custom_reducer import merge_dicts
 
 
 # 3. Content Pattern Analysis
@@ -63,7 +30,6 @@ class ContentGapState(TypedDict):
 
 
 # 5. Authority & Trust Signals
-
 class AuthorityState(TypedDict):
     avg_domain_strength: float
     dominant_domains: list[str]
@@ -73,35 +39,12 @@ class AuthorityState(TypedDict):
 
 
 # 6. SERP Feature Impact
-
 class SERPFeatureImpactState(TypedDict):
     features_present: list[str]
     ctr_loss_estimate: float
     blocking_features: list[str]
     opportunity_features: list[str]
 
-
-class ExtractedKeyword(TypedDict):
-    """Individual extracted keyword with TF-IDF scoring."""
-    keyword: str
-    score: float
-    raw_tfidf: float
-    rank: int
-    word_count: int
-    in_query: bool
-    in_topics: bool
-
-
-class ExtractedKeywordsState(TypedDict):
-    """Collection of extracted keywords categorized by type."""
-    all: list[ExtractedKeyword]
-    total_count: int
-    query: str
-    extraction_method: str
-    sources: dict[str, int]
-
-
-# 8. Final SEO Engine Result State
 
 #  Title Recommendation State
 class TitleRecommendation(TypedDict):
@@ -117,10 +60,8 @@ class TitleRecommendation(TypedDict):
 class KeywordRecommendationState(TypedDict):
     """Keyword recommendation result state."""
     original_title: str
-    recommendations: list[TitleRecommendation]
-    patterns_found: dict[str, Any]
-    top_keywords_used: list[str]
-    total_competitors_analyzed: int
+    selected_keyword: str
+    recommendations: list[str]
     is_changed: bool
     error: Optional[str]
 
@@ -131,27 +72,26 @@ class SEOOpportunityState(TypedDict):
     key_drivers: dict[str, Any]
 
 
-class SEOStrategyState(TypedDict):
-    target_intent: str
-    recommended_content_type: str
-    ideal_word_count: int
-    priority_topics: list[str]
-    questions_to_answer: list[str]
-    difficulty: str
-    ranking_time_estimate: str
-    content_angle: str
+class SERPBacklinks(TypedDict):
+    keyword: str
+    search_volume: int
+    keyword_difficulty: int
+    backlinks: int
+    referring_domains: int
+    dofollow_links: int
+    images: bool
+    videos: bool
+    discussions_and_forums:bool
+    main_intent: str
+    foreign_intent: str
+
 
 
 class SEORESULT(TypedDict, total=False):
     """SEO analysis result - fields are optional as they may be populated by different nodes."""
-    extracted_keywords: ExtractedKeywordsState
-    keyword_difficulty: KeywordDifficultyState
+    serp_backlinks: Annotated[SERPBacklinks, merge_dicts]
     keyword_recommendations: KeywordRecommendationState
-    intent: SearchIntentState
-    content_pattern: ContentPatternState
     content_gaps: ContentGapState
-    authority: AuthorityState
     serp_features: SERPFeatureImpactState
-    seo_strategy: SEOStrategyState
     seo_opportunity: SEOOpportunityState 
-    keyword_iteration_count: int  # Tracks keyword router loop iterations
+    keyword_iteration_count: int
