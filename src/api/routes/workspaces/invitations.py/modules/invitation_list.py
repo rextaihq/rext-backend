@@ -11,7 +11,8 @@ from src.utils.route_decorators import db_transaction_handler, require_permissio
 from src.api.database.async_database import get_async_db
 from src.api.security.dependencies import get_current_user
 from src.api.middleware.exceptions import ResourceNotFoundException, RextAPIException
-from src.api.schema.response_schemas import ErrorCode, ErrorSeverity
+from src.api.schema.response_schemas import ErrorCode, ErrorSeverity, SuccessResponse
+from src.api.schema.response.invitation_responses import InvitationListResponse
 from src.api.models.user_models.users import Users
 from src.api.models.user_models.invitations import UserInvitations
 from src.services.invitation_service import InvitationService
@@ -22,7 +23,7 @@ from src.api.services.notification_helper import schedule_if_allowed
 router = APIRouter()
 
 
-@router.get("/sent")
+@router.get("/sent", response_model=SuccessResponse[InvitationListResponse])
 @require_permissions("member.read", workspace_scoped=True)
 @db_transaction_handler("list sent invitations", auto_commit=False)
 async def list_sent_invitations(
@@ -58,16 +59,16 @@ async def list_sent_invitations(
             invitations_data.append(details)
 
    
-    return {
-        "data": {
+    return success(
+        data={
             "invitations": invitations_data,
             "total_count": len(invitations_data),
             "status_filter": status_filter
         },
-        "message": f"Retrieved {len(invitations_data)} sent invitation(s)"
-    }
+        message=f"Retrieved {len(invitations_data)} sent invitation(s)"
+    )
 
-@router.get("/received")
+@router.get("/received", response_model=SuccessResponse[InvitationListResponse])
 @require_permissions("member.read")
 @db_transaction_handler("list received invitations", auto_commit=True)
 async def list_received_invitations(
@@ -151,10 +152,10 @@ async def list_received_invitations(
     # ------------------------------------------------------------------
     # 6️⃣ Return the API response
     # ------------------------------------------------------------------
-    return {
-        "data": {
+    return success(
+        data={
             "invitations": invitations_data,
             "total_count": len(invitations_data),
         },
-        "message": f"Retrieved {len(invitations_data)} pending invitation(s)",
-    }
+        message=f"Retrieved {len(invitations_data)} pending invitation(s)"
+    )

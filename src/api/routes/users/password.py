@@ -11,8 +11,12 @@ from src.api.config import get_settings
 from src.api.schema.user_schema import (
     VerifyPasswordRequest
 )
-from src.utils.response_utils import success, error
-from src.api.schema.response_schemas import ErrorCode, ErrorSeverity
+from src.api.schema.response_schemas import SuccessResponse, GenericResponse
+from src.api.schema.response.password_responses import (
+    ResetPasswordResponse,
+    ChangePasswordResponse,
+    VerifyPasswordResponse
+)
 from src.api.security.token_utils import create_reset_token, decode_and_verify_token
 from src.api.database.async_database import get_async_db
 from src.api.middleware.exceptions import (
@@ -21,6 +25,8 @@ from src.api.middleware.exceptions import (
     RextAuthenticationException
 )
 from src.services.user_service import UserService
+from src.utils.response_utils import success, error
+from src.api.schema.response_schemas import ErrorCode, ErrorSeverity
 from src.api.middleware.rate_limiter import password_reset_rate_limit
 from src.api.schema.user_schema import ForgotPasswordRequest, ResetPassword,ChangePasswordRequest
 
@@ -66,7 +72,7 @@ async def send_password_reset_email_task(
         logger.error(f"Failed to send password reset email to {email}: {str(e)}", exc_info=True)
 
 
-@router.post("/forgot-password")
+@router.post("/forgot-password", response_model=SuccessResponse[GenericResponse])
 @db_transaction_handler("forgot password", auto_commit=True)
 async def forgot_password(
     request: Request,
@@ -118,14 +124,18 @@ async def forgot_password(
         logger.info(f"Password reset initiated for user: {user.id}")
 
     # Always return the same generic message
-    return {
-        "message": generic_message
-    }
+    return success(
+        data={
+            "message": generic_message
+        },
+        request=request,
+        message=generic_message
+    )
 
     
 
 
-@router.post("/reset-password")
+@router.post("/reset-password", response_model=SuccessResponse[ResetPasswordResponse])
 @db_transaction_handler("reset password", auto_commit=True)
 async def reset_password(
     payload: ResetPassword,
@@ -184,7 +194,7 @@ async def reset_password(
     )
 
 
-@router.post("/change-password")
+@router.post("/change-password", response_model=SuccessResponse[ChangePasswordResponse])
 @require_permissions("user.update", workspace_scoped=False)
 @db_transaction_handler("change password", auto_commit=True)
 async def change_password(
@@ -266,7 +276,7 @@ async def change_password(
 # -------------------------
 # Verify Password
 # -------------------------
-@router.post("/verify-password")
+@router.post("/verify-password", response_model=SuccessResponse[VerifyPasswordResponse])
 @require_permissions("user.read", workspace_scoped=False)
 @db_transaction_handler("verify password", auto_commit=False)
 async def verify_password(

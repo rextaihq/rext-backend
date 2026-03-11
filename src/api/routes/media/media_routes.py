@@ -18,6 +18,16 @@ from src.config.storage_config import storage_settings
 from src.utils.response_utils import success, created, error
 from src.utils.route_decorators import db_transaction_handler, require_permissions
 from src.api.middleware.rate_limiter import media_upload_rate_limit
+from src.api.schema.response_schemas import SuccessResponse
+from src.api.schema.response.media_responses import (
+    MediaUploadData,
+    MediaListData,
+    MediaItemSchema,
+    DeleteMediaData,
+    BulkDeleteMediaData,
+    StorageUsageData,
+    MediaUsageData,
+)
 from src.utils.logger import logger
 
 # File: src/api/routes/media/media_routes.py
@@ -134,7 +144,7 @@ def get_media_service(db: AsyncSession) -> MediaService:
     return MediaService(db, storage_service, image_service)
 
 
-@router.post("/upload", response_model=dict, status_code=status.HTTP_201_CREATED)
+@router.post("/upload", response_model=SuccessResponse[MediaUploadData], status_code=status.HTTP_201_CREATED)
 @db_transaction_handler("upload media")
 @require_permissions("media.create")
 async def upload_media(
@@ -236,7 +246,7 @@ async def upload_media(
         )
 
 
-@router.get("", response_model=dict)
+@router.get("", response_model=SuccessResponse[MediaListData])
 @db_transaction_handler("list media")
 @require_permissions("media.read")
 async def list_media(
@@ -317,7 +327,7 @@ async def list_media(
     )
 
 
-@router.post("/bulk-delete", response_model=dict)
+@router.post("/bulk-delete", response_model=SuccessResponse[BulkDeleteMediaData])
 @db_transaction_handler("bulk delete media")
 @require_permissions("media.delete")
 async def bulk_delete_media(
@@ -363,7 +373,7 @@ async def bulk_delete_media(
     )
 
 
-@router.get("/usage/stats", response_model=dict)
+@router.get("/usage/stats", response_model=SuccessResponse[StorageUsageData])
 @db_transaction_handler("get storage usage")
 @require_permissions("media.read")
 async def get_storage_usage(
@@ -391,7 +401,7 @@ async def get_storage_usage(
 
 
 
-@router.get("/{media_id}", response_model=dict)
+@router.get("/{media_id}", response_model=SuccessResponse[MediaItemSchema])
 @db_transaction_handler("get media")
 @require_permissions("media.read")
 async def get_media_detail(
@@ -429,7 +439,7 @@ async def get_media_detail(
     )
 
 
-@router.patch("/{media_id}", response_model=dict)
+@router.patch("/{media_id}", response_model=SuccessResponse[MediaItemSchema])
 @db_transaction_handler("update media")
 @require_permissions("media.update")
 async def update_media_metadata(
@@ -493,7 +503,7 @@ async def update_media_metadata(
     )
 
 
-@router.delete("/{media_id}", response_model=dict)
+@router.delete("/{media_id}", response_model=SuccessResponse[DeleteMediaData])
 @db_transaction_handler("delete media")
 @require_permissions("media.delete")
 async def delete_media(
@@ -542,7 +552,7 @@ async def delete_media(
 
 
 
-@router.get("/{media_id}/usage", response_model=dict)
+@router.get("/{media_id}/usage", response_model=SuccessResponse[MediaUsageData])
 @db_transaction_handler("get media usage")
 @require_permissions("media.read")
 async def get_media_usage_info(

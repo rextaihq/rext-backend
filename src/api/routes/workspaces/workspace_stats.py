@@ -20,10 +20,14 @@ from src.utils.route_decorators import db_transaction_handler, require_permissio
 from src.utils.auth_utils import verify_current_user
 from src.services.workspace_service import WorkspaceService
 
+from src.api.schema.response_schemas import SuccessResponse
+from src.api.schema.response.workspace_responses import WorkspaceStatsResponse
+from src.utils.response_utils import success
+
 router = APIRouter()
 
 
-@router.get("/{workspace_id}/stats")
+@router.get("/{workspace_id}/stats", response_model=SuccessResponse[WorkspaceStatsResponse])
 @require_permissions("workspace.read", workspace_scoped=True)
 @db_transaction_handler("get workspace stats", success_message="Workspace statistics retrieved successfully", auto_commit=False)
 async def get_workspace_stats(
@@ -85,4 +89,4 @@ async def get_workspace_stats(
         "has_content_builder": has_content_builder,
     }
 
-    return stats
+    return success(data=stats, message="Workspace statistics retrieved successfully")
