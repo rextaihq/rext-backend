@@ -19,7 +19,7 @@ from src.api.models.admin_models.error_log import ErrorLogSeverity
 from src.api.security.dependencies import get_current_user
 from src.services.monitoring_service import MonitoringService
 from src.utils.route_decorators import db_transaction_handler, require_permissions
-from src.api.cache.decorators import cached
+from src.api.cache.decorators import cached, invalidate_cache
 
 
 router = APIRouter(prefix="/monitoring", tags=["Admin - Monitoring"])
@@ -136,6 +136,10 @@ async def resolve_error_log(
         log_id=log_id,
         admin_user_id=UUID(admin_user_id)
     )
+
+    # Invalidate error logs cache
+    await invalidate_cache("admin:monitoring:errors:*")
+    await invalidate_cache("admin:monitoring:health:*")
 
     return log_data
 

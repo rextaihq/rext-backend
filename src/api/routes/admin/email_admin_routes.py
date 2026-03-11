@@ -17,6 +17,7 @@ from src.services.email_service import EmailService
 from src.api.lib.logger import auto_logger
 from src.utils.response_utils import success, error
 from src.utils.route_decorators import require_permissions
+from src.api.cache.decorators import cached, invalidate_cache
 
 logger = auto_logger()
 router = APIRouter(prefix="/api/v1/admin/emails", tags=["Admin - Emails"])
@@ -28,6 +29,7 @@ router = APIRouter(prefix="/api/v1/admin/emails", tags=["Admin - Emails"])
 
 @router.get("/failed")
 @require_permissions("audit.admin", workspace_scoped=False)
+@cached(key_prefix="admin:email:failed_list", ttl=300)
 async def get_failed_emails(
     db: AsyncSession = Depends(get_async_db),
     limit: int = Query(default=50, le=200),
@@ -155,6 +157,9 @@ async def resend_single_email(
             retry_on_failure=True,
             auto_commit=True
         )
+        
+        # Invalidate failed emails list cache
+        await invalidate_cache("admin:email:failed_list:*")
 
         return success(
             data={
@@ -254,6 +259,10 @@ async def resend_batch_emails(
 
         # Commit all successful resends
         await db.commit()
+
+        # Invalidate failed emails list cache if any were successful
+        if results["successful"]:
+            await invalidate_cache("admin:email:failed_list:*")
 
         logger.info(
             f"Batch resend completed: {len(results['successful'])} successful, {len(results['failed'])} failed",

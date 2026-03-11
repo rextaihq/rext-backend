@@ -23,6 +23,7 @@ from src.utils.logger import logger
 from src.utils.rbac_utils import check_all_permissions
 from src.utils.response_utils import success
 from src.utils.route_decorators import db_transaction_handler, require_permissions
+from src.api.cache.decorators import cached
 
 router = APIRouter(prefix="/invitations", tags=["admin-analytics"])
 
@@ -30,6 +31,7 @@ router = APIRouter(prefix="/invitations", tags=["admin-analytics"])
 @router.get("/analytics", summary="Get invitation analytics")
 @db_transaction_handler("get invitation analytics", auto_commit=False)
 @require_permissions("audit.read", workspace_scoped=False)
+@cached(key_prefix="admin:invitations:analytics", ttl=1800)
 async def get_invitation_analytics(
     request: Request,
     workspace_id: Optional[str] = Query(

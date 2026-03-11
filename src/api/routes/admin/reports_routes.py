@@ -21,6 +21,7 @@ from src.api.security.dependencies import get_current_user
 from src.services.subscription_analytics_service import SubscriptionAnalyticsService
 from src.utils.route_decorators import db_transaction_handler, require_permissions
 from src.api.routes.subscriptions.admin.shared.auth import require_super_admin
+from src.api.cache.decorators import cached
 
 
 
@@ -35,6 +36,7 @@ router = APIRouter(prefix="/reports", tags=["Admin - Reports"])
 @router.get("/revenue", response_model=dict)
 @require_permissions("audit.admin", workspace_scoped=False)
 @db_transaction_handler("get revenue report", auto_commit=False)
+@cached(key_prefix="admin:reports:revenue", ttl=3600)
 async def get_revenue_report(
     request: Request,
     start_date: Optional[datetime] = Query(None, description="Start date (ISO format)"),
@@ -230,6 +232,7 @@ async def export_revenue_report(
 @router.get("/revenue/summary", response_model=dict)
 @require_permissions("audit.admin", workspace_scoped=False)
 @db_transaction_handler("get revenue summary", auto_commit=False)
+@cached(key_prefix="admin:reports:revenue_summary", ttl=1800)
 async def get_revenue_summary(
     request: Request,
     db: AsyncSession = Depends(get_async_db),

@@ -16,6 +16,7 @@ from src.api.database.async_database import get_async_db
 from src.api.security.dependencies import get_current_user
 from src.services.webhook_monitoring_service import WebhookMonitoringService
 from src.utils.route_decorators import db_transaction_handler, require_permissions
+from src.api.cache.decorators import cached, invalidate_cache
 
 
 router = APIRouter()
@@ -28,7 +29,7 @@ router = APIRouter()
 @router.get("/webhooks/events", response_model=dict)
 @require_permissions("audit.webhooks", workspace_scoped=False)
 @db_transaction_handler("get webhook events", auto_commit=False)
-@require_permissions("audit.webhooks", workspace_scoped=False)
+@cached(key_prefix="admin:webhooks:events", ttl=300)
 async def get_webhook_events(
     request: Request,
     limit: int = Query(50, ge=1, le=100, description="Maximum events to return"),
@@ -74,7 +75,7 @@ async def get_webhook_events(
 @router.get("/webhooks/failed", response_model=dict)
 @require_permissions("audit.webhooks", workspace_scoped=False)
 @db_transaction_handler("get failed webhooks", auto_commit=False)
-@require_permissions("audit.webhooks", workspace_scoped=False)
+@cached(key_prefix="admin:webhooks:failed", ttl=300)
 async def get_failed_webhooks(
     request: Request,
     limit: int = Query(50, ge=1, le=100, description="Maximum events to return"),
@@ -143,13 +144,19 @@ async def retry_webhook(
     result = await service.retry_webhook(webhook_id)
     if not result.get("success"):
         raise HTTPException(status_code=400, detail=result.get("message", "Retry failed"))
+        
+    # Invalidate webhook caches
+    await invalidate_cache("admin:webhooks:failed:*")
+    await invalidate_cache("admin:webhooks:events:*")
+    await invalidate_cache("admin:webhooks:stats:*")
+    
     return {"event": result.get("event")}
 
 
 @router.get("/webhooks/statistics", response_model=dict)
 @require_permissions("audit.webhooks", workspace_scoped=False)
 @db_transaction_handler("get webhook statistics", auto_commit=False)
-@require_permissions("audit.webhooks", workspace_scoped=False)
+@cached(key_prefix="admin:webhooks:stats", ttl=300)
 async def get_webhook_statistics(
     request: Request,
     hours: int = Query(24, ge=1, le=720, description="Statistics period in hours"),
