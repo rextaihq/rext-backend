@@ -32,6 +32,7 @@ class WorkspacePermissionService:
             ResourceNotFoundException: Workspace does not exist
             RextAuthorizationException: User has no access
         """
+        from src.utils.rbac_utils import get_user_permissions, get_user_role_names, is_user_admin
 
         # Check workspace exists
         result = await db.execute(
@@ -48,54 +49,69 @@ class WorkspacePermissionService:
                 resource_id=str(workspace_id),
             )
 
-        from src.utils.rbac_utils import get_user_roles, get_user_permissions, ADMIN_HIERARCHY_THRESHOLD
-
-        # Get all roles the user has that apply to this workspace (global or scoped)
-        roles_with_context = await get_user_roles(db, user_id, workspace_id)
+        # 1. Determine the user's highest role name for the response
+        # Check if user is the platform admin first
+        is_platform_admin = await is_user_admin(db, user_id)
         
-        if not roles_with_context:
-            raise RextAuthorizationException(
-                message="User does not have access to workspace",
-                resource=f"workspace:{workspace_id}",
-            )
+        # Check if user is the workspace owner (the user who created it)
+        is_workspace_owner = (workspace.user_id == user_id)
 
-        # Sort by hierarchy level to find the highest role
-        roles_with_context.sort(key=lambda x: x[0].hierarchy_level, reverse=True)
-        highest_role = roles_with_context[0][0]
+        # Fetch all role names for accurate status reporting
+        all_role_names = await get_user_role_names(db, user_id, workspace_id)
+        
+        if is_workspace_owner and "workspace_owner" not in all_role_names:
+            # Add it to the list for display if they are the owner record but role mapping is missing
+            all_role_names.append("workspace_owner")
 
-        # If highest role is admin level (>=80), return all system permissions
-        # This covers super_admin (100), support_admin (90), and platform_admin (80)
-        if highest_role.hierarchy_level >= ADMIN_HIERARCHY_THRESHOLD:
-            # Admin bypass - return all permissions in the system
-            all_permissions_result = await db.execute(select(Permission.name))
-            raw_perms = [row[0] for row in all_permissions_result.all()]
-            
-            # Global Permission Bridge: Ensure both dot and colon notation are supported.
-            permissions_list = list(raw_perms)
-            colon_perms = [p.replace('.', ':') for p in permissions_list if '.' in p]
-            if colon_perms:
-                permissions_list.extend(colon_perms)
-            permissions = sorted(list(set(permissions_list)))
+        # Determine highest role for display
+        if is_platform_admin:
+            highest_role = "admin"
+        elif is_workspace_owner or "workspace_owner" in all_role_names:
+            highest_role = "workspace_owner"
+        elif all_role_names:
+            highest_role = all_role_names[0] # Simplification, could use hierarchy
         else:
-            # Return union of permissions from all applicable roles
-            # (get_user_permissions already aggregates global + workspace-scoped and handles the bridge)
-            permissions = await get_user_permissions(db, user_id, workspace_id)
+            # If they have no roles in the workspace AND aren't the owner record, 
+            # they shouldn't even reach here if they aren't global admins.
+            if not is_platform_admin:
+                 raise RextAuthorizationException(
+                    message="User does not have access to workspace",
+                    resource=f"workspace:{workspace_id}",
+                )
+            highest_role = "admin"
+
+        # 2. Get the actual UNION of permissions from rbac_utils
+        # This is the single source of truth used by decorators
+        permissions = await get_user_permissions(db, user_id, workspace_id)
+
+        # 3. If they are the workspace owner record, ensure they have ALL relevant permissions
+        # even if the role mapping in DB is broken/incomplete.
+        if is_workspace_owner:
+            owner_permissions_result = await db.execute(
+                select(Permission.name)
+                .where(Permission.resource.in_([
+                    'workspace', 'content', 'topic', 'knowledge', 'member', 'subscription', 'billing', 'usage', 'media', 'license'
+                ]))
+            )
+            owner_perms = [row[0] for row in owner_permissions_result.all()]
+            # Merge with existing permissions
+            permissions = list(set(permissions) | set(owner_perms))
 
         logger.info(
             "Loaded workspace permissions",
             extra={
                 "user_id": str(user_id),
                 "workspace_id": str(workspace_id),
-                "highest_role": highest_role.name,
-                "permission_count": len(permissions),
+                "highest_role": highest_role,
+                "permission_count": len(permissions)
             },
         )
 
         return {
             "workspace_id": str(workspace_id),
             "workspace_slug": workspace.slug,
-            "user_role": highest_role.name,
-            "permissions": list(permissions),
+            "user_role": highest_role,
+            "permissions": permissions,
         }
 
     @staticmethod

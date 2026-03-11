@@ -61,7 +61,7 @@ async def test_workspace_pipeline_emits_progress_and_persists_brand_voice(
             target_audience=["Audience"],
             brand_voice=["Voice"],
             competitors=["Competitor"],
-            content_strategy=["Pillar"],
+            content_pillar=["Pillar"],
         )
 
     pipeline = WorkspacePipeline(
