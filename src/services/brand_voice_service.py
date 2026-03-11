@@ -24,6 +24,7 @@ from sqlalchemy import select, delete
 from src.api.models.knowledge_models.knowledge_model import BrandVoice
 from src.api.models.workspace_models.workspace_member import WorkspaceMembers
 from src.utils.logger import logger
+from src.api.cache.decorators import invalidate_cache_key
 from src.api.middleware.exceptions import RextAuthenticationException
 from src.api.schema.knowledge_schema import BrandSchema
 
@@ -107,7 +108,6 @@ class BrandVoiceService:
         payload = self._normalize_brand_data(brand_data)
 
         if brand_voice:
-            # Update existing record with latest brand data
             for field, value in payload.items():
                 setattr(brand_voice, field, value)
 
@@ -128,6 +128,10 @@ class BrandVoiceService:
             f"Brand voice {action} for workspace {workspace_id}",
             extra={"workspace_id": str(workspace_id), "action": action}
         )
+        
+        # Invalidate workspace:brand_voice cache
+        cache_key = f"workspace:brand_voice:{workspace_id}"
+        await invalidate_cache_key(cache_key)
 
         return brand_voice
 
@@ -158,6 +162,12 @@ class BrandVoiceService:
         )
 
         deleted_count = result.rowcount
+        
+        if deleted_count > 0:
+            # Invalidate workspace:brand_voice cache
+            cache_key = f"workspace:brand_voice:{workspace_id}"
+            await invalidate_cache_key(cache_key)
+            
         return deleted_count > 0
 
     # ========================================================================
@@ -206,7 +216,11 @@ class BrandVoiceService:
         self,
         brand_data: Union[BrandSchema, Dict[str, Any]]
     ) -> Dict[str, Any]:
-        """Convert brand voice payload into model-compatible structure."""
+        """Convert brand voice payload into model-compatible structure.
+        
+        This method ensures all fields are correctly extracted from either a 
+        BrandSchema instance or a dictionary.
+        """
         if isinstance(brand_data, BrandSchema):
             data = brand_data.model_dump()
         else:
@@ -219,5 +233,6 @@ class BrandVoiceService:
             "target_audience": data.get("target_audience"),
             "brand_voice": data.get("brand_voice"),
             "competitors": data.get("competitors"),
-            "content_strategy": data.get("content_strategy") 
+            # content_strategy is already mapped to content_pillar by Pydantic AliasChoices
+            "content_pillar": data.get("content_pillar"),
         }

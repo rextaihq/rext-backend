@@ -18,8 +18,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.api.database.async_database import get_async_db
 from src.services.email_event_service import EmailEventService
 from src.api.schema.webhook_schema import WebhookResponse, WebhookProcessingResult
+from src.api.schema.response_schemas import SuccessResponse
+from src.api.schema.response.email_system_responses import EmailWebhookHealthResponse
 from src.config.email_config import email_config
 from src.api.lib.logger import auto_logger
+from src.utils.response_utils import success
 
 # Import Svix for webhook verification
 from svix.webhooks import Webhook, WebhookVerificationError
@@ -179,6 +182,7 @@ async def process_webhook_in_background(
 
 
 @router.post("/resend", response_model=WebhookResponse)
+# NOTE: Not migrated — acts as a webhook receiver (Resend)
 async def handle_resend_webhook(
     request: Request,
     background_tasks: BackgroundTasks,
@@ -287,16 +291,20 @@ async def handle_resend_webhook(
         )
 
 
-@router.get("/health")
-async def webhook_health_check():
+@router.get("/health", response_model=SuccessResponse[EmailWebhookHealthResponse])
+async def webhook_health_check(request: Request):
     """
     Health check endpoint for webhook service.
 
     Returns:
         Simple status response
     """
-    return {
-        "status": "healthy",
-        "service": "resend-webhooks",
-        "webhook_secret_configured": bool(email_config.resend_webhook_secret)
-    }
+    return success(
+        data={
+            "status": "healthy",
+            "service": "resend-webhooks",
+            "webhook_secret_configured": bool(email_config.resend_webhook_secret)
+        },
+        request=request,
+        message="Email webhook health check successful"
+    )

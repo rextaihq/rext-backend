@@ -68,3 +68,5 @@ emails/.react-email/
 
 # Media
 media/
+
+*.txt

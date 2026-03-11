@@ -3,6 +3,9 @@ from src.flow.states.rext import REXT
 from src.flow.states.seo_state import SEORESULT
 
 
+from src.flow.utils.intent_utils import get_consensus_intent
+
+
 def seo_opportunity_node(state: REXT) -> Dict[str, SEORESULT]:
     seo = state.get("seo_result", {})
 
@@ -63,7 +66,10 @@ def seo_opportunity_node(state: REXT) -> Dict[str, SEORESULT]:
         opportunity_level = "low"
 
     # 3. STRATEGY DERIVATION
-    intent = (seo.get("intent") or {}).get("primary_intent", "informational")
+    # Use consensus intent (API + Competitors) for better accuracy
+    serp_backlinks = seo.get("serp_backlinks", {})
+    api_intent = serp_backlinks.get("main_intent")
+    intent = get_consensus_intent(api_intent, competitors)
     
     # Count how many competitors have the keyword intent as the top intent
     intent_counts = {}

@@ -143,17 +143,10 @@ def success(
     if request and hasattr(request.state, '_start_time'):
         processing_time_ms = int((time.time() - request.state._start_time) * 1000)
 
-    # Add message to data if provided
-    response_data = data
-    if message:
-        if isinstance(data, dict):
-            response_data = {"message": message, **data}
-        else:
-            response_data = {"message": message, "data": data}
-
     # Create response
     response = create_success_response(
-        data=response_data,
+        data=data,
+        message=message,
         request_id=request_id,
         processing_time_ms=processing_time_ms
     )

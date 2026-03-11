@@ -11,13 +11,20 @@ from uuid import UUID
 
 from src.api.database.async_database import get_async_db
 from src.api.security.dependencies import get_current_user
+from src.api.schema.response_schemas import SuccessResponse
+from src.api.schema.response.security_responses import (
+    UserSecurityStatsResponse,
+    UserLoginHistoryResponse,
+    ActiveSessionsCountResponse,
+)
+from src.utils.response_utils import success
 from src.services.security_service import SecurityService
 from src.utils.route_decorators import require_permissions, db_transaction_handler
 
 router = APIRouter()
 
 
-@router.get("/security/stats", response_model=dict)
+@router.get("/security/stats", response_model=SuccessResponse[UserSecurityStatsResponse])
 @require_permissions("user.read", workspace_scoped=False)
 @db_transaction_handler("retrieve user security stats", auto_commit=False)
 async def get_current_user_security_stats(
@@ -41,10 +48,15 @@ async def get_current_user_security_stats(
     service = SecurityService(db)
 
     # Get user-specific security stats
-    return await service.get_user_security_stats(user_id=user_id)
+    service_result = await service.get_user_security_stats(user_id=user_id)
+    return success(
+        data=service_result["data"],
+        request=request,
+        message="Security statistics retrieved successfully"
+    )
 
 
-@router.get("/security/login-history", response_model=dict)
+@router.get("/security/login-history", response_model=SuccessResponse[UserLoginHistoryResponse])
 @require_permissions("user.read", workspace_scoped=False)
 @db_transaction_handler("retrieve user login history", auto_commit=False)
 async def get_current_user_login_history(
@@ -71,14 +83,19 @@ async def get_current_user_login_history(
     user_id = UUID(current_user.get("identity"))
     service = SecurityService(db)
 
-    return await service.get_user_login_history(
+    service_result = await service.get_user_login_history(
         user_id=user_id,
         limit=limit,
         offset=offset
     )
+    return success(
+        data=service_result,
+        request=request,
+        message="Login history retrieved successfully"
+    )
 
 
-@router.get("/security/active-sessions-count", response_model=dict)
+@router.get("/security/active-sessions-count", response_model=SuccessResponse[ActiveSessionsCountResponse])
 @require_permissions("user.read", workspace_scoped=False)
 @db_transaction_handler("retrieve active sessions count", auto_commit=False)
 async def get_active_sessions_count(
@@ -95,4 +112,9 @@ async def get_active_sessions_count(
     user_id = UUID(current_user.get("identity"))
     service = SecurityService(db)
 
-    return await service.get_active_sessions_count(user_id=user_id)
+    service_result = await service.get_active_sessions_count(user_id=user_id)
+    return success(
+        data=service_result["data"],
+        request=request,
+        message="Active sessions count retrieved successfully"
+    )

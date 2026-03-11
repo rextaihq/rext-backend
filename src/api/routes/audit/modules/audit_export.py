@@ -11,17 +11,21 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.database.async_database import get_async_db
 from src.api.schema.audit_schema import AuditLogExportFormat
+from src.api.schema.response_schemas import SuccessResponse
+from src.api.schema.response.audit_responses import AuditStatsOverviewResponse
 from src.api.security.dependencies import get_current_user
 from src.services.audit_service import AuditService
+from src.utils.response_utils import success
 from src.utils.route_decorators import db_transaction_handler, require_permissions
+from src.utils.audit_helper import create_audit_log
 
 router = APIRouter()
 
 
 @router.get("/export/download")
+# NOTE: Not migrated — returns Response (JSON/CSV file download)
 @require_permissions("audit.export", workspace_scoped=False)
 @db_transaction_handler("export audit logs", auto_commit=False)
-@require_permissions("audit.export", workspace_scoped=False)
 async def export_audit_logs(
     request: Request,
     format: AuditLogExportFormat = Query(AuditLogExportFormat.JSON, description="Export format (json/csv)"),
@@ -141,7 +145,7 @@ async def export_audit_logs(
     )
 
 
-@router.get("/stats/overview", response_model=dict)
+@router.get("/stats/overview", response_model=SuccessResponse[AuditStatsOverviewResponse])
 @require_permissions("audit.admin", workspace_scoped=False)
 @db_transaction_handler("get audit statistics", auto_commit=False)
 @require_permissions("audit.admin", workspace_scoped=False)
@@ -155,4 +159,8 @@ async def get_audit_stats(
     service = AuditService(db)
     stats = await service.get_statistics(days)
 
-    return stats
+    return success(
+        data=stats,
+        request=request,
+        message="Audit statistics retrieved successfully"
+    )
