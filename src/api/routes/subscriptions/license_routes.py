@@ -12,9 +12,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.api.database.async_database import get_async_db
 from src.api.security.dependencies import get_current_user
 from src.utils.route_decorators import require_permissions
+from src.api.schema.response_schemas import SuccessResponse
+from src.api.schema.response.license_responses import (
+    LicenseValidateResponseSchema,
+    LicenseActivationData,
+    LicenseAdminRow,
+    LicenseListResponseSchema,
+    LicenseActivationListResponseSchema,
+    LicenseRevokeResponseSchema,
+    LicenseActivationRow,
+)
 from src.api.schema.subscription import (
     LicenseValidateRequest,
-    LicenseValidateResponse
 )
 from src.api.schema.subscription.license_schemas import (
     LicenseActivateRequest,
@@ -41,7 +50,7 @@ router = APIRouter(
 )
 
 
-@router.post("/validate", response_model=dict, status_code=status.HTTP_200_OK)
+@router.post("/validate", response_model=SuccessResponse[LicenseValidateResponseSchema], status_code=status.HTTP_200_OK)
 @require_permissions("license.read", workspace_scoped=False)
 @db_transaction_handler("validate license key", auto_commit=False)
 async def validate_license(
@@ -118,7 +127,7 @@ async def validate_license(
         )
 
         # Format response
-        response_data = LicenseValidateResponse(
+        response_data = LicenseValidateResponseSchema(
             valid=validation_result.get("valid", False),
             license_key=license_data.license_key,
             status=validation_result.get("status", "unknown"),
@@ -156,7 +165,7 @@ async def validate_license(
 # LICENSE ACTIVATION MANAGEMENT ENDPOINTS
 # ============================================================================
 
-@router.post("/activate", response_model=dict, status_code=status.HTTP_200_OK)
+@router.post("/activate", response_model=SuccessResponse[LicenseActivationData], status_code=status.HTTP_200_OK)
 @db_transaction_handler("activate license")
 @require_permissions("license.activate", workspace_scoped=False)
 async def activate_license_endpoint(
@@ -244,7 +253,7 @@ async def activate_license_endpoint(
     )
 
 
-@router.post("/{license_id}/deactivate", response_model=dict, status_code=status.HTTP_200_OK)
+@router.post("/{license_id}/deactivate", response_model=SuccessResponse[LicenseActivationRow], status_code=status.HTTP_200_OK)
 @db_transaction_handler("deactivate license")
 @require_permissions("license.deactivate", workspace_scoped=False)
 async def deactivate_license_endpoint(
@@ -297,7 +306,7 @@ async def deactivate_license_endpoint(
     )
 
 
-@router.get("", response_model=dict, status_code=status.HTTP_200_OK)
+@router.get("", response_model=SuccessResponse[LicenseListResponseSchema], status_code=status.HTTP_200_OK)
 @db_transaction_handler("list licenses", auto_commit=False)
 @require_permissions("license.read", workspace_scoped=False)
 async def list_licenses_endpoint(
@@ -345,7 +354,7 @@ async def list_licenses_endpoint(
     )
 
 
-@router.get("/{license_id}", response_model=dict, status_code=status.HTTP_200_OK)
+@router.get("/{license_id}", response_model=SuccessResponse[LicenseAdminRow], status_code=status.HTTP_200_OK)
 @db_transaction_handler("get license details", auto_commit=False)
 @require_permissions("license.read", workspace_scoped=False)
 async def get_license_endpoint(
@@ -406,7 +415,7 @@ async def get_license_endpoint(
     )
 
 
-@router.get("/{license_id}/activations", response_model=dict, status_code=status.HTTP_200_OK)
+@router.get("/{license_id}/activations", response_model=SuccessResponse[LicenseActivationListResponseSchema], status_code=status.HTTP_200_OK)
 @db_transaction_handler("list license activations", auto_commit=False)
 @require_permissions("license.read", workspace_scoped=False)
 async def list_license_activations_endpoint(
@@ -464,7 +473,7 @@ async def list_license_activations_endpoint(
     )
 
 
-@router.post("/admin/{license_id}/revoke", response_model=dict, status_code=status.HTTP_200_OK)
+@router.post("/admin/{license_id}/revoke", response_model=SuccessResponse[LicenseRevokeResponseSchema], status_code=status.HTTP_200_OK)
 @db_transaction_handler("revoke license")
 @require_permissions("license.revoke", workspace_scoped=False)
 async def revoke_license_endpoint(

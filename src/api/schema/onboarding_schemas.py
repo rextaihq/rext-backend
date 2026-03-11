@@ -22,10 +22,10 @@ class OnboardingStepUpdate(BaseModel):
 
 ONBOARDING_STEPS = [
     {
-        "id": OnboardingStep.CONTENT_STRATEGY.value,
-        "name": "content_strategy",
+        "id": OnboardingStep.CONTENT_PILLAR.value,
+        "name": "content_pillar",
         "title": "Welcome to Rext",
-        "description": "Choose your content strategy foundation",
+        "description": "Choose your content pillars foundation",
         "required": True,
     },
     {

@@ -65,6 +65,7 @@ async def _heartbeat_stream(request: Request) -> AsyncGenerator[Dict[str, Any], 
 
 @router.get(
     "/test",
+    # NOTE: Not migrated — returns EventSourceResponse (SSE)
     summary="SSE connectivity smoke test",
     description="Streams heartbeat events to verify Server-Sent Events are configured correctly.",
 )

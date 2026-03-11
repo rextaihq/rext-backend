@@ -16,7 +16,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.database.async_database import get_async_db
 from src.api.security.dependencies import get_current_user
+from src.api.schema.response_schemas import SuccessResponse
+from src.api.schema.response.admin_subscription_responses import (
+    SubscriptionAdminListResponse,
+    SubscriptionAdminDetailResponse,
+)
 from src.services.subscription_retrieval_service import SubscriptionRetrievalService
+from src.utils.response_utils import success
 from src.utils.route_decorators import db_transaction_handler, require_permissions
 from .shared.auth import require_super_admin
 
@@ -24,7 +30,7 @@ from .shared.auth import require_super_admin
 router = APIRouter()
 
 
-@router.get("/", response_model=dict)
+@router.get("/", response_model=SuccessResponse[SubscriptionAdminListResponse])
 @require_permissions("subscription.read")
 @db_transaction_handler("list subscriptions", auto_commit=False)
 async def list_all_subscriptions(
@@ -42,16 +48,17 @@ async def list_all_subscriptions(
 
     service = SubscriptionRetrievalService(db)
     plan_uuid = UUID(plan_id) if plan_id else None
-    return await service.list_subscriptions(
+    result = await service.list_subscriptions(
         status_filter=status_filter,
         plan_id=plan_uuid,
         user_email=user_email,
         limit=limit,
         offset=offset,
     )
+    return success(data=result["data"], request=request, message=result["message"])
 
 
-@router.get("/{subscription_id}", response_model=dict)
+@router.get("/{subscription_id}", response_model=SuccessResponse[SubscriptionAdminDetailResponse])
 @require_permissions("subscription.read")
 @db_transaction_handler("get subscription", auto_commit=False)
 async def get_subscription_admin(
@@ -64,4 +71,5 @@ async def get_subscription_admin(
     await require_super_admin(db, admin_user_id)
 
     service = SubscriptionRetrievalService(db)
-    return await service.get_subscription(subscription_id=UUID(subscription_id))
+    result = await service.get_subscription(subscription_id=UUID(subscription_id))
+    return success(data=result["data"], request=request, message=result["message"])

@@ -25,18 +25,24 @@ from src.api.models.subscription_models.refunds import RefundStatus
 from src.api.schema.subscription.refund_schemas import (
     RefundCreateRequest,
     RefundCreateResponse,
-    RefundListResponse,
+)
+from src.api.schema.response_schemas import SuccessResponse
+from src.api.schema.response.refund_responses import (
+    RefundAdminRow,
+    RefundAdminListResponse,
+    RefundCreateData,
     RefundResponse,
+    RefundListResponse,
 )
 from src.services.refund_service import RefundService
 from src.providers.payment.providers.lemonsqueezy import LemonSqueezyProvider
 from src.utils.route_decorators import db_transaction_handler, require_permissions
+from src.utils.response_utils import success
 from src.utils.logger import logger
 from src.services.audit_logger import audit_logger
 from .shared.auth import require_super_admin
 from src.api.config import settings
 from src.config.payment_config import payment_settings
-from fastapi import HTTPException
 
 
 router = APIRouter()
@@ -63,7 +69,7 @@ async def get_lemonsqueezy_provider() -> LemonSqueezyProvider:
 # REFUND ENDPOINTS
 # ============================================================================
 
-@router.get("/refunds", response_model=dict)
+@router.get("/refunds", response_model=SuccessResponse[RefundAdminListResponse])
 @require_permissions("subscription.read")
 @db_transaction_handler("list refunds", auto_commit=False)
 async def list_refunds(
@@ -110,13 +116,14 @@ async def list_refunds(
         per_page=per_page,
     )
 
-    return {
-        "data": result,
-        "message": "Refunds retrieved successfully"
-    }
+    return success(
+        data=result,
+        request=request,
+        message="Refunds retrieved successfully"
+    )
 
 
-@router.get("/refunds/{refund_id}", response_model=dict)
+@router.get("/refunds/{refund_id}", response_model=SuccessResponse[RefundAdminRow])
 @require_permissions("subscription.read")
 @db_transaction_handler("get refund", auto_commit=False)
 async def get_refund(
@@ -146,13 +153,14 @@ async def get_refund(
             detail=f"Refund {refund_id} not found"
         )
 
-    return {
-        "data": refund,
-        "message": "Refund retrieved successfully"
-    }
+    return success(
+        data=refund,
+        request=request,
+        message="Refund retrieved successfully"
+    )
 
 
-@router.post("/refunds/create", response_model=dict)
+@router.post("/refunds/create", response_model=SuccessResponse[RefundCreateData])
 @require_permissions("subscription.manage")
 @db_transaction_handler("create refund")
 async def create_refund(
@@ -313,14 +321,16 @@ async def create_refund(
             }
         )
 
-        return {
-            "data": {
-                "success": True,
-                "refund": refund_details,
-                "message": "Refund created successfully"
-            },
-            "message": "Refund initiated successfully"
+        result_data = {
+            "success": True,
+            "refund": refund_details,
+            "message": "Refund created successfully"
         }
+        return success(
+            data=result_data,
+            request=request,
+            message="Refund initiated successfully"
+        )
 
     except Exception as e:
         logger.error(

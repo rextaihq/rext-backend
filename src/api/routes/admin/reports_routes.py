@@ -18,9 +18,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.database.async_database import get_async_db
 from src.api.security.dependencies import get_current_user
+from src.api.schema.response_schemas import SuccessResponse
+from src.api.schema.response.report_responses import (
+    RevenueReportResponse,
+    RevenueSummaryResponse
+)
 from src.services.subscription_analytics_service import SubscriptionAnalyticsService
+from src.utils.response_utils import success
 from src.utils.route_decorators import db_transaction_handler, require_permissions
 from src.api.routes.subscriptions.admin.shared.auth import require_super_admin
+from src.api.schema.reports_schema import ReportsRevenueReportSchema, ReportsRevenueSummarySchema
 
 
 
@@ -32,7 +39,7 @@ router = APIRouter(prefix="/reports", tags=["Admin - Reports"])
 # ============================================================================
 
 
-@router.get("/revenue", response_model=dict)
+@router.get("/revenue", response_model=SuccessResponse[ReportsRevenueReportSchema])
 @require_permissions("audit.admin", workspace_scoped=False)
 @db_transaction_handler("get revenue report", auto_commit=False)
 async def get_revenue_report(
@@ -75,8 +82,8 @@ async def get_revenue_report(
     # Get plan distribution
     plan_distribution = await service.get_plan_distribution()
 
-    return {
-        "data": {
+    return success(
+        data={
             "report_period": {
                 "start_date": start_date.isoformat(),
                 "end_date": end_date.isoformat(),
@@ -94,10 +101,12 @@ async def get_revenue_report(
             "plan_distribution": plan_distribution["data"],
             "generated_at": datetime.now(timezone.utc).isoformat()
         },
-        "message": "Revenue report retrieved successfully"
-    }
+        request=request,
+        message="Revenue report retrieved successfully"
+    )
 
 @router.get("/revenue/export", response_class=Response)
+# NOTE: Not migrated — returns Response (JSON/CSV file download)
 @require_permissions("audit.admin", workspace_scoped=False)
 @db_transaction_handler("export revenue report", auto_commit=False)
 async def export_revenue_report(
@@ -227,7 +236,7 @@ async def export_revenue_report(
     )
 
 
-@router.get("/revenue/summary", response_model=dict)
+@router.get("/revenue/summary", response_model=SuccessResponse[ReportsRevenueSummarySchema])
 @require_permissions("audit.admin", workspace_scoped=False)
 @db_transaction_handler("get revenue summary", auto_commit=False)
 async def get_revenue_summary(
@@ -261,8 +270,8 @@ async def get_revenue_summary(
     if previous_month_mrr > 0:
         mom_growth = ((current_month_mrr - previous_month_mrr) / previous_month_mrr) * 100
 
-    return {
-        "data": {
+    return success(
+        data={
             "current_month": {
                 "mrr": stats["data"]["mrr"],
                 "arr": stats["data"]["arr"],
@@ -280,5 +289,6 @@ async def get_revenue_summary(
                 "trial_conversion": stats["data"]["trial_conversion_rate"],
             }
         },
-        "message": "Revenue summary retrieved successfully"
-    }
+        request=request,
+        message="Revenue summary retrieved successfully"
+    )

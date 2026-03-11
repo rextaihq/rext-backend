@@ -13,6 +13,11 @@ from src.services.notification_preferences_service import NotificationPreference
 from src.utils.route_decorators import db_transaction_handler
 from src.api.middleware.exceptions import ResourceNotFoundException
 from src.api.models.user_models.notification_preferences import NotificationPreferences
+from src.api.schema.response_schemas import SuccessResponse
+from src.api.schema.response.email_preference_responses import (
+    EmailPreferencesResponse,
+    UnsubscribeResponse
+)
 from src.utils.response_utils import success
 from src.utils.logger import logger
 from src.utils.audit_helper import create_audit_log
@@ -61,7 +66,7 @@ class UnsubscribeRequest(BaseModel):
     token: str
     email_types: Optional[List[str]] = []
 
-@router.get("/")
+@router.get("/", response_model=SuccessResponse[EmailPreferencesResponse])
 @db_transaction_handler("get email preferences", auto_commit=False)
 async def get_preferences(
     request: Request,
@@ -83,7 +88,7 @@ async def get_preferences(
         message="Email preferences retrieved successfully"
     )
 
-@router.put("/")
+@router.put("/", response_model=SuccessResponse[EmailPreferencesResponse])
 @db_transaction_handler("update email preferences", auto_commit=True)
 async def update_preferences(
     request: Request,
@@ -170,7 +175,7 @@ async def update_preferences(
         message="Email preferences updated successfully"
     )
 
-@router.post("/unsubscribe")
+@router.post("/unsubscribe", response_model=SuccessResponse[UnsubscribeResponse])
 @db_transaction_handler("unsubscribe from emails", auto_commit=True)
 async def unsubscribe(
     request: Request,

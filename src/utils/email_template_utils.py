@@ -282,8 +282,8 @@ async def get_workspace_template(db, workspace_id: str, template_type: str) -> D
     Returns:
         Dictionary with 'subject' and 'body' keys
     """
-    from sqlalchemy import select, or_, cast, String
-    from src.api.models.workspace_models.email_template import EmailTemplate, TemplateType
+    from sqlalchemy import select, cast, String
+    from src.api.models.workspace_models.email_template import EmailTemplate
     from src.utils.logger import logger
 
     try:

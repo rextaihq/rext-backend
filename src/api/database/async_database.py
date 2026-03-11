@@ -19,13 +19,18 @@ else:
 logger.info("Async database configuration initialized", extra={"database_url": ASYNC_DATABASE_URL.split("@")[-1] if ASYNC_DATABASE_URL else None})
 
 # Create async engine
+# IMPORTANT: pool_pre_ping=False — enabling it causes asyncpg to run async I/O
+# from thread-pool threads (when LangGraph dispatches sync nodes), which raises:
+# RuntimeError: Task got Future attached to a different loop.
+# pool_size reduced to prevent "too many clients" on the server's shared Postgres.
 async_engine = create_async_engine(
     ASYNC_DATABASE_URL,
-    echo=False,  # Disable SQL logging
-    pool_pre_ping=True,  # Verify connections before using
-    pool_size=20,  # Connection pool size
-    max_overflow=10,  # Max connections beyond pool_size
-    pool_recycle=3600,  # Recycle connections after 1 hour
+    echo=False,
+    pool_pre_ping=False,   # Must be False — see above
+    pool_size=2,           # Reduced: server shares DB with LangGraph internals
+    max_overflow=3,        # Total max = 10 connections
+    pool_recycle=1800,     # Recycle connections every 30 min
+    pool_timeout=30,       # Wait up to 30s for a free connection
 )
 
 # Create async session factory
@@ -94,13 +99,15 @@ else:
     SYNC_DATABASE_URL = SQLALCHEMY_DATABASE_URL
 
 # Create sync engine for LangGraph nodes
+# pool_size is intentionally small — reduces Postgres "too many clients" errors
 sync_engine = create_engine(
     SYNC_DATABASE_URL,
     echo=False,
     pool_pre_ping=True,
-    pool_size=10,
-    max_overflow=5,
-    pool_recycle=3600,
+    pool_size=3,
+    max_overflow=2,
+    pool_recycle=1800,
+    pool_timeout=30,
 )
 
 # Create sync session factory

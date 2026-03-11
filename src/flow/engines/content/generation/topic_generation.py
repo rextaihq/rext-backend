@@ -22,16 +22,23 @@ async def topic_generation(state: REXT) -> Dict[str, Any]:
     """
     logger.info("Starting topic generation")
 
-    # Get the normalized query
+    # Get the normalized query from SERP results or fallback to input payload
     normalized_result = state.get("serp_normalized", {})
+    
     # Check for upstream errors — skip processing if prior node failed
-    if normalized_result.get("error"):
+    if normalized_result and normalized_result.get("error"):
         logger.warning(
             "Skipping topic generation due to upstream error: %s",
             normalized_result["error"],
         )
         return {"content": {"topics": [], "selected_topic": ""}}
-    query = normalized_result.get("query", "")
+
+    query = normalized_result.get("query")
+    
+    if not query:
+        serp_payload = state.get("serp_payload", {})
+        query = serp_payload.get("query", "")
+
     
     if not query:
         logger.warning("No query found in serp_normalized")

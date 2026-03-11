@@ -14,8 +14,9 @@ from src.api.schema.user_schema import UpdateProfileRequest, UserResponse, Profi
 from src.api.schema.notification_schema import NotificationPreferencesResponse, UpdateNotificationPreferencesRequest
 from src.api.database.async_database import get_async_db
 from src.utils.response_utils import success, error
-from src.api.schema.response_schemas import ErrorCode, ErrorSeverity
-from src.api.middleware.exceptions import ResourceNotFoundException
+from src.api.schema.response_schemas import ErrorCode, ErrorSeverity, SuccessResponse, GenericResponse
+from src.api.schema.response.user_related_responses import UpdateProfileResponse
+from src.api.middleware.exceptions import ResourceNotFoundException, RextValidationException
 from src.services.user_service import UserService
 from src.services.notification_preferences_service import NotificationPreferencesService
 from src.services.notification_helper import schedule_if_allowed
@@ -88,7 +89,7 @@ async def get_profile(
 
 
 @require_permissions("user.update")
-@router.patch("/profile")
+@router.patch("/profile", response_model=SuccessResponse[UpdateProfileResponse])
 @require_permissions("user.update", workspace_scoped=False)
 @db_transaction_handler("update profile", auto_commit=True)
 async def update_profile(
@@ -160,7 +161,7 @@ async def update_profile(
     )
 
 
-@router.post("/avatar/upload")
+@router.post("/avatar/upload", response_model=SuccessResponse[GenericResponse])
 @require_permissions("user.update", workspace_scoped=False)
 @db_transaction_handler("upload avatar", auto_commit=True)
 async def upload_avatar(
@@ -276,7 +277,7 @@ async def upload_avatar(
     )
 
 
-@router.delete("/avatar")
+@router.delete("/avatar", response_model=SuccessResponse[GenericResponse])
 @require_permissions("user.update", workspace_scoped=False)
 @db_transaction_handler("delete avatar", auto_commit=True)
 async def delete_avatar(
@@ -320,7 +321,7 @@ async def delete_avatar(
     )
 
 
-@router.get("/preferences/notifications")
+@router.get("/preferences/notifications", response_model=SuccessResponse[NotificationPreferencesResponse])
 @require_permissions("user.read", workspace_scoped=False)
 @db_transaction_handler("get notification preferences", auto_commit=True)
 async def get_notification_preferences(
@@ -345,7 +346,7 @@ async def get_notification_preferences(
     )
 
 
-@router.patch("/preferences/notifications")
+@router.patch("/preferences/notifications", response_model=SuccessResponse[NotificationPreferencesResponse])
 @require_permissions("user.update", workspace_scoped=False)
 @db_transaction_handler("update notification preferences", auto_commit=True)
 async def update_notification_preferences(

@@ -29,6 +29,7 @@ from sqlalchemy import select
 from src.utils.logger import logger
 from src.api.security.dependencies import get_current_user
 from src.api.cache.redis_client import cache
+from src.api.lib.log_policy import log_with_level, get_event_level
 from dataclasses import dataclass
 
 SECONDS_PER_MINUTE = 60
@@ -63,6 +64,7 @@ LICENSE_VALIDATE_LIMIT = EndpointLimitProfile(10, 1, "license validation")
 LICENSE_ACTIVATE_LIMIT = EndpointLimitProfile(5, 1, "license activation")
 LICENSE_DEACTIVATE_LIMIT = EndpointLimitProfile(5, 1, "license deactivation")
 LICENSE_REVOKE_LIMIT = EndpointLimitProfile(10, 1, "license revocation")
+
 
 
 class RateLimiter:
@@ -308,7 +310,6 @@ class RateLimiterMiddleware:
         is_allowed, retry_after, limit_type = await self.limiter.check_rate_limit(client_key)
 
         if not is_allowed:
-            from src.api.lib.log_policy import log_with_level, get_event_level
             log_with_level(
                 logger,
                 get_event_level("rate_limit_exceeded"),

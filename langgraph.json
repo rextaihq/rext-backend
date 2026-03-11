@@ -9,13 +9,16 @@
   "image_distro": "wolfi",
   "pip_installer": "uv",
   "http": {
-    "app": "src/api/server.py:app"
+    "app": "src.api.server:app"
   },
   "checkpointer": {
     "ttl": {
       "default_ttl": 259200,
       "sweep_interval_minutes": 30
     }
+  },
+  "store": {
+    "path": "src/flow/store/rext_store.py:generate_store"
   },
   "dockerfile_lines": [
     "RUN pip install playwright crawl4ai",

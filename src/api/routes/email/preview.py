@@ -17,8 +17,11 @@ from src.api.schema.email_preview_schema import (
     WorkspaceEmailPreviewRequest,
     EmailPreviewResponse
 )
+from src.api.schema.response_schemas import SuccessResponse
+from src.api.schema.response.email_system_responses import EmailPreviewWrappedResponse
 from src.api.security.dependencies import get_current_user
 from src.utils.logger import logger
+from src.utils.response_utils import success
 from src.utils.route_decorators import require_permissions
 
 # Import email templates
@@ -69,7 +72,7 @@ def extract_preview_text(html: str) -> str:
     return ""
 
 
-@router.post("/auth", response_model=EmailPreviewResponse)
+@router.post("/auth", response_model=SuccessResponse[EmailPreviewWrappedResponse])
 @require_permissions("user.read", workspace_scoped=False)
 async def preview_auth_email(
     request: AuthEmailPreviewRequest,
@@ -130,7 +133,7 @@ async def preview_auth_email(
             }
         )
 
-        return EmailPreviewResponse(
+        preview_data = EmailPreviewResponse(
             html=html,
             template_type=request.template_type,
             subject=subject,
@@ -140,6 +143,12 @@ async def preview_auth_email(
                 "size_bytes": len(html),
                 "frontend_url": frontend_url
             }
+        ).model_dump()
+
+        return success(
+            data=preview_data,
+            request=request,
+            message="Auth email preview generated successfully"
         )
 
     except HTTPException:
@@ -163,7 +172,7 @@ async def preview_auth_email(
         )
 
 
-@router.post("/workspace", response_model=EmailPreviewResponse)
+@router.post("/workspace", response_model=SuccessResponse[EmailPreviewWrappedResponse])
 @require_permissions("user.read", workspace_scoped=False)
 async def preview_workspace_email(
     request: WorkspaceEmailPreviewRequest,
@@ -248,7 +257,7 @@ async def preview_workspace_email(
             }
         )
 
-        return EmailPreviewResponse(
+        preview_data = EmailPreviewResponse(
             html=html,
             template_type=request.template_type,
             subject=subject,
@@ -259,6 +268,12 @@ async def preview_workspace_email(
                 "workspace_name": request.workspace_name,
                 "frontend_url": frontend_url
             }
+        ).model_dump()
+
+        return success(
+            data=preview_data,
+            request=request,
+            message="Workspace email preview generated successfully"
         )
 
     except HTTPException:
@@ -284,6 +299,7 @@ async def preview_workspace_email(
 
 
 @router.post("/auth/html", response_class=HTMLResponse)
+# NOTE: Not migrated — returns HTMLResponse
 @require_permissions("user.read", workspace_scoped=False)
 async def preview_auth_email_html(
     request: AuthEmailPreviewRequest,
@@ -302,6 +318,7 @@ async def preview_auth_email_html(
 
 
 @router.post("/workspace/html", response_class=HTMLResponse)
+# NOTE: Not migrated — returns HTMLResponse
 @require_permissions("user.read", workspace_scoped=False)
 async def preview_workspace_email_html(
     request: WorkspaceEmailPreviewRequest,

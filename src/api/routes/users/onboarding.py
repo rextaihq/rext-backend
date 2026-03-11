@@ -15,17 +15,25 @@ from src.api.schema.onboarding_schemas import (
     OnboardingStepUpdate,
     OnboardingMarketingData,
 )
+from src.api.schema.response_schemas import SuccessResponse
+from src.api.schema.response.onboarding_responses import (
+    UserOnboardingResponse,
+    ShouldShowOnboardingResponse,
+)
+from src.utils.response_utils import success
 from src.api.middleware.exceptions import RextValidationException, RextAuthenticationException
 from src.services.onboarding_service import OnboardingService
+from src.api.models.user_models.roles import Role
 from src.utils.logger import logger
 from src.utils.route_decorators import require_permissions, db_transaction_handler
 
 router = APIRouter(prefix="/onboarding", tags=["onboarding"])
 
 
-@router.get("", response_model=OnboardingResponse, status_code=status.HTTP_200_OK)
+@router.get("", response_model=SuccessResponse[UserOnboardingResponse], status_code=status.HTTP_200_OK)
 @db_transaction_handler("get onboarding status", auto_commit=False)
 async def get_onboarding_status(
+    request: Request,
     db: Annotated[AsyncSession, Depends(get_async_db)],
     current_user: Annotated[dict | None, Depends(get_current_user_optional)],
 ):
@@ -43,10 +51,14 @@ async def get_onboarding_status(
 
     user_id = UUID(current_user["identity"])
     onboarding = await OnboardingService.get_or_create_onboarding(db, user_id)
-    return OnboardingResponse.model_validate(onboarding).model_dump()
+    return success(
+        data=OnboardingResponse.model_validate(onboarding).model_dump(),
+        request=request,
+        message="Onboarding status retrieved successfully"
+    )
 
 
-@router.post("/update", response_model=OnboardingResponse, status_code=status.HTTP_200_OK)
+@router.post("/update", response_model=SuccessResponse[UserOnboardingResponse], status_code=status.HTTP_200_OK)
 @require_permissions("user.update", workspace_scoped=False)
 @db_transaction_handler("update onboarding step", auto_commit=True)
 async def update_onboarding_step(
@@ -77,10 +89,14 @@ async def update_onboarding_step(
             validation_errors={"action": "Invalid action value"}
         )
 
-    return OnboardingResponse.model_validate(onboarding).model_dump()
+    return success(
+        data=OnboardingResponse.model_validate(onboarding).model_dump(),
+        request=request,
+        message="Onboarding step updated successfully"
+    )
 
 
-@router.post("/complete", response_model=OnboardingResponse, status_code=status.HTTP_200_OK)
+@router.post("/complete", response_model=SuccessResponse[UserOnboardingResponse], status_code=status.HTTP_200_OK)
 @require_permissions("user.update", workspace_scoped=False)
 @db_transaction_handler("complete onboarding", auto_commit=True)
 async def complete_onboarding(
@@ -97,10 +113,14 @@ async def complete_onboarding(
     user_id = UUID(current_user["identity"])
     onboarding = await OnboardingService.complete_onboarding(db, user_id)
     logger.info(f"[Onboarding] User {user_id} completed onboarding")
-    return OnboardingResponse.model_validate(onboarding).model_dump()
+    return success(
+        data=OnboardingResponse.model_validate(onboarding).model_dump(),
+        request=request,
+        message="Onboarding completed successfully"
+    )
 
 
-@router.post("/reset", response_model=OnboardingResponse, status_code=status.HTTP_200_OK)
+@router.post("/reset", response_model=SuccessResponse[UserOnboardingResponse], status_code=status.HTTP_200_OK)
 @require_permissions("user.update", workspace_scoped=False)
 @db_transaction_handler("reset onboarding", auto_commit=True)
 async def reset_onboarding(
@@ -124,12 +144,17 @@ async def reset_onboarding(
     user_id = UUID(current_user["identity"])
     onboarding = await OnboardingService.reset_onboarding(db, user_id)
     logger.info(f"[Onboarding] User {user_id} reset onboarding")
-    return OnboardingResponse.model_validate(onboarding).model_dump()
+    return success(
+        data=OnboardingResponse.model_validate(onboarding).model_dump(),
+        request=request,
+        message="Onboarding reset successfully"
+    )
 
 
-@router.get("/should-show", status_code=status.HTTP_200_OK)
+@router.get("/should-show", response_model=SuccessResponse[ShouldShowOnboardingResponse], status_code=status.HTTP_200_OK)
 @db_transaction_handler("check should show onboarding", auto_commit=False)
 async def should_show_onboarding(
+    request: Request,
     db: Annotated[AsyncSession, Depends(get_async_db)],
     current_user: Annotated[dict | None, Depends(get_current_user_optional)],
 ):
@@ -142,14 +167,22 @@ async def should_show_onboarding(
     """
     # Return false if not authenticated (graceful degradation)
     if not current_user:
-        return {"should_show": False}
+        return success(
+            data={"should_show": False},
+            request=request,
+            message="Onboarding show status retrieved"
+        )
 
     user_id = UUID(current_user["identity"])
     should_show = await OnboardingService.should_show_onboarding(db, user_id)
-    return {"should_show": should_show}
+    return success(
+        data={"should_show": should_show},
+        request=request,
+        message="Onboarding show status retrieved"
+    )
 
 
-@router.post("/marketing", response_model=OnboardingResponse, status_code=status.HTTP_200_OK)
+@router.post("/marketing", response_model=SuccessResponse[UserOnboardingResponse], status_code=status.HTTP_200_OK)
 @require_permissions("user.update", workspace_scoped=False)
 @db_transaction_handler("update marketing data", auto_commit=True)
 async def update_marketing_data(
@@ -173,6 +206,10 @@ async def update_marketing_data(
         heard_from=marketing_data.heard_from,
     )
     logger.info(f"[Onboarding] Marketing data updated for user {user_id}")
-    return OnboardingResponse.model_validate(onboarding).model_dump()
+    return success(
+        data=OnboardingResponse.model_validate(onboarding).model_dump(),
+        request=request,
+        message="Marketing data updated successfully"
+    )
 
 
