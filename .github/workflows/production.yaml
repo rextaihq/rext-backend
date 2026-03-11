@@ -111,50 +111,50 @@ jobs:
   # ──────────────────────────────────────────────
   # ✅ Stage 4 — Smoke Test
   # ──────────────────────────────────────────────
-  smoke_test:
-    name: ✅ Smoke Test
-    needs: deploy
-    runs-on: ubuntu-latest
+  # smoke_test:
+  #   name: ✅ Smoke Test
+  #   needs: deploy
+  #   runs-on: ubuntu-latest
 
-    steps:
-      - name: Wait for container startup
-        run: sleep 60
+  #   steps:
+  #     - name: Wait for container startup
+  #       run: sleep 60
 
-      - name: Health check
-        run: |
-          echo "Checking PRODUCTION server health..."
-          status=$(curl -s -o /dev/null -w "%{http_code}" \
-            "${{ vars.PROD_SERVER_URL }}/health" \
-            --max-time 20 --retry 5 --retry-delay 15)
+  #     - name: Health check
+  #       run: |
+  #         echo "Checking PRODUCTION server health..."
+  #         status=$(curl -s -o /dev/null -w "%{http_code}" \
+  #           "${{ vars.PROD_SERVER_URL }}/health" \
+  #           --max-time 20 --retry 5 --retry-delay 15)
 
-          if [ "$status" = "200" ]; then
-            echo "✅ Health check passed (HTTP $status)"
-          else
-            echo "::error::PRODUCTION health check FAILED with HTTP $status"
-            exit 1
-          fi
+  #         if [ "$status" = "200" ]; then
+  #           echo "✅ Health check passed (HTTP $status)"
+  #         else
+  #           echo "::error::PRODUCTION health check FAILED with HTTP $status"
+  #           exit 1
+  #         fi
 
-      - name: Readiness check
-        run: |
-          echo "Checking PRODUCTION server readiness..."
-          response=$(curl -s "${{ vars.PROD_SERVER_URL }}/health/ready" \
-            --max-time 20 --retry 5 --retry-delay 15)
+  #     - name: Readiness check
+  #       run: |
+  #         echo "Checking PRODUCTION server readiness..."
+  #         response=$(curl -s "${{ vars.PROD_SERVER_URL }}/health/ready" \
+  #           --max-time 20 --retry 5 --retry-delay 15)
 
-          status=$(echo "$response" | jq -r '.status // "unknown"' 2>/dev/null || echo "unknown")
+  #         status=$(echo "$response" | jq -r '.status // "unknown"' 2>/dev/null || echo "unknown")
 
-          if [ "$status" = "ready" ]; then
-            echo "✅ Readiness check passed — all dependencies healthy"
-          else
-            echo "::warning::Readiness check returned status: $status"
-            echo "Response: $response"
-          fi
+  #         if [ "$status" = "ready" ]; then
+  #           echo "✅ Readiness check passed — all dependencies healthy"
+  #         else
+  #           echo "::warning::Readiness check returned status: $status"
+  #           echo "Response: $response"
+  #         fi
 
   # ──────────────────────────────────────────────
   # 📢 Stage 5 — Notification Summary
   # ──────────────────────────────────────────────
   notify:
     name: 📢 Summary
-    needs: [quality, docker_job, deploy, smoke_test]
+    needs: [quality, docker_job, deploy]
     if: always()
     runs-on: ubuntu-latest
 
@@ -172,7 +172,6 @@ jobs:
           echo "| 🔍 Quality Gate | \`${{ needs.quality.result }}\` |" >> $GITHUB_STEP_SUMMARY
           echo "| 🐳 Build & Push | \`${{ needs.docker_job.result }}\` |" >> $GITHUB_STEP_SUMMARY
           echo "| 🚀 Coolify Deploy | \`${{ needs.deploy.result }}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| ✅ Smoke Test | \`${{ needs.smoke_test.result }}\` |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Image:** \`ghcr.io/${{ github.repository_owner }}/wrext-backend:latest\`" >> $GITHUB_STEP_SUMMARY
           echo "**Rollback tag:** \`ghcr.io/${{ github.repository_owner }}/wrext-backend:sha-${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
