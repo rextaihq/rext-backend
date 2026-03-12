@@ -5,7 +5,7 @@ This module defines Pydantic models for subscription analytics and statistics.
 """
 
 from pydantic import BaseModel, Field
-from typing import Dict, List
+from typing import Dict, List, Any
 
 
 class SubscriptionStatsResponse(BaseModel):
@@ -102,6 +102,9 @@ class ChurnAnalysisResponse(BaseModel):
     total_active_end: int = Field(..., description="Active subscriptions at end")
     churn_rate: float = Field(..., description="Churn rate percentage")
     retention_rate: float = Field(..., description="Retention rate percentage")
+    cancellation_reasons: Dict[str, int] = Field(default={}, description="Breakdown of cancellation reasons")
+    revenue_lost: float = Field(0.0, description="Absolute MRR value lost")
+    churn_by_plan: List[Dict[str, Any]] = Field(default=[], description="Churn breakdown by plan")
 
     class Config:
         json_schema_extra = {
@@ -112,7 +115,10 @@ class ChurnAnalysisResponse(BaseModel):
                 "cancellations": 23,
                 "total_active_end": 1027,
                 "churn_rate": 2.3,
-                "retention_rate": 97.7
+                "retention_rate": 97.7,
+                "cancellation_reasons": {"too_expensive": 10, "not_used": 8},
+                "revenue_lost": 1220.50,
+                "churn_by_plan": [{"plan_name": "Pro", "cancellations": 15}]
             }
         }
 
@@ -125,6 +131,7 @@ class TrialConversionResponse(BaseModel):
     trials_active: int = Field(..., description="Trials still active")
     conversion_rate: float = Field(..., description="Conversion rate percentage")
     average_trial_length_days: float = Field(..., description="Average trial duration")
+    conversion_by_plan: List[Dict[str, Any]] = Field(default=[], description="Conversion breakdown by plan")
 
     class Config:
         json_schema_extra = {
@@ -134,6 +141,7 @@ class TrialConversionResponse(BaseModel):
                 "trials_expired": 45,
                 "trials_active": 18,
                 "conversion_rate": 68.5,
-                "average_trial_length_days": 13.2
+                "average_trial_length_days": 13.2,
+                "conversion_by_plan": [{"plan_name": "Pro", "conversions": 95}]
             }
         }

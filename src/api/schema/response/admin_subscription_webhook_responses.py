@@ -88,11 +88,20 @@ class WebhookStatsByType(BaseModel):
     failed: int
     success_rate: float
 
+class WebhookErrorRow(BaseModel):
+    """Schema for a recent webhook error entry."""
+    event_name: str
+    error_message: str
+    created_at: datetime
+
+
 class WebhookStatisticsResponse(BaseModel):
     """Schema for the webhook statistics response data."""
     period: WebhookStatsPeriod
     overall: WebhookStatsOverall
     by_event_type: List[WebhookStatsByType]
+    event_type_breakdown: List[Dict[str, Any]] = []
+    recent_errors: List[WebhookErrorRow] = []
     message: Optional[str] = None
 
 

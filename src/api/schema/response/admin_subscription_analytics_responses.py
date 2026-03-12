@@ -54,6 +54,8 @@ class ChurnAnalysisResponse(BaseModel):
     churn_rate: float
     retention_rate: float
     cancellation_reasons: Dict[str, int]
+    revenue_lost: float = 0.0
+    churn_by_plan: List[Dict[str, Any]] = []
     message: Optional[str] = None
 
 class TrialConversionResponse(BaseModel):
@@ -64,6 +66,7 @@ class TrialConversionResponse(BaseModel):
     trials_active: int
     conversion_rate: float
     average_trial_length_days: float
+    conversion_by_plan: List[Dict[str, Any]] = []
     message: Optional[str] = None
 
 class RecentSubscriptionRow(BaseModel):

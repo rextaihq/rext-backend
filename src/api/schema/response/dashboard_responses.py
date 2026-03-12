@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import Optional
+
 
 class ContentStats(BaseModel):
     """Schema for content statistics in the dashboard."""
@@ -13,4 +13,3 @@ class WorkspaceDashboardResponse(BaseModel):
     members: int
     content: ContentStats
     personas: int
-    message: Optional[str] = None
