@@ -50,16 +50,23 @@ async def get_dataforseo_data(
 
             tasks = data.get("tasks", [])
             if not tasks:
+                logger.error(f"DataForSEO returned no tasks for keyword: {keyword}")
                 return {}
             
-            result = tasks[0].get("result")
+            task = tasks[0]
+            if task.get("status_code") != 20000:
+                logger.error(f"DataForSEO task failed: {task.get('status_message')} (code: {task.get('status_code')})")
+            
+            result = task.get("result")
             if not result or not result[0]:
+                logger.warning(f"DataForSEO returned empty result for: {keyword}")
                 return {}
                 
             # ✅ Metrics for the actual keyword are in 'seed_keyword_data'
             # when using keyword_suggestions with include_seed_keyword: True
             item = result[0].get("seed_keyword_data", {})
             if not item:
+                logger.info(f"Using fallback: seed_keyword_data missing for '{keyword}'. Pulling from items[0].")
                 # Fallback to first item if seed_keyword_data is missing
                 items = result[0].get("items", [])
                 if items:
@@ -75,13 +82,24 @@ async def get_dataforseo_data(
 
             serp_item_types = serp_info.get("serp_item_types", []) or []
 
+            # Calculate difficulty level
+            difficulty_score = int(keyword_props.get("keyword_difficulty", 0)) if keyword_props and keyword_props.get("keyword_difficulty") else 0
+            difficulty_level = "easy"
+            if difficulty_score > 60:
+                difficulty_level = "very_hard"
+            elif difficulty_score > 40:
+                difficulty_level = "hard"
+            elif difficulty_score > 20:
+                difficulty_level = "medium"
+
             # Cast metrics to int as per SERPBacklinks TypedDict
             return {
                 "keyword": item.get("keyword", keyword),
 
                 # Core metrics
                 "search_volume": int(keyword_info.get("search_volume", 0)) if keyword_info and keyword_info.get("search_volume") else 0,
-                "keyword_difficulty": int(keyword_props.get("keyword_difficulty", 0)) if keyword_props and keyword_props.get("keyword_difficulty") else 0,
+                "keyword_difficulty": difficulty_score,
+                "difficulty_level": difficulty_level,
 
                 # Link metrics
                 "backlinks": int(backlinks_info.get("backlinks", 0)) if backlinks_info and backlinks_info.get("backlinks") else 0,
@@ -117,12 +135,8 @@ async def fetch_dataforseo_backlinks(state: REXT) -> Dict[str, Any]:
         "foreign_intent": "unknown",
     }
 
-    # if not serp_payload:
-    #     logger.error("No serp_payload found in state")
-    #     return {"seo_result": {"serp_backlinks": default_backlinks}}
-
-    query = serp_payload.get("query")
-    country = serp_payload.get("country", "Pakistan")
+    query = serp_payload.get("query") if serp_payload else None
+    country = serp_payload.get("country", "Pakistan") if serp_payload else "Pakistan"
     
     # Handle invalid country codes and global
     if country and country.lower() == "global":
@@ -138,8 +152,8 @@ async def fetch_dataforseo_backlinks(state: REXT) -> Dict[str, Any]:
     default_backlinks["keyword"] = query or ""
 
     # Check required IDs
-    user_id = serp_payload.get("user_id")
-    workspace_id = serp_payload.get("workspace_id")
+    user_id = serp_payload.get("user_id") if serp_payload else None
+    workspace_id = serp_payload.get("workspace_id") if serp_payload else None
     if not user_id or not workspace_id:
         logger.error("No user_id or workspace_id found in serp_payload")
         return {"seo_result": {"serp_backlinks": default_backlinks}}
@@ -159,9 +173,22 @@ async def fetch_dataforseo_backlinks(state: REXT) -> Dict[str, Any]:
             }
 
         logger.info(f"Successfully fetched SERP backlinks for query '{query}'")
+        
+        # Prepare structured keyword difficulty for opportunity node
+        diff_score = backlinks_data.get("keyword_difficulty", 0)
+        diff_level = backlinks_data.get("difficulty_level", "easy")
+        
         return {
             "seo_result":{
-                "serp_backlinks": backlinks_data
+                "serp_backlinks": backlinks_data,
+                "keyword_difficulty": {
+                    "difficulty_score": diff_score,
+                    "difficulty_level": diff_level,
+                    "breakdown": {
+                        "brand_dominance": 0,
+                        "freshness_pressure": 0
+                    }
+                }
             }
         }
 
