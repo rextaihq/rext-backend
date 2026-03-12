@@ -47,5 +47,5 @@ class PlanCreateResponse(BaseModel):
 
 class PlanDeleteResponse(BaseModel):
     """Response schema for plan deletion."""
-    deleted_plan_id: str
+    deleted_plan_id: UUID
     plan_name: str

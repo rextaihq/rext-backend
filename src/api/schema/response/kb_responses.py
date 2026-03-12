@@ -1,13 +1,15 @@
 from pydantic import BaseModel
-from typing import List, Optional, Any, Dict
+from typing import List, Optional
+from datetime import datetime
+from uuid import UUID
 
 class KnowledgeBaseBrief(BaseModel):
-    id: str
-    workspace_id: str
+    id: UUID
+    workspace_id: UUID
     name: str
-    description: Optional[str]
-    created_at: str
-    updated_at: str
+    description: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
     items_count: Optional[int] = None
 
 class KnowledgeBaseListResponse(BaseModel):
@@ -17,8 +19,18 @@ class KnowledgeBaseListResponse(BaseModel):
     offset: int
     has_more: bool
 
+class KnowledgeBaseDetail(BaseModel):
+    """Typed detail model replacing Dict[str, Any]."""
+    id: UUID
+    workspace_id: UUID
+    name: str
+    description: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
+    items_count: Optional[int] = None
+
 class KnowledgeBaseResponse(BaseModel):
-    knowledge_base: Dict[str, Any] # to_dict output
+    knowledge_base: KnowledgeBaseDetail
 
 class KnowledgeBaseDeleteResponse(BaseModel):
-    kb_id: str
+    kb_id: UUID

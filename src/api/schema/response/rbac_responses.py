@@ -27,14 +27,14 @@ class PermissionItemSchema(BaseModel):
     SerializableMixin serialises all columns → id (UUID→str), name, display_name,
     description (optional), resource, action, created_at (ISO str), updated_at (ISO str).
     """
-    id: str
+    id: UUID
     name: str
     display_name: Optional[str] = None
     description: Optional[str] = None
     resource: Optional[str] = None
     action: Optional[str] = None
-    created_at: Optional[str] = None
-    updated_at: Optional[str] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
 
     # Optional nested roles (present when include_roles=True)
     roles: Optional[List[RoleSummarySchema]] = None
@@ -42,7 +42,7 @@ class PermissionItemSchema(BaseModel):
 
 class RoleSummarySchema(BaseModel):
     """Slim role reference used inside PermissionItemSchema.roles."""
-    id: str
+    id: UUID
     name: str
     display_name: str
     hierarchy_level: int
@@ -77,7 +77,7 @@ class PermissionListData(BaseModel):
 
 class DeletePermissionData(BaseModel):
     """Matches PermissionService.delete_permission() → result["data"]: {"permission_id": str}"""
-    permission_id: str
+    permission_id: UUID
 
 
 # ---------------------------------------------------------------------------
@@ -95,7 +95,7 @@ class PermissionSummarySchema(BaseModel):
         "action": perm.action,
     }
     """
-    id: str
+    id: UUID
     name: str
     display_name: Optional[str] = None
     resource: Optional[str] = None
@@ -110,15 +110,15 @@ class RoleItemSchema(BaseModel):
 
     When include_permissions=True the route adds: permissions: List[PermissionSummarySchema]
     """
-    id: str
+    id: UUID
     name: str
     display_name: str
     description: Optional[str] = None
     hierarchy_level: int
     is_system_role: bool
     is_workspace_role: bool
-    created_at: Optional[str] = None
-    updated_at: Optional[str] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
     # Present only when include_permissions=True
     permissions: Optional[List[PermissionSummarySchema]] = None
 
@@ -135,7 +135,7 @@ class RoleListData(BaseModel):
 
 class DeleteRoleData(BaseModel):
     """Matches the data dict built in delete_role route: {"role_id": str}"""
-    role_id: str
+    role_id: UUID
 
 
 # ---------------------------------------------------------------------------
@@ -153,7 +153,7 @@ class AssignPermissionsData(BaseModel):
         "invalid_count": int,
     }
     """
-    role_id: str
+    role_id: UUID
     role_name: str
     added_count: int
     skipped_count: int
@@ -170,7 +170,7 @@ class RevokePermissionData(BaseModel):
         "permission_name": permission.name,
     }
     """
-    role_id: str
+    role_id: UUID
     role_name: str
-    permission_id: str
+    permission_id: UUID
     permission_name: str

@@ -1,9 +1,11 @@
 from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
+from datetime import datetime
+from uuid import UUID
 
 class ReportPeriod(BaseModel):
-    start_date: str
-    end_date: str
+    start_date: datetime
+    end_date: datetime
     days: int
 
 class RevenueSummary(BaseModel):
@@ -14,7 +16,7 @@ class RevenueSummary(BaseModel):
     churn_rate_monthly: float
 
 class PlanRevenue(BaseModel):
-    plan_id: str
+    plan_id: UUID
     plan_name: str
     plan_display_name: str
     subscription_count: int
@@ -34,7 +36,7 @@ class RevenueHistoryEntry(BaseModel):
     net_revenue: float
 
 class PlanDistributionEntry(BaseModel):
-    plan_id: str
+    plan_id: UUID
     plan_name: str
     plan_display_name: str
     subscription_count: int
@@ -49,7 +51,7 @@ class RevenueReportResponse(BaseModel):
     revenue_breakdown: RevenueBreakdown
     revenue_history: List[RevenueHistoryEntry]
     plan_distribution: List[PlanDistributionEntry]
-    generated_at: str
+    generated_at: datetime
     message: Optional[str] = None
 
 class RevenueSummaryResponse(BaseModel):
