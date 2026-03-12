@@ -22,9 +22,7 @@ async def get_recent_activities(
         select(
             Content.title,
             Users.full_name,
-            Content.content_type,
-            Content.status
-
+            Content.status,
         )
         .join(
             Users,
