@@ -5,7 +5,7 @@ from src.flow.states.rext import REXT
 from langgraph.types import interrupt, Command
 from langgraph.graph import END
 
-from src.flow.utils.intent_utils import get_consensus_intent
+from src.flow.utils.intent_utils import get_consensus_intent, calculate_intent_with_llm, get_intent_consensus
 
 logger = logging.getLogger(__name__)
 
@@ -23,9 +23,22 @@ async def keyword_recommendation(state: REXT, config, *, runtime) -> Dict[str, A
 
     recommendations = serp_normalized.get("related_topics", []) if serp_normalized else []
     
-    # Use consensus intent (API + Competitors) for better accuracy
+    # Use consensus intent (API + Competitors + LLM) for better accuracy
+    serp_payload = state.get("serp_payload")
+    query = serp_payload.get("query", "") if serp_payload else ""
+    organic_results = serp_normalized.get("normalize_results", []) if serp_normalized else []
+    
     api_intent = serp_backlinks.get("main_intent")
-    search_intent = get_consensus_intent(api_intent, competitors)
+    
+    # Calculate Top intent (Consensus among competitors)
+    top_intent = get_consensus_intent(api_intent, competitors)
+    
+    # Calculate LLM intent
+    llm_predicted = await calculate_intent_with_llm(query, organic_results)
+    
+    # Get final consensus
+    intent_analysis = get_intent_consensus(api_intent, top_intent, llm_predicted)
+    search_intent = intent_analysis["consensus_intent"]
     
     volume = serp_backlinks.get("search_volume", 0)
     keyword_difficulty = serp_backlinks.get("keyword_difficulty", 0)
@@ -154,7 +167,7 @@ async def keyword_recommendation(state: REXT, config, *, runtime) -> Dict[str, A
             **seo_result,
             "serp_backlinks": {
                 **serp_backlinks,
-                "main_intent": search_intent
+                "main_intent": search_intent or serp_backlinks.get("main_intent", "unknown")
             },
             "keyword_recommendations": {
                 "original_title": original_query,

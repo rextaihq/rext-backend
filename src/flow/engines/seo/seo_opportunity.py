@@ -3,10 +3,10 @@ from src.flow.states.rext import REXT
 from src.flow.states.seo_state import SEORESULT
 
 
-from src.flow.utils.intent_utils import get_consensus_intent
+from src.flow.utils.intent_utils import get_consensus_intent, calculate_intent_with_llm, get_intent_consensus
 
 
-def seo_opportunity_node(state: REXT) -> Dict[str, SEORESULT]:
+async def seo_opportunity_node(state: REXT) -> Dict[str, SEORESULT]:
     seo = state.get("seo_result", {})
 
     kd = seo.get("keyword_difficulty", {})
@@ -66,10 +66,24 @@ def seo_opportunity_node(state: REXT) -> Dict[str, SEORESULT]:
         opportunity_level = "low"
 
     # 3. STRATEGY DERIVATION
-    # Use consensus intent (API + Competitors) for better accuracy
+    # Use consensus intent (API + Competitors + LLM) for better accuracy
+    serp_payload = state.get("serp_payload", {})
+    query = serp_payload.get("query", "")
+    serp_normalized = state.get("serp_normalized", {})
+    organic_results = serp_normalized.get("normalize_results", [])
+    
     serp_backlinks = seo.get("serp_backlinks", {})
     api_intent = serp_backlinks.get("main_intent")
-    intent = get_consensus_intent(api_intent, competitors)
+    
+    # Calculate Top intent (Consensus among competitors)
+    top_intent = get_consensus_intent(api_intent, competitors)
+    
+    # Calculate LLM intent
+    llm_predicted = await calculate_intent_with_llm(query, organic_results)
+    
+    # Get final consensus and include all intents
+    intent_analysis = get_intent_consensus(api_intent, top_intent, llm_predicted)
+    intent = intent_analysis["consensus_intent"]
     
     # Count how many competitors have the keyword intent as the top intent
     intent_counts = {}
@@ -116,7 +130,8 @@ def seo_opportunity_node(state: REXT) -> Dict[str, SEORESULT]:
         "seo_result": {
             **seo,
             "seo_strategy": {
-                "target_intent": str(top_intent_count),
+                "target_intent": intent,
+                "intent_analysis": intent_analysis,
                 "recommended_content_type": recommended_content_type,
                 "ideal_word_count": ideal_word_count,
                 "priority_topics": missing_topics[:5],

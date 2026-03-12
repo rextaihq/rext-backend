@@ -8,6 +8,7 @@ from src.flow.states.rext import REXT
 import httpx
 from src.flow.states.countries import VALID_COUNTRY_CODES
 from src.flow.states.seo_state import SERPBacklinks
+from src.flow.utils.intent_utils import calculate_intent_with_llm
 
 load_dotenv()
 
@@ -34,10 +35,11 @@ async def get_dataforseo_data(
     include_serp_info: bool = True
 ) -> Dict:
 
+    # ✅ keyword_overview/live endpoint expects 'keywords' as a list
     payload = [{
         "location_name": location_name,
         "language_code": language_code,
-        "keyword": keyword,   # ✅ keyword suggestions uses singular 'keyword'
+        "keywords": [keyword],   # ✅ keyword overview/live uses 'keywords' plural
         "include_serp_info": include_serp_info,
         "include_seed_keyword": True
     }]
@@ -55,17 +57,13 @@ async def get_dataforseo_data(
             result = tasks[0].get("result")
             if not result or not result[0]:
                 return {}
+            
+            # ✅ keyword_overview returns actual metrics in the result items
+            items = result[0].get("items", [])
+            if not items:
+                return {}
                 
-            # ✅ Metrics for the actual keyword are in 'seed_keyword_data'
-            # when using keyword_suggestions with include_seed_keyword: True
-            item = result[0].get("seed_keyword_data", {})
-            if not item:
-                # Fallback to first item if seed_keyword_data is missing
-                items = result[0].get("items", [])
-                if items:
-                    item = items[0]
-                else:
-                    return {}
+            item = items[0]
 
             backlinks_info = item.get("avg_backlinks_info", {}) or {}
             keyword_info = item.get("keyword_info", {}) or {}
@@ -151,7 +149,15 @@ async def fetch_dataforseo_backlinks(state: REXT) -> Dict[str, Any]:
     try:
         backlinks_data = await get_dataforseo_data(query, country)
         if not backlinks_data:
-            logger.warning(f"No DataForSEO data found for query '{query}'")
+            logger.warning(f"No DataForSEO data found for query '{query}'. Calculating intent with LLM.")
+            
+            # Use LLM as fallback for intent
+            serp_normalized = state.get("serp_normalized", {})
+            organic_results = serp_normalized.get("normalize_results", [])
+            
+            llm_result = await calculate_intent_with_llm(query, organic_results)
+            default_backlinks["main_intent"] = llm_result.intent if llm_result.intent != "unknown" else "informational"
+            
             return {
                 "seo_result":{
                     "serp_backlinks": default_backlinks
