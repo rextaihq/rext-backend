@@ -11,7 +11,7 @@ def get_consensus_intent(
     api_intent: str, 
     competitors: List[Competitor], 
     threshold: float = 0.6
-) -> str:
+) -> tuple[str, float]:
     """
     Determine the real search intent using a weighted consensus model.
     Weights are assigned based on the SERP position of competitors:
@@ -25,7 +25,7 @@ def get_consensus_intent(
         threshold: The dominance threshold for consensus (default 60%).
     """
     if not competitors:
-        return api_intent or "unknown"
+        return (api_intent or "unknown"), 0.0
         
     weighted_counts = {}
     total_weighted_samples = 0
@@ -49,27 +49,17 @@ def get_consensus_intent(
                 weighted_counts[name] = weighted_counts.get(name, 0) + weight
                 total_weighted_samples += weight
                 
-    if total_weighted_samples == 0:
-        return api_intent or "unknown"
+    if not weighted_counts or total_weighted_samples == 0:
+        return (api_intent or "unknown"), 0.0
         
     # Find the most frequent weighted intent
     sorted_intents = sorted(weighted_counts.items(), key=lambda x: x[1], reverse=True)
     top_intent, weighted_count = sorted_intents[0]
     
-    # Check if a single intent dominates weighted votes
+    # Check weighted confidence
     confidence = weighted_count / total_weighted_samples
-    
-    if confidence >= threshold:
-        logger.info(f"Consensus intent reached: {top_intent.upper()} (weighted {weighted_count}/{total_weighted_samples}, {confidence:.1%})")
-        return top_intent
         
-    # Fallback to API intent if no consensus, unless API intent is unknown/empty
-    if api_intent and api_intent.lower() != "unknown":
-        logger.info(f"No clear consensus ({confidence:.1%}), using API intent: {api_intent}")
-        return api_intent
-        
-    logger.info(f"No API intent and no clear consensus, using most frequent competitor intent: {top_intent}")
-    return top_intent
+    return top_intent, confidence
 
 async def calculate_intent_with_llm(
     query: str, 
@@ -107,41 +97,56 @@ async def calculate_intent_with_llm(
 
 def get_intent_consensus(
     api_intent: Optional[str],
-    top_intent: str,
+    serp_intent: str,
+    serp_confidence: float,
     llm_predicted: KeywordIntentResponse
-) -> Dict[str, str]:
+) -> Dict[str, Any]:
     """
-    Determine final intent based on API, Top (Competitor), and LLM predictions.
+    Determine final intent based on API, SERP (Competitor), and LLM predictions.
     
-    Logic:
-    - If api_intent matches LLM predicted intent -> Return that intent.
-    - Else if LLM probability > 60% -> Return LLM intent.
-    - Otherwise -> Return API intent (if exists & known) else Top intent.
+    Refined logic:
+    1. If api_intent is "unknown", use serp_intent as the primary baseline.
+    2. If api_intent != serp_intent and serp_confidence > 60%, prioritize serp_intent.
+    3. If the refined api_intent matches LLM intent -> Success.
+    4. If LLM probability > 60% -> Prioritize LLM.
+    5. Fallback to refined api_intent.
     """
+    # Normalize and establish refined API intent
     api_intent_val = (api_intent or "unknown").lower()
+    serp_intent_val = serp_intent.lower()
     llm_intent_val = llm_predicted.intent.lower()
     
+    baseline_intent = api_intent_val
+    
+    # Rule 1: Replace unknown API intent with SERP
+    if api_intent_val == "unknown" or not api_intent_val:
+        logger.info(f"API intent unknown, using SERP intent: '{serp_intent_val}'")
+        baseline_intent = serp_intent_val
+    
+    # Rule 2: Prioritize SERP if strong mismatch
+    elif api_intent_val != serp_intent_val and serp_confidence > 0.6:
+        logger.info(f"SERP consensus is strong ({serp_confidence:.1%}) and differs from API '{api_intent_val}'. Using SERP: '{serp_intent_val}'")
+        baseline_intent = serp_intent_val
+
     final_intent = ""
     
-    if api_intent_val != "unknown" and api_intent_val == llm_intent_val:
-        logger.info(f"Intent Match: API and LLM both predicted '{api_intent_val}'")
-        final_intent = api_intent_val
+    # Intent Consensus with LLM
+    if baseline_intent == llm_intent_val:
+        logger.info(f"Intent Match: Baseline and LLM both predicted '{baseline_intent}'")
+        final_intent = baseline_intent
     elif llm_predicted.probability > 0.6:
         logger.info(f"LLM Intent dominant ({llm_predicted.probability:.1%}): Using '{llm_intent_val}'")
         final_intent = llm_intent_val
     else:
-        if api_intent_val != "unknown":
-            logger.info(f"No strong LLM consensus, falling back to API intent: '{api_intent_val}'")
-            final_intent = api_intent_val
-        else:
-            logger.info(f"No API intent and no strong LLM consensus, falling back to Top intent: '{top_intent}'")
-            final_intent = top_intent
+        logger.info(f"Falling back to baseline intent: '{baseline_intent}'")
+        final_intent = baseline_intent
 
     return {
         "api_intent": api_intent_val,
-        "top_intent": top_intent,
+        "serp_intent": serp_intent_val,
+        "serp_confidence": f"{serp_confidence:.1%}",
         "llm_intent": llm_intent_val,
-        "consensus_intent": final_intent,
         "llm_probability": f"{llm_predicted.probability:.1%}",
+        "consensus_intent": final_intent,
         "explanation": llm_predicted.explanation
     }

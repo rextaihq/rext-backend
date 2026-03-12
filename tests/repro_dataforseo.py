@@ -23,39 +23,60 @@ async def test_dataforseo_payload(payload):
             # print(f"Response: {data}")
             tasks = data.get("tasks", [])
             if not tasks:
-                print("❌ No tasks in response")
+                print(f"❌ No tasks in response. Full data: {data}")
                 return
             
-            result = tasks[0].get("result")
+            task = tasks[0]
+            print(f"Task status: {task.get('status_message')} (code: {task.get('status_code')})")
+            
+            result = task.get("result")
             if not result or not result[0]:
-                print("❌ No result in tasks[0]")
+                print(f"❌ No result in tasks[0]. Task: {task}")
                 return
             
-            print("✅ Data found!")
-            print(f"Result keys: {result[0].keys()}")
+            res = result[0]
+            items = res.get("items", [])
+            print(f"✅ Data found! Result keys: {res.keys()}")
+            print(f"Items count: {len(items)}")
+            if items:
+                print(f"First item keyword: {items[0].get('keyword')}")
+                print(f"First item intent: {items[0].get('search_intent_info', {}).get('main_intent')}")
+            else:
+                print("⚠️ Items list is empty.")
     except Exception as e:
         print(f"❌ Error: {e}")
+        import traceback
+        traceback.print_exc()
 
 async def main():
-    # CURRENT WRONG PAYLOAD
-    wrong_payload = [{
+    # TEST 1: CURRENT "FIXED" PAYLOAD
+    fixed_payload = [{
         "location_name": "United States",
         "language_code": "en",
-        "keyword": "unlimited wordpress support",
+        "keywords": ["unlimited wordpress support"],
         "include_serp_info": True,
         "include_seed_keyword": True
     }]
-    print("\n--- Testing Wrong Payload ---")
-    await test_dataforseo_payload(wrong_payload)
+    print("\n--- Testing Fixed Payload (with extra flags) ---")
+    await test_dataforseo_payload(fixed_payload)
 
-    # PROPOSED CORRECT PAYLOAD (using 'keywords' plural for keyword_overview/live)
-    correct_payload = [{
+    # TEST 2: MINIMAL PAYLOAD
+    minimal_payload = [{
         "location_name": "United States",
         "language_code": "en",
         "keywords": ["unlimited wordpress support"]
     }]
-    print("\n--- Testing Correct Payload ---")
-    await test_dataforseo_payload(correct_payload)
+    print("\n--- Testing Minimal Payload ---")
+    await test_dataforseo_payload(minimal_payload)
+
+    # TEST 4: PAKISTAN LOCATION
+    pakistan_payload = [{
+        "location_name": "Pakistan",
+        "language_code": "en",
+        "keywords": ["unlimited wordpress support"]
+    }]
+    print("\n--- Testing Pakistan Location ---")
+    await test_dataforseo_payload(pakistan_payload)
 
 if __name__ == "__main__":
     asyncio.run(main())

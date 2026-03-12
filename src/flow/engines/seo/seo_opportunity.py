@@ -75,14 +75,14 @@ async def seo_opportunity_node(state: REXT) -> Dict[str, SEORESULT]:
     serp_backlinks = seo.get("serp_backlinks", {})
     api_intent = serp_backlinks.get("main_intent")
     
-    # Calculate Top intent (Consensus among competitors)
-    top_intent = get_consensus_intent(api_intent, competitors)
+    # Calculate SERP intent (Consensus among competitors)
+    serp_intent, serp_confidence = get_consensus_intent(api_intent, competitors)
     
     # Calculate LLM intent
     llm_predicted = await calculate_intent_with_llm(query, organic_results)
     
     # Get final consensus and include all intents
-    intent_analysis = get_intent_consensus(api_intent, top_intent, llm_predicted)
+    intent_analysis = get_intent_consensus(api_intent, serp_intent, serp_confidence, llm_predicted)
     intent = intent_analysis["consensus_intent"]
     
     # Count how many competitors have the keyword intent as the top intent

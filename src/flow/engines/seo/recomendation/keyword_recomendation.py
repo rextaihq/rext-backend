@@ -30,14 +30,14 @@ async def keyword_recommendation(state: REXT, config, *, runtime) -> Dict[str, A
     
     api_intent = serp_backlinks.get("main_intent")
     
-    # Calculate Top intent (Consensus among competitors)
-    top_intent = get_consensus_intent(api_intent, competitors)
+    # Calculate SERP intent (Consensus among competitors)
+    serp_intent, serp_confidence = get_consensus_intent(api_intent, competitors)
     
     # Calculate LLM intent
     llm_predicted = await calculate_intent_with_llm(query, organic_results)
     
     # Get final consensus
-    intent_analysis = get_intent_consensus(api_intent, top_intent, llm_predicted)
+    intent_analysis = get_intent_consensus(api_intent, serp_intent, serp_confidence, llm_predicted)
     search_intent = intent_analysis["consensus_intent"]
     
     volume = serp_backlinks.get("search_volume", 0)

@@ -52,15 +52,30 @@ async def get_dataforseo_data(
 
             tasks = data.get("tasks", [])
             if not tasks:
+                logger.warning(f"DataForSEO response has no tasks: {data}")
                 return {}
             
-            result = tasks[0].get("result")
+            task = tasks[0]
+            status_code = task.get("status_code")
+            if status_code != 20000:
+                logger.warning(f"DataForSEO task failed with code {status_code}: {task.get('status_message')}")
+                return {}
+            
+            result = task.get("result")
             if not result or not result[0]:
+                logger.warning(f"DataForSEO task has no result: {task}")
                 return {}
             
             # ✅ keyword_overview returns actual metrics in the result items
-            items = result[0].get("items", [])
+            res = result[0]
+            items = res.get("items")
+            
+            if items is None:
+                logger.warning(f"DataForSEO result items is None for query '{keyword}'")
+                return {}
+            
             if not items:
+                logger.warning(f"DataForSEO result items is empty for query '{keyword}'")
                 return {}
                 
             item = items[0]

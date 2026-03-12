@@ -38,29 +38,40 @@ async def run_verification():
 
     # 2. Test Consensus Logic - Scenario: Match
     print("\n2. Scenario: Match (API: commercial, LLM: commercial)")
-    results = get_intent_consensus("commercial", "informational", llm_predicted)
+    serp_intent, serp_conf = "commercial", 0.5
+    results = get_intent_consensus("commercial", serp_intent, serp_conf, llm_predicted)
     print(f"Final Intent: {results['consensus_intent']}")
     assert results['consensus_intent'] == "commercial"
 
     # 3. Test Consensus Logic - Scenario: No Match, LLM > 60%
     print("\n3. Scenario: No Match, High LLM Confidence (API: informational, LLM: commercial @ 85%)")
     high_conf_llm = KeywordIntentResponse(intent="COMMERCIAL", confidence="high", probability=0.85, explanation="Review/Comparison results")
-    results = get_intent_consensus("informational", "informational", high_conf_llm)
+    serp_intent, serp_conf = "informational", 0.5
+    results = get_intent_consensus("informational", serp_intent, serp_conf, high_conf_llm)
     print(f"Final Intent: {results['consensus_intent']}")
     assert results['consensus_intent'] == "commercial"
 
-    # 4. Test Consensus Logic - Scenario: No Match, LLM < 60%
+    # 4. Test Consensus Logic - Scenario: No Match, Low LLM Confidence (API: informational, LLM: commercial @ 45%)
     print("\n4. Scenario: No Match, Low LLM Confidence (API: informational, LLM: commercial @ 45%)")
     low_conf_llm = KeywordIntentResponse(intent="COMMERCIAL", confidence="low", probability=0.45, explanation="Unclear results")
-    results = get_intent_consensus("informational", "informational", low_conf_llm)
+    serp_intent, serp_conf = "informational", 0.4
+    results = get_intent_consensus("informational", serp_intent, serp_conf, low_conf_llm)
     print(f"Final Intent: {results['consensus_intent']}")
     assert results['consensus_intent'] == "informational"
 
     # 5. Test Consensus Logic - Scenario: No API intent
-    print("\n5. Scenario: No API Intent (API: None, LLM: commercial @ 45%, Top: informational)")
-    results = get_intent_consensus(None, "informational", low_conf_llm)
+    print("\n5. Scenario: No API Intent (API: None, LLM: commercial @ 45%, SERP: transactional @ 70%)")
+    serp_intent, serp_conf = "transactional", 0.7
+    results = get_intent_consensus(None, serp_intent, serp_conf, low_conf_llm)
     print(f"Final Intent: {results['consensus_intent']}")
-    assert results['consensus_intent'] == "informational"
+    assert results['consensus_intent'] == "transactional"
+
+    # 6. Test Consensus Logic - Scenario: API Mismatch, High SERP Confidence
+    print("\n6. Scenario: API Mismatch, High SERP Confidence (API: informational, SERP: commercial @ 80%)")
+    serp_intent, serp_conf = "commercial", 0.8
+    results = get_intent_consensus("informational", serp_intent, serp_conf, low_conf_llm)
+    print(f"Final Intent: {results['consensus_intent']}")
+    assert results['consensus_intent'] == "commercial"
 
     print("\n=== All Tests Passed (Logic Verified) ===")
 

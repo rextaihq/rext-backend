@@ -34,7 +34,7 @@ def content_type(state: REXT) -> REXT:
 
     # Use consensus intent (API + Competitors) for better accuracy
     api_intent = serp_backlinks.get("main_intent")
-    search_intent = get_consensus_intent(api_intent, competitors)
+    search_intent, _ = get_consensus_intent(api_intent, competitors)
 
     # Check for upstream errors — skip processing if prior node failed
     if content_state.get("error"):
