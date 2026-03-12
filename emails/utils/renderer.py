@@ -26,18 +26,20 @@ class TemplateRenderer:
         self,
         template_content: str,
         context: Dict[str, Any],
-        layout_props: Optional[EmailLayoutProps] = None
+        layout_props: Optional[EmailLayoutProps] = None,
+        raw_fields: Optional[set] = None
     ) -> str:
         """
         Render template with context variables.
 
-        Performs simple variable substitution using {{variable}} syntax.
+        Performs variable substitution with HTML escaping.
         Wraps content in email layout.
 
         Args:
             template_content: HTML template string with {{variables}}
             context: Dictionary of variables to substitute
             layout_props: Optional layout configuration
+            raw_fields: Set of variable names to skip escaping (trusted content only)
 
         Returns:
             Complete HTML email string
@@ -49,7 +51,7 @@ class TemplateRenderer:
             >>> html = renderer.render(template, context)
         """
         # Substitute variables
-        rendered_content = self._substitute_variables(template_content, context)
+        rendered_content = self._substitute_variables(template_content, context, raw_fields)
 
         # Wrap in layout
         return email_layout(rendered_content, layout_props)
@@ -57,7 +59,8 @@ class TemplateRenderer:
     def render_without_layout(
         self,
         template_content: str,
-        context: Dict[str, Any]
+        context: Dict[str, Any],
+        raw_fields: Optional[set] = None
     ) -> str:
         """
         Render template without wrapping in layout.
@@ -67,34 +70,41 @@ class TemplateRenderer:
         Args:
             template_content: HTML template string with {{variables}}
             context: Dictionary of variables to substitute
+            raw_fields: Set of variable names to skip escaping (trusted content only)
 
         Returns:
             Rendered HTML string (without layout)
         """
-        return self._substitute_variables(template_content, context)
+        return self._substitute_variables(template_content, context, raw_fields)
 
     def _substitute_variables(
         self,
         content: str,
-        context: Dict[str, Any]
+        context: Dict[str, Any],
+        raw_fields: Optional[set] = None
     ) -> str:
         """
-        Substitute variables in template content.
+        Substitute variables in template content with HTML-escaped values.
 
         Uses simple {{variable}} syntax.
-        Missing variables are left as-is with a fallback message.
+        All values are HTML-escaped by default to prevent XSS.
+        Variables listed in raw_fields are inserted without escaping
+        (use only for trusted, pre-sanitized content like rendered components).
 
         Args:
             content: Template content with {{variables}}
             context: Variable values
+            raw_fields: Set of variable names to skip escaping (trusted content only)
 
         Returns:
-            Content with variables substituted
+            Content with variables substituted (HTML-escaped)
         """
+        import html
+        import re
+
+        raw_fields = raw_fields or set()
         result = content
 
-        # Find all {{variable}} patterns
-        import re
         pattern = r'\{\{(\w+)\}\}'
 
         def replace_variable(match):
@@ -105,7 +115,14 @@ class TemplateRenderer:
                 # Leave as-is or use fallback
                 return f"[{var_name}]"
 
-            return str(value)
+            str_value = str(value)
+
+            # Skip escaping for explicitly trusted fields
+            if var_name in raw_fields:
+                return str_value
+
+            # HTML-escape all user-supplied values
+            return html.escape(str_value, quote=True)
 
         result = re.sub(pattern, replace_variable, result)
 
@@ -137,6 +154,7 @@ _renderer = TemplateRenderer()
 def render_template(
     template_content: str,
     context: Dict[str, Any],
+    raw_fields: Optional[set] = None,
     **layout_kwargs
 ) -> str:
     """
@@ -145,6 +163,7 @@ def render_template(
     Args:
         template_content: HTML template string with {{variables}}
         context: Dictionary of variables to substitute
+        raw_fields: Set of variable names to skip escaping (trusted content only)
         **layout_kwargs: Additional layout configuration
 
     Returns:
@@ -161,7 +180,7 @@ def render_template(
     if layout_kwargs:
         layout_props = EmailLayoutProps(**layout_kwargs)
 
-    return _renderer.render(template_content, context, layout_props)
+    return _renderer.render(template_content, context, layout_props, raw_fields)
 
 
 def compose_email(components: list, **layout_kwargs) -> str:

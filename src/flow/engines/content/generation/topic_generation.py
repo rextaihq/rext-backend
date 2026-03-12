@@ -2,10 +2,10 @@ import logging
 from typing import Dict, Any
 from src.flow.states.rext import REXT
 from src.flow.model.structure.topics import SEOTopics
-from src.flow.model.llm_manager import load_model
+from src.flow.model.llm_manager import topic_generation_model
 from langgraph.types import interrupt
 from langchain_core.messages import SystemMessage, HumanMessage
-from datetime import datetime
+from datetime import datetime, timezone
 logger = logging.getLogger(__name__)
 
 
@@ -22,17 +22,31 @@ async def topic_generation(state: REXT) -> Dict[str, Any]:
     """
     logger.info("Starting topic generation")
 
-    # Get the normalized query
+    # Get the normalized query from SERP results or fallback to input payload
     normalized_result = state.get("serp_normalized", {})
-    query = normalized_result.get("query", "")
+    
+    # Check for upstream errors — skip processing if prior node failed
+    if normalized_result and normalized_result.get("error"):
+        logger.warning(
+            "Skipping topic generation due to upstream error: %s",
+            normalized_result["error"],
+        )
+        return {"content": {"topics": [], "selected_topic": ""}}
+
+    query = normalized_result.get("query")
+    
+    if not query:
+        serp_payload = state.get("serp_payload", {})
+        query = serp_payload.get("query", "")
+
     
     if not query:
         logger.warning("No query found in serp_normalized")
         return {"content": {"topics": [], "selected_topic": ""}}
 
     # Load the model with structured output
-    model = load_model().with_structured_output(SEOTopics)
-    current_year = datetime.now().year
+    model = topic_generation_model().with_structured_output(SEOTopics)
+    current_year = datetime.now(timezone.utc).year
     # Use a LIST of messages, not a SET
     messages = [
     SystemMessage(

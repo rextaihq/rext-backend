@@ -16,7 +16,7 @@ Usage:
 
         id = Column(UUID(as_uuid=True), primary_key=True)
         name = Column(String, nullable=False)
-        created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
+        created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
     # Basic serialization
     obj = MyModel(name="Example")
@@ -38,7 +38,7 @@ Usage:
 """
 
 from typing import Any, Dict, List, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 from uuid import UUID
 from decimal import Decimal
 
@@ -115,7 +115,7 @@ class SerializableMixin:
             if column.name in exclude:
                 continue
 
-            value = getattr(self, column.name)
+            value = getattr(self, column.key)
 
             # Skip None values if requested
             if value is None and not include_nulls:
@@ -142,8 +142,9 @@ class SerializableMixin:
                     continue
 
                 # Check if the relationship is loaded (won't trigger lazy load)
+                from sqlalchemy.orm.base import NO_VALUE
                 rel_state = inspector.attrs.get(rel_name)
-                if rel_state is None or not rel_state.loaded_value:
+                if rel_state is None or rel_state.loaded_value is NO_VALUE:
                     # Relationship not loaded, skip it
                     continue
 
@@ -163,4 +164,61 @@ class SerializableMixin:
                         rel_obj.to_dict() if hasattr(rel_obj, 'to_dict') else str(rel_obj)
                     )
 
-        return data
+        return data 
+        
+        
+from sqlalchemy import Column, DateTime, event
+from sqlalchemy.ext.hybrid import hybrid_property
+
+
+class SoftDeleteMixin:
+    """
+    Mixin for soft-delete support on SQLAlchemy models.
+
+    Adds a `deleted_at` column and provides:
+    - `soft_delete()` / `restore()` instance methods
+    - `is_deleted` hybrid property (works in Python and SQL)
+    - `active()` class method for filtering queries
+
+    Usage:
+        class MyModel(Base, SerializableMixin, SoftDeleteMixin):
+            __tablename__ = "my_table"
+
+        # Query only active records:
+        stmt = select(MyModel).where(MyModel.is_deleted == False)
+        # Or use the helper:
+        stmt = select(MyModel).where(MyModel.active())
+    """
+
+    deleted_at = Column(
+        DateTime(timezone=True),
+        nullable=True,
+        default=None,
+        comment="Soft delete timestamp. NULL = active, non-NULL = deleted."
+    )
+
+    @hybrid_property
+    def is_deleted(self) -> bool:
+        """Python-side check: is this record soft-deleted?"""
+        return self.deleted_at is not None
+
+    @is_deleted.expression
+    def is_deleted(cls):
+        """SQL-side expression: generates `deleted_at IS NOT NULL`."""
+        return cls.deleted_at.isnot(None)
+
+    def soft_delete(self) -> None:
+        """Mark this record as soft-deleted."""
+        self.deleted_at = datetime.now(timezone.utc)
+
+    def restore(self) -> None:
+        """Restore a soft-deleted record."""
+        self.deleted_at = None
+
+    @classmethod
+    def active(cls):
+        """Return a filter expression for non-deleted records.
+
+        Usage: select(Model).where(Model.active())
+        """
+        return cls.deleted_at.is_(None)

@@ -9,8 +9,9 @@ from datetime import datetime, timezone, timedelta
 from typing import Dict, Optional
 from uuid import UUID
 
-from sqlalchemy import delete, select, func
+from sqlalchemy import delete, select, func,update 
 from sqlalchemy.ext.asyncio import AsyncSession
+from src.api.models.user_models.token_blacklist import TokenBlacklist
 
 from src.api.models.audit_models.audit_logs import AuditLog
 from src.api.models.email_models.email_log import EmailLog
@@ -85,7 +86,7 @@ class DataCleanupService:
                     break
 
                 deleted_total += deleted_batch
-                await self.db.commit()
+                await self.db.flush()
 
                 logger.debug(f"Deleted batch of {deleted_batch} audit logs (total: {deleted_total})")
 
@@ -152,7 +153,7 @@ class DataCleanupService:
                     break
 
                 deleted_total += deleted_batch
-                await self.db.commit()
+                await self.db.flush()
 
                 logger.debug(f"Deleted batch of {deleted_batch} email logs (total: {deleted_total})")
 
@@ -224,7 +225,7 @@ class DataCleanupService:
                     break
 
                 deleted_total += deleted_batch
-                await self.db.commit()
+                await self.db.flush()
 
                 logger.debug(f"Deleted batch of {deleted_batch} orphaned email events (total: {deleted_total})")
 
@@ -299,7 +300,7 @@ class DataCleanupService:
                     break
 
                 deleted_total += deleted_batch
-                await self.db.commit()
+                await self.db.flush()
 
                 logger.debug(f"Deleted batch of {deleted_batch} inactive sessions (total: {deleted_total})")
 
@@ -328,7 +329,8 @@ class DataCleanupService:
         Returns:
             Number of records deleted (or would be deleted in dry-run mode)
         """
-        retention_days = retention_days or 90  # Default 90 days for webhook events
+        
+        retention_days = retention_days or cleanup_config.WEBHOOK_EVENT_RETENTION_DAYS
         cutoff_date = datetime.now(timezone.utc) - timedelta(days=retention_days)
 
         logger.info(
@@ -341,7 +343,7 @@ class DataCleanupService:
             select(func.count(WebhookEvent.id))
             .where(
                 WebhookEvent.created_at < cutoff_date,
-                WebhookEvent.processed == True
+                WebhookEvent.processed.is_(True)
             )
         )
         record_count = count_result.scalar()
@@ -359,7 +361,7 @@ class DataCleanupService:
                     delete(WebhookEvent)
                     .where(
                         WebhookEvent.created_at < cutoff_date,
-                        WebhookEvent.processed == True
+                        WebhookEvent.processed.is_(True)
                     )
                     .execution_options(synchronize_session=False)
                     .returning(WebhookEvent.id)
@@ -371,7 +373,7 @@ class DataCleanupService:
                     break
 
                 deleted_total += deleted_batch
-                await self.db.commit()
+                await self.db.flush()
 
                 logger.debug(f"Deleted batch of {deleted_batch} webhook events (total: {deleted_total})")
 
@@ -404,7 +406,7 @@ class DataCleanupService:
         Returns:
             Number of records anonymized (or would be anonymized in dry-run mode)
         """
-        retention_days = retention_days or 90  # Default 90 days after cancellation
+        retention_days = retention_days or cleanup_config.CANCELLED_SUBSCRIPTION_RETENTION_DAYS
         cutoff_date = datetime.now(timezone.utc) - timedelta(days=retention_days)
 
         logger.info(
@@ -429,20 +431,19 @@ class DataCleanupService:
 
         if not self.dry_run:
             # Anonymize by setting user_id to NULL (keep subscription for financial records)
-            from sqlalchemy import update
 
             result = await self.db.execute(
                 update(UserSubscription)
                 .where(
                     UserSubscription.updated_at < cutoff_date,
                     UserSubscription.status.in_(["cancelled", "expired"]),
-                    UserSubscription.user_id.isnot(None)
+                    UserSubscription.user_id.isnot(None),
                 )
                 .values(user_id=None)
                 .returning(UserSubscription.id)
             )
             anonymized_count = len(result.fetchall())
-            await self.db.commit()
+            await self.db.flush()
 
             logger.info(
                 f"Anonymized {anonymized_count} cancelled subscriptions (user_id set to NULL)",
@@ -472,6 +473,7 @@ class DataCleanupService:
             "user_sessions": await self.cleanup_inactive_sessions(),
             "webhook_events": await self.cleanup_webhook_events(),
             "cancelled_subscriptions_anonymized": await self.anonymize_cancelled_subscriptions(),
+            "cleanup_expired_tokens": await self.cleanup_expired_tokens()
         }
 
         total_deleted = sum(results.values())
@@ -482,3 +484,34 @@ class DataCleanupService:
         )
 
         return results
+    
+    async def cleanup_expired_tokens(self) -> int:
+        """
+        Clean up expired tokens from the blacklist.
+
+        Expired tokens can be safely removed since they would be
+        rejected anyway due to expiration.
+
+        Returns:
+            Number of records deleted (or would be deleted in dry-run mode)
+        """
+        cutoff_date = datetime.now(timezone.utc)
+
+        if self.dry_run:
+            count_stmt = select(func.count()).select_from(TokenBlacklist).where(
+                TokenBlacklist.expires_at < cutoff_date
+            )
+            result = await self.db.execute(count_stmt)
+            count = result.scalar() or 0
+            logger.info(f"[DRY RUN] Would delete {count} expired tokens from blacklist")
+            return count
+
+        stmt = delete(TokenBlacklist).where(
+            TokenBlacklist.expires_at < cutoff_date
+        )
+        result = await self.db.execute(stmt)
+        deleted = result.rowcount
+        await self.db.flush()
+
+        logger.info(f"Cleaned up {deleted} expired tokens from blacklist")
+        return deleted

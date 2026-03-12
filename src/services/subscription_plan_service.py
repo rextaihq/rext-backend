@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, Optional
 from uuid import UUID
 
@@ -31,12 +31,8 @@ class SubscriptionPlanService:
         self.db = db
 
     async def is_admin(self, user_id: UUID) -> bool:
-        result = await self.db.execute(
-            select(UserRole)
-            .join(Role)
-            .where(UserRole.user_id == user_id, Role.name.in_(["admin", "super_admin"]))
-        )
-        return result.scalar_one_or_none() is not None
+        from src.utils.rbac_utils import is_user_admin
+        return await is_user_admin(self.db, user_id)
 
     async def require_admin(self, user_id: UUID) -> None:
         if not await self.is_admin(user_id):
@@ -49,24 +45,24 @@ class SubscriptionPlanService:
         await self._ensure_unique_name(payload.name)
 
         plan = SubscriptionPlan(
-            name=payload.name.lower(),
-            display_name=payload.display_name,
-            description=payload.description,
-            price_monthly=payload.price_monthly,
-            price_yearly=payload.price_yearly,
-            features=payload.features or {},
-            max_workspaces=payload.max_workspaces,
-            max_members_per_workspace=payload.max_members_per_workspace,
-            max_topics=payload.max_topics,
-            max_knowledge_items=payload.max_knowledge_items,
-            max_api_calls_per_month=payload.max_api_calls_per_month,
-            is_active=payload.is_active,
-            is_public=payload.is_public,
-            stripe_price_id_monthly=payload.stripe_price_id_monthly,
-            stripe_price_id_yearly=payload.stripe_price_id_yearly,
-            created_at=datetime.utcnow(),
-            updated_at=datetime.utcnow(),
-        )
+        name=payload.name.lower(),
+        display_name=payload.display_name,
+        description=payload.description,
+        price_monthly=payload.price_monthly,
+        price_yearly=payload.price_yearly,
+        features=payload.features or {},
+        max_workspaces=payload.max_workspaces,
+        max_members_per_workspace=payload.max_members_per_workspace,
+        max_topics=payload.max_topics,
+        max_knowledge_items=payload.max_knowledge_items,
+        max_api_calls_per_month=payload.max_api_calls_per_month,
+        is_active=payload.is_active,
+        is_public=payload.is_public,
+        lemonsqueezy_product_id=payload.lemonsqueezy_product_id,
+        lemonsqueezy_variant_id_monthly=payload.lemonsqueezy_variant_id_monthly,
+        lemonsqueezy_variant_id_yearly=payload.lemonsqueezy_variant_id_yearly,
+        created_at=datetime.now(timezone.utc),
+        updated_at=datetime.now(timezone.utc),)
 
         self.db.add(plan)
         await self.db.flush()
@@ -145,7 +141,7 @@ class SubscriptionPlanService:
         for field, value in update_data.items():
             setattr(plan, field, value)
 
-        plan.updated_at = datetime.utcnow()
+        plan.updated_at = datetime.now(timezone.utc)
         await self.db.flush()
         await self.db.refresh(plan)
 

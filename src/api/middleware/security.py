@@ -3,45 +3,63 @@ Security Headers Middleware
 
 Adds security-related HTTP headers to all responses.
 """
+
 from fastapi import Request
-from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.responses import Response
 
 
-class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+
+class SecurityHeadersMiddleware:
     """
     Middleware to add security headers to all responses.
-
-    Headers added:
-    - X-Content-Type-Options: Prevents MIME type sniffing
-    - X-Frame-Options: Prevents clickjacking
-    - X-XSS-Protection: Enables XSS filter in browsers
-    - Strict-Transport-Security: Forces HTTPS (only on HTTPS requests)
+    Using pure ASGI interface to avoid BaseHTTPMiddleware issues with streaming responses.
     """
+    def __init__(self, app):
+        self.app = app
 
-    async def dispatch(self, request: Request, call_next) -> Response:
-        response = await call_next(request)
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
 
-        # Prevent MIME type sniffing
-        response.headers["X-Content-Type-Options"] = "nosniff"
+        async def send_wrapper(message):
+            if message["type"] == "http.response.start":
+                headers = list(message.get("headers", []))
+                
+                # Helper to set header
+                def set_header(name, value):
+                    # Remove existing if any
+                    for i, (k, v) in enumerate(headers):
+                        if k.lower() == name.lower().encode():
+                            headers[i] = (k, value.encode())
+                            return
+                    headers.append((name.encode(), value.encode()))
 
-        # Prevent clickjacking
-        response.headers["X-Frame-Options"] = "DENY"
+                # Prevent MIME type sniffing
+                set_header("X-Content-Type-Options", "nosniff")
 
-        # Content Security Policy
-        # Restricts where resources can be loaded from and blocks embedding
-        response.headers["Content-Security-Policy"] = "default-src 'self'; frame-ancestors 'none';"
+                # Content Security Policy
+                csp = (
+                    "default-src 'self'; "
+                    "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net; "
+                    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net; "
+                    "img-src 'self' data: https://fastapi.tiangolo.com; "
+                    "font-src 'self' https://fonts.gstatic.com; "
+                    "frame-ancestors 'none';"
+                )
+                set_header("Content-Security-Policy", csp)
 
-        # Referrer Policy
-        # Controls how much referrer information is included with requests
-        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+                # Referrer Policy
+                set_header("Referrer-Policy", "strict-origin-when-cross-origin")
 
-        # Permissions Policy
-        # Disables unused browser features for enhanced privacy
-        response.headers["Permissions-Policy"] = "geolocation=(), camera=(), microphone=()"
+                # Permissions Policy
+                set_header("Permissions-Policy", "geolocation=(), camera=(), microphone=()")
 
-        # HSTS (only for HTTPS)
-        if request.url.scheme == "https":
-            response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+                # HSTS (only apply on HTTPS)
+                if scope.get("scheme") == "https":
+                    set_header("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
 
-        return response
+                message["headers"] = headers
+            
+            await send(message)
+
+        await self.app(scope, receive, send_wrapper)

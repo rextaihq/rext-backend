@@ -96,8 +96,8 @@ def get_webhook_payload(event_type: str, **kwargs) -> Dict[str, Any]:
     Returns:
         Dict containing webhook payload
     """
-    timestamp = datetime.utcnow().isoformat() + "Z"
-    event_id = kwargs.get("event_id", f"test_{event_type}_{int(datetime.utcnow().timestamp())}")
+    timestamp = datetime.now(timezone.utc).isoformat() + "Z"
+    event_id = kwargs.get("event_id", f"test_{event_type}_{int(datetime.now(timezone.utc).timestamp())}")
 
     # Common subscription attributes
     subscription_attrs = {
@@ -707,7 +707,7 @@ def test_idempotency(url: str, secret: str, verbose: bool = False) -> Dict[str, 
     print("Testing Idempotency (Duplicate Events)")
     print(f"{'='*70}\n")
 
-    event_id = f"idempotency_test_{int(datetime.utcnow().timestamp())}"
+    event_id = f"idempotency_test_{int(datetime.now(timezone.utc).timestamp())}"
 
     # Send first webhook
     print("[1/2] Sending webhook first time...", end=" ")

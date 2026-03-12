@@ -2,7 +2,7 @@
 from sqlalchemy import Column, String, DateTime, ForeignKey
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import relationship
-from datetime import datetime
+from datetime import datetime, timezone
 import uuid
 
 from src.api.database.base import Base
@@ -25,8 +25,8 @@ class EmailEvent(Base, SerializableMixin):
     provider_message_id = Column(String(255), nullable=False, index=True)  # Links to email_logs
     event_type = Column(String(50), nullable=False, index=True)  # delivered, opened, clicked, bounced, complained
     event_data = Column(JSONB, nullable=True)  # Full webhook payload
-    received_at = Column(DateTime(timezone=True), nullable=False, default=datetime.utcnow, index=True)
-    created_at = Column(DateTime(timezone=True), nullable=False, default=datetime.utcnow)
+    received_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc), index=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
 
     # Relationships
     email_log = relationship("EmailLog", back_populates="events")

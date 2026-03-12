@@ -61,6 +61,9 @@ dependencies = [
     "seokar>=1.0.0",
     "language-tool-python>=3.2.2",
     "aiosmtplib>=3.0.0",
+    "apscheduler>=3.10.0,<4.0.0",
+    "docx2txt>=0.8",
+    "openpyxl>=3.1.0",
 ]
 
 [project.scripts]
@@ -76,4 +79,16 @@ dev = [
     "factory-boy>=3.3.1",
     "faker>=20.0.0",
     "pytest-cov>=4.1.0",
+    "ruff>=0.13.0",
 ]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = ["F401"]
+"scripts/**/*.py" = ["I001"]

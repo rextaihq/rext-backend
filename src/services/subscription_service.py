@@ -28,6 +28,7 @@ from sqlalchemy import select, func, and_
 from sqlalchemy.orm import selectinload
 
 from src.api.models.subscription_models.plans import SubscriptionPlan
+from src.api.cache.decorators import invalidate_cache
 from src.api.models.subscription_models.subscriptions import (
     UserSubscription,
     SubscriptionStatus,
@@ -131,6 +132,9 @@ class SubscriptionService:
         self.db.add(new_subscription)
         await self.db.flush()
         await self.db.refresh(new_subscription)
+
+        # Invalidate subscription tier cache
+        await invalidate_cache(f"user:subscription_tier:{user_id}:*")
 
         logger.info(
             f"User {user_id} subscribed to plan: {plan.name} ({billing_period.value})",
@@ -459,6 +463,9 @@ class SubscriptionService:
         await self.db.flush()
         await self.db.refresh(current_subscription)
 
+        # Invalidate subscription tier cache
+        await invalidate_cache(f"user:subscription_tier:{user_id}:*")
+
         action = "downgraded" if is_downgrade else "upgraded"
         logger.info(
             f"User {user_id} {action} from {current_plan.name} to {new_plan.name}",
@@ -521,7 +528,8 @@ class SubscriptionService:
         user_id: UUID,
         reason: Optional[str] = None,
         cancel_immediately: bool = False,
-        background_tasks: Optional[BackgroundTasks] = None
+        background_tasks: Optional[BackgroundTasks] = None,
+        fail_on_provider_error: bool = False
     ) -> UserSubscription:
         """
         Cancel subscription.
@@ -537,12 +545,14 @@ class SubscriptionService:
             reason: Optional cancellation reason
             cancel_immediately: If True, cancel now; if False, at end of period
             background_tasks: Optional background tasks for notifications
+            fail_on_provider_error: If True, raise exception if payment provider call fails
 
         Returns:
             Updated UserSubscription object
 
         Raises:
             ResourceNotFoundException: If no active subscription
+            RextValidationException: If payment provider cancellation fails and fail_on_provider_error is True
         """
         # Get current subscription
         subscription = await self.get_subscription_by_user(user_id)
@@ -559,7 +569,7 @@ class SubscriptionService:
                 provider_sub_id = subscription.lemonsqueezy_subscription_id or subscription.provider_subscription_id
 
                 # Cancel with payment provider
-                cancelled_subscription = await self.payment_provider.cancel_subscription(
+                await self.payment_provider.cancel_subscription(
                     subscription_id=provider_sub_id,
                     at_period_end=not cancel_immediately
                 )
@@ -590,11 +600,22 @@ class SubscriptionService:
                     }
                 )
 
-                # Continue with local cancellation even if provider cancellation fails
+                if fail_on_provider_error:
+                    raise RextValidationException(
+                        message="Payment provider cancellation failed; local cancellation aborted",
+                        context={"user_id": str(user_id), "provider_error": str(e)}
+                    )
+
+                # Continue with local cancellation even if provider cancellation fails for non-admin paths
                 # This ensures we don't leave the user stuck
 
         # Update local subscription
         subscription.cancelled_at = datetime.now(timezone.utc)
+
+        # Store cancellation reason
+        if reason:
+            subscription.cancellation_reason = reason
+            logger.info(f"Cancellation reason stored for subscription {subscription.id}")
         subscription.cancel_at_period_end = not cancel_immediately
 
         if cancel_immediately:
@@ -611,6 +632,9 @@ class SubscriptionService:
         subscription.updated_at = datetime.now(timezone.utc)
         await self.db.flush()
         await self.db.refresh(subscription)
+
+        # Invalidate subscription tier cache
+        await invalidate_cache(f"user:subscription_tier:{user_id}:*")
 
         logger.info(
             f"User {user_id} cancelled subscription (immediately={cancel_immediately})",
@@ -1048,8 +1072,6 @@ class SubscriptionService:
                 "max_members_per_workspace": plan.max_members_per_workspace,
                 "max_topics": plan.max_topics,
                 "max_knowledge_items": plan.max_knowledge_items,
-                "max_content_per_month": plan.max_content_per_month,
-                "max_ai_generations_per_month": plan.max_ai_generations_per_month,
                 "is_active": plan.is_active,
                 "created_at": plan.created_at,
                 "updated_at": plan.updated_at
@@ -1085,7 +1107,6 @@ class SubscriptionService:
         # Usage-based check
         is_usage_downgrade = (
             (new_plan.max_workspaces != -1 and new_plan.max_workspaces < current_usage["workspaces"]) or
-            (new_plan.max_topics != -1 and new_plan.max_topics < current_usage["topics"]) or
             (new_plan.max_knowledge_items != -1 and new_plan.max_knowledge_items < current_usage["knowledge_items"])
         )
 

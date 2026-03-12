@@ -1,19 +1,16 @@
-from sqlalchemy import Column, String, Text, DateTime, ForeignKey
-from sqlalchemy.dialects.postgresql import UUID, JSONB
+from sqlalchemy import Column, String, Text
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
 from src.api.database.base import Base
 from src.api.models.base import SerializableMixin
-import uuid
-from datetime import datetime, timezone
+from src.api.models.mixins import UUIDPrimaryKeyMixin, TimestampMixin, WorkspaceScopedMixin
 
 
-class Persona(Base, SerializableMixin):
+class Persona(Base, SerializableMixin, UUIDPrimaryKeyMixin, TimestampMixin, WorkspaceScopedMixin):
     """Persona model - Stores extracted user personas for workspaces...."""
     __tablename__ = "persona"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, unique=True, nullable=False)
-    workspace_id = Column(UUID(as_uuid=True), ForeignKey("workspace.id", ondelete="CASCADE"), nullable=False)
-
+    # id, workspace_id, created_at, updated_at provided by mixins
     name = Column(String(255), nullable=False)
     description = Column(Text, nullable=True)
     
@@ -32,29 +29,5 @@ class Persona(Base, SerializableMixin):
     behaviors = Column(Text, nullable=True)
     custom_metadata = Column(JSONB, nullable=True)
 
-    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
-    updated_at = Column(DateTime(timezone=True), onupdate=lambda: datetime.now(timezone.utc), nullable=True)
-
     # Relationships
     workspace = relationship("WorkspaceModel", back_populates="personas")
-
-    def to_dict(self):
-        return {
-            "id": str(self.id),
-            "workspace_id": str(self.workspace_id),
-            "name": self.name,
-            "description": self.description,
-            "full_name": self.full_name,
-            "professional_title": self.professional_title,
-            "areas_of_expertise": self.areas_of_expertise,
-            "tone_of_voice": self.tone_of_voice,
-            "bio": self.bio,
-            "linkedin_url": self.linkedin_url,
-            "demographics": self.demographics,
-            "pain_points": self.pain_points,
-            "goals": self.goals,
-            "behaviors": self.behaviors,
-            "custom_metadata": self.custom_metadata,
-            "created_at": self.created_at,
-            "updated_at": self.updated_at
-        }

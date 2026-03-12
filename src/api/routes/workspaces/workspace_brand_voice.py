@@ -8,10 +8,9 @@ from src.api.schema.knowledge_schema import BrandSchema
 from src.api.security.dependencies import get_current_user
 from src.services.brand_voice_service import BrandVoiceService
 from src.services.workspace_service import WorkspaceService
-from src.utils.auth_utils import verify_current_user
 from src.utils.response_utils import success
 from src.utils.route_decorators import db_transaction_handler, require_permissions
-from src.utils.workspace_utils import resolve_and_verify_workspace
+from src.utils.workspace_utils import resolve_workspace_for_route
 
 router = APIRouter(tags=["workspace-brand-voice"])
 
@@ -41,13 +40,8 @@ async def _update_brand_voice(
     user: dict,
 ) -> dict:
     """Shared handler logic for brand voice upsert operations."""
+    workspace, _ = await resolve_workspace_for_route(db=db, workspace_identifier=workspace_identifier, user=user)
     user_id = UUID(str(user.get("identity")))
-
-    # Verify user exists (using auth_utils)
-    await verify_current_user(db, str(user_id))
-
-    # Resolve workspace identifier to UUID and ensure membership
-    workspace, _membership = await resolve_and_verify_workspace(db, workspace_identifier, user_id)
 
     service = BrandVoiceService(db)
     brand_voice = await service.upsert_brand_voice(

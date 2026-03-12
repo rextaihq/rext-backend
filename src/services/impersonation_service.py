@@ -16,27 +16,26 @@ Does NOT:
 - Create actual JWT tokens (that's token utils)
 """
 
-from typing import Dict, Any, Optional
+from datetime import datetime, timezone
+from typing import Any, Dict, Optional
 from uuid import UUID
-from datetime import datetime
 
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.api.models.user_models.users import Users
-from src.api.models.user_models.user_roles import UserRole
-from src.api.models.user_models.roles import Role
-from src.api.models.user_models.permissions import Permission
-from src.api.models.user_models.role_permissions import RolePermission
-from src.utils.logger import logger
 from src.api.middleware.exceptions import (
     ResourceNotFoundException,
+    RextAuthenticationException,
     RextValidationException,
-    RextAuthenticationException
 )
-from datetime import datetime
-from sqlalchemy import select
 from src.api.models.user_models.impersonation_session import ImpersonationSession
+from src.api.models.user_models.permissions import Permission
+from src.api.models.user_models.role_permissions import RolePermission
+from src.api.models.user_models.roles import Role
+from src.api.models.user_models.user_roles import UserRole
+from src.api.models.user_models.users import Users
+from src.utils.logger import logger
+
 
 class ImpersonationService:
     """Service for user impersonation management"""
@@ -137,7 +136,7 @@ class ImpersonationService:
             "target_display_name": target_context["display_name"],
             "impersonated_by": str(admin_user_id),
             "impersonated_by_email": admin_user.email,
-            "impersonation_started_at": datetime.utcnow().isoformat(),
+            "impersonation_started_at": datetime.now(timezone.utc).isoformat(),
             "roles": target_context["roles"],
             "permissions": target_context["permissions"],
         }
@@ -168,7 +167,7 @@ class ImpersonationService:
         return {
             "message": "Impersonation stopped",
             "admin_user_id": str(admin_user_id),
-            "impersonation_stopped_at": datetime.utcnow().isoformat()
+            "impersonation_stopped_at": datetime.now(timezone.utc).isoformat()
         }
 
     async def get_impersonation_status(
@@ -251,7 +250,7 @@ class ImpersonationService:
             .join(UserRole, UserRole.role_id == Role.id)
             .where(
                 UserRole.user_id == user_id,
-                Permission.name == "user.update"
+                Permission.name == "user.impersonate"
             )
         )
         permission = result.scalar_one_or_none()
@@ -325,6 +324,7 @@ class ImpersonationService:
             "roles": auth_context["roles"],
             "permissions": auth_context["permissions"],
         }
+
     async def invalidate_session(self, session_id: str) -> bool:
         """
         Invalidate an impersonation session by session_id.
@@ -339,7 +339,7 @@ class ImpersonationService:
         try:
             invalidated_session = ImpersonationSession(
                 session_id=session_id,
-                invalidated_at=datetime.utcnow(),
+                invalidated_at=datetime.now(timezone.utc),
                 is_valid=False
             )
             self.db.add(invalidated_session)
@@ -367,7 +367,7 @@ class ImpersonationService:
         try:
             stmt = select(ImpersonationSession).where(
                 ImpersonationSession.session_id == session_id,
-                ImpersonationSession.is_valid == False
+                ImpersonationSession.is_valid.is_(False)
             )
             result = await self.db.execute(stmt)
             invalidated_session = result.scalar_one_or_none()

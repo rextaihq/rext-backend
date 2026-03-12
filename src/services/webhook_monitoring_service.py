@@ -7,24 +7,81 @@ Provides webhook event tracking and monitoring capabilities:
 - Retry failed webhooks
 - Get webhook statistics
 """
-from datetime import datetime, timedelta
+from datetime import datetime, timezone, timedelta
 from typing import Dict, List, Optional, Any
-from sqlalchemy import func, and_, or_, desc
+from copy import deepcopy
+import re
+from sqlalchemy import func, and_, or_, desc, Integer
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-
+from uuid import UUID 
 from src.api.models.subscription_models.webhooks import WebhookEvent
 from src.services.lemonsqueezy_webhook_service import LemonSqueezyWebhookService
 from src.utils.logger import logger
 
 
+def _mask_email(email: str) -> str:
+    """
+    Mask an email address for display in monitoring contexts.
+
+    Examples:
+        "john.doe@example.com" -> "jo***@example.com"
+        "a@b.com" -> "a***@b.com"
+        None or invalid -> "***"
+    """
+    if not email or not isinstance(email, str) or "@" not in email:
+        return "***"
+    local, domain = email.rsplit("@", 1)
+    if len(local) <= 1:
+        return f"{local[0]}***@{domain}"
+    return f"{local[:2]}***@{domain}"
+
+
 class WebhookMonitoringService:
     """Service for monitoring and managing webhook events."""
+
+    _SENSITIVE_KEYS = {
+        "name", "address", "phone",
+        "api_key", "token", "secret", "authorization", "card_number",
+        "card_last_four", "payment_method", "iban", "metadata", "custom_data"
+    }
 
     def __init__(self, db: AsyncSession):
         """Initialize service with database session."""
         self.db = db
         self.webhook_service = LemonSqueezyWebhookService(db)
+
+    def _mask_email(self, value: Optional[str]) -> Optional[str]:
+        """Partially mask email address for PII protection."""
+        if not value or "@" not in value:
+            return value
+        try:
+            local, domain = value.split("@", 1)
+            if len(local) <= 2:
+                return "***@" + domain
+            return local[:2] + "***@" + domain
+        except ValueError:
+            return value
+
+    def _redact_payload(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        """Recursively redact sensitive keys from payload."""
+        def _walk(value: Any, parent_key: Optional[str] = None) -> Any:
+            if isinstance(value, dict):
+                out: Dict[str, Any] = {}
+                for k, v in value.items():
+                    key_lower = k.lower()
+                    if key_lower in self._SENSITIVE_KEYS:
+                        out[k] = "[REDACTED]"
+                    else:
+                        out[k] = _walk(v, k)
+                return out
+            if isinstance(value, list):
+                return [_walk(item, parent_key) for item in value]
+            if isinstance(value, str) and parent_key and parent_key.lower() in ["user_email", "customer_email", "email"]:
+                return self._mask_email(value)
+            return value
+
+        return _walk(deepcopy(payload))
 
     async def get_webhook_events(
         self,
@@ -65,10 +122,10 @@ class WebhookMonitoringService:
                 conditions.append(WebhookEvent.processed == processed)
 
             if hours:
-                cutoff_time = datetime.utcnow() - timedelta(hours=hours)
+                cutoff_time = datetime.now(timezone.utc) - timedelta(hours=hours)
                 conditions.append(WebhookEvent.created_at >= cutoff_time)
 
-            # Count total matching events
+            # Count total matching eventss
             count_stmt = select(func.count(WebhookEvent.id))
             if conditions:
                 count_stmt = count_stmt.where(and_(*conditions))
@@ -139,7 +196,8 @@ class WebhookMonitoringService:
         self,
         limit: int = 50,
         offset: int = 0,
-        hours: Optional[int] = 24
+        hours: Optional[int] = 24,
+        include_payload: bool = False
     ) -> Dict[str, Any]:
         """
         Get failed webhook events.
@@ -148,6 +206,7 @@ class WebhookMonitoringService:
             limit: Maximum number of events to return (default 50)
             offset: Offset for pagination (default 0)
             hours: Only show events from last N hours (default 24)
+            include_payload: Whether to include redacted payload body
 
         Returns:
             Dictionary with failed webhook events:
@@ -161,12 +220,12 @@ class WebhookMonitoringService:
         try:
             # Build conditions for failed webhooks
             conditions = [
-                WebhookEvent.processed == False,
+                WebhookEvent.processed.is_(False),
                 WebhookEvent.error_message.isnot(None)
             ]
 
             if hours:
-                cutoff_time = datetime.utcnow() - timedelta(hours=hours)
+                cutoff_time = datetime.now(timezone.utc) - timedelta(hours=hours)
                 conditions.append(WebhookEvent.created_at >= cutoff_time)
 
             # Count total failed events
@@ -185,6 +244,7 @@ class WebhookMonitoringService:
             # Serialize events with more details for troubleshooting
             events_data = []
             for event in events:
+                event_payload = event.payload or {}
                 events_data.append({
                     "id": str(event.id),
                     "event_id": event.event_id,
@@ -193,7 +253,8 @@ class WebhookMonitoringService:
                     "retry_count": event.retry_count,
                     "created_at": event.created_at.isoformat() if event.created_at else None,
                     "updated_at": event.updated_at.isoformat() if event.updated_at else None,
-                    "payload": event.payload  # Include full payload for debugging
+                    "payload_summary": self._summarize_payload(event_payload),
+                    "payload": self._redact_payload(event_payload) if include_payload else None
                 })
 
             logger.info(
@@ -219,7 +280,8 @@ class WebhookMonitoringService:
             )
             raise
 
-    async def retry_webhook(self, webhook_id: str) -> Dict[str, Any]:
+    async def retry_webhook(self, webhook_id: UUID) -> Dict[str, Any]:
+        stmt = select(WebhookEvent).where(WebhookEvent.id == webhook_id)
         """
         Retry processing a failed webhook event.
 
@@ -262,21 +324,18 @@ class WebhookMonitoringService:
             try:
                 # Increment retry count
                 event.retry_count += 1
-                event.updated_at = datetime.utcnow()
+                event.updated_at = datetime.now(timezone.utc)
 
                 # Process the webhook using the webhook service
-                await self.webhook_service.process_webhook_event(
-                    event_id=event.event_id,
-                    event_name=event.event_name,
-                    payload=event.payload
-                )
+                # Use reprocess_event skipping signature verification
+                await self.webhook_service.reprocess_event(webhook_event=event)
 
                 # Mark as processed
                 event.processed = True
-                event.processed_at = datetime.utcnow()
+                event.processed_at = datetime.now(timezone.utc)
                 event.error_message = None
 
-                await self.db.commit()
+                await self.db.flush()
 
                 logger.info(f"Successfully retried webhook: {webhook_id}")
 
@@ -289,7 +348,7 @@ class WebhookMonitoringService:
             except Exception as process_error:
                 # Update error message
                 event.error_message = str(process_error)
-                await self.db.commit()
+                await self.db.flush()
 
                 logger.error(
                     f"Failed to retry webhook {webhook_id}: {str(process_error)}",
@@ -336,7 +395,7 @@ class WebhookMonitoringService:
             # Build time filter
             time_condition = []
             if hours:
-                cutoff_time = datetime.utcnow() - timedelta(hours=hours)
+                cutoff_time = datetime.now(timezone.utc) - timedelta(hours=hours)
                 time_condition.append(WebhookEvent.created_at >= cutoff_time)
 
             # Total events
@@ -349,7 +408,7 @@ class WebhookMonitoringService:
 
             # Processed successfully
             stmt_processed = select(func.count(WebhookEvent.id)).where(
-                WebhookEvent.processed == True,
+                WebhookEvent.processed.is_(True),
                 WebhookEvent.error_message.is_(None),
                 *time_condition
             )
@@ -366,7 +425,7 @@ class WebhookMonitoringService:
 
             # Pending (not processed, no error)
             stmt_pending = select(func.count(WebhookEvent.id)).where(
-                WebhookEvent.processed == False,
+                WebhookEvent.processed.is_(False),
                 WebhookEvent.error_message.is_(None),
                 *time_condition
             )
@@ -456,12 +515,14 @@ class WebhookMonitoringService:
     def _summarize_payload(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         """
         Create a summary of the webhook payload for monitoring.
+        PII fields are masked to comply with data minimization principles
+        (GDPR Article 5(1)(c), CCPA).
 
         Args:
             payload: Full webhook payload
 
         Returns:
-            Summarized payload with key information
+            Summarized payload with key information (PII masked)
         """
         summary = {}
 
@@ -471,18 +532,42 @@ class WebhookMonitoringService:
             summary["id"] = data.get("id")
             summary["type"] = data.get("type")
 
-            # Extract key attributes
+            # Extract key attributes with PII masking
             if "attributes" in data:
                 attrs = data["attributes"]
                 summary["status"] = attrs.get("status")
-                summary["user_email"] = attrs.get("user_email")
-                summary["customer_id"] = attrs.get("customer_id")
+                summary["user_email_masked"] = _mask_email(attrs.get("user_email"))
+                summary["has_customer_id"] = bool(attrs.get("customer_id"))
 
         # Include meta information
         if "meta" in payload:
             summary["meta"] = payload["meta"]
 
         return summary
+
+    def _redact_payload_pii(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Create a deep copy of the payload with PII fields redacted.
+        Used when the full payload structure is needed for debugging
+        but PII must not be exposed.
+
+        Args:
+            payload: Original webhook payload
+
+        Returns:
+            Payload copy with PII fields masked
+        """
+        import copy
+        redacted = copy.deepcopy(payload)
+
+        if "data" in redacted and "attributes" in redacted["data"]:
+            attrs = redacted["data"]["attributes"]
+            if "user_email" in attrs:
+                attrs["user_email"] = _mask_email(attrs["user_email"])
+            if "customer_id" in attrs:
+                attrs["customer_id"] = "[REDACTED]"
+
+        return redacted
 
     def _serialize_event(self, event: WebhookEvent) -> Dict[str, Any]:
         """Serialize a webhook event to dictionary."""

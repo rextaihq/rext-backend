@@ -10,6 +10,14 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Cleanup Runner (Pre-build)
+        run: |
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /opt/ghc
+          sudo rm -rf /opt/hostedtoolcache/CodeQL
+          sudo docker system prune -af --volumes || true
+          df -h
+
       - name: Checkout code
         uses: actions/checkout@v4
 
@@ -67,19 +75,17 @@ jobs:
       - name: Install dev dependencies
         run: uv sync --group dev
 
-      # - name: Run tests
-      #   run: uv run pytest tests/ -x --tb=short
-      #   env:
-      #     ENVIRONMENT: test
-      #     SECRET_KEY: ci-test-secret-key-must-be-at-least-32-chars-long
-      #     REFRESH_SECRET_KEY: ci-test-refresh-secret-key-must-be-at-least-32-chars-long
-      #     POSTGRES_URI_CUSTOM: postgresql+asyncpg://user:pass@localhost:5432/test_db
 
   docker_job:
     needs: build
     runs-on: ubuntu-latest
 
     steps:
+      - name: Cleanup Runner (Pre-docker)
+        run: |
+          sudo docker system prune -af --volumes
+          df -h
+
       - name: Checkout code
         uses: actions/checkout@v4
 
@@ -100,3 +106,9 @@ jobs:
 
       - name: Push Docker image
         run: docker push ${{ secrets.DOCKER_USERNAME }}/wrext:latest
+
+      - name: Cleanup Docker (Post-build)
+        if: always()
+        run: |
+          docker system prune -f
+          df -h

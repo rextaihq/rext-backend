@@ -1,8 +1,16 @@
-"""User session management routes."""
+"""User session management routes.
+
+Note: The POST /sessions/revoke-all endpoint is deprecated.
+It was added for frontend compatibility but DELETE /sessions
+should be used for new integrations. The POST endpoint is
+scheduled for removal after the frontend is migrated.
+
+See: [Frontend Migration Ticket URL]
+"""
 
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Header, Request
+from fastapi import APIRouter, Depends, Header, Request, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.database.async_database import get_async_db
@@ -132,15 +140,38 @@ async def revoke_all_sessions(
     }
 
 
-@router.post("/sessions/revoke-all")
+@router.post("/sessions/revoke-all", deprecated=True)
 @require_permissions("user.update", workspace_scoped=False)
 @db_transaction_handler("revoke all user sessions (POST)", auto_commit=True)
 async def revoke_all_sessions_post(
     request: Request,
+    response: Response,
     current_user: dict = Depends(get_current_user),
     authorization: str = Header(...),
     db: AsyncSession = Depends(get_async_db)
 ) -> dict:
-    """Revoke all sessions except the current one (POST version for frontend)."""
+    """
+    Revoke all sessions except the current one.
+
+    .. deprecated::
+        This endpoint is deprecated. Use DELETE /sessions instead.
+        This endpoint exists for legacy frontend compatibility and will be
+        removed in a future version.
+    """
+    # Add deprecation header for API consumers
+    response.headers["Deprecation"] = "true"
+    response.headers["Sunset"] = "2026-06-01"  # Plan removal date
+    response.headers["Link"] = '</api/user/sessions>; rel="successor-version"'
+
+    # Log deprecation warning for monitoring
+    logger.warning(
+        "Deprecated endpoint called: POST /sessions/revoke-all",
+        extra={
+            "user_id": str(current_user.get("identity")),
+            "deprecated_endpoint": "POST /sessions/revoke-all",
+            "replacement_endpoint": "DELETE /sessions"
+        }
+    )
+
     # Reuse the same logic as DELETE /sessions
     return await revoke_all_sessions(request, current_user, authorization, db)

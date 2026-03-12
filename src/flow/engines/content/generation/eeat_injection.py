@@ -6,15 +6,16 @@ Authoritativeness, and Trustworthiness (E-E-A-T) signals by injecting
 persona-based credibility indicators and expert insights.
 """
 
+import asyncio
 import logging
 from uuid import UUID
 from sqlalchemy import select
 
 from src.flow.states.rext import REXT
-from src.flow.model.llm_manager import load_model
+from src.flow.model.llm_manager import load_content_model
 from src.flow.model.structure.content import GeneratedContent
 from src.flow.prompts.human.eeat import get_eeat_prompt
-from src.api.database.async_database import get_async_db_context
+from src.api.database.async_database import get_sync_db
 from src.api.models.knowledge_models.persona_model import Persona
 
 logger = logging.getLogger(__name__)
@@ -38,6 +39,13 @@ async def inject_eeat(state: REXT) -> dict:
         dict: Updated state with E-E-A-T enhanced content
     """
     content_state = state.get("content", {})
+
+    if content_state.get("error"):
+        logger.warning(
+            "Skipping E-E-A-T injection due to upstream error: %s",
+            content_state["error"],
+        )
+        return {"content": content_state}
     
     try:
         # 1️⃣ Get content from state
@@ -70,15 +78,21 @@ async def inject_eeat(state: REXT) -> dict:
                 }
             }
         
-        # 3️⃣ Fetch persona from database
-        async with get_async_db_context() as db:
-            result = await db.execute(
-                select(Persona)
-                .where(Persona.workspace_id == UUID(str(workspace_id)))
-                .order_by(Persona.created_at.desc())
-                .limit(1)
-            )
-            persona_record = result.scalar_one_or_none()
+        # 3️⃣ Fetch persona from database using sync session (avoids asyncio loop mismatch in LangGraph)
+        def _fetch_persona():
+            db = next(get_sync_db())
+            try:
+                return db.execute(
+                    select(Persona)
+                    .where(Persona.workspace_id == UUID(str(workspace_id)))
+                    .order_by(Persona.created_at.desc())
+                    .limit(1)
+                ).scalar_one_or_none()
+            finally:
+                db.close()
+
+        loop = asyncio.get_event_loop()
+        persona_record = await loop.run_in_executor(None, _fetch_persona)
         
         if not persona_record:
             error_msg = f"No persona found for workspace {workspace_id}. Please create a persona first."
@@ -119,7 +133,7 @@ async def inject_eeat(state: REXT) -> dict:
         }
         
         # 7️⃣ Load model and prepare messages
-        model = load_model().with_structured_output(GeneratedContent)
+        model = load_content_model().with_structured_output(GeneratedContent)
         messages = get_eeat_prompt().format_messages(**prompt_data)
         
         # 8️⃣ Invoke LLM for E-E-A-T injection

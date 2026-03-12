@@ -27,6 +27,12 @@ def get_payment_provider() -> PaymentProvider:
 
     logger.info(f"Initializing payment provider: {provider_name}")
 
+    if payment_settings.payment_sandbox_mode:
+        logger.warning(
+            "Payment provider initialized in SANDBOX MODE. "
+            "No real charges will be processed."
+        )
+
     if provider_name == "lemonsqueezy":
         try:
             from src.providers.payment.providers.lemonsqueezy import LemonSqueezyProvider
@@ -42,7 +48,7 @@ def get_payment_provider() -> PaymentProvider:
                 api_key=payment_settings.lemonsqueezy_api_key,
                 store_id=payment_settings.lemonsqueezy_store_id,
                 webhook_secret=payment_settings.lemonsqueezy_webhook_secret,
-                sandbox_mode=(payment_settings.payment_provider == "lemonsqueezy_sandbox")
+                sandbox_mode=payment_settings.payment_sandbox_mode
             )
         except ImportError as e:
             logger.error(f"LemonSqueezy provider import failed: {e}")
@@ -59,23 +65,24 @@ def get_payment_provider() -> PaymentProvider:
         )
 
 
-# Singleton instance for reuse
+import threading
+
 _provider_instance: PaymentProvider = None
+_provider_lock = threading.Lock()
 
 
 def get_payment_provider_singleton() -> PaymentProvider:
     """
-    Get singleton instance of payment provider.
+    Get singleton instance of payment provider (thread-safe).
 
-    This ensures the same provider instance is reused across requests,
-    which is useful for providers that maintain connection pools or cache data.
-
-    Returns:
-        PaymentProvider: Singleton payment provider instance
+    Uses double-checked locking to ensure only one provider instance
+    is created even under concurrent access.
     """
     global _provider_instance
 
     if _provider_instance is None:
-        _provider_instance = get_payment_provider()
+        with _provider_lock:
+            if _provider_instance is None:
+                _provider_instance = get_payment_provider()
 
     return _provider_instance

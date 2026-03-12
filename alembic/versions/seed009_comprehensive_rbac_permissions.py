@@ -1,3 +1,7 @@
+# NOTE: This seed migration is superseded by scripts/seeds/.
+# It remains in the migration chain for backward compatibility with existing databases.
+# For new environments, use: python -m scripts.seeds.run_all
+
 """Seed comprehensive RBAC permissions
 
 Revision ID: seed009
@@ -21,7 +25,7 @@ Reference: roles-permissions-improvement-plan.md
 """
 from alembic import op
 import sqlalchemy as sa
-from datetime import datetime
+from datetime import datetime, timezone
 from uuid import uuid4
 
 
@@ -344,7 +348,7 @@ def upgrade():
                     'description': description,
                     'resource': resource,
                     'action': action,
-                    'created_at': datetime.utcnow()
+                    'created_at': datetime.now(timezone.utc).replace(tzinfo=None)
                 }
             )
             permission_map[name] = perm_id
@@ -403,7 +407,7 @@ def upgrade():
                         'id': str(uuid4()),
                         'role_id': role_id,
                         'permission_id': perm_id,
-                        'created_at': datetime.utcnow()
+                        'created_at': datetime.now(timezone.utc).replace(tzinfo=None)
                     }
                 )
                 assigned_count += 1

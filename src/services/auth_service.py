@@ -21,7 +21,7 @@ Does NOT:
 
 from typing import Tuple, Dict, Any, Optional
 from uuid import UUID
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone, timedelta, timezone
 from src.utils.password_utils import validate_password_strength
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -59,14 +59,18 @@ from src.api.middleware.exceptions import (
     ResourceNotFoundException,
     BusinessRuleViolationException
 )
-default_permissions = [
-            "user.update",
-            "user.read",
-            "workspace.create",
-            "subscription.read"
-        ]
 class AuthService:
     """Service for authentication business logic"""
+
+    # Default permissions assigned to new users during registration
+    # Using tuple to prevent accidental mutation
+    DEFAULT_PERMISSIONS: tuple[str, ...] = (
+        "user.update",
+        "user.read",
+        "workspace.create",
+        "subscription.read",
+    )
+
     def __init__(self, db: AsyncSession):
         """
         Initialize AuthService.
@@ -216,7 +220,7 @@ class AuthService:
         """
         # Find user (eagerly load relationships to avoid lazy loading in async context)
         from sqlalchemy.orm import selectinload
-        global  default_permissions
+
         result = await self.db.execute(
             select(Users)
             .options(selectinload(Users.user_roles).selectinload(UserRole.role))
@@ -282,8 +286,12 @@ class AuthService:
             subscription = sub_result.scalar_one_or_none()
             
             if subscription and subscription.trial_end_date:
-                if subscription.trial_end_date < datetime.now(timezone.utc):
-                     await schedule_if_allowed(
+                trial_end = subscription.trial_end_date
+                if trial_end.tzinfo is None:
+                    trial_end = trial_end.replace(tzinfo=timezone.utc)
+                    
+                if trial_end < datetime.now(timezone.utc):
+                    await schedule_if_allowed(
                         db=self.db,
                         user_id=str(db_user.id),
                         background_tasks=background_tasks,
@@ -305,7 +313,7 @@ class AuthService:
             .join(UserRole, UserRole.role_id == Role.id)
             .where(UserRole.user_id == db_user.id)
             .where(UserRole.workspace_id.is_(None))
-            .where(UserRole.is_primary == True)
+            .where(UserRole.is_primary.is_(True))
         )
         global_role_names = list(global_roles_result.scalars().all())
         
@@ -317,7 +325,7 @@ class AuthService:
             .join(UserRole, UserRole.role_id == Role.id)
             .where(UserRole.user_id == db_user.id)
             .where(UserRole.workspace_id.is_(None))  # global roles only
-            .where(UserRole.is_primary == True)
+            .where(UserRole.is_primary.is_(True))
             .distinct()
         )
         global_permissions = list(result.scalars().all())
@@ -364,10 +372,14 @@ class AuthService:
             extra={"email": email, "session_id": str(new_session.id)}
         )
 
+        from src.api.config import get_settings
+        settings = get_settings()
+        
         tokens = {
             "access_token": access_token,
             "refresh_token": refresh_token,
             "token_type": "bearer",
+            "expires_in": settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
             "permissions": global_permissions,  # Include permissions for route response
             "roles": global_role_names  # Include roles for route response
         }
@@ -505,10 +517,13 @@ class AuthService:
                 context={"reason": "Token blacklisted"}
             )
 
-        # Get user
+        # Get user (eagerly load relationships to avoid lazy loading)
         user_id = payload.get("id")
+        from sqlalchemy.orm import selectinload
         result = await self.db.execute(
-            select(Users).where(Users.id == user_id)
+            select(Users)
+            .options(selectinload(Users.user_roles).selectinload(UserRole.role))
+            .where(Users.id == user_id)
         )
         db_user = result.scalar_one_or_none()
 
@@ -538,7 +553,7 @@ class AuthService:
             .join(UserRole, UserRole.role_id == RolePermission.role_id)
             .where(UserRole.user_id == db_user.id)
             .where(UserRole.workspace_id == None)  # Only global role assignments
-            .where(UserRole.is_primary == True)     # Only primary roles
+            .where(UserRole.is_primary.is_(True))     # Only primary roles
             .distinct()
         )
         global_permissions = [row[0] for row in result.all()]
@@ -570,10 +585,14 @@ class AuthService:
             extra={"old_jti": jti}
         )
 
+        from src.api.config import get_settings
+        settings = get_settings()
+
         return {
             "access_token": new_access_token,
             "refresh_token": new_refresh_token,
-            "token_type": "bearer"
+            "token_type": "bearer",
+            "expires_in": settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60
         }
 
     async def logout_user(self, user_id: UUID, jti: str, exp: int) -> None:
@@ -614,7 +633,7 @@ class AuthService:
         result = await self.db.execute(
             select(UserSession).where(
                 UserSession.jti == jti,
-                UserSession.is_active == True
+                UserSession.is_active.is_(True)
             )
         )
         session = result.scalar_one_or_none()
@@ -752,7 +771,7 @@ class AuthService:
         Args:
             role: Role object
         """
-        global default_permissions
+
 
         # Get existing permissions for the role to avoid adding duplicates
         existing_perms_result = await self.db.execute(
@@ -762,7 +781,7 @@ class AuthService:
         )
         existing_perms = {p_name for p_name, in existing_perms_result}
 
-        permissions_to_add_names = [p for p in default_permissions if p not in existing_perms]
+        permissions_to_add_names = [p for p in self.DEFAULT_PERMISSIONS if p not in existing_perms]
 
         if not permissions_to_add_names:
             logger.debug(f"Role '{role.name}' already has all default permissions.")
@@ -791,7 +810,7 @@ class AuthService:
         result = await self.db.execute(
             select(SubscriptionPlan).where(
                 SubscriptionPlan.name == "trial",
-                SubscriptionPlan.is_active == True
+                SubscriptionPlan.is_active.is_(True)
             )
         )
         trial_plan = result.scalar_one_or_none()

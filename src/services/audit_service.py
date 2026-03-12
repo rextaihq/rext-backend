@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, Iterable, Optional
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from uuid import UUID
 
 from src.api.models.audit_models.audit_logs import AuditLog
 from src.api.schema.audit_schema import AuditLogExportFormat, AuditStatus
@@ -48,7 +49,7 @@ class AuditService:
                     field_errors={"status_filter": ["Unsupported audit status"]},
                 ) from exc
 
-        query = await build_audit_query(
+        data_query, _ = await build_audit_query(
             db=self.db,
             user_id=user_id,
             full_name=full_name,
@@ -62,7 +63,7 @@ class AuditService:
             date_to=date_to,
         )
 
-        query = query.order_by(AuditLog.created_at.desc()).limit(limit)
+        query = data_query.order_by(AuditLog.created_at.desc()).limit(limit)
         result = await self.db.execute(query)
         return result.scalars().all()
 
@@ -83,11 +84,42 @@ class AuditService:
         formatted_logs = [format_audit_log(log, include_details=True) for log in logs]
 
         return {
-            "export_date": datetime.utcnow().isoformat(),
+            "export_date": datetime.now(timezone.utc).isoformat(),
             "exported_by": requested_by,
             "total_records": len(formatted_logs),
             "logs": formatted_logs,
         }
+
+    async def log_admin_action(
+        self,
+        admin_id: str,
+        action: str,
+        entity_type: str,
+        entity_id: str,
+        details: Dict[str, Any],
+        db: AsyncSession
+    ) -> None:
+        """Log an administrative action."""
+        # Lazy import to avoid circular dependency
+        from src.api.models.user_models.users import Users
+        
+        # Get admin user for denormalized fields
+        admin_query = select(Users).where(Users.id == UUID(admin_id))
+        admin_result = await db.execute(admin_query)
+        admin = admin_result.scalar_one_or_none()
+        
+        audit_log = AuditLog(
+            user_id=UUID(admin_id),
+            full_name=admin.full_name if admin else "Unknown Admin",
+            user_email=admin.email if admin else "unknown@admin.com",
+            action=action,
+            resource_type=entity_type,
+            resource_id=entity_id,
+            audit_metadata=details,
+            status="success"
+        )
+        db.add(audit_log)
+        await db.flush()
 
     async def get_statistics(self, days: int) -> Dict[str, Any]:
         """Return summary statistics for audit logs over the provided window."""
@@ -100,7 +132,7 @@ class AuditService:
                 field_errors={"days": ["Value out of allowed range"]},
             )
 
-        cutoff = datetime.utcnow() - timedelta(days=days)
+        cutoff = datetime.now(timezone.utc) - timedelta(days=days)
 
         total_logs_result = await self.db.execute(
             select(func.count(AuditLog.id)).where(AuditLog.created_at >= cutoff)

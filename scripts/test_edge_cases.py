@@ -112,7 +112,7 @@ class EdgeCaseTestRunner:
             'passed': passed,
             'message': message,
             'details': details or {},
-            'timestamp': datetime.utcnow().isoformat()
+            'timestamp': datetime.now(timezone.utc).isoformat()
         })
 
     def generate_webhook_signature(self, payload: str) -> str:
@@ -863,7 +863,7 @@ class EdgeCaseTestRunner:
 
         summary = {
             'test_run': {
-                'timestamp': datetime.utcnow().isoformat(),
+                'timestamp': datetime.now(timezone.utc).isoformat(),
                 'total_tests': len(self.results),
                 'passed': sum(1 for r in self.results if r['passed']),
                 'failed': sum(1 for r in self.results if not r['passed']),

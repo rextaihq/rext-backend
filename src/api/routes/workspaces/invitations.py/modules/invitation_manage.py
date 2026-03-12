@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, Request, HTTPException, status, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-from datetime import datetime
+from datetime import datetime, timezone
 from uuid import UUID
 import os
 
@@ -38,6 +38,7 @@ from src.services.workspace_service import WorkspaceService
 from src.services.role_service import RoleService
 from src.api.models.user_models.notification_preferences import NotificationPreferences
 from src.services.notifications_services import notification_service
+from src.services.notification_helper import schedule_if_allowed
 
 
 router = APIRouter()
@@ -155,7 +156,7 @@ async def accept_invitation(
     # 4️⃣ Schedule the notification using the helper
     await schedule_if_allowed(
         db=db,
-        user_id=str(inviter_id),
+        user_id=str(invitation.invited_by_user_id),
         background_tasks=background_tasks,
         pref_flag="ws_invite_accepted",
         message="Your invitation was accepted!",
@@ -172,7 +173,7 @@ async def accept_invitation(
             "workspace_name": workspace.name if workspace else None,
             "role_id": str(invitation.role_id),
             "membership_id": result["membership_id"],
-            "joined_at": datetime.utcnow().isoformat()
+            "joined_at": datetime.now(timezone.utc).isoformat()
         },
         "message": "Successfully joined workspace"
     }
@@ -206,19 +207,19 @@ async def revoke_invitation(
     # Check permission: must be invitation creator or workspace admin (route-level authorization)
     is_creator = str(invitation.invited_by_user_id) == str(user_id)
 
-    # Check if user has admin role in the workspace
+    # Check if user has admin/owner role in the workspace (hierarchy >= 60)
     result = await db.execute(
         select(UserRole)
         .join(Role, UserRole.role_id == Role.id)
         .where(
             UserRole.user_id == UUID(user_id),
             UserRole.workspace_id == invitation.workspace_id,
-            Role.name.in_(["admin", "owner", "workspace_admin"])
+            Role.hierarchy_level >= 60 # 60 is workspace_owner threshold
         )
     )
-    is_admin = result.first() is not None
+    is_authorized_by_role = result.first() is not None
 
-    if not is_creator and not is_admin:
+    if not is_creator and not is_authorized_by_role:
         raise RextAuthenticationException(
             message="Insufficient permissions to revoke this invitation"
         )
@@ -233,7 +234,7 @@ async def revoke_invitation(
     )
 
     # Create audit log (audit concern - stays in route)
-    create_audit_log(
+    await create_audit_log(
         db=db,
         user_id=user_id,
         action="invitation.revoke",

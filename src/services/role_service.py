@@ -19,17 +19,16 @@ Does NOT:
 
 from typing import List, Optional, Dict, Any
 from uuid import UUID
-from datetime import datetime
-
+from datetime import datetime, timezone
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, and_
-
 from src.api.models.user_models.roles import Role
 from src.api.models.user_models.permissions import Permission
 from src.api.models.user_models.role_permissions import RolePermission
 from src.api.models.user_models.user_roles import UserRole
 from src.api.models.workspace_models.workspace_model import WorkspaceModel
 from src.api.models.workspace_models.workspace_member import WorkspaceMembers
+from sqlalchemy import select, func, and_, delete
+from src.api.cache.decorators import invalidate_cache
 from src.utils.logger import logger
 from src.api.middleware.exceptions import (
     DuplicateResourceException,
@@ -132,7 +131,7 @@ class RoleService:
             hierarchy_level=hierarchy_level,
             is_system_role=is_system_role,
             is_workspace_role=is_workspace_role,
-            created_at=datetime.utcnow()
+            created_at=datetime.now(timezone.utc)
         )
 
         self.db.add(new_role)
@@ -239,7 +238,7 @@ class RoleService:
                 )
             role.hierarchy_level = hierarchy_level
 
-        role.updated_at = datetime.utcnow()
+        role.updated_at = datetime.now(timezone.utc)
 
         await self.db.flush()
         await self.db.refresh(role)
@@ -302,7 +301,7 @@ class RoleService:
             # Reassign all users
             for user_role in user_roles:
                 user_role.role_id = reassign_to
-                user_role.assigned_at = datetime.utcnow()
+                user_role.assigned_at = datetime.now(timezone.utc)
 
             await self.db.flush()
 
@@ -312,7 +311,6 @@ class RoleService:
             )
 
         # Bulk-delete role permissions
-        from sqlalchemy import delete
         await self.db.execute(
             delete(RolePermission).where(RolePermission.role_id == role_id)
         )
@@ -410,7 +408,7 @@ class RoleService:
             workspace_id=workspace_id,
             assigned_by_user_id=assigned_by_user_id or user_id,
             is_primary=is_primary,
-            assigned_at=datetime.utcnow()
+            assigned_at=datetime.now(timezone.utc)
         )
 
         self.db.add(user_role)
@@ -418,7 +416,6 @@ class RoleService:
         await self.db.refresh(user_role)
 
         # Invalidate permissions cache for this user
-        from src.api.cache.decorators import invalidate_cache
         await invalidate_cache(f"user:permissions:{user_id}:*")
 
         logger.info(
@@ -474,7 +471,6 @@ class RoleService:
         await self.db.delete(user_role)
 
         # Invalidate permissions cache for this user
-        from src.api.cache.decorators import invalidate_cache
         await invalidate_cache(f"user:permissions:{user_id}:*")
 
         logger.info(
@@ -526,7 +522,6 @@ class RoleService:
                 )
 
         # Bulk-delete existing permissions
-        from sqlalchemy import delete
         await self.db.execute(
             delete(RolePermission).where(RolePermission.role_id == role_id)
         )
@@ -541,11 +536,19 @@ class RoleService:
 
         await self.db.flush()
 
+        await self.db.flush()
+
+        result = await self.db.execute(
+            select(UserRole.user_id).where(UserRole.role_id == role_id)
+        )
+        user_ids = [row[0] for row in result.all()]
+        for user_id in user_ids:
+            await invalidate_cache(f"user:permissions:{user_id}:*")
+
         logger.info(
             f"Permissions updated for role {role.name}: {len(permission_ids)} permissions",
             extra={"role_id": str(role_id), "permission_count": len(permission_ids)}
         )
-
         return role
 
     async def get_role_hierarchy(
@@ -628,6 +631,7 @@ class RoleService:
                 "role_name": role.name,
                 "role_display_name": role.display_name,
                 "hierarchy_level": role.hierarchy_level,
+                "is_workspace_role": role.is_workspace_role,
                 "workspace_id": str(user_role.workspace_id) if user_role.workspace_id else None,
                 "workspace_name": workspace.name if workspace else None,
                 "is_primary": user_role.is_primary,

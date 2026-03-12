@@ -2,18 +2,6 @@ from pydantic import BaseModel, Field
 from typing import Literal, Optional, Dict
 
 
-class NotificationCategories(BaseModel):
-    """Category-specific notification preferences."""
-    mentions: Optional[bool] = None
-    workspace_invites: Optional[bool] = None
-    content_updates: Optional[bool] = None
-    comments: Optional[bool] = None
-    team_activity: Optional[bool] = None
-    security_alerts: Optional[bool] = None
-    billing_updates: Optional[bool] = None
-    product_updates: Optional[bool] = None
-
-
 class NotificationPreferencesResponse(BaseModel):
     """Response schema for notification preferences matching API spec."""
     email_enabled: bool
@@ -30,14 +18,7 @@ class NotificationPreferencesResponse(BaseModel):
                 "digest_enabled": True,
                 "digest_frequency": "daily",
                 "categories": {
-                    "mentions": True,
-                    "workspace_invites": True,
-                    "content_updates": True,
-                    "comments": True,
-                    "team_activity": True,
-                    "security_alerts": True,
-                    "billing_updates": True,
-                    "product_updates": False
+                    "workspace_invites": True
                 }
             }
         }
@@ -47,31 +28,11 @@ class UpdateNotificationPreferencesRequest(BaseModel):
     """Request schema for updating notification preferences.
 
     Supports partial updates - all fields are optional.
-    When a category is set, it applies to both email and in-app channels.
     """
     # GLOBAL
     email_enabled: Optional[bool] = Field(None, alias="email_notifications")
     in_app_enabled: Optional[bool] = Field(None, alias="in_app_notifications")
 
-    # CATEGORIES (Simplified UI-facing updates)
-    categories: Optional[NotificationCategories] = None
-
-    # GRANULAR FIELDS (Backward compatibility/Detail control)
-    # ACTIVITY & ALERTS
-    email_team_activity: Optional[bool] = None
-    in_app_team_activity: Optional[bool] = None
-    email_security_alerts: Optional[bool] = None
-    in_app_security_alerts: Optional[bool] = None
-    email_billing_updates: Optional[bool] = None
-    in_app_billing_updates: Optional[bool] = None
-    email_product_updates: Optional[bool] = None
-    in_app_product_updates: Optional[bool] = None
-    email_content_updates: Optional[bool] = None
-    in_app_content_updates: Optional[bool] = None
-    email_mentions: Optional[bool] = None
-    in_app_mentions: Optional[bool] = None
-    email_comments: Optional[bool] = None
-    in_app_comments: Optional[bool] = None
 
     # WORKSPACE
     ws_invite_received: Optional[bool] = None

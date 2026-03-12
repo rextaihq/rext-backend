@@ -12,10 +12,7 @@ def register_routes(app: FastAPI) -> None:
     from src.api.routes.events import router as events_router
 
     # ---- Workspace routes ----
-    from src.api.routes.workspaces import (
-        router as workspace_router,
-        workspaces_router,
-    )
+    from src.api.routes.workspaces import workspaces_router, workspace_router
     from src.api.routes.workspaces.workspace_knowledge import (
         router as workspace_knowledge_router,
     )
@@ -34,7 +31,6 @@ def register_routes(app: FastAPI) -> None:
     # ---- Subscriptions ----
     from src.api.routes.subscriptions.plan_routes import router as plan_routes_router
     from src.api.routes.subscriptions.subscription_routes import router as subscription_routes_router
-    from src.api.routes.subscriptions.checkout_routes import router as checkout_routes_router
     from src.api.routes.subscriptions.webhook_routes import router as webhook_routes_router
     from src.api.routes.subscriptions.license_routes import router as license_routes_router
     from src.api.routes.subscriptions.trial_routes import router as trial_routes_router
@@ -57,6 +53,7 @@ def register_routes(app: FastAPI) -> None:
     # ---- System & Security ----
     from src.api.routes.audit.modules import router as audit_router
     from src.api.routes.security.security_routes import router as security_router
+    # from src.api.routes.security.auth_test_routes import router as auth_test_router
     
     # ---- User & Communications ----
     from src.api.routes.email import preview_router, webhook_router as email_webhook_router
@@ -64,14 +61,13 @@ def register_routes(app: FastAPI) -> None:
     from src.api.routes.users.onboarding import router as onboarding_router
     from src.api.routes.invitations import router as invitations_router
     from src.api.routes.notifications.notification_routes import router as notification_router
-    
+    from src.api.routes.test_api_key_auth import router as test_api_key_router
     from src.api.routes.combine_user.combine_data import router as dashboard_router
     from src.api.routes.combine_user.recent_activities import router as recent_activities
 
     # ---- Misc & Tools ----
     from src.api.routes.media import router as media_router
     from src.api.tool.routes import router as tools_router
-    from src.api.routes.test_api_key_auth import router as test_api_key_router
 
     # ============================================================================
     # ROUTER REGISTRATION
@@ -81,8 +77,9 @@ def register_routes(app: FastAPI) -> None:
     app.include_router(health_router, prefix="/api/v1", tags=["Health"])
     app.include_router(events_router, prefix="/api/v1", tags=["Events"])
 
-    app.include_router(workspace_router, prefix="/api/v1", tags=["Workspaces"])
+
     app.include_router(workspaces_router, prefix="/api/v1", tags=["Workspaces"])
+    app.include_router(workspace_router, prefix="/api/v1", tags=["Workspaces"])
     app.include_router(workspace_knowledge_router, prefix="/api/v1", tags=["Workspace Knowledge"])
     app.include_router(workspace_knowledge_bases_router, prefix="/api/v1", tags=["Knowledge Bases"])
     app.include_router(email_template_router, prefix="/api/v1", tags=["Email Templates"])
@@ -93,7 +90,6 @@ def register_routes(app: FastAPI) -> None:
 
     app.include_router(plan_routes_router, prefix="/api/v1", tags=["Subscription Plans"])
     app.include_router(subscription_routes_router, prefix="/api/v1", tags=["Subscriptions"])
-    app.include_router(checkout_routes_router, prefix="/api/v1", tags=["Subscriptions", "Checkout"])
     app.include_router(webhook_routes_router, prefix="/api/v1", tags=["Subscriptions", "Webhooks"])
     app.include_router(license_routes_router, prefix="/api/v1", tags=["Licenses"])
     app.include_router(trial_routes_router, prefix="/api/v1", tags=["Trials"])
@@ -103,6 +99,8 @@ def register_routes(app: FastAPI) -> None:
     app.include_router(admin_monitoring_routes_router, prefix="/api/v1/admin", tags=["Admin - Monitoring"])
     app.include_router(admin_reports_routes_router, prefix="/api/v1/admin", tags=["Admin - Reports"])
     app.include_router(admin_email_analytics_routes_router, prefix="/api/v1", tags=["Admin - Email Analytics"])
+    # NOTE: admin_email_routes_router already defines its own
+    # prefix ("/api/v1/admin/emails") and tags ("Admin - Emails").
     app.include_router(admin_email_routes_router)
     app.include_router(admin_webhook_monitoring_routes_router, prefix="/api/v1/admin", tags=["Admin - Webhooks"])
     app.include_router(admin_export_routes_router, prefix="/api/v1/admin", tags=["Admin - Exports"])
@@ -112,6 +110,7 @@ def register_routes(app: FastAPI) -> None:
 
     app.include_router(audit_router, prefix="/api/v1", tags=["Audit Logs"])
     app.include_router(security_router, prefix="/api/v1", tags=["Security Monitoring"])
+    # app.include_router(auth_test_router, prefix="/api/v1", tags=["Auth Testing"])
     
     app.include_router(preview_router, prefix="/api/v1/email", tags=["Email Preview"])
     app.include_router(email_webhook_router, prefix="/api/v1/email", tags=["Email Webhooks"])
@@ -123,17 +122,9 @@ def register_routes(app: FastAPI) -> None:
     app.include_router(notification_router, prefix="/api/v1", tags=["Notifications"])
     app.include_router(tools_router, prefix="/api/v1", tags=["Tools"])
     app.include_router(
-    dashboard_router,
-    prefix="/api/v1",
-    tags=["Dashboard"])
-
-    app.include_router(
-    recent_activities,
-    prefix="/api/v1",
-    tags=["Recent Activities"])
-    
-
-    
-    
+        dashboard_router,
+        prefix="/api/v1",
+        tags=["Dashboard"],
+    )
     # app.include_router(test_api_key_router, prefix="/api/v1", tags=["Testing"])
 

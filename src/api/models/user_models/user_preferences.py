@@ -7,13 +7,14 @@ Stores user-specific preferences for UI customization and behavior.
 from sqlalchemy import Column, String, Integer, Boolean, DateTime, ForeignKey, Index
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
-from datetime import datetime
+from datetime import datetime, timezone
 import uuid
 
 from src.api.database.base import Base
+from src.api.models.base import SerializableMixin
 
 
-class UserPreferences(Base):
+class UserPreferences(Base, SerializableMixin):
     """User preferences for UI and behavior customization"""
 
     __tablename__ = "user_preferences"
@@ -29,27 +30,11 @@ class UserPreferences(Base):
     sidebar_collapsed = Column(Boolean, nullable=True, default=False)
 
     # Timestamps
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
-    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
     # Relationships
     user = relationship("Users", back_populates="preferences")
 
-    # Indexes
-    __table_args__ = (
-        Index("ix_user_preferences_user_id", "user_id"),
-    )
 
-    def to_dict(self):
-        """Convert to dictionary"""
-        return {
-            "id": str(self.id),
-            "user_id": str(self.user_id),
-            "theme": self.theme,
-            "date_format": self.date_format,
-            "time_format": self.time_format,
-            "items_per_page": self.items_per_page,
-            "sidebar_collapsed": self.sidebar_collapsed,
-            "created_at": self.created_at.isoformat() if self.created_at else None,
-            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
-        }
+    

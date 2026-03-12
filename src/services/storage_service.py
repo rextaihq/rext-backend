@@ -9,15 +9,19 @@ Uses boto3 for R2 communication (S3-compatible API).
 """
 
 import os
+import stat
+import secrets
+from pathlib import Path as PathLib
 import boto3
 from typing import BinaryIO, Optional, Tuple
 from abc import ABC, abstractmethod
 import aiofiles
 import hashlib
-from datetime import datetime
+from datetime import datetime, timezone
 from botocore.exceptions import ClientError
 import asyncio
 from functools import partial
+from src.config.storage_config import storage_settings
 
 
 class StorageBackend(ABC):
@@ -29,7 +33,8 @@ class StorageBackend(ABC):
         file: BinaryIO,
         path: str,
         content_type: str,
-        metadata: Optional[dict] = None
+        metadata: Optional[dict] = None,
+        is_public: bool = False
     ) -> str:
         """
         Upload file and return storage path.
@@ -39,6 +44,7 @@ class StorageBackend(ABC):
             path: Destination path/key
             content_type: MIME type
             metadata: Optional metadata dict
+            is_public: Whether the file should be publicly accessible
 
         Returns:
             Storage path/key
@@ -56,13 +62,13 @@ class StorageBackend(ABC):
         pass
 
     @abstractmethod
-    async def get_url(self, path: str, expires_in: int = 3600) -> str:
+    async def get_url(self, path: str, expires_in: int | None = None) -> str:
         """
         Get URL to access file.
 
         Args:
             path: File path/key
-            expires_in: URL expiration in seconds
+            expires_in: URL expiration in seconds. If None, uses configured default.
 
         Returns:
             Accessible URL (presigned for private files)
@@ -79,6 +85,17 @@ class StorageBackend(ABC):
 
         Returns:
             True if file exists
+        """
+        pass
+
+    @abstractmethod
+    async def update_acl(self, path: str, is_public: bool) -> None:
+        """
+        Update file access control.
+
+        Args:
+            path: File path/key
+            is_public: Whether the file should be public
         """
         pass
 
@@ -130,18 +147,32 @@ class CloudflareR2Backend(StorageBackend):
         file: BinaryIO,
         path: str,
         content_type: str,
-        metadata: Optional[dict] = None
+        metadata: Optional[dict] = None,
+        is_public: bool = False
     ) -> str:
-        """Upload file to Cloudflare R2."""
+        """
+    Upload a file object to the configured R2 bucket.
+
+    Uses run_in_executor to avoid blocking the event loop since
+    boto3's upload_fileobj is synchronous.
+
+    Args:
+        file: Binary file-like object to upload.
+        path: Storage key (e.g., "workspace_123/images/photo.jpg").
+        content_type: MIME type for the Content-Type header.
+        metadata: Optional key-value metadata to attach to the object.
+
+    Returns:
+        The storage path (same as input path) for reference.
+    """
         extra_args = {
             'ContentType': content_type,
-            'ACL': 'private'  # Default to private
+            'ACL': 'public-read' if is_public else 'private'
         }
 
         if metadata:
             extra_args['Metadata'] = {k: str(v) for k, v in metadata.items()}
 
-        # Run blocking S3 upload in executor to avoid blocking
         loop = asyncio.get_event_loop()
         await loop.run_in_executor(
             None,
@@ -168,18 +199,23 @@ class CloudflareR2Backend(StorageBackend):
             )
         )
 
-    async def get_url(self, path: str, expires_in: int = 3600) -> str:
+    async def get_url(self, path: str, expires_in: int | None = None) -> str:
         """
         Generate presigned URL for R2 object.
 
         For public buckets with custom domain, returns direct URL.
-        For private buckets, returns presigned URL.
+        For private buckets, returns presigned URL with configurable expiration.
         """
         if self.public_domain:
-            # Return public URL if custom domain is configured
             return f"https://{self.public_domain}/{path}"
 
-        # Generate presigned URL for private access
+        # Use configured default if not explicitly provided
+        if expires_in is None:
+            expires_in = storage_settings.presigned_url_expiration
+
+        # Enforce maximum expiration
+        expires_in = min(expires_in, storage_settings.presigned_url_max_expiration)
+
         loop = asyncio.get_event_loop()
         url = await loop.run_in_executor(
             None,
@@ -215,6 +251,10 @@ class CloudflareR2Backend(StorageBackend):
         Args:
             path: File path/key to make public
         """
+        await self.update_acl(path, is_public=True)
+
+    async def update_acl(self, path: str, is_public: bool) -> None:
+        """Update R2 object ACL."""
         loop = asyncio.get_event_loop()
         await loop.run_in_executor(
             None,
@@ -222,7 +262,7 @@ class CloudflareR2Backend(StorageBackend):
                 self.s3.put_object_acl,
                 Bucket=self.bucket,
                 Key=path,
-                ACL='public-read'
+                ACL='public-read' if is_public else 'private'
             )
         )
 
@@ -234,18 +274,13 @@ class LocalStorageBackend(StorageBackend):
     For development and self-hosted deployments.
     """
 
-    def __init__(self, base_path: str = "./media", public_url_base: str = "/media"):
-        """
-        Initialize local storage backend.
-
-        Args:
-            base_path: Base directory for file storage
-            public_url_base: Base URL path for accessing files
-        """
-        self.base_path = base_path
+    def __init__(self, base_path: str, public_url_base: str = "/media"):
+        resolved_base = PathLib(base_path).expanduser().resolve()
+        self.base_path = str(resolved_base)
         self.public_url_base = public_url_base
-        os.makedirs(base_path, exist_ok=True)
-
+        os.makedirs(self.base_path, exist_ok=True)
+        os.chmod(base_path, stat.S_IRWXU | stat.S_IRGRP | stat.S_IXGRP)
+    
     async def upload(
         self,
         file: BinaryIO,
@@ -253,8 +288,63 @@ class LocalStorageBackend(StorageBackend):
         content_type: str,
         metadata: Optional[dict] = None
     ) -> str:
-        """Save file to local filesystem."""
+        """Save file to local filesystem with restricted permissions."""
         full_path = os.path.join(self.base_path, path)
+
+        # Create directory structure with restricted permissions
+        dir_path = os.path.dirname(full_path)
+        os.makedirs(dir_path, exist_ok=True)
+        # Set directory permissions: rwxr-x--- (owner: rwx, group: r-x, others: none)
+        os.chmod(dir_path, stat.S_IRWXU | stat.S_IRGRP | stat.S_IXGRP)
+
+        # Write file asynchronously
+        async with aiofiles.open(full_path, 'wb') as f:
+            content = file.read()
+            await f.write(content)
+
+        # Set file permissions: rw-r----- (owner: rw, group: r, others: none)
+        os.chmod(full_path, stat.S_IRUSR | stat.S_IWUSR | stat.S_IRGRP)
+
+        return path
+
+
+    def _resolve_safe_path(self, path: str) -> str:
+        """
+        Resolve a storage path safely, preventing directory traversal.
+
+        Uses pathlib.Path.resolve() to canonicalize the path (resolving
+        symlinks, '.', and '..') and verifies the result is within base_path.
+
+        Args:
+            path: Relative storage path
+
+        Returns:
+            Resolved absolute path string
+
+        Raises:
+            ValueError: If the resolved path escapes base_path
+        """
+        base = PathLib(self.base_path).resolve()
+        full = (base / path).resolve()
+
+        if not str(full).startswith(str(base) + os.sep) and full != base:
+            raise ValueError(
+                f"Invalid storage path: directory traversal detected. "
+                f"Path '{path}' resolves outside the storage directory."
+            )
+
+        return str(full)
+
+    async def upload(
+        self,
+        file: BinaryIO,
+        path: str,
+        content_type: str,
+        metadata: Optional[dict] = None,
+        is_public: bool = False
+    ) -> str:
+        """Save file to local filesystem."""
+        full_path = self._resolve_safe_path(path)
 
         # Create directory structure
         os.makedirs(os.path.dirname(full_path), exist_ok=True)
@@ -264,11 +354,13 @@ class LocalStorageBackend(StorageBackend):
             content = file.read()
             await f.write(content)
 
+        # Note: Local backend doesn't have ACL concepts.
+        # Public/private access is managed at the HTTP level.
         return path
 
     async def delete(self, path: str) -> None:
         """Delete file from filesystem."""
-        full_path = os.path.join(self.base_path, path)
+        full_path = self._resolve_safe_path(path)
         if os.path.exists(full_path):
             await asyncio.get_event_loop().run_in_executor(
                 None,
@@ -276,7 +368,7 @@ class LocalStorageBackend(StorageBackend):
                 full_path
             )
 
-    async def get_url(self, path: str, expires_in: int = 3600) -> str:
+    async def get_url(self, path: str, expires_in: int | None = None) -> str:
         """
         Return local file URL.
 
@@ -286,8 +378,15 @@ class LocalStorageBackend(StorageBackend):
 
     async def exists(self, path: str) -> bool:
         """Check if file exists on filesystem."""
-        full_path = os.path.join(self.base_path, path)
+        full_path = self._resolve_safe_path(path)
         return os.path.exists(full_path)
+
+    async def update_acl(self, path: str, is_public: bool) -> None:
+        """
+        Update local file ACL.
+        No-op for local backend as access is managed elsewhere.
+        """
+        pass
 
 
 class StorageService:
@@ -318,6 +417,10 @@ class StorageService:
 
         Format: {workspace_id}/{user_id}/{timestamp}_{hash}{extension}
 
+        Uniqueness is guaranteed by including a cryptographically random
+        component in the hash input, preventing collisions even for
+        identical uploads within the same second.
+
         Args:
             original_filename: Original upload filename
             workspace_id: Workspace UUID
@@ -326,10 +429,13 @@ class StorageService:
         Returns:
             Generated filename path
         """
-        timestamp = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
+        timestamp = datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')
 
-        # Create hash for uniqueness
-        hash_input = f"{original_filename}{workspace_id}{user_id}{timestamp}"
+        # Add random component to prevent same-second collisions
+        random_suffix = secrets.token_hex(4)  # 8 hex chars, 2^32 possible values
+
+        # Create hash for uniqueness (includes random component)
+        hash_input = f"{original_filename}{workspace_id}{user_id}{timestamp}{random_suffix}"
         hash_value = hashlib.md5(hash_input.encode()).hexdigest()[:8]
 
         # Extract extension
@@ -345,7 +451,8 @@ class StorageService:
         content_type: str,
         workspace_id: str,
         user_id: str,
-        metadata: Optional[dict] = None
+        metadata: Optional[dict] = None,
+        is_public: bool = False
     ) -> Tuple[str, str]:
         """
         Upload file with automatic naming.
@@ -357,12 +464,15 @@ class StorageService:
             workspace_id: Workspace UUID
             user_id: User UUID
             metadata: Optional metadata
+            is_public: Whether the file should be publicly accessible
 
         Returns:
             Tuple of (storage_path, generated_filename)
         """
         filename = self.generate_filename(original_filename, workspace_id, user_id)
-        storage_path = await self.backend.upload(file, filename, content_type, metadata)
+        storage_path = await self.backend.upload(
+            file, filename, content_type, metadata, is_public=is_public
+        )
         return storage_path, filename
 
     async def delete_file(self, path: str) -> None:
@@ -374,18 +484,42 @@ class StorageService:
         """
         await self.backend.delete(path)
 
-    async def get_file_url(self, path: str, expires_in: int = 3600) -> str:
+    async def get_file_url(self, path: str, expires_in: int | None = None) -> str:
         """
         Get accessible URL for file.
 
         Args:
             path: File path/key
-            expires_in: URL expiration in seconds (for presigned URLs)
+            expires_in: URL expiration in seconds. If None, uses configured default.
 
         Returns:
             Accessible URL
         """
         return await self.backend.get_url(path, expires_in)
+
+    async def get_public_file_url(self, path: str) -> str:
+        """
+        Get a permanent public URL for a file.
+
+        For R2 with a public domain configured, returns a direct URL.
+        For R2 without a public domain, returns a presigned URL with long expiry.
+        For local backend, returns the standard local URL.
+
+        Args:
+            path: File path/key
+
+        Returns:
+            Permanent public URL
+        """
+        if isinstance(self.backend, CloudflareR2Backend):
+            if self.backend.public_domain:
+                return f"https://{self.backend.public_domain}/{path}"
+            else:
+                # No public domain configured — use a long-lived presigned URL
+                # (7 days max for S3-compatible APIs)
+                return await self.backend.get_url(path, expires_in=604800)
+        else:
+            return await self.backend.get_url(path)
 
     async def file_exists(self, path: str) -> bool:
         """
@@ -398,6 +532,16 @@ class StorageService:
             True if file exists
         """
         return await self.backend.exists(path)
+
+    async def update_file_acl(self, path: str, is_public: bool) -> None:
+        """
+        Update file access control.
+
+        Args:
+            path: File path/key
+            is_public: Whether the file should be public
+        """
+        await self.backend.update_acl(path, is_public)
 
 
 def create_storage_service(
@@ -432,6 +576,18 @@ def create_storage_service(
         )
     """
     if backend_type == "r2":
+        required = {
+            "bucket": kwargs.get("bucket"),
+            "account_id": kwargs.get("account_id"),
+            "access_key_id": kwargs.get("access_key_id"),
+            "secret_access_key": kwargs.get("secret_access_key"),
+        }
+        missing = [name for name, value in required.items() if not value or not str(value).strip()]
+        if missing:
+            raise ValueError(
+                f"R2 storage backend requires the following configuration: "
+                f"{', '.join(missing)}. Check your environment variables."
+            )
         backend = CloudflareR2Backend(
             bucket=kwargs.get("bucket"),
             account_id=kwargs.get("account_id"),
@@ -440,9 +596,13 @@ def create_storage_service(
             public_domain=kwargs.get("public_domain")
         )
     elif backend_type == "local":
+        base_path = kwargs.get("base_path")
+        if not base_path:
+            raise ValueError("base_path is required when backend_type='local'")
+
         backend = LocalStorageBackend(
-            base_path=kwargs.get("base_path", "./media"),
-            public_url_base=kwargs.get("public_url_base", "/media")
+            base_path=str(base_path),
+            public_url_base=kwargs.get("public_url_base", "/media"),
         )
     else:
         raise ValueError(f"Unknown backend type: {backend_type}")

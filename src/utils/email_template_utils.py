@@ -292,8 +292,8 @@ async def get_workspace_template(db, workspace_id: str, template_type: str) -> D
         query = select(EmailTemplate).where(
             EmailTemplate.workspace_id == workspace_id,
             cast(EmailTemplate.template_type, String) == template_type,
-            EmailTemplate.is_active == True,
-            EmailTemplate.is_default == False
+            EmailTemplate.is_active.is_(True),
+            EmailTemplate.is_default.is_(False)
         )
         result = await db.execute(query)
         custom_template = result.scalar_one_or_none()
@@ -308,8 +308,8 @@ async def get_workspace_template(db, workspace_id: str, template_type: str) -> D
         default_query = select(EmailTemplate).where(
             EmailTemplate.workspace_id == workspace_id,
             cast(EmailTemplate.template_type, String) == template_type,
-            EmailTemplate.is_active == True,
-            EmailTemplate.is_default == True
+            EmailTemplate.is_active.is_(True),
+            EmailTemplate.is_default.is_(True)
         )
         result = await db.execute(default_query)
         db_default_template = result.scalar_one_or_none()

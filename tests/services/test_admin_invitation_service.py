@@ -64,7 +64,7 @@ async def super_admin_user(async_session):
         workspace_id=None,  # Platform-level
         assigned_by_user_id=user.id,
         is_primary=True,
-        assigned_at=datetime.utcnow()
+        assigned_at=datetime.now(timezone.utc)
     )
     async_session.add(user_role)
     await async_session.commit()
@@ -235,7 +235,7 @@ async def test_accept_admin_invitation_expired(async_session, super_admin_user, 
     )
 
     # Manually expire invitation
-    invitation.expires_at = datetime.utcnow() - timedelta(days=1)
+    invitation.expires_at = datetime.now(timezone.utc) - timedelta(days=1)
     await async_session.commit()
 
     # Try to accept
@@ -417,3 +417,24 @@ async def test_get_all_invitations_with_status_filter(async_session, super_admin
     assert len(declined_invitations) == 1
     assert pending_invitations[0].status == 'pending'
     assert declined_invitations[0].status == 'declined'
+@pytest.mark.asyncio
+async def test_get_all_invitations_paginated_returns_full_total(async_session, super_admin_user):
+    """Test that paginated listing returns correct full total count."""
+    service = AdminInvitationService(async_session)
+
+    # Create 3 invitations
+    for idx in range(3):
+        await service.create_admin_invitation(
+            email=f"paginated-{idx}@test.com",
+            admin_role="support_admin",
+            invited_by_admin_id=super_admin_user.id,
+            expiry_days=7,
+        )
+    await async_session.commit()
+
+    # Get page with limit 1
+    page_rows, total_count = await service.get_all_invitations_paginated(limit=1, offset=0)
+
+    assert len(page_rows) == 1
+    assert total_count >= 3
+    print(f"✅ Verified: total_count={total_count} for page size 1")

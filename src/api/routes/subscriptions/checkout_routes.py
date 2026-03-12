@@ -57,7 +57,7 @@ class PortalSessionResponse(BaseModel):
 # NOTE: /checkout endpoint is in subscription_routes.py (uses service layer with rate limiting)
 
 @router.get("/portal", response_model=dict, status_code=status.HTTP_200_OK)
-@require_permissions("billing.read")
+@require_permissions("billing.read", workspace_scoped=False)
 @db_transaction_handler("create portal session", auto_commit=False)
 async def create_portal_session(
     request: Request,
@@ -105,7 +105,7 @@ async def create_portal_session(
         logger.error(f"Failed to create portal session: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to create portal session: {str(e)}"
+            detail="Failed to create portal session. Please try again or contact support."
         )
 
 
@@ -191,7 +191,7 @@ async def get_subscription_status_v2(
 
 
 @router.get("/usage", response_model=dict, status_code=status.HTTP_200_OK)
-@require_permissions("usage.read")
+@require_permissions("usage.read", workspace_scoped=False)
 @db_transaction_handler("get usage metrics", auto_commit=False)
 async def get_usage_metrics(
     request: Request,
@@ -222,7 +222,7 @@ async def get_usage_metrics(
 
 
 @router.delete("/cancel", response_model=dict, status_code=status.HTTP_200_OK)
-@require_permissions("subscription.manage")
+@require_permissions("subscription.manage", workspace_scoped=False)
 @db_transaction_handler("cancel subscription")
 async def cancel_subscription(
     request: Request,
@@ -266,8 +266,8 @@ async def cancel_subscription(
         )
 
     except Exception as e:
-        logger.error(f"Failed to cancel subscription: {str(e)}")
+        logger.error("Failed to cancel subscription", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to cancel subscription: {str(e)}"
+            detail="Failed to cancel subscription. Please try again or contact support."
         )

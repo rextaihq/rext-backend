@@ -13,7 +13,7 @@ Business Rules:
 """
 
 from typing import List, Optional, Dict, Any
-from datetime import datetime
+from datetime import datetime, timezone
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -76,6 +76,12 @@ class LicenseService:
                 field_errors={"license_key": ["License is disabled"]}
             )
 
+        if license_obj.status == LicenseStatus.REVOKED:
+            raise RextValidationException(
+                message="This license has been revoked",
+                field_errors={"license_key": ["License has been revoked by an administrator"]}
+            )
+
         # Check if license is expired
         if license_obj.is_expired:
             raise RextValidationException(
@@ -126,7 +132,7 @@ class LicenseService:
         # If license isn't claimed yet, claim it
         if not license_obj.user_id:
             license_obj.user_id = user_id
-            license_obj.activated_at = datetime.utcnow()
+            license_obj.activated_at = datetime.now(timezone.utc)
             await self.db.flush()
 
         # Check if this instance is already activated
@@ -160,7 +166,7 @@ class LicenseService:
         if existing_activation:
             # Reactivate previously deactivated instance
             existing_activation.is_active = True
-            existing_activation.activated_at = datetime.utcnow()
+            existing_activation.activated_at = datetime.now(timezone.utc)
             existing_activation.deactivated_at = None
             if instance_name:
                 existing_activation.instance_name = instance_name
@@ -174,7 +180,7 @@ class LicenseService:
                 instance_id=instance_id,
                 instance_name=instance_name,
                 is_active=True,
-                activated_at=datetime.utcnow(),
+                activated_at=datetime.now(timezone.utc),
                 activation_metadata=metadata or {}
             )
             self.db.add(activation)
@@ -359,7 +365,7 @@ class LicenseService:
         stmt = select(LicenseActivation).where(
             and_(
                 LicenseActivation.license_id == license_id,
-                LicenseActivation.is_active == True
+                LicenseActivation.is_active.is_(True)
             )
         )
         result = await self.db.execute(stmt)
@@ -369,7 +375,7 @@ class LicenseService:
             activation.deactivate()
 
         # Update license status
-        license_obj.status = LicenseStatus.DISABLED
+        license_obj.status = LicenseStatus.REVOKED
         license_obj.activation_count = 0
 
         await self.db.flush()
@@ -422,7 +428,7 @@ class LicenseService:
         stmt = select(func.count(LicenseActivation.id)).where(
             and_(
                 LicenseActivation.license_id == license_id,
-                LicenseActivation.is_active == True
+                LicenseActivation.is_active.is_(True)
             )
         )
         result = await self.db.execute(stmt)

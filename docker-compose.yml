@@ -34,7 +34,7 @@ services:
 
     # Postgres Databases and also add some other secrets
     postgres:
-        image: postgres:17-alpine
+        image: pgvector/pgvector:pg17
         environment:
             POSTGRES_USER: exec
             POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-rextserver}
@@ -60,6 +60,7 @@ services:
             -c max_parallel_maintenance_workers=2
             -c huge_pages=off
             -c jit=off
+            -c max_connections=200
             -c statement_timeout=60000
             -c idle_in_transaction_session_timeout=300000
             -c log_min_duration_statement=1000
@@ -77,7 +78,7 @@ services:
 
     # Backend API Service
     rext-api:
-        image: revnixhq/wrext:${IMAGE_TAG:-dev}
+        image: revnixhq/wrext:${IMAGE_TAG:-latest}
         labels:
             - "traefik.docker.network=d4wwgc0coow0888wogwc04gs"
         deploy:
@@ -199,6 +200,9 @@ services:
             LEMONSQUEEZY_API_KEY: ${LEMONSQUEEZY_API_KEY}
             LEMONSQUEEZY_SANDBOX_MODE: ${LEMONSQUEEZY_SANDBOX_MODE}
             LEMONSQUEEZY_STORE_ID: ${LEMONSQUEEZY_STORE_ID}
+            
+            # Encription
+            FIELD_ENCRYPTION_KEY: ${FIELD_ENCRYPTION_KEY}
 
 networks:
     rext-network:
