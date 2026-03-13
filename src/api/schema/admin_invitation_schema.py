@@ -7,6 +7,7 @@ Separate from workspace invitation schemas for clarity and type safety.
 from pydantic import BaseModel, EmailStr, Field, field_validator
 from typing import Optional, List, Dict, Any
 from datetime import datetime, timezone
+from uuid import UUID
 from src.utils.invitation_utils import MIN_EXPIRY_DAYS, MAX_EXPIRY_DAYS
 
 
@@ -141,7 +142,7 @@ class AdminInvitationResponse(BaseModel):
 
     Returned when creating, viewing, or listing admin invitations.
     """
-    id: str = Field(..., description="Invitation UUID")
+    id: UUID = Field(..., description="Invitation UUID")
     email: str = Field(..., description="Invitee email address")
     admin_role: str = Field(..., description="Admin role being offered")
     status: str = Field(
@@ -152,26 +153,26 @@ class AdminInvitationResponse(BaseModel):
     permissions: Optional[Dict[str, Any]] = Field(None, description="Additional permissions (JSONB)")
 
     # Inviter info
-    invited_by_admin_id: Optional[str] = Field(None, description="Admin who sent invitation")
+    invited_by_admin_id: Optional[UUID] = Field(None, description="Admin who sent invitation")
     invited_by_name: Optional[str] = Field(None, description="Name of inviter")
     invited_by_email: Optional[str] = Field(None, description="Email of inviter")
 
     # Timestamps
-    created_at: str = Field(..., description="When invitation was created (ISO format)")
-    expires_at: str = Field(..., description="When invitation expires (ISO format)")
-    accepted_at: Optional[str] = Field(None, description="When invitation was accepted (ISO format)")
-    declined_at: Optional[str] = Field(None, description="When invitation was declined (ISO format)")
-    revoked_at: Optional[str] = Field(None, description="When invitation was revoked (ISO format)")
+    created_at: datetime = Field(..., description="When invitation was created")
+    expires_at: datetime = Field(..., description="When invitation expires")
+    accepted_at: Optional[datetime] = Field(None, description="When invitation was accepted")
+    declined_at: Optional[datetime] = Field(None, description="When invitation was declined")
+    revoked_at: Optional[datetime] = Field(None, description="When invitation was revoked")
 
     # Acceptance info
-    accepted_by_user_id: Optional[str] = Field(None, description="User who accepted invitation")
+    accepted_by_user_id: Optional[UUID] = Field(None, description="User who accepted invitation")
     accepted_by_name: Optional[str] = Field(None, description="Name of accepter")
 
     # Decline info
     declined_reason: Optional[str] = Field(None, description="Reason for declining")
 
     # Revoke info
-    revoked_by_admin_id: Optional[str] = Field(None, description="Admin who revoked invitation")
+    revoked_by_admin_id: Optional[UUID] = Field(None, description="Admin who revoked invitation")
     revoked_by_name: Optional[str] = Field(None, description="Name of revoker")
     revoked_reason: Optional[str] = Field(None, description="Reason for revoking")
 
@@ -243,12 +244,12 @@ class ValidateAdminInvitationResponse(BaseModel):
     Public endpoint - used before signup/acceptance to show invitation details.
     """
     valid: bool = Field(..., description="Whether token is valid")
-    invitation_id: Optional[str] = Field(None, description="Invitation UUID (if valid)")
+    invitation_id: Optional[UUID] = Field(None, description="Invitation UUID (if valid)")
     email: str = Field(..., description="Email this invitation is for")
     admin_role: str = Field(..., description="Admin role being offered")
     message: Optional[str] = Field(None, description="Personalized message from inviter")
     invited_by_name: Optional[str] = Field(None, description="Name of inviter")
-    expires_at: str = Field(..., description="When invitation expires")
+    expires_at: datetime = Field(..., description="When invitation expires")
     is_expired: bool = Field(..., description="Whether invitation has expired")
     status: str = Field(..., description="Invitation status")
     error_message: Optional[str] = Field(None, description="Error message if invalid")

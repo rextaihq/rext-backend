@@ -84,9 +84,9 @@ class Invoice(BaseModel):
     tax: Optional[float] = None
     subtotal: Optional[float] = None
     invoice_url: str
-    invoice_date: Optional[str] = None
-    due_date: Optional[str] = None
-    paid_at: Optional[str] = None
+    invoice_date: Optional[datetime] = None
+    due_date: Optional[datetime] = None
+    paid_at: Optional[datetime] = None
     customer_email: Optional[str] = None
     customer_name: Optional[str] = None
     items: List[Dict[str, Any]] = Field(default_factory=list)

@@ -10,23 +10,23 @@ class UserListPagination(BaseModel):
     pages: int
 
 class UserListResponse(BaseModel):
-    users: List[Dict[str, Any]]
+    users: List[Dict[str, Any]]  # service-level dict (varies by endpoint)
     total_count: int
-    workspace_id: Optional[str] = None
+    workspace_id: Optional[UUID] = None
     pagination: UserListPagination
 
 class UserDeleteResponse(BaseModel):
-    id: str
+    id: UUID
 
 class UserUpdateProfile(BaseModel):
-    id: str
+    id: UUID
     email: str
     full_name: Optional[str] = None
     display_name: Optional[str] = None
     language: str
     timezone: str
     status: str
-    updated_at: Optional[str] = None
+    updated_at: Optional[datetime] = None
 
 class UserUpdateResponse(BaseModel):
     user: UserUpdateProfile

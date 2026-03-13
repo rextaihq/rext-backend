@@ -1,5 +1,5 @@
 from pydantic import BaseModel, HttpUrl, Field, EmailStr
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 from uuid import UUID
 from datetime import datetime
 
@@ -62,6 +62,22 @@ class WorkspaceSchema(BaseModel):
     }
 
 
+class WorkspaceOwnerSummary(BaseModel):
+    """Structured owner summary embedded in workspace responses."""
+    id: UUID
+    full_name: Optional[str] = None
+    email: str
+    avatar_url: Optional[str] = None
+
+
+class WorkspaceKnowledgeStats(BaseModel):
+    """Knowledge item counts for a workspace."""
+    web_count: int = 0
+    file_count: int = 0
+    text_count: int = 0
+    total_count: int = 0
+
+
 class WorkspaceResponseSchema(BaseModel):
     """Full workspace response with ID and metadata"""
     id: UUID = Field(..., description="Workspace UUID")
@@ -75,8 +91,8 @@ class WorkspaceResponseSchema(BaseModel):
     updated_at: Optional[datetime] = Field(None, description="Last update timestamp")
     
     # Optional nested data
-    owner: Optional[Dict[str, Any]] = Field(None, description="Owner summary")
-    knowledge_stats: Optional[Dict[str, Any]] = Field(None, description="Counts of knowledge items")
+    owner: Optional[WorkspaceOwnerSummary] = Field(None, description="Owner summary")
+    knowledge_stats: Optional[WorkspaceKnowledgeStats] = Field(None, description="Counts of knowledge items")
     members_count: Optional[int] = Field(0, description="Total members")
 
     class Config:

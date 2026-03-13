@@ -185,6 +185,11 @@ class ResponseMeta(BaseModel):
         description="Server instance identifier for debugging",
         example="server-01"
     )
+    operation_id: Optional[str] = Field(
+        None,
+        description="Unique identifier for long-running operations",
+        example="op_123456789"
+    )
 
     @field_validator('request_id')
     @classmethod
@@ -238,7 +243,8 @@ class SuccessResponse(BaseResponse, Generic[T]):
                     "request_id": "req_1234567890_abc123",
                     "timestamp": "2024-01-15T10:30:00.123456Z",
                     "processing_time_ms": 250,
-                    "version": "1.0"
+                    "version": "1.0",
+                    "operation_id": None
                 }
             }
         }
@@ -342,7 +348,8 @@ def create_success_response(
     message: Optional[str] = None,
     request_id: Optional[str] = None,
     processing_time_ms: Optional[int] = None,
-    server_id: Optional[str] = None
+    server_id: Optional[str] = None,
+    operation_id: Optional[str] = None
 ) -> SuccessResponse[T]:
     """
     Create a standardized success response.
@@ -372,7 +379,8 @@ def create_success_response(
         meta=ResponseMeta(
             request_id=request_id or generate_request_id(),
             processing_time_ms=processing_time_ms,
-            server_id=server_id
+            server_id=server_id,
+            operation_id=operation_id
         )
     )
 
@@ -386,7 +394,8 @@ def create_error_response(
     request_id: Optional[str] = None,
     processing_time_ms: Optional[int] = None,
     context: Optional[Dict[str, Any]] = None,
-    server_id: Optional[str] = None
+    server_id: Optional[str] = None,
+    operation_id: Optional[str] = None
 ) -> ErrorResponse:
     """
     Create a standardized error response.
@@ -438,7 +447,8 @@ def create_error_response(
         meta=ResponseMeta(
             request_id=request_id or generate_request_id(),
             processing_time_ms=processing_time_ms,
-            server_id=server_id
+            server_id=server_id,
+            operation_id=operation_id
         )
     )
 
