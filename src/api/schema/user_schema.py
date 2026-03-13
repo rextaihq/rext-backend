@@ -18,8 +18,6 @@ class UserResponse(BaseModel):
     login_count: int = Field(0, description="Total login count")
     created_at: datetime = Field(..., description="Creation timestamp")
     updated_at: Optional[datetime] = Field(None, description="Last update timestamp")
-    role: str = Field("user", description="Primary system role")
-    permissions: List[str] = Field(default=[], description="Granular permission keys")
 
     class Config:
         from_attributes = True
@@ -166,7 +164,7 @@ class UpdateProfileRequest(BaseModel):
 
 class ProfileResponse(BaseModel):
     """Schema for profile response"""
-    id: str
+    id: UUID
     email: str
     full_name: Optional[str] = None
     display_name: Optional[str] = None
@@ -176,8 +174,11 @@ class ProfileResponse(BaseModel):
     status: str
     email_verified: bool
     avatar_url: Optional[str] = None
-    created_at: Optional[str] = None
-    updated_at: Optional[str] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
 
 
 class UserStatusRequest(BaseModel):
@@ -187,14 +188,17 @@ class UserStatusRequest(BaseModel):
 
 class UserStatusResponse(BaseModel):
     """Schema for user status response"""
-    user_id: str
+    user_id: UUID
     full_name: str
     email: str
     old_status: str
     new_status: str
     changed_by: str
     reason: Optional[str]
-    changed_at: str
+    changed_at: datetime
+
+    class Config:
+        from_attributes = True
 
 
 class DeactivateAccountRequest(BaseModel):
@@ -214,11 +218,11 @@ class DeactivateAccountRequest(BaseModel):
 
 class DeactivateAccountResponse(BaseModel):
     """Schema for account deactivation response"""
-    user_id: str
+    user_id: UUID
     email: str
     status: str
-    deactivated_at: str
-    scheduled_deletion_at: str
+    deactivated_at: datetime
+    scheduled_deletion_at: datetime
     message: str
 
 

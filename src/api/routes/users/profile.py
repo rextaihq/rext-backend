@@ -15,7 +15,7 @@ from src.api.schema.notification_schema import NotificationPreferencesResponse, 
 from src.api.database.async_database import get_async_db
 from src.utils.response_utils import success, error
 from src.api.schema.response_schemas import ErrorCode, ErrorSeverity, SuccessResponse, GenericResponse
-from src.api.schema.response.user_related_responses import UpdateProfileResponse
+from src.api.schema.response.user_related_responses import UpdateProfileResponse, ProfileResponseDetailed
 from src.api.middleware.exceptions import ResourceNotFoundException, RextValidationException
 from src.services.user_service import UserService
 from src.services.notification_preferences_service import NotificationPreferencesService
@@ -33,7 +33,7 @@ router = APIRouter()
 AVATAR_UPLOAD_DIR = Path("media/avatars")
 AVATAR_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
-@router.get("/profile", response_model=UserResponse)
+@router.get("/profile", response_model=SuccessResponse[ProfileResponseDetailed])
 @require_permissions("user.read", workspace_scoped=False)
 @db_transaction_handler("get profile", auto_commit=False)
 async def get_profile(
@@ -52,8 +52,8 @@ async def get_profile(
         user = await service.get_user_by_id(user_id)
 
         # Build profile response using schema
-        profile_data = ProfileResponse(
-            id=str(user.id),
+        profile_data = ProfileResponseDetailed(
+            id=user.id,
             email=user.email,
             full_name=user.full_name,
             display_name=user.display_name,
@@ -63,8 +63,10 @@ async def get_profile(
             status=user.status,
             email_verified=user.email_verified,
             avatar_url=user.avatar_url,
-            created_at=user.created_at.isoformat() if user.created_at else None,
-            updated_at=user.updated_at.isoformat() if user.updated_at else None
+            created_at=user.created_at,
+            updated_at=user.updated_at,
+            role=current_user.get("role", "user"),
+            permissions=current_user.get("permissions", [])
         ).model_dump()
 
         return success(

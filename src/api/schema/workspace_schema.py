@@ -30,16 +30,16 @@ class AddWorkspaceMemberRequest(BaseModel):
 
 class WorkspaceMemberResponse(BaseModel):
     """Schema for workspace member response"""
-    id: str = Field(..., description="Membership UUID")
-    workspace_id: str = Field(..., description="Workspace UUID")
-    user_id: str = Field(..., description="User UUID")
+    id: UUID = Field(..., description="Membership UUID")
+    workspace_id: UUID = Field(..., description="Workspace UUID")
+    user_id: UUID = Field(..., description="User UUID")
     email: str = Field(..., description="User email")
     full_name: Optional[str] = Field(None, description="User full name")
-    role_id: str = Field(..., description="Role UUID")
+    role_id: UUID = Field(..., description="Role UUID")
     role_name: str = Field(..., description="Role name (slug)")
     role_display_name: str = Field(..., description="Role display name")
     status: str = Field(..., description="Membership status")
-    joined_at: str = Field(..., description="When user joined workspace")
+    joined_at: datetime = Field(..., description="When user joined workspace")
 
     class Config:
         from_attributes = True

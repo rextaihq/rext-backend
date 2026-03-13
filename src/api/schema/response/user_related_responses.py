@@ -2,7 +2,7 @@ from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
 from datetime import datetime
 from uuid import UUID
-from src.api.schema.user_schema import UserResponse
+from src.api.schema.user_schema import UserResponse, ProfileResponse
 
 class UpdateProfileResponse(BaseModel):
     profile: UserResponse
@@ -20,3 +20,7 @@ class NotificationPreferencesResponse(BaseModel):
     marketing_emails: bool
     created_at: datetime
     updated_at: datetime
+class ProfileResponseDetailed(ProfileResponse):
+    """Extended profile for the authenticated user with RBAC visibility."""
+    role: str
+    permissions: List[str]
