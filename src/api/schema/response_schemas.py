@@ -550,5 +550,3 @@ def get_severity_for_http_status(status_code: int) -> ErrorSeverity:
         return ErrorSeverity.MEDIUM
     else:
         return ErrorSeverity.HIGH
-    else:
-        return ErrorSeverity.HIGH

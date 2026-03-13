@@ -17,7 +17,7 @@ class SingleWorkspaceResponse(BaseModel):
     workspace: WorkspaceResponseSchema
 
 class RoleData(BaseModel):
-    id: str
+    id: UUID
     name: str
     display_name: str
     description: Optional[str]
@@ -79,7 +79,7 @@ class BrandVoiceRefreshResponse(BaseModel):
     operation_id: str
 
 class MyWorkspacePermissionsResponse(BaseModel):
-    workspace_id: str
+    workspace_id: UUID
     workspace_slug: str
     user_role: str
     permissions: List[str]
@@ -87,17 +87,17 @@ class MyWorkspacePermissionsResponse(BaseModel):
 class CheckWorkspacePermissionResponse(BaseModel):
     has_permission: bool
     permission: str
-    workspace_id: str
+    workspace_id: UUID
 
 class WorkspaceRoleResponse(BaseModel):
     name: str
     display_name: str
     workspace_scoped: bool
-    workspace_id: Optional[str] = None
+    workspace_id: Optional[UUID] = None
 
 class MemberWorkspacePermissionsResponse(BaseModel):
-    user_id: str
-    workspace_id: str
+    user_id: UUID
+    workspace_id: UUID
     roles: List[WorkspaceRoleResponse]
     permissions: List[str]
 
