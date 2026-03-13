@@ -18,6 +18,8 @@ class UserResponse(BaseModel):
     login_count: int = Field(0, description="Total login count")
     created_at: datetime = Field(..., description="Creation timestamp")
     updated_at: Optional[datetime] = Field(None, description="Last update timestamp")
+    role: str = Field("user", description="Primary system role")
+    permissions: List[str] = Field(default=[], description="Granular permission keys")
 
     class Config:
         from_attributes = True

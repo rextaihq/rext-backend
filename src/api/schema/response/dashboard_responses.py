@@ -14,4 +14,3 @@ class WorkspaceDashboardResponse(BaseModel):
     members: int
     content: ContentStats
     personas: int
-    message: Optional[str] = None
