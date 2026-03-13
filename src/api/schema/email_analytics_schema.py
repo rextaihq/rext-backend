@@ -1,6 +1,7 @@
 from typing import List, Optional
 from pydantic import BaseModel
 from datetime import datetime
+from uuid import UUID
 
 class EmailOverviewStatsSchema(BaseModel):
     total_sent: int
@@ -29,7 +30,7 @@ class EmailTemplatesResponseSchema(BaseModel):
     total_count: int
 
 class EmailTimelineItemSchema(BaseModel):
-    date: str
+    date: datetime
     sent: int
     opened: int
     clicked: int
@@ -39,12 +40,12 @@ class EmailTimelineResponseSchema(BaseModel):
     total_count: int
 
 class EmailFailureItemSchema(BaseModel):
-    id: str
+    id: UUID
     to: str
     template_type: str
     status: str
     error_message: Optional[str] = None
-    sent_at: str
+    sent_at: datetime
 
 class EmailFailuresResponseSchema(BaseModel):
     failures: List[EmailFailureItemSchema]
