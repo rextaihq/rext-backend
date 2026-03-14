@@ -117,8 +117,8 @@ services:
             # POSTGRES_URI_CUSTOM: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable
             # DATABASE_URI: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable
 
-            POSTGRES_URI_CUSTOM: postgres://exec:rextserver@a00wcc84ok0s4oosc8oko00o:5432/rext
-            DATABASE_URI: postgres://exec:rextserver@a00wcc84ok0s4oosc8oko00o:5432/rext
+            POSTGRES_URI_CUSTOM: postgresql+asyncpg://://exec:rextserver@a00wcc84ok0s4oosc8oko00o:5432/rext
+            DATABASE_URI: postgresql+asyncpg://://exec:rextserver@a00wcc84ok0s4oosc8oko00o:5432/rext
             REDIS_URI: ${REDIS_URI:-redis://langgraph-redis:6379}
             REDIS_URL: ${REDIS_URL:-redis://redis:6379}
             CACHE_URL: ${CACHE_URL:-redis://redis:6379}
