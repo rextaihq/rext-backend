@@ -208,6 +208,11 @@ services:
             # Encription
             FIELD_ENCRYPTION_KEY: ${FIELD_ENCRYPTION_KEY}
 
+            # Data For Seo
+            DATAFORSEO_AUTH_HEADER: ${DATAFORSEO_AUTH_HEADER}
+            DATAFORSEO_SERP_URL: ${DATAFORSEO_SERP_URL}
+            DATAFORSEO_BACKLINKS_URL: ${DATAFORSEO_BACKLINKS_URL}
+
 networks:
     rext-network:
         driver: bridge

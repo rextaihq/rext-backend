@@ -64,7 +64,7 @@ def run_migrations():
 
     try:
         result = subprocess.run(
-            [alembic_cmd, "upgrade", "head"],
+            [alembic_cmd, "upgrade", "heads"],
             cwd=project_root,
             capture_output=True,
             text=True,
