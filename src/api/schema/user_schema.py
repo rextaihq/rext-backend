@@ -16,6 +16,8 @@ class UserResponse(BaseModel):
     email_verified: bool = Field(..., description="Whether email is verified")
     last_login_at: Optional[datetime] = Field(None, description="Last login timestamp")
     login_count: int = Field(0, description="Total login count")
+    initials: Optional[str] = Field(None, description="User initials (e.g., 'JD')")
+    display_role: Optional[str] = Field("User", description="Primary or highest role for display")
     created_at: datetime = Field(..., description="Creation timestamp")
     updated_at: Optional[datetime] = Field(None, description="Last update timestamp")
 

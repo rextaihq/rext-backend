@@ -10,6 +10,7 @@ class KnowledgeBaseBrief(BaseModel):
     description: Optional[str] = None
     created_at: datetime
     updated_at: datetime
+    type: str = "custom"
     items_count: Optional[int] = None
 
 class KnowledgeBaseListResponse(BaseModel):
@@ -27,6 +28,7 @@ class KnowledgeBaseDetail(BaseModel):
     description: Optional[str] = None
     created_at: datetime
     updated_at: datetime
+    type: str = "custom"
     items_count: Optional[int] = None
 
 class KnowledgeBaseResponse(BaseModel):

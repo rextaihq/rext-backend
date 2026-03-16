@@ -42,6 +42,7 @@ class WorkspaceStatsResponse(BaseModel):
     content_count: int
     knowledge_items_count: int
     members_count: int
+    topics_count: int = 0
     has_content_builder: bool
 
 class EmailTemplateDeleteResponse(BaseModel):

@@ -86,6 +86,7 @@ async def get_workspace_stats(
         "content_count": content_count,
         "knowledge_items_count": knowledge_items_count,
         "members_count": members_count,
+        "topics_count": analytics.get("topics_count", 0),
         "has_content_builder": has_content_builder,
     }
 

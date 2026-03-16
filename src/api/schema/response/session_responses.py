@@ -9,9 +9,14 @@ class SessionItem(BaseModel):
     token_id: Optional[str] = None
     is_current: bool
     created_at: datetime
+    last_activity_at: datetime
     expires_at: datetime
     user_agent: Optional[str] = None
     ip_address: Optional[str] = None
+    device_name: Optional[str] = None
+    device_type: Optional[str] = None
+    city: Optional[str] = None
+    country: Optional[str] = None
 
 class SessionListResponse(BaseModel):
     sessions: List[SessionItem]

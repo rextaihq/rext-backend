@@ -25,3 +25,15 @@ class RegisterWithInvitationResponse(BaseModel):
 class UnlinkOAuthResponse(BaseModel):
     provider: str
     status: str
+
+class OAuthAccountResponse(BaseModel):
+    id: str
+    provider: str
+    provider_email: Optional[str] = None
+    provider_username: Optional[str] = None
+    provider_avatar_url: Optional[str] = None
+    created_at: str
+
+class OAuthAccountsResponse(BaseModel):
+    accounts: List[OAuthAccountResponse]
+    total_count: int

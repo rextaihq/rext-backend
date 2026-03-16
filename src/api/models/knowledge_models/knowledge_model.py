@@ -87,10 +87,25 @@ class BrandVoice(Base, SerializableMixin):
     brand_voice = Column(JSONB, nullable=True)
     competitors = Column(JSONB, nullable=True)
     content_strategy = Column(JSONB, nullable=True)
+    content_pillar = Column(Text, nullable=True)
+    secondary_pillars = Column(JSONB, nullable=True)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
     updated_at = Column(DateTime(timezone=True), onupdate=lambda: datetime.now(timezone.utc), nullable=True)
 
     workspace = relationship("WorkspaceModel", back_populates="brand_voices")
+
+    def to_dict(self, **kwargs) -> dict:
+        """Custom serialization handling list fields"""
+        data = super().to_dict(**kwargs)
+        # Ensure list fields are always lists (even if stored as empty JSONB)
+        list_fields = ['target_audience', 'brand_voice', 'competitors', 'content_strategy', 'secondary_pillars']
+        for field in list_fields:
+            if field in data:
+                if data[field] is None:
+                    data[field] = []
+            else:
+                data[field] = []
+        return data
 
 # Web Knowledge
 class Website(Base, SerializableMixin):

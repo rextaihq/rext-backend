@@ -66,8 +66,29 @@ class WorkspaceOwnerSummary(BaseModel):
     """Structured owner summary embedded in workspace responses."""
     id: UUID
     full_name: Optional[str] = None
+    name: Optional[str] = None  # Alias for full_name for frontend compatibility
     email: str
     avatar_url: Optional[str] = None
+
+
+class BrandVoiceResponseSchema(BaseModel):
+    """Full brand voice details."""
+    id: Optional[UUID] = None
+    workspace_id: UUID
+    about: Optional[str] = None
+    customer_profile: Optional[str] = None
+    selling_position: Optional[str] = None
+    target_audience: List[str] = []
+    brand_voice: List[str] = []
+    competitors: List[str] = []
+    content_strategy: List[str] = []
+    content_pillar: Optional[str] = None
+    secondary_pillars: List[str] = []
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
 
 
 class WorkspaceKnowledgeStats(BaseModel):
@@ -94,6 +115,8 @@ class WorkspaceResponseSchema(BaseModel):
     owner: Optional[WorkspaceOwnerSummary] = Field(None, description="Owner summary")
     knowledge_stats: Optional[WorkspaceKnowledgeStats] = Field(None, description="Counts of knowledge items")
     members_count: Optional[int] = Field(0, description="Total members")
+    brand_voice: Optional[BrandVoiceResponseSchema] = None
+    analytics: Optional[Dict[str, Any]] = None
 
     class Config:
         from_attributes = True
@@ -109,28 +132,6 @@ class SidebarWorkspaceSchema(BaseModel):
     class Config:
         from_attributes = True
 
-
-# NEW: Separated schema for brand voice fields
-class BrandVoiceSchema(BaseModel):
-    """Schema for brand voice and marketing fields."""
-    about: Optional[str] = Field(None, description="About the brand")
-    customer_profile: Optional[str] = Field(None, description="Customer profile details")
-    selling_position: Optional[str] = Field(None, description="Selling position of the brand")
-    target_audience: Optional[str] = Field(None, description="Target audience details")
-    brand_voice: Optional[str] = Field(None, description="Tone and voice of the brand")
-    competitors: Optional[str] = Field(None, description="Competitors information")
-    content_strategy: Optional[str] = Field(None, description="Content strategy pillars")
-
-
-class BrandVoiceResponseSchema(BrandVoiceSchema):
-    """Response schema for brand voice with ID"""
-    id: UUID = Field(..., description="Brand voice record UUID")
-    workspace_id: UUID = Field(..., description="Workspace UUID")
-    created_at: datetime = Field(..., description="Creation timestamp")
-    updated_at: Optional[datetime] = Field(None, description="Last update timestamp")
-
-    class Config:
-        from_attributes = True
 
 
 class WorkspaceUpdateSchema(BaseModel):

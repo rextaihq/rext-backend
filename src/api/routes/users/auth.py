@@ -47,7 +47,9 @@ from src.api.schema.response.auth_responses import (
     AuthTokenResponse,
     VerifyEmailResponse,
     RegisterWithInvitationResponse,
-    UnlinkOAuthResponse
+    UnlinkOAuthResponse,
+    OAuthAccountResponse,
+    OAuthAccountsResponse
 )
 
 router = APIRouter()
@@ -499,7 +501,7 @@ async def register_with_invitation(
     )
 
 
-@router.post("/oauth/link", response_model=SuccessResponse[dict])
+@router.post("/oauth/link", response_model=SuccessResponse[OAuthAccountResponse])
 @require_permissions("user.read", workspace_scoped=False)
 @db_transaction_handler("link oauth account", auto_commit=True)
 async def link_oauth(
@@ -562,4 +564,29 @@ async def unlink_oauth(
         data={"provider": provider, "status": "unlinked"},
         request=request,
         message=f"Successfully unlinked {provider} account"
+    )
+
+@router.get("/oauth/accounts", response_model=SuccessResponse[OAuthAccountsResponse])
+@require_permissions("user.read", workspace_scoped=False)
+@db_transaction_handler("get oauth accounts", auto_commit=False)
+async def get_oauth_accounts(
+    request: Request,
+    current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_async_db)
+):
+    """
+    Get all OAuth accounts linked to the current user.
+    """
+    from src.services.oauth_service import OAuthService
+    user_id = UUID(current_user.get("identity"))
+    oauth_service = OAuthService(db)
+    
+    accounts = await oauth_service.get_user_oauth_accounts(user_id)
+    return success(
+        data={
+            "accounts": [a.to_dict() for a in accounts],
+            "total_count": len(accounts)
+        },
+        request=request,
+        message="OAuth accounts retrieved successfully"
     )

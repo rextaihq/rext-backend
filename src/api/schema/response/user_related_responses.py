@@ -24,3 +24,4 @@ class ProfileResponseDetailed(ProfileResponse):
     """Extended profile for the authenticated user with RBAC visibility."""
     role: str
     permissions: List[str]
+    two_factor_enabled: bool = False

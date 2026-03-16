@@ -67,8 +67,11 @@ class SessionService:
                 "device_type": session.device_type,
                 "ip_address": str(session.ip_address) if session.ip_address else None,
                 "user_agent": session.user_agent,
+                "city": session.city,
+                "country": session.country,
                 "created_at": session.created_at.isoformat() if session.created_at else None,
                 "last_activity_at": session.last_activity_at.isoformat() if session.last_activity_at else None,
+                "expires_at": session.expires_at.isoformat() if session.expires_at else None,
                 "is_current": False,  # Will be determined by route based on current token
                 "token_id": session.jti,
             })

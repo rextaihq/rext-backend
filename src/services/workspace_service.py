@@ -38,6 +38,7 @@ from src.api.models.user_models.permissions import Permission
 from src.api.models.user_models.role_permissions import RolePermission
 from src.api.models.user_models.user_roles import UserRole
 from src.api.models.content_models.content import Content
+from src.api.models.topic_models.topic_models import TopicsModel
 from src.api.middleware.exceptions import (
     ResourceNotFoundException,
     RextValidationException,
@@ -382,7 +383,13 @@ class WorkspaceService:
                     "url": ws.url,
                     "created_at": ws.created_at.isoformat() if ws.created_at else None,
                     "updated_at": ws.updated_at.isoformat() if ws.updated_at else None,
-                    "owner": {"name": owner_name, "email": owner_email},
+                    "owner": {
+                        "id": str(ws.user_id),
+                        "full_name": owner_name,
+                        "name": owner_name,
+                        "email": owner_email,
+                        "avatar_url": ws.owner.avatar_url if ws.owner else None
+                    },
                     "knowledge_stats": {
                         "web_knowledge": web_count,
                         "files": files_count,
@@ -452,6 +459,14 @@ class WorkspaceService:
             .correlate(None)
             .scalar_subquery()
         )
+        topics_count_subq = (
+            select(func.count(TopicsModel.id))
+            .where(
+                TopicsModel.workspace_id == workspace_id,
+            )
+            .correlate(None)
+            .scalar_subquery()
+        )
 
         result = await self.db.execute(
             select(
@@ -460,6 +475,7 @@ class WorkspaceService:
                 text_count_subq.label("text_count"),
                 members_count_subq.label("members_count"),
                 content_count_subq.label("content_count"),
+                topics_count_subq.label("topics_count"),
             )
         )
         row = result.one()
@@ -468,6 +484,7 @@ class WorkspaceService:
         text_count = row.text_count or 0
         members_count = row.members_count or 0
         content_count = row.content_count or 0
+        topics_count = row.topics_count or 0
 
         analytics = {
             "knowledge_stats": {
@@ -478,6 +495,7 @@ class WorkspaceService:
             },
             "members_count": members_count,
             "content_count": content_count,
+            "topics_count": topics_count,
         }
 
         # Add word count analytics if requested
@@ -577,6 +595,14 @@ class WorkspaceService:
             "slug": workspace.slug,
             "timezone": workspace.timezone,
             "url": workspace.url,
+            "status": "active",
+            "owner": {
+                "id": str(workspace.owner.id),
+                "full_name": workspace.owner.full_name,
+                "name": workspace.owner.full_name,
+                "email": workspace.owner.email,
+                "avatar_url": workspace.owner.avatar_url
+            } if workspace.owner else None,
             "created_at": (
                 workspace.created_at.isoformat() if workspace.created_at else None
             ),

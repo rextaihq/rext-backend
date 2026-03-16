@@ -262,7 +262,7 @@ async def get_available_roles(
 # -------------------------
 # Get workspace by ID or slug (RESTful)
 # -------------------------
-@router.get("/{workspace_id}", response_model=SuccessResponse[WorkspaceResponseSchema])
+@router.get("/{workspace_id}", response_model=SuccessResponse[SingleWorkspaceResponse])
 @require_permissions("workspace.read")
 @db_transaction_handler("get workspace", success_message="Workspace retrieved successfully")
 async def get_workspace_detail(
@@ -270,7 +270,7 @@ async def get_workspace_detail(
     request: Request,
     db: AsyncSession = Depends(get_async_db),
     user: dict = Depends(get_current_user)
-) -> SuccessResponse[WorkspaceResponseSchema]:
+) -> SuccessResponse[SingleWorkspaceResponse]:
     """
     Fetch comprehensive workspace details by ID or slug.
     
@@ -300,7 +300,7 @@ async def get_workspace_detail(
         }
     }
 
-    return success(data=workspace_data, request=request)
+    return success(data={"workspace": workspace_data}, request=request)
 
 
 # -------------------------

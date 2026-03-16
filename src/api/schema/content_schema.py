@@ -29,6 +29,8 @@ class ContentSEODataSchema(BaseModel):
     seo_score: Optional[float] = None
     readability_score: Optional[float] = None
     trust_score: Optional[float] = None
+    keyword_difficulty: Optional[int] = None
+    intent_label: Optional[str] = None
     seo_details: Optional[str] = None
 
 

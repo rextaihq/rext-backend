@@ -29,7 +29,7 @@ class LicenseActivationRow(BaseModel):
     deactivated_at: Optional[datetime] = None
     message: Optional[str] = None
 
-class LicenseValidateResponseSchema(BaseModel):
+class LicenseValidateResponse(BaseModel):
     """Schema for license validation response data."""
     valid: bool
     license_key: str
@@ -50,20 +50,20 @@ class LicenseActivationData(BaseModel):
     license: LicenseAdminRow
     message: Optional[str] = None
 
-class LicenseListResponseSchema(BaseModel):
+class LicenseListResponse(BaseModel):
     """Schema for the license list response data."""
     licenses: List[LicenseAdminRow]
     total: int
     message: Optional[str] = None
 
-class LicenseActivationListResponseSchema(BaseModel):
+class LicenseActivationListResponse(BaseModel):
     """Schema for the license activation list response data."""
     activations: List[LicenseActivationRow]
     total: int
     active_count: int
     message: Optional[str] = None
 
-class LicenseRevokeResponseSchema(BaseModel):
+class LicenseRevokeResponse(BaseModel):
     """Schema for the license revocation response data."""
     id: UUID
     license_key: str

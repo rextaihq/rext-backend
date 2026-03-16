@@ -2,6 +2,7 @@ from pydantic import BaseModel, EmailStr
 from typing import List, Optional, Dict, Any
 from datetime import datetime
 from uuid import UUID
+from src.api.schema.user_schema import UserResponse
 
 class UserListPagination(BaseModel):
     total: int
@@ -10,7 +11,7 @@ class UserListPagination(BaseModel):
     pages: int
 
 class UserListResponse(BaseModel):
-    users: List[Dict[str, Any]]  # service-level dict (varies by endpoint)
+    users: List[UserResponse]  # fully typed
     total_count: int
     workspace_id: Optional[UUID] = None
     pagination: UserListPagination

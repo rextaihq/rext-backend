@@ -126,6 +126,7 @@ class BulkDeleteMediaData(BaseModel):
     deleted: int
     failed: int
     errors: Optional[List[str]] = None
+    message: Optional[str] = None
 
 
 # ---------------------------------------------------------------------------
