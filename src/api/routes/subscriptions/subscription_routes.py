@@ -518,12 +518,13 @@ async def get_usage_stats(
     current_usage = await service.calculate_usage(user_id)
 
     # Helper function to calculate percentage
-    def calc_percentage(current: int, maximum: int) -> float:
-        if maximum == -1:  # Unlimited
+    def calc_percentage(current: int | None, maximum: int | None) -> float:
+        curr = current if current is not None else 0
+        if maximum is None or maximum == -1:  # Unlimited or not set
             return 0.0
         if maximum == 0:
-            return 100.0 if current > 0 else 0.0
-        return round((current / maximum) * 100, 1)
+            return 100.0 if curr > 0 else 0.0
+        return round((curr / maximum) * 100, 1)
 
     usage_data = {
         "subscription_id": str(subscription.id),
@@ -531,10 +532,10 @@ async def get_usage_stats(
         "billing_period": subscription.billing_period.value,
         "current_workspaces": current_usage["workspaces"],
         "current_knowledge_items": current_usage["knowledge_items"],
-        "current_api_calls": subscription.current_api_calls,
-        "max_workspaces": plan.max_workspaces if plan else 0,
-        "max_knowledge_items": plan.max_knowledge_items if plan else 0,
-        "max_api_calls_per_month": plan.max_api_calls_per_month if plan else 0,
+        "current_api_calls": subscription.current_api_calls or 0,
+        "max_workspaces": (plan.max_workspaces if plan.max_workspaces is not None else 0) if plan else 0,
+        "max_knowledge_items": (plan.max_knowledge_items if plan.max_knowledge_items is not None else 0) if plan else 0,
+        "max_api_calls_per_month": (plan.max_api_calls_per_month if plan.max_api_calls_per_month is not None else 0) if plan else 0,
         "workspaces_usage_percent": calc_percentage(current_usage["workspaces"], plan.max_workspaces if plan else 0),
         "knowledge_items_usage_percent": calc_percentage(current_usage["knowledge_items"], plan.max_knowledge_items if plan else 0),
         "api_calls_usage_percent": calc_percentage(subscription.current_api_calls, plan.max_api_calls_per_month if plan else 0),

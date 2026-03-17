@@ -12,7 +12,7 @@ from datetime import datetime, timezone, timedelta
 
 from fastapi import APIRouter, Depends, Request, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_, or_, desc, func
+from sqlalchemy import select, and_, or_, desc, func, Integer
 
 from src.api.database.async_database import get_async_db
 from src.api.security.dependencies import get_current_user
