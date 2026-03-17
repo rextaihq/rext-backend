@@ -68,7 +68,6 @@ class BrandVoiceResponse(BaseModel):
     # Extended fields matching backend extraction logic
     personas: List[PersonaResponse] = []
     content_pillar: Optional[str] = None
-    secondary_pillars: List[str] = []
 
 class BrandVoiceWrapperResponse(BaseModel):
     brand_voice: Optional[BrandVoiceResponse] = None

@@ -34,7 +34,6 @@ def _serialize_brand_voice(brand_voice) -> dict:
         "competitors": brand_voice.competitors or [],
         "content_strategy": brand_voice.content_strategy or [],
         "content_pillar": brand_voice.content_pillar,
-        "secondary_pillars": brand_voice.secondary_pillars or [],
         "created_at": brand_voice.created_at.isoformat() if getattr(brand_voice, "created_at", None) else None,
         "updated_at": brand_voice.updated_at.isoformat() if getattr(brand_voice, "updated_at", None) else None,
     }

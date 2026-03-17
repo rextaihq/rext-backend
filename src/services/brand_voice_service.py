@@ -220,6 +220,5 @@ class BrandVoiceService:
             "brand_voice": data.get("brand_voice"),
             "competitors": data.get("competitors"),
             "content_strategy": data.get("content_strategy"),
-            "content_pillar": data.get("content_pillar"),
-            "secondary_pillars": data.get("secondary_pillars")
+            "content_pillar": data.get("content_pillar")
         }

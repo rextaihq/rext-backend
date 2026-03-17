@@ -89,11 +89,6 @@ class BrandSchema(BaseModel):
         description="Main content pillar",
         example="Sustainability in Fashion"
     )
-    secondary_pillars: List[str] = Field(
-        default_factory=list,
-        description="Secondary content pillars",
-        example=["Eco-friendly lifestyle", "Circular economy"]
-    )
     content_strategy: List[str] = Field(
         default_factory=list,
         description="Main content strategy themes or pillars",

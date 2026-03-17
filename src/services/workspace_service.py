@@ -340,6 +340,7 @@ class WorkspaceService:
                 WorkspaceModel,
                 Users.display_name.label("owner_name"),
                 Users.email.label("owner_email"),
+                Users.avatar_url.label("owner_avatar_url"),
                 func.count(distinct(Website.id)).label("web_knowledge_count"),
                 func.count(distinct(KnowledgeFiles.id)).label("files_count"),
                 func.count(distinct(TextKnowledge.id)).label("text_knowledge_count"),
@@ -367,10 +368,11 @@ class WorkspaceService:
             ws = result_row[0]  # WorkspaceModel
             owner_name = result_row[1]
             owner_email = result_row[2]
-            web_count = result_row[3] or 0
-            files_count = result_row[4] or 0
-            text_count = result_row[5] or 0
-            members_count = result_row[6] or 0
+            owner_avatar_url = result_row[3]
+            web_count = result_row[4] or 0
+            files_count = result_row[5] or 0
+            text_count = result_row[6] or 0
+            members_count = result_row[7] or 0
             total_knowledge = web_count + files_count + text_count
 
             workspace_data.append(
@@ -388,7 +390,7 @@ class WorkspaceService:
                         "full_name": owner_name,
                         "name": owner_name,
                         "email": owner_email,
-                        "avatar_url": ws.owner.avatar_url if ws.owner else None
+                        "avatar_url": owner_avatar_url
                     },
                     "knowledge_stats": {
                         "web_knowledge": web_count,
