@@ -172,7 +172,7 @@ async def get_my_subscription(
 
     if not subscription:
         return success(
-            data=None,
+            data={"subscription": None},
             request=request,
             message="No active subscription found"
         )
@@ -235,7 +235,7 @@ async def get_my_subscription(
                 payload={"subscription_id": str(subscription.id), "renewal_date": subscription.renews_at.isoformat()},
             )
     return success(
-        data=response_data,
+        data={"subscription": response_data},
         request=request,
         message="Subscription retrieved successfully"
     )
@@ -326,7 +326,9 @@ async def upgrade_subscription(
         )
 
     # Prevent upgrade to lower plan accidentally
-    if new_plan.price_monthly < current_subscription.plan.price_monthly:
+    current_plan_price = float(current_subscription.plan.price_monthly or 0) if current_subscription.plan else 0
+    new_plan_price = float(new_plan.price_monthly or 0)
+    if new_plan_price < current_plan_price:
         raise HTTPException(
             status_code=400,
             detail="Cannot upgrade to a lower-priced plan. Use downgrade endpoint instead."
@@ -385,18 +387,24 @@ async def downgrade_subscription(
         )
     # Fetch current subscription and plan
     subscription = await service.get_subscription_by_user(user_id)
+    if not subscription:
+        raise HTTPException(
+            status_code=404,
+            detail="No active subscription found"
+        )
     current_plan = await service._get_plan_or_404(subscription.plan_id)
 
     # Fetch new plan
     new_plan = await service.get_plan_by_id(downgrade_data.new_plan_id)
 
-        
-    #Prevent downgrade to higher plan
-    if new_plan.price_monthly > current_plan.price_monthly:
+    # Prevent downgrade to higher plan
+    current_plan_price = float(current_plan.price_monthly or 0)
+    new_plan_price = float(new_plan.price_monthly or 0)
+    if new_plan_price > current_plan_price:
         raise HTTPException(
-        status_code=400,
-        detail="Use upgrade subscription to move to the higher plan"
-    )
+            status_code=400,
+            detail="Use upgrade subscription to move to the higher plan"
+        )
  
     
     # Downgrade subscription (same logic as upgrade)
@@ -496,51 +504,9 @@ async def get_usage_stats(
     - Usage percentages
     """
     user_id = current_user.get("identity")
-    service = SubscriptionService(db)
-    usage_service = UsageTrackingService(db)    
+    usage_service = UsageTrackingService(db)
 
-    # Get current subscription
-    subscription = await service.get_subscription_by_user(user_id)
-    
-    # If no subscription, return free tier usage
-    if not subscription:
-        free_tier_usage = await usage_service.get_usage_metrics(user_id)
-        return success(
-            data=free_tier_usage,
-            request=request,
-            message="Usage statistics retrieved successfully"
-        )
-        
-    # Get plan
-    plan = await service.get_plan_by_id(subscription.plan_id)
-
-    # Calculate current usage
-    current_usage = await service.calculate_usage(user_id)
-
-    # Helper function to calculate percentage
-    def calc_percentage(current: int | None, maximum: int | None) -> float:
-        curr = current if current is not None else 0
-        if maximum is None or maximum == -1:  # Unlimited or not set
-            return 0.0
-        if maximum == 0:
-            return 100.0 if curr > 0 else 0.0
-        return round((curr / maximum) * 100, 1)
-
-    usage_data = {
-        "subscription_id": str(subscription.id),
-        "plan_name": plan.name if plan else "Unknown",
-        "billing_period": subscription.billing_period.value,
-        "current_workspaces": current_usage["workspaces"],
-        "current_knowledge_items": current_usage["knowledge_items"],
-        "current_api_calls": subscription.current_api_calls or 0,
-        "max_workspaces": (plan.max_workspaces if plan.max_workspaces is not None else 0) if plan else 0,
-        "max_knowledge_items": (plan.max_knowledge_items if plan.max_knowledge_items is not None else 0) if plan else 0,
-        "max_api_calls_per_month": (plan.max_api_calls_per_month if plan.max_api_calls_per_month is not None else 0) if plan else 0,
-        "workspaces_usage_percent": calc_percentage(current_usage["workspaces"], plan.max_workspaces if plan else 0),
-        "knowledge_items_usage_percent": calc_percentage(current_usage["knowledge_items"], plan.max_knowledge_items if plan else 0),
-        "api_calls_usage_percent": calc_percentage(subscription.current_api_calls, plan.max_api_calls_per_month if plan else 0),
-        "usage_reset_date": subscription.usage_reset_date.isoformat() if subscription.usage_reset_date else None
-    }
+    usage_data = await usage_service.get_usage_metrics(user_id)
 
     return success(
         data=usage_data,
@@ -636,24 +602,20 @@ async def get_invoices(
     )
     user = result.scalar_one_or_none()
 
-    if not user or not user.provider_customer_id:
-        # User has no payment provider customer - return empty list
+    if not user:
         return success(
-            data={
-                "invoices": [],
-                "count": 0
-            },
+            data={"invoices": [], "count": 0},
             request=request,
-            message="No invoices found - no payment provider customer"
+            message="No invoices found"
         )
 
     # Get payment provider
     payment_provider = get_payment_provider_singleton()
 
     try:
-        # Get invoices from payment provider
+        # Get invoices from payment provider using user email
         invoices_data = await payment_provider.get_invoices(
-            customer_id=user.provider_customer_id,
+            user_email=user.email,
             limit=limit
         )
 

@@ -1124,6 +1124,60 @@ class LemonSqueezyProvider(PaymentProvider):
             )
             raise
 
+    async def get_invoices(
+        self,
+        user_email: str,
+        limit: int = 10
+    ) -> list:
+        """
+        Get order/invoice history for a user from LemonSqueezy.
+
+        Uses the /orders endpoint filtered by user_email.
+
+        Args:
+            user_email: Customer email address
+            limit: Maximum number of invoices to return
+
+        Returns:
+            List of invoice dicts
+        """
+        response = await self._make_request(
+            method="GET",
+            endpoint="/orders",
+            params={
+                "filter[user_email]": user_email,
+                "page[size]": limit
+            }
+        )
+
+        items = self._parse_jsonapi_data(response)
+        if not isinstance(items, list):
+            return []
+
+        invoices = []
+        for item in items:
+            created_at = item.get("created_at")
+            updated_at = item.get("updated_at")
+
+            invoices.append({
+                "invoice_id": str(item.get("id", "")),
+                "invoice_number": item.get("order_number") or item.get("id"),
+                "status": item.get("status", "unknown"),
+                "amount": (item.get("total") or 0) / 100.0,
+                "subtotal": (item.get("subtotal") or 0) / 100.0,
+                "tax": (item.get("tax") or 0) / 100.0,
+                "currency": item.get("currency", "USD"),
+                "invoice_url": item.get("urls", {}).get("receipt"),
+                "invoice_date": datetime.fromisoformat(created_at.replace("Z", "+00:00")) if created_at else None,
+                "due_date": None,
+                "paid_at": datetime.fromisoformat(updated_at.replace("Z", "+00:00")) if updated_at and item.get("status") == "paid" else None,
+                "customer_email": item.get("user_email"),
+                "customer_name": item.get("user_name"),
+                "items": []
+            })
+
+        return invoices
+
     async def close(self):
         """Close the HTTP client connection"""
         await self.client.aclose()

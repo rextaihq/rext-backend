@@ -273,20 +273,30 @@ class SubscriptionService:
 
         logger.info(f"🔍 DEBUG: Customer ID is {customer_id}")
         # Create checkout session
-        checkout_session = await self.payment_provider.create_checkout_session(
-            customer_id=customer_id,
-            price_id=variant_id,
-            success_url=success_url,
-            cancel_url=cancel_url,
-            discount_code=discount_code,
-            metadata={
-                "user_id": str(user_id),
-                "plan_id": str(plan_id),
-                "billing_period": billing_period.value,
-                "discount_code": discount_code if discount_code else None,
-                "affiliate_code": affiliate_code if affiliate_code else None
-            }
-        )
+        try:
+            checkout_session = await self.payment_provider.create_checkout_session(
+                customer_id=customer_id,
+                price_id=variant_id,
+                success_url=success_url,
+                cancel_url=cancel_url,
+                discount_code=discount_code,
+                metadata={
+                    "user_id": str(user_id),
+                    "plan_id": str(plan_id),
+                    "billing_period": billing_period.value,
+                    "discount_code": discount_code if discount_code else None,
+                    "affiliate_code": affiliate_code if affiliate_code else None
+                }
+            )
+        except Exception as e:
+            logger.error(
+                f"Payment provider error during checkout: {str(e)}",
+                extra={"user_id": str(user_id), "plan_id": str(plan_id)}
+            )
+            raise RextValidationException(
+                message="Failed to create checkout session. Please try again or contact support.",
+                field_errors={"checkout": [str(e)]}
+            )
 
         logger.info(
             f"Created checkout session {checkout_session.session_id} for user {user_id}",
@@ -967,15 +977,6 @@ class SubscriptionService:
             )
             return None
 
-        # Get current subscription to verify it exists
-        subscription = await self.get_subscription_by_user(user_id)
-        if not subscription or not subscription.lemonsqueezy_subscription_id:
-            logger.warning(
-                f"Cannot generate portal URL: User {user_id} has no active subscription",
-                extra={"user_id": str(user_id)}
-            )
-            return None
-
         try:
             # Generate portal session URL
             portal_url = await self.payment_provider.create_portal_session(
@@ -1066,12 +1067,15 @@ class SubscriptionService:
                 "id": plan.id,
                 "name": plan.name,
                 "display_name": plan.display_name,
-                "price_monthly": plan.price_monthly,
-                "price_yearly": plan.price_yearly,
+                "price_monthly": float(plan.price_monthly) if plan.price_monthly is not None else 0.0,
+                "price_yearly": float(plan.price_yearly) if plan.price_yearly is not None else 0.0,
                 "max_workspaces": plan.max_workspaces,
                 "max_members_per_workspace": plan.max_members_per_workspace,
                 "max_topics": plan.max_topics,
                 "max_knowledge_items": plan.max_knowledge_items,
+                "max_api_calls_per_month": plan.max_api_calls_per_month,
+                "lemonsqueezy_variant_id_monthly": plan.lemonsqueezy_variant_id_monthly,
+                "lemonsqueezy_variant_id_yearly": plan.lemonsqueezy_variant_id_yearly,
                 "is_active": plan.is_active,
                 "created_at": plan.created_at,
                 "updated_at": plan.updated_at
@@ -1101,13 +1105,15 @@ class SubscriptionService:
         Returns:
             True if downgrade, False otherwise
         """
-        # Price-based check
-        is_price_downgrade = new_plan.price_monthly < current_plan.price_monthly
+        # Price-based check (guard against None)
+        current_price = float(current_plan.price_monthly or 0)
+        new_price = float(new_plan.price_monthly or 0)
+        is_price_downgrade = new_price < current_price
 
-        # Usage-based check
+        # Usage-based check (guard against None)
         is_usage_downgrade = (
-            (new_plan.max_workspaces != -1 and new_plan.max_workspaces < current_usage["workspaces"]) or
-            (new_plan.max_knowledge_items != -1 and new_plan.max_knowledge_items < current_usage["knowledge_items"])
+            (new_plan.max_workspaces is not None and new_plan.max_workspaces != -1 and new_plan.max_workspaces < current_usage["workspaces"]) or
+            (new_plan.max_knowledge_items is not None and new_plan.max_knowledge_items != -1 and new_plan.max_knowledge_items < current_usage["knowledge_items"])
         )
 
         return is_price_downgrade or is_usage_downgrade
@@ -1128,14 +1134,14 @@ class SubscriptionService:
             RextValidationException: If usage exceeds new plan limits
         """
         # Check workspace limit
-        if new_plan.max_workspaces != -1 and current_usage["workspaces"] > new_plan.max_workspaces:
+        if new_plan.max_workspaces is not None and new_plan.max_workspaces != -1 and current_usage["workspaces"] > new_plan.max_workspaces:
             raise RextValidationException(
                 message=f"Cannot downgrade: You have {current_usage['workspaces']} workspaces, new plan allows {new_plan.max_workspaces}",
                 field_errors={"new_plan_id": ["Workspace limit exceeded"]}
             )
 
         # Check knowledge items limit
-        if new_plan.max_knowledge_items != -1 and current_usage["knowledge_items"] > new_plan.max_knowledge_items:
+        if new_plan.max_knowledge_items is not None and new_plan.max_knowledge_items != -1 and current_usage["knowledge_items"] > new_plan.max_knowledge_items:
             raise RextValidationException(
                 message=f"Cannot downgrade: You have {current_usage['knowledge_items']} knowledge items, new plan allows {new_plan.max_knowledge_items}",
                 field_errors={"new_plan_id": ["Knowledge items limit exceeded"]}
