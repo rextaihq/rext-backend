@@ -49,20 +49,21 @@ async def topic_generation(state: REXT) -> Dict[str, Any]:
     current_year = datetime.now(timezone.utc).year
     # Use a LIST of messages, not a SET
     messages = [
-    SystemMessage(
-        content=(
-            f"You are a SEO expert. Generate a high quality list of 5 SEO topics related to the given topic. "
-            f"Focus on topics that rank well in search engines, provide value to readers, and are relevant in {current_year}. "
-            f"Prefer trends, latest strategies, and current best practices."
+        SystemMessage(
+            content=(
+                f"You are a SEO expert. Generate a high quality list of 5 SEO topics related to the given topic. "
+                f"Focus on topics that rank well in search engines, provide value to readers, and are relevant in {current_year}. "
+                f"Prefer trends, latest strategies, and current best practices. "
+                f"Only output pairs of topic_name and description. Do NOT output complex metadata."
+            )
+        ),
+        HumanMessage(
+            content=f"Generate 5 SEO topic name and description pairs for: {query} in {current_year}"
         )
-    ),
-    HumanMessage(
-        content=f"Generate 5 SEO topics for: {query} in {current_year}"
-    )
-]
+    ]
     
     results: SEOTopics = await model.ainvoke(messages)
-    topics = results.topics
+    topics = [t.model_dump() for t in results.topics]
     
     logger.info(f"Generated {len(topics)} topics")   
     
@@ -81,9 +82,9 @@ async def topic_generation(state: REXT) -> Dict[str, Any]:
     if isinstance(user_selection, int):
         # User selected by index (1-5)
         if 1 <= user_selection <= len(topics):
-            selected_topic = topics[user_selection - 1]
+            selected_topic = topics[user_selection - 1].get("topic_name", "")
         else:
-            selected_topic = topics[0]  # Default to first topic
+            selected_topic = topics[0].get("topic_name", "")  # Default to first topic
     elif isinstance(user_selection, str):
         # User typed the topic directly or selected from list
         selected_topic = user_selection.strip()
@@ -91,14 +92,14 @@ async def topic_generation(state: REXT) -> Dict[str, Any]:
         if selected_topic.isdigit():
             idx = int(selected_topic)
             if 1 <= idx <= len(topics):
-                selected_topic = topics[idx - 1]
+                selected_topic = topics[idx - 1].get("topic_name", "")
     elif isinstance(user_selection, dict):
         # User returned a dict with selection
-        selected_topic = user_selection.get("selected_topic", "") or user_selection.get("topic", "")
+        selected_topic = user_selection.get("selected_topic", "") or user_selection.get("topic_name", "") or user_selection.get("topic", "")
     
     # Fallback to first topic if selection is empty
     if not selected_topic:
-        selected_topic = topics[0] if topics else ""
+        selected_topic = topics[0].get("topic_name", "") if topics else ""
     
     logger.info(f"User selected topic: {selected_topic}")
     

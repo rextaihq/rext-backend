@@ -28,7 +28,8 @@ class TopicService:
     async def create_topic(self, workspace_id: UUID, topic_data: Dict[str, Any]) -> TopicsModel:
         topic = TopicsModel(
             workspace_id=workspace_id,
-            **topic_data
+            topic_name=topic_data.get('topic_name'),
+            description=topic_data.get('description')
         )
         self.db.add(topic)
         await self.db.flush()
@@ -36,12 +37,11 @@ class TopicService:
 
     async def update_topic(self, topic_id: UUID, update_data: Dict[str, Any]) -> TopicsModel:
         topic = await self.get_topic_by_id(topic_id)
-        for key, value in update_data.items():
-            if hasattr(topic, key):
-                setattr(topic, key, value)
         
-        if 'approved' in update_data and update_data['approved']:
-            topic.approved_at = datetime.now(timezone.utc)
+        if 'topic_name' in update_data:
+            topic.topic_name = update_data['topic_name']
+        if 'description' in update_data:
+            topic.description = update_data['description']
             
         topic.updated_at = datetime.now(timezone.utc)
         await self.db.flush()

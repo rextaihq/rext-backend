@@ -21,6 +21,7 @@ from uuid import UUID, uuid4
 from datetime import datetime, timezone
 import re
 from asyncio import create_task
+from sqlalchemy.orm import selectinload
 
 from sqlalchemy import select, func, distinct, case
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -648,7 +649,9 @@ class WorkspaceService:
             ResourceNotFoundException: If workspace not found
         """
         result = await self.db.execute(
-            select(WorkspaceModel).where(
+            select(WorkspaceModel)
+            .options(selectinload(WorkspaceModel.owner))
+            .where(
                 WorkspaceModel.id == workspace_id,
                 WorkspaceModel.deleted_at.is_(None),  # Exclude soft-deleted workspaces
             )
