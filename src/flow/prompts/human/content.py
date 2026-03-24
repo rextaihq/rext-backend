@@ -38,6 +38,8 @@ Tone:
 {tone}
 
 Generate complete SEO-optimized content following the outline.
+Ensure you incorporate all facts and statistics mentioned in the outline.
+Populate the 'facts' field in the output JSON with objects containing 'text' and 'source_url' for each key verifiable fact or statistic you included in the content. For 'source_url', use the one from the outline or find a direct link to the data source.
 Ensure you outperform the competitors listed above.
                 """,
             ),
