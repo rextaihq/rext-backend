@@ -26,6 +26,13 @@ from src.services.license_service import LicenseService
 from src.utils.response_utils import success
 from src.utils.route_decorators import db_transaction_handler
 from src.utils.logger import logger
+from src.api.routes.subscriptions.admin.shared.auth import require_super_admin
+from src.api.middleware.rate_limiter import (
+    license_validate_rate_limit,
+    license_activate_rate_limit,
+    license_deactivate_rate_limit,
+    license_revoke_rate_limit
+)
 
 
 router = APIRouter(
@@ -40,7 +47,9 @@ router = APIRouter(
 async def validate_license(
     request: Request,
     license_data: LicenseValidateRequest,
-    db: AsyncSession = Depends(get_async_db)
+    db: AsyncSession = Depends(get_async_db),
+    current_user: dict = Depends(get_current_user),
+    _rate_limit: None = Depends(license_validate_rate_limit())
 ):
     """
     Validate a LemonSqueezy license key.
@@ -79,9 +88,11 @@ async def validate_license(
     }
     ```
     """
+    user_id = current_user.get("identity")
     logger.info(
         f"License validation request for key: {license_data.license_key[:8]}...",
         extra={
+            "user_id": user_id,
             "license_key_prefix": license_data.license_key[:8],
             "has_instance_id": bool(license_data.instance_id)
         }
@@ -122,22 +133,22 @@ async def validate_license(
         )
 
         return success(
-            data=response_data.dict(),
+            data=response_data.model_dump(),
             request=request,
             message="License validated successfully"
         )
 
     except Exception as e:
         logger.error(
-            f"License validation failed: {str(e)}",
+            "License validation failed",
+            exc_info=True,
             extra={
-                "license_key_prefix": license_data.license_key[:8],
-                "error": str(e)
+                "license_key_prefix": license_data.license_key[:8]
             }
         )
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"License validation failed: {str(e)}"
+            detail="License validation failed. Please check your key and try again."
         )
 
 
@@ -152,7 +163,8 @@ async def activate_license_endpoint(
     request: Request,
     activation_data: LicenseActivateRequest,
     db: AsyncSession = Depends(get_async_db),
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
+    _rate_limit: None = Depends(license_activate_rate_limit())
 ):
     """
     Activate a license key for a specific device/instance.
@@ -240,7 +252,8 @@ async def deactivate_license_endpoint(
     license_id: str,
     deactivation_data: LicenseDeactivateRequest,
     db: AsyncSession = Depends(get_async_db),
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
+    _rate_limit: None = Depends(license_deactivate_rate_limit())
 ):
     """
     Deactivate a license activation for a specific instance.
@@ -459,7 +472,8 @@ async def revoke_license_endpoint(
     license_id: str,
     revoke_data: LicenseRevokeRequest,
     db: AsyncSession = Depends(get_async_db),
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
+    _rate_limit: None = Depends(license_revoke_rate_limit())
 ):
     """
     Revoke a license (admin only).
@@ -481,6 +495,8 @@ async def revoke_license_endpoint(
     - 403: Not authorized (admin only)
     """
     admin_user_id = current_user.get("identity")
+    await require_super_admin(db, admin_user_id)
+
     service = LicenseService(db)
 
     # Revoke license

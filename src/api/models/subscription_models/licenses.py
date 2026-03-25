@@ -1,8 +1,9 @@
 """License model for LemonSqueezy one-time purchases."""
 import uuid
 import enum
-from datetime import datetime
-from sqlalchemy import Column, String, Integer, ForeignKey, TIMESTAMP, Enum as SQLEnum
+from datetime import datetime, timezone
+from sqlalchemy import DateTime
+from sqlalchemy import Column, String, Integer, ForeignKey, Enum as SQLEnum
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import relationship
 from src.api.database.base import Base
@@ -15,6 +16,7 @@ class LicenseStatus(str, enum.Enum):
     INACTIVE = "inactive"
     EXPIRED = "expired"
     DISABLED = "disabled"
+    REVOKED = "revoked"
 
 
 class License(Base, SerializableMixin):
@@ -41,17 +43,17 @@ class License(Base, SerializableMixin):
     activation_count = Column(Integer, default=0, nullable=False)
 
     # Timestamps
-    activated_at = Column(TIMESTAMP, nullable=True)
-    expires_at = Column(TIMESTAMP, nullable=True)  # Null = lifetime license
-    created_at = Column(TIMESTAMP, default=datetime.utcnow, nullable=False)
-    updated_at = Column(TIMESTAMP, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    activated_at = Column(DateTime(timezone=True), nullable=True)
+    expires_at = Column(DateTime(timezone=True), nullable=True)  # Null = lifetime license
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
+    updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc), nullable=False)
 
     # License metadata for extensibility (using license_metadata to avoid reserved word)
     license_metadata = Column(JSONB, default=dict, nullable=False)
 
     # Relationships
-    user = relationship("Users", backref="licenses")
-    activations = relationship("LicenseActivation", back_populates="license", cascade="all, delete-orphan")
+    user = relationship("Users", back_populates="licenses")
+    activations = relationship("LicenseActivation", back_populates="license", cascade="all, delete-orphan", passive_deletes=True)
 
     def __repr__(self):
         return f"<License(id={self.id}, key={self.license_key[:12]}..., status={self.status.value})>"
@@ -67,18 +69,17 @@ class License(Base, SerializableMixin):
     @property
     def is_valid(self) -> bool:
         """Check if license is currently valid."""
-        if self.status != LicenseStatus.ACTIVE:
+        if self.status not in (LicenseStatus.ACTIVE,):
             return False
-        if self.expires_at and self.expires_at < datetime.utcnow():
+        if self.expires_at and self.expires_at < datetime.now(timezone.utc):
             return False
         if self.activation_limit and self.activation_count >= self.activation_limit:
             return False
         return True
-
     @property
     def is_expired(self) -> bool:
         """Check if license has expired."""
-        if self.expires_at and self.expires_at < datetime.utcnow():
+        if self.expires_at and self.expires_at < datetime.now(timezone.utc):
             return True
         return False
 

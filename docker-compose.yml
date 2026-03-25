@@ -2,41 +2,73 @@ volumes:
     langgraph-data:
         driver: local
 services:
-    # Redis for application cache (separate from LangGraph)
+    # Redis for application cache
     redis:
         image: redis:7-alpine
-        container_name: rext-redis
-        ports:
-            - "6379:6379"
+        command: redis-server --appendonly yes --maxmemory 2gb --maxmemory-policy allkeys-lru
         healthcheck:
             test: [ "CMD", "redis-cli", "ping" ]
             interval: 5s
             timeout: 1s
             retries: 5
         restart: unless-stopped
+        networks:
+            - rext-network
 
     # Redis for LangGraph
     langgraph-redis:
-        image: redis:6
-        container_name: langgraph-redis
+        image: redis:7-alpine
+        command: redis-server --maxmemory 256mb --maxmemory-policy noeviction
         healthcheck:
-            test: redis-cli ping
+            test: [ "CMD", "redis-cli", "ping" ]
             interval: 5s
             timeout: 1s
             retries: 5
+        restart: unless-stopped
+        deploy:
+            resources:
+                limits:
+                    memory: 512M
+        networks:
+            - rext-network
 
     # Postgres Databases and also add some other secrets
     postgres:
-        image: postgres:17-alpine
-        container_name: rext-postgres
+        image: pgvector/pgvector:pg17
         environment:
             POSTGRES_USER: exec
-            POSTGRES_PASSWORD: rextserver
+            POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-rextserver}
             POSTGRES_DB: rext
         volumes:
             - langgraph-data:/var/lib/postgresql/data
-        ports:
-            - "5432:5432"
+        command: >
+            postgres
+            -c shared_buffers=2GB
+            -c effective_cache_size=6GB
+            -c maintenance_work_mem=512MB
+            -c work_mem=10MB
+            -c wal_buffers=64MB
+            -c min_wal_size=1GB
+            -c max_wal_size=4GB
+            -c checkpoint_completion_target=0.9
+            -c random_page_cost=1.1
+            -c effective_io_concurrency=200
+            -c default_statistics_target=100
+            -c max_worker_processes=4
+            -c max_parallel_workers_per_gather=2
+            -c max_parallel_workers=4
+            -c max_parallel_maintenance_workers=2
+            -c huge_pages=off
+            -c jit=off
+            -c max_connections=200
+            -c statement_timeout=60000
+            -c idle_in_transaction_session_timeout=300000
+            -c log_min_duration_statement=1000
+            -c shared_preload_libraries=pg_stat_statements
+        deploy:
+            resources:
+                limits:
+                    memory: 2G
         healthcheck:
             test: [ "CMD-SHELL", "pg_isready -U exec" ]
             interval: 5s
@@ -45,10 +77,24 @@ services:
             - rext-network
 
     # Backend API Service
-    langgraph-api:
-        image: revnixhq/wrext:${IMAGE_TAG:-dev}
-        ports:
-            - "2024:2024"
+    rext-api:
+        image: revnixhq/wrext:${IMAGE_TAG:-latest}
+        labels:
+            - "traefik.docker.network=d4wwgc0coow0888wogwc04gs"
+        deploy:
+            replicas: 1 # Set to 1 to avoid 'container name must be unique' error in Coolify
+            resources:
+                limits:
+                    cpus: '2.0'
+                    memory: 2.5G
+                reservations:
+                    cpus: '0.5'
+                    memory: 1.5G
+        expose:
+            - "2024"
+
+        # Traefik labels are managed by Coolify — do not uncomment these manually
+        # See Coolify dashboard > Applications > rext-backend for routing config
         depends_on:
             postgres:
                 condition: service_healthy
@@ -64,11 +110,11 @@ services:
             LANGSMITH_TRACING: ${LANGSMITH_TRACING:-true}
 
             # Database (Connect to host PostgreSQL)
-            POSTGRES_URI_CUSTOM: postgresql://exec:rextserver@postgres:5432/rext
-            DATABASE_URI: postgresql://exec:rextserver@postgres:5432/rext
+            POSTGRES_URI_CUSTOM: postgresql://exec:${POSTGRES_PASSWORD:-rextserver}@postgres:5432/rext
+            DATABASE_URI: postgresql://exec:${POSTGRES_PASSWORD:-rextserver}@postgres:5432/rext
             REDIS_URI: ${REDIS_URI:-redis://langgraph-redis:6379}
-            REDIS_URL: ${REDIS_URL:-redis://langgraph-redis:6379}
-            CACHE_URL: ${CACHE_URL:-redis://langgraph-redis:6379}
+            REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+            CACHE_URL: ${CACHE_URL:-redis://redis:6379}
 
             # Security
             SECRET_KEY: ${SECRET_KEY}
@@ -132,18 +178,34 @@ services:
             # Monitoring
             SENTRY_DSN: ${SENTRY_DSN}
             SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-production}
-            CACHE_ENABLED: ${CACHE_ENABLED:-false}
+            CACHE_ENABLED: ${CACHE_ENABLED:-true}
 
             # Feature Flags
             FF_PROFILE_IMPORTS: ${FF_PROFILE_IMPORTS:-false}
-            BG_JOB_ISOLATED_LOOPS: ${BG_JOB_ISOLATED_LOOPS:-false}
+            BG_JOB_ISOLATED_LOOPS: "true"
+            N_JOBS_PER_WORKER: "50"
+
+            # Connection pooling (FIXED)
+            REDIS_MAX_CONNECTIONS: "50"
+
+            # TTL - CRITICAL for 8GB (auto-delete old threads)
+            CHECKPOINTER_TTL_DEFAULT: 86400 # 24hr
+            STORE_TTL_DEFAULT: 604800 # 7 days
+
+            # Efficiency
+            WORKER_CONCURRENCY: 2
 
             # Payment
             LEMONSQUEEZY_WEBHOOK_SECRET: ${LEMONSQUEEZY_WEBHOOK_SECRET}
             LEMONSQUEEZY_API_KEY: ${LEMONSQUEEZY_API_KEY}
             LEMONSQUEEZY_SANDBOX_MODE: ${LEMONSQUEEZY_SANDBOX_MODE}
             LEMONSQUEEZY_STORE_ID: ${LEMONSQUEEZY_STORE_ID}
+            
+            # Encription
+            FIELD_ENCRYPTION_KEY: ${FIELD_ENCRYPTION_KEY}
 
 networks:
     rext-network:
         driver: bridge
+    coolify:
+        external: true

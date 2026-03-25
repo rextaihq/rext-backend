@@ -9,9 +9,11 @@ Handles incoming webhook events from Resend:
 """
 from typing import Optional, Dict, Any
 from uuid import UUID
-from datetime import datetime
+from datetime import datetime, timezone
+from src.utils.datetime_utils import utc_now, parse_iso_datetime
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+import hashlib
 
 from src.api.models.email_models.email_event import EmailEvent
 from src.api.models.email_models.email_log import EmailLog
@@ -43,6 +45,39 @@ class EmailEventService:
             db: Async SQLAlchemy database session
         """
         self.db = db
+
+    def _generate_provider_event_id(
+        self,
+        email_id: str,
+        event_type: str,
+        created_at_str: str
+    ) -> str:
+        """
+        Generate deterministic, normalized idempotency key for webhook events.
+
+        Uses SHA-256 hash of normalized components to produce fixed-length key
+        immune to minor format changes in source data.
+
+        Args:
+            email_id: Provider's email/message ID
+            event_type: Event type (e.g., "email.delivered")
+            created_at_str: Raw timestamp string from webhook
+
+        Returns:
+            Deterministic event ID string prefixed with "evt_"
+        """
+        # Normalize timestamp: parse to datetime and format consistently
+        try:
+            parsed_ts = datetime.fromisoformat(created_at_str.replace('Z', '+00:00'))
+            normalized_ts = parsed_ts.strftime("%Y-%m-%dT%H:%M:%S")
+        except (ValueError, AttributeError):
+            # Fallback: use raw string if parsing fails
+            normalized_ts = created_at_str
+
+        # Use pipe delimiter to avoid collision with values containing underscores
+        content = f"{email_id}|{event_type}|{normalized_ts}"
+        hash_value = hashlib.sha256(content.encode('utf-8')).hexdigest()[:32]
+        return f"evt_{hash_value}"
 
     async def process_webhook_event(
         self,
@@ -132,23 +167,23 @@ class EmailEventService:
 
             # Parse created_at timestamp
             try:
-                event_timestamp = datetime.fromisoformat(created_at_str.replace('Z', '+00:00'))
+                event_timestamp = parse_iso_datetime(created_at_str)
             except (ValueError, AttributeError):
                 logger.warning(
                     f"Invalid timestamp format: {created_at_str}",
                     extra={"event_type": event_type}
                 )
-                event_timestamp = datetime.utcnow()
+                event_timestamp = utc_now()
 
             # Create event record
             email_event = EmailEvent(
                 email_log_id=email_log_id,
                 provider="resend",
-                provider_event_id=f"{email_id}_{event_type}_{created_at_str}",  # Unique composite ID
+                provider_event_id=self._generate_provider_event_id(email_id, event_type, created_at_str),
                 provider_message_id=email_id,
                 event_type=event_type,
                 event_data=event_data,
-                received_at=datetime.utcnow(),
+                received_at=utc_now(),
                 created_at=event_timestamp
             )
 
@@ -168,7 +203,7 @@ class EmailEventService:
             if email_log:
                 await self._update_email_log_status(email_log, event_type, event_timestamp)
 
-            await self.db.commit()
+            await self.db.flush()
 
             return WebhookProcessingResult(
                 success=True,
@@ -207,12 +242,12 @@ class EmailEventService:
         Args:
             email_id: Provider's email/message ID
             event_type: Event type
-            created_at: Event timestamp
+            created_at: Event timestamp string
 
         Returns:
             EmailEvent if found, None otherwise
         """
-        provider_event_id = f"{email_id}_{event_type}_{created_at}"
+        provider_event_id = self._generate_provider_event_id(email_id, event_type, created_at)
 
         result = await self.db.execute(
             select(EmailEvent).where(
@@ -313,7 +348,7 @@ class EmailEventService:
             )
 
         # Update timestamp
-        email_log.updated_at = datetime.utcnow()
+        email_log.updated_at = utc_now()
 
         if email_log.status != original_status:
             logger.info(
@@ -366,7 +401,7 @@ class EmailEventService:
         """
         from datetime import timedelta
 
-        cutoff_time = datetime.utcnow() - timedelta(hours=hours)
+        cutoff_time = utc_now() - timedelta(hours=hours)
 
         result = await self.db.execute(
             select(EmailEvent)

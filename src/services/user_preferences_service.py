@@ -16,7 +16,7 @@ Does NOT:
 
 from typing import Optional, Dict, Any
 from uuid import UUID
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -118,8 +118,8 @@ class UserPreferencesService:
             updates.append(f"sidebar_collapsed={sidebar_collapsed}")
 
         if updates:
-            preferences.updated_at = datetime.utcnow()
-            await self.db.commit() 
+            preferences.updated_at = datetime.now(timezone.utc)
+            await self.db.flush() 
             logger.info(f"Updated preferences for user {user_id}: {', '.join(updates)}")
         else:
             logger.debug(f"No preferences updated for user {user_id}")

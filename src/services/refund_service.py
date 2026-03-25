@@ -8,12 +8,12 @@ Handles refund operations including:
 - Sending refund notifications
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, Dict, Any, List
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, and_, or_, desc
+from sqlalchemy import select, func, and_, or_, desc, cast, Integer
 from sqlalchemy.orm import joinedload
 
 from src.api.models.subscription_models.refunds import Refund, RefundStatus
@@ -21,6 +21,7 @@ from src.api.models.subscription_models.subscriptions import UserSubscription
 from src.api.models.subscription_models.licenses import License, LicenseStatus
 from src.api.models.user_models.users import Users
 from src.utils.logger import logger
+from src.services.webhook_monitoring_service import _mask_email
 
 
 class RefundService:
@@ -115,10 +116,10 @@ class RefundService:
             raise ValueError(f"Refund {refund_id} not found")
 
         refund.status = RefundStatus.COMPLETED
-        refund.processed_at = datetime.utcnow()
+        refund.processed_at = datetime.now(timezone.utc)
         if lemonsqueezy_refund_id:
             refund.lemonsqueezy_refund_id = lemonsqueezy_refund_id
-        refund.updated_at = datetime.utcnow()
+        refund.updated_at = datetime.now(timezone.utc)
 
         await self.db.flush()
 
@@ -154,7 +155,7 @@ class RefundService:
         refund.status = RefundStatus.FAILED
         if reason:
             refund.reason = f"{refund.reason or ''}\nFailure: {reason}".strip()
-        refund.updated_at = datetime.utcnow()
+        refund.updated_at = datetime.now(timezone.utc)
 
         await self.db.flush()
 
@@ -219,6 +220,11 @@ class RefundService:
         if subscription_id:
             filters.append(Refund.subscription_id == subscription_id)
         if status:
+            if isinstance(status, str):
+                try:
+                    status = RefundStatus(status)
+                except ValueError:
+                    pass  # Let it fail at query time if invalid
             filters.append(Refund.status == status)
         if is_partial is not None:
             filters.append(Refund.is_partial == is_partial)
@@ -234,7 +240,7 @@ class RefundService:
         total_result = await self.db.execute(count_query)
         total_refunds = total_result.scalar() or 0
 
-        # Get paginated refunds with relationships
+        # Get paginated refunds with relationshipss
         offset = (page - 1) * per_page
         query = (
             select(Refund)
@@ -257,15 +263,15 @@ class RefundService:
         summary_query = select(
             func.count(Refund.id).label("total"),
             func.sum(Refund.refund_amount).label("total_amount"),
-            func.sum(func.cast(Refund.is_partial, func.INTEGER)).label("partial_count"),
+            func.sum(cast(Refund.is_partial, Integer)).label("partial_count"),
             func.sum(
-                func.cast(Refund.status == RefundStatus.COMPLETED, func.INTEGER)
+                cast(Refund.status == RefundStatus.COMPLETED, Integer)
             ).label("completed_count"),
             func.sum(
-                func.cast(Refund.status == RefundStatus.PENDING, func.INTEGER)
+                cast(Refund.status == RefundStatus.PENDING, Integer)
             ).label("pending_count"),
             func.sum(
-                func.cast(Refund.status == RefundStatus.FAILED, func.INTEGER)
+                cast(Refund.status == RefundStatus.FAILED, Integer)
             ).label("failed_count"),
         )
 
@@ -291,8 +297,8 @@ class RefundService:
 
             # Add user details
             if refund.user:
-                refund_dict["user_email"] = refund.user.email
-                refund_dict["user_name"] = refund.user.full_name or refund.user.display_name or refund.user.email
+                refund_dict["user_email_masked"] = _mask_email(refund.user.email)
+                refund_dict["user_name"] = refund.user.full_name or refund.user.display_name or "***"
 
             # Add plan details
             if refund.subscription and refund.subscription.plan:
@@ -340,8 +346,8 @@ class RefundService:
 
         # Add user details
         if refund.user:
-            refund_dict["user_email"] = refund.user.email
-            refund_dict["user_name"] = refund.user.full_name or refund.user.display_name or refund.user.email
+            refund_dict["user_email_masked"] = _mask_email(refund.user.email)
+            refund_dict["user_name"] = refund.user.full_name or refund.user.display_name or "***"
 
         # Add plan details
         if refund.subscription and refund.subscription.plan:

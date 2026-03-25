@@ -20,10 +20,10 @@ from datetime import datetime, timedelta
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.api.models.user_models.users import User
-from src.api.models.workspace_models.workspace import Workspace
+from src.api.models.user_models.users import Users
+from src.api.models.workspace_models.workspace_model import WorkspaceModel
 from src.api.models.user_models.invitations import UserInvitations
-from src.api.models.workspace_models.workspace_members import WorkspaceMembers
+from src.api.models.workspace_models.workspace_member import WorkspaceMembers
 from src.services.invitation_service import InvitationService
 from src.services.workspace_service import WorkspaceService
 from src.core.exceptions import (
@@ -40,8 +40,8 @@ class TestInvitationEdgeCases:
     async def test_accept_invitation_already_member(
         self,
         db: AsyncSession,
-        test_user: User,
-        test_workspace: Workspace,
+        test_user: Users,
+        test_workspace: WorkspaceModel,
         invitation_service: InvitationService
     ):
         """
@@ -82,7 +82,7 @@ class TestInvitationEdgeCases:
     async def test_user_with_50_plus_workspaces_performance(
         self,
         db: AsyncSession,
-        test_user: User,
+        test_user: Users,
         workspace_service: WorkspaceService
     ):
         """
@@ -93,7 +93,7 @@ class TestInvitationEdgeCases:
         # Create 60 workspaces for the user
         workspaces = []
         for i in range(60):
-            workspace = Workspace(
+            workspace = WorkspaceModel(
                 id=uuid4(),
                 name=f"Workspace {i}",
                 slug=f"workspace-{i}-{uuid4().hex[:8]}",
@@ -118,14 +118,14 @@ class TestInvitationEdgeCases:
         await db.commit()
 
         # Performance test: Fetch all user workspaces
-        start_time = datetime.utcnow()
+        start_time = datetime.now(timezone.utc)
 
         user_workspaces = await workspace_service.get_user_workspaces(
             db=db,
             user_id=test_user.id
         )
 
-        end_time = datetime.utcnow()
+        end_time = datetime.now(timezone.utc)
         duration = (end_time - start_time).total_seconds()
 
         # Assertions
@@ -136,8 +136,8 @@ class TestInvitationEdgeCases:
     async def test_concurrent_invitation_acceptance_race_condition(
         self,
         db: AsyncSession,
-        test_user: User,
-        test_workspace: Workspace,
+        test_user: Users,
+        test_workspace: WorkspaceModel,
         invitation_service: InvitationService
     ):
         """
@@ -184,8 +184,8 @@ class TestInvitationEdgeCases:
     async def test_inviter_deleted_before_acceptance(
         self,
         db: AsyncSession,
-        test_user: User,
-        test_workspace: Workspace,
+        test_user: Users,
+        test_workspace: WorkspaceModel,
         invitation_service: InvitationService
     ):
         """
@@ -194,12 +194,11 @@ class TestInvitationEdgeCases:
         Expected: Invitation should still be acceptable (or clear error message).
         """
         # Create inviter user
-        inviter = User(
+        inviter = Users(
             id=uuid4(),
             email="inviter@example.com",
             username="inviter",
-            first_name="Test",
-            last_name="Inviter",
+            full_name="Test Inviter",
             password_hash="hashed",
             email_verified=True
         )
@@ -216,7 +215,7 @@ class TestInvitationEdgeCases:
         )
 
         # Soft-delete the inviter
-        inviter.deleted_at = datetime.utcnow()
+        inviter.deleted_at = datetime.now(timezone.utc)
         await db.commit()
 
         # Try to accept invitation
@@ -237,8 +236,8 @@ class TestInvitationEdgeCases:
     async def test_workspace_deleted_before_acceptance(
         self,
         db: AsyncSession,
-        test_user: User,
-        test_workspace: Workspace,
+        test_user: Users,
+        test_workspace: WorkspaceModel,
         invitation_service: InvitationService
     ):
         """
@@ -256,7 +255,7 @@ class TestInvitationEdgeCases:
         )
 
         # Soft-delete the workspace
-        test_workspace.deleted_at = datetime.utcnow()
+        test_workspace.deleted_at = datetime.now(timezone.utc)
         await db.commit()
 
         # Try to accept invitation
@@ -274,8 +273,8 @@ class TestInvitationEdgeCases:
     async def test_accept_invitation_after_email_changed(
         self,
         db: AsyncSession,
-        test_user: User,
-        test_workspace: Workspace,
+        test_user: Users,
+        test_workspace: WorkspaceModel,
         invitation_service: InvitationService
     ):
         """
@@ -312,8 +311,8 @@ class TestInvitationEdgeCases:
     async def test_accept_expired_invitation(
         self,
         db: AsyncSession,
-        test_user: User,
-        test_workspace: Workspace,
+        test_user: Users,
+        test_workspace: WorkspaceModel,
         invitation_service: InvitationService
     ):
         """
@@ -332,7 +331,7 @@ class TestInvitationEdgeCases:
         )
 
         # Manually expire the invitation
-        invitation.expires_at = datetime.utcnow() - timedelta(days=1)
+        invitation.expires_at = datetime.now(timezone.utc) - timedelta(days=1)
         await db.commit()
 
         # Try to accept expired invitation
@@ -349,7 +348,7 @@ class TestInvitationEdgeCases:
     async def test_pending_invitations_from_deleted_workspaces(
         self,
         db: AsyncSession,
-        test_user: User,
+        test_user: Users,
         invitation_service: InvitationService
     ):
         """
@@ -360,7 +359,7 @@ class TestInvitationEdgeCases:
         # Create 3 workspaces (2 will be deleted)
         workspaces = []
         for i in range(3):
-            ws = Workspace(
+            ws = WorkspaceModel(
                 id=uuid4(),
                 name=f"Workspace {i}",
                 slug=f"workspace-{i}-{uuid4().hex[:8]}",
@@ -384,8 +383,8 @@ class TestInvitationEdgeCases:
             invitations.append(inv)
 
         # Soft-delete 2 workspaces
-        workspaces[0].deleted_at = datetime.utcnow()
-        workspaces[1].deleted_at = datetime.utcnow()
+        workspaces[0].deleted_at = datetime.now(timezone.utc)
+        workspaces[1].deleted_at = datetime.now(timezone.utc)
         await db.commit()
 
         # Get pending invitations
@@ -402,8 +401,8 @@ class TestInvitationEdgeCases:
     async def test_duplicate_invitation_handling(
         self,
         db: AsyncSession,
-        test_user: User,
-        test_workspace: Workspace,
+        test_user: Users,
+        test_workspace: WorkspaceModel,
         invitation_service: InvitationService
     ):
         """
@@ -438,8 +437,8 @@ class TestInvitationEdgeCases:
     async def test_invitation_token_security(
         self,
         db: AsyncSession,
-        test_user: User,
-        test_workspace: Workspace,
+        test_user: Users,
+        test_workspace: WorkspaceModel,
         invitation_service: InvitationService
     ):
         """
@@ -484,14 +483,13 @@ async def workspace_service():
 
 
 @pytest.fixture
-async def test_user(db: AsyncSession) -> User:
+async def test_user(db: AsyncSession) -> Users:
     """Create a test user."""
-    user = User(
+    user = Users(
         id=uuid4(),
         email="testuser@example.com",
         username="testuser",
-        first_name="Test",
-        last_name="User",
+        full_name="Test User",
         password_hash="hashed_password",
         email_verified=True
     )
@@ -502,9 +500,9 @@ async def test_user(db: AsyncSession) -> User:
 
 
 @pytest.fixture
-async def test_workspace(db: AsyncSession, test_user: User) -> Workspace:
+async def test_workspace(db: AsyncSession, test_user: Users) -> WorkspaceModel:
     """Create a test workspace."""
-    workspace = Workspace(
+    workspace = WorkspaceModel(
         id=uuid4(),
         name="Test Workspace",
         slug=f"test-workspace-{uuid4().hex[:8]}",

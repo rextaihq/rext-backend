@@ -1,10 +1,13 @@
 from langsmith import Client
 from langchain_core.prompts import ChatPromptTemplate
-from dotenv import load_dotenv
-load_dotenv()
 
 
 def get_client():
+    """Get the LangSmith client instance.
+
+    Returns:
+        Client: An initialized LangSmith client.
+    """
     client = Client()
 
     return client

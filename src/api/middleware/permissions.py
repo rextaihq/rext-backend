@@ -16,17 +16,16 @@ Usage:
 """
 
 from typing import List, Optional
+from uuid import UUID
 from fastapi import Depends, HTTPException, status, Request
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.database.async_database import get_async_db as get_db
 from src.api.security.dependencies import get_current_user
-from src.api.models.user_models.users import Users
 from src.api.models.user_models.user_roles import UserRole
-from src.api.models.user_models.role_permissions import RolePermission
-from src.api.models.user_models.permissions import Permission
 from src.api.models.user_models.roles import Role
 from src.utils.logger import logger
+from src.utils.rbac_utils import get_user_role_names
 
 
 class PermissionChecker:
@@ -67,7 +66,7 @@ class PermissionChecker:
         self,
         request: Request,
         current_user: dict = Depends(get_current_user),
-        db: Session = Depends(get_db)
+        db: AsyncSession = Depends(get_db)
     ):
         """
         Check if current user has required permissions.
@@ -184,15 +183,15 @@ class PermissionChecker:
 
     @staticmethod
     async def _get_user_permissions(
-        db: Session,
+        db: AsyncSession,
         user_id: str,
         workspace_id: Optional[str] = None
     ) -> set:
         """
         Get all permissions for a user.
 
-        Queries the database to find all permissions associated with the user's roles.
-        Supports workspace-scoped permissions.
+        Delegates to rbac_utils.get_user_permissions() which provides
+        Redis caching with a 5-minute TTL for consistent performance.
 
         Args:
             db: Database session
@@ -201,90 +200,29 @@ class PermissionChecker:
 
         Returns:
             Set of permission names (e.g., {"user.read", "user.write"})
-        """
-        from sqlalchemy import select, or_
+        """ 
+        from uuid import UUID as UUIDType
+        from src.utils.rbac_utils import get_user_permissions
 
-        # Query to get all permissions for user via their roles
-        query = (
-            select(Permission.name)
-            .select_from(Permission)
-            .join(RolePermission, RolePermission.permission_id == Permission.id)
-            .join(UserRole, UserRole.role_id == RolePermission.role_id)
-            .where(UserRole.user_id == user_id)
-        )
+        # Convert string IDs to UUID objects as expected by rbac_utils
+        user_uuid = UUIDType(user_id) if isinstance(user_id, str) else user_id
+        workspace_uuid = UUIDType(workspace_id) if workspace_id and isinstance(workspace_id, str) else workspace_id
 
-        # If workspace-scoped, filter by workspace or global roles (workspace_id = NULL)
-        if workspace_id:
-            query = query.where(
-                or_(
-                    UserRole.workspace_id == workspace_id,
-                    UserRole.workspace_id == None
-                )
-            )
-        else:
-            # Only global permissions (not workspace-specific)
-            query = query.where(UserRole.workspace_id == None)
-
-        result = await db.execute(query)
-        permissions = result.scalars().all()
-        return {perm for perm in permissions}
+        permissions_list = await get_user_permissions(db, user_uuid, workspace_uuid)
+        return set(permissions_list)
 
     @staticmethod
-    def _check_permissions(
-        user_permissions: set,
-        required_permissions: List[str],
-        require_all: bool
-    ) -> bool:
-        """
-        Check if user has required permissions.
-
-        Args:
-            user_permissions: Set of user's permission names
-            required_permissions: List of required permission names
-            require_all: If True, must have ALL. If False, must have at least ONE.
-
-        Returns:
-            True if user has sufficient permissions, False otherwise
-        """
-        if require_all:
-            # User must have ALL required permissions
-            return all(perm in user_permissions for perm in required_permissions)
-        else:
-            # User must have at least ONE of the required permissions
-            return any(perm in user_permissions for perm in required_permissions)
-
-    @staticmethod
-    async def _is_super_admin(db: Session, user_id: str) -> bool:
-        """
-        Check if user has super_admin role.
-
-        Super admins bypass ALL permission checks as per RBAC implementation plan.
-        This is a security feature for platform administrators.
-
-        Args:
-            db: Database session
-            user_id: User ID (UUID as string)
-
-        Returns:
-            True if user has super_admin role, False otherwise
-        """
-        from sqlalchemy import select
-
-        query = (
-            select(UserRole)
-            .join(Role, UserRole.role_id == Role.id)
-            .where(
-                UserRole.user_id == user_id,
-                Role.name == "super_admin"
-            )
-        )
-        result = await db.execute(query)
-        super_admin_role = result.scalars().first()
-        return super_admin_role is not None
+    async def _is_super_admin(db: AsyncSession, user_id: str) -> bool:
+        """Check if user has super-admin level role (cached)."""
+        from src.utils.rbac_utils import is_user_super_admin
+        
+        # Convert string ID to UUID object as expected by rbac_utils
+        user_uuid = UUID(user_id) if isinstance(user_id, str) else user_id
+        return await is_user_super_admin(db, user_uuid)
 
     @staticmethod
     async def _validate_workspace_membership(
-        db: Session,
+        db: AsyncSession,
         user_id: str,
         workspace_id: str
     ) -> bool:
@@ -371,36 +309,15 @@ def require_permissions(
 
 async def is_admin(
     current_user: dict = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_db)
 ) -> bool:
     """
     Check if current user is an admin.
 
-    This is a convenience dependency that checks if the user has either
-    the 'admin' or 'super_admin' role.
-
-    Args:
-        current_user: Current authenticated user (from get_current_user dependency)
-        db: Database session
-
-    Raises:
-        HTTPException: 403 if user is not an admin
-
-    Returns:
-        True if user is an admin
-
-    Usage:
-        @router.delete("/users/{user_id}")
-        def delete_user(
-            user_id: str,
-            _: bool = Depends(is_admin),
-            db: Session = Depends(get_db)
-        ):
-            # Only admins can delete users
-            return {"message": "User deleted"}
+    This is a convenience dependency that checks if the user has
+    hierarchy_level >= 90 (cached via rbac_utils).
     """
-    from sqlalchemy import select
-
+    from src.utils.rbac_utils import is_user_admin
     user_id = current_user.get("identity")
 
     if not user_id:
@@ -413,19 +330,13 @@ async def is_admin(
             detail="Authentication required"
         )
 
-    # Check if user has admin or super_admin role
-    query = (
-        select(UserRole)
-        .join(Role, UserRole.role_id == Role.id)
-        .where(
-            UserRole.user_id == user_id,
-            Role.name.in_(["admin", "super_admin"])
-        )
-    )
-    result = await db.execute(query)
-    admin_role = result.scalars().first()
+    # Convert string ID to UUID object as expected by rbac_utils
+    user_uuid = UUID(user_id) if isinstance(user_id, str) else user_id
 
-    if not admin_role:
+    # Check if user has admin-level role (cached)
+    is_authorized = await is_user_admin(db, user_uuid)
+
+    if not is_authorized:
         logger.warning(
             f"Admin access denied for user {user_id}",
             extra={

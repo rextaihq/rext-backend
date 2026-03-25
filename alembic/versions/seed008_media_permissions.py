@@ -1,3 +1,7 @@
+# NOTE: This seed migration is superseded by scripts/seeds/.
+# It remains in the migration chain for backward compatibility with existing databases.
+# For new environments, use: python -m scripts.seeds.run_all
+
 """Seed media permissions
 
 Revision ID: seed008
@@ -14,7 +18,7 @@ These permissions are assigned to workspace roles (owner, admin, editor).
 """
 from alembic import op
 import sqlalchemy as sa
-from datetime import datetime
+from datetime import datetime, timezone
 from uuid import uuid4
 
 
@@ -31,7 +35,7 @@ def upgrade():
 
     # Media permissions to create
     media_permissions = [
-        {
+        {     
             'name': 'media.view',
             'display_name': 'View Media',
             'description': 'View media files in workspace',
@@ -87,7 +91,7 @@ def upgrade():
                     'description': perm['description'],
                     'resource': perm['resource'],
                     'action': perm['action'],
-                    'created_at': datetime.utcnow()
+                    'created_at': datetime.now(timezone.utc).replace(tzinfo=None)
                 }
             )
             permission_ids[perm['name']] = perm_id
@@ -143,7 +147,7 @@ def upgrade():
                             'id': str(uuid4()),
                             'role_id': role_id,
                             'permission_id': permission_ids[perm_name],
-                            'created_at': datetime.utcnow()
+                            'created_at': datetime.now(timezone.utc).replace(tzinfo=None)
                         }
                     )
                     print(f"Assigned {perm_name} to {role_name}")

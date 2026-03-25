@@ -1,15 +1,16 @@
 """Customer Note model for admin internal notes."""
 
-from datetime import datetime
-from uuid import UUID, uuid4
+from datetime import datetime, timezone
+from uuid import uuid4
 
 from sqlalchemy import Column, DateTime, ForeignKey, String, Text
 from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
 
 from src.api.database.base import Base
+from src.api.models.base import SerializableMixin
 
 
-class CustomerNote(Base):
+class CustomerNote(Base, SerializableMixin):
     """
     Model for internal admin notes on customer accounts.
 
@@ -27,27 +28,15 @@ class CustomerNote(Base):
     )
     admin_id = Column(
         PostgresUUID(as_uuid=True),
-        ForeignKey("users.id"),
-        nullable=False,
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
         index=True
     )
     note = Column(Text, nullable=False)
     category = Column(String(50))  # billing, support, technical, other
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False, index=True)
     updated_at = Column(
-        DateTime,
-        default=datetime.utcnow,
-        onupdate=datetime.utcnow
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc)
     )
-
-    def to_dict(self) -> dict:
-        """Convert note to dictionary."""
-        return {
-            "id": str(self.id),
-            "user_id": str(self.user_id),
-            "admin_id": str(self.admin_id),
-            "note": self.note,
-            "category": self.category,
-            "created_at": self.created_at.isoformat() if self.created_at else None,
-            "updated_at": self.updated_at.isoformat() if self.updated_at else None
-        }

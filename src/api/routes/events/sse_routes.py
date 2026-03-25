@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Dict
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Path, status
 from sse_starlette.sse import EventSourceResponse
 
 from src.api.security.dependencies import get_current_user, get_current_user_sse
@@ -16,6 +16,10 @@ router = APIRouter(
     tags=["events"],
 )
 
+# Matches plain UUIDs and prefixed UUIDs (e.g., "user-notifications-<uuid>")
+# Allows lowercase alphanumeric characters and hyphens, 1-100 chars
+OPERATION_ID_PATTERN = r"^[a-z0-9](?:[a-z0-9\-]{0,98}[a-z0-9])?$"
+
 
 @router.get(
     "/{operation_id}",
@@ -23,7 +27,13 @@ router = APIRouter(
     response_model=None,
 )
 async def subscribe_to_operation_events(
-    operation_id: str,
+    operation_id: str = Path(
+        ...,
+        min_length=1,
+        max_length=100,
+        pattern=OPERATION_ID_PATTERN,
+        description="Operation identifier (UUID or prefixed-UUID format)",
+    ),
     current_user: Dict[str, str] = Depends(get_current_user_sse),
 ) -> EventSourceResponse:
     """
@@ -65,8 +75,10 @@ async def subscribe_to_operation_events(
         return EventSourceResponse(
             event_stream_manager.subscribe_completed(operation_id, user_id),
             media_type="text/event-stream",
+            ping=15,
+            send_timeout=5,
             headers={
-                "Cache-Control": "no-cache",
+                "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0",
                 "X-Accel-Buffering": "no",
             },
         )
@@ -74,8 +86,10 @@ async def subscribe_to_operation_events(
     return EventSourceResponse(
         event_stream_manager.subscribe(operation_id, user_id),
         media_type="text/event-stream",
+        ping=15,
+        send_timeout=5,
         headers={
-            "Cache-Control": "no-cache",
+            "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0",
             "X-Accel-Buffering": "no",
         },
     )

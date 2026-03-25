@@ -88,8 +88,13 @@ class KeywordExtractor:
             documents.append(titles)
         
         # Document 2: All snippets (medium weight - context and variations)
-        snippets = ' '.join([
-            result.get('snippet', '') 
+        # snippets = ' '.join([
+        #     result.get('snippet', '') 
+        #     for result in (normalize_results or [])
+        # ])
+
+        snippets = ' '.join([  
+            (result.get('snippet') or '')
             for result in (normalize_results or [])
         ])
         if snippets.strip():
@@ -210,7 +215,8 @@ class KeywordExtractor:
             return keyword_scores
             
         except Exception as e:
-            print(f"TF-IDF calculation error: {e}")
+            import logging
+            logging.getLogger(__name__).warning(f"TF-IDF calculation error: {e}")
             return {}
     
     def _boost_keyword_scores(

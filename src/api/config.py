@@ -2,12 +2,12 @@
 API Configuration Settings
 
 Centralized configuration using environment variables with Pydantic validation.
-Note: dotenv is loaded in server.py before importing this module.
+Note: dotenv is loaded in src/api/server.py before importing this module.
 """
 from typing import List, Optional
 from pathlib import Path
 from pydantic import Field, field_validator
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -26,7 +26,7 @@ class Settings(BaseSettings):
     SECRET_KEY: str = Field(..., min_length=32, description="JWT access token secret key (min 32 chars)")
     REFRESH_SECRET_KEY: str = Field(..., min_length=32, description="JWT refresh token secret key (min 32 chars)")
     ALGORITHM: str = Field(default="HS256", description="JWT signing algorithm")
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = Field(default=1440, description="Access token expiration (minutes)")
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = Field(default=30, description="Access token expiration (minutes)")
     REFRESH_TOKEN_EXPIRE_DAYS: int = Field(default=7, description="Refresh token expiration (days)")
 
     # API Key Authentication (Optional)
@@ -57,6 +57,10 @@ class Settings(BaseSettings):
         default="http://localhost:3000,http://127.0.0.1:3000",
         description="Comma-separated CORS allowed origins"
     )
+    CORS_ALLOWED_HEADERS: str = Field(
+        default="Authorization,Content-Type,Accept,X-Request-ID,X-API-Key",
+        description="Comma-separated list of allowed CORS request headers",
+    )
 
     # ============================================================================
     # SERVER CONFIGURATION
@@ -69,6 +73,10 @@ class Settings(BaseSettings):
     RATE_LIMIT_PER_HOUR: int = Field(default=10000, description="Rate limit: requests per hour", ge=1)
     RATE_LIMIT_PER_DAY: int = Field(default=100000, description="Rate limit: requests per day", ge=1)
     RATE_LIMITING_ENABLED: bool = Field(default=True, description="Enable rate limiting")
+    
+
+    # Trusted reverse proxy IPs (comma-separated)
+    TRUSTED_PROXY_IPS: str = Field(default="127.0.0.1,::1",description="Comma-separated list of trusted reverse proxy IPs")
 
     # ============================================================================
     # AI SERVICES
@@ -149,8 +157,9 @@ class Settings(BaseSettings):
     MIN_IMAGE_HEIGHT: int = Field(default=10, description="Minimum image height in pixels", ge=1)
 
     # File Security - MIME Type Whitelist
+    from src.config.storage_config import get_all_allowed_types
     ALLOWED_MIME_TYPES: str = Field(
-        default="image/jpeg,image/png,image/gif,image/webp,application/pdf,text/plain,text/markdown",
+        default=",".join(get_all_allowed_types()),
         description="Comma-separated list of allowed MIME types for file uploads"
     )
 
@@ -177,6 +186,15 @@ class Settings(BaseSettings):
         ge=1,
         le=65535
     )
+    CLAMAV_BINARY_PATH: str = Field(
+        default="/usr/bin/clamdscan",
+        description="Absolute path to the clamdscan binary"
+    )
+    VIRUS_SCAN_FAIL_BEHAVIOR: str = Field(
+        default="closed",
+        description="Behavior when virus scanner is unavailable: 'closed' (reject upload) or 'open' (allow upload). "
+                    "Production should always use 'closed'. Use 'open' only for development/testing."
+    )
 
     # Subscription Tier Limits - File Size (in MB)
     TIER_FREE_MAX_FILE_SIZE_MB: int = Field(default=10, description="Free tier: max file size in MB", ge=1)
@@ -187,6 +205,18 @@ class Settings(BaseSettings):
     TIER_FREE_MAX_STORAGE_MB: int = Field(default=100, description="Free tier: max total storage in MB", ge=1)
     TIER_PRO_MAX_STORAGE_MB: int = Field(default=1024, description="Pro tier: max total storage in MB (1GB)", ge=1)
     TIER_ENTERPRISE_MAX_STORAGE_MB: int = Field(default=10240, description="Enterprise tier: max total storage in MB (10GB)", ge=1)
+
+    @field_validator("ALLOWED_ORIGINS")
+    @classmethod
+    def validate_allowed_origins(cls, v: str) -> str:
+        """Reject '*' when credentials are enabled."""
+        origins = [origin.strip() for origin in v.split(",") if origin.strip()]
+        if "*" in origins:
+            raise ValueError(
+                "ALLOWED_ORIGINS cannot include '*' when credentialed CORS is enabled. "
+                "Provide explicit origins."
+            )
+        return ",".join(origins)
 
     @field_validator('SECRET_KEY', 'REFRESH_SECRET_KEY')
     @classmethod
@@ -245,6 +275,11 @@ class Settings(BaseSettings):
     def allowed_origins_list(self) -> List[str]:
         """Parse comma-separated ALLOWED_ORIGINS into a list."""
         return [origin.strip() for origin in self.ALLOWED_ORIGINS.split(',') if origin.strip()]
+
+    @property
+    def cors_allowed_headers_list(self) -> List[str]:
+        """Parse comma-separated CORS_ALLOWED_HEADERS into a list."""
+        return [header.strip() for header in self.CORS_ALLOWED_HEADERS.split(",") if header.strip()]
 
     @property
     def database_url(self) -> str:
@@ -326,13 +361,12 @@ class Settings(BaseSettings):
         else:  # free or unknown defaults to free
             return self.TIER_FREE_MAX_STORAGE_MB
 
-    class Config:
-        """Pydantic configuration."""
-        env_file = ".env"
-        env_file_encoding = "utf-8"
-        case_sensitive = True
-        extra = "ignore"  # Ignore extra env vars not defined in this class
-
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=True,
+        extra="ignore",
+    )
 
 # Singleton pattern for settings
 _settings: Optional[Settings] = None

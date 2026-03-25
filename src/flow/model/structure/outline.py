@@ -91,4 +91,3 @@ class Outline(BaseModel):
         le=5000,
         description="Target word count for the complete article."
     )
-

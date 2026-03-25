@@ -30,7 +30,7 @@ from src.api.models.user_models.permissions import Permission
 from src.api.models.user_models.roles import Role
 from src.api.models.user_models.role_permissions import RolePermission
 from src.utils.logger import logger
-from datetime import datetime
+from datetime import datetime, timezone
 import uuid
 
 
@@ -139,11 +139,24 @@ GLOBAL_PERMISSIONS = [
 
     # Platform Management
     ("audit.read", "View Audit Logs", "audit", "read", "View audit logs"),
+    ("audit.write", "Write Audit Logs", "audit", "write", "Allows modifying audit/monitoring records (resolve errors, etc.)"),
     ("audit.export", "Export Audit Logs", "audit", "export", "Export audit logs"),
+
+    # Email Management (Admin)
+    ("email.resend", "Resend Emails", "email", "resend", "Allows resending failed emails via admin panel"),
 
     # Support Staff Permissions
     ("support.view_workspace", "View Any Workspace", "support", "view_workspace", "View any workspace (read-only)"),
     ("support.view_billing", "View Billing Info", "support", "view_billing", "View billing information for support"),
+
+    # Billing & Subscription (Owner Only!)
+    ("subscription.read", "View Subscription", "subscription", "read", "View subscription details and status"),
+    ("subscription.manage", "Manage Subscription", "subscription", "manage", "Change plans, update billing, cancel subscription"),
+
+    # Billing & Usage
+    ("billing.read", "View Billing", "billing", "read", "View billing information and invoices"),
+    ("billing.manage", "Manage Billing", "billing", "manage", "Update payment methods, view invoices"),
+    ("usage.read", "View Usage", "usage", "read", "View usage metrics and limits"),
 ]
 
 
@@ -310,7 +323,8 @@ ROLE_PERMISSION_ASSIGNMENTS = {
         "workspace.create", "admin.invite",
         "role.create", "role.read", "role.update", "role.delete", "role.manage_permissions",
         "permission.create", "permission.read", "permission.update", "permission.delete",
-        "audit.read", "audit.export",
+        "audit.read", "audit.write", "audit.export",
+        "email.resend",
         "support.view_workspace", "support.view_billing",
     ],
 
@@ -352,7 +366,8 @@ ROLE_PERMISSION_ASSIGNMENTS = {
         "user.create", "user.read", "user.update", "user.manage_roles",
         "role.create", "role.read", "role.update", "role.manage_permissions",
         "permission.create", "permission.read", "permission.update",
-        "audit.read", "audit.export",
+        "audit.read", "audit.write", "audit.export",
+        "email.resend",
         "admin.invite",
         "support.view_workspace", "support.view_billing",
     ],
@@ -415,6 +430,10 @@ ROLE_PERMISSION_ASSIGNMENTS = {
         # License (can view/activate own licenses)
         "license.read",
         "license.view",  # Backward compatibility (deprecated) "license.activate", "license.deactivate",
+
+        # Subscription
+        "subscription.read",
+        "subscription.manage",
     ],
 }
 
@@ -459,7 +478,7 @@ async def create_permissions(db: AsyncSession) -> dict:
                 description=description,
                 resource=resource,
                 action=action,
-                created_at=datetime.utcnow()
+                created_at=datetime.now(timezone.utc)
             )
             db.add(perm)
             await db.flush()
@@ -526,7 +545,7 @@ async def assign_permissions_to_roles(db: AsyncSession, permission_map: dict):
                     id=uuid.uuid4(),
                     role_id=role.id,
                     permission_id=perm_id,
-                    created_at=datetime.utcnow()
+                    created_at=datetime.now(timezone.utc)
                 )
                 db.add(role_perm)
                 assigned_count += 1

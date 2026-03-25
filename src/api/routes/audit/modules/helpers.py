@@ -1,11 +1,12 @@
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
-from typing import Optional
-from datetime import datetime
+from sqlalchemy import select, func
+from typing import Optional, Tuple
+from datetime import datetime, timezone
 
 from src.api.models.audit_models.audit_logs import AuditLog
 from src.api.schema.audit_schema import AuditStatus
 from src.api.middleware.exceptions import RextValidationException
+
 
 
 async def build_audit_query(
@@ -20,50 +21,66 @@ async def build_audit_query(
     status_filter: Optional[AuditStatus] = None,
     date_from: Optional[str] = None,
     date_to: Optional[str] = None
-):
+) -> Tuple[select, select]:
     """
-    Build audit log query with filters.
+    Build audit log data query and count query with shared filters.
 
-    Helper function to construct SQLAlchemy query with optional filters.
+    Returns a tuple of (data_query, count_query) where both queries share
+    the same WHERE conditions. This avoids the need to extract where clauses
+    from one query to apply to another.
+
+    Args:
+        db: Async database session
+        user_id: Filter by user UUID
+        full_name: Filter by full name (partial match)
+        user_email: Filter by email (partial match)
+        action: Filter by action (exact match or prefix with '.')
+        resource_type: Filter by resource type
+        resource_id: Filter by resource ID
+        workspace_id: Filter by workspace UUID
+        status_filter: Filter by AuditStatus enum
+        date_from: Start date (ISO 8601)
+        date_to: End date (ISO 8601)
+
+    Returns:
+        Tuple of (data_query, count_query) with same filter conditions applied
     """
-    query = select(AuditLog)
+    conditions = []
 
     # Filter by user
     if user_id:
-        query = query.where(AuditLog.user_id == user_id)
+        conditions.append(AuditLog.user_id == user_id)
     if full_name:
-        query = query.where(AuditLog.full_name.ilike(f"%{full_name}%"))
+        conditions.append(AuditLog.full_name.ilike(f"%{full_name}%"))
     if user_email:
-        query = query.where(AuditLog.user_email.ilike(f"%{user_email}%"))
+        conditions.append(AuditLog.user_email.ilike(f"%{user_email}%"))
 
     # Filter by action (supports prefix matching, e.g., "user." matches all user actions)
     if action:
         if action.endswith("."):
-            # Prefix match: "user." matches "user.create", "user.update", etc.
-            query = query.where(AuditLog.action.like(f"{action}%"))
+            conditions.append(AuditLog.action.like(f"{action}%"))
         else:
-            # Exact match
-            query = query.where(AuditLog.action == action)
+            conditions.append(AuditLog.action == action)
 
     # Filter by resource
     if resource_type:
-        query = query.where(AuditLog.resource_type == resource_type)
+        conditions.append(AuditLog.resource_type == resource_type)
     if resource_id:
-        query = query.where(AuditLog.resource_id == resource_id)
+        conditions.append(AuditLog.resource_id == resource_id)
 
     # Filter by workspace
     if workspace_id:
-        query = query.where(AuditLog.workspace_id == workspace_id)
+        conditions.append(AuditLog.workspace_id == workspace_id)
 
     # Filter by status
     if status_filter:
-        query = query.where(AuditLog.status == status_filter.value)
+        conditions.append(AuditLog.status == status_filter.value)
 
     # Filter by date range
     if date_from:
         try:
             date_from_dt = datetime.fromisoformat(date_from.replace("Z", "+00:00"))
-            query = query.where(AuditLog.created_at >= date_from_dt)
+            conditions.append(AuditLog.created_at >= date_from_dt)
         except ValueError:
             raise RextValidationException(
                 field="date_from",
@@ -73,14 +90,22 @@ async def build_audit_query(
     if date_to:
         try:
             date_to_dt = datetime.fromisoformat(date_to.replace("Z", "+00:00"))
-            query = query.where(AuditLog.created_at <= date_to_dt)
+            conditions.append(AuditLog.created_at <= date_to_dt)
         except ValueError:
             raise RextValidationException(
                 field="date_to",
                 message="Invalid date format. Use ISO 8601 format (e.g., 2025-10-02T23:59:59Z)"
             )
 
-    return query
+    # Build both queries from the same conditions list
+    data_query = select(AuditLog)
+    count_query = select(func.count()).select_from(AuditLog)
+
+    if conditions:
+        data_query = data_query.where(*conditions)
+        count_query = count_query.where(*conditions)
+
+    return data_query, count_query
 
 
 def format_audit_log(log: AuditLog, include_details: bool = False) -> dict:

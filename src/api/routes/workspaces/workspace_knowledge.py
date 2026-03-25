@@ -1,19 +1,20 @@
 from typing import Annotated, Any, Optional
 from uuid import UUID
-
+from src.utils.vector_store import search_vector_store
+from src.utils.url_validator import SSRFValidationError
 from fastapi import APIRouter, BackgroundTasks, Body, Depends, File, Request, UploadFile
 from pydantic import BaseModel, HttpUrl, constr
 from sqlalchemy.ext.asyncio import AsyncSession
 from src.api.database.async_database import get_async_db
 from src.api.middleware.exceptions import RextValidationException
 from src.api.middleware.usage_limiter import check_knowledge_item_limit
+from src.api.middleware.usage_limiter import check_embedding_rate_limit
 from src.api.security.dependencies import get_current_user
 from src.services.knowledge_service import KnowledgeService
-from src.utils.auth_utils import verify_current_user
 from src.utils.logger import logger
 from src.utils.response_utils import created, success
 from src.utils.route_decorators import db_transaction_handler, require_permissions
-from src.utils.workspace_utils import resolve_and_verify_workspace
+from src.utils.workspace_utils import resolve_workspace_for_route
 from src.services.notification_helper import schedule_if_allowed
 
 
@@ -53,6 +54,13 @@ class FileKnowledgeUpdateRequest(BaseModel):
 
     name: constr(strip_whitespace=True, min_length=1, max_length=255)
 
+class KnowledgeSearchRequest(BaseModel):
+    """Payload for searching knowledge via vector similarity."""
+
+    query: constr(strip_whitespace=True, min_length=1, max_length=1000)
+    knowledge_base_id: Optional[UUID] = None
+    limit: int = 10
+    score_threshold: Optional[float] = None
 
 router = APIRouter(
     prefix="/workspaces/{workspace_id}/knowledge",
@@ -65,50 +73,72 @@ router = APIRouter(
 async def get_workspace_knowledge(
     workspace_id: str,
     request: Request,
+    limit: int = 10,
     db: AsyncSession = Depends(get_async_db),
     user: dict = Depends(get_current_user),
 ):
-    """Return all knowledge categories for a workspace."""
-    workspace, _ = await _resolve_workspace(
-        db=db,
-        workspace_identifier=workspace_id,
-        user=user,
+    """Return summary knowledge categories for a workspace (paginated)."""
+    workspace, _ = await resolve_workspace_for_route(
+        db=db, workspace_identifier=workspace_id, user=user,
     )
 
     service = KnowledgeService(db)
-    web_knowledge = await service.list_web_knowledge(workspace.id)
-    file_knowledge = await service.list_file_knowledge(workspace.id)
-    text_knowledge = await service.list_text_knowledge(workspace.id)
-
-    summary = {
-        "web_count": len(web_knowledge),
-        "file_count": len(file_knowledge),
-        "text_count": len(text_knowledge),
-        "total_count": len(web_knowledge) + len(file_knowledge) + len(text_knowledge),
-    }
+    web_items, web_total = await service.list_web_knowledge(workspace.id, limit=limit)
+    file_items, file_total = await service.list_file_knowledge(workspace.id, limit=limit)
+    text_items, text_total = await service.list_text_knowledge(workspace.id, limit=limit)
 
     return success(
         data={
-            "web_knowledge": web_knowledge,
-            "file_knowledge": file_knowledge,
-            "text_knowledge": text_knowledge,
-            "summary": summary,
+            "web_knowledge": web_items,
+            "file_knowledge": file_items,
+            "text_knowledge": text_items,
+            "summary": {
+                "web_count": web_total,
+                "file_count": file_total,
+                "text_count": text_total,
+                "total_count": web_total + file_total + text_total,
+            },
         },
         request=request,
         message="Workspace knowledge retrieved successfully",
     )
 
+@router.post("/search")
+@require_permissions("knowledge.read", workspace_scoped=True)
+@db_transaction_handler("search knowledge", auto_commit=False)
+async def search_knowledge(
+    workspace_id: str,
+    request: Request,
+    payload: KnowledgeSearchRequest = Body(...),
+    db: AsyncSession = Depends(get_async_db),
+    user: dict = Depends(get_current_user),
+):
+    """Search knowledge base using vector similarity."""
+    workspace, _ = await resolve_workspace_for_route(
+        db=db,
+        workspace_identifier=workspace_id,
+        user=user,
+    )
 
-async def _resolve_workspace(
-    *,
-    db: AsyncSession,
-    workspace_identifier: str,
-    user: dict[str, Any],
-) -> tuple[Any, Any]:
-    """Resolve workspace and ensure the current user has access."""
-    user_id = user.get("identity")
-    await verify_current_user(db, user_id)
-    return await resolve_and_verify_workspace(db, workspace_identifier, UUID(str(user_id)))
+    from src.utils.vector_store import search_vector_store
+
+    results = search_vector_store(
+        query=payload.query,
+        workspace_id=str(workspace.id),
+        knowledge_base_id=str(payload.knowledge_base_id) if payload.knowledge_base_id else None,
+        k=payload.limit,
+        score_threshold=payload.score_threshold,
+    )
+
+    return success(
+        data={
+            "results": results,
+            "query": payload.query,
+            "total_results": len(results),
+        },
+        request=request,
+        message="Knowledge search completed successfully",
+    )
 
 
 def _format_list_response(items: list[dict[str, Any]], key: str) -> dict[str, Any]:
@@ -122,24 +152,31 @@ def _format_list_response(items: list[dict[str, Any]], key: str) -> dict[str, An
 async def list_web_knowledge(
     workspace_id: str,
     request: Request,
+    limit: int = 20,
+    offset: int = 0,
     db: AsyncSession = Depends(get_async_db),
     user: dict = Depends(get_current_user),
 ):
-    """Return all web knowledge entries for a workspace."""
-    workspace, _ = await _resolve_workspace(
-        db=db,
-        workspace_identifier=workspace_id,
-        user=user,
+    """Return paginated web knowledge entries for a workspace."""
+    workspace, _ = await resolve_workspace_for_route(
+        db=db, workspace_identifier=workspace_id, user=user,
     )
 
     service = KnowledgeService(db)
-    knowledge = await service.list_web_knowledge(workspace.id)
-    payload = _format_list_response(knowledge, "web_knowledge")
+    items, total_count = await service.list_web_knowledge(
+        workspace.id, limit=limit, offset=offset
+    )
 
     return success(
-        data=payload,
+        data={
+            "web_knowledge": items,
+            "total_count": total_count,
+            "limit": limit,
+            "offset": offset,
+            "has_more": offset + limit < total_count,
+        },
         request=request,
-        message=f"Retrieved {payload['total_count']} web knowledge entr{'y' if payload['total_count'] == 1 else 'ies'}",
+        message=f"Retrieved {len(items)} of {total_count} web knowledge entries",
     )
 
 
@@ -154,9 +191,10 @@ async def create_web_knowledge(
     db: AsyncSession = Depends(get_async_db),
     user: dict = Depends(get_current_user),
     _: None = Depends(check_knowledge_item_limit()),
+    _rate: None = Depends(check_embedding_rate_limit()),  # ADD THIS
 ):
     """Create a new web knowledge entry by scraping a URL."""
-    workspace, _ = await _resolve_workspace(
+    workspace, _ = await resolve_workspace_for_route(
         db=db,
         workspace_identifier=workspace_id,
         user=user,
@@ -194,14 +232,18 @@ async def create_web_knowledge(
             request=request,
             message="Web knowledge added and processed successfully",
         )
-    except Exception as e:
+    except SSRFValidationError as e:
+        raise RextValidationException(
+            message="The provided URL is not allowed",
+            field_errors={"url": [str(e)]}
+        )
         # Schedule failure notification
         await schedule_if_allowed(
             db=db,
             user_id=str(user["identity"]),
             background_tasks=background_tasks,
             pref_flag="kb_processing_failed",
-            message=f"Failed to create web knowledge for URL '{raw_url}': {str(e)}",
+            message=f"Failed to create web knowledge for URL '{raw_url}'",
             payload={"url": raw_url, "type": "web"},
             workspace_id=str(workspace.id),
         )
@@ -219,7 +261,7 @@ async def get_web_knowledge(
     user: dict = Depends(get_current_user),
 ):
     """Return a single web knowledge entry."""
-    workspace, _ = await _resolve_workspace(
+    workspace, _ = await resolve_workspace_for_route(
         db=db,
         workspace_identifier=workspace_id,
         user=user,
@@ -247,7 +289,7 @@ async def update_web_knowledge(
     user: dict = Depends(get_current_user),
 ):
     """Update metadata for an existing web knowledge entry."""
-    workspace, _ = await _resolve_workspace(
+    workspace, _ = await resolve_workspace_for_route(
         db=db,
         workspace_identifier=workspace_id,
         user=user,
@@ -278,7 +320,7 @@ async def delete_web_knowledge(
     user: dict = Depends(get_current_user),
 ):
     """Delete a web knowledge entry."""
-    workspace, _ = await _resolve_workspace(
+    workspace, _ = await resolve_workspace_for_route(
         db=db,
         workspace_identifier=workspace_id,
         user=user,
@@ -300,24 +342,31 @@ async def delete_web_knowledge(
 async def list_file_knowledge(
     workspace_id: str,
     request: Request,
+    limit: int = 20,
+    offset: int = 0,
     db: AsyncSession = Depends(get_async_db),
     user: dict = Depends(get_current_user),
 ):
     """Return all file knowledge entries for a workspace."""
-    workspace, _ = await _resolve_workspace(
+    workspace, _ = await resolve_workspace_for_route(
         db=db,
         workspace_identifier=workspace_id,
         user=user,
     )
 
     service = KnowledgeService(db)
-    file_knowledge = await service.list_file_knowledge(workspace.id)
-    payload = _format_list_response(file_knowledge, "file_knowledge")
+    items, total_count = await service.list_file_knowledge(workspace.id, limit=limit, offset=offset)
 
     return success(
-        data=payload,
+        data={
+            "file_knowledge": items,
+            "total_count": total_count,
+            "limit": limit,
+            "offset": offset,
+            "has_more": offset + limit < total_count,
+        },
         request=request,
-        message=f"Retrieved {payload['total_count']} file knowledge entr{'y' if payload['total_count'] == 1 else 'ies'}",
+        message=f"Retrieved {len(items)} of {total_count} file knowledge entries",
     )
 
 
@@ -335,7 +384,7 @@ async def create_file_knowledge(
     user: dict = Depends(get_current_user),
 ):
     """Upload a file and add it to workspace knowledge."""
-    workspace, _ = await _resolve_workspace(
+    workspace, _ = await resolve_workspace_for_route(
         db=db,
         workspace_identifier=workspace_id,
         user=user,
@@ -390,7 +439,7 @@ async def create_file_knowledge(
             user_id=str(user["identity"]),
             background_tasks=background_tasks,
             pref_flag="kb_processing_failed",
-            message=f"Failed to upload file knowledge: {str(e)}",
+            message=f"Failed to upload file knowledge",
             payload={"file_name": knowledge.file_name if 'knowledge' in locals() else None, "type": "file"},
             workspace_id=str(workspace.id),
         )
@@ -408,7 +457,7 @@ async def get_file_knowledge(
     user: dict = Depends(get_current_user),
 ):
     """Return a single file knowledge entry."""
-    workspace, _ = await _resolve_workspace(
+    workspace, _ = await resolve_workspace_for_route(
         db=db,
         workspace_identifier=workspace_id,
         user=user,
@@ -436,7 +485,7 @@ async def update_file_knowledge(
     user: dict = Depends(get_current_user),
 ):
     """Update metadata (name) for a file knowledge entry."""
-    workspace, _ = await _resolve_workspace(
+    workspace, _ = await resolve_workspace_for_route(
         db=db,
         workspace_identifier=workspace_id,
         user=user,
@@ -467,7 +516,7 @@ async def delete_file_knowledge(
     user: dict = Depends(get_current_user),
 ):
     """Delete a file knowledge entry and associated vector data."""
-    workspace, _ = await _resolve_workspace(
+    workspace, _ = await resolve_workspace_for_route(
         db=db,
         workspace_identifier=workspace_id,
         user=user,
@@ -492,24 +541,31 @@ async def delete_file_knowledge(
 async def list_text_knowledge(
     workspace_id: str,
     request: Request,
+    limit: int = 20,
+    offset: int = 0,
     db: AsyncSession = Depends(get_async_db),
     user: dict = Depends(get_current_user),
 ):
     """Return all text knowledge entries for a workspace."""
-    workspace, _ = await _resolve_workspace(
+    workspace, _ = await resolve_workspace_for_route(
         db=db,
         workspace_identifier=workspace_id,
         user=user,
     )
 
     service = KnowledgeService(db)
-    text_knowledge = await service.list_text_knowledge(workspace.id)
-    payload = _format_list_response(text_knowledge, "text_knowledge")
+    items, total_count = await service.list_text_knowledge(workspace.id, limit=limit, offset=offset)
 
     return success(
-        data=payload,
+        data={
+            "text_knowledge": items,
+            "total_count": total_count,
+            "limit": limit,
+            "offset": offset,
+            "has_more": offset + limit < total_count,
+        },
         request=request,
-        message=f"Retrieved {payload['total_count']} text knowledge entr{'y' if payload['total_count'] == 1 else 'ies'}",
+        message=f"Retrieved {len(items)} of {total_count} text knowledge entries",
     )
 
 
@@ -526,7 +582,7 @@ async def create_text_knowledge(
     _: None = Depends(check_knowledge_item_limit()),
 ):
     """Create a new text knowledge entry."""
-    workspace, _ = await _resolve_workspace(
+    workspace, _ = await resolve_workspace_for_route(
         db=db,
         workspace_identifier=workspace_id,
         user=user,
@@ -538,10 +594,9 @@ async def create_text_knowledge(
         payload.title,
         payload.content,
         knowledge_base_id=payload.knowledge_base_id,
+        tags=payload.tags,
     )
 
-    if payload.tags:
-        logger.warning("Tags provided for text knowledge are currently ignored", extra={"tags": payload.tags})
 
     try:
         # Schedule success notification
@@ -572,7 +627,7 @@ async def create_text_knowledge(
             user_id=str(user["identity"]),
             background_tasks=background_tasks,
             pref_flag="kb_processing_failed",
-            message=f"Failed to create text knowledge: {str(e)}",
+            message=f"Failed to create text knowledge",
             payload={"title": payload.title if payload else None, "type": "text"},
             workspace_id=str(workspace.id),
         )
@@ -590,7 +645,7 @@ async def get_text_knowledge(
     user: dict = Depends(get_current_user),
 ):
     """Return a single text knowledge entry."""
-    workspace, _ = await _resolve_workspace(
+    workspace, _ = await resolve_workspace_for_route(
         db=db,
         workspace_identifier=workspace_id,
         user=user,
@@ -624,7 +679,7 @@ async def update_text_knowledge(
             field_errors={"payload": ["No fields supplied for update"]},
         )
 
-    workspace, _ = await _resolve_workspace(
+    workspace, _ = await resolve_workspace_for_route(
         db=db,
         workspace_identifier=workspace_id,
         user=user,
@@ -636,10 +691,8 @@ async def update_text_knowledge(
         workspace.id,
         title=payload.title,
         content=payload.content,
+        tags=payload.tags,
     )
-
-    if payload.tags:
-        logger.warning("Tags update for text knowledge is not yet supported", extra={"tags": payload.tags})
 
     return success(
         data={"text_knowledge": knowledge},
@@ -659,7 +712,7 @@ async def delete_text_knowledge(
     user: dict = Depends(get_current_user),
 ):
     """Delete a text knowledge entry."""
-    workspace, _ = await _resolve_workspace(
+    workspace, _ = await resolve_workspace_for_route(
         db=db,
         workspace_identifier=workspace_id,
         user=user,

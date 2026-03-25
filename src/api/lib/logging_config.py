@@ -6,8 +6,6 @@ import time
 from typing import Optional, Dict, Any
 from contextlib import contextmanager
 from dataclasses import dataclass, asdict
-from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.requests import Request
 from src.api.config import get_settings
 
 
@@ -45,16 +43,53 @@ def get_logger(name: str) -> structlog.BoundLogger:
     return structlog.get_logger(name)
 
 
-class RequestIDMiddleware(BaseHTTPMiddleware):
-    """Middleware to add request ID tracking to all requests."""
 
-    async def dispatch(self, request: Request, call_next):
-        request_id = request.headers.get("X-Request-ID", str(uuid.uuid4()))
+class RequestIDMiddleware:
+    """Middleware to add request ID tracking to all requests.
+    Using pure ASGI interface to avoid BaseHTTPMiddleware issues with streaming responses.
+    """
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        # Try to get request ID from headers
+        request_id = None
+        for header, value in scope.get("headers", []):
+            if header.lower() == b"x-request-id":
+                request_id = value.decode()
+                break
+        
+        if not request_id:
+            request_id = str(uuid.uuid4())
+
         structlog.contextvars.bind_contextvars(request_id=request_id)
-        response = await call_next(request)
-        response.headers["X-Request-ID"] = request_id
-        structlog.contextvars.clear_contextvars()
-        return response
+
+        async def send_wrapper(message):
+            if message["type"] == "http.response.start":
+                headers = list(message.get("headers", []))
+                
+                # Check if header already exists
+                has_header = False
+                for k, v in headers:
+                    if k.lower() == b"x-request-id":
+                        has_header = True
+                        break
+                
+                if not has_header:
+                    headers.append((b"X-Request-ID", request_id.encode()))
+                
+                message["headers"] = headers
+            
+            await send(message)
+
+        try:
+            await self.app(scope, receive, send_wrapper)
+        finally:
+            structlog.contextvars.clear_contextvars()
 
 
 # ============================================================================

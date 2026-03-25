@@ -19,7 +19,7 @@ Does NOT:
 
 from typing import Dict, Any, Optional, List
 from uuid import UUID
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta,timezone
 
 from fastapi import BackgroundTasks
 from src.services.notification_helper import schedule_if_allowed
@@ -28,6 +28,7 @@ from sqlalchemy import select, func, and_
 from sqlalchemy.orm import selectinload
 
 from src.api.models.subscription_models.plans import SubscriptionPlan
+from src.api.cache.decorators import invalidate_cache
 from src.api.models.subscription_models.subscriptions import (
     UserSubscription,
     SubscriptionStatus,
@@ -120,17 +121,20 @@ class SubscriptionService:
             plan_id=plan_id,
             status=SubscriptionStatus.TRIAL if is_trial else SubscriptionStatus.ACTIVE,
             billing_period=billing_period,
-            start_date=datetime.utcnow(),
-            trial_end_date=datetime.utcnow() + timedelta(days=trial_days) if is_trial else None,
+            start_date=datetime.now(timezone.utc),
+            trial_end_date=datetime.now(timezone.utc) + timedelta(days=trial_days) if is_trial else None,
             current_api_calls=0,
-            usage_reset_date=datetime.utcnow() + timedelta(days=30),
-            created_at=datetime.utcnow(),
-            updated_at=datetime.utcnow()
+            usage_reset_date=datetime.now(timezone.utc) + timedelta(days=30),
+            created_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(timezone.utc)
         )
 
         self.db.add(new_subscription)
         await self.db.flush()
         await self.db.refresh(new_subscription)
+
+        # Invalidate subscription tier cache
+        await invalidate_cache(f"user:subscription_tier:{user_id}:*")
 
         logger.info(
             f"User {user_id} subscribed to plan: {plan.name} ({billing_period.value})",
@@ -269,20 +273,30 @@ class SubscriptionService:
 
         logger.info(f"🔍 DEBUG: Customer ID is {customer_id}")
         # Create checkout session
-        checkout_session = await self.payment_provider.create_checkout_session(
-            customer_id=customer_id,
-            price_id=variant_id,
-            success_url=success_url,
-            cancel_url=cancel_url,
-            discount_code=discount_code,
-            metadata={
-                "user_id": str(user_id),
-                "plan_id": str(plan_id),
-                "billing_period": billing_period.value,
-                "discount_code": discount_code if discount_code else None,
-                "affiliate_code": affiliate_code if affiliate_code else None
-            }
-        )
+        try:
+            checkout_session = await self.payment_provider.create_checkout_session(
+                customer_id=customer_id,
+                price_id=variant_id,
+                success_url=success_url,
+                cancel_url=cancel_url,
+                discount_code=discount_code,
+                metadata={
+                    "user_id": str(user_id),
+                    "plan_id": str(plan_id),
+                    "billing_period": billing_period.value,
+                    "discount_code": discount_code if discount_code else None,
+                    "affiliate_code": affiliate_code if affiliate_code else None
+                }
+            )
+        except Exception as e:
+            logger.error(
+                f"Payment provider error during checkout: {str(e)}",
+                extra={"user_id": str(user_id), "plan_id": str(plan_id)}
+            )
+            raise RextValidationException(
+                message="Failed to create checkout session. Please try again or contact support.",
+                field_errors={"checkout": [str(e)]}
+            )
 
         logger.info(
             f"Created checkout session {checkout_session.session_id} for user {user_id}",
@@ -361,7 +375,7 @@ class SubscriptionService:
             # Only billing period change
             if billing_period and billing_period != current_subscription.billing_period:
                 current_subscription.billing_period = billing_period
-                current_subscription.updated_at = datetime.utcnow()
+                current_subscription.updated_at = datetime.now(timezone.utc)
                 await self.db.flush()
                 await self.db.refresh(current_subscription)
 
@@ -454,10 +468,13 @@ class SubscriptionService:
         if new_variant_id:
             current_subscription.lemonsqueezy_variant_id = new_variant_id
 
-        current_subscription.updated_at = datetime.utcnow()
+        current_subscription.updated_at = datetime.now(timezone.utc)
 
         await self.db.flush()
         await self.db.refresh(current_subscription)
+
+        # Invalidate subscription tier cache
+        await invalidate_cache(f"user:subscription_tier:{user_id}:*")
 
         action = "downgraded" if is_downgrade else "upgraded"
         logger.info(
@@ -521,7 +538,8 @@ class SubscriptionService:
         user_id: UUID,
         reason: Optional[str] = None,
         cancel_immediately: bool = False,
-        background_tasks: Optional[BackgroundTasks] = None
+        background_tasks: Optional[BackgroundTasks] = None,
+        fail_on_provider_error: bool = False
     ) -> UserSubscription:
         """
         Cancel subscription.
@@ -537,12 +555,14 @@ class SubscriptionService:
             reason: Optional cancellation reason
             cancel_immediately: If True, cancel now; if False, at end of period
             background_tasks: Optional background tasks for notifications
+            fail_on_provider_error: If True, raise exception if payment provider call fails
 
         Returns:
             Updated UserSubscription object
 
         Raises:
             ResourceNotFoundException: If no active subscription
+            RextValidationException: If payment provider cancellation fails and fail_on_provider_error is True
         """
         # Get current subscription
         subscription = await self.get_subscription_by_user(user_id)
@@ -559,7 +579,7 @@ class SubscriptionService:
                 provider_sub_id = subscription.lemonsqueezy_subscription_id or subscription.provider_subscription_id
 
                 # Cancel with payment provider
-                cancelled_subscription = await self.payment_provider.cancel_subscription(
+                await self.payment_provider.cancel_subscription(
                     subscription_id=provider_sub_id,
                     at_period_end=not cancel_immediately
                 )
@@ -590,17 +610,27 @@ class SubscriptionService:
                     }
                 )
 
-                # Continue with local cancellation even if provider cancellation fails
+                if fail_on_provider_error:
+                    raise RextValidationException(
+                        message="Payment provider cancellation failed; local cancellation aborted",
+                        context={"user_id": str(user_id), "provider_error": str(e)}
+                    )
+
+                # Continue with local cancellation even if provider cancellation fails for non-admin paths
                 # This ensures we don't leave the user stuck
 
         # Update local subscription
-        subscription.cancelled_at = datetime.utcnow()
+        subscription.cancelled_at = datetime.now(timezone.utc)
+
+        # Store cancellation reason
+        if reason:
+            subscription.cancellation_reason = reason
+            logger.info(f"Cancellation reason stored for subscription {subscription.id}")
         subscription.cancel_at_period_end = not cancel_immediately
 
         if cancel_immediately:
             subscription.status = SubscriptionStatus.CANCELLED
-            subscription.end_date = datetime.utcnow()
-        else:
+            subscription.end_date = datetime.now(timezone.utc)
             # Calculate end of billing period
             if subscription.billing_period == BillingPeriod.MONTHLY:
                 subscription.end_date = subscription.usage_reset_date
@@ -609,10 +639,12 @@ class SubscriptionService:
             else:  # LIFETIME
                 subscription.end_date = None  # No end date for lifetime
 
-        subscription.updated_at = datetime.utcnow()
-
+        subscription.updated_at = datetime.now(timezone.utc)
         await self.db.flush()
         await self.db.refresh(subscription)
+
+        # Invalidate subscription tier cache
+        await invalidate_cache(f"user:subscription_tier:{user_id}:*")
 
         logger.info(
             f"User {user_id} cancelled subscription (immediately={cancel_immediately})",
@@ -755,7 +787,7 @@ class SubscriptionService:
         trial_expired = False
 
         if is_trial and trial_end_date:
-            days_remaining = (trial_end_date - datetime.utcnow()).days
+            days_remaining = (trial_end_date - datetime.now(timezone.utc)).days
             trial_expired = days_remaining < 0
 
         return {
@@ -945,15 +977,6 @@ class SubscriptionService:
             )
             return None
 
-        # Get current subscription to verify it exists
-        subscription = await self.get_subscription_by_user(user_id)
-        if not subscription or not subscription.lemonsqueezy_subscription_id:
-            logger.warning(
-                f"Cannot generate portal URL: User {user_id} has no active subscription",
-                extra={"user_id": str(user_id)}
-            )
-            return None
-
         try:
             # Generate portal session URL
             portal_url = await self.payment_provider.create_portal_session(
@@ -1044,14 +1067,15 @@ class SubscriptionService:
                 "id": plan.id,
                 "name": plan.name,
                 "display_name": plan.display_name,
-                "price_monthly": plan.price_monthly,
-                "price_yearly": plan.price_yearly,
+                "price_monthly": float(plan.price_monthly) if plan.price_monthly is not None else 0.0,
+                "price_yearly": float(plan.price_yearly) if plan.price_yearly is not None else 0.0,
                 "max_workspaces": plan.max_workspaces,
                 "max_members_per_workspace": plan.max_members_per_workspace,
                 "max_topics": plan.max_topics,
                 "max_knowledge_items": plan.max_knowledge_items,
-                "max_content_per_month": plan.max_content_per_month,
-                "max_ai_generations_per_month": plan.max_ai_generations_per_month,
+                "max_api_calls_per_month": plan.max_api_calls_per_month,
+                "lemonsqueezy_variant_id_monthly": plan.lemonsqueezy_variant_id_monthly,
+                "lemonsqueezy_variant_id_yearly": plan.lemonsqueezy_variant_id_yearly,
                 "is_active": plan.is_active,
                 "created_at": plan.created_at,
                 "updated_at": plan.updated_at
@@ -1081,14 +1105,15 @@ class SubscriptionService:
         Returns:
             True if downgrade, False otherwise
         """
-        # Price-based check
-        is_price_downgrade = new_plan.price_monthly < current_plan.price_monthly
+        # Price-based check (guard against None)
+        current_price = float(current_plan.price_monthly or 0)
+        new_price = float(new_plan.price_monthly or 0)
+        is_price_downgrade = new_price < current_price
 
-        # Usage-based check
+        # Usage-based check (guard against None)
         is_usage_downgrade = (
-            (new_plan.max_workspaces != -1 and new_plan.max_workspaces < current_usage["workspaces"]) or
-            (new_plan.max_topics != -1 and new_plan.max_topics < current_usage["topics"]) or
-            (new_plan.max_knowledge_items != -1 and new_plan.max_knowledge_items < current_usage["knowledge_items"])
+            (new_plan.max_workspaces is not None and new_plan.max_workspaces != -1 and new_plan.max_workspaces < current_usage["workspaces"]) or
+            (new_plan.max_knowledge_items is not None and new_plan.max_knowledge_items != -1 and new_plan.max_knowledge_items < current_usage["knowledge_items"])
         )
 
         return is_price_downgrade or is_usage_downgrade
@@ -1109,14 +1134,14 @@ class SubscriptionService:
             RextValidationException: If usage exceeds new plan limits
         """
         # Check workspace limit
-        if new_plan.max_workspaces != -1 and current_usage["workspaces"] > new_plan.max_workspaces:
+        if new_plan.max_workspaces is not None and new_plan.max_workspaces != -1 and current_usage["workspaces"] > new_plan.max_workspaces:
             raise RextValidationException(
                 message=f"Cannot downgrade: You have {current_usage['workspaces']} workspaces, new plan allows {new_plan.max_workspaces}",
                 field_errors={"new_plan_id": ["Workspace limit exceeded"]}
             )
 
         # Check knowledge items limit
-        if new_plan.max_knowledge_items != -1 and current_usage["knowledge_items"] > new_plan.max_knowledge_items:
+        if new_plan.max_knowledge_items is not None and new_plan.max_knowledge_items != -1 and current_usage["knowledge_items"] > new_plan.max_knowledge_items:
             raise RextValidationException(
                 message=f"Cannot downgrade: You have {current_usage['knowledge_items']} knowledge items, new plan allows {new_plan.max_knowledge_items}",
                 field_errors={"new_plan_id": ["Knowledge items limit exceeded"]}

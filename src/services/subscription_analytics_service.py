@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List
+
+from src.services.webhook_monitoring_service import _mask_email
 
 from sqlalchemy import and_, case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -38,7 +40,7 @@ class SubscriptionAnalyticsService:
         mrr = await self._calculate_mrr(include_trial=True)
         arr = mrr * 12
 
-        thirty_days_ago = datetime.utcnow() - timedelta(days=30)
+        thirty_days_ago = datetime.now(timezone.utc) - timedelta(days=30)
         cancellations_last_month = await self._count_cancellations(thirty_days_ago)
         churn_rate = self._safe_percentage(cancellations_last_month, counts[SubscriptionStatus.ACTIVE])
 
@@ -90,12 +92,13 @@ class SubscriptionAnalyticsService:
 
     async def get_churn_analysis(self, period_days: int) -> Dict[str, Any]:
         """Return churn analysis over a period."""
-        period_start = datetime.utcnow() - timedelta(days=period_days)
-        period_end = datetime.utcnow()
+        period_start = datetime.now(timezone.utc) - timedelta(days=period_days)
+        period_end = datetime.now(timezone.utc)
 
         total_active_start = await self._count_active_at_start(period_start)
         new_subscriptions = await self._count_new_subscriptions(period_start, period_end)
         cancellations = await self._count_cancellations(period_start, period_end)
+        reason_breakdown = await self._get_cancellation_reason_breakdown(period_start, period_end)
         total_active_end = await self._count_active_now()
 
         churn_rate = self._safe_percentage(cancellations, total_active_start)
@@ -110,13 +113,14 @@ class SubscriptionAnalyticsService:
                 "total_active_end": total_active_end,
                 "churn_rate": round(churn_rate, 2),
                 "retention_rate": retention_rate,
+                "cancellation_reasons": reason_breakdown,
             },
             "message": "Churn analysis retrieved successfully",
         }
 
     async def get_trial_conversion_metrics(self, period_days: int) -> Dict[str, Any]:
         """Return trial conversion metrics over a period."""
-        period_start = datetime.utcnow() - timedelta(days=period_days)
+        period_start = datetime.now(timezone.utc) - timedelta(days=period_days)
 
         total_trials_started = await self._count_trials_started(period_start)
         trials_converted = await self._count_trials_converted(period_start)
@@ -207,7 +211,7 @@ class SubscriptionAnalyticsService:
         return float(value) if value else 0.0
 
     async def _calculate_new_revenue(self, days: int) -> float:
-        start_date = datetime.utcnow() - timedelta(days=days)
+        start_date = datetime.now(timezone.utc) - timedelta(days=days)
         query = (
             select(
                 func.sum(
@@ -369,7 +373,7 @@ class SubscriptionAnalyticsService:
         arr = mrr * 12
 
         # Calculate churn rate
-        thirty_days_ago = datetime.utcnow() - timedelta(days=30)
+        thirty_days_ago = datetime.now(timezone.utc) - timedelta(days=30)
         cancellations_last_month = await self._count_cancellations(thirty_days_ago)
         churn_rate = self._safe_percentage(cancellations_last_month, counts[SubscriptionStatus.ACTIVE])
 
@@ -384,7 +388,7 @@ class SubscriptionAnalyticsService:
         # Get recent subscriptions
         recent_subscriptions = await self._get_recent_subscriptions(limit=10)
 
-        # Calculate growth metrics
+        # Calculate growth metricss
         new_revenue_30d = await self._calculate_new_revenue(days=30)
         growth_rate = self._safe_percentage(new_revenue_30d, mrr)
 
@@ -419,7 +423,7 @@ class SubscriptionAnalyticsService:
         months = period_map.get(period, 12)
 
         history_data = []
-        current_date = datetime.utcnow()
+        current_date = datetime.now(timezone.utc)
 
         for i in range(months, -1, -1):
             month_date = current_date - timedelta(days=30 * i)
@@ -471,7 +475,7 @@ class SubscriptionAnalyticsService:
     async def get_cohort_retention(self, cohort_months: int = 6) -> Dict[str, Any]:
         """Return cohort retention analysis."""
         cohorts = []
-        current_date = datetime.utcnow()
+        current_date = datetime.now(timezone.utc)
 
         for i in range(cohort_months, -1, -1):
             cohort_date = current_date - timedelta(days=30 * i)
@@ -532,8 +536,8 @@ class SubscriptionAnalyticsService:
         for sub, user_email, user_name, plan_name in records:
             subscriptions.append({
                 "subscription_id": str(sub.id),
-                "user_email": user_email,
-                "user_name": user_name or user_email,
+                "user_email_masked": _mask_email(user_email),
+                "user_name": user_name or "***",
                 "plan_name": plan_name,
                 "status": sub.status.value,
                 "start_date": sub.start_date.isoformat() if sub.start_date else None,
@@ -649,6 +653,38 @@ class SubscriptionAnalyticsService:
             )
         )
         return result.scalar() or 0
+
+    async def _get_cancellation_reason_breakdown(
+        self,
+        start: datetime,
+        end: datetime,
+    ) -> Dict[str, int]:
+        """Return breakdown of cancellation reasons for a period."""
+        query = select(UserSubscription.cancellation_reason).where(
+            UserSubscription.cancelled_at >= start,
+            UserSubscription.cancelled_at <= end,
+            UserSubscription.cancellation_reason.isnot(None),
+        )
+
+        result = await self.db.execute(query)
+        rows = result.scalars().all()
+
+        breakdown: Dict[str, int] = {}
+
+        for reason_text in rows:
+            if not reason_text:
+                continue
+
+            parts = [p.strip() for p in reason_text.split(";")]
+
+            for part in parts:
+                if part.startswith("Additional feedback"):
+                    continue
+
+                breakdown[part] = breakdown.get(part, 0) + 1
+
+        return breakdown
+
 
     @staticmethod
     def _safe_percentage(numerator: float, denominator: float) -> float:

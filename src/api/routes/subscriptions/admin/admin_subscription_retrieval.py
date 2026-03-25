@@ -25,7 +25,7 @@ router = APIRouter()
 
 
 @router.get("/", response_model=dict)
-@require_permissions("subscription.read")
+@require_permissions("subscription.read", workspace_scoped=False)
 @db_transaction_handler("list subscriptions", auto_commit=False)
 async def list_all_subscriptions(
     request: Request,
@@ -52,7 +52,7 @@ async def list_all_subscriptions(
 
 
 @router.get("/{subscription_id}", response_model=dict)
-@require_permissions("subscription.read")
+@require_permissions("subscription.read", workspace_scoped=False)
 @db_transaction_handler("get subscription", auto_commit=False)
 async def get_subscription_admin(
     request: Request,

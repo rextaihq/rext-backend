@@ -7,6 +7,7 @@ from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import delete, select
 
 from src.api.models.knowledge_models.knowledge_model import BrandVoice
 from src.api.schema.knowledge_schema import BrandSchema
@@ -17,6 +18,8 @@ from src.services.sse_service import (
     emit_step_start,
     emit_step_success,
 )
+from src.api.models.knowledge_models.persona_model import Persona
+
 from src.utils.helper import web_page_scraper
 from src.utils.logger import logger
 from src.utils.vector_store import add_to_vector_store
@@ -46,6 +49,7 @@ class WorkspacePipeline:
         db: AsyncSession,
         operation_id: str,
         workspace_id: UUID,
+        user_id: UUID,
         url: str,
         scraper: Optional[ScrapeCallable] = None,
         vector_uploader: Optional[VectorUploaderCallable] = None,
@@ -55,6 +59,7 @@ class WorkspacePipeline:
         self.operation_id = operation_id
         self.workspace_id = workspace_id
         self.url = url
+        self.user_id = user_id
         self._scraper = scraper or self._default_scraper
         self._vector_uploader = vector_uploader or self._default_vector_uploader
         self._brand_voice_generator = (
@@ -85,6 +90,7 @@ class WorkspacePipeline:
                 scope=self.scope,
                 message="Workspace creation pipeline completed successfully",
                 payload=payload,
+                user_id=self.user_id,
             )
             logger.info(
                 "Workspace pipeline completed",
@@ -106,14 +112,19 @@ class WorkspacePipeline:
                 step="pipeline",
                 message="Workspace creation pipeline failed",
                 error=str(exc),
+                user_id=self.user_id,
             )
             raise
 
     async def _scrape_website(self) -> _ScrapeResult:
         """Scrape the target URL and emit relevant SSE events."""
         logger.info(
-            f"🌐 Starting to scrape URL: {self.url}",
-            extra={"workspace_id": str(self.workspace_id), "operation_id": self.operation_id},
+            "Starting to scrape URL",
+            extra={
+                "workspace_id": str(self.workspace_id),
+                "operation_id": self.operation_id,
+                "url": self.url,
+            },
         )
         
         await emit_step_start(
@@ -122,6 +133,7 @@ class WorkspacePipeline:
             step="scrape",
             message=f"Scraping website: {self.url}",
             progress=10,
+            user_id=self.user_id,
         )
 
         try:
@@ -133,6 +145,7 @@ class WorkspacePipeline:
                 step="scrape",
                 message=f"Failed to scrape website: {exc}",
                 error=str(exc),
+                user_id=self.user_id,
             )
             raise
 
@@ -155,6 +168,7 @@ class WorkspacePipeline:
             message="Website scraped successfully",
             payload=metadata,
             progress=30,
+            user_id=self.user_id,
         )
 
         return _ScrapeResult(
@@ -178,8 +192,12 @@ class WorkspacePipeline:
         # ============================================================================
         
         logger.info(
-            f"⚠️ VECTOR STORE DISABLED - Skipping {len(chunks)} chunks",
-            extra={"workspace_id": str(self.workspace_id), "operation_id": self.operation_id},
+            "Vector store disabled, skipping chunks",
+            extra={
+                "workspace_id": str(self.workspace_id),
+                "operation_id": self.operation_id,
+                "chunk_count": len(chunks),
+            },
         )
         
         # Original code commented out below:
@@ -235,6 +253,7 @@ class WorkspacePipeline:
             step="brand_voice",
             message="Analyzing brand voice",
             progress=70,
+            user_id=self.user_id,
         )
 
         if not content.strip():
@@ -245,40 +264,31 @@ class WorkspacePipeline:
                 message="No content available for brand voice extraction",
                 payload=None,
                 progress=90,
+                user_id=self.user_id,
             )
             return None
 
         trimmed_content = content[: self._MAX_BRAND_VOICE_CHARS]
         
-        # Log scraped content for debugging
         logger.info(
-            "=" * 80,
-            extra={"workspace_id": str(self.workspace_id), "operation_id": self.operation_id}
+            "Scraped content prepared for brand voice extraction",
+            extra={
+                "workspace_id": str(self.workspace_id),
+                "operation_id": self.operation_id,
+                "original_length": len(content),
+                "trimmed_length": len(trimmed_content),
+            },
         )
-        logger.info(
-            "📄 SCRAPED CONTENT (for LLM analysis)",
-            extra={"workspace_id": str(self.workspace_id), "operation_id": self.operation_id}
+        logger.debug(
+            "Scraped content for LLM analysis",
+            extra={
+                "workspace_id": str(self.workspace_id),
+                "operation_id": self.operation_id,
+                "content_preview": trimmed_content[:500],
+                "content_length": len(trimmed_content),
+            },
         )
-        logger.info(
-            "=" * 80,
-            extra={"workspace_id": str(self.workspace_id), "operation_id": self.operation_id}
-        )
-        logger.info(
-            f"Content length: {len(trimmed_content)} characters (trimmed from {len(content)})",
-            extra={"workspace_id": str(self.workspace_id), "operation_id": self.operation_id}
-        )
-        logger.info(
-            "-" * 80,
-            extra={"workspace_id": str(self.workspace_id), "operation_id": self.operation_id}
-        )
-        logger.info(
-            trimmed_content,
-            extra={"workspace_id": str(self.workspace_id), "operation_id": self.operation_id}
-        )
-        logger.info(
-            "=" * 80,
-            extra={"workspace_id": str(self.workspace_id), "operation_id": self.operation_id}
-        )
+
 
         try:
             brand_voice_schema = await self._brand_voice_generator(trimmed_content)
@@ -289,6 +299,7 @@ class WorkspacePipeline:
                 step="brand_voice",
                 message=f"Failed to extract brand voice: {exc}",
                 error=str(exc),
+                user_id=self.user_id,
             )
             raise
 
@@ -300,6 +311,7 @@ class WorkspacePipeline:
                 message="Brand voice extraction returned no data",
                 payload=None,
                 progress=90,
+                user_id=self.user_id,
             )
             return None
 
@@ -310,6 +322,7 @@ class WorkspacePipeline:
             message="Brand voice extracted successfully",
             payload=brand_voice_schema.model_dump(),
             progress=90,
+            user_id=self.user_id,
         )
         return brand_voice_schema
 
@@ -339,7 +352,7 @@ class WorkspacePipeline:
                 existing.target_audience = data.get("target_audience") or []
                 existing.brand_voice = data.get("brand_voice") or []
                 existing.competitors = data.get("competitors") or []
-                existing.content_strategy = data.get("content_pillar") or []
+                existing.content_strategy = data.get("content_strategy") or []
                 brand_voice_record = existing
             else:
                 brand_voice_record = BrandVoice(
@@ -350,7 +363,7 @@ class WorkspacePipeline:
                     target_audience=data.get("target_audience") or [],
                     brand_voice=data.get("brand_voice") or [],
                     competitors=data.get("competitors") or [],
-                    content_strategy=data.get("content_pillar") or [],
+                    content_strategy=data.get("content_strategy") or [],
                 )
                 self.db.add(brand_voice_record)
 
@@ -359,7 +372,7 @@ class WorkspacePipeline:
             # Persist personas separately
             await self._persist_personas(personas_data)
             
-            await self.db.commit()
+            await self.db.flush()
             return brand_voice_record
 
         except Exception as exc:  # noqa: BLE001 - rollback and propagate
@@ -383,123 +396,74 @@ class WorkspacePipeline:
             )
             return
         
-        # Log extracted personas for review
         logger.info(
-            "=" * 80,
-            extra={"workspace_id": str(self.workspace_id), "operation_id": self.operation_id}
+            "Extracted personas ready for persistence",
+            extra={
+                "workspace_id": str(self.workspace_id),
+                "operation_id": self.operation_id,
+                "persona_count": len(personas_data),
+                "persona_names": [p.get("name", "Unnamed") for p in personas_data],
+            },
         )
+        logger.debug(
+            "Extracted persona details",
+            extra={
+                "workspace_id": str(self.workspace_id),
+                "operation_id": self.operation_id,
+                "personas": [
+                    {
+                        "name": p.get("name"),
+                        "description": p.get("description"),
+                        "professional_title": p.get("professional_title"),
+                        "has_bio": bool(p.get("bio")),
+                        "has_linkedin": bool(p.get("linkedin_url")),
+                    }
+                    for p in personas_data
+                ],
+            },
+        )
+
+        # Use a savepoint to make the delete-then-insert atomic.
+        # If insertion fails, the savepoint rollback also undoes the deletion,
+        # preserving the original personas.
+        async with self.db.begin_nested():
+            # Delete existing personas for this workspace
+            await self.db.execute(
+                delete(Persona).where(Persona.workspace_id == self.workspace_id)
+            )
+
+            # Insert new personas with ALL fields
+            for persona_data in personas_data:
+                persona = Persona(
+                    workspace_id=self.workspace_id,
+                    # Basic fields
+                    name=persona_data.get("name"),
+                    description=persona_data.get("description"),
+                    # E-E-A-T Professional fields
+                    full_name=persona_data.get("full_name"),
+                    professional_title=persona_data.get("professional_title"),
+                    areas_of_expertise=persona_data.get("areas_of_expertise"),
+                    tone_of_voice=persona_data.get("tone_of_voice"),
+                    bio=persona_data.get("bio"),
+                    linkedin_url=persona_data.get("linkedin_url"),
+                    # User persona fields
+                    demographics=persona_data.get("demographics"),
+                    pain_points=persona_data.get("pain_points"),
+                    goals=persona_data.get("goals"),
+                    behaviors=persona_data.get("behaviors"),
+                )
+                self.db.add(persona)
+
+            # Flush within the savepoint to detect constraint violations
+            await self.db.flush()
+
         logger.info(
-            f"📊 EXTRACTED PERSONAS ({len(personas_data)} total)",
-            extra={"workspace_id": str(self.workspace_id), "operation_id": self.operation_id}
-        )
-        logger.info(
-            "=" * 80,
-            extra={"workspace_id": str(self.workspace_id), "operation_id": self.operation_id}
-        )
-        
-        for idx, persona_data in enumerate(personas_data, 1):
-            logger.info(
-                f"\n👤 PERSONA #{idx}: {persona_data.get('name', 'Unnamed')}",
-                extra={"workspace_id": str(self.workspace_id), "operation_id": self.operation_id}
-            )
-            logger.info(
-                f"  📝 Description: {persona_data.get('description', 'N/A')}",
-                extra={"workspace_id": str(self.workspace_id), "operation_id": self.operation_id}
-            )
-            
-            # E-E-A-T Professional Fields
-            if persona_data.get('full_name'):
-                logger.info(
-                    f"  👔 Full Name: {persona_data.get('full_name')}",
-                    extra={"workspace_id": str(self.workspace_id), "operation_id": self.operation_id}
-                )
-            if persona_data.get('professional_title'):
-                logger.info(
-                    f"  💼 Title: {persona_data.get('professional_title')}",
-                    extra={"workspace_id": str(self.workspace_id), "operation_id": self.operation_id}
-                )
-            if persona_data.get('areas_of_expertise'):
-                logger.info(
-                    f"  🎓 Expertise: {persona_data.get('areas_of_expertise')}",
-                    extra={"workspace_id": str(self.workspace_id), "operation_id": self.operation_id}
-                )
-            if persona_data.get('tone_of_voice'):
-                logger.info(
-                    f"  🗣️  Tone: {persona_data.get('tone_of_voice')}",
-                    extra={"workspace_id": str(self.workspace_id), "operation_id": self.operation_id}
-                )
-            if persona_data.get('bio'):
-                logger.info(
-                    f"  📖 Bio: {persona_data.get('bio')[:100]}...",
-                    extra={"workspace_id": str(self.workspace_id), "operation_id": self.operation_id}
-                )
-            if persona_data.get('linkedin_url'):
-                logger.info(
-                    f"  🔗 LinkedIn: {persona_data.get('linkedin_url')}",
-                    extra={"workspace_id": str(self.workspace_id), "operation_id": self.operation_id}
-                )
-            
-            # User Persona Fields (if any)
-            if persona_data.get('demographics'):
-                logger.info(
-                    f"  👥 Demographics: {persona_data.get('demographics')}",
-                    extra={"workspace_id": str(self.workspace_id), "operation_id": self.operation_id}
-                )
-            if persona_data.get('pain_points'):
-                logger.info(
-                    f"  ⚠️  Pain Points: {persona_data.get('pain_points')}",
-                    extra={"workspace_id": str(self.workspace_id), "operation_id": self.operation_id}
-                )
-            if persona_data.get('goals'):
-                logger.info(
-                    f"  🎯 Goals: {persona_data.get('goals')}",
-                    extra={"workspace_id": str(self.workspace_id), "operation_id": self.operation_id}
-                )
-            if persona_data.get('behaviors'):
-                logger.info(
-                    f"  🔄 Behaviors: {persona_data.get('behaviors')}",
-                    extra={"workspace_id": str(self.workspace_id), "operation_id": self.operation_id}
-                )
-            
-            logger.info(
-                "-" * 80,
-                extra={"workspace_id": str(self.workspace_id), "operation_id": self.operation_id}
-            )
-        
-        from sqlalchemy import delete
-        from src.api.models.knowledge_models.persona_model import Persona
-        
-        # Delete existing personas for this workspace
-        await self.db.execute(
-            delete(Persona).where(Persona.workspace_id == self.workspace_id)
-        )
-        
-        # Insert new personas with ALL fields
-        for persona_data in personas_data:
-            persona = Persona(
-                workspace_id=self.workspace_id,
-                # Basic fields
-                name=persona_data.get("name"),
-                description=persona_data.get("description"),
-                # E-E-A-T Professional fields
-                full_name=persona_data.get("full_name"),
-                professional_title=persona_data.get("professional_title"),
-                areas_of_expertise=persona_data.get("areas_of_expertise"),
-                tone_of_voice=persona_data.get("tone_of_voice"),
-                bio=persona_data.get("bio"),
-                linkedin_url=persona_data.get("linkedin_url"),
-                # User persona fields
-                demographics=persona_data.get("demographics"),
-                pain_points=persona_data.get("pain_points"),
-                goals=persona_data.get("goals"),
-                behaviors=persona_data.get("behaviors"),
-            )
-            self.db.add(persona)
-        
-        await self.db.flush()
-        logger.info(
-            f"✅ Persisted {len(personas_data)} persona(s)",
-            extra={"workspace_id": str(self.workspace_id), "operation_id": self.operation_id}
+            "Persisted personas",
+            extra={
+                "workspace_id": str(self.workspace_id),
+                "operation_id": self.operation_id,
+                "persona_count": len(personas_data),
+            },
         )
 
     @staticmethod
@@ -522,7 +486,7 @@ class WorkspacePipeline:
         if not content.strip():
             return None
 
-        def _invoke_model() -> BrandSchema:
+        async def _invoke_model() -> BrandSchema:
             from langchain_core.messages import SystemMessage, HumanMessage
             
             model = load_model()
@@ -531,46 +495,35 @@ class WorkspacePipeline:
             system_prompt = """You are an expert at analyzing website content and extracting brand information and personas.
 
 IMPORTANT INSTRUCTIONS FOR PERSONAS:
-- Extract AUTHOR/EXPERT personas (real people who create content, run the business, or are mentioned as experts)
-- DO NOT extract customer/user personas or target audience segments
-- Look for:
-  * Blog authors and their names
-  * Company founders or leadership team members
-  * Experts, consultants, or professionals mentioned on the site
-  * Team members with "About" or "Team" pages
-  * People with professional credentials or expertise
-  
-EXAMPLES OF CORRECT PERSONAS:
-✓ "Dr. Sarah Mitchell" - Board-Certified Dermatologist
-✓ "Mobheen Abdullah" - Founder & CEO
-✓ "John Smith" - Senior Software Engineer & Tech Blogger
+- ONLY extract REAL INDIVIDUALS mentioned on the website (Authors, Founders, Team Members, or Experts).
+- DO NOT generate hypothetical or dummy "User" or "Customer" personas.
+- DO NOT create audience segments as personas.
 
-EXAMPLES OF INCORRECT PERSONAS (DO NOT EXTRACT):
-✗ "Eco-Conscious Shopper" - this is a customer, not an author
-✗ "Tech-Savvy Professional" - this is a target audience, not a real person
-✗ "Busy Executive" - this is a user persona, not an expert/author
+Look for:
+- People with names (e.g., founders, leadership team, blog authors).
+- Professionals with specific roles or credentials described on the site.
 
-For personas, fill in:
-- name: The person's actual name (e.g., "Mobheen Abdullah")
-- full_name: Their complete professional name
-- professional_title: Their job title or credentials
-- areas_of_expertise: What they specialize in
-- tone_of_voice: How they communicate
-- bio: Their professional background
-- linkedin_url: If available on the website
+For each PERSONA extracted, provide:
+- name: The person's actual name (e.g., "Mobheen Abdullah").
+- full_name: Their complete professional name.
+- professional_title: Job title or credentials found on the site.
+- areas_of_expertise: What they specialize in based on the content.
+- tone_of_voice: Their unique writing or communication style.
+- bio: A professional background summary extracted from the text.
+- linkedin_url: Their social link if provided.
 
-If no real people/authors are found on the website, return an empty personas list.
+If no specific real individuals are found, return an empty personas list.
 
-Now analyze the following website content and extract brand information:"""
+Now analyze the following website content and extract brand information and real professional personas (NO DUMMY PERSONAS):"""
             
             messages = [
                 SystemMessage(content=system_prompt),
                 HumanMessage(content=content)
             ]
             
-            return structured.invoke(messages)
+            return await structured.ainvoke(messages)
 
-        return await asyncio.to_thread(_invoke_model)
+        return await _invoke_model()
 
 
 async def run_workspace_pipeline(
@@ -578,6 +531,7 @@ async def run_workspace_pipeline(
     db: AsyncSession,
     operation_id: str,
     workspace_id: UUID,
+    user_id: UUID,
     url: str,
     scraper: Optional[ScrapeCallable] = None,
     vector_uploader: Optional[VectorUploaderCallable] = None,
@@ -599,6 +553,7 @@ async def run_workspace_pipeline(
         db=db,
         operation_id=operation_id,
         workspace_id=workspace_id,
+        user_id=user_id,
         url=url,
         scraper=scraper,
         vector_uploader=vector_uploader,

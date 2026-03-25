@@ -1,3 +1,7 @@
+# NOTE: This seed migration is superseded by scripts/seeds/.
+# It remains in the migration chain for backward compatibility with existing databases.
+# For new environments, use: python -m scripts.seeds.run_all
+
 """seed005_default_email_templates
 
 Revision ID: seed005
@@ -6,7 +10,7 @@ Create Date: 2025-10-05 00:02:00.000000
 
 """
 from typing import Sequence, Union
-from datetime import datetime
+from datetime import datetime, timezone
 
 from alembic import op
 import sqlalchemy as sa
@@ -164,12 +168,12 @@ The Rext Team''',
                 'template_type': template['template_type'],
                 'subject': template['subject'],
                 'body': template['body'],
-                'created_at': datetime.utcnow(),
-                'updated_at': datetime.utcnow(),
+                'created_at': datetime.now(timezone.utc).replace(tzinfo=None),
+                'updated_at': datetime.now(timezone.utc).replace(tzinfo=None),
             }
         )
 
-    print(f"✅ Created {len(templates)} system-wide email templates (global, not workspace-specific)")
+    print(f" Created {len(templates)} system-wide email templates (global, not workspace-specific)")
 
 
 def downgrade() -> None:

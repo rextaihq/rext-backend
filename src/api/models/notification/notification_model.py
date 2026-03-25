@@ -1,33 +1,24 @@
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlalchemy import (
-    Column, String, Boolean, TIMESTAMP, ForeignKey, Text, Index
+    Column, String, Boolean, DateTime, ForeignKey, Text, Index
 )
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import relationship
 from src.api.database.base import Base
-from src.api.models.base import SerializableMixin
+from src.api.models.base import SerializableMixin, SoftDeleteMixin
 
 
-class Notification(Base, SerializableMixin):
+class Notification(Base, SerializableMixin, SoftDeleteMixin):
     """
     Notification model for storing user notifications.
-    
-    This model stores all notifications sent to users, including:
-    - In-app notifications
-    - System notifications
-    - Workspace notifications
-    - Billing notifications
-    - Content generation notifications
-    - Knowledge base notifications
-    
-    Features:
-    - Read/unread status tracking
-    - Notification type categorization
-    - Priority levels
-    - Rich payload support (JSONB)
-    - Soft delete support
-    - Expiration support
+
+    Lifecycle states:
+    - is_read / read_at: whether the user has seen the notification
+    - is_deleted / deleted_at: soft delete via SoftDeleteMixin (cleared notifications)
+
+    Note: Archive functionality was removed as it had no consumers.
+    Use soft delete (clear) for removing notifications from the user's view.
     """
     __tablename__ = "notifications"
 
@@ -35,10 +26,10 @@ class Notification(Base, SerializableMixin):
     # PRIMARY KEY
     # ==============================
     id = Column(
-        UUID(as_uuid=True), 
-        primary_key=True, 
-        default=uuid.uuid4, 
-        unique=True, 
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+        unique=True,
         nullable=False
     )
 
@@ -46,15 +37,15 @@ class Notification(Base, SerializableMixin):
     # FOREIGN KEYS
     # ==============================
     user_id = Column(
-        UUID(as_uuid=True), 
-        ForeignKey("users.id", ondelete="CASCADE"), 
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
         nullable=False,
         index=True
     )
-    
+
     workspace_id = Column(
-        UUID(as_uuid=True), 
-        ForeignKey("workspace.id", ondelete="CASCADE"), 
+        UUID(as_uuid=True),
+        ForeignKey("workspace.id", ondelete="CASCADE"),
         nullable=True,
         index=True
     )
@@ -64,97 +55,75 @@ class Notification(Base, SerializableMixin):
     # ==============================
     title = Column(String(255), nullable=False)
     message = Column(Text, nullable=False)
-    
+
     # ==============================
     # NOTIFICATION METADATA
     # ==============================
     type = Column(
-        String(50), 
+        String(50),
         nullable=False,
         index=True,
-        comment="Type of notification: workspace, billing, content, knowledge, system, etc."
+        comment="Type of notification"
     )
-    
+
     category = Column(
-        String(50), 
+        String(50),
         nullable=True,
         index=True,
-        comment="Specific category: ws_invite_received, billing_payment_failed, kb_processing_completed, etc."
+        comment="Specific notification category"
     )
-    
+
     priority = Column(
-        String(20), 
+        String(20),
         default="normal",
-        nullable=False,
-        comment="Priority level: low, normal, high, urgent"
+        nullable=False
     )
-    
+
     status = Column(
-        String(20), 
+        String(20),
         default="new",
         nullable=False,
-        index=True,
-        comment="Status: new, success, warning, error, info"
+        index=True
     )
 
     # ==============================
     # NOTIFICATION STATE
     # ==============================
     is_read = Column(Boolean, default=False, nullable=False, index=True)
-    read_at = Column(TIMESTAMP, nullable=True)
-    
-    is_archived = Column(Boolean, default=False, nullable=False, index=True)
-    archived_at = Column(TIMESTAMP, nullable=True)
-    
-    is_deleted = Column(Boolean, default=False, nullable=False, index=True)
-    deleted_at = Column(TIMESTAMP, nullable=True)
+    read_at = Column(DateTime(timezone=True), nullable=True)
+
+    # Note: is_deleted and deleted_at are provided by SoftDeleteMixin.
+    # Do NOT redeclare them here — the mixin's hybrid property handles both
+    # Python-side and SQL-side is_deleted checks via deleted_at.
 
     # ==============================
     # ADDITIONAL DATA
     # ==============================
-    payload = Column(
-        JSONB, 
-        nullable=True,
-        comment="Additional data in JSON format (e.g., workspace_id, content_id, etc.)"
-    )
-    
-    action_url = Column(
-        String(500), 
-        nullable=True,
-        comment="URL to navigate to when notification is clicked"
-    )
-    
-    action_label = Column(
-        String(100), 
-        nullable=True,
-        comment="Label for the action button (e.g., 'View Workspace', 'View Invoice')"
-    )
+    payload = Column(JSONB, nullable=True)
+    action_url = Column(String(500), nullable=True)
+    action_label = Column(String(100), nullable=True)
 
     # ==============================
     # NOTIFICATION DELIVERY
     # ==============================
     sent_via_email = Column(Boolean, default=False, nullable=False)
     sent_via_sse = Column(Boolean, default=False, nullable=False)
-    email_sent_at = Column(TIMESTAMP, nullable=True)
-    sse_sent_at = Column(TIMESTAMP, nullable=True)
+    email_sent_at = Column(DateTime(timezone=True), nullable=True)
+    sse_sent_at = Column(DateTime(timezone=True), nullable=True)
 
     # ==============================
     # EXPIRATION
     # ==============================
-    expires_at = Column(
-        TIMESTAMP, 
-        nullable=True,
-        comment="When this notification should expire and be auto-archived"
-    )
+    expires_at = Column(DateTime(timezone=True), nullable=True)
 
     # ==============================
     # TIMESTAMPS
     # ==============================
-    created_at = Column(TIMESTAMP, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
     updated_at = Column(
-        TIMESTAMP,
-        default=datetime.utcnow,
-        onupdate=datetime.utcnow,
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
         nullable=False
     )
 
@@ -168,57 +137,40 @@ class Notification(Base, SerializableMixin):
     # INDEXES
     # ==============================
     __table_args__ = (
-        # Composite index for common queries
-        Index('idx_user_read_deleted', 'user_id', 'is_read', 'is_deleted'),
+        Index('idx_user_read_deleted', 'user_id', 'is_read', 'deleted_at'),
         Index('idx_user_created', 'user_id', 'created_at'),
         Index('idx_user_type_created', 'user_id', 'type', 'created_at'),
         Index('idx_workspace_created', 'workspace_id', 'created_at'),
+        # Deduplication index — supports the time-windowed duplicate check
+        Index('idx_dedup_user_category_workspace', 'user_id', 'category', 'workspace_id', 'created_at'),
     )
 
     def to_dict(self, **kwargs):
-        """
-        Return only selected fields required by the frontend/UI.
-        """
-        return {
-            "id": self.id,
-            "user_id": self.user_id,
-            "workspace_id": self.workspace_id,
-            "title": self.title,
-            "message": self.message,
-            "type": self.type,
-            "category": self.category,
-            "status": self.status,
-            "is_read": self.is_read,
-            "created_at": self.created_at,
-            "updated_at": self.updated_at,
-        }
+        """Return notification data for the frontend/UI.
 
+        Exposes all user-facing fields including priority, action buttons,
+        payload, and read timestamp. Excludes internal state tracking
+        (soft delete, archive) and delivery channel metadata.
+        """
+        if 'exclude' not in kwargs:
+            kwargs['exclude'] = [
+                # Internal state — not needed by frontend
+                'is_archived', 'archived_at',
+                'is_deleted', 'deleted_at',
+                # Delivery channel tracking — internal metadata
+                'sent_via_email', 'sent_via_sse',
+                'email_sent_at', 'sse_sent_at',
+            ]
+        return super().to_dict(**kwargs)
+
+    # ==============================
+    # HELPERS
+    # ==============================
     def mark_as_read(self):
-        """Mark notification as read."""
         self.is_read = True
-        self.read_at = datetime.utcnow()
+        self.read_at = datetime.now(timezone.utc)
 
     def mark_as_unread(self):
-        """Mark notification as unread."""
         self.is_read = False
         self.read_at = None
 
-    def archive(self):
-        """Archive notification."""
-        self.is_archived = True
-        self.archived_at = datetime.utcnow()
-
-    def unarchive(self):
-        """Unarchive notification."""
-        self.is_archived = False
-        self.archived_at = None
-
-    def soft_delete(self):
-        """Soft delete notification."""
-        self.is_deleted = True
-        self.deleted_at = datetime.utcnow()
-
-    def restore(self):
-        """Restore soft-deleted notification."""
-        self.is_deleted = False
-        self.deleted_at = None

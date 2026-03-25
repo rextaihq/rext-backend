@@ -2,71 +2,52 @@
 Webhook Security Monitoring Service
 
 Tracks webhook verification failures and generates security alerts for potential attacks.
-
-This service monitors webhook signature verification failures and:
-1. Tracks failure counts by IP address and time window
-2. Detects potential attacks (multiple failures in short time)
-3. Generates security alerts via logging and Sentry
-4. Provides security metrics for monitoring
-
-Usage:
-    from src.services.webhook_security_monitor import webhook_security_monitor
-
-    # Record failure
-    webhook_security_monitor.record_verification_failure(
-        ip_address="192.168.1.100",
-        event_type="subscription_created",
-        signature_prefix="abc123"
-    )
-
-    # Check if should alert
-    if webhook_security_monitor.should_alert(ip_address):
-        # Send alert to security team
+Uses Redis for persistent, cross-worker failure tracking.
 """
 
-from datetime import datetime, timedelta
+import json
+import time
+from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional
-from collections import defaultdict, deque
-from dataclasses import dataclass
+from dataclasses import dataclass, asdict
 import sentry_sdk
 
 from src.utils.logger import logger
+from src.api.cache.redis_client import cache
 
 
 @dataclass
 class WebhookFailureRecord:
-    """Record of a webhook verification failure"""
+    """Record of a failed webhook signature verification."""
     timestamp: datetime
     ip_address: str
-    event_type: Optional[str]
-    signature_prefix: str
-    payload_size: int
+    event_type: Optional[str] = None
+    signature_prefix: str = ""
+    payload_size: int = 0
+
+    def to_dict(self) -> Dict:
+        return asdict(self)
 
 
 class WebhookSecurityMonitor:
     """
-    Monitors webhook security and detects potential attacks.
-
-    Tracks verification failures and generates alerts when suspicious
-    patterns are detected (e.g., multiple failures from same IP).
+    Monitors and alerts on webhook security events (e.g., signature failures).
+    Uses Redis for persistent tracking across worker processes.
     """
 
-    # Alert thresholds
-    FAILURE_THRESHOLD = 5  # Number of failures before alerting
-    TIME_WINDOW_MINUTES = 5  # Time window for counting failures
-    ALERT_COOLDOWN_MINUTES = 15  # Minimum time between alerts for same IP
-
     def __init__(self):
-        """Initialize security monitor"""
-        # Storage: {ip_address: deque of WebhookFailureRecord}
-        self._failures: Dict[str, deque] = defaultdict(deque)
+        """Initialize security monitor with Redis-backed storage."""
+        self.FAILURE_THRESHOLD = 5  # failures per IP
+        self.TIME_WINDOW_MINUTES = 5  # tracking window
+        self.ALERT_COOLDOWN_MINUTES = 15  # alert suppression window
 
-        # Track when we last alerted for each IP (prevent spam)
-        self._last_alert: Dict[str, datetime] = {}
+        self.REDIS_KEY_PREFIX = "webhook_security:"
+        self.FAILURE_KEY_PREFIX = f"{self.REDIS_KEY_PREFIX}failures:"
+        self.ALERT_KEY_PREFIX = f"{self.REDIS_KEY_PREFIX}last_alert:"
 
-        logger.info("WebhookSecurityMonitor initialized")
+        logger.info("WebhookSecurityMonitor initialized (Redis-backed)")
 
-    def record_verification_failure(
+    async def record_verification_failure(
         self,
         ip_address: str,
         event_type: Optional[str] = None,
@@ -74,33 +55,56 @@ class WebhookSecurityMonitor:
         payload_size: int = 0
     ) -> None:
         """
-        Record a webhook signature verification failure.
+        Record a webhook signature verification failure in Redis.
 
-        Args:
-            ip_address: IP address of the request
-            event_type: Type of webhook event (if parseable)
-            signature_prefix: First 8 chars of received signature
-            payload_size: Size of payload in bytes
+        Uses a Redis sorted set with timestamps as scores for sliding window counting.
         """
-        record = WebhookFailureRecord(
-            timestamp=datetime.utcnow(),
-            ip_address=ip_address,
-            event_type=event_type,
-            signature_prefix=signature_prefix,
-            payload_size=payload_size
-        )
+        now_ts = time.time()
+        record_data = json.dumps({
+            "ip_address": ip_address,
+            "event_type": event_type,
+            "signature_prefix": signature_prefix,
+            "payload_size": payload_size,
+            "timestamp": now_ts
+        })
 
-        # Add to failure tracking
-        self._failures[ip_address].append(record)
+        redis_key = f"{self.FAILURE_KEY_PREFIX}{ip_address}"
+        window_seconds = self.TIME_WINDOW_MINUTES * 60
 
-        # Clean up old failures (outside time window)
-        self._cleanup_old_failures(ip_address)
-
-        # Check if we should alert
-        failure_count = len(self._failures[ip_address])
+        try:
+            redis = cache.redis
+            if redis is not None:
+                pipe = redis.pipeline()
+                # Add failure record with timestamp as score
+                pipe.zadd(redis_key, {record_data: now_ts})
+                # Remove entries outside the time window
+                pipe.zremrangebyscore(redis_key, 0, now_ts - window_seconds)
+                # Set TTL to auto-cleanup (window + buffer)
+                pipe.expire(redis_key, window_seconds + 60)
+                # Count failures in window
+                pipe.zcount(redis_key, now_ts - window_seconds, "+inf")
+                results = await pipe.execute()
+                failure_count = results[3]
+            else:
+                # Fallback: log warning, no tracking
+                logger.warning(
+                    "Redis unavailable for webhook security monitoring — failure not tracked",
+                    extra={"ip_address": ip_address}
+                )
+                sentry_sdk.capture_message(
+                    "WebhookSecurityMonitor: Redis unavailable, failure tracking disabled",
+                    level="warning"
+                )
+                return
+        except Exception as e:
+            logger.error(
+                f"Failed to record webhook failure in Redis: {e}",
+                extra={"ip_address": ip_address}
+            )
+            return
 
         logger.info(
-            f"Webhook verification failure recorded",
+            "Webhook verification failure recorded",
             extra={
                 "event": "verification_failure_recorded",
                 "ip_address": ip_address,
@@ -110,62 +114,43 @@ class WebhookSecurityMonitor:
             }
         )
 
-        # Alert if threshold exceeded and not in cooldown
-        if self.should_alert(ip_address):
-            self._send_security_alert(ip_address, failure_count)
+        if await self.should_alert(ip_address):
+            await self._send_security_alert(ip_address, failure_count)
 
-    def _cleanup_old_failures(self, ip_address: str) -> None:
-        """
-        Remove failures outside the time window.
-
-        Args:
-            ip_address: IP address to clean up failures for
-        """
-        cutoff = datetime.utcnow() - timedelta(minutes=self.TIME_WINDOW_MINUTES)
-        failures = self._failures[ip_address]
-
-        while failures and failures[0].timestamp < cutoff:
-            failures.popleft()
-
-        # Remove IP entirely if no recent failures
-        if not failures:
-            del self._failures[ip_address]
-
-    def should_alert(self, ip_address: str) -> bool:
+    async def should_alert(self, ip_address: str) -> bool:
         """
         Check if we should send a security alert for this IP.
-
-        Args:
-            ip_address: IP address to check
-
-        Returns:
-            True if should alert, False otherwise
+        Uses Redis for cross-worker coordination.
         """
-        # Check if enough failures
-        failure_count = len(self._failures.get(ip_address, []))
-        if failure_count < self.FAILURE_THRESHOLD:
-            return False
+        try:
+            redis = cache.redis
+            if redis is None:
+                return False
 
-        # Check alert cooldown
-        last_alert = self._last_alert.get(ip_address)
-        if last_alert:
-            cooldown_end = last_alert + timedelta(minutes=self.ALERT_COOLDOWN_MINUTES)
-            if datetime.utcnow() < cooldown_end:
+            now_ts = time.time()
+            window_seconds = self.TIME_WINDOW_MINUTES * 60
+
+            # Check failure count
+            failure_key = f"{self.FAILURE_KEY_PREFIX}{ip_address}"
+            failure_count = await redis.zcount(failure_key, now_ts - window_seconds, "+inf")
+            if failure_count < self.FAILURE_THRESHOLD:
+                return False
+
+            # Check alert cooldown
+            alert_key = f"{self.ALERT_KEY_PREFIX}{ip_address}"
+            last_alert = await redis.get(alert_key)
+            if last_alert is not None:
                 return False  # Still in cooldown
 
-        return True
+            return True
+        except Exception as e:
+            logger.error(f"Failed to check alert status in Redis: {e}")
+            return False
 
-    def _send_security_alert(self, ip_address: str, failure_count: int) -> None:
+    async def _send_security_alert(self, ip_address: str, failure_count: int) -> None:
         """
-        Send security alert for suspicious webhook activity.
-
-        Args:
-            ip_address: IP address with suspicious activity
-            failure_count: Number of failures in time window
+        Send security alert and set cooldown in Redis.
         """
-        failures = list(self._failures[ip_address])
-
-        # Build alert message
         alert_message = (
             f"SECURITY ALERT: Multiple webhook verification failures detected\n"
             f"IP Address: {ip_address}\n"
@@ -178,7 +163,6 @@ class WebhookSecurityMonitor:
             f"Action: Monitor and consider blocking IP if attacks persist"
         )
 
-        # Log critical security event
         logger.critical(
             alert_message,
             extra={
@@ -187,83 +171,95 @@ class WebhookSecurityMonitor:
                 "ip_address": ip_address,
                 "failure_count": failure_count,
                 "time_window_minutes": self.TIME_WINDOW_MINUTES,
-                "first_failure": failures[0].timestamp.isoformat(),
-                "last_failure": failures[-1].timestamp.isoformat(),
-                "event_types": [f.event_type for f in failures if f.event_type],
-                "signature_prefixes": [f.signature_prefix for f in failures]
             }
         )
 
-        # Send to Sentry for alerting
         with sentry_sdk.push_scope() as scope:
             scope.set_context("webhook_security", {
                 "ip_address": ip_address,
                 "failure_count": failure_count,
                 "time_window_minutes": self.TIME_WINDOW_MINUTES,
                 "threshold": self.FAILURE_THRESHOLD,
-                "first_failure": failures[0].timestamp.isoformat(),
-                "last_failure": failures[-1].timestamp.isoformat(),
             })
-
             scope.set_tag("security_event", "webhook_verification_failures")
             scope.set_tag("ip_address", ip_address)
             scope.level = "error"
-
             sentry_sdk.capture_message(
                 f"Webhook Security Alert: {failure_count} verification failures from {ip_address}",
                 level="error"
             )
 
-        # Update last alert time
-        self._last_alert[ip_address] = datetime.utcnow()
+        # Set alert cooldown in Redis
+        try:
+            redis = cache.redis
+            if redis is not None:
+                cooldown_seconds = self.ALERT_COOLDOWN_MINUTES * 60
+                alert_key = f"{self.ALERT_KEY_PREFIX}{ip_address}"
+                await redis.set(alert_key, "1", ex=cooldown_seconds)
+        except Exception as e:
+            logger.error(f"Failed to set alert cooldown in Redis: {e}")
 
         logger.info(
             f"Security alert sent for IP {ip_address}. Alert cooldown: {self.ALERT_COOLDOWN_MINUTES} minutes",
             extra={"event": "security_alert_sent", "ip_address": ip_address}
         )
 
-    def get_failure_stats(self, ip_address: Optional[str] = None) -> Dict:
-        """
-        Get failure statistics for monitoring.
+    async def get_failure_stats(self, ip_address: Optional[str] = None) -> Dict:
+        """Get failure statistics from Redis."""
+        try:
+            redis = cache.redis
+            if redis is None:
+                return {"error": "Redis unavailable"}
 
-        Args:
-            ip_address: Optional IP to get stats for. If None, returns overall stats.
+            now_ts = time.time()
+            window_seconds = self.TIME_WINDOW_MINUTES * 60
 
-        Returns:
-            Dictionary with failure statistics
-        """
-        if ip_address:
-            failures = list(self._failures.get(ip_address, []))
-            return {
-                "ip_address": ip_address,
-                "failure_count": len(failures),
-                "time_window_minutes": self.TIME_WINDOW_MINUTES,
-                "first_failure": failures[0].timestamp.isoformat() if failures else None,
-                "last_failure": failures[-1].timestamp.isoformat() if failures else None,
-            }
-        else:
-            # Overall stats
-            total_failures = sum(len(failures) for failures in self._failures.values())
-            return {
-                "total_ips_with_failures": len(self._failures),
-                "total_failures_in_window": total_failures,
-                "time_window_minutes": self.TIME_WINDOW_MINUTES,
-                "threshold": self.FAILURE_THRESHOLD,
-                "ips": list(self._failures.keys())
-            }
+            if ip_address:
+                failure_key = f"{self.FAILURE_KEY_PREFIX}{ip_address}"
+                failure_count = await redis.zcount(failure_key, now_ts - window_seconds, "+inf")
+                return {
+                    "ip_address": ip_address,
+                    "failure_count": failure_count,
+                    "time_window_minutes": self.TIME_WINDOW_MINUTES,
+                }
+            else:
+                # Scan for all failure keys
+                keys = []
+                async for key in redis.scan_iter(f"{self.FAILURE_KEY_PREFIX}*"):
+                    keys.append(key)
 
-    def clear_failures(self, ip_address: str) -> None:
-        """
-        Clear failure records for an IP address (manual reset).
+                total_failures = 0
+                ips = []
+                for key in keys:
+                    count = await redis.zcount(key, now_ts - window_seconds, "+inf")
+                    if count > 0:
+                        ip = key.decode() if isinstance(key, bytes) else key
+                        ip = ip.replace(self.FAILURE_KEY_PREFIX, "")
+                        ips.append(ip)
+                        total_failures += count
 
-        Args:
-            ip_address: IP address to clear failures for
-        """
-        if ip_address in self._failures:
-            del self._failures[ip_address]
+                return {
+                    "total_ips_with_failures": len(ips),
+                    "total_failures_in_window": total_failures,
+                    "time_window_minutes": self.TIME_WINDOW_MINUTES,
+                    "threshold": self.FAILURE_THRESHOLD,
+                    "ips": ips
+                }
+        except Exception as e:
+            logger.error(f"Failed to get failure stats from Redis: {e}")
+            return {"error": str(e)}
 
-        if ip_address in self._last_alert:
-            del self._last_alert[ip_address]
+    async def clear_failures(self, ip_address: str) -> None:
+        """Clear failure records for an IP address in Redis."""
+        try:
+            redis = cache.redis
+            if redis is not None:
+                pipe = redis.pipeline()
+                pipe.delete(f"{self.FAILURE_KEY_PREFIX}{ip_address}")
+                pipe.delete(f"{self.ALERT_KEY_PREFIX}{ip_address}")
+                await pipe.execute()
+        except Exception as e:
+            logger.error(f"Failed to clear failures in Redis: {e}")
 
         logger.info(
             f"Cleared webhook verification failures for IP {ip_address}",
@@ -271,5 +267,5 @@ class WebhookSecurityMonitor:
         )
 
 
-# Global singleton instance
+# Global instance
 webhook_security_monitor = WebhookSecurityMonitor()

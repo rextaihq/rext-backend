@@ -13,7 +13,7 @@ import hmac
 import hashlib
 import json
 from typing import Dict, Any, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 
 from src.utils.logger import logger
 
@@ -160,7 +160,7 @@ def parse_webhook_payload(payload: bytes) -> Dict[str, Any]:
             "custom_data": meta.get("custom_data", {}),
             "data": data,
             "timestamp": datetime.fromisoformat(
-                meta.get("created_at", datetime.utcnow().isoformat())
+                meta.get("created_at", datetime.now(timezone.utc).isoformat())
             ),
             "test_mode": meta.get("test_mode", False),
             "raw_meta": meta,

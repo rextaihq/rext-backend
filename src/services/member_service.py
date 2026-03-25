@@ -18,7 +18,7 @@ Does NOT:
 
 from typing import Optional, List, Dict, Any
 from uuid import UUID
-from datetime import datetime
+from datetime import datetime,timezone
 
 from sqlalchemy import select, and_, func
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -44,26 +44,29 @@ class MemberService(InvitationService):
         Args:
             db: Async database session
         """
-        self.db = db
+        super().__init__(db)
 
     async def add_member(
         self,
         workspace_id: UUID,
         user_id: UUID,
+        role_id: Optional[UUID] = None,
         invitation_id: Optional[UUID] = None,
         status: str = "active"
     ) -> WorkspaceMembers:
         """
-        Add a member to a workspace.
+        Add a member to a workspace and assign a role.
 
         Business Rules:
         - Workspace must exist
         - User must not already be a member
-        - Status defaults to 'active' unless specified
+        - Every member MUST have a role in the workspace
+        - Defaults to 'viewer' role if no role_id provided
 
         Args:
             workspace_id: Workspace UUID
             user_id: User UUID to add
+            role_id: Optional Role UUID to assign
             invitation_id: Optional invitation UUID
             status: Member status (active/pending/inactive)
 
@@ -71,9 +74,12 @@ class MemberService(InvitationService):
             Created WorkspaceMembers object
 
         Raises:
-            ResourceNotFoundException: If workspace doesn't exist
+            ResourceNotFoundException: If workspace or role doesn't exist
             DuplicateResourceException: If user is already a member
         """
+        from src.api.models.user_models.roles import Role
+        from src.api.models.user_models.user_roles import UserRole
+
         # Verify workspace exists
         result = await self.db.execute(
             select(WorkspaceModel).where(WorkspaceModel.id == workspace_id)
@@ -103,24 +109,65 @@ class MemberService(InvitationService):
                 context={"workspace_id": str(workspace_id)}
             )
 
-        # Create new member
+        # Handle role assignment
+        if not role_id:
+            # Default to viewer role
+            result = await self.db.execute(
+                select(Role).where(Role.name == "viewer", Role.is_workspace_role == True)
+            )
+            role = result.scalar_one_or_none()
+            if not role:
+                # Fallback to any role named viewer if is_workspace_role flag is inconsistent
+                result = await self.db.execute(
+                    select(Role).where(func.lower(Role.name) == "viewer")
+                )
+                role = result.scalar_one_or_none()
+            
+            if not role:
+                logger.error("Default 'viewer' role not found in database")
+                raise ResourceNotFoundException(
+                    message="Default role 'viewer' not found. Roles must be seeded.",
+                    resource_type="role"
+                )
+            role_id = role.id
+
+        # Create new member record
         new_member = WorkspaceMembers(
             workspace_id=workspace_id,
             user_id=user_id,
             invitation_id=invitation_id,
             status=status,
-            joined_at=datetime.utcnow(),
-            last_activity_at=datetime.utcnow()
+            joined_at=datetime.now(timezone.utc),
+            last_activity_at=datetime.now(timezone.utc)
         )
         self.db.add(new_member)
+
+        # Create role assignment
+        # Check if they already have *any* role in this workspace to avoid duplicates
+        role_result = await self.db.execute(
+            select(UserRole).where(
+                UserRole.user_id == user_id,
+                UserRole.workspace_id == workspace_id
+            )
+        )
+        if not role_result.first():
+            user_role = UserRole(
+                user_id=user_id,
+                role_id=role_id,
+                workspace_id=workspace_id,
+                is_primary=True
+            )
+            self.db.add(user_role)
+
         await self.db.flush()
         await self.db.refresh(new_member)
 
         logger.info(
-            f"Member added to workspace: user={user_id}, workspace={workspace_id}",
+            f"Member added to workspace with role: user={user_id}, workspace={workspace_id}, role={role_id}",
             extra={
                 "user_id": str(user_id),
                 "workspace_id": str(workspace_id),
+                "role_id": str(role_id),
                 "status": status
             }
         )
@@ -174,8 +221,84 @@ class MemberService(InvitationService):
         return {
             "user_id": str(user_id),
             "workspace_id": str(workspace_id),
-            "removed_at": datetime.utcnow()
+            "removed_at": datetime.now(timezone.utc)
         }
+
+    async def get_workspace_member(
+        self,
+        workspace_id: UUID,
+        user_id: UUID
+    ) -> Dict[str, Any]:
+        """
+        Get a single workspace member with their role information.
+
+        Args:
+            workspace_id: Workspace UUID
+            user_id: User UUID
+
+        Returns:
+            Dict containing member data and workspace_role
+
+        Raises:
+            ResourceNotFoundException: If member not found in workspace
+        """
+        from src.api.models.user_models.user_roles import UserRole
+        from src.api.models.user_models.roles import Role
+
+        # Query the membership
+        result = await self.db.execute(
+            select(WorkspaceMembers).where(
+                and_(
+                    WorkspaceMembers.workspace_id == workspace_id,
+                    WorkspaceMembers.user_id == user_id
+                )
+            )
+        )
+        member = result.scalar_one_or_none()
+
+        if not member:
+            raise ResourceNotFoundException(
+                resource_type="WorkspaceMember",
+                resource_id=str(user_id),
+                context={"workspace_id": str(workspace_id)}
+            )
+
+        # Get the user's role in this workspace via UserRole join table
+        role_result = await self.db.execute(
+            select(Role)
+            .join(UserRole, UserRole.role_id == Role.id)
+            .where(
+                and_(
+                    UserRole.user_id == user_id,
+                    UserRole.workspace_id == workspace_id
+                )
+            )
+        )
+        role = role_result.scalar_one_or_none()
+
+        # Build the response dict matching the expected format
+        member_dict = member.to_dict()
+        
+        # Ensure role data is consistently structured
+        if role:
+            member_dict["workspace_role"] = {
+                "id": str(role.id),
+                "name": role.name,
+                "display_name": role.display_name
+            }
+        else:
+            member_dict["workspace_role"] = None
+
+        logger.debug(
+            f"Retrieved workspace member: user={user_id}, workspace={workspace_id}, role={role.name if role else 'none'}",
+            extra={
+                "user_id": str(user_id),
+                "workspace_id": str(workspace_id),
+                "has_role": role is not None
+            }
+        )
+
+        return member_dict
 
     async def get_workspace_members(
         self,
@@ -290,7 +413,7 @@ class MemberService(InvitationService):
             )
 
         member.status = status
-        member.last_activity_at = datetime.utcnow()
+        member.last_activity_at = datetime.now(timezone.utc)
 
         logger.info(
             f"Member status updated: user={user_id}, workspace={workspace_id}, status={status}",
@@ -322,18 +445,18 @@ class MemberService(InvitationService):
         Raises:
             ResourceNotFoundException: If member not found
         """
-        # Clear any existing default
-        result = await self.db.execute(
-            select(WorkspaceMembers).where(
+        # Bulk-clear any existing default
+        from sqlalchemy import update
+        await self.db.execute(
+            update(WorkspaceMembers)
+            .where(
                 and_(
                     WorkspaceMembers.user_id == user_id,
                     WorkspaceMembers.is_default == True
                 )
             )
+            .values(is_default=False)
         )
-        existing_defaults = result.scalars().all()
-        for default_member in existing_defaults:
-            default_member.is_default = False
 
         # Set new default
         result = await self.db.execute(
@@ -420,7 +543,7 @@ class MemberService(InvitationService):
                 context={"workspace_id": str(workspace_id)}
             )
 
-        member.last_activity_at = datetime.utcnow()
+        member.last_activity_at = datetime.now(timezone.utc)
 
         logger.debug(
             f"Member activity updated: user={user_id}, workspace={workspace_id}",
@@ -571,8 +694,8 @@ class MemberService(InvitationService):
             old_role = old_role_result.scalar_one_or_none()
 
         # Update or create user role
-        # Use utcnow() for timezone-naive datetime to match TIMESTAMP WITHOUT TIME ZONE column
-        timestamp = datetime.utcnow()
+        # Use timezone-aware datetime
+        timestamp = datetime.now(timezone.utc)
         if user_role:
             user_role.role_id = new_role_id
             user_role.assigned_by_user_id = assigned_by_user_id
@@ -622,8 +745,8 @@ class MemberService(InvitationService):
         for user_role in user_roles:
             await self.db.delete(user_role)
 
-        # ✅ Commit the changes
-        await self.db.commit()
+        # Flush to execute deletes within current transaction
+        await self.db.flush()
 
     async def get_workspace_members_with_users(
         self,
@@ -683,13 +806,19 @@ class MemberService(InvitationService):
         """
         from src.api.models.user_models.users import Users
         from src.api.models.user_models.roles import Role
+        from src.api.models.user_models.user_roles import UserRole
+        from src.utils.rbac_utils import ADMIN_HIERARCHY_THRESHOLD
 
         query = (
             select(WorkspaceMembers, Users)
             .join(Users, Users.id == WorkspaceMembers.user_id)
-            .join(Role, WorkspaceMembers.role_id == Role.id)
+            .join(UserRole, and_(
+                UserRole.user_id == WorkspaceMembers.user_id,
+                UserRole.workspace_id == workspace_id
+            ))
+            .join(Role, Role.id == UserRole.role_id)
             .where(WorkspaceMembers.workspace_id == workspace_id)
-            .where(Role.name.in_(["owner", "admin"]))
+            .where(Role.hierarchy_level >= 60) # 60 is workspace_owner
             .order_by(WorkspaceMembers.joined_at.asc())
         )
 

@@ -8,10 +8,9 @@ from src.api.schema.knowledge_schema import BrandSchema
 from src.api.security.dependencies import get_current_user
 from src.services.brand_voice_service import BrandVoiceService
 from src.services.workspace_service import WorkspaceService
-from src.utils.auth_utils import verify_current_user
 from src.utils.response_utils import success
 from src.utils.route_decorators import db_transaction_handler, require_permissions
-from src.utils.workspace_utils import resolve_and_verify_workspace
+from src.utils.workspace_utils import resolve_workspace_for_route
 
 router = APIRouter(tags=["workspace-brand-voice"])
 
@@ -41,13 +40,8 @@ async def _update_brand_voice(
     user: dict,
 ) -> dict:
     """Shared handler logic for brand voice upsert operations."""
+    workspace, _ = await resolve_workspace_for_route(db=db, workspace_identifier=workspace_identifier, user=user)
     user_id = UUID(str(user.get("identity")))
-
-    # Verify user exists (using auth_utils)
-    await verify_current_user(db, str(user_id))
-
-    # Resolve workspace identifier to UUID and ensure membership
-    workspace, _membership = await resolve_and_verify_workspace(db, workspace_identifier, user_id)
 
     service = BrandVoiceService(db)
     brand_voice = await service.upsert_brand_voice(
@@ -75,6 +69,72 @@ async def update_brand_voice_restful(
         brand_data=brand_data,
         workspace_identifier=workspace_id,
         user=user,
+    )
+
+
+@router.get("/{workspace_id}/brand-voice")
+@db_transaction_handler("get brand voice", "Brand voice retrieved successfully")
+@require_permissions("workspace.read", workspace_scoped=True)
+async def get_brand_voice(
+    workspace_id: str,
+    request: Request,
+    db: AsyncSession = Depends(get_async_db),
+    user: dict = Depends(get_current_user),
+):
+    """Retrieve brand voice for a workspace."""
+    user_id = UUID(str(user.get("identity")))
+    workspace_uuid = UUID(workspace_id)
+
+    service = BrandVoiceService(db)
+    brand_voice = await service.get_brand_voice(
+        workspace_id=workspace_uuid,
+        user_id=user_id,
+    )
+
+    if not brand_voice:
+        return success(
+            data={"brand_voice": None},
+            request=request,
+            message="Brand voice not configured for this workspace",
+        )
+
+    return success(
+        data={"brand_voice": _serialize_brand_voice(brand_voice)},
+        request=request,
+        message="Brand voice retrieved successfully",
+    )
+
+
+@router.delete("/{workspace_id}/brand-voice")
+@db_transaction_handler("delete brand voice", "Brand voice deleted successfully")
+@require_permissions("workspace.update", workspace_scoped=True)
+async def delete_brand_voice(
+    workspace_id: str,
+    request: Request,
+    db: AsyncSession = Depends(get_async_db),
+    user: dict = Depends(get_current_user),
+):
+    """Delete brand voice for a workspace."""
+    user_id = UUID(str(user.get("identity")))
+    workspace_uuid = UUID(workspace_id)
+
+    service = BrandVoiceService(db)
+    deleted = await service.delete_brand_voice(
+        workspace_id=workspace_uuid,
+        user_id=user_id,
+    )
+
+    if not deleted:
+        return success(
+            data={"deleted": False},
+            request=request,
+            message="No brand voice found to delete",
+        )
+
+    return success(
+        data={"deleted": True},
+        request=request,
+        message="Brand voice deleted successfully",
     )
 
 

@@ -5,17 +5,18 @@ Routes handle HTTP concerns and delegate business logic to RoleService.
 """
 
 from fastapi import APIRouter, Depends, Request, Query
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from uuid import UUID
 
 from src.api.database.async_database import get_async_db
+from src.api.models.workspace_models.workspace_model import WorkspaceModel
+from src.api.routes.roles.modules.helpers import check_role_permission
 from src.api.security.dependencies import get_current_user
 from src.api.schema.user_role_schema import AssignUserRoleRequest
 from src.services.role_service import RoleService
-from src.utils.response_utils import success
 from src.utils.route_decorators import db_transaction_handler, require_permissions
 from src.utils.logger import logger
-
 
 router = APIRouter()
 
@@ -59,29 +60,23 @@ async def assign_role_to_user(
     )
 
     # Get role details for response
-    role = await service._get_role_or_404(assignment_data.role_id)
+    role = await service.get_role_by_id(assignment_data.role_id)
 
     # Get workspace name if applicable
     workspace_name = None
     if assignment_data.workspace_id:
-        from sqlalchemy import select
-        from src.api.models.workspace_models.workspace_model import WorkspaceModel
         ws_result = await db.execute(
             select(WorkspaceModel).where(WorkspaceModel.id == assignment_data.workspace_id)
         )
         workspace = ws_result.scalar_one_or_none()
         workspace_name = workspace.name if workspace else None
 
-    return success(
-        data={
-            "assignment": user_role.to_dict(),
-            "role_name": role.name,
-            "role_display_name": role.display_name,
-            "workspace_name": workspace_name
-        },
-        request=request,
-        message=f"Role '{role.display_name}' assigned successfully"
-    )
+    return {
+        "assignment": user_role.to_dict(),
+        "role_name": role.name,
+        "role_display_name": role.display_name,
+        "workspace_name": workspace_name
+    }
 
 
 @router.delete("/{user_id}/roles/{role_id}")
@@ -111,7 +106,7 @@ async def revoke_role_from_user(
     service = RoleService(db)
 
     # Get role for response before revoking
-    role = await service._get_role_or_404(UUID(role_id))
+    role = await service.get_role_by_id(UUID(role_id))
 
     # Revoke role
     await service.revoke_role(
@@ -120,20 +115,48 @@ async def revoke_role_from_user(
         workspace_id=UUID(workspace_id) if workspace_id else None
     )
 
-    return success(
-        data={
-            "user_id": user_id,
-            "role_id": role_id,
-            "workspace_id": workspace_id,
-            "role_name": role.name
-        },
-        request=request,
-        message=f"Role '{role.display_name}' revoked successfully"
+    return {
+        "user_id": user_id,
+        "role_id": role_id,
+        "workspace_id": workspace_id,
+        "role_name": role.name
+    }
+
+
+@router.get("/me/roles")
+@require_permissions("role.read", workspace_scoped=False)
+@db_transaction_handler("get current user roles", auto_commit=False)
+async def get_current_user_roles(
+    request: Request,
+    workspace_id: str = Query(None, description="Optional workspace UUID filter"),
+    db: AsyncSession = Depends(get_async_db),
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Get roles for the current authenticated user.
+    
+    This is a convenience endpoint that doesn't require passing user_id.
+    
+    Query Parameters:
+    - workspace_id: Optional workspace UUID to filter roles
+    
+    Returns:
+    - List of current user's roles with details
+    """
+    user_id = current_user.get("identity")
+    service = RoleService(db)
+
+    roles_data = await service.get_user_roles(
+        user_id=UUID(user_id),
+        workspace_id=UUID(workspace_id) if workspace_id else None
     )
 
-
+    return {
+        "user_id": user_id,
+        "roles": roles_data,
+        "count": len(roles_data)
+    }
 @router.get("/{user_id}/roles")
-@require_permissions("role.read")
 @db_transaction_handler("list user roles", auto_commit=False)
 async def list_user_roles(
     request: Request,
@@ -145,21 +168,23 @@ async def list_user_roles(
     """
     List all roles assigned to a user.
 
-    Requires: user.read permission OR admin role OR requesting own roles
+    Authorization:
+    - Users can always view their own roles (no permission required).
+    - Viewing another user's roles requires 'user.read' permission or admin role.
 
     Parameters:
-    - user_id: UUID of the user
-    - workspace_id: Optional workspace UUID to filter roles
+    - user_id: UUID of the user whose roles to retrieve
+    - workspace_id: Optional workspace UUID to filter roles by workspace
 
     Returns:
     - List of user's roles with details
     """
+
     requester_id = current_user.get("identity")
     is_own_user = requester_id == user_id
 
-    # If not own user, check permissions
+    # Non-self requests require user.read permission or admin role
     if not is_own_user:
-        from src.api.routes.roles.modules.helpers import check_role_permission
         await check_role_permission(db, UUID(requester_id), "user.read")
 
     service = RoleService(db)
@@ -169,8 +194,7 @@ async def list_user_roles(
         workspace_id=UUID(workspace_id) if workspace_id else None
     )
 
-    return success(
-        data={"roles": roles_data, "count": len(roles_data)},
-        request=request,
-        message=f"Retrieved {len(roles_data)} role(s) for user"
-    )
+    return {
+        "roles": roles_data,
+        "count": len(roles_data)
+    }

@@ -20,7 +20,7 @@ Does NOT:
 
 from typing import List, Dict, Any, Optional
 from uuid import UUID
-from datetime import datetime, timedelta
+from datetime import datetime, timezone, timedelta,timezone
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_
@@ -90,7 +90,7 @@ class SecurityService:
 
         # Format response
         users_data = []
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
 
         for user in users:
             is_locked = bool(user.locked_until and user.locked_until > now)
@@ -134,7 +134,7 @@ class SecurityService:
         query = select(Users).where(Users.locked_until.isnot(None))
 
         if not include_expired:
-            query = query.where(Users.locked_until > datetime.utcnow())
+            query = query.where(Users.locked_until > datetime.now(timezone.utc))
 
         query = query.order_by(Users.locked_until.desc())
 
@@ -150,7 +150,7 @@ class SecurityService:
 
         # Format response
         locked_accounts = []
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
 
         for user in users:
             if user.locked_until:
@@ -196,7 +196,7 @@ class SecurityService:
         user = await self._get_user_or_404(user_id)
 
         # Check if account is actually locked
-        if not user.locked_until or user.locked_until <= datetime.utcnow():
+        if not user.locked_until or user.locked_until <= datetime.now(timezone.utc):
             raise RextValidationException(
                 message="Account is not currently locked",
                 field_errors={"user_id": ["Account not locked"]}
@@ -205,7 +205,7 @@ class SecurityService:
         # Unlock account
         user.locked_until = None
         user.failed_login_attempts = 0
-        user.updated_at = datetime.utcnow()
+        user.updated_at = datetime.now(timezone.utc)
 
         await self.db.flush()
         await self.db.refresh(user)
@@ -237,7 +237,7 @@ class SecurityService:
 
         # Reset counter
         user.failed_login_attempts = 0
-        user.updated_at = datetime.utcnow()
+        user.updated_at = datetime.now(timezone.utc)
 
         await self.db.flush()
         await self.db.refresh(user)
@@ -267,10 +267,11 @@ class SecurityService:
             - Account activity (registrations, verifications)
             - Top offenders by IP and user
         """
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         last_24h = now - timedelta(hours=24)
         last_7d = now - timedelta(days=7)
         last_30d = now - timedelta(days=30)
+        today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
 
         # Failed login stats from audit logs
         failed_logins_24h = await self._count_audit_logs(
@@ -293,9 +294,9 @@ class SecurityService:
 
         # Locked accounts
         currently_locked = await self._count_currently_locked()
-        locked_24h = await self._count_audit_logs(
+        locked_today = await self._count_audit_logs(
             action="user.lock",
-            since=last_24h
+            since=today_start
         )
 
         # Password security
@@ -310,7 +311,7 @@ class SecurityService:
         )
 
         # Account activity
-        new_registrations_24h = await self._count_new_users(since=last_24h)
+        new_registrations_today = await self._count_new_users(since=today_start)
         email_verifications_24h = await self._count_audit_logs(
             action="user.verify_email",
             since=last_24h
@@ -323,23 +324,43 @@ class SecurityService:
         top_failed_login_users = await self._get_top_failed_login_users(limit=10)
 
         return {
+            "failed_logins": {
+                "last_24h": failed_logins_24h,
+                "in_7_days": failed_logins_7d,
+                "in_30_days": failed_logins_30d
+            },
+            "locked_accounts": {
+                "currently": currently_locked,
+                "locked_today": locked_today
+            },
+            "password_activity": {
+                "resets": password_resets_24h,
+                "changes": password_changes_24h,
+                "last_24_hours": password_resets_24h + password_changes_24h
+            },
+            "new_accounts": {
+                "today": new_registrations_today,
+                "verified": email_verifications_24h
+            },
+            "top_failed_login_ips": top_failed_login_ips,
+            "top_failed_login_users": top_failed_login_users,
+            # Legacy fields for backward compatibility if needed
             "failed_logins_last_24h": failed_logins_24h,
             "failed_logins_last_7d": failed_logins_7d,
             "failed_logins_last_30d": failed_logins_30d,
             "currently_locked_accounts": currently_locked,
-            "locked_accounts_last_24h": locked_24h,
+            "locked_accounts_last_24h": locked_today,
             "password_resets_last_24h": password_resets_24h,
             "password_changes_last_24h": password_changes_24h,
-            "new_registrations_last_24h": new_registrations_24h,
-            "email_verifications_last_24h": email_verifications_24h,
-            "top_failed_login_ips": top_failed_login_ips,
-            "top_failed_login_users": top_failed_login_users
+            "new_registrations_last_24h": new_registrations_today,
+            "email_verifications_last_24h": email_verifications_24h
         }
 
     async def get_user_login_history(
         self,
         user_id: UUID,
-        limit: int = 50
+        limit: int = 50,
+        offset: int = 0
     ) -> Dict[str, Any]:
         """
         Get login history for a specific user.
@@ -347,22 +368,33 @@ class SecurityService:
         Args:
             user_id: User UUID
             limit: Number of recent login events (1-100)
+            offset: Pagination offset
 
         Returns:
-            Dict with user info and login history
+            Dict with user info, login history, and pagination info
 
         Raises:
             ResourceNotFoundException: If user not found
         """
+        from sqlalchemy import func
+
         # Get user
         user = await self._get_user_or_404(user_id)
 
-        # Get login events from audit log
+        # Build base query for login events
+        base_query = select(AuditLog).where(
+            AuditLog.user_id == user_id,
+            AuditLog.action.like("auth.login%")
+        )
+
+        # Get total count
+        count_query = select(func.count()).select_from(base_query.subquery())
+        total_result = await self.db.execute(count_query)
+        total_count = total_result.scalar() or 0
+
+        # Get paginated login events
         events_result = await self.db.execute(
-            select(AuditLog).where(
-                AuditLog.user_id == user_id,
-                AuditLog.action.like("auth.login%")
-            ).order_by(AuditLog.created_at.desc()).limit(limit)
+            base_query.order_by(AuditLog.created_at.desc()).offset(offset).limit(limit)
         )
         login_events = events_result.scalars().all()
 
@@ -382,7 +414,10 @@ class SecurityService:
             "full_name": user.full_name,
             "email": user.email,
             "login_history": login_history,
-            "total_events": len(login_history)
+            "total": total_count,
+            "limit": limit,
+            "offset": offset,
+            "has_more": (offset + limit) < total_count
         }
 
     # ========================================================================
@@ -464,7 +499,7 @@ class SecurityService:
         # Get user
         user = await self._get_user_or_404(user_id)
 
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         is_locked = bool(user.locked_until and user.locked_until > now)
 
         # Get last successful login from audit logs
@@ -537,7 +572,7 @@ class SecurityService:
         """
         from src.api.models.user_models.user_sessions import UserSession
 
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         query = select(func.count(UserSession.id)).where(
             and_(
                 UserSession.user_id == user_id,
@@ -563,7 +598,7 @@ class SecurityService:
         Returns:
             Count of locked accounts
         """
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         result = await self.db.execute(
             select(func.count(Users.id)).where(
                 Users.locked_until.isnot(None),

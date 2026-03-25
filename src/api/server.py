@@ -11,7 +11,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from dotenv import load_dotenv
-
+from src.api.tool.routes import router as tool_router
 # Local application imports
 from src.api.database.async_database import async_engine
 from src.api.middleware.request_tracker import RequestTrackerMiddleware
@@ -19,18 +19,22 @@ from src.api.middleware.error_handler import ErrorHandlerMiddleware, setup_excep
 from src.api.middleware.security import SecurityHeadersMiddleware
 from src.api.middleware.rate_limiter import RateLimiterMiddleware
 from src.config.payment_config import payment_settings
+from src.config.storage_config import storage_settings
 from src.tasks.scheduled_tasks import start_scheduled_tasks, shutdown_scheduled_tasks
 from src.api.cache.redis_client import cache
 from src.api.config import settings
 from src.utils.response_utils import success
 from src.api.database.base import Base
 from src.utils.logger import logger
-
+from src.api.tool.routes import router as tool_router
 # Structured logging
 from src.api.lib.logging_config import configure_logging, RequestIDMiddleware
 
 # Sentry error monitoring
 from src.api.lib.sentry_config import init_sentry
+
+from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
+
 
 load_dotenv()
 
@@ -52,7 +56,13 @@ async def lifespan(app):
         init_sentry(settings)
         logger.info("✅ Sentry initialized successfully")
     except Exception as e:
-        logger.warning(f"⚠️ Failed to initialize Sentry: {e}")
+        logger.warning(
+            "Failed to initialize Sentry",
+            exc_info=True,
+            extra={
+                "error": str(e),
+            }
+        )
 
     # --- Connect Redis cache ---
     try:
@@ -82,7 +92,13 @@ async def lifespan(app):
         start_scheduled_tasks()
         logger.info("✅ Scheduled tasks started")
     except Exception as e:
-        logger.warning(f"⚠️ Failed to start scheduled tasks: {e}")
+        logger.warning(
+            "Failed to start scheduled tasks",
+            exc_info=True,
+            extra={
+                "error": str(e),
+            }
+        )
 
     # --- Application is now ready ---
     logger.info("✅ Application startup complete. Ready to serve requests.")
@@ -95,7 +111,13 @@ async def lifespan(app):
         shutdown_scheduled_tasks()
         logger.info("✅ Scheduled tasks stopped")
     except Exception as e:
-        logger.warning(f"⚠️ Failed to stop scheduled tasks: {e}")
+        logger.warning(
+            "Failed to stop scheduled tasks",
+            exc_info=True,
+            extra={
+                "error": str(e),
+            }
+        )
 
     try:
         await cache.disconnect()
@@ -118,8 +140,19 @@ app = FastAPI(
 # ============================================================================
 # MIDDLEWARE CONFIGURATION
 # ============================================================================
+# NOTE: In Starlette/FastAPI, middleware added LAST is the OUTERMOST (processes
+# requests first). CORS must be outermost so preflight OPTIONS requests get
+# proper headers even if inner middleware returns early.
 
-# Request tracking middleware (first in chain)
+# Proxy headers middleware 
+app.add_middleware(
+    ProxyHeadersMiddleware,
+    trusted_hosts=settings.TRUSTED_PROXY_IPS.split(",")
+    if hasattr(settings, "TRUSTED_PROXY_IPS") and settings.TRUSTED_PROXY_IPS
+    else ["127.0.0.1", "::1"]
+)
+
+# Request tracking middleware
 app.add_middleware(
     RequestTrackerMiddleware,
     header_name="X-Request-ID",
@@ -144,17 +177,6 @@ app.add_middleware(
     max_error_details=10
 )
 
-# CORS middleware
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=settings.allowed_origins_list,
-    allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
-    allow_headers=["*"],
-    expose_headers=["X-Request-ID", "Content-Type"],
-    max_age=3600,
-)
-
 # Security headers middleware
 app.add_middleware(SecurityHeadersMiddleware)
 
@@ -165,6 +187,18 @@ app.add_middleware(
     requests_per_hour=settings.RATE_LIMIT_PER_HOUR,
     requests_per_day=settings.RATE_LIMIT_PER_DAY,
     enable=settings.RATE_LIMITING_ENABLED
+)
+
+# CORS middleware (MUST be added last = outermost, so it handles preflight
+# OPTIONS requests before any other middleware can intercept them)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.allowed_origins_list,
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+    allow_headers=settings.cors_allowed_headers_list,
+    expose_headers=["X-Request-ID", "Content-Type"],
+    max_age=3600,
 )
 
 # Setup global exception handlers
@@ -184,13 +218,11 @@ register_routes(app)
 # Mount media directory for serving uploaded files
 # This allows the frontend to access media files via URLs like:
 # http://localhost:2024/media/workspace-id/user-id/filename.jpg
-media_dir = os.path.join(os.getcwd(), "media")
-if not os.path.exists(media_dir):
-    os.makedirs(media_dir, exist_ok=True)
-    logger.info(f"Created media directory at: {media_dir}")
+media_dir = str(storage_settings.local_storage_path)
+os.makedirs(media_dir, exist_ok=True)
 
 app.mount("/media", StaticFiles(directory=media_dir), name="media")
-logger.info(f"Mounted media directory for static file serving: {media_dir}")
+logger.info("Mounted media directory for static file serving: %s", media_dir)
 
 # ============================================================================
 # ROOT ENDPOINTS
@@ -221,7 +253,7 @@ async def health_check(request: Request):
     Returns overall system health with detailed dependency checks.
     Returns 200 if healthy, 503 if degraded.
     """
-    from datetime import datetime
+    from datetime import datetime, timezone
     from fastapi.responses import JSONResponse
     from sqlalchemy import text
     import shutil
@@ -231,7 +263,7 @@ async def health_check(request: Request):
         "service": "rext-api",
         "version": "1.0.0",
         "environment": settings.ENVIRONMENT,
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
         "checks": {}
     }
 
@@ -286,11 +318,11 @@ async def liveness_check(request: Request):
     This endpoint should only fail if the application has crashed or is deadlocked.
     Kubernetes will restart the pod if this returns non-200.
     """
-    from datetime import datetime
+    from datetime import datetime, timezone
     return {
         "status": "alive",
         "service": "rext-api",
-        "timestamp": datetime.utcnow().isoformat()
+        "timestamp": datetime.now(timezone.utc).isoformat()
     }
 
 
@@ -303,14 +335,14 @@ async def readiness_check(request: Request):
     Returns 503 if dependencies are unavailable.
     Kubernetes will remove pod from load balancer if this returns non-200.
     """
-    from datetime import datetime
+    from datetime import datetime, timezone
     from fastapi.responses import JSONResponse
     from sqlalchemy import text
 
     status = {
         "status": "ready",
         "service": "rext-api",
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
         "checks": {}
     }
 

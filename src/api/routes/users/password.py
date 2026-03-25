@@ -2,27 +2,27 @@ from fastapi import APIRouter, Depends, Request, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
 from uuid import UUID
 import uuid
-import os
+
 
 from src.utils.logger import logger
 from src.api.security.dependencies import get_current_user
-from src.utils.route_decorators import require_permissions
+from src.utils.route_decorators import require_permissions, db_transaction_handler
 from src.api.config import get_settings
 from src.api.schema.user_schema import (
-    ResetPassword,
-    ForgotPasswordRequest,
-    ChangePasswordRequest
+    VerifyPasswordRequest
 )
-from src.api.security.token_utils import create_reset_token, verify_token
-from src.api.database.async_database import get_async_db
 from src.utils.response_utils import success, error
 from src.api.schema.response_schemas import ErrorCode, ErrorSeverity
+from src.api.security.token_utils import create_reset_token, decode_and_verify_token
+from src.api.database.async_database import get_async_db
 from src.api.middleware.exceptions import (
     ResourceNotFoundException,
-    RextValidationException
+    RextValidationException,
+    RextAuthenticationException
 )
 from src.services.user_service import UserService
 from src.api.middleware.rate_limiter import password_reset_rate_limit
+from src.api.schema.user_schema import ForgotPasswordRequest, ResetPassword,ChangePasswordRequest
 
 router = APIRouter()
 
@@ -67,6 +67,7 @@ async def send_password_reset_email_task(
 
 
 @router.post("/forgot-password")
+@db_transaction_handler("forgot password", auto_commit=True)
 async def forgot_password(
     request: Request,
     forgot_request: ForgotPasswordRequest,
@@ -77,22 +78,20 @@ async def forgot_password(
     """
     Initiate forgot password process.
     Sends password reset email with token.
+
+    SECURITY: Always returns the same response regardless of whether the email
+    exists to prevent user enumeration attacks (OWASP A07:2025).
     """
-    try:
-        logger.info(f"Forgot password request for: {forgot_request.email}")
-        service = UserService(db)
+    # Use a generic message for all responses
+    generic_message = "If an account with this email exists, a password reset link has been sent."
 
-        # Get user by email
-        user = await service.get_user_by_email(forgot_request.email)
-        if not user:
-            return error(
-                message="User with this email does not exist",
-                code=ErrorCode.RESOURCE_NOT_FOUND,
-                status_code=404,
-                severity=ErrorSeverity.MEDIUM,
-                request=request
-            )
+    # Log at debug level only — do not log the email at info level
+    logger.debug(f"Forgot password request received")
 
+    service = UserService(db)
+    user = await service.get_user_by_email(forgot_request.email)
+
+    if user:
         # Generate reset token
         reset_data = {
             "user_id": str(user.id),
@@ -107,7 +106,7 @@ async def forgot_password(
         # Get frontend URL
         frontend_url = settings.FRONTEND_URL
 
-        # Send email in background using professional template
+        # Send email in background
         background_tasks.add_task(
             send_password_reset_email_task,
             email=user.email,
@@ -116,20 +115,18 @@ async def forgot_password(
             user_id=str(user.id),
             frontend_url=frontend_url
         )
+        logger.info(f"Password reset initiated for user: {user.id}")
 
-        logger.info(f"Password reset email sent to: {user.email}")
-        return success(
-            data={"message": "Password reset link has been sent to your email."},
-            request=request,
-            message="Forgot password initiated successfully"
-        )
+    # Always return the same generic message
+    return {
+        "message": generic_message
+    }
 
-    except Exception as e:
-        logger.error(f"Forgot password error: {str(e)}")
-        raise
+    
 
 
 @router.post("/reset-password")
+@db_transaction_handler("reset password", auto_commit=True)
 async def reset_password(
     payload: ResetPassword,
     request: Request,
@@ -139,93 +136,86 @@ async def reset_password(
     """
     Reset user password using token from email.
     """
+    # Verify token validity first
+    # Verify token validity first
     try:
-        # Verify token validity first
-        try:
-            verify_token(payload.token)
-        except Exception as e:
-            logger.warning(f"Invalid reset token: {str(e)}")
-            return error(
-                message="Invalid or expired reset token",
-                code=ErrorCode.INVALID_INPUT,
-                status_code=400,
-                severity=ErrorSeverity.MEDIUM,
-                request=request
-            )
+        decode_and_verify_token(payload.token)
+    except Exception as e:
+        logger.warning(f"Invalid reset token: {str(e)}")
+        return error(
+            message="Invalid or expired reset token",
+            code=ErrorCode.INVALID_VALUE,
+            status_code=400,
+            severity=ErrorSeverity.MEDIUM,
+            request=request
+        )
 
-        # Reset password via service
-        service = UserService(db)
+    # Reset password via service
+    service = UserService(db)
+    try:
         user = await service.reset_password_with_token(
             reset_token=payload.token,
             new_password=payload.new_password
         )
 
-        # SECURITY: Revoke all sessions after password reset
-        # This prevents attackers from maintaining access if they had stolen sessions
-        from src.services.session_service import SessionService
-        session_service = SessionService(db)
-        await session_service.revoke_all_sessions(user.id)
+    except ResourceNotFoundException:
 
-        logger.info(f"Password reset successfully for user: {user.id}, all sessions revoked")
-        return success(
-            data={
-                "user_id": str(user.id),
-                "sessions_revoked": True
-            },
-            request=request,
-            message="Password updated successfully. Please login with your new password."
-        )
-
-    except ResourceNotFoundException as e:
         return error(
-            message=str(e),
-            code=ErrorCode.INVALID_INPUT,
+            message="Invalid or expired reset token",
+            code=ErrorCode.INVALID_VALUE,
             status_code=400,
             severity=ErrorSeverity.MEDIUM,
             request=request
         )
-    except Exception as e:
-        logger.error(f"Password reset error: {str(e)}")
-        raise
+
+    # SECURITY: Revoke all sessions after password reset
+    from src.services.session_service import SessionService
+    session_service = SessionService(db)
+    await session_service.revoke_all_sessions(user.id)
+
+    logger.info(f"Password reset successfully for user: {user.id}, all sessions revoked")
+    return success(
+        data={
+            "user_id": str(user.id),
+            "sessions_revoked": True
+        },
+        request=request,
+        message="Password updated successfully. Please login with your new password."
+    )
 
 
 @router.post("/change-password")
-@require_permissions("user.update")
+@require_permissions("user.update", workspace_scoped=False)
+@db_transaction_handler("change password", auto_commit=True)
 async def change_password(
     request: Request,
     password_data: ChangePasswordRequest,
     current_user: dict = Depends(get_current_user),
-    db: AsyncSession = Depends(get_async_db)
+    db: AsyncSession = Depends(get_async_db),
+    _rate_limit: None = Depends(password_reset_rate_limit())
+
 ):
     """
     Change user password (requires authentication).
-    Thin controller - uses UserService for all business logic.
-
-    - **current_password**: Current password for verification
-    - **new_password**: New password (min 8 characters)
-    - **confirm_password**: Confirmation of new password
     """
     try:
         user_id = UUID(current_user.get("identity"))
         service = UserService(db)
 
-        # Change password via service (handles all validation)
+        # Change password via service
         user = await service.change_password(
             user_id=user_id,
             current_password=password_data.current_password,
             new_password=password_data.new_password
         )
 
-        # SECURITY: Revoke all other sessions when password changes
-        # This forces users to re-login on all devices, preventing stolen sessions
+        # SECURITY: Revoke all other sessions
         from src.services.session_service import SessionService
         session_service = SessionService(db)
         await session_service.revoke_all_sessions(user_id)
 
-        # Send password changed confirmation email
+        # Send confirmation email
         from src.services.email_helpers import send_auth_email
-        from datetime import datetime
-
         try:
             await send_auth_email(
                 db=db,
@@ -240,15 +230,14 @@ async def change_password(
             )
             logger.info(f"Password changed email sent to {user.email}")
         except Exception as e:
-            # Don't fail the password change if email fails
-            logger.error(f"Failed to send password changed email: {str(e)}", exc_info=True)
+            logger.error(f"Failed to send password changed email: {str(e)}")
 
         logger.info(f"Password changed successfully for user: {user_id}, all sessions revoked")
         return success(
             data={
                 "user_id": str(user.id),
                 "password_changed_at": user.password_changed_at.isoformat(),
-                "sessions_revoked": True  # Inform frontend that re-login is needed
+                "sessions_revoked": True
             },
             request=request,
             message="Password changed successfully. Please login again on all devices."
@@ -263,55 +252,43 @@ async def change_password(
             request=request
         )
     except RextValidationException as e:
-        # Service returns validation errors for incorrect password
         logger.warning(f"Password change validation error for user {current_user.get('identity')}: {e.message}")
         return error(
             message=e.message,
-            code=ErrorCode.INVALID_INPUT,
+            code=ErrorCode.INVALID_VALUE,
             status_code=400,
             severity=ErrorSeverity.LOW,
             context={"details": e.details} if e.details else None,
             request=request
         )
-    except Exception as e:
-        logger.error(f"Error changing password: {str(e)}")
-        raise
 
 
 # -------------------------
 # Verify Password
 # -------------------------
 @router.post("/verify-password")
-@require_permissions("user.read")
+@require_permissions("user.read", workspace_scoped=False)
+@db_transaction_handler("verify password", auto_commit=False)
 async def verify_password(
-    request: Request,
+    password_data: VerifyPasswordRequest,  # CHANGED: Added Pydantic schema parameter
+    request: Request,  # CHANGED: Moved to second position
     db: AsyncSession = Depends(get_async_db),
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
+    _rate_limit: None = Depends(password_reset_rate_limit())
+
 ):
     """
     Verify user's current password.
-    
-    Used for confirming sensitive operations like workspace deletion.
-    
-    Body:
-        {
-          "password": "user's current password"
-        }
-    
-    Returns:
-        200: Password is correct
-        400: Password is incorrect
     """
     try:
         user_id = UUID(current_user.get("identity"))
-        body = await request.json()
-        password = body.get("password")
+        password = password_data.password
 
         if not password:
             return error(
                 message="Password is required",
                 request=request,
-                code=ErrorCode.VALIDATION_ERROR,
+                code=ErrorCode.VALIDATION_FAILED,
                 status_code=400,
                 severity=ErrorSeverity.MEDIUM
             )
@@ -324,7 +301,7 @@ async def verify_password(
             return error(
                 message="Invalid password",
                 request=request,
-                code=ErrorCode.AUTHENTICATION_FAILED,
+                code=ErrorCode.UNAUTHORIZED,
                 status_code=401,
                 severity=ErrorSeverity.MEDIUM
             )
@@ -339,7 +316,7 @@ async def verify_password(
         return error(
             message="User not found",
             request=request,
-            code=ErrorCode.NOT_FOUND,
+            code=ErrorCode.RESOURCE_NOT_FOUND,
             status_code=404,
             severity=ErrorSeverity.HIGH
         )

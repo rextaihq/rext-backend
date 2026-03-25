@@ -103,7 +103,7 @@ async def test_upsert_brand_voice_creates_new_record():
         target_audience=["Startups", "SMBs"],
         brand_voice=["Warm", "Storytelling"],
         competitors=["Competitor A"],
-        content_pillar=["Education", "Enablement"],
+        content_strategy=["Education", "Enablement"],
     )
 
     brand_voice = await service.upsert_brand_voice(
@@ -117,7 +117,7 @@ async def test_upsert_brand_voice_creates_new_record():
     assert brand_voice.workspace_id == workspace_id
     assert brand_voice.about == payload.about
     assert brand_voice.brand_voice == payload.brand_voice
-    assert brand_voice.content_strategy == payload.content_pillar
+    assert brand_voice.content_strategy == payload.content_strategy 
 
 
 @pytest.mark.asyncio
@@ -149,7 +149,7 @@ async def test_upsert_brand_voice_updates_existing_record():
         target_audience=["Marketing teams"],
         brand_voice=["Friendly", "Conversational"],
         competitors=["New competitor"],
-        content_pillar=["How-to", "Guides"],
+        content_strategy=["How-to", "Guides"],
     )
 
     updated = await service.upsert_brand_voice(
@@ -160,7 +160,7 @@ async def test_upsert_brand_voice_updates_existing_record():
 
     assert updated.about == payload.about
     assert updated.brand_voice == payload.brand_voice
-    assert updated.content_strategy == payload.content_pillar
+    assert updated.content_strategy == payload.content_strategy
     mock_db.flush.assert_awaited_once()
 
 
@@ -174,3 +174,42 @@ async def test_verify_workspace_membership_raises_when_not_member():
 
     with pytest.raises(RextAuthenticationException):
         await service._verify_workspace_membership(uuid4(), uuid4())
+@pytest.mark.asyncio
+async def test_delete_brand_voice_success():
+    """delete_brand_voice should return True when record is deleted."""
+    mock_db = AsyncMock()
+    service = BrandVoiceService(mock_db)
+    workspace_id = uuid4()
+    user_id = uuid4()
+
+    service._verify_workspace_membership = AsyncMock()
+    
+    # Mock delete result
+    mock_result = MagicMock()
+    mock_result.rowcount = 1
+    mock_db.execute.return_value = mock_result
+
+    result = await service.delete_brand_voice(workspace_id, user_id)
+
+    assert result is True
+    service._verify_workspace_membership.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_delete_brand_voice_not_found():
+    """delete_brand_voice should return False when no record exists."""
+    mock_db = AsyncMock()
+    service = BrandVoiceService(mock_db)
+    workspace_id = uuid4()
+    user_id = uuid4()
+
+    service._verify_workspace_membership = AsyncMock()
+    
+    # Mock delete result
+    mock_result = MagicMock()
+    mock_result.rowcount = 0
+    mock_db.execute.return_value = mock_result
+
+    result = await service.delete_brand_voice(workspace_id, user_id)
+
+    assert result is False

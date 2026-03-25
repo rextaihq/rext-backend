@@ -18,7 +18,7 @@ Does NOT:
 
 from typing import List, Dict, Any, Union
 from uuid import UUID
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -54,7 +54,7 @@ class SessionService:
         result = await self.db.execute(
             select(UserSession).where(
                 UserSession.user_id == user_id,
-                UserSession.is_active == True
+                UserSession.is_active.is_(True)
             ).order_by(UserSession.created_at.desc())
         )
         sessions = result.scalars().all()
@@ -114,13 +114,13 @@ class SessionService:
                 message="Session not found or does not belong to user"
             )
 
-        # Blacklist token
+        # Blacklist token 
         if session.jti:
             blacklist_entry = TokenBlacklist(
                 jti=session.jti,
                 token_type="access",
                 user_id=user_id,
-                revoked_at=datetime.utcnow(),
+                revoked_at=datetime.now(timezone.utc),
                 expires_at=self._normalize_expiry(session.expires_at),
                 reason="session_revoked"
             )
@@ -128,7 +128,7 @@ class SessionService:
 
         # Deactivate session
         session.is_active = False
-        session.revoked_at = datetime.utcnow()
+        session.revoked_at = datetime.now(timezone.utc)
 
         await self.db.flush()
 
@@ -167,7 +167,7 @@ class SessionService:
         # Get all active sessions
         query = select(UserSession).where(
             UserSession.user_id == user_id,
-            UserSession.is_active == True
+            UserSession.is_active.is_(True)
         )
 
         if exclude_session_id:
@@ -179,7 +179,7 @@ class SessionService:
         sessions = result.scalars().all()
 
         revoked_count = 0
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
 
         for session in sessions:
             # Blacklist token
@@ -214,5 +214,5 @@ class SessionService:
         if isinstance(expires_at, datetime):
             return expires_at
         if isinstance(expires_at, (int, float)):
-            return datetime.utcfromtimestamp(expires_at)
-        return datetime.utcnow()
+            return datetime.fromtimestamp(expires_at, tz=timezone.utc)
+        return datetime.now(timezone.utc)

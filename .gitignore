@@ -10,8 +10,10 @@ wheels/
 .env.production
 
 # Virtual environments
+test2/
 uploads/
 secrets/
+tasks/
 .venv
 vector_store/
 .langgraph_api
