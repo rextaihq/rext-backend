@@ -31,11 +31,18 @@ class LinkSuggestion(BaseModel):
     )
 
 
+class Fact(BaseModel):
+    """Verifiable fact or statistic with source citation context."""
+    
+    text: str = Field(description="The factual statement or statistic.")
+    source_url: Optional[str] = Field(description="Direct URL to the source of this fact for verification and linking.")
+
+
 class Section(BaseModel):
     heading: str = Field(description="Section heading text.")
     heading_level: Literal["H2", "H3"] = Field(description="Heading level.")
     description: str = Field(description="What this section will cover.")
-    key_points: conlist(str, min_length=2, max_length=4)
+    key_points: conlist(str, min_length=2, max_length=6)
     questions_to_answer: Optional[List[str]] = Field(
         description="PAA or user questions to answer in this section."
     )
@@ -45,6 +52,10 @@ class Section(BaseModel):
     include_keyphrase_in_heading: bool = Field(
         default=False,
         description="Whether this heading should include the focus keyphrase or a variant."
+    )
+    facts: Optional[List[Fact]] = Field(
+        default=[],
+        description="Verifiable facts, statistics, or data points with sources to include in this section."
     )
 
 
@@ -64,6 +75,10 @@ class Outline(BaseModel):
     # Structure
     sections: conlist(Section, min_length=4, max_length=8)
     faqs: Optional[List[str]] = Field(description="FAQ questions for schema.")
+    key_facts: Optional[List[Fact]] = Field(
+        default=[],
+        description="Key verifiable facts or statistics with sources to be used throughout the article."
+    )
     
     # Images Planning
     image_suggestions: List[ImageSuggestion] = Field(

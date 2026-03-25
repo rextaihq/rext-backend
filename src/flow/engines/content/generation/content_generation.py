@@ -1,37 +1,39 @@
 """
-Pure Content Generation Node
+Content Generation Node (Agent-Based)
 
-This module generates SEO-optimized content without E-E-A-T signals.
-E-E-A-T injection and humanization are handled in separate nodes.
+Generates SEO-optimized content using the content agent.
+Streams tokens and tool calls to the frontend via LangGraph's custom stream
+so the user sees the agent work in real time (like GPT).
 """
 
 import logging
 import json
+from langchain_core.messages import HumanMessage, AIMessage
+from langgraph.config import get_stream_writer
 from src.flow.states.rext import REXT
-from src.flow.model.llm_manager import load_content_model
+from src.flow.engines.agent.content_agent import create_content_agent
 from src.flow.model.structure.content import GeneratedContent
-from src.flow.prompts.human.content import get_content_prompt
 
 logger = logging.getLogger(__name__)
 
 
 async def generate_content(state: REXT) -> dict:
     """
-    Generates SEO-optimized content using an LLM.
-    
-    This node focuses on pure content generation based on outline and context.
-    E-E-A-T signals and humanization are applied in subsequent nodes.
-    
+    Generates SEO-optimized content using the content agent.
+
+    The agent can invoke tools (e.g. DuckDuckGo web search) to verify facts
+    and statistics before producing the final structured output.
+
     Args:
         state: REXT state containing outline and context
-    
+
     Returns:
         dict: Updated state with generated content
     """
+    content_state = state.get("content", {})
+
     try:
         # 1️⃣ Get content state, topic, and content type
-        payload = state.get("serp_payload", {})
-        content_state = state.get("content", {})
         topic = content_state.get("selected_topic", "")
         content_type = content_state.get("content_type", "article")
 
@@ -54,24 +56,26 @@ async def generate_content(state: REXT) -> dict:
         logger.info(f"Outline extracted: {outline_str[:20]}...")
 
         # 2️⃣ Prepare Reference Content (If any)
-        # We are skipping semantic search for now as per requirements
         page_content = ""
         meta_data = {}
 
-
         # 3️⃣ Get primary keyword from outline
-        primary_keyword = outline.get("keywords_to_include", [""])[0] if outline.get("keywords_to_include") else topic
+        primary_keyword = (
+            outline.get("keywords_to_include", [""])[0]
+            if outline.get("keywords_to_include")
+            else topic
+        )
 
         # 4️⃣ Extract SEO & SERP Insights (CRITICAL)
         seo_result = state.get("seo_result", {})
         serp_backlinks = seo_result.get("serp_backlinks", {})
         serp_normalized = state.get("serp_normalized", {})
-        
+
         # SEO Metrics
         backlink_volume = serp_backlinks.get("backlinks", 0)
         referring_domains = serp_backlinks.get("referring_domains", 0)
         intent = serp_backlinks.get("main_intent", "Informational")
-        
+
         # SERP Data
         top_results = serp_normalized.get("normalize_results", [])[:5]
         questions = serp_normalized.get("questions", [])
@@ -80,8 +84,10 @@ async def generate_content(state: REXT) -> dict:
         # Format Competitor & SEO Insights
         competitor_list = []
         for res in top_results:
-            competitor_list.append(f"- {res['title']} (Position {res['position']}): {res['snippet']}")
-        
+            competitor_list.append(
+                f"- {res['title']} (Position {res['position']}): {res['snippet']}"
+            )
+
         serp_insights = "\n".join(competitor_list)
         seo_signals = (
             f"SEO SIGNALS:\n"
@@ -91,48 +97,217 @@ async def generate_content(state: REXT) -> dict:
             f"- People Also Ask (Questions): {', '.join(questions[:5])}\n"
             f"- Related SEO Topics: {', '.join(related_topics[:10])}"
         )
-        
-        competitor_insights = f"TOP SERP COMPETITORS:\n{serp_insights}\n\n{seo_signals}"
+
+        competitor_insights = (
+            f"TOP SERP COMPETITORS:\n{serp_insights}\n\n{seo_signals}"
+        )
 
         # 5️⃣ Extract Tone & Metadata
         tone = outline.get("tone", "Professional")
+        target_word_count = outline.get("target_word_count", 1500)
         logger.info(f"Tone: {tone}")
 
-        # Prepare prompt data
-        prompt_data = {
-            "content_type": content_type,
-            "topic": topic,
-            "outline": outline_str,
-            "reference_text": page_content,
-            "meta_data": meta_data,
-            "primary_keyword": primary_keyword,
-            "competitor_insights": competitor_insights,
-            "target_word_count": outline.get("target_word_count", 1500),
-            "tone": tone,
-        }
+        # 6️⃣ Build the human message for the agent
+        # (system prompt is already embedded in the agent via CONTENT_SYSTEM_PROMPT)
+        human_message_content = (
+            f"Content Type: {content_type}\n"
+            f"Topic: {topic}\n\n"
+            f"Primary Keyword: {primary_keyword}\n"
+            f"Target Word Count: {target_word_count} words (minimum)\n\n"
+            f"COMPETITIVE LANDSCAPE:\n"
+            f"{competitor_insights}\n"
+            f"- Go deeper than these competitors\n"
+            f"- Cover gaps they missed\n"
+            f"- Offer a unique angle/perspective\n\n"
+            f"Approved Outline:\n{outline_str}\n\n"
+            f"Reference / Source Content:\n{page_content}\n\n"
+            f"Meta_data:\n{meta_data}\n\n"
+            f"Tone:\n{tone}\n\n"
+            f"Generate complete SEO-optimized content following the outline.\n"
+            f"Ensure you incorporate all facts and statistics mentioned in the outline.\n"
+            f"Populate the 'facts' field in the output JSON with objects containing "
+            f"'text' and 'source_url' for each key verifiable fact or statistic you "
+            f"included in the content. For 'source_url', use the one from the outline "
+            f"or find a direct link to the data source.\n"
+            f"Ensure you outperform the competitors listed above."
+        )
 
-        # 6️⃣ Load model and prepare messages
-        content_model = load_content_model().with_structured_output(GeneratedContent)
-        messages = get_content_prompt().format_messages(**prompt_data)
-        logger.info(f"Number of messages sent to LLM: {len(messages)}")
+        # 7️⃣ Create the content agent
+        logger.info("Creating content agent...")
+        agent = await create_content_agent()
+        agent_input = {"messages": [HumanMessage(content=human_message_content)]}
 
-        # Invoke LLM
-        logger.info("Invoking LLM for content generation...")
-        generated_content = await content_model.ainvoke(messages)
-        content_dict = generated_content.model_dump()
+        # 8️⃣ Stream agent events → forward tokens & tool calls to frontend
+        write = get_stream_writer()
+        final_messages = []
+        structured_output = None  # GeneratedContent Pydantic object if agent returns one
 
-        logger.info(f"Content generated successfully. Word count: {content_dict.get('word_count', 0)}")
+        # The schema name used by ToolStrategy for the artificial structured-output tool
+        _STRUCTURED_OUTPUT_TOOL_NAME = GeneratedContent.__name__  # "GeneratedContent"
+
+        # Track the agent's root run_id from the very first on_chain_start.
+        # When called from inside a LangGraph node the outer graph may inject parent_ids
+        # into all inner events — so we cannot rely on `not event.get("parent_ids")`.
+        # Instead we match the root completion by run_id.
+        agent_root_run_id: str | None = None
+
+        async for event in agent.astream_events(agent_input, version="v2"):
+            kind = event["event"]
+            tool_name = event.get("name", "")
+            event_run_id = event.get("run_id", "")
+
+            # Capture the root run_id from the very first chain-start event
+            if kind == "on_chain_start" and agent_root_run_id is None:
+                agent_root_run_id = event_run_id
+
+            # Token-by-token LLM output
+            elif kind == "on_chat_model_stream":
+                chunk = event["data"].get("chunk")
+                if chunk:
+                    raw = chunk.content
+                    if isinstance(raw, str):
+                        token = raw
+                    elif isinstance(raw, list):
+                        token = "".join(
+                            p.get("text", "")
+                            for p in raw
+                            if isinstance(p, dict) and p.get("type") == "text"
+                        )
+                    else:
+                        token = ""
+                    if token:
+                        write({"type": "token", "content": token})
+
+            # on_chat_model_end: ToolStrategy never invokes the fake GeneratedContent tool —
+            # it parses args directly inside the model node. So on_tool_start never fires
+            # for it. The structured content is in data.output.tool_calls[].args here.
+            elif kind == "on_chat_model_end":
+                output_msg = event["data"].get("output")
+                if output_msg is not None and hasattr(output_msg, "tool_calls"):
+                    for tc in output_msg.tool_calls:
+                        if tc.get("name") == _STRUCTURED_OUTPUT_TOOL_NAME:
+                            try:
+                                structured_output = GeneratedContent(**tc["args"])
+                                logger.debug("Captured GeneratedContent from on_chat_model_end")
+                            except Exception as e:
+                                logger.warning(
+                                    "GeneratedContent parse failed: %s | arg keys: %s",
+                                    e, list(tc.get("args", {}).keys())
+                                )
+
+            # Real tool call started — stream to frontend (skip the fake structured-output tool)
+            elif kind == "on_tool_start" and tool_name != _STRUCTURED_OUTPUT_TOOL_NAME:
+                tool_input = event["data"].get("input")
+                logger.info("on_tool_start: name=%s input_type=%s input=%r", tool_name, type(tool_input).__name__, tool_input)
+                if isinstance(tool_input, str):
+                    query = tool_input
+                elif isinstance(tool_input, dict):
+                    # Walk all string values; pick the longest one (most likely the actual query)
+                    str_vals = [str(v) for v in tool_input.values() if v and str(v).strip()]
+                    query = max(str_vals, key=len) if str_vals else ""
+                else:
+                    query = str(tool_input) if tool_input else ""
+                write({
+                    "type": "tool_start",
+                    "id": event_run_id,
+                    "name": tool_name,
+                    "query": query,
+                })
+
+            # Real tool call finished — stream results to frontend
+            elif kind == "on_tool_end" and tool_name != _STRUCTURED_OUTPUT_TOOL_NAME:
+                raw_output = event["data"].get("output", "")
+                logger.info("on_tool_end: name=%s output_type=%s", tool_name, type(raw_output).__name__)
+
+                # Normalise to a list of result dicts regardless of output format
+                results = []
+                if isinstance(raw_output, list):
+                    results = raw_output
+                elif hasattr(raw_output, "content"):
+                    try:
+                        parsed = json.loads(raw_output.content)
+                        results = parsed if isinstance(parsed, list) else [parsed]
+                    except Exception:
+                        results = [{"body": str(raw_output.content)[:360]}]
+                elif isinstance(raw_output, str):
+                    try:
+                        parsed = json.loads(raw_output)
+                        results = parsed if isinstance(parsed, list) else [parsed]
+                    except Exception:
+                        results = [{"body": raw_output[:360]}]
+                elif isinstance(raw_output, dict):
+                    results = [raw_output]
+
+                count = len(results)
+                lines = []
+                for item in results[:3]:
+                    if isinstance(item, dict):
+                        title = item.get("title", "")
+                        body = item.get("body", item.get("snippet", item.get("content", "")))
+                        if title:
+                            lines.append(f"• {title}: {str(body)[:120]}")
+                        elif body:
+                            lines.append(f"• {str(body)[:120]}")
+                    elif isinstance(item, str):
+                        lines.append(f"• {item[:120]}")
+                snippet = "\n".join(lines) if lines else (str(raw_output)[:360] if raw_output else "")
+
+                write({
+                    "type": "tool_end",
+                    "id": event_run_id,
+                    "count": count,
+                    "output": snippet,
+                })
+
+            # Graph completion — check every on_chain_end for the structured_response key.
+            # Fallback: if on_tool_start missed it, try on_chain_end state dict
+            elif kind == "on_chain_end" and structured_output is None:
+                out = event["data"].get("output", {})
+                if isinstance(out, GeneratedContent):
+                    structured_output = out
+                elif isinstance(out, dict):
+                    sr = out.get("structured_response")
+                    if isinstance(sr, GeneratedContent):
+                        structured_output = sr
+                    elif isinstance(sr, dict) and sr:
+                        try:
+                            structured_output = GeneratedContent(**sr)
+                        except Exception:
+                            pass
+                    if "messages" in out and not final_messages:
+                        final_messages = out["messages"]
+
+        # 9️⃣ Extract structured content from the agent output
+        content_dict = None
+
+        if structured_output is not None:
+            content_dict = structured_output.model_dump()
+        else:
+            # Last-resort fallback: parse JSON from the last AIMessage
+            for msg in reversed(final_messages):
+                if isinstance(msg, AIMessage) and msg.content:
+                    try:
+                        content_dict = json.loads(msg.content)
+                        break
+                    except (json.JSONDecodeError, TypeError):
+                        continue
+
+        if not content_dict:
+            raise ValueError("Content agent returned no structured output")
+
+        logger.info(f"Content generated successfully: {content_dict.get('title', '')}")
 
         # Return structured content
         return {
             "content": {
+                **content_state,
                 "outline": outline,
                 "final_content": {
                     **content_dict,
                     "status": "generated",
-                    "rejected_reason": ""
+                    "rejected_reason": "",
                 },
-                "status": "content_generated"
+                "status": "content_generated",
             }
         }
 
@@ -141,6 +316,6 @@ async def generate_content(state: REXT) -> dict:
         return {
             "content": {
                 **content_state,
-                "error": f"Generation failed: {str(e)}"
+                "error": f"Generation failed: {str(e)}",
             }
         }

@@ -1,7 +1,7 @@
 from typing import List, Optional
-from typing import List, Optional
 import logging
 from pydantic import BaseModel, Field, model_validator
+from src.flow.model.structure.outline import Fact
 
 logger = logging.getLogger(__name__)
 
@@ -119,6 +119,11 @@ class GeneratedContent(BaseModel):
     # Schema Markup
     schema_markup: SchemaMarkup = Field(
         description="Structured data/schema markup for the article."
+    )
+
+    facts: List[Fact] = Field(
+        default=[],
+        description="List of key verifiable facts or statistics with source URLs included in the content."
     )
 
 
