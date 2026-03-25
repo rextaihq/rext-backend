@@ -870,10 +870,12 @@ class SubscriptionService:
         Returns:
             UserSubscription object or None
         """
-        # Use CASE statement to prioritize ACTIVE (1) over TRIAL (0)
+        # Use CASE statement to prioritize: ACTIVE(3) > TRIAL(2) > PAST_DUE(1) > PAUSED(0)
         from sqlalchemy import case
         priority = case(
-            (UserSubscription.status == SubscriptionStatus.ACTIVE, 1),
+            (UserSubscription.status == SubscriptionStatus.ACTIVE, 3),
+            (UserSubscription.status == SubscriptionStatus.TRIAL, 2),
+            (UserSubscription.status == SubscriptionStatus.PAST_DUE, 1),
             else_=0
         )
 
@@ -882,14 +884,19 @@ class SubscriptionService:
                 selectinload(UserSubscription.plan)
             ).where(
                 UserSubscription.user_id == user_id,
-                UserSubscription.status.in_([SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIAL])
+                UserSubscription.status.in_([
+                    SubscriptionStatus.ACTIVE,
+                    SubscriptionStatus.TRIAL,
+                    SubscriptionStatus.PAST_DUE,
+                    SubscriptionStatus.PAUSED,
+                ])
             ).order_by(
-                # Prioritize ACTIVE (1) over TRIAL (0), then most recent
                 priority.desc(),
                 UserSubscription.created_at.desc()
             ).limit(1)
         )
         return result.scalar_one_or_none()
+
 
     async def get_plan_by_id(self, plan_id: UUID) -> SubscriptionPlan:
         """

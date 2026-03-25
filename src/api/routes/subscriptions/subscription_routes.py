@@ -171,11 +171,39 @@ async def get_my_subscription(
     subscription = await service.get_subscription_by_user(user_id)
 
     if not subscription:
+        # Race-condition guard: Check if checkout was completed but webhook hasn't been
+        # processed yet. LemonSqueezy sets provider_customer_id on the user when checkout
+        # completes, but the subscription record is created asynchronously via webhook.
+        # A real customer ID does NOT start with "temp_".
+        from sqlalchemy import select as sa_select
+        user_result = await db.execute(
+            sa_select(Users.provider_customer_id).where(Users.id == user_id)
+        )
+        provider_customer_id = user_result.scalar_one_or_none()
+
+        if provider_customer_id and not provider_customer_id.startswith("temp_"):
+            # Checkout completed, waiting for webhook to create subscription record
+            logger.info(
+                f"User {user_id} has provider_customer_id but no subscription yet — returning pending state",
+                extra={"user_id": str(user_id), "provider_customer_id": provider_customer_id}
+            )
+            return success(
+                data={
+                    "subscription": {
+                        "status": "pending",
+                        "message": "Your subscription is being activated. This usually takes a few seconds.",
+                    }
+                },
+                request=request,
+                message="Subscription activation in progress"
+            )
+
         return success(
             data={"subscription": None},
             request=request,
             message="No active subscription found"
         )
+
 
     # Get plan details
     plan = await service.get_plan_by_id(subscription.plan_id)
