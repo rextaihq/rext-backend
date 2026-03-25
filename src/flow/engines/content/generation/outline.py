@@ -69,7 +69,9 @@ async def generate_outline(state: REXT) -> dict:
 
     # 3. Generate outline
     try:
-        outline_model = load_model(max_tokens=DEFAULT_MAX_TOKENS).with_structured_output(Outline)
+        outline_model = load_model(max_tokens=DEFAULT_MAX_TOKENS).with_structured_output(
+            Outline
+        )
         prompt_template = get_outline_prompt()
 
         messages = prompt_template.format_messages(

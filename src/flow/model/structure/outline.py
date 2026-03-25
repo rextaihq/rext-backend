@@ -42,7 +42,7 @@ class Section(BaseModel):
     heading: str = Field(description="Section heading text.")
     heading_level: Literal["H2", "H3"] = Field(description="Heading level.")
     description: str = Field(description="What this section will cover.")
-    key_points: conlist(str, min_length=2, max_length=4)
+    key_points: conlist(str, min_length=2, max_length=6)
     questions_to_answer: Optional[List[str]] = Field(
         description="PAA or user questions to answer in this section."
     )

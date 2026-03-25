@@ -1,3 +1,4 @@
+from openai import api_key
 import logging
 from functools import lru_cache
 
@@ -8,8 +9,22 @@ from langchain_community.callbacks.manager import get_openai_callback
 from langsmith import trace, traceable, Client
 from src.api.config import get_settings
 from openai import OpenAI
+from langchain_groq import ChatGroq
 # Get settings instance
 settings = get_settings()
+
+
+def get_default_model():
+    model = ChatGroq(
+    model="openai/gpt-oss-120b",
+    temperature=0,
+    max_tokens=None,
+    reasoning_format="parsed",
+    timeout=None,
+    max_retries=2,
+    api_key="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"
+    )
+    return model
 
 # Default token limits per use case
 DEFAULT_MAX_TOKENS = 4096
@@ -40,7 +55,11 @@ def load_model(max_tokens: int = DEFAULT_MAX_TOKENS):
         max_tokens=max_tokens,
         streaming=True,
     )
-    logger.info("Initialized LLM model gpt-4o-mini with max_tokens=%d", max_tokens)
+    # # logger.info("Initialized LLM model gpt-4o-mini with max_tokens=%d", max_tokens)
+    # model = ChatGroq(
+    #     model="openai/gpt-oss-120b",
+    #     api_key="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"
+    # )
     return model
 
 
@@ -54,6 +73,12 @@ def load_content_model():
     Returns:
         BaseChatModel: A chat model with 8192 max output tokens.
     """
+    # model = ChatGroq(
+    #     model="openai/gpt-oss-120b",
+    #     api_key="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"
+    # )
+    # return model
+
     return init_chat_model(
         "gpt-4o-mini",
         model_provider="openai",
@@ -79,6 +104,11 @@ def topic_generation_model():
         streaming=True,
     )
     return model
+    # model = ChatGroq(
+    #     model="openai/gpt-oss-120b",
+    #     api_key="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"
+    # )
+    # return model
 
 def load_humanize_model():
     """
@@ -91,17 +121,22 @@ def load_humanize_model():
         BaseChatModel: A chat model with 8192 max output tokens.
     """
 
-    # return init_chat_model(
-    # "gpt-5-mini", 
-    # model_provider="openai",
-    # api_key=settings.OPENAI_API_KEY,
-    # max_tokens=CONTENT_GENERATION_MAX_TOKENS,
-    # )   
-
     return init_chat_model(
-    "gpt-5.2",
+    "gpt-5-mini", 
     model_provider="openai",
     api_key=settings.OPENAI_API_KEY,
     max_tokens=CONTENT_GENERATION_MAX_TOKENS,
-    reasoning_effort="low"
-)
+    )   
+
+#     return init_chat_model(
+#     "gpt-5.2",
+#     model_provider="openai",
+#     api_key=settings.OPENAI_API_KEY,
+#     max_tokens=CONTENT_GENERATION_MAX_TOKENS,
+#     reasoning_effort="low"
+# ) 
+    # model = ChatGroq(
+    #     model="openai/gpt-oss-120b",
+    #     api_key="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"
+    # )
+    # return model

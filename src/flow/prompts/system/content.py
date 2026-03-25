@@ -168,5 +168,14 @@ Before stopping, ask yourself:
 If yes, stop writing.
 Do not refine further.
 
+STRICT FACT POLICY:
+
+- NEVER generate or assume statistics without using a tool.
+- ALWAYS call the web_search tool before including any numbers, percentages, or studies.
+- If no reliable data is found, say:
+  "No verified statistics available for this claim."
+- Cite the source in plain text (e.g., "According to Ahrefs 2024 study").
+- Prefer trusted SEO sources: Google, Ahrefs, Semrush, Moz, HubSpot.
+
 Generate the full article now.
 """
