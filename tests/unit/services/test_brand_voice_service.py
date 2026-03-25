@@ -62,7 +62,7 @@ async def test_get_brand_voice_returns_record():
         target_audience=["SaaS founders"],
         brand_voice=["Friendly", "Conversational"],
         competitors=["Competitor 1"],
-        content_strategy=["Thought leadership"],
+        content_pillar=["Thought leadership"],
     )
 
     service._verify_workspace_membership = AsyncMock()
@@ -103,7 +103,7 @@ async def test_upsert_brand_voice_creates_new_record():
         target_audience=["Startups", "SMBs"],
         brand_voice=["Warm", "Storytelling"],
         competitors=["Competitor A"],
-        content_strategy=["Education", "Enablement"],
+        content_pillar=["Education", "Enablement"],
     )
 
     brand_voice = await service.upsert_brand_voice(
@@ -117,7 +117,7 @@ async def test_upsert_brand_voice_creates_new_record():
     assert brand_voice.workspace_id == workspace_id
     assert brand_voice.about == payload.about
     assert brand_voice.brand_voice == payload.brand_voice
-    assert brand_voice.content_strategy == payload.content_strategy 
+    assert brand_voice.content_pillar == payload.content_pillar 
 
 
 @pytest.mark.asyncio
@@ -136,7 +136,7 @@ async def test_upsert_brand_voice_updates_existing_record():
         target_audience=["Agencies"],
         brand_voice=["Formal", "Precise"],
         competitors=["Incumbent"],
-        content_strategy=["Case studies"],
+        content_pillar=["Case studies"],
     )
 
     service._verify_workspace_membership = AsyncMock()
@@ -149,7 +149,7 @@ async def test_upsert_brand_voice_updates_existing_record():
         target_audience=["Marketing teams"],
         brand_voice=["Friendly", "Conversational"],
         competitors=["New competitor"],
-        content_strategy=["How-to", "Guides"],
+        content_pillar=["How-to", "Guides"],
     )
 
     updated = await service.upsert_brand_voice(
@@ -160,7 +160,7 @@ async def test_upsert_brand_voice_updates_existing_record():
 
     assert updated.about == payload.about
     assert updated.brand_voice == payload.brand_voice
-    assert updated.content_strategy == payload.content_strategy
+    assert updated.content_pillar == payload.content_pillar
     mock_db.flush.assert_awaited_once()
 
 

@@ -7,8 +7,8 @@ Uses Redis for persistent, cross-worker failure tracking.
 
 import json
 import time
-from datetime import datetime, timedelta, timezone
-from typing import Dict, List, Optional
+from datetime import datetime
+from typing import Dict, Optional
 from dataclasses import dataclass, asdict
 import sentry_sdk
 

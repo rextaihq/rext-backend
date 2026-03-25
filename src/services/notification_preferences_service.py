@@ -18,6 +18,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from src.api.models.user_models.notification_preferences import NotificationPreferences
 from src.utils.logger import logger
+from src.utils.audit_helper import create_audit_log
 
 
 class NotificationPreferencesService:
@@ -57,6 +58,18 @@ class NotificationPreferencesService:
             preferences = NotificationPreferences(user_id=user_id)
             self.db.add(preferences)
             await self.db.flush()  # Flush to get ID but don't commit
+            
+            # Create audit log for preference creation
+            await create_audit_log(
+                db=self.db,
+                user_id=user_id,
+                action="notification_preferences.create",
+                resource_type="notification_preferences",
+                resource_id=str(preferences.id),
+                new_values=preferences.to_dict(), # Log default values
+                metadata={"source": "NotificationPreferencesService.get_or_create"}
+            )
+            
             logger.info(f"Created default notification preferences for user {user_id}")
         else:
             logger.debug(f"Retrieved existing notification preferences for user {user_id}")

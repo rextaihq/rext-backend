@@ -129,11 +129,18 @@ async def _recheck_preference_enabled(
         logger.debug("[recheck] User %s has disabled all in-app notifications.", user_id)
         return False
 
-    # Resolve the real preference column via the registry (single source of truth)
-    recheck_config = NOTIFICATION_REGISTRY.get(pref_flag)
-    real_pref_column = (recheck_config.pref_column if recheck_config and recheck_config.pref_column else pref_flag)
+    # Map virtual flags to real columns (same logic as main function)
+    real_pref_column = pref_flag
+    if pref_flag in ["profile_update_failed", "avatar_uploaded", "avatar_upload_failed"]:
+        real_pref_column = "in_app_notifications"
 
-    flag_enabled = getattr(pref, real_pref_column, False)
+    # Dedicated column (in_app_notifications) — access via attribute.
+    # Category preferences live in JSONB — use get_preference().
+    if real_pref_column == "in_app_notifications":
+        flag_enabled = pref.in_app_notifications
+    else:
+        flag_enabled = pref.get_preference(real_pref_column)
+
     if not flag_enabled:
         logger.debug(
             "[recheck] User %s has %s=False – notification suppressed after re-check.",
@@ -216,21 +223,19 @@ async def schedule_if_allowed(
         logger.debug("User %s disabled all in-app notifications.", user_id)
         return
 
-    # 3️⃣ Resolve preference column and check specific flag
-    config = NOTIFICATION_REGISTRY.get(pref_flag)
-    if config is None:
-        logger.warning(
-            "Unknown notification pref_flag '%s' for user %s — using defaults",
-            pref_flag,
-            user_id,
-        )
-        config = NotificationConfig(
-            notification_type="system",
-            title="Notification",
-        )
+    # 3. Specific flag
+    # Handle virtual flags mapping to real columns
+    real_pref_column = pref_flag
+    if pref_flag in ["profile_update_failed", "avatar_uploaded", "avatar_upload_failed"]:
+        real_pref_column = "in_app_notifications"
 
-    real_pref_column = config.pref_column or pref_flag
-    flag_enabled = getattr(pref, real_pref_column, False)
+    # Dedicated column (in_app_notifications) — access via attribute.
+    # Category preferences live in JSONB — use get_preference().
+    if real_pref_column == "in_app_notifications":
+        flag_enabled = pref.in_app_notifications
+    else:
+        flag_enabled = pref.get_preference(real_pref_column)
+
     if not flag_enabled:
         logger.debug(
             "User %s has preference %s=False – skipping notification.",
@@ -239,7 +244,17 @@ async def schedule_if_allowed(
         )
         return
 
-    # 4️⃣ Use resolved notification metadata
+    # 4️⃣ Resolve notification configuration
+    config = NOTIFICATION_REGISTRY.get(pref_flag)
+    if not config:
+        logger.error(
+            "Notification flag %r not found in NOTIFICATION_REGISTRY – "
+            "skipping notification for user %s",
+            pref_flag,
+            user_id,
+        )
+        return
+
     notification_type = config.notification_type
     notification_status = config.status
     notification_title = config.title

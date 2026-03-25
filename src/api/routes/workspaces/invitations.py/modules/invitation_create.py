@@ -26,6 +26,12 @@ from src.api.schema.invitation_schema import (
     BulkCreateInvitationRequest,
     BulkInvitationResult,
 )
+from src.api.schema.response_schemas import SuccessResponse
+from src.api.schema.response.invitation_responses import (
+    InvitationStatusResponse,
+    CreateInvitationResponse,
+    BulkInvitationResponse
+)
 from src.api.models.user_models.users import Users
 from src.api.models.user_models.invitations import UserInvitations
 from src.api.models.workspace_models.workspace_member import WorkspaceMembers
@@ -90,7 +96,7 @@ async def send_workspace_invitation_email_task(
         logger.error(f"Failed to send workspace invitation email to {email}: {str(e)}", exc_info=True)
 
 
-@router.get("/status")
+@router.get("/status", response_model=SuccessResponse[InvitationStatusResponse])
 async def get_invitation_status(request: Request):
     """Qa
     Endpoint to check the invitation service status.
@@ -101,7 +107,7 @@ async def get_invitation_status(request: Request):
     )
 
 
-@router.post("/", status_code=status.HTTP_201_CREATED)
+@router.post("/", status_code=status.HTTP_201_CREATED, response_model=SuccessResponse[CreateInvitationResponse])
 @db_transaction_handler("create invitation", auto_commit=True)
 @require_permissions("member.invite", workspace_scoped=True)
 async def create_invitation(
@@ -185,8 +191,8 @@ async def create_invitation(
         user_email=inviter.email if inviter else None
     )
 
-    return {
-        "data": {
+    return success(
+        data={
             "invitation": {
                 "id": str(invitation.id),
                 "email": invitation.email,
@@ -199,11 +205,11 @@ async def create_invitation(
                 "created_at": invitation.created_at.isoformat()
             }
         },
-        "message": f"Invitation sent to {invitation_data.email}"
-    }
+        message=f"Invitation sent to {invitation_data.email}"
+    )
 
 
-@router.post("/bulk", status_code=status.HTTP_201_CREATED)
+@router.post("/bulk", status_code=status.HTTP_201_CREATED, response_model=SuccessResponse[BulkInvitationResponse])
 @db_transaction_handler("create bulk invitations", auto_commit=True)
 @require_permissions("member.invite", workspace_scoped=True)
 async def create_bulk_invitations(
@@ -297,12 +303,12 @@ async def create_bulk_invitations(
 
     logger.info(f"Bulk invitation completed: {successful} successful, {failed} failed")
 
-    return {
-        "data": {
+    return success(
+        data={
             "total_requested": len(invitation_data.emails),
             "successful": successful,
             "failed": failed,
             "results": [r.model_dump() for r in results]
         },
-        "message": f"Bulk invitation completed: {successful} sent, {failed} failed"
-    }
+        message=f"Bulk invitation completed: {successful} sent, {failed} failed"
+    )
