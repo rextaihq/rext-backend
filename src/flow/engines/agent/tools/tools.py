@@ -8,9 +8,6 @@ from langchain_core.tools import BaseTool
 
 llm = ChatOllama(model="gpt-oss:120b-cloud", temperature=0)
 
-from langchain.agents import create_agent  # v1 API
-from langchain_core.messages import AIMessage, BaseMessage, ToolMessage
-
 
 class UnsplashImageSearchTool(BaseTool):
     name: str = "unsplash_image_search"
