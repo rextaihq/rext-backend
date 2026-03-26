@@ -51,13 +51,13 @@ async def topic_generation(state: REXT) -> Dict[str, Any]:
     messages = [
     SystemMessage(
         content=(
-            f"You are a SEO expert. Generate a high quality list of 5 SEO topics related to the given topic. "
+            f"You are a SEO expert. Generate a high quality list of 5 topics related to the given topic. "
             f"Focus on topics that rank well in search engines, provide value to readers, and are relevant in {current_year}. "
             f"Prefer trends, latest strategies, and current best practices."
         )
     ),
     HumanMessage(
-        content=f"Generate 5 SEO topics for: {query} in {current_year}"
+        content=f"Generate 5 topics for: {query} in {current_year}"
     )
 ]
     

@@ -13,13 +13,14 @@ from src.flow.prompts.system.content import CONTENT_SYSTEM_PROMPT
 from langchain.agents.structured_output import ToolStrategy
 from src.flow.model.llm_manager import load_content_model
 from src.flow.engines.agent.middleware.persona_middleware import PersonaInjectionMiddleware
+from src.flow.engines.agent.middleware.humanize_middleware import HumanizeMiddleware
 
 async def create_content_agent(
     model: Optional[Any] = None,
     tools: Optional[Sequence[BaseTool | Callable | dict[str, Any]]] = None,
-    system_prompt: str = CONTENT_SYSTEM_PROMPT,
+    # system_prompt: str = CONTENT_SYSTEM_PROMPT,
     rext_middleware: Sequence[AgentMiddleware] = (),
-    debug: bool = False,
+    debug: bool = True,
     name: Optional[str] = "content_agent",
     cache: Optional[BaseCache] = None,
     agent_store=None,
@@ -49,7 +50,8 @@ async def create_content_agent(
         workspace_id=workspace_id,
         user_id=user_id,
         outline=outline,
-      )
+      ),
+      # HumanizeMiddleware(model=model),
     ]
 
     if rext_middleware:
@@ -58,7 +60,7 @@ async def create_content_agent(
     return create_agent(
         model=model,
         tools=tools,
-        system_prompt=system_prompt,
+        # system_prompt=system_prompt,
         middleware=middleware_stack,
         debug=debug,
         name=name,

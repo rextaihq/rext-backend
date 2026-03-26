@@ -71,8 +71,9 @@ Always output in this format:
 5. Practical Section
    (Tips, Steps, Strategies, or Checklist)
 
-6. FAQ Section (3–6 questions)
+6. FAQ Section (6-8 questions)
    - Questions must target real search queries
+   - FAQS should be real not toy
 
 7. Conclusion
    - Summary
