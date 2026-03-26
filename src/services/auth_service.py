@@ -34,6 +34,7 @@ from src.api.models.user_models.permissions import Permission
 from src.api.models.user_models.role_permissions import RolePermission
 from src.api.models.user_models.token_blacklist import TokenBlacklist
 from src.api.models.user_models.user_sessions import UserSession
+from src.api.models.audit_models.audit_logs import AuditLog
 from src.api.models.subscription_models.plans import SubscriptionPlan
 from src.api.models.subscription_models.subscriptions import (
     UserSubscription,
@@ -259,6 +260,19 @@ class AuthService:
 
             await self.db.flush()
 
+            audit_log = AuditLog(
+                user_id=db_user.id,
+                action="auth.login.failed",
+                resource_type="user",
+                resource_id=str(db_user.id),
+                ip_address=device_info.get("ip_address") if device_info else None,
+                user_agent=device_info.get("user_agent") if device_info else None,
+                status="failed",
+                audit_metadata={"reason": "invalid_password", "device_type": device_info.get("device_type") if device_info else None}
+            )
+            self.db.add(audit_log)
+            await self.db.flush()
+
             raise RextAuthenticationException(
                 message="Invalid email or password",
                 context={"login_attempt": email}
@@ -268,6 +282,19 @@ class AuthService:
         db_user.failed_login_attempts = 0
         db_user.last_login_at = datetime.now(timezone.utc)
         db_user.login_count = (db_user.login_count or 0) + 1
+        await self.db.flush()
+
+        audit_log = AuditLog(
+            user_id=db_user.id,
+            action="auth.login",
+            resource_type="user",
+            resource_id=str(db_user.id),
+            ip_address=device_info.get("ip_address") if device_info else None,
+            user_agent=device_info.get("user_agent") if device_info else None,
+            status="success",
+            audit_metadata={"device_type": device_info.get("device_type") if device_info else None, "device_name": device_info.get("device_name") if device_info else None}
+        )
+        self.db.add(audit_log)
         await self.db.flush()
 
         # Auto-accept pending workspace invitations for this user
@@ -302,7 +329,7 @@ class AuthService:
                             "trial_end_date": subscription.trial_end_date.isoformat(),
                             "plan_id": str(subscription.plan_id)
                         },
-                        workspace_id=str(subscription.workspace_id),
+                        workspace_id=str(subscription.workspace_id) if subscription.workspace_id else None,
                     )
 
         # Get GLOBAL roles only (workspace_id is NULL and is_primary is True)

@@ -73,7 +73,7 @@ class Refund(Base, SerializableMixin):
     # STATUS
     # ==============================
     status = Column(
-        SQLEnum(RefundStatus, name="refundstatus", create_constraint=True),
+        SQLEnum(RefundStatus, name="refundstatus", create_constraint=True, values_callable=lambda obj: [e.value for e in obj]),
         nullable=False,
         default=RefundStatus.PENDING,
         index=True,

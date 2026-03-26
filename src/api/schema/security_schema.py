@@ -73,39 +73,48 @@ class LockedAccountResponse(BaseModel):
 
 class SecurityStatsResponse(BaseModel):
     """Schema for security statistics dashboard."""
-    # Failed login stats
-    failed_logins_last_24h: int = Field(..., description="Failed logins in last 24 hours")
-    failed_logins_last_7d: int = Field(..., description="Failed logins in last 7 days")
-    failed_logins_last_30d: int = Field(..., description="Failed logins in last 30 days")
-
-    # Locked accounts
-    currently_locked_accounts: int = Field(..., description="Number of currently locked accounts")
-    locked_accounts_last_24h: int = Field(..., description="Accounts locked in last 24 hours")
-
-    # Password security
-    password_resets_last_24h: int = Field(..., description="Password resets in last 24 hours")
-    password_changes_last_24h: int = Field(..., description="Password changes in last 24 hours")
-
-    # Account activity
-    new_registrations_last_24h: int = Field(..., description="New registrations in last 24 hours")
-    email_verifications_last_24h: int = Field(..., description="Email verifications in last 24 hours")
+    # Grouped stats
+    failed_logins: Dict[str, int] = Field(..., description="Failed login metrics")
+    locked_accounts: Dict[str, int] = Field(..., description="Locked account metrics")
+    password_activity: Dict[str, int] = Field(..., description="Password activity metrics")
+    new_accounts: Dict[str, int] = Field(..., description="New account metrics")
 
     # Top offenders
     top_failed_login_ips: List[Dict[str, Any]] = Field(..., description="Top IPs with failed logins")
     top_failed_login_users: List[Dict[str, Any]] = Field(..., description="Users with most failed logins")
 
+    # Legacy fields (optional/deprecated but kept for compatibility)
+    failed_logins_last_24h: Optional[int] = None
+    failed_logins_last_7d: Optional[int] = None
+    failed_logins_last_30d: Optional[int] = None
+    currently_locked_accounts: Optional[int] = None
+    locked_accounts_last_24h: Optional[int] = None
+    password_resets_last_24h: Optional[int] = None
+    password_changes_last_24h: Optional[int] = None
+    new_registrations_last_24h: Optional[int] = None
+    email_verifications_last_24h: Optional[int] = None
+
     class Config:
         json_schema_extra = {
             "example": {
-                "failed_logins_last_24h": 156,
-                "failed_logins_last_7d": 892,
-                "failed_logins_last_30d": 3421,
-                "currently_locked_accounts": 5,
-                "locked_accounts_last_24h": 12,
-                "password_resets_last_24h": 8,
-                "password_changes_last_24h": 23,
-                "new_registrations_last_24h": 45,
-                "email_verifications_last_24h": 38,
+                "failed_logins": {
+                    "last_24h": 156,
+                    "in_7_days": 892,
+                    "in_30_days": 3421
+                },
+                "locked_accounts": {
+                    "currently": 5,
+                    "locked_today": 12
+                },
+                "password_activity": {
+                    "resets": 8,
+                    "changes": 23,
+                    "last_24_hours": 31
+                },
+                "new_accounts": {
+                    "today": 45,
+                    "verified": 38
+                },
                 "top_failed_login_ips": [
                     {"ip": "192.168.1.100", "count": 45},
                     {"ip": "10.0.0.50", "count": 32}
