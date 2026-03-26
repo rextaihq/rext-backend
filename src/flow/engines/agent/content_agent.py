@@ -1,4 +1,5 @@
 from typing import Any, Callable, Sequence, Optional
+from uuid import UUID
 from langchain_core.caches import BaseCache
 from langchain_core.tools import BaseTool
 from langchain_ollama import ChatOllama
@@ -6,26 +7,25 @@ from langchain.agents import create_agent
 from langchain.agents.middleware import AgentMiddleware
 from langgraph.graph.state import CompiledStateGraph
 
-from src.flow.engines.tools.tools import get_tools
+from src.flow.engines.agent.tools.tools import get_tools
 from src.flow.model.structure.content import GeneratedContent
 from src.flow.prompts.system.content import CONTENT_SYSTEM_PROMPT
 from langchain.agents.structured_output import ToolStrategy
 from src.flow.model.llm_manager import load_content_model
-
-def get_default_model():
-    llm = load_content_model()
-    return llm
+from src.flow.engines.agent.middleware.persona_middleware import PersonaInjectionMiddleware
 
 async def create_content_agent(
     model: Optional[Any] = None,
     tools: Optional[Sequence[BaseTool | Callable | dict[str, Any]]] = None,
     system_prompt: str = CONTENT_SYSTEM_PROMPT,
-    botlab_middleware: Sequence[AgentMiddleware] = (),
+    rext_middleware: Sequence[AgentMiddleware] = (),
     debug: bool = False,
     name: Optional[str] = "content_agent",
     cache: Optional[BaseCache] = None,
     agent_store=None,
     response_format = ToolStrategy(GeneratedContent),
+    user_id: Optional[UUID] = None,
+    workspace_id: Optional[UUID] = None,
 ) -> CompiledStateGraph:
     """
     Create a content agent with parent/child tool routing AND dynamic integration tools.
@@ -40,12 +40,24 @@ async def create_content_agent(
         tools = tools_list
 
     if model is None:
-        model = get_default_model()
+        model = load_content_model()
+
+    # Middleware Stack
+    middleware_stack = [
+      PersonaInjectionMiddleware(
+        workspace_id=workspace_id,
+        user_id=user_id,
+      )
+    ]
+
+    if rext_middleware:
+      middleware_stack.extend(rext_middleware)
 
     return create_agent(
         model=model,
         tools=tools,
         system_prompt=system_prompt,
+        middleware=middleware_stack,
         debug=debug,
         name=name,
         cache=cache,
@@ -372,3 +384,4 @@ Now Based on the outline generate the content
         print("\n\n--- Execution Complete ---")
 
     asyncio.run(main())
+ 
