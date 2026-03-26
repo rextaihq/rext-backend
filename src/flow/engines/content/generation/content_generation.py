@@ -80,14 +80,15 @@ async def generate_content(state: REXT) -> dict:
         top_results = serp_normalized.get("normalize_results", [])[:5]
         questions = serp_normalized.get("questions", [])
         related_topics = serp_normalized.get("related_topics", [])
-        urls = top_results.get("url", [])
         # Format Competitor & SEO Insights
         competitor_list = []
+        urls = []
         for res in top_results:
             competitor_list.append(
                 f"- {res['title']} (Position {res['position']}): {res['snippet']}"
             )
-
+            urls.append(res['url'])
+        urls_str = "\n".join(urls)
         serp_insights = "\n".join(competitor_list)
         seo_signals = (
             f"SEO SIGNALS:\n"
@@ -96,7 +97,6 @@ async def generate_content(state: REXT) -> dict:
             f"- Referring Domains: {referring_domains}\n"
             f"- People Also Ask (Questions): {', '.join(questions[:5])}\n"
             f"- Related SEO Topics: {', '.join(related_topics[:10])}\n"
-            f"- URLs: {', '.join(urls[:5])}"
         )
 
         competitor_insights = (
@@ -124,6 +124,7 @@ async def generate_content(state: REXT) -> dict:
             f"Reference / Source Content:\n{page_content}\n\n"
             f"Meta_data:\n{meta_data}\n\n"
             f"Tone:\n{tone}\n\n"
+            f"Internal_links:\n{urls_str}\n\n"
             f"Generate complete SEO-optimized content following the outline.\n"
             f"Ensure you incorporate all facts and statistics mentioned in the outline.\n"
             f"Populate the 'facts' field in the output JSON with objects containing "
