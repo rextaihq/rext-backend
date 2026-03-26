@@ -4,11 +4,11 @@ on:
   push:
     branches:
       - main
+  workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
-
     steps:
       - name: Cleanup Runner (Pre-build)
         run: |
@@ -40,14 +40,6 @@ jobs:
       - name: Install dependencies
         run: uv sync
 
-      - name: Cache pip packages
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ hashFiles('**/uv.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-pip-
-
       - name: Install system dependencies
         run: |
           sudo apt-get update
@@ -69,18 +61,13 @@ jobs:
           uv run crawl4ai-setup
           uv run crawl4ai-doctor
 
-      - name: Install dev dependencies
-        run: uv sync --group dev
-
-
   docker_job:
     needs: build
     runs-on: ubuntu-latest
-
     steps:
       - name: Cleanup Runner (Pre-docker)
         run: |
-          sudo docker system prune -af --volumes
+          sudo docker system prune -af --volumes || true
           df -h
 
       - name: Checkout code
@@ -107,5 +94,5 @@ jobs:
       - name: Cleanup Docker (Post-build)
         if: always()
         run: |
-          docker system prune -f
+          sudo docker system prune -f
           df -h
