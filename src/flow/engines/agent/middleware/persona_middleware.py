@@ -1,7 +1,7 @@
 from uuid import UUID
 from typing import Optional
 
-from langchain.agents.middleware import BaseMiddleware, AgentState
+from langchain.agents.middleware import AgentMiddleware, AgentState
 from langchain.messages import SystemMessage
 from langgraph.runtime import Runtime
 from sqlalchemy import select
@@ -10,7 +10,7 @@ from src.api.models.knowledge_models.persona_model import Persona
 from src.flow.engines.agent.context import RextContext
 
 
-class PersonaInjectionMiddleware(BaseMiddleware):
+class PersonaInjectionMiddleware(AgentMiddleware):
     """
     Fetches a Persona from DB (scoped to workspace_id) and injects it
     as a SystemMessage before the agent loop starts.
