@@ -10,7 +10,7 @@ from src.flow.utils.intent_utils import get_consensus_intent
 logger = logging.getLogger(__name__)
 
 
-async def keyword_recommendation(state: REXT, config, *, runtime) -> Dict[str, Any] | Command:
+async def keyword_recommendation(state: REXT, config, *, runtime) -> Any:
     """
     Enhanced LangGraph node: Google-like keyword recommendations.
     Stores each run with a unique key to preserve history.
@@ -24,7 +24,7 @@ async def keyword_recommendation(state: REXT, config, *, runtime) -> Dict[str, A
     recommendations = serp_normalized.get("related_topics", []) if serp_normalized else []
     
     # Use consensus intent (API + Competitors) for better accuracy
-    api_intent = serp_backlinks.get("main_intent")
+    api_intent = serp_backlinks.get("main_intent") or ""
     search_intent = get_consensus_intent(api_intent, competitors)
     
     volume = serp_backlinks.get("search_volume", 0)
@@ -121,12 +121,15 @@ async def keyword_recommendation(state: REXT, config, *, runtime) -> Dict[str, A
         return {"seo_result": seo_result}
 
     # Interrupt for user selection
+    keyword_clusters = seo_result.get("keyword_clusters", [])
+
     user_selection = interrupt(
         {
             "instruction": "Select a keyword for your content",
             "type": "keyword Selection",
             "Primary Keyword": original_query,
             "Recommendations": recommendations,
+            "Keyword Clusters": keyword_clusters,
             "seo_state": {
                 "keyword_difficulty": keyword_difficulty,
                 "intent": search_intent or "informational",
@@ -165,7 +168,7 @@ async def keyword_recommendation(state: REXT, config, *, runtime) -> Dict[str, A
             },
         },
         "serp_payload": {
-            **serp_payload,
+            **(serp_payload or {}),
             "query": primary_keyword,
         },
     }

@@ -19,6 +19,7 @@ def create_seo_engine() -> CompiledStateGraph:
     from src.flow.engines.router.keyword_router import keyword_router
     from src.flow.engines.seo.fetch_dataforseo_backlinks import fetch_dataforseo_backlinks
     from src.flow.engines.seo.recomendation.keyword_recomendation import keyword_recommendation
+    from src.flow.engines.seo.keyword_clustering import keyword_clustering_node
 
     graph = StateGraph(REXT)
 
@@ -26,13 +27,14 @@ def create_seo_engine() -> CompiledStateGraph:
 
     # Add Nodes
     graph.add_node("fetch_dataforseo_backlinks", fetch_dataforseo_backlinks)
-
+    graph.add_node("keyword_clustering", keyword_clustering_node)
     graph.add_node("keyword_recommendation", keyword_recommendation)
     
 
     graph.add_edge(START, "seo_entry")
     graph.add_edge("seo_entry", "fetch_dataforseo_backlinks")
-    graph.add_edge("fetch_dataforseo_backlinks", "keyword_recommendation")
+    graph.add_edge("fetch_dataforseo_backlinks", "keyword_clustering")
+    graph.add_edge("keyword_clustering", "keyword_recommendation")
 
 
     graph.add_conditional_edges(
