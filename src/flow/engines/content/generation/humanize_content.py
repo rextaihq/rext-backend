@@ -91,7 +91,7 @@ async def _humanize_generated_content(
         "html_content": generated.html_content or "",
         "selected_topic": metadata.get("selected_topic", ""),
         "content_type": metadata.get("content_type", ""),
-        "word_count": generated.word_count or "[word count]",
+        "word_count": getattr(generated, "word_count", len(generated.body_markdown.split())),
         "target_audience": metadata.get("target_audience", "[exact persona + skill level]"),
         "content_tone": metadata.get("tone", "[casual/direct/spicy/calm]"),
         **persona_data # Inject persona fields
@@ -129,8 +129,9 @@ def humanization_after_model_middleware():
         if not metadata.get("enable_humanization", True):
             return output
             
-        if getattr(generated, "word_count", 0) and generated.word_count < 300:
-            logger.info("Content word count < 300. Skipping humanization.")
+        word_count = getattr(generated, "word_count", len(generated.body_markdown.split()))
+        if word_count < 300:
+            logger.info(f"Content word count ({word_count}) < 300. Skipping humanization.")
             return output
             
         try:
