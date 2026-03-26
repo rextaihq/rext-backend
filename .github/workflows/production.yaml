@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+  workflow_dispatch:
 
 # Production: NEVER cancel in-progress deployments — queue instead
 concurrency:

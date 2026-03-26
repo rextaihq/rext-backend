@@ -29,7 +29,6 @@ jobs:
     needs: [quality]
     if: always()
     runs-on: ubuntu-latest
-
     steps:
       - name: Generate deployment summary
         run: |

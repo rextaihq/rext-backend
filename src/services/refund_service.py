@@ -13,7 +13,7 @@ from typing import Optional, Dict, Any, List
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, and_, or_, desc
+from sqlalchemy import select, func, and_, or_, desc, cast, Integer
 from sqlalchemy.orm import joinedload
 
 from src.api.models.subscription_models.refunds import Refund, RefundStatus
@@ -263,15 +263,15 @@ class RefundService:
         summary_query = select(
             func.count(Refund.id).label("total"),
             func.sum(Refund.refund_amount).label("total_amount"),
-            func.sum(func.cast(Refund.is_partial, func.INTEGER)).label("partial_count"),
+            func.sum(cast(Refund.is_partial, Integer)).label("partial_count"),
             func.sum(
-                func.cast(Refund.status == RefundStatus.COMPLETED, func.INTEGER)
+                cast(Refund.status == RefundStatus.COMPLETED, Integer)
             ).label("completed_count"),
             func.sum(
-                func.cast(Refund.status == RefundStatus.PENDING, func.INTEGER)
+                cast(Refund.status == RefundStatus.PENDING, Integer)
             ).label("pending_count"),
             func.sum(
-                func.cast(Refund.status == RefundStatus.FAILED, func.INTEGER)
+                cast(Refund.status == RefundStatus.FAILED, Integer)
             ).label("failed_count"),
         )
 
