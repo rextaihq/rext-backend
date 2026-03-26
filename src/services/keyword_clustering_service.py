@@ -14,7 +14,7 @@ class KeywordClusteringService:
     Service for grouping keywords into semantic clusters using embeddings.
     """
     
-    def __init__(self, distance_threshold: float = 0.25):
+    def __init__(self, distance_threshold: float = 0.45):
         """
         Initialize the clustering service.
         
