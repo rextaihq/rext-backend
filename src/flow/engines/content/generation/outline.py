@@ -65,6 +65,7 @@ async def generate_outline(state: REXT) -> dict:
     ]
 
     intent_distribution = serp_backlinks.get("main_intent", "Informational")
+    print("Intent: ",intent_distribution)
 
     # 3. Generate outline
     try:
