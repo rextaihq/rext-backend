@@ -134,8 +134,23 @@ async def generate_content(state: REXT) -> dict:
 
         # 7️⃣ Create the content agent
         logger.info("Creating content agent...")
-        agent = await create_content_agent()
+        from src.flow.engines.content.generation.humanize_content import humanization_after_model_middleware
+        
+        base_agent = await create_content_agent()
+        agent = base_agent | humanization_after_model_middleware()
+        
         agent_input = {"messages": [HumanMessage(content=human_message_content)]}
+        workspace_id = state.get("serp_payload", {}).get("workspace_id")
+        agent_config = {
+            "metadata": {
+                "workspace_id": workspace_id,
+                "selected_topic": topic,
+                "content_type": content_type,
+                "target_audience": outline.get("target_audience", ""),
+                "tone": tone,
+                "enable_humanization": True
+            }
+        }
 
         # 8️⃣ Stream agent events → forward tokens & tool calls to frontend
         write = get_stream_writer()
@@ -151,7 +166,7 @@ async def generate_content(state: REXT) -> dict:
         # Instead we match the root completion by run_id.
         agent_root_run_id: str | None = None
 
-        async for event in agent.astream_events(agent_input, version="v2"):
+        async for event in agent.astream_events(agent_input, config=agent_config, version="v2"):
             kind = event["event"]
             tool_name = event.get("name", "")
             event_run_id = event.get("run_id", "")
@@ -259,9 +274,8 @@ async def generate_content(state: REXT) -> dict:
                     "output": snippet,
                 })
 
-            # Graph completion — check every on_chain_end for the structured_response key.
-            # Fallback: if on_tool_start missed it, try on_chain_end state dict
-            elif kind == "on_chain_end" and structured_output is None:
+            # Graph completion — extract outputs. The middleware might update this value.
+            elif kind == "on_chain_end":
                 out = event["data"].get("output", {})
                 if isinstance(out, GeneratedContent):
                     structured_output = out
@@ -274,7 +288,7 @@ async def generate_content(state: REXT) -> dict:
                             structured_output = GeneratedContent(**sr)
                         except Exception:
                             pass
-                    if "messages" in out and not final_messages:
+                    if "messages" in out:
                         final_messages = out["messages"]
 
         # 9️⃣ Extract structured content from the agent output
