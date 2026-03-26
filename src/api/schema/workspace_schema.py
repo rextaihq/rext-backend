@@ -133,6 +133,28 @@ class SidebarWorkspaceSchema(BaseModel):
         from_attributes = True
 
 
+# NEW: Separated schema for brand voice fields
+class BrandVoiceSchema(BaseModel):
+    """Schema for brand voice and marketing fields."""
+    about: Optional[str] = Field(None, description="About the brand")
+    customer_profile: Optional[str] = Field(None, description="Customer profile details")
+    selling_position: Optional[str] = Field(None, description="Selling position of the brand")
+    target_audience: Optional[List[str]] = Field(default_factory=list, description="Target audience details")
+    brand_voice: Optional[List[str]] = Field(default_factory=list, description="Tone and voice of the brand")
+    competitors: Optional[List[str]] = Field(default_factory=list, description="Competitors information")
+    content_pillar: Optional[List[str]] = Field(default_factory=list, description="Content strategy pillars")
+
+
+class BrandVoiceResponseSchema(BrandVoiceSchema):
+    """Response schema for brand voice with ID"""
+    id: UUID = Field(..., description="Brand voice record UUID")
+    workspace_id: UUID = Field(..., description="Workspace UUID")
+    created_at: datetime = Field(..., description="Creation timestamp")
+    updated_at: Optional[datetime] = Field(None, description="Last update timestamp")
+
+    class Config:
+        from_attributes = True
+
 
 class WorkspaceUpdateSchema(BaseModel):
     """Schema for updating workspace metadata."""

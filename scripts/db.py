@@ -4,9 +4,10 @@ Database management script for rext-backend
 
 Usage:
     python scripts/db.py reset    - Reset database (drops all data)
-    python scripts/db.py migrate  - Run all migrations
-    python scripts/db.py seed     - Reset + migrate (fresh start)
+    python scripts/db.py migrate  - Run all migrations + setup store
+    python scripts/db.py seed     - Reset + migrate + setup store (fresh start)
     python scripts/db.py status   - Check migration status
+    python scripts/db.py store    - Setup LangGraph store tables
 """
 
 import asyncio
@@ -20,6 +21,7 @@ from dotenv import load_dotenv
 
 # Load environment from project root
 project_root = Path(__file__).parent.parent
+sys.path.append(str(project_root))
 env_path = project_root / ".env"
 load_dotenv(env_path)
 
@@ -112,6 +114,25 @@ def check_status():
         return False
 
 
+async def setup_store():
+    """Initialize LangGraph store tables."""
+    print("\n🏪 Setting up LangGraph Store...")
+    try:
+        from src.flow.store.rext_store import generate_store
+
+        # generate_store() is an async context manager that calls store.setup()
+        async with generate_store() as _:
+            pass
+
+        print("✅ Store setup completed successfully")
+        return True
+    except Exception as e:
+        print(f"❌ Error setting up store: {e}")
+        # import traceback
+        # traceback.print_exc()
+        return False
+
+
 async def seed_database():
     """Reset database and run all migrations (fresh start)."""
     print("🌱 Seeding database (reset + migrate)...\n")
@@ -122,6 +143,10 @@ async def seed_database():
 
     # Migrate
     if not run_migrations():
+        sys.exit(1)
+
+    # Setup Store
+    if not await setup_store():
         sys.exit(1)
 
     print("\n✅ Database seeded successfully!")
@@ -149,6 +174,8 @@ def main():
 
     elif command == "migrate":
         success = run_migrations()
+        if success:
+            success = asyncio.run(setup_store())
         sys.exit(0 if success else 1)
 
     elif command == "seed":
@@ -157,6 +184,10 @@ def main():
 
     elif command == "status":
         success = check_status()
+        sys.exit(0 if success else 1)
+
+    elif command == "store":
+        success = asyncio.run(setup_store())
         sys.exit(0 if success else 1)
 
     else:

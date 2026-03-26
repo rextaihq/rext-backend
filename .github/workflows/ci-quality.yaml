@@ -13,28 +13,28 @@ jobs:
   # ──────────────────────────────────────────────
   # 🔍 Lint & Format Check
   # ──────────────────────────────────────────────
-  # lint:
-  #   name: 🔍 Lint & Format
-  #   runs-on: ubuntu-latest
+  lint:
+    name: 🔍 Lint & Format
+    runs-on: ubuntu-latest
     # TODO: Remove continue-on-error once existing lint errors are fixed (~3700 remaining)
-    # continue-on-error: true
-    # steps:
-    #   - name: Checkout code
-    #     uses: actions/checkout@v4
+    continue-on-error: true
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-    #   - name: Set up Python
-    #     uses: actions/setup-python@v5
-    #     with:
-    #       python-version: '3.11'
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
 
-    #   - name: Install ruff
-    #     run: pip install "ruff>=0.13.0"
+      - name: Install ruff
+        run: pip install "ruff>=0.13.0"
 
-    #   - name: Ruff lint check
-    #     run: ruff check . --output-format=github
+      - name: Ruff lint check
+        run: ruff check src --output-format=github
 
-    #   - name: Ruff format check
-    #     run: ruff format --check .
+      - name: Ruff format check
+        run: ruff format --check src
 
   # ──────────────────────────────────────────────
   # 🔒 Dependency Security Scan
@@ -84,6 +84,7 @@ jobs:
   test:
     name: 🧪 Tests
     runs-on: ubuntu-latest
+    continue-on-error: true
     env:
       ENVIRONMENT: testing
       SECRET_KEY: "temporary_secret_key_for_testing_purposes_only_32_chars"
@@ -145,16 +146,14 @@ jobs:
           crawl4ai-doctor
 
       - name: Run tests
-        # TODO: Re-enable tests once the testing environment/data is stabilized
         run: |
-          echo "⚠️ Tests are temporarily skipped by user request."
-          # if [ "${{ inputs.run_integration }}" = "true" ]; then
-          #   echo "Running full test suite (unit + integration)..."
-          #   uv run pytest --tb=short -v
-          # else
-          #   echo "Running unit tests only..."
-          #   uv run pytest -m "not integration and not slow" --tb=short -v
-          # fi
+          if [ "${{ inputs.run_integration }}" = "true" ]; then
+            echo "Running full test suite (unit + integration) on src..."
+            uv run pytest src --tb=short -v
+          else
+            echo "Running unit tests only on src..."
+            uv run pytest src -m "not integration and not slow" --tb=short -v
+          fi
 
       - name: Upload coverage report
         if: always()

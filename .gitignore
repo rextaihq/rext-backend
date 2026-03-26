@@ -26,6 +26,7 @@ secure_uploads/
 my_faiss_index3/
 test.txt
 compose.txt
+secrets.py
 .idea/
 logs/
 *.log

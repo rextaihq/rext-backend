@@ -1,4 +1,4 @@
-from pydantic import BaseModel, HttpUrl, Field, constr
+from pydantic import BaseModel, HttpUrl, Field, constr, AliasChoices, ConfigDict
 from typing import Optional, List
 from uuid import UUID
 from datetime import datetime, timezone
@@ -84,16 +84,14 @@ class BrandSchema(BaseModel):
         description="List of competitors",
         example=["Patagonia", "Everlane"]
     )
-    content_pillar: Optional[str] = Field(
-        default=None,
-        description="Main content pillar",
-        example="Sustainability in Fashion"
-    )
-    content_strategy: List[str] = Field(
+    content_pillar: List[str] = Field(
         default_factory=list,
-        description="Main content strategy themes or pillars",
+        validation_alias=AliasChoices("content_pillar", "content_strategy"),
+        description="Main content pillars or strategy themes",
         example=["Sustainability", "Fashion Trends", "Eco-lifestyle"]
     )
+    
+    model_config = ConfigDict(populate_by_name=True)
     
     personas: List[PersonaExtract] = Field(
         default_factory=list,

@@ -86,8 +86,7 @@ class BrandVoice(Base, SerializableMixin):
     target_audience = Column(JSONB, nullable=True)
     brand_voice = Column(JSONB, nullable=True)
     competitors = Column(JSONB, nullable=True)
-    content_strategy = Column(JSONB, nullable=True)
-    content_pillar = Column(Text, nullable=True)
+    content_pillar = Column(JSONB, nullable=True)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
     updated_at = Column(DateTime(timezone=True), onupdate=lambda: datetime.now(timezone.utc), nullable=True)
 

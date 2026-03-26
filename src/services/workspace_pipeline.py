@@ -351,7 +351,7 @@ class WorkspacePipeline:
                 existing.target_audience = data.get("target_audience") or []
                 existing.brand_voice = data.get("brand_voice") or []
                 existing.competitors = data.get("competitors") or []
-                existing.content_strategy = data.get("content_strategy") or []
+                existing.content_pillar = data.get("content_pillar") or []
                 brand_voice_record = existing
             else:
                 brand_voice_record = BrandVoice(
@@ -362,7 +362,7 @@ class WorkspacePipeline:
                     target_audience=data.get("target_audience") or [],
                     brand_voice=data.get("brand_voice") or [],
                     competitors=data.get("competitors") or [],
-                    content_strategy=data.get("content_strategy") or [],
+                    content_pillar=data.get("content_pillar") or [],
                 )
                 self.db.add(brand_voice_record)
 
@@ -492,6 +492,15 @@ class WorkspacePipeline:
             structured = model.with_structured_output(BrandSchema)
             
             system_prompt = """You are an expert at analyzing website content and extracting brand information and personas.
+
+IMPORTANT INSTRUCTIONS FOR BRAND INFORMATION:
+- Extract 'about': A brief summary of what the brand/business does.
+- Extract 'customer_profile': Who their ideal customers are.
+- Extract 'selling_position': Their unique value proposition (what makes them different).
+- Extract 'target_audience': Specific segments or demographics they target.
+- Extract 'brand_voice': The characteristics of their communication style (Friendly, Professional, etc.).
+- Extract 'competitors': Other businesses mentioned or implied as competitors.
+- Extract 'content_pillar': The main themes or categories they create content about (e.g., sustainability, tech tips, lifestyle).
 
 IMPORTANT INSTRUCTIONS FOR PERSONAS:
 - ONLY extract REAL INDIVIDUALS mentioned on the website (Authors, Founders, Team Members, or Experts).

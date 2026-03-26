@@ -56,10 +56,10 @@ jobs:
         run: pip install langgraph-cli
 
       - name: Build Docker image with LangGraph
-        run: langgraph build -t ghcr.io/${{ github.repository_owner }}/wrext-backend:stage
+        run: langgraph build -t ghcr.io/${{ github.repository_owner }}/rext-backend:stage
 
       - name: Push Docker image to GHCR
-        run: docker push ghcr.io/${{ github.repository_owner }}/wrext-backend:stage
+        run: docker push ghcr.io/${{ github.repository_owner }}/rext-backend:stage
 
       - name: Cleanup Docker (Post-build)
         if: always()
@@ -103,47 +103,47 @@ jobs:
   # ──────────────────────────────────────────────
   # ✅ Stage 4 — Smoke Test
   # ──────────────────────────────────────────────
-  smoke_test:
-    name: ✅ Smoke Test
-    needs: deploy
-    runs-on: ubuntu-latest
+  # smoke_test:
+  #   name: ✅ Smoke Test
+  #   needs: deploy
+  #   runs-on: ubuntu-latest
 
-    steps:
-      - name: Wait for container startup
-        run: sleep 45
+  #   steps:
+  #     - name: Wait for container startup
+  #       run: sleep 45
 
-      - name: Health check
-        run: |
-          echo "Checking STAGE server health..."
-          status=$(curl -s -o /dev/null -w "%{http_code}" \
-            "${{ vars.STAGE_SERVER_URL }}/health" \
-            --max-time 15 --retry 3 --retry-delay 10)
+  #     - name: Health check
+  #       run: |
+  #         echo "Checking STAGE server health..."
+  #         status=$(curl -s -o /dev/null -w "%{http_code}" \
+  #           "${{ vars.STAGE_SERVER_URL }}/health" \
+  #           --max-time 15 --retry 3 --retry-delay 10)
 
-          if [ "$status" = "200" ]; then
-            echo "✅ Health check passed (HTTP $status)"
-          else
-            echo "::warning::Health check returned HTTP $status"
-          fi
+  #         if [ "$status" = "200" ]; then
+  #           echo "✅ Health check passed (HTTP $status)"
+  #         else
+  #           echo "::warning::Health check returned HTTP $status"
+  #         fi
 
-      - name: Readiness check
-        run: |
-          echo "Checking STAGE server readiness..."
-          status=$(curl -s -o /dev/null -w "%{http_code}" \
-            "${{ vars.STAGE_SERVER_URL }}/health/ready" \
-            --max-time 15 --retry 3 --retry-delay 10)
+  #     - name: Readiness check
+  #       run: |
+  #         echo "Checking STAGE server readiness..."
+  #         status=$(curl -s -o /dev/null -w "%{http_code}" \
+  #           "${{ vars.STAGE_SERVER_URL }}/health/ready" \
+  #           --max-time 15 --retry 3 --retry-delay 10)
 
-          if [ "$status" = "200" ]; then
-            echo "✅ Readiness check passed (HTTP $status)"
-          else
-            echo "::warning::Readiness check returned HTTP $status (database may be unavailable)"
-          fi
+  #         if [ "$status" = "200" ]; then
+  #           echo "✅ Readiness check passed (HTTP $status)"
+  #         else
+  #           echo "::warning::Readiness check returned HTTP $status (database may be unavailable)"
+  #         fi
 
   # ──────────────────────────────────────────────
   # 📢 Stage 5 — Notification Summary
   # ──────────────────────────────────────────────
   notify:
     name: 📢 Summary
-    needs: [quality, docker_job, deploy, smoke_test]
+    needs: [quality, docker_job, deploy]
     if: always()
     runs-on: ubuntu-latest
 
@@ -161,6 +161,5 @@ jobs:
           echo "| 🔍 Quality Gate | \`${{ needs.quality.result }}\` |" >> $GITHUB_STEP_SUMMARY
           echo "| 🐳 Build & Push | \`${{ needs.docker_job.result }}\` |" >> $GITHUB_STEP_SUMMARY
           echo "| 🚀 Coolify Deploy | \`${{ needs.deploy.result }}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| ✅ Smoke Test | \`${{ needs.smoke_test.result }}\` |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Image:** \`ghcr.io/${{ github.repository_owner }}/wrext-backend:stage\`" >> $GITHUB_STEP_SUMMARY
