@@ -29,7 +29,7 @@ def content_type(state: REXT) -> REXT:
     serp_backlinks = seo_result.get("serp_backlinks", {})
     logger.info(f"serp_backlinks: {serp_backlinks}")
 
-    search_intent = serp_backlinks.get("main_intent") or "informational"
+    search_intent = serp_backlinks.get("main_intent", "informational")
 
     # Check for upstream errors — skip processing if prior node failed
     if content_state.get("error"):

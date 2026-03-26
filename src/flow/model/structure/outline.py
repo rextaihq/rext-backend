@@ -85,7 +85,20 @@ class Outline(BaseModel):
     
     # Content Strategy
     target_audience: List[str]
-    tone: Literal["Professional", "Conversational", "Authoritative"]
+    tone: Literal[
+    "Professional",
+    "Conversational",
+    "Authoritative",
+    "Friendly",
+    "Encouraging",
+    "Neutral",
+    "Persuasive",
+    "Analytical",
+    "Direct",
+    "Action-oriented",
+    "Trustworthy",
+    "Urgent"
+]
     target_word_count: int = Field(
         ge=800,
         le=5000,
