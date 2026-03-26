@@ -1,5 +1,6 @@
 import logging
 from src.flow.states.rext import REXT
+from src.flow.engines.content.review.content.on_page_scoring import markdown_to_clean_html
 
 logger = logging.getLogger(__name__)
 
@@ -12,11 +13,15 @@ async def calculate_eeat_trust(state: REXT):
     title = final_content.get("title", "")
     primary_keyword = final_content.get("primary_keyword", "")
     secondary_keywords = final_content.get("secondary_keywords", [])
-    html_content = final_content.get("html_content", "")
+    introduction = final_content.get("introduction") or ""
+    body_markdown = final_content.get("body_markdown") or ""
 
-    if not html_content:
-        logger.warning("No HTML content available for E-E-A-T evaluation, skipping")
+    full_markdown = f"{introduction}\n\n{body_markdown}".strip()
+    if not full_markdown:
+        logger.warning("No content available for E-E-A-T evaluation, skipping")
         return {}
+
+    html_content = markdown_to_clean_html(full_markdown)
 
     from src.flow.engines.content.utils.eeat import calculate_eeat_trust_score
 

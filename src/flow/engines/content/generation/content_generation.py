@@ -136,7 +136,11 @@ async def generate_content(state: REXT) -> dict:
 
         # 7️⃣ Create the content agent
         logger.info("Creating content agent...")
-        agent = await create_content_agent()
+        agent = await create_content_agent(
+            user_id=state.get("serp_payload",{}).get("user_id"),
+            workspace_id=state.get("serp_payload",{}).get("workspace_id"),
+            outline=outline if outline else None,
+        )
         agent_input = {"messages": [HumanMessage(content=human_message_content)]}
 
         # 8️⃣ Stream agent events → forward tokens & tool calls to frontend
@@ -177,6 +181,16 @@ async def generate_content(state: REXT) -> dict:
                         )
                     else:
                         token = ""
+
+                    # ToolStrategy emits structured output as tool-call argument
+                    # fragments (not as plain content). Capture those so the frontend
+                    # can do live JSON field extraction (e.g. body_markdown appears
+                    # character-by-character instead of dumping all at once).
+                    if not token:
+                        for tc in chunk.tool_call_chunks or []:
+                            if tc.get("args"):
+                                token += tc["args"]
+
                     if token:
                         write({"type": "token", "content": token})
 

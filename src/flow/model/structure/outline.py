@@ -35,8 +35,6 @@ class Fact(BaseModel):
     """Verifiable fact or statistic with source citation context."""
     
     text: str = Field(description="The factual statement or statistic.")
-    source_url: Optional[str] = Field(description="Direct URL to the source of this fact for verification and linking.")
-
 
 class Section(BaseModel):
     heading: str = Field(description="Section heading text.")
@@ -62,6 +60,7 @@ class Section(BaseModel):
 class Outline(BaseModel):
     title: str = Field(description="SEO-optimized article title starting with the focus keyphrase.")
     slug_suggestion: str = Field(
+        pattern=r"^[a-z0-9-]+$",
         description="Suggested URL slug containing the focus keyphrase."
     )
     brief: str = Field(description="Article goal and value proposition.")
@@ -74,9 +73,9 @@ class Outline(BaseModel):
     
     # Structure
     sections: conlist(Section, min_length=4, max_length=8)
-    faqs: Optional[List[str]] = Field(description="FAQ questions for schema.")
+    faqs: Optional[List[str]] = Field(default_factory=list,description="FAQ questions for schema.")
     key_facts: Optional[List[Fact]] = Field(
-        default=[],
+        default_factory=list,
         description="Key verifiable facts or statistics with sources to be used throughout the article."
     )
     

@@ -26,6 +26,7 @@ async def create_content_agent(
     response_format = ToolStrategy(GeneratedContent),
     user_id: Optional[UUID] = None,
     workspace_id: Optional[UUID] = None,
+    outline: Optional[dict] = None,
 ) -> CompiledStateGraph:
     """
     Create a content agent with parent/child tool routing AND dynamic integration tools.
@@ -47,6 +48,7 @@ async def create_content_agent(
       PersonaInjectionMiddleware(
         workspace_id=workspace_id,
         user_id=user_id,
+        outline=outline,
       )
     ]
 
