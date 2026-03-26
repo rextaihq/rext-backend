@@ -120,23 +120,10 @@ def load_humanize_model():
     Returns:
         BaseChatModel: A chat model with 8192 max output tokens.
     """
-
     return init_chat_model(
-    "gpt-5-mini", 
+    "gpt-5.2",
     model_provider="openai",
     api_key=settings.OPENAI_API_KEY,
     max_tokens=CONTENT_GENERATION_MAX_TOKENS,
-    )   
-
-#     return init_chat_model(
-#     "gpt-5.2",
-#     model_provider="openai",
-#     api_key=settings.OPENAI_API_KEY,
-#     max_tokens=CONTENT_GENERATION_MAX_TOKENS,
-#     reasoning_effort="low"
-# ) 
-    # model = ChatGroq(
-    #     model="openai/gpt-oss-120b",
-    #     api_key="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"
-    # )
-    # return model
+    reasoning_effort="low"
+) 
