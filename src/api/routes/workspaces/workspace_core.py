@@ -152,16 +152,11 @@ async def get_workspace_by_slug(
     # Merge analytics into workspace data
     workspace_data["knowledge_stats"] = analytics["knowledge_stats"]
     workspace_data["analytics"] = {
-        "knowledge_counts": {
-            "web_knowledge": analytics["knowledge_stats"]["web_knowledge"],
-            "files": analytics["knowledge_stats"]["files"],
-            "text_knowledge": analytics["knowledge_stats"]["text_knowledge"],
-            "total_knowledge_items": analytics["knowledge_stats"]["total"]
-        },
+        "knowledge_stats": analytics["knowledge_stats"],
         "content_metrics": analytics.get("content_metrics", {}),
-        "team_metrics": {
-            "total_members": analytics["members_count"]
-        }
+        "members_count": analytics["members_count"],
+        "content_count": analytics["content_count"],
+        "topics_count": analytics["topics_count"],
     }
 
     return success(
@@ -194,16 +189,11 @@ async def get_workspace_by_id(
     # Merge analytics into workspace data
     workspace_data["knowledge_stats"] = analytics["knowledge_stats"]
     workspace_data["analytics"] = {
-        "knowledge_counts": {
-            "web_knowledge": analytics["knowledge_stats"]["web_knowledge"],
-            "files": analytics["knowledge_stats"]["files"],
-            "text_knowledge": analytics["knowledge_stats"]["text_knowledge"],
-            "total_knowledge_items": analytics["knowledge_stats"]["total"]
-        },
+        "knowledge_stats": analytics["knowledge_stats"],
         "content_metrics": analytics.get("content_metrics", {}),
-        "team_metrics": {
-            "total_members": analytics["members_count"]
-        }
+        "members_count": analytics["members_count"],
+        "content_count": analytics["content_count"],
+        "topics_count": analytics["topics_count"],
     }
 
     return success(
@@ -288,16 +278,11 @@ async def get_workspace_detail(
     # Merge analytics into workspace data
     workspace_data["knowledge_stats"] = analytics["knowledge_stats"]
     workspace_data["analytics"] = {
-        "knowledge_counts": {
-            "web_knowledge": analytics["knowledge_stats"]["web_knowledge"],
-            "files": analytics["knowledge_stats"]["files"],
-            "text_knowledge": analytics["knowledge_stats"]["text_knowledge"],
-            "total_knowledge_items": analytics["knowledge_stats"]["total"]
-        },
+        "knowledge_stats": analytics["knowledge_stats"],
         "content_metrics": analytics.get("content_metrics", {}),
-        "team_metrics": {
-            "total_members": analytics["members_count"]
-        }
+        "members_count": analytics["members_count"],
+        "content_count": analytics["content_count"],
+        "topics_count": analytics["topics_count"],
     }
 
     return success(data={"workspace": workspace_data}, request=request)

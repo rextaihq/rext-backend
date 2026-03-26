@@ -394,10 +394,10 @@ class WorkspaceService:
                         "avatar_url": owner_avatar_url
                     },
                     "knowledge_stats": {
-                        "web_knowledge": web_count,
-                        "files": files_count,
-                        "text_knowledge": text_count,
-                        "total": total_knowledge,
+                        "web_count": web_count,
+                        "file_count": files_count,
+                        "text_count": text_count,
+                        "total_count": total_knowledge,
                     },
                     "members_count": members_count,
                     "status": "active",
@@ -491,10 +491,10 @@ class WorkspaceService:
 
         analytics = {
             "knowledge_stats": {
-                "web_knowledge": web_count,
-                "files": files_count,
-                "text_knowledge": text_count,
-                "total": web_count + files_count + text_count,
+                "web_count": web_count,
+                "file_count": files_count,
+                "text_count": text_count,
+                "total_count": web_count + files_count + text_count,
             },
             "members_count": members_count,
             "content_count": content_count,
