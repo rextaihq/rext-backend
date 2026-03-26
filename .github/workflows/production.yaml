@@ -66,8 +66,8 @@ jobs:
 
       - name: Setup Crawl4AI
         run: |
-          uv run crawl4ai-setup
-          uv run crawl4ai-doctor
+          crawl4ai-setup
+          crawl4ai-doctor
 
       - name: Install dev dependencies
         run: uv sync --group dev
