@@ -132,9 +132,15 @@ async def generate_content(state: REXT) -> dict:
             f"Ensure you outperform the competitors listed above."
         )
 
-        # 7️⃣ Create the content agent
-        logger.info("Creating content agent...")
-        agent = await create_content_agent()
+        # 7️⃣ Create the content agent (pass user/workspace IDs for persona injection)
+        serp_payload = state.get("serp_payload", {})
+        user_id = serp_payload.get("user_id")
+        workspace_id = serp_payload.get("workspace_id")
+        logger.info(
+            "Creating content agent | user_id=%s workspace_id=%s",
+            user_id, workspace_id
+        )
+        agent = await create_content_agent(user_id=user_id, workspace_id=workspace_id)
         agent_input = {"messages": [HumanMessage(content=human_message_content)]}
 
         # 8️⃣ Stream agent events → forward tokens & tool calls to frontend

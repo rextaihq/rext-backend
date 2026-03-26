@@ -32,6 +32,10 @@ async def generate_store():
             if uri.startswith(prefix):
                 uri = uri.replace(prefix, "postgresql://", 1)
                 break
+        
+        # Psycopg3 uses sslmode=require, while asyncpg uses ssl=require.
+        # Ensure we use the correct parameter for psycopg3.
+        uri = uri.replace("ssl=require", "sslmode=require")
 
     print(f"DEBUG: Initializing LangGraph Store with URI: {uri.split('@')[-1] if uri else None}", file=sys.stderr)
     

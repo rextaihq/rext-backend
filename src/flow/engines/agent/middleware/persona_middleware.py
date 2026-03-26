@@ -1,16 +1,20 @@
+import logging
 from uuid import UUID
-from typing import Optional
+from typing import Optional, Any
 
-from langchain.agents.middleware import BaseMiddleware, AgentState
-from langchain.messages import SystemMessage
-from langgraph.runtime import Runtime
+from langchain.agents.middleware import AgentMiddleware, AgentState  # type: ignore
+from langchain.messages import SystemMessage  # type: ignore
+from langgraph.runtime import Runtime  # type: ignore
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession  # type: ignore
 
-from src.api.models.knowledge_models.persona_model import Persona
-from src.flow.engines.agent.context import RextContext
+from src.api.models.knowledge_models.persona_model import Persona  # type: ignore
+from src.flow.engines.agent.context import RextContext  # type: ignore
+
+logger = logging.getLogger(__name__)
 
 
-class PersonaInjectionMiddleware(BaseMiddleware):
+class PersonaInjectionMiddleware(AgentMiddleware):
     """
     Fetches a Persona from DB (scoped to workspace_id) and injects it
     as a SystemMessage before the agent loop starts.
@@ -32,18 +36,35 @@ class PersonaInjectionMiddleware(BaseMiddleware):
         self.workspace_id = workspace_id
         self.persona_id = persona_id
 
-    async def abefore_agent(self, state: AgentState, runtime: Runtime[RextContext]) -> AgentState:
+    async def abefore_agent(self, state: AgentState, runtime: Runtime[RextContext]) -> dict[str, Any] | None:
+        logger.info(
+            "[PersonaMiddleware] abefore_agent called | user_id=%s workspace_id=%s persona_id=%s",
+            self.user_id, self.workspace_id, self.persona_id
+        )
         db = runtime.context.db
-        persona = await self._fetch_persona(db)
+        persona = await self._fetch_persona(db)  # type: ignore
         if persona is None:
-            return state
+            logger.warning(
+                "[PersonaMiddleware] No persona found for workspace_id=%s — skipping injection",
+                self.workspace_id
+            )
+            return None
 
+        logger.info(
+            "[PersonaMiddleware] Injecting persona: id=%s name=%s",
+            persona.id, persona.name
+        )
         system_message = self._build_system_message(persona)
         state["messages"].insert(0, SystemMessage(content=system_message))
-        return state
+        logger.debug("[PersonaMiddleware] SystemMessage injected:\n%s", system_message[:300])
+        return None
 
-    async def _fetch_persona(self, db) -> Optional[Persona]:
+    async def _fetch_persona(self, db: AsyncSession) -> Optional[Persona]:
+        if self.workspace_id is None:
+            logger.error("[PersonaMiddleware] workspace_id is None — cannot query DB")
+            return None
         if self.persona_id is not None:
+            logger.debug("[PersonaMiddleware] Fetching specific persona id=%s", self.persona_id)
             result = await db.execute(
                 select(Persona).where(
                     Persona.id == self.persona_id,
@@ -51,13 +72,18 @@ class PersonaInjectionMiddleware(BaseMiddleware):
                 )
             )
         else:
+            logger.debug(
+                "[PersonaMiddleware] Fetching latest persona for workspace_id=%s", self.workspace_id
+            )
             result = await db.execute(
                 select(Persona)
                 .where(Persona.workspace_id == self.workspace_id)
                 .order_by(Persona.created_at.desc())
                 .limit(1)
             )
-        return result.scalar_one_or_none()
+        persona = result.scalar_one_or_none()
+        logger.debug("[PersonaMiddleware] DB result: %s", persona)
+        return persona
 
     def _build_system_message(self, persona: Persona) -> str:
         lines = ["## Author Persona\n"]
