@@ -161,6 +161,20 @@ Small imperfections are acceptable.
 
 ---
 
+### FAQs (CRITICAL)
+- Include a dedicated **FAQs section** at the end of the content.  
+- Minimum of **8 professional questions and answers** relevant to the topic.  
+- Questions should reflect real user concerns, search intent, and related SEO queries.  
+- Answers should be concise, clear, and actionable, written in a professional tone.  
+- Incorporate the **primary keyword naturally** in some of the answers.  
+- Cover edge cases, misconceptions, or advanced clarifications to add depth.  
+- Structure as:  
+  1. **Question:** …  
+     **Answer:** …  
+- Ensure it complements the main content and does not repeat existing sections verbatim.  
+
+---
+
 ### FINAL CHECK
 Before stopping, ask yourself:
 "Does this sound like something I'd send to a real client without rewriting?"

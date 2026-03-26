@@ -80,7 +80,7 @@ async def generate_content(state: REXT) -> dict:
         top_results = serp_normalized.get("normalize_results", [])[:5]
         questions = serp_normalized.get("questions", [])
         related_topics = serp_normalized.get("related_topics", [])
-
+        urls = top_results.get("url", [])
         # Format Competitor & SEO Insights
         competitor_list = []
         for res in top_results:
@@ -95,7 +95,8 @@ async def generate_content(state: REXT) -> dict:
             f"- Average Backlink Volume: {backlink_volume}\n"
             f"- Referring Domains: {referring_domains}\n"
             f"- People Also Ask (Questions): {', '.join(questions[:5])}\n"
-            f"- Related SEO Topics: {', '.join(related_topics[:10])}"
+            f"- Related SEO Topics: {', '.join(related_topics[:10])}\n"
+            f"- URLs: {', '.join(urls[:5])}"
         )
 
         competitor_insights = (
