@@ -653,14 +653,13 @@ class SubscriptionAnalyticsService:
             )
         )
         return result.scalar() or 0
-    
-        async def _get_cancellation_reason_breakdown(
+
+    async def _get_cancellation_reason_breakdown(
         self,
         start: datetime,
         end: datetime,
-    ) -> Dict[str, int]: 
-            """Return breakdown of cancellation reasons for a period."""
-
+    ) -> Dict[str, int]:
+        """Return breakdown of cancellation reasons for a period."""
         query = select(UserSubscription.cancellation_reason).where(
             UserSubscription.cancelled_at >= start,
             UserSubscription.cancelled_at <= end,

@@ -6,7 +6,11 @@ Validates signature synchronously, then processes in background.
 """
 
 import json
+import uuid
+from datetime import datetime, timezone, timedelta
+from typing import Optional
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status, Request
+from pydantic import BaseModel
 from src.api.config import get_settings
 from src.api.database.async_database import AsyncSessionLocal
 from src.api.middleware.webhook_security import validate_lemonsqueezy_webhook_ip

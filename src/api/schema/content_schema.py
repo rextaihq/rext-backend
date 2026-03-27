@@ -50,6 +50,8 @@ class ContentCreate(ContentBase):
     body_markdown: Optional[str] = None
     body_html: Optional[str] = None
     tags: Optional[List[str]] = None
+    content_type:Optional[Any] = Field(None, description="content type")
+     
     
     # Nested relations
     seo_data: Optional[ContentSEODataSchema] = None

@@ -30,8 +30,8 @@ from .shared.auth import require_super_admin
 router = APIRouter()
 
 
-@router.get("/", response_model=SuccessResponse[SubscriptionAdminListResponse])
-@require_permissions("subscription.read")
+@router.get("/", response_model=dict)
+@require_permissions("subscription.read", workspace_scoped=False)
 @db_transaction_handler("list subscriptions", auto_commit=False)
 async def list_all_subscriptions(
     request: Request,
@@ -58,8 +58,8 @@ async def list_all_subscriptions(
     return success(data=result["data"], request=request, message=result["message"])
 
 
-@router.get("/{subscription_id}", response_model=SuccessResponse[SubscriptionAdminDetailResponse])
-@require_permissions("subscription.read")
+@router.get("/{subscription_id}", response_model=dict)
+@require_permissions("subscription.read", workspace_scoped=False)
 @db_transaction_handler("get subscription", auto_commit=False)
 async def get_subscription_admin(
     request: Request,

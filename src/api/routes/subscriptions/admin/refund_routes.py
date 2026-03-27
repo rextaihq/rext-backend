@@ -306,7 +306,7 @@ async def create_refund(
         # Audit log
         client_ip = request.client.host if request.client else None
         audit_logger.log_admin_refund_created(
-            admin_id=UUID(admin_user_id),
+            admin_id=admin_user_id if isinstance(admin_user_id, UUID) else UUID(str(admin_user_id)),
             user_id=user_id,
             refund_id=refund.id,
             subscription_id=subscription_id,

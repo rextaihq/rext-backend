@@ -29,11 +29,12 @@ async def require_super_admin_user(
     return current_user
 
 
-async def check_super_admin(db: AsyncSession, user_id: str) -> bool:
+async def check_super_admin(db: AsyncSession, user_id) -> bool:
     """Check if user is a super admin."""
     from uuid import UUID
     from src.utils.rbac_utils import is_user_super_admin
-    return await is_user_super_admin(db, UUID(user_id))
+    uuid_val = user_id if isinstance(user_id, UUID) else UUID(str(user_id))
+    return await is_user_super_admin(db, uuid_val)
 
 
 async def require_super_admin(db: AsyncSession, user_id: str):
