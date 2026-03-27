@@ -44,6 +44,12 @@ class Content(Base, SerializableMixin, UUIDPrimaryKeyMixin, TimestampMixin, Work
     wordpress_url = Column(Text, nullable=True)
     wordpress_published_at = Column(DateTime(timezone=True), nullable=True)
 
+    # Shopify publishing fields
+    from sqlalchemy import BigInteger
+    shopify_article_id = Column(BigInteger, nullable=True)
+    shopify_article_url = Column(Text, nullable=True)
+    shopify_published_at = Column(DateTime(timezone=True), nullable=True)
+
     # Relationships
     workspace = relationship("WorkspaceModel", back_populates="content_items")
     created_by = relationship("Users", foreign_keys=[created_by_user_id])

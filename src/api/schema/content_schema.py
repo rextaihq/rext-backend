@@ -196,6 +196,8 @@ class PublishResponse(BaseModel):
     success: bool
     wordpress_post_id: Optional[int] = None
     wordpress_url: Optional[str] = None
+    shopify_article_id: Optional[int] = None
+    shopify_article_url: Optional[str] = None
     error: Optional[str] = None
 
 

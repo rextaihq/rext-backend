@@ -271,5 +271,37 @@ async def publish_to_site(
         except Exception as e:
             logger.error(f"Failed to publish to WordPress: {e}")
             raise RextValidationException(message=f"Publishing failed: {str(e)}")
+            
+    elif site.integration_type.lower() == "shopify":
+        try:
+            from src.web.shopify import ShopifyConnector
+            async with ShopifyConnector(
+                store_url=site.site_url,
+                access_token=site.api_key
+            ) as shopify:
+                is_published = data.status == "publish"
+                body_to_use = content.body_html or content.body_markdown or ""
+                
+                shop_resp = await shopify.publish_blog_post(
+                    title=content.title,
+                    body_html=body_to_use,
+                    tags=(content.seo_data.content_primary_keywords if content.seo_data else []),
+                    published=is_published
+                )
+                
+            # Update content status
+            content.status = "published"
+            content.shopify_article_id = shop_resp.get("article_id")
+            content.shopify_article_url = shop_resp.get("article_url")
+            content.shopify_published_at = datetime.now(timezone.utc)
+            
+            return {
+                "shopify_result": shop_resp,
+                "content_id": str(content.id)
+            }
+        except Exception as e:
+            logger.error(f"Failed to publish to Shopify: {e}")
+            raise RextValidationException(message=f"Shopify publishing failed: {str(e)}")
+            
     else:
         raise RextValidationException(message=f"Site type {site.integration_type} not supported for publishing yet")
