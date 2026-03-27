@@ -43,7 +43,7 @@ from src.api.models.user_models.roles import Role
 from src.api.models.user_models.permissions import Permission
 from src.api.models.user_models.role_permissions import RolePermission
 from src.api.models.user_models.user_roles import UserRole
-from src.api.middleware.exceptions import RextAuthorizationException
+# Circular import fix: Move RextAuthorizationException to inside functions
 from src.api.lib.logger import auto_logger
 
 logger = auto_logger()
@@ -182,6 +182,7 @@ async def require_permission(
     has_permission = await check_permission(db, user_id, permission_name, workspace_id)
 
     if not has_permission:
+        from src.api.middleware.exceptions import RextAuthorizationException
         logger.warning(
             f"Permission denied: user={user_id}, permission={permission_name}, "
             f"workspace={workspace_id}, resource={resource_name}"
@@ -266,6 +267,32 @@ async def get_user_permissions(
     # Ensure uniqueness and sort for stability
     permissions_list = sorted(list(set(permissions_list)))
 
+    # WORKSPACE OWNER FALLBACK:
+    # If a user is the primary owner of the workspace record, they must ALWAYS 
+    # have owner permissions, even if the user_roles table is missing the mapping.
+    if workspace_id:
+        from src.api.models.workspace_models.workspace_model import WorkspaceModel
+        # Check if user is the record owner
+        ws_query = select(WorkspaceModel.user_id).where(WorkspaceModel.id == workspace_id)
+        ws_result = await db.execute(ws_query)
+        owner_id = ws_result.scalar()
+        
+        if owner_id == user_id:
+            logger.info(f"User {user_id} is record owner of workspace {workspace_id}; ensuring owner permissions.")
+            # Fetch the permissions defined for the workspace_owner role
+            # This ensures they get EXACTLY what an owner should have
+            owner_perms_query = (
+                select(Permission.name)
+                .join(RolePermission, RolePermission.permission_id == Permission.id)
+                .join(Role, Role.id == RolePermission.role_id)
+                .where(Role.name == "workspace_owner")
+            )
+            owner_perms_res = await db.execute(owner_perms_query)
+            owner_perms = owner_perms_res.scalars().all()
+            
+            # Use set for union to avoid duplicates
+            permissions_list = list(set(permissions_list) | set(owner_perms))
+
     logger.debug(
         f"Retrieved {len(permissions_list)} permissions for user={user_id}, workspace={workspace_id}"
     )
@@ -328,6 +355,27 @@ async def get_user_roles(
     rows = result.all()
 
     roles = [(row[0], row[1]) for row in rows]
+
+    # WORKSPACE OWNER FALLBACK:
+    # Ensure the workspace_owner role is present if the user is the record owner
+    if workspace_id:
+        from src.api.models.workspace_models.workspace_model import WorkspaceModel
+        # Check if they are already assigned via UserRole
+        has_owner_role = any(r.name == "workspace_owner" and ws_id == workspace_id for r, ws_id in roles)
+        
+        if not has_owner_role:
+            ws_query = select(WorkspaceModel.user_id).where(WorkspaceModel.id == workspace_id)
+            ws_res = await db.execute(ws_query)
+            owner_id = ws_res.scalar()
+            
+            if owner_id == user_id:
+                # User is owner but role mapping is missing - fetch the role object and add it
+                logger.warning(f"User {user_id} is owner of {workspace_id} but missing workspace_owner role mapping. Fixing in response.")
+                role_query = select(Role).where(Role.name == "workspace_owner")
+                role_res = await db.execute(role_query)
+                wo_role = role_res.scalar_one_or_none()
+                if wo_role:
+                    roles.append((wo_role, workspace_id))
 
     logger.debug(
         f"Retrieved {len(roles)} roles for user={user_id}, workspace={workspace_id}"
@@ -515,6 +563,7 @@ async def check_permission_or_admin(
             detail=f"Insufficient permissions. Required: {permission_name} or admin role",
         )
     else:
+        from src.api.middleware.exceptions import RextAuthorizationException
         raise RextAuthorizationException(
             message="You do not have permission to perform this action",
             context={"required_permission": permission_name, "user_id": str(user_id)},

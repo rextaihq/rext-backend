@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 
@@ -8,14 +8,18 @@ from src.api.security.dependencies import get_current_user
 from src.api.models.workspace_models.workspace_member import WorkspaceMembers
 from src.api.models.content_models.content import Content
 from src.api.models.knowledge_models.persona_model import Persona
+from src.api.schema.response_schemas import SuccessResponse
+from src.api.schema.response.dashboard_responses import WorkspaceDashboardResponse
+from src.utils.response_utils import success
 
 # ✅ define router ONCE
 router = APIRouter(prefix="/dashboard")
 
 
-@router.get("/{workspace_id}")
+@router.get("/{workspace_id}", response_model=SuccessResponse[WorkspaceDashboardResponse])
 async def get_dashboard_details(
     workspace_id: str,
+    request: Request,
     db: AsyncSession = Depends(get_async_db),
     current_user=Depends(get_current_user),
 ):
@@ -56,13 +60,17 @@ async def get_dashboard_details(
         )
     )
 
-    return {
-        "workspace_id": workspace_id,
-        "members": total_members,
-        "content": {
-            "total": total_content,
-            "published": published_content,
-            "draft": draft_content,
+    return success(
+        data={
+            "workspace_id": workspace_id,
+            "members": total_members,
+            "content": {
+                "total": total_content,
+                "published": published_content,
+                "draft": draft_content,
+            },
+            "personas": total_personas,
         },
-        "personas": total_personas,
-    }
+        request=request,
+        message="Dashboard details retrieved successfully"
+    )

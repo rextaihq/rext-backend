@@ -17,6 +17,13 @@ from src.api.schema.subscription import SubscriptionPlanCreate, SubscriptionPlan
 from src.services.subscription_plan_service import SubscriptionPlanService
 from src.utils.response_utils import created, success
 from src.utils.route_decorators import db_transaction_handler, require_permissions
+from src.api.schema.response_schemas import SuccessResponse
+from src.api.schema.response.plan_responses import (
+    PlanListResponse,
+    PlanDetails,
+    PlanCreateResponse,
+    PlanDeleteResponse
+)
 
 
 router = APIRouter(
@@ -25,7 +32,7 @@ router = APIRouter(
 )
 
 
-@router.get("/public", response_model=dict)
+@router.get("/public", response_model=SuccessResponse[PlanListResponse])
 @db_transaction_handler("list public plans", auto_commit=False)
 async def list_public_plans(
     request: Request,
@@ -48,7 +55,7 @@ async def list_public_plans(
     )
 
 
-@router.post("", response_model=dict, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=SuccessResponse[PlanDetails], status_code=status.HTTP_201_CREATED)
 @db_transaction_handler("create plan", auto_commit=True)
 async def create_plan(
     request: Request,
@@ -69,7 +76,7 @@ async def create_plan(
     )
 
 
-@router.get("", response_model=dict)
+@router.get("", response_model=SuccessResponse[PlanListResponse])
 @db_transaction_handler("list plans", auto_commit=False)
 async def list_plans(
     request: Request,
@@ -95,7 +102,7 @@ async def list_plans(
     )
 
 
-@router.get("/{plan_id}", response_model=dict)
+@router.get("/{plan_id}", response_model=SuccessResponse[PlanDetails])
 @require_permissions("subscription.read", workspace_scoped=False)
 @db_transaction_handler("get plan", auto_commit=False)
 async def get_plan(
@@ -117,7 +124,7 @@ async def get_plan(
     )
 
 
-@router.patch("/{plan_id}", response_model=dict)
+@router.patch("/{plan_id}", response_model=SuccessResponse[PlanDetails])
 @require_permissions("subscription.manage", workspace_scoped=False)
 @db_transaction_handler("update plan", auto_commit=True)
 async def update_plan(
@@ -140,7 +147,7 @@ async def update_plan(
     )
 
 
-@router.delete("/{plan_id}", response_model=dict)
+@router.delete("/{plan_id}", response_model=SuccessResponse[PlanDeleteResponse])
 @require_permissions("subscription.manage", workspace_scoped=False)
 @db_transaction_handler("delete plan", auto_commit=True)
 async def delete_plan(

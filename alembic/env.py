@@ -1,15 +1,14 @@
+import asyncio
+import os
+import sys
 from logging.config import fileConfig
+from pathlib import Path
 
-from sqlalchemy import engine_from_config, pool
+from sqlalchemy import pool
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from alembic import context
-
-import os
-import sys
-import asyncio
-from pathlib import Path
 
 # Add the src directory to Python path
 backend_dir = Path(__file__).resolve().parent.parent
@@ -17,38 +16,61 @@ sys.path.insert(0, str(backend_dir))
 from dotenv import load_dotenv
 load_dotenv()
 
-# Import SQLAlchemy Base and all models
-from src.api.database.base import Base
+load_dotenv()
 
-from src.api.models.workspace_models.workspace_model import WorkspaceModel
-from src.api.models.workspace_models.workspace_member import WorkspaceMembers
-from src.api.models.workspace_models.workspace_integration import WorkspaceIntegration
-from src.api.models.knowledge_models.knowledge_model import (
-    BrandVoice, Website, KnowledgeFiles, TextKnowledge
+# Import SQLAlchemy Base and all models — these are required by Alembic
+# autogenerate even though they appear unused (they register on Base.metadata)
+from src.api.database.base import Base  # noqa: E402, F401
+from src.api.models.admin_models import (  # noqa: E402, F401
+    CustomerNote,
+    ErrorLog,
+    PlatformAdminInvitations,
 )
-from src.api.models.subscription_models import (
-    SubscriptionPlan, UserSubscription, PaymentMethod, WebhookEvent,
-    License, LicenseActivation, DiscountUsage, TrialConversion, Refund
+from src.api.models.audit_models.audit_logs import AuditLog  # noqa: E402, F401
+from src.api.models.content_models import Content, ContentMedia, ContentSEOData  # noqa: E402, F401
+from src.api.models.email_models import EmailEvent, EmailLog  # noqa: E402, F401
+from src.api.models.knowledge_models.knowledge_model import (  # noqa: E402, F401
+    BrandVoice,
+    KnowledgeFiles,
+    TextKnowledge,
+    Website,
 )
-from src.api.models.audit_models.audit_logs import AuditLog
-from src.api.models.content_models import (
-    Content, ContentSEOData, ContentMedia
+from src.api.models.knowledge_models.persona_model import Persona  # noqa: E402, F401
+from src.api.models.media_models.media import Media  # noqa: E402, F401
+from src.api.models.notification.notification_model import Notification  # noqa: E402, F401
+from src.api.models.subscription_models import (  # noqa: E402, F401
+    DiscountUsage,
+    License,
+    LicenseActivation,
+    PaymentMethod,
+    Refund,
+    SubscriptionPlan,
+    TrialConversion,
+    UserSubscription,
+    WebhookEvent,
 )
-from src.api.models.admin_models import (
-    CustomerNote, ErrorLog, PlatformAdminInvitations
+from src.api.models.user_models import (  # noqa: E402, F401
+    EmailPreferences,
+    NotificationPreferences,
+    OAuthAccount,
+    Permission,
+    Role,
+    RolePermission,
+    TokenBlacklist,
+    UserInvitations,
+    UserOnboarding,
+    UserPreferences,
+    UserRole,
+    Users,
+    UserSession,
 )
-from src.api.models.user_models import (
-    Users, Role, Permission, UserRole, RolePermission, 
-    UserInvitations, TokenBlacklist, NotificationPreferences,
-    UserSession, OAuthAccount, UserOnboarding, EmailPreferences,
-    UserPreferences
+from src.api.models.user_models.impersonation_session import (  # noqa: E402
+    ImpersonationSession,  # noqa: F401
 )
-from src.api.models.user_models.impersonation_session import ImpersonationSession
-from src.api.models.media_models.media import Media
-from src.api.models.knowledge_models.persona_model import Persona
-from src.api.models.notification.notification_model import Notification
-from src.api.models.workspace_models.email_template import EmailTemplate
-from src.api.models.email_models import EmailLog, EmailEvent
+from src.api.models.workspace_models.email_template import EmailTemplate  # noqa: E402, F401
+from src.api.models.workspace_models.workspace_integration import (  # noqa: E402
+    WorkspaceIntegration,  # noqa: F401
+)
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

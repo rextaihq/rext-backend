@@ -47,7 +47,7 @@ async def test_update_brand_voice_restful_returns_serialized_payload(monkeypatch
         target_audience=["Audience A"],
         brand_voice=["Friendly"],
         competitors=["Competitor"],
-        content_strategy=["Strategy"],
+        content_pillar=["Strategy"],
         created_at=None,
         updated_at=None,
     )
@@ -93,7 +93,7 @@ async def test_update_brand_voice_restful_returns_serialized_payload(monkeypatch
         "target_audience": ["Audience A"],
         "brand_voice": ["Friendly"],
         "competitors": ["Competitor"],
-        "content_strategy": ["Strategy"],
+        "content_pillar": ["Strategy"],
     }
 
     try:
@@ -119,7 +119,7 @@ async def test_update_brand_voice_restful_returns_serialized_payload(monkeypatch
     assert response_payload["target_audience"] == ["Audience A"]
     assert response_payload["brand_voice"] == ["Friendly"]
     assert response_payload["competitors"] == ["Competitor"]
-    assert response_payload["content_strategy"] == ["Strategy"]
+    assert response_payload["content_pillar"] == ["Strategy"]
     assert response_payload["workspace_id"] == str(workspace_identifier)
     assert response_payload["id"] == str(brand_voice_stub.id)
 
@@ -129,7 +129,7 @@ async def test_update_brand_voice_restful_returns_serialized_payload(monkeypatch
     assert called_user_id == user_identifier
     # Ensure original request payload surfaced through BrandSchema
     assert brand_data.about == "Updated about"
-    assert brand_data.strategy == ["Strategy"]
+    assert brand_data.content_pillar == ["Strategy"]
 
 
 @pytest.mark.asyncio
@@ -228,7 +228,7 @@ async def test_get_brand_voice_success(monkeypatch: pytest.MonkeyPatch) -> None:
         target_audience=[],
         brand_voice=[],
         competitors=[],
-        content_strategy=[],
+        content_pillar=[],
         created_at=None,
         updated_at=None,
     )

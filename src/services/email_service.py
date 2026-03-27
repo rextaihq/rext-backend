@@ -191,7 +191,7 @@ class EmailService:
         )
 
         # Retry with fallback if enabled and primary failed
-        if not result.success and retry_on_failure and self.fallback_provider:
+        if not result.success and retry_on_failure and self.fallback_provider and email_config.email_retry_enabled:
             logger.warning(
                 "Primary provider failed, trying fallback",
                 extra={
@@ -240,13 +240,24 @@ class EmailService:
         provider,
         email_log: EmailLog
     ) -> EmailResult:
-        """Send email using specific provider with configurable retry."""
-        max_attempts = email_config.email_retry_max_attempts if email_config.email_retry_enabled else 1
-        delay_seconds = email_config.email_retry_delay_seconds
+        """
+        Send email using specific provider with exponential backoff retry.
 
+        Args:
+            message: Email message to send
+            provider: Provider instance to use
+            email_log: Log entry to update
+
+        Returns:
+            EmailResult from provider
+        """
+        max_attempts = email_config.email_retry_max_attempts
+        retry_delay = email_config.email_retry_delay_seconds
+
+        # Create retry decorator with config-driven exponential backoff
         @retry(
-            stop=stop_after_attempt(max_attempts),
-            wait=wait_exponential(multiplier=1, min=delay_seconds, max=delay_seconds * 3),
+            stop=stop_after_attempt(max_attempts if email_config.email_retry_enabled else 1),
+            wait=wait_exponential(multiplier=1, min=retry_delay, max=retry_delay * 3),
             before_sleep=before_sleep_log(logging.getLogger(__name__), logging.WARNING),
             reraise=True
         )
@@ -260,7 +271,7 @@ class EmailService:
                 return result
             except Exception as e:
                 logger.error(
-                    f"Provider send failed (attempt {email_log.retry_count}/3): {str(e)}",
+                    f"Provider send failed (attempt {email_log.retry_count}/{max_attempts}): {str(e)}",
                     extra={
                         "email_log_id": str(email_log.id),
                         "provider": provider.get_provider_name(),
@@ -270,11 +281,11 @@ class EmailService:
                     exc_info=True
                 )
 
-                # Alert Sentry on 3rd+ failure (critical)
-                if email_log.retry_count >= 3 and SENTRY_AVAILABLE:
+                # Alert Sentry on final failure (critical)
+                if email_log.retry_count >= max_attempts and SENTRY_AVAILABLE:
                     sentry_sdk.capture_exception(e)
                     logger.critical(
-                        "Email failed after 3 attempts - Sentry alert sent",
+                        f"Email failed after {max_attempts} attempts - Sentry alert sent",
                         extra={
                             "email_log_id": str(email_log.id),
                             "to_email": email_log.to_email,

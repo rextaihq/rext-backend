@@ -1,5 +1,5 @@
 from pydantic import BaseModel, HttpUrl, Field, EmailStr
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 from uuid import UUID
 from datetime import datetime
 
@@ -100,10 +100,10 @@ class BrandVoiceSchema(BaseModel):
     about: Optional[str] = Field(None, description="About the brand")
     customer_profile: Optional[str] = Field(None, description="Customer profile details")
     selling_position: Optional[str] = Field(None, description="Selling position of the brand")
-    target_audience: Optional[str] = Field(None, description="Target audience details")
-    brand_voice: Optional[str] = Field(None, description="Tone and voice of the brand")
-    competitors: Optional[str] = Field(None, description="Competitors information")
-    content_strategy: Optional[str] = Field(None, description="Content strategy pillars")
+    target_audience: Optional[List[str]] = Field(default_factory=list, description="Target audience details")
+    brand_voice: Optional[List[str]] = Field(default_factory=list, description="Tone and voice of the brand")
+    competitors: Optional[List[str]] = Field(default_factory=list, description="Competitors information")
+    content_pillar: Optional[List[str]] = Field(default_factory=list, description="Content strategy pillars")
 
 
 class BrandVoiceResponseSchema(BrandVoiceSchema):
