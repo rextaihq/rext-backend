@@ -51,7 +51,12 @@ async def create_content_agent(
         user_id=user_id,
         outline=outline,
       ),
-      # HumanizeMiddleware(model=model),
+      HumanizeMiddleware(
+        model=model,
+        workspace_id=workspace_id,
+        user_id=user_id,
+        outline=outline,
+      ),
     ]
 
     if rext_middleware:
@@ -320,61 +325,7 @@ Now Based on the outline generate the content
         }
 
         print("--- Agent Execution with Streaming & Tool Calling ---")
-        
-        # # We use astream_events (v2) to capture both tokens and tool execution details
-        # async for event in agent.astream_events(input_data, version="v2"):
-        #     kind = event["event"]
-        #     print("Event: ", event, "\n")
-        #     print("Event Kind: ", kind, "\n")
-            
-        #     # Show streaming tokens from the LLM
-        #     if kind == "on_chat_model_stream":
-        #         content = event["data"]["chunk"].content
-        #         if content:
-        #             print(content, end="", flush=True)
-            
-        #     # Show when a tool is being called
-        #     elif kind == "on_tool_start":
-        #         print(f"\n\n[Tool Call] >>> Calling tool: {event['name']}")
-        #         print(f"[Tool Input] {event['data'].get('input')}\n")
-            
-        #     # Show when a tool finishes execution
-        #     elif kind == "on_tool_end":
-        #         print(f"\n[Tool Result] <<< Tool '{event['name']}' execution finished.\n")
-            
-        #     # Show when the agent finishes
-        #     elif kind == "on_agent_end":
-        #         print(f"\n[Agent Result] <<< Agent execution finished.\n")
-        #         # print(f"[Final Output] {event['data'].get('output')}\n")
-        #          # Only process the final structured GeneratedContent response
-        #         structured_response = event['data'].get('output')
-        #         if isinstance(structured_response, GeneratedContent):
-        #             import json
-        #             response_dict = structured_response.model_dump()
-        #             response_json = json.dumps(response_dict, indent=2, ensure_ascii=False)
-        #             print(f"[Structured Response JSON]\n{response_json}\n")
-        #     elif kind == "on_chain_end" and not event.get('parent_ids'):
-        #         # Top-level graph end: output is {'messages': [...]}
-        #         # The structured JSON is in the last AIMessage's content
-        #         import json
-        #         output = event['data'].get('output')
-        #         if isinstance(output, GeneratedContent):
-        #             response_dict = output.model_dump()
-        #         elif isinstance(output, dict) and 'messages' in output:
-        #             messages = output['messages']
-        #             last_msg = messages[-1] if messages else None
-        #             content = getattr(last_msg, 'content', '') if last_msg else ''
-        #             try:
-        #                 response_dict = json.loads(content) if content else None
-        #             except (json.JSONDecodeError, TypeError):
-        #                 response_dict = None
-        #         else:
-        #             response_dict = None
-
-        #         if response_dict:
-        #             response_json = json.dumps(response_dict, indent=2, ensure_ascii=False)
-        #             print(f"\n[Structured Response JSON]\n{response_json}\n")
-
+       
         final_output = await agent.ainvoke(input_data)
         structured_output = final_output.get("structured_response")
         if isinstance(structured_output, GeneratedContent):
