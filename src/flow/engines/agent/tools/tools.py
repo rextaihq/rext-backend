@@ -1,36 +1,53 @@
 from langchain_core.tools import tool
-from langchain_community.tools import DuckDuckGoSearchResults
+from langchain_community.tools.tavily_search import TavilySearchResults
+from dotenv import load_dotenv
 import json
+import os
+
+load_dotenv()
 
 @tool
 def search_tool(query: str) -> str:
-    """Perform a web search using DuckDuckGo and return a list of results.
+    """Perform a web search using Tavily and return top 5 results with snippets.
 
-    Use this tool for any factual questions, current events, research, or when you need up-to-date information from the web.
-    Do not use for opinions, creative writing, or math calculations.
+    Use this tool for factual questions, current events, research, or up-to-date web info.
+    Returns structured results with title, URL, and snippet for citation.
 
     Args:
-        query: The search query string to send to DuckDuckGo
+        query: Search query (e.g., "best laptops 2024 review")
     """
-    search = DuckDuckGoSearchResults(
-        max_results=5,  # Limit results to keep responses concise
-        output_format="list"  # Return as structured list
+    search = TavilySearchResults(
+        max_results=5,
+        search_depth="advanced",
+        api_key=os.getenv("TAVILY_API_KEY"),
     )
     results = search.run(query)
     return json.dumps(results, indent=2)
 
 @tool
 def search_image_tool(query: str) -> str:
-    """Search for and return a relevant stock image URL from Unsplash.
+    """Search for a real, valid image URL to embed in the article.
 
-    Use this ONLY when the user specifically asks for an image or visual reference.
-    Returns a single high-quality image URL matching the query.
+    Returns ONLY a direct image URL (e.g. https://images.unsplash.com/...).
+    Embed it in markdown as: ![descriptive alt text](returned_url)
+    NEVER invent or guess URLs — only use what this tool returns.
+    If the tool returns NO_IMAGE_FOUND, skip the image entirely.
 
     Args:
-        query: Descriptive terms for the image (e.g., "sunset beach landscape")
+        query: Image description (e.g., "AI automation robots manufacturing 2024")
     """
-    print(f"Image search executed for: {query}")
-    return "https://images.unsplash.com/photo-1506744038136-49a8b3f14ba3?ixlib=rb-4.0.3&auto=format&fit=crop&w=1170&q=80"
+    try:
+        search = TavilySearchResults(
+            max_results=5,
+            search_depth="basic",
+            include_images=True,
+            api_key=os.getenv("TAVILY_API_KEY"),
+        )
+        response = search.run(query)
+
+        return json.dumps(response, indent=2)
+    except Exception as e:
+        return f"Error: {str(e)}"
 
 
 def get_tools():

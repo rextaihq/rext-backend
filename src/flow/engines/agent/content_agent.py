@@ -24,10 +24,7 @@ async def create_content_agent(
     name: Optional[str] = "content_agent",
     cache: Optional[BaseCache] = None,
     agent_store=None,
-    response_format = ToolStrategy(GeneratedContent),
-    user_id: Optional[UUID] = None,
-    workspace_id: Optional[UUID] = None,
-    outline: Optional[dict] = None,
+    response_format = ToolStrategy(GeneratedContent)
 ) -> CompiledStateGraph:
     """
     Create a content agent with parent/child tool routing AND dynamic integration tools.
@@ -46,11 +43,7 @@ async def create_content_agent(
 
     # Middleware Stack
     middleware_stack = [
-      PersonaInjectionMiddleware(
-        workspace_id=workspace_id,
-        user_id=user_id,
-        outline=outline,
-      ),
+      PersonaInjectionMiddleware(),
       # HumanizeMiddleware(model=model),
     ]
 
@@ -67,7 +60,7 @@ async def create_content_agent(
         cache=cache,
         store=agent_store,
         response_format=response_format,
-    ).with_config({"recursion_limit": 100})
+    ).with_config({"recursion_limit": 1000})
 
 
 if __name__ == "__main__":
