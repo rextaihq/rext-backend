@@ -53,6 +53,7 @@ async def _get_site_or_404(
 @db_transaction_handler("list connected sites")
 async def list_connected_sites(
     workspace_id: str,
+    request: Request,
     db: AsyncSession = Depends(get_async_db),
     user: dict = Depends(get_current_user)
 ):

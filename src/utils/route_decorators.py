@@ -396,7 +396,7 @@ def require_permissions(
             # Tests must use dependency overrides or monkeypatching, not production bypass branches.
             check_func = check_all_permissions if require_all else check_any_permission
             try:
-                await check_func(db, user_id, list(permissions), workspace_uuid)
+                has_permission = await check_func(db, user_id, list(permissions), workspace_uuid)
             except Exception as exc:
                 logger.error(
                     "Permission evaluation failed; denying request",
