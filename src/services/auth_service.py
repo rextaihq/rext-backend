@@ -965,13 +965,6 @@ class AuthService:
                             user_id=user.id
                         )
 
-                        # Auto-accept the invitation
-                        # This creates WorkspaceMembers + UserRole records
-                        result = await invitation_service.accept_invitation(
-                            invitation_id=invitation.id,
-                            user_id=user.id
-                        )
-
                         accepted_count += 1
                         logger.info(
                             f"[AUTO-ACCEPT] ✅ Successfully auto-accepted invitation during login",
@@ -983,20 +976,6 @@ class AuthService:
                                 "result": result
                             }
                         )
-                    else:
-                        # Other business rule violations - log and continue
-                        logger.error(
-                            f"[AUTO-ACCEPT] ❌ Unexpected error auto-accepting invitation: {str(e)}",
-                            exc_info=True,
-                            extra={
-                                "user_id": str(user.id),
-                                "invitation_id": str(invitation.id),
-                                "workspace_id": str(invitation.workspace_id),
-                                "error": str(e),
-                                "error_type": type(e).__name__
-                            }
-                        )
-                        skipped_count += 1
 
                 except Exception as e:
                     # Unexpected error - savepoint was rolled back; log but don't fail login
