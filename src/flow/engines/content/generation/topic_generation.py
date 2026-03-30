@@ -6,7 +6,7 @@ from src.flow.model.llm_manager import topic_generation_model
 from langgraph.types import interrupt
 from langchain_core.messages import SystemMessage, HumanMessage
 from datetime import datetime, timezone
-logger = logging.getLogger(__name__)
+logger = logging.getLogger(__name__) 
 
 
 async def topic_generation(state: REXT) -> Dict[str, Any]:

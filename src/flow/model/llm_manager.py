@@ -55,11 +55,6 @@ def load_model(max_tokens: int = DEFAULT_MAX_TOKENS):
         max_tokens=max_tokens,
         streaming=True,
     )
-    # # logger.info("Initialized LLM model gpt-4o-mini with max_tokens=%d", max_tokens)
-    # model = ChatGroq(
-    #     model="openai/gpt-oss-120b",
-    #     api_key="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"
-    # )
     return model
 
 
@@ -73,12 +68,6 @@ def load_content_model():
     Returns:
         BaseChatModel: A chat model with 8192 max output tokens.
     """
-    # model = ChatGroq(
-    #     model="openai/gpt-oss-120b",
-    #     api_key="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"
-    # )
-    # return model
-
     return init_chat_model(
         "gpt-4o-mini",
         model_provider="openai",
@@ -104,39 +93,3 @@ def topic_generation_model():
         streaming=True,
     )
     return model
-    # model = ChatGroq(
-    #     model="openai/gpt-oss-120b",
-    #     api_key="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"
-    # )
-    # return model
-
-def load_humanize_model():
-    """
-    Returns a model configured for content humanization with higher token limits.
-
-    Humanization transforms AI content to appear natural, which requires
-    significant context and output length.
-
-    Returns:
-        BaseChatModel: A chat model with 8192 max output tokens.
-    """
-
-    return init_chat_model(
-    "gpt-5-mini", 
-    model_provider="openai",
-    api_key=settings.OPENAI_API_KEY,
-    max_tokens=CONTENT_GENERATION_MAX_TOKENS,
-    )   
-
-#     return init_chat_model(
-#     "gpt-5.2",
-#     model_provider="openai",
-#     api_key=settings.OPENAI_API_KEY,
-#     max_tokens=CONTENT_GENERATION_MAX_TOKENS,
-#     reasoning_effort="low"
-# ) 
-    # model = ChatGroq(
-    #     model="openai/gpt-oss-120b",
-    #     api_key="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"
-    # )
-    # return model

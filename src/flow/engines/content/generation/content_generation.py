@@ -109,7 +109,7 @@ async def generate_content(state: REXT) -> dict:
         logger.info(f"Tone: {tone}")
 
         # 6️⃣ Build the human message for the agent
-        # (system prompt is already embedded in the agent via CONTENT_SYSTEM_PROMPT)
+        # (system prompt is already embedded in the agent)
         human_message_content = (
             f"Content Type: {content_type}\n"
             f"Topic: {topic}\n\n"
@@ -136,12 +136,20 @@ async def generate_content(state: REXT) -> dict:
 
         # 7️⃣ Create the content agent
         logger.info("Creating content agent...")
-        agent = await create_content_agent(
-            user_id=state.get("serp_payload",{}).get("user_id"),
-            workspace_id=state.get("serp_payload",{}).get("workspace_id"),
-            outline=outline if outline else None,
-        )
-        agent_input = {"messages": [HumanMessage(content=human_message_content)]}
+        serp_payload = state.get("serp_payload", {})
+        user_id = serp_payload.get("user_id")
+        workspace_id = serp_payload.get("workspace_id")
+
+        agent = await create_content_agent()
+        agent_input = {
+            "messages": [HumanMessage(content=human_message_content)],
+            "serp_payload": {
+                **serp_payload,
+                "user_id": user_id,
+                "workspace_id": workspace_id,
+            },
+            "content": {"outline": outline},
+        }
 
         # 8️⃣ Stream agent events → forward tokens & tool calls to frontend
         write = get_stream_writer()
@@ -157,7 +165,11 @@ async def generate_content(state: REXT) -> dict:
         # Instead we match the root completion by run_id.
         agent_root_run_id: str | None = None
 
-        async for event in agent.astream_events(agent_input, version="v2"):
+        async for event in agent.astream_events(
+            agent_input,
+            version="v2",
+            config={"recursion_limit": 200},
+        ):
             kind = event["event"]
             tool_name = event.get("name", "")
             event_run_id = event.get("run_id", "")
