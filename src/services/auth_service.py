@@ -909,60 +909,64 @@ class AuthService:
             skipped_count = 0
 
             for invitation in pending_invitations:
+                # Use a savepoint per invitation so a DB failure on one invitation
+                # doesn't abort the outer transaction for subsequent iterations.
                 try:
-                    logger.info(
-                        f"[AUTO-ACCEPT] Processing invitation {str(invitation.id)}",
-                        extra={
-                            "invitation_id": str(invitation.id),
-                            "workspace_id": str(invitation.workspace_id),
-                            "role_id": str(invitation.role_id),
-                            "status": invitation.status,
-                            "expires_at": invitation.expires_at.isoformat()
-                        }
-                    )
-
-                    # Skip expired invitations
-                    if is_invitation_expired(invitation):
-                        invitation.status = "expired"
-                        skipped_count += 1
-                        logger.warning(
-                            f"[AUTO-ACCEPT] Skipping expired invitation",
+                    async with db.begin_nested():
+                        logger.info(
+                            f"[AUTO-ACCEPT] Processing invitation {str(invitation.id)}",
                             extra={
                                 "invitation_id": str(invitation.id),
                                 "workspace_id": str(invitation.workspace_id),
+                                "role_id": str(invitation.role_id),
+                                "status": invitation.status,
                                 "expires_at": invitation.expires_at.isoformat()
                             }
                         )
-                        continue
-                    #  send the notification to user
-                    await schedule_if_allowed(
-                        db=db,
-                        user_id=str(invitation.invited_by_user_id),
-                        background_tasks=background_tasks,
-                        pref_flag="ws_invite_accepted",
-                        message=f"{user.email} has accepted an invitation to join a workspace.",
-                        payload = {
-                            "user_id": str(user.id),
-                            "invitation_id": str(invitation.id),
-                            "user_existed": True
-                        },
-                        workspace_id=str(invitation.workspace_id),
-                    )
-                    logger.info(
-                        f"[AUTO-ACCEPT] Calling accept_invitation service method",
-                        extra={
-                            "invitation_id": str(invitation.id),
-                            "user_id": str(user.id),
-                            "workspace_id": str(invitation.workspace_id)
-                        }
-                    )
 
-                    # Auto-accept the invitation
-                    # This creates WorkspaceMembers + UserRole records
-                    result = await invitation_service.accept_invitation(
-                        invitation_id=invitation.id,
-                        user_id=user.id
-                    )
+                        # Skip expired invitations
+                        if is_invitation_expired(invitation):
+                            invitation.status = "expired"
+                            skipped_count += 1
+                            logger.warning(
+                                f"[AUTO-ACCEPT] Skipping expired invitation",
+                                extra={
+                                    "invitation_id": str(invitation.id),
+                                    "workspace_id": str(invitation.workspace_id),
+                                    "expires_at": invitation.expires_at.isoformat()
+                                }
+                            )
+                            return
+
+                        #  send the notification to user
+                        await schedule_if_allowed(
+                            db=db,
+                            user_id=str(invitation.invited_by_user_id),
+                            background_tasks=background_tasks,
+                            pref_flag="ws_invite_accepted",
+                            message=f"{user.email} has accepted an invitation to join a workspace.",
+                            payload = {
+                                "user_id": str(user.id),
+                                "invitation_id": str(invitation.id),
+                                "user_existed": True
+                            },
+                            workspace_id=str(invitation.workspace_id),
+                        )
+                        logger.info(
+                            f"[AUTO-ACCEPT] Calling accept_invitation service method",
+                            extra={
+                                "invitation_id": str(invitation.id),
+                                "user_id": str(user.id),
+                                "workspace_id": str(invitation.workspace_id)
+                            }
+                        )
+
+                        # Auto-accept the invitation
+                        # This creates WorkspaceMembers + UserRole records
+                        result = await invitation_service.accept_invitation(
+                            invitation_id=invitation.id,
+                            user_id=user.id
+                        )
 
                     accepted_count += 1
                     logger.info(
@@ -989,7 +993,6 @@ class AuthService:
                                 "error": str(e)
                             }
                         )
-                        # Note: invitation.status already set to "accepted" by accept_invitation before raising
                     else:
                         # Other business rule violations - log and continue
                         logger.error(
@@ -1005,7 +1008,7 @@ class AuthService:
                         skipped_count += 1
 
                 except Exception as e:
-                    # Unexpected error - log but don't fail login
+                    # Unexpected error - savepoint was rolled back; log but don't fail login
                     logger.error(
                         f"[AUTO-ACCEPT] ❌ Unexpected error auto-accepting invitation: {str(e)}",
                         exc_info=True,
@@ -1018,17 +1021,6 @@ class AuthService:
                         }
                     )
                     skipped_count += 1
-
-            # Flush changes to database
-            logger.info(
-                f"[AUTO-ACCEPT] Flushing database changes",
-                extra={
-                    "user_id": str(user.id),
-                    "accepted_count": accepted_count,
-                    "skipped_count": skipped_count
-                }
-            )
-            await self.db.flush()
 
             logger.info(
                 f"[AUTO-ACCEPT] ✅ Process completed - auto-accepted {accepted_count} invitation(s), skipped {skipped_count}",

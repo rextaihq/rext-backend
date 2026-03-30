@@ -1,7 +1,7 @@
 from typing import List, Optional
-from typing import List, Optional
 import logging
 from pydantic import BaseModel, Field, model_validator
+from src.flow.model.structure.outline import Fact
 
 logger = logging.getLogger(__name__)
 
@@ -95,11 +95,6 @@ class GeneratedContent(BaseModel):
         max_length=60000,
     )
 
-    # Html content
-    html_content: str = Field(
-        description="Complete article body written in HTML format following the approved outline.",
-    )
-
     # Image Alt Text Suggestions
     images: List[ImageAltText] = Field(
         default=[],
@@ -121,25 +116,7 @@ class GeneratedContent(BaseModel):
         description="Structured data/schema markup for the article."
     )
 
-
-# class GeneratedHumanizeContent(BaseModel):
-#     """Validated output of the content humanization step with comprehensive SEO requirements."""
-
-#     # Core Content
-#     title: str = Field(description="Final SEO-optimized article title starting with the keyphrase.")
-  
-#     # Introduction
-#     introduction: str = Field(
-#         description="Opening paragraph(s) that introduce the topic and contain the keyphrase naturally (150-300 words in Markdown).",
-#         min_length=150,
-#         max_length=2000,
-#     )
-    
-#     # Main Content
-#     body_markdown: str = Field(
-#         description="Complete article body written in Markdown format (excluding introduction), following the approved outline. Must include subheadings with keyphrase variants.",
-#         min_length=800,
-#         max_length=30000,
-#     )
-    
-   
+    facts: List[Fact] = Field(
+        default_factory=list,
+        description="List of key verifiable facts or statistics with source URLs included in the content."
+    )

@@ -25,16 +25,6 @@ class ContentOutline(TypedDict):
     rejected_reason: Annotated[Optional[str], operator.add]
 
 
-class ContentDraft(TypedDict):
-    title: str
-    body_markdown: str
-    word_count: int
-    sections_completed: list[str]
-
-    status: Literal["approved", "rejected"]
-    rejected_reason: Optional[str]
-
-
 # Readability Metrics
 class ReadabilityMetrics(TypedDict):
     flesch_reading_ease: float
@@ -117,7 +107,6 @@ class ContentReview(TypedDict, total=False):
 
 class FinalContent(TypedDict):
     title: str
-    html_content: str
     body_markdown: str
     introduction: str
     
@@ -142,7 +131,6 @@ class CONTENT(TypedDict, total=False):
     """
     Main LangGraph state for AI-powered SEO content engine
     """
-
     # Core artifact
     topics: list[str]
     selected_topic: str
