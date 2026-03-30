@@ -103,6 +103,8 @@ class ContentService:
         # Save Media links
         if data.media_items:
             for item in data.media_items:
+                if not item.media_id:
+                    continue
                 media_link = ContentMedia(
                     content_id=content.id,
                     media_id=item.media_id,
@@ -181,6 +183,8 @@ class ContentService:
             await self.db.execute(delete(ContentMedia).where(ContentMedia.content_id == content.id))
             
             for item in data.media_items:
+                if not item.media_id:
+                    continue
                 self.db.add(ContentMedia(
                     content_id=content.id, 
                     media_id=item.media_id, 
@@ -287,7 +291,7 @@ class ContentService:
         if not sites:
             logger.warning(f"No active sites found for workspace {workspace_id}")
             raise RextValidationException(
-                message="No active WordPress sites found in this workspace. Please connect a site before publishing."
+                message="No active sites found in this workspace. Please connect a site before publishing."
             )
 
         # Prepare content data for publisher
@@ -319,27 +323,53 @@ class ContentService:
             seo_data=seo_data
         )
 
-        async def publish_one(site):
+        async def publish_one(site) -> PublishResponse:
             try:
-                async with WordPressPublisher(
-                    site_url=site.site_url,
-                    api_endpoint=site.api_endpoint,
-                    username=site.username,
-                    app_password=site.app_password,
-                    api_key=site.api_key
-                ) as wp_publisher:
-                    wp_response = await wp_publisher.publish_post(
-                        data=content_data,
-                        status=publish_status
+                if site.integration_type == "shopify":
+                    from src.web.shopify import ShopifyConnector
+                    async with ShopifyConnector(
+                        store_url=site.site_url,
+                        access_token=site.api_key
+                    ) as shopify:
+                        # Convert status to shopify concept of 'published'
+                        is_published = publish_status == "publish"
+                        # We use html for universal support
+                        body_to_use = content.body_html or content.body_markdown or ""
+                        
+                        shop_resp = await shopify.publish_blog_post(
+                            title=content.title,
+                            body_html=body_to_use,
+                            tags=content.tags,
+                            published=is_published,
+                            handle=content.slug
+                        )
+                    return PublishResponse(
+                        site_id=site.id,
+                        site_url=site.site_url,
+                        success=True,
+                        shopify_article_id=shop_resp.get("article_id"),
+                        shopify_article_url=shop_resp.get("article_url")
                     )
-
-                return PublishResponse(
-                    site_id=site.id,
-                    site_url=site.site_url,
-                    success=True,
-                    wordpress_post_id=wp_response.get("post_id"),
-                    wordpress_url=wp_response.get("link")
-                )
+                else:
+                    # Default to WordPress
+                    async with WordPressPublisher(
+                        site_url=site.site_url,
+                        api_endpoint=site.api_endpoint,
+                        username=site.username,
+                        app_password=site.app_password,
+                        api_key=site.api_key
+                    ) as wp_publisher:
+                        wp_response = await wp_publisher.publish_post(
+                            data=content_data,
+                            status=publish_status
+                        )
+                    return PublishResponse(
+                        site_id=site.id,
+                        site_url=site.site_url,
+                        success=True,
+                        wordpress_post_id=wp_response.get("post_id"),
+                        wordpress_url=wp_response.get("link")
+                    )
             except Exception as e:
                 logger.error(f"Failed to publish to {site.site_url}: {str(e)}")
                 return PublishResponse(
@@ -354,10 +384,19 @@ class ContentService:
         # Update content with first successful publish info
         successful_results = [r for r in results if r.success]
         if successful_results:
-            first_success = successful_results[0]
-            content.wordpress_post_id = first_success.wordpress_post_id
-            content.wordpress_url = first_success.wordpress_url
-            content.wordpress_published_at = datetime.now(timezone.utc)
+            # We track the first successful WP and first successful Shopify publish
+            wp_success = next((r for r in successful_results if r.wordpress_post_id), None)
+            shopify_success = next((r for r in successful_results if r.shopify_article_id), None)
+            
+            if wp_success:
+                content.wordpress_post_id = wp_success.wordpress_post_id
+                content.wordpress_url = wp_success.wordpress_url
+                content.wordpress_published_at = datetime.now(timezone.utc)
+            if shopify_success:
+                content.shopify_article_id = shopify_success.shopify_article_id
+                content.shopify_article_url = shopify_success.shopify_article_url
+                content.shopify_published_at = datetime.now(timezone.utc)
+                
             content.status = "published"
         else:
             content.status = "failed"
