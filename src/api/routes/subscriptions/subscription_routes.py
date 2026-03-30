@@ -665,7 +665,7 @@ async def get_invoices(
             message="Unable to retrieve invoices at this time"
         )
 
-@router.get("/portal", response_model=dict, status_code=status.HTTP_200_OK)
+@router.api_route("/portal", methods=["GET", "POST"], response_model=dict, status_code=status.HTTP_200_OK)
 @require_permissions("subscription.read", workspace_scoped=False)
 @db_transaction_handler("create portal session", auto_commit=False)
 async def create_portal_session(
