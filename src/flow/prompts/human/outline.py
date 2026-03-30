@@ -28,6 +28,9 @@ SERP Insights:
 - Intent Distribution:
 {intent_distribution}
 
+SEO Keyword Clusters (Semantic Groups):
+{keyword_clusters}
+
 Iteration Feedback:
 - Previous Rejection Reason: {rejected_reason}
 - Previous Outline (if any):
@@ -40,9 +43,10 @@ Iteration Feedback:
 3. All main sections MUST be H2.
 4. H3 sections only when logically required.
 5. Each section must:
-   - Map to a clear search intent
-   - Include 2–4 key points
+   - Map to a clear search intent (Use the provided **Keyword Clusters** to guide these intents)
+   - Include 2–4 key points (Ensure the 'Supporting Keywords' from the cluster are covered here)
    - Answer real user questions
+5b. **Semantic Synthesis**: Each unique Keyword Cluster should ideally inform a main H2 or H3 heading. If clusters overlap semantically, merge them into a single authoritative section to avoid redundancy.
 6. Include:
    - At least 1 featured snippet–targeted section
    - A dedicated FAQ section using PAA questions

@@ -66,6 +66,15 @@ async def generate_outline(state: REXT) -> dict:
     intent_distribution = ", ".join(
         f"{k}: {v}" for k, v in seo_result.get("intent", {}).items()
     )
+    
+    # 2b. Format Keyword Clusters for prompt (if available)
+    keyword_clusters = seo_result.get("keyword_clusters", [])
+    clusters_context = "None"
+    if keyword_clusters:
+        clusters_context = "\n".join([
+            f"- Topic Bucket: {c.get('cluster_name')}\n  Supporting Keywords: {', '.join([k.get('keyword') for k in c.get('keywords', [])[:8]])}"
+            for c in keyword_clusters
+        ])
 
     # 3. Generate outline
     try:
@@ -79,6 +88,7 @@ async def generate_outline(state: REXT) -> dict:
             questions="\n".join(f"- {q}" for q in questions),
             competitors_context="\n".join(competitors_context),
             intent_distribution=intent_distribution,
+            keyword_clusters=clusters_context,
             rejected_reason=outline_rejected_reason,
             previous_outline=outline_state,
         )
