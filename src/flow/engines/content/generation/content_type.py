@@ -7,6 +7,8 @@ from langgraph.types import interrupt
 from langchain_core.messages import SystemMessage, HumanMessage
 from src.flow.model.structure.intent_suggestion import INTENT_TO_CONTENT_TYPES
 
+from src.flow.utils.intent_utils import get_consensus_intent
+
 logger = logging.getLogger(__name__)
 
 
@@ -24,6 +26,7 @@ def content_type(state: REXT) -> REXT:
     
     # get the selected topic from the state
     content_state = state.get("content", {})
+    competitors = state.get("competitors", [])
 
     seo_result = state.get("seo_result", {})
     serp_backlinks = seo_result.get("serp_backlinks", {})

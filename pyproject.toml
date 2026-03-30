@@ -68,6 +68,11 @@ dependencies = [
     "ddgs>=9.11.4",
     "beautifulsoup4>=4.14.3",
     "langchain-tavily>=0.2.17",
+    "pylint>=4.0.5",
+    "flake8>=7.3.0",
+    "radon>=6.0.1",
+    "bandit>=1.9.4",
+    "sqlalchemy[asyncio]>=2.0.45",
 ]
 
 [project.scripts]
@@ -89,6 +94,7 @@ dev = [
 [tool.ruff]
 line-length = 100
 target-version = "py311"
+exclude = ["alembic/versions/"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I"]
@@ -96,3 +102,4 @@ select = ["E", "F", "I"]
 [tool.ruff.lint.per-file-ignores]
 "tests/**/*.py" = ["F401"]
 "scripts/**/*.py" = ["I001"]
+"alembic/env.py" = ["E402"]

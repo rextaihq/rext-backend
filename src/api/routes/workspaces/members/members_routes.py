@@ -16,7 +16,8 @@ from src.api.database.async_database import get_async_db
 from src.utils.helper import web_page_scraper
 from src.utils.response_utils import success, error, created
 from src.utils.route_decorators import db_transaction_handler, require_permissions
-from src.api.schema.response_schemas import ErrorCode, ErrorSeverity
+from src.api.schema.response_schemas import ErrorCode, ErrorSeverity, SuccessResponse
+from src.api.schema.response.member_responses import MemberAddResponse
 from src.api.middleware.exceptions import (
     DuplicateResourceException,
     ResourceNotFoundException,
@@ -36,7 +37,7 @@ router = APIRouter(
 )
 
 
-@router.post("/{workspace_id}/add", summary="Add a member to a workspace")
+@router.post("/{workspace_id}/add", summary="Add a member to a workspace", response_model=SuccessResponse[MemberAddResponse])
 @db_transaction_handler("add member to workspace", auto_commit=True)
 @require_permissions("member.invite", workspace_scoped=True)
 async def add_member_to_workspace(
@@ -73,7 +74,7 @@ async def add_member_to_workspace(
         user_id=UUID(user.get("identity"))
     )
 
-    return {
-        "data": {"user_id": str(user.get("identity")), "workspace_id": workspace_id},
-        "message": "User added to workspace successfully"
-    }
+    return success(
+        data={"user_id": str(user.get("identity")), "workspace_id": workspace_id},
+        message="User added to workspace successfully"
+    )

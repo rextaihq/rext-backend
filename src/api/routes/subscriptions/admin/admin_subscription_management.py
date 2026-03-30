@@ -15,6 +15,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.database.async_database import get_async_db
 from src.api.security.dependencies import get_current_user
+from src.api.schema.response_schemas import SuccessResponse
+from src.api.schema.response.admin_subscription_responses import (
+    SubscriptionAdminAssignResponse,
+    UserSubscriptionBase,
+)
 from src.api.schema.subscription import (
     AdminSubscriptionAssignRequest,
     AdminSubscriptionExtendRequest,
@@ -22,6 +27,7 @@ from src.api.schema.subscription import (
 )
 from src.services.subscription_management_service import SubscriptionManagementService
 from src.utils.logger import logger
+from src.utils.response_utils import success, created
 from src.utils.route_decorators import db_transaction_handler, require_permissions
 from .shared.auth import require_super_admin
 
@@ -50,11 +56,11 @@ async def assign_subscription(
         extra={"admin_user_id": str(admin_user_id), "target_user_id": str(assign_data.user_id)},
     )
 
-    return {
-        "data": result["subscription"],
-        "message": result["message"],
-        "status_code": status.HTTP_201_CREATED,
-    }
+    return created(
+        data=result["subscription"],
+        request=request,
+        message=result["message"],
+    )
 
 
 @router.post("/{subscription_id}/extend", response_model=dict)
@@ -78,10 +84,11 @@ async def extend_subscription(
         payload=extend_data,
     )
 
-    return {
-        "data": result["subscription"],
-        "message": result["message"],
-    }
+    return success(
+        data=result["subscription"],
+        request=request,
+        message=result["message"],
+    )
 
 
 @router.post("/{subscription_id}/reset-usage", response_model=dict)
@@ -105,7 +112,8 @@ async def reset_usage(
         payload=reset_data,
     )
 
-    return {
-        "data": result["subscription"],
-        "message": result["message"],
-    }
+    return success(
+        data=result["subscription"],
+        request=request,
+        message=result["message"],
+    )

@@ -98,7 +98,6 @@ async def handle_order_created(
     lemonsqueezy_product_id = order_data.get("product_id")
     product_name = order_data.get("product_name")
     user_email = order_data.get("user_email")
-    total = order_data.get("total")
     status = order_data.get("status", "paid")
 
     # Get user identifier from custom_data or email

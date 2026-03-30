@@ -36,9 +36,9 @@ services:
     postgres:
         image: pgvector/pgvector:pg17
         environment:
-            POSTGRES_USER: exec
-            POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-rextserver}
-            POSTGRES_DB: rext
+            POSTGRES_USER: ${POSTGRES_USER}
+            POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+            POSTGRES_DB: ${POSTGRES_DB}
         volumes:
             - langgraph-data:/var/lib/postgresql/data
         command: >
@@ -70,7 +70,7 @@ services:
                 limits:
                     memory: 2G
         healthcheck:
-            test: [ "CMD-SHELL", "pg_isready -U exec" ]
+            test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
             interval: 5s
             retries: 5
         networks:
@@ -78,9 +78,10 @@ services:
 
     # Backend API Service
     rext-api:
-        image: revnixhq/wrext:${IMAGE_TAG:-latest}
+        image: ghcr.io/revnix/rext-backend:${IMAGE_TAG:-latest}
         labels:
-            - "traefik.docker.network=d4wwgc0coow0888wogwc04gs"
+            - "traefik.enable=true"
+            - "traefik.docker.network=coolify"
         deploy:
             replicas: 1 # Set to 1 to avoid 'container name must be unique' error in Coolify
             resources:
@@ -91,10 +92,13 @@ services:
                     cpus: '0.5'
                     memory: 1.5G
         expose:
-            - "2024"
+            - ${PORT:-2024}
 
         # Traefik labels are managed by Coolify — do not uncomment these manually
         # See Coolify dashboard > Applications > rext-backend for routing config
+        networks:
+            - rext-network
+            - coolify
         depends_on:
             postgres:
                 condition: service_healthy
@@ -110,8 +114,8 @@ services:
             LANGSMITH_TRACING: ${LANGSMITH_TRACING:-true}
 
             # Database (Connect to host PostgreSQL)
-            POSTGRES_URI_CUSTOM: postgresql://exec:${POSTGRES_PASSWORD:-rextserver}@postgres:5432/rext
-            DATABASE_URI: postgresql://exec:${POSTGRES_PASSWORD:-rextserver}@postgres:5432/rext
+            POSTGRES_URI_CUSTOM: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+            DATABASE_URI: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
             REDIS_URI: ${REDIS_URI:-redis://langgraph-redis:6379}
             REDIS_URL: ${REDIS_URL:-redis://redis:6379}
             CACHE_URL: ${CACHE_URL:-redis://redis:6379}
@@ -123,12 +127,12 @@ services:
 
             # Server
             HOST: ${HOST:-0.0.0.0}
-            PORT: ${PORT:-2024}
+            PORT: ${PORT}
 
             # Frontend + CORS
             FRONTEND_URL: ${FRONTEND_URL}
             ALLOWED_ORIGINS: ${ALLOWED_ORIGINS}
-            ENVIRONMENT: ${ENVIRONMENT:-production}
+            ENVIRONMENT: ${ENVIRONMENT}
             DEBUG: ${DEBUG:-false}
 
             # Rate Limiting
@@ -151,14 +155,14 @@ services:
             RESEND_FROM_EMAIL: ${RESEND_FROM_EMAIL}
             RESEND_FROM_NAME: ${RESEND_FROM_NAME}
             RESEND_WEBHOOK_SECRET: ${RESEND_WEBHOOK_SECRET}
-            SMTP_SERVER: ${SMTP_SERVER:-}
-            SMTP_PORT: ${SMTP_PORT:-587}
-            SMTP_USERNAME: ${SMTP_USERNAME:-}
-            SMTP_PASSWORD: ${SMTP_PASSWORD:-}
-            SMTP_USE_TLS: ${SMTP_USE_TLS:-true}
-            EMAIL_RETRY_ENABLED: ${EMAIL_RETRY_ENABLED:-true}
-            EMAIL_RETRY_MAX_ATTEMPTS: ${EMAIL_RETRY_MAX_ATTEMPTS:-3}
-            EMAIL_RETRY_DELAY_SECONDS: ${EMAIL_RETRY_DELAY_SECONDS:-5}
+            SMTP_SERVER: ${SMTP_SERVER}
+            SMTP_PORT: ${SMTP_PORT}
+            SMTP_USERNAME: ${SMTP_USERNAME}
+            SMTP_PASSWORD: ${SMTP_PASSWORD}
+            SMTP_USE_TLS: ${SMTP_USE_TLS}
+            EMAIL_RETRY_ENABLED: ${EMAIL_RETRY_ENABLED}
+            EMAIL_RETRY_MAX_ATTEMPTS: ${EMAIL_RETRY_MAX_ATTEMPTS}
+            EMAIL_RETRY_DELAY_SECONDS: ${EMAIL_RETRY_DELAY_SECONDS}
 
             # Payment (LemonSqueezy)
             PAYMENT_PROVIDER: ${PAYMENT_PROVIDER:-lemonsqueezy}
@@ -166,18 +170,15 @@ services:
             PAYMENT_SUCCESS_URL: ${PAYMENT_SUCCESS_URL}
             PAYMENT_CANCEL_URL: ${PAYMENT_CANCEL_URL}
 
-            # AI + External
-            PERPLEXITY_API_KEY: ${PERPLEXITY_API_KEY}
-            SERPER_API_KEY: ${SERPER_API_KEY}
 
             # Admin
             SUPER_ADMIN_EMAIL: ${SUPER_ADMIN_EMAIL}
             SUPER_ADMIN_PASSWORD: ${SUPER_ADMIN_PASSWORD}
-            SUPER_ADMIN_FULL_NAME: ${SUPER_ADMIN_FULL_NAME:-Samiullah}
+            SUPER_ADMIN_FULL_NAME: ${SUPER_ADMIN_FULL_NAME}
 
             # Monitoring
             SENTRY_DSN: ${SENTRY_DSN}
-            SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-production}
+            SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT}
             CACHE_ENABLED: ${CACHE_ENABLED:-true}
 
             # Feature Flags

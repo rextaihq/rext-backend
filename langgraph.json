@@ -6,7 +6,7 @@
     "agent": "main:graph"
   },
   "http": {
-    "app": "src/api/server.py:app"
+    "app": "src.api.server:app"
   },
   "env": ".env",
   "image_distro": "wolfi",

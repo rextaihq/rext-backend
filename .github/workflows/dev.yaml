@@ -6,100 +6,38 @@ on:
       - closed
     branches:
       - dev
-  workflow_dispatch:
+
+concurrency:
+  group: dev-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  build:
-    if: github.event.pull_request.merged == true || github.event_name == 'workflow_dispatch'
+  # ──────────────────────────────────────────────
+  # 🔍 Stage 1 — Quality Gate (lint + security + tests)
+  # ──────────────────────────────────────────────
+  quality:
+    if: github.event.pull_request.merged == true
+    uses: ./.github/workflows/ci-quality.yaml
+    with:
+      run_integration: false
+
+  # ──────────────────────────────────────────────
+  # 📢 Stage 5 — Notification Summary
+  # ──────────────────────────────────────────────
+  notify:
+    name: 📢 Summary
+    needs: [quality]
+    if: always()
     runs-on: ubuntu-latest
     steps:
-      - name: Cleanup Runner (Pre-build)
+      - name: Generate deployment summary
         run: |
-          sudo rm -rf /usr/share/dotnet
-          sudo rm -rf /opt/ghc
-          sudo rm -rf /opt/hostedtoolcache/CodeQL
-          sudo docker system prune -af --volumes || true
-          df -h
-
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Install uv
-        run: pip install uv
-
-      - name: Cache uv dependencies
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/uv
-          key: ${{ runner.os }}-uv-${{ hashFiles('**/uv.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-uv-
-
-      - name: Install dependencies
-        run: uv sync
-
-      - name: Install system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            chromium-browser \
-            libnss3 \
-            libfreetype6 \
-            libharfbuzz0b \
-            ca-certificates \
-            bash \
-            libstdc++6 \
-            && sudo apt-get clean
-
-      - name: Install playwright and crawl4ai
-        run: uv pip install --system --no-cache-dir playwright crawl4ai
-
-      - name: Install Playwright browser
-        run: playwright install chromium
-
-      - name: Setup Crawl4AI
-        run: |
-          crawl4ai-setup
-          crawl4ai-doctor
-
-  docker_job:
-    if: github.event.pull_request.merged == true || github.event_name == 'workflow_dispatch'
-    needs: build
-    runs-on: ubuntu-latest
-    steps:
-      - name: Cleanup Runner (Pre-docker)
-        run: |
-          sudo docker system prune -af --volumes || true
-          df -h
-
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Log into Docker Hub
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKER_USERNAME }}
-          password: ${{ secrets.DOCKER_PASSWORD }}
-
-      - name: Install LangGraph CLI
-        run: pip install langgraph-cli
-
-      - name: Build Docker image with LangGraph
-        run: langgraph build -t ${{ secrets.DOCKER_USERNAME }}/wrext:dev
-
-      - name: Push Docker image
-        run: docker push ${{ secrets.DOCKER_USERNAME }}/wrext:dev
-
-      - name: Cleanup Docker (Post-build)
-        if: always()
-        run: |
-          sudo docker system prune -f
-          df -h
+          echo "## 🚀 DEV Pipeline Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Branch:** \`${{ github.head_ref }}\` → \`dev\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Commit:** \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Triggered by:** ${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Stage | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|---|---|" >> $GITHUB_STEP_SUMMARY
+          echo "| 🔍 Quality Gate | \`${{ needs.quality.result }}\` |" >> $GITHUB_STEP_SUMMARY

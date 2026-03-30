@@ -6,16 +6,17 @@ from uuid import UUID
 
 class ContentBase(BaseModel):
     """Base content schema with common fields"""
-    title: str = Field(..., min_length=1, max_length=500, description="Content title")
+    # title: str = Field(..., min_length=1, max_length=500, description="Content title")
+    title: str = Field(default="", description="Content title")
     content_language: Optional[str] = Field(default="English", description="Content language")
     status: Optional[str] = Field(default="draft", description="Content status")
 
-    @field_validator('title')
-    @classmethod
-    def validate_title(cls, v):
-        if not v or not v.strip():
-            raise ValueError('Title cannot be empty')
-        return v.strip()
+    # @field_validator('title')
+    # @classmethod
+    # def validate_title(cls, v):
+    #     if not v or not v.strip():
+    #         raise ValueError('Title cannot be empty')
+    #     return v.strip()
 
 
 class ContentSEODataSchema(BaseModel):
@@ -34,7 +35,8 @@ class ContentSEODataSchema(BaseModel):
 
 class ContentMediaSchema(BaseModel):
     """Media usage schema for content"""
-    media_id: UUID
+    # media_id: UUID
+    media_id: Optional[Any] = None
     usage_type: Optional[str] = "inline"
     position: Optional[int] = 0
 
@@ -167,14 +169,22 @@ class WorkspaceIntegrationUpdate(BaseModel):
 
 
 class WorkspaceIntegrationResponse(BaseModel):
+    """Full representation of a connected site (matches to_dict() output)."""
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
     workspace_id: UUID
+    integration_type: str
+    is_active: bool
+    site_url: Optional[str] = None
+    api_endpoint: Optional[str] = None
+    username: Optional[str] = None
+    config_json: Optional[Dict[str, Any]] = None
     has_app_password: bool = False
     has_api_key: bool = False
     created_at: datetime
     updated_at: Optional[datetime] = None
+    deleted_at: Optional[datetime] = None
 
 
 class WorkspaceIntegrationListResponse(BaseModel):
@@ -196,6 +206,8 @@ class PublishResponse(BaseModel):
     success: bool
     wordpress_post_id: Optional[int] = None
     wordpress_url: Optional[str] = None
+    shopify_article_id: Optional[int] = None
+    shopify_article_url: Optional[str] = None
     error: Optional[str] = None
 
 
@@ -207,3 +219,4 @@ class PublishToSitesResponse(BaseModel):
     failed: int
     results: List[PublishResponse]
     all_failed: bool = False
+

@@ -14,7 +14,20 @@ from src.services.knowledge_service import KnowledgeService
 from src.utils.logger import logger
 from src.utils.response_utils import created, success
 from src.utils.route_decorators import db_transaction_handler, require_permissions
-from src.utils.workspace_utils import resolve_workspace_for_route
+from src.api.schema.response_schemas import SuccessResponse
+from src.api.schema.response.knowledge_responses import (
+    WorkspaceKnowledgeResponse,
+    KnowledgeSearchResult,
+    WebKnowledgeListResponse,
+    WebKnowledgeResponse,
+    WebKnowledgeDeleteResponse,
+    FileKnowledgeListResponse,
+    FileKnowledgeResponse,
+    FileKnowledgeDeleteResponse,
+    TextKnowledgeListResponse,
+    TextKnowledgeResponse,
+    TextKnowledgeDeleteResponse
+)
 from src.services.notification_helper import schedule_if_allowed
 
 
@@ -68,7 +81,7 @@ router = APIRouter(
 )
 
 
-@router.get("")
+@router.get("", response_model=SuccessResponse[WorkspaceKnowledgeResponse])
 @db_transaction_handler("get workspace knowledge", auto_commit=False)
 async def get_workspace_knowledge(
     workspace_id: str,
@@ -103,7 +116,7 @@ async def get_workspace_knowledge(
         message="Workspace knowledge retrieved successfully",
     )
 
-@router.post("/search")
+@router.post("/search", response_model=SuccessResponse[KnowledgeSearchResult])
 @require_permissions("knowledge.read", workspace_scoped=True)
 @db_transaction_handler("search knowledge", auto_commit=False)
 async def search_knowledge(
@@ -146,7 +159,7 @@ def _format_list_response(items: list[dict[str, Any]], key: str) -> dict[str, An
     return {key: items, "total_count": len(items)}
 
 
-@router.get("/web")
+@router.get("/web", response_model=SuccessResponse[WebKnowledgeListResponse])
 @require_permissions("knowledge.read", workspace_scoped=True)
 @db_transaction_handler("list web knowledge", auto_commit=False)
 async def list_web_knowledge(
@@ -180,7 +193,7 @@ async def list_web_knowledge(
     )
 
 
-@router.post("/web")
+@router.post("/web", response_model=SuccessResponse[WebKnowledgeResponse])
 @db_transaction_handler("create web knowledge", "Web knowledge created successfully")
 @require_permissions("knowledge.create", workspace_scoped=True)
 async def create_web_knowledge(
@@ -250,7 +263,7 @@ async def create_web_knowledge(
         raise
 
 
-@router.get("/web/{web_id}")
+@router.get("/web/{web_id}", response_model=SuccessResponse[WebKnowledgeResponse])
 @require_permissions("knowledge.read", workspace_scoped=True)
 @db_transaction_handler("get web knowledge", auto_commit=False)
 async def get_web_knowledge(
@@ -277,7 +290,7 @@ async def get_web_knowledge(
     )
 
 
-@router.patch("/web/{web_id}")
+@router.patch("/web/{web_id}", response_model=SuccessResponse[WebKnowledgeResponse])
 @require_permissions("knowledge.update", workspace_scoped=True)
 @db_transaction_handler("update web knowledge", auto_commit=True)
 async def update_web_knowledge(
@@ -309,7 +322,7 @@ async def update_web_knowledge(
     )
 
 
-@router.delete("/web/{web_id}")
+@router.delete("/web/{web_id}", response_model=SuccessResponse[WebKnowledgeDeleteResponse])
 @db_transaction_handler("delete web knowledge", "Web knowledge deleted successfully")
 @require_permissions("knowledge.delete", workspace_scoped=True)
 async def delete_web_knowledge(
@@ -336,7 +349,7 @@ async def delete_web_knowledge(
     )
 
 
-@router.get("/files")
+@router.get("/files", response_model=SuccessResponse[FileKnowledgeListResponse])
 @require_permissions("knowledge.read", workspace_scoped=True)
 @db_transaction_handler("list file knowledge", auto_commit=False)
 async def list_file_knowledge(
@@ -370,7 +383,7 @@ async def list_file_knowledge(
     )
 
 
-@router.post("/files")
+@router.post("/files", response_model=SuccessResponse[FileKnowledgeResponse])
 @db_transaction_handler("create file knowledge", "File knowledge uploaded successfully")
 @require_permissions("knowledge.create", workspace_scoped=True)
 async def create_file_knowledge(
@@ -446,7 +459,7 @@ async def create_file_knowledge(
         raise
 
 
-@router.get("/files/{file_id}")
+@router.get("/files/{file_id}", response_model=SuccessResponse[FileKnowledgeResponse])
 @require_permissions("knowledge.read", workspace_scoped=True)
 @db_transaction_handler("get file knowledge", auto_commit=False)
 async def get_file_knowledge(
@@ -473,7 +486,7 @@ async def get_file_knowledge(
     )
 
 
-@router.patch("/files/{file_id}")
+@router.patch("/files/{file_id}", response_model=SuccessResponse[FileKnowledgeResponse])
 @require_permissions("knowledge.update", workspace_scoped=True)
 @db_transaction_handler("update file knowledge", auto_commit=True)
 async def update_file_knowledge(
@@ -505,7 +518,7 @@ async def update_file_knowledge(
     )
 
 
-@router.delete("/files/{file_id}")
+@router.delete("/files/{file_id}", response_model=SuccessResponse[FileKnowledgeDeleteResponse])
 @db_transaction_handler("delete file knowledge", "File knowledge deleted successfully")
 @require_permissions("knowledge.delete", workspace_scoped=True)
 async def delete_file_knowledge(
@@ -535,7 +548,7 @@ async def delete_file_knowledge(
     )
 
 
-@router.get("/text")
+@router.get("/text", response_model=SuccessResponse[TextKnowledgeListResponse])
 @require_permissions("knowledge.read", workspace_scoped=True)
 @db_transaction_handler("list text knowledge", auto_commit=False)
 async def list_text_knowledge(
@@ -569,7 +582,7 @@ async def list_text_knowledge(
     )
 
 
-@router.post("/text")
+@router.post("/text", response_model=SuccessResponse[TextKnowledgeResponse])
 @db_transaction_handler("create text knowledge", "Text knowledge created successfully")
 @require_permissions("knowledge.create", workspace_scoped=True)
 async def create_text_knowledge(
@@ -634,7 +647,7 @@ async def create_text_knowledge(
         raise
 
 
-@router.get("/text/{text_id}")
+@router.get("/text/{text_id}", response_model=SuccessResponse[TextKnowledgeResponse])
 @require_permissions("knowledge.read", workspace_scoped=True)
 @db_transaction_handler("get text knowledge", auto_commit=False)
 async def get_text_knowledge(
@@ -661,7 +674,7 @@ async def get_text_knowledge(
     )
 
 
-@router.patch("/text/{text_id}")
+@router.patch("/text/{text_id}", response_model=SuccessResponse[TextKnowledgeResponse])
 @require_permissions("knowledge.update", workspace_scoped=True)
 @db_transaction_handler("update text knowledge", auto_commit=True)
 async def update_text_knowledge(
@@ -701,7 +714,7 @@ async def update_text_knowledge(
     )
 
 
-@router.delete("/text/{text_id}")
+@router.delete("/text/{text_id}", response_model=SuccessResponse[TextKnowledgeDeleteResponse])
 @db_transaction_handler("delete text knowledge", "Text knowledge deleted successfully")
 @require_permissions("knowledge.delete", workspace_scoped=True)
 async def delete_text_knowledge(

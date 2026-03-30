@@ -16,14 +16,17 @@ from sqlalchemy.orm import selectinload
 from uuid import UUID
 from datetime import datetime, timezone
 from src.utils.response_utils import success, error
-from src.api.models.enums import InvitationStatus
-
 from src.utils.invitation_utils import is_invitation_expired, normalize_email
 from src.api.database.async_database import get_async_db
 from src.api.security.dependencies import get_current_user
 from src.api.models.user_models.invitations import UserInvitations
 from src.api.models.enums import InvitationStatus
 from src.api.config import get_settings
+from src.api.schema.response_schemas import SuccessResponse
+from src.api.schema.response.user_invitation_responses import (
+    PendingInvitationsResponse,
+    UserDeclineInvitationResponse
+)
 from src.api.models.workspace_models.workspace_model import WorkspaceModel
 from src.api.models.user_models.roles import Role
 from src.api.models.user_models.users import Users
@@ -37,14 +40,12 @@ from src.services.email_service import EmailService
 from src.utils.logger import logger
 from src.utils.route_decorators import db_transaction_handler, require_permissions
 from src.utils.audit_helper import create_audit_log_async
-from src.utils.invitation_utils import is_invitation_expired
-from src.utils.logger import logger
-from src.api.schema.user_schema import DeclineInvitationRequest  # Added import
+from src.api.schema.user_schema import DeclineInvitationRequest
 
 router = APIRouter(prefix="/invitations", tags=["User Invitations"])
 
 
-@router.get("/pending")
+@router.get("/pending", response_model=SuccessResponse[PendingInvitationsResponse])
 @require_permissions("member.read", workspace_scoped=False)
 @db_transaction_handler("get pending invitations", auto_commit=False)
 async def get_pending_invitations(
@@ -192,13 +193,17 @@ async def get_pending_invitations(
         }
     )
 
-    return {
-        "invitations": invitation_list,
-        "count": len(invitation_list)
-    }
+    return success(
+        data={
+            "invitations": invitation_list,
+            "count": len(invitation_list)
+        },
+        request=request,
+        message="Pending invitations retrieved successfully"
+    )
 
 
-@router.post("/{invitation_id}/decline")
+@router.post("/{invitation_id}/decline", response_model=SuccessResponse[UserDeclineInvitationResponse])
 @require_permissions("member.read", workspace_scoped=False)
 @db_transaction_handler("decline invitation", auto_commit=True)
 async def decline_invitation(
