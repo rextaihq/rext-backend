@@ -12,14 +12,14 @@ def create_seo_engine() -> CompiledStateGraph:
     (keyword difficulty, competitor gap, SEO opportunity, keyword
     finder) followed by keyword recommendation with conditional
     routing for user-driven keyword iteration.
-
+ 
     Returns:
         CompiledStateGraph: Compiled SEO engine subgraph.
     """
     from src.flow.engines.router.keyword_router import keyword_router
     from src.flow.engines.seo.fetch_dataforseo_backlinks import fetch_dataforseo_backlinks
-    from src.flow.engines.seo.recomendation.keyword_recomendation import keyword_recommendation
     from src.flow.engines.seo.keyword_clustering import keyword_clustering_node
+    from src.flow.engines.seo.keyword_recomendation import keyword_recommendation
 
     graph = StateGraph(REXT)
 

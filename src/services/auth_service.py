@@ -34,6 +34,7 @@ from src.api.models.user_models.permissions import Permission
 from src.api.models.user_models.role_permissions import RolePermission
 from src.api.models.user_models.token_blacklist import TokenBlacklist
 from src.api.models.user_models.user_sessions import UserSession
+from src.api.models.audit_models.audit_logs import AuditLog
 from src.api.models.subscription_models.plans import SubscriptionPlan
 from src.api.models.subscription_models.subscriptions import (
     UserSubscription,
@@ -259,6 +260,19 @@ class AuthService:
 
             await self.db.flush()
 
+            audit_log = AuditLog(
+                user_id=db_user.id,
+                action="auth.login.failed",
+                resource_type="user",
+                resource_id=str(db_user.id),
+                ip_address=device_info.get("ip_address") if device_info else None,
+                user_agent=device_info.get("user_agent") if device_info else None,
+                status="failed",
+                audit_metadata={"reason": "invalid_password", "device_type": device_info.get("device_type") if device_info else None}
+            )
+            self.db.add(audit_log)
+            await self.db.flush()
+
             raise RextAuthenticationException(
                 message="Invalid email or password",
                 context={"login_attempt": email}
@@ -268,6 +282,19 @@ class AuthService:
         db_user.failed_login_attempts = 0
         db_user.last_login_at = datetime.now(timezone.utc)
         db_user.login_count = (db_user.login_count or 0) + 1
+        await self.db.flush()
+
+        audit_log = AuditLog(
+            user_id=db_user.id,
+            action="auth.login",
+            resource_type="user",
+            resource_id=str(db_user.id),
+            ip_address=device_info.get("ip_address") if device_info else None,
+            user_agent=device_info.get("user_agent") if device_info else None,
+            status="success",
+            audit_metadata={"device_type": device_info.get("device_type") if device_info else None, "device_name": device_info.get("device_name") if device_info else None}
+        )
+        self.db.add(audit_log)
         await self.db.flush()
 
         # Auto-accept pending workspace invitations for this user
@@ -302,7 +329,7 @@ class AuthService:
                             "trial_end_date": subscription.trial_end_date.isoformat(),
                             "plan_id": str(subscription.plan_id)
                         },
-                        workspace_id=str(subscription.workspace_id),
+                        workspace_id=str(subscription.workspace_id) if subscription.workspace_id else None,
                     )
 
         # Get GLOBAL roles only (workspace_id is NULL and is_primary is True)
@@ -875,18 +902,14 @@ class AuthService:
                     }
                 )
 
-                if not pending_invitations:
-                    logger.info(
-                        f"[AUTO-ACCEPT] No pending invitations found for {user.email} - skipping",
-                        extra={"user_id": str(user.id)}
-                    )
-                    return  # No pending invitations, nothing to do
+            accepted_count = 0
+            skipped_count = 0
 
-                accepted_count = 0
-                skipped_count = 0
-
-                for invitation in pending_invitations:
-                    try:
+            for invitation in pending_invitations:
+                # Use a savepoint per invitation so a DB failure on one invitation
+                # doesn't abort the outer transaction for subsequent iterations.
+                try:
+                    async with db.begin_nested():
                         logger.info(
                             f"[AUTO-ACCEPT] Processing invitation {str(invitation.id)}",
                             extra={
@@ -910,7 +933,8 @@ class AuthService:
                                     "expires_at": invitation.expires_at.isoformat()
                                 }
                             )
-                            continue
+                            return
+
                         #  send the notification to user
                         await schedule_if_allowed(
                             db=db,
@@ -941,6 +965,13 @@ class AuthService:
                             user_id=user.id
                         )
 
+                        # Auto-accept the invitation
+                        # This creates WorkspaceMembers + UserRole records
+                        result = await invitation_service.accept_invitation(
+                            invitation_id=invitation.id,
+                            user_id=user.id
+                        )
+
                         accepted_count += 1
                         logger.info(
                             f"[AUTO-ACCEPT] ✅ Successfully auto-accepted invitation during login",
@@ -952,37 +983,8 @@ class AuthService:
                                 "result": result
                             }
                         )
-
-                    except BusinessRuleViolationException as e:
-                        # User might already be a member - this is OK, just skip
-                        if "already a member" in str(e):
-                            skipped_count += 1
-                            logger.info(
-                                f"[AUTO-ACCEPT] User already member of workspace (invitation already marked accepted)",
-                                extra={
-                                    "user_id": str(user.id),
-                                    "invitation_id": str(invitation.id),
-                                    "workspace_id": str(invitation.workspace_id),
-                                    "error": str(e)
-                                }
-                            )
-                            # Note: invitation.status already set to "accepted" by accept_invitation before raising
-                        else:
-                            # Other business rule violations - log and continue
-                            logger.error(
-                                f"[AUTO-ACCEPT] ❌ Business rule violation - failed to auto-accept invitation: {str(e)}",
-                                extra={
-                                    "user_id": str(user.id),
-                                    "invitation_id": str(invitation.id),
-                                    "workspace_id": str(invitation.workspace_id),
-                                    "error": str(e),
-                                    "error_type": type(e).__name__
-                                }
-                            )
-                            skipped_count += 1
-
-                    except Exception as e:
-                        # Unexpected error - log but don't fail login
+                    else:
+                        # Other business rule violations - log and continue
                         logger.error(
                             f"[AUTO-ACCEPT] ❌ Unexpected error auto-accepting invitation: {str(e)}",
                             exc_info=True,
@@ -996,27 +998,31 @@ class AuthService:
                         )
                         skipped_count += 1
 
-                # Flush changes to database
-                logger.info(
-                    f"[AUTO-ACCEPT] Flushing database changes",
-                    extra={
-                        "user_id": str(user.id),
-                        "accepted_count": accepted_count,
-                        "skipped_count": skipped_count
-                    }
-                )
-                await self.db.flush()
+                except Exception as e:
+                    # Unexpected error - savepoint was rolled back; log but don't fail login
+                    logger.error(
+                        f"[AUTO-ACCEPT] ❌ Unexpected error auto-accepting invitation: {str(e)}",
+                        exc_info=True,
+                        extra={
+                            "user_id": str(user.id),
+                            "invitation_id": str(invitation.id),
+                            "workspace_id": str(invitation.workspace_id),
+                            "error": str(e),
+                            "error_type": type(e).__name__
+                        }
+                    )
+                    skipped_count += 1
 
-                logger.info(
-                    f"[AUTO-ACCEPT] ✅ Process completed - auto-accepted {accepted_count} invitation(s), skipped {skipped_count}",
-                    extra={
-                        "user_id": str(user.id),
-                        "user_email": user.email,
-                        "accepted": accepted_count,
-                        "skipped": skipped_count,
-                        "total_processed": len(pending_invitations)
-                    }
-                )
+            logger.info(
+                f"[AUTO-ACCEPT] ✅ Process completed - auto-accepted {accepted_count} invitation(s), skipped {skipped_count}",
+                extra={
+                    "user_id": str(user.id),
+                    "user_email": user.email,
+                    "accepted": accepted_count,
+                    "skipped": skipped_count,
+                    "total_processed": len(pending_invitations)
+                }
+            )
 
         except Exception as e:
             # Catch-all: Don't fail login if invitation processing fails.

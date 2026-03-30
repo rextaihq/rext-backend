@@ -13,8 +13,8 @@ from alembic import context
 # Add the src directory to Python path
 backend_dir = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(backend_dir))
-
-from dotenv import load_dotenv  # noqa: E402
+from dotenv import load_dotenv
+load_dotenv()
 
 load_dotenv()
 
@@ -160,6 +160,8 @@ def do_run_migrations(connection):
 
 def run_migrations_online() -> None:
     """Run migrations in 'online' mode using asyncio."""
+    if sys.platform == 'win32':
+        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
     asyncio.run(run_async_migrations())
 
 

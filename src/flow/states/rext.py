@@ -102,6 +102,9 @@ class ScrapeContext(TypedDict, total=False):
 
 
 class REXT(TypedDict, total=False):
+    # Agent Messages
+    messages: Annotated[list[BaseMessage], add_messages]
+
     # SERP
     serp_payload: Annotated[SERPPAYLOAD, merge_dicts]
     serp_result: Annotated[SERPEngineState, merge_dicts]

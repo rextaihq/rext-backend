@@ -15,10 +15,10 @@ from .refund_routes import router as refund_router
 router = APIRouter(prefix="/admin/subscriptions", tags=["admin-subscriptions"])
 
 router.include_router(management_router)
-router.include_router(retrieval_router)
 router.include_router(analytics_router)
 router.include_router(webhook_monitoring_router)
 router.include_router(export_router)
 router.include_router(refund_router)
+router.include_router(retrieval_router)
 
 __all__ = ["router"]
