@@ -20,7 +20,8 @@ from src.api.middleware.exceptions import (
     RextAPIException,
     DuplicateResourceException
 )
-from src.api.schema.response_schemas import ErrorCode, ErrorSeverity
+from src.api.schema.response_schemas import ErrorCode, ErrorSeverity, SuccessResponse
+from src.api.schema.response.invitation_responses import AcceptInvitationResponse, RevokeInvitationResponse
 from src.api.schema.invitation_schema import (
     AcceptInvitationRequest,
     RevokeInvitationRequest,
@@ -91,7 +92,7 @@ async def notify_workspace_admins_of_acceptance(
         logger.error(f"Failed to send invitation accepted notifications: {str(e)}", exc_info=True)
 
 
-@router.post("/accept")
+@router.post("/accept", response_model=SuccessResponse[AcceptInvitationResponse])
 @require_permissions("member.read")
 @db_transaction_handler("accept invitation", auto_commit=True)
 async def accept_invitation(
@@ -166,21 +167,21 @@ async def accept_invitation(
 
     logger.info(f"User {user_id} accepted invitation to workspace {invitation.workspace_id}")
 
-    return {
-        "data": {
-            "invitation_id": result["invitation_id"],
-            "workspace_id": result["workspace_id"],
+    return success(
+        data={
+            "invitation_id": str(result.get("invitation_id")),
+            "workspace_id": str(result.get("workspace_id")),
             "workspace_name": workspace.name if workspace else None,
             "role_id": str(invitation.role_id),
-            "membership_id": result["membership_id"],
+            "membership_id": str(result.get("membership_id")),
             "joined_at": datetime.now(timezone.utc).isoformat()
         },
-        "message": "Successfully joined workspace"
-    }
+        message="Successfully joined workspace"
+    )
 
 
 
-@router.post("/{invitation_id}/revoke")
+@router.post("/{invitation_id}/revoke", response_model=SuccessResponse[RevokeInvitationResponse])
 @require_permissions("member.invite", workspace_scoped=True)
 @db_transaction_handler("revoke invitation", auto_commit=True)
 async def revoke_invitation(
@@ -251,12 +252,12 @@ async def revoke_invitation(
     # No need for flush/refresh - service handles it
     logger.info(f"Invitation {invitation_id} revoked by user {user_id}")
 
-    return {
-        "data": {
+    return success(
+        data={
             "invitation_id": str(invitation.id),
             "status": invitation.status,
             "revoked_by": user.full_name if user else "unknown",
             "reason": revoke_data.reason
         },
-        "message": "Invitation revoked successfully"
-    }
+        message="Invitation revoked successfully"
+    )

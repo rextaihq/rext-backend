@@ -6,9 +6,31 @@ on:
       - main
   workflow_dispatch:
 
+# Production: NEVER cancel in-progress deployments — queue instead
+concurrency:
+  group: production
+  cancel-in-progress: false
+
 jobs:
-  build:
+  # ──────────────────────────────────────────────
+  # 🔍 Stage 1 — Quality Gate (lint + security + FULL tests)
+  # ──────────────────────────────────────────────
+  quality:
+    uses: ./.github/workflows/ci-quality.yaml
+    with:
+      run_integration: true
+
+  # ──────────────────────────────────────────────
+  # 🐳 Stage 2 — Build & Push Docker Image to GHCR
+  # ──────────────────────────────────────────────
+  docker_job:
+    name: 🐳 Build & Push
+    needs: quality
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
     steps:
       - name: Cleanup Runner (Pre-build)
         run: |
@@ -21,78 +43,143 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Install uv
-        run: pip install uv
-
-      - name: Cache uv dependencies
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/uv
-          key: ${{ runner.os }}-uv-${{ hashFiles('**/uv.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-uv-
-
-      - name: Install dependencies
-        run: uv sync
-
-      - name: Install system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            chromium-browser \
-            libnss3 \
-            libfreetype6 \
-            libharfbuzz0b \
-            ca-certificates \
-            bash \
-            libstdc++6 \
-            && sudo apt-get clean
-
-      - name: Install Playwright
-        run: uv run playwright install --with-deps chromium
-
-      - name: Setup Crawl4AI
-        run: |
-          uv run crawl4ai-setup
-          uv run crawl4ai-doctor
-
-  docker_job:
-    needs: build
-    runs-on: ubuntu-latest
-    steps:
-      - name: Cleanup Runner (Pre-docker)
-        run: |
-          sudo docker system prune -af --volumes || true
-          df -h
-
-      - name: Checkout code
-        uses: actions/checkout@v4
-
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Log into Docker Hub
+      - name: Log into GitHub Container Registry
         uses: docker/login-action@v3
         with:
-          username: ${{ secrets.DOCKER_USERNAME }}
-          password: ${{ secrets.DOCKER_PASSWORD }}
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Install LangGraph CLI
         run: pip install langgraph-cli
 
       - name: Build Docker image with LangGraph
-        run: langgraph build -t ${{ secrets.DOCKER_USERNAME }}/wrext:latest
+        run: langgraph build -t ghcr.io/${{ github.repository_owner }}/rext-backend:latest
 
-      - name: Push Docker image
-        run: docker push ${{ secrets.DOCKER_USERNAME }}/wrext:latest
+      - name: Tag with commit SHA for rollback
+        run: |
+          docker tag \
+            ghcr.io/${{ github.repository_owner }}/rext-backend:latest \
+            ghcr.io/${{ github.repository_owner }}/rext-backend:sha-${{ github.sha }}
+
+      - name: Push Docker images to GHCR
+        run: |
+          docker push ghcr.io/${{ github.repository_owner }}/rext-backend:latest
+          docker push ghcr.io/${{ github.repository_owner }}/rext-backend:sha-${{ github.sha }}
 
       - name: Cleanup Docker (Post-build)
         if: always()
         run: |
           docker system prune -f
           df -h
+
+  # ──────────────────────────────────────────────
+  # 🚀 Stage 3 — Deploy via Coolify
+  # ──────────────────────────────────────────────
+  deploy:
+    name: 🚀 Coolify Deploy
+    needs: docker_job
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Trigger Coolify Deployment
+        run: |
+          # Clean the API URL: remove trailing slashes and redundant /api/v1
+          CLEAN_URL=$(echo "${{ secrets.COOLIFY_API_URL }}" | sed 's#/*$##; s#/api/v1$##')
+          
+          echo "Triggering Coolify deployment for PRODUCTION..."
+          response=$(curl -s -w "\n%{http_code}" --get \
+            "$CLEAN_URL/api/v1/deploy" \
+            --data-urlencode "uuid=${{ secrets.COOLIFY_UUID_PROD }}" \
+            --data-urlencode "force=true" \
+            -H "Authorization: Bearer ${{ secrets.COOLIFY_TOKEN }}")
+
+          http_code=$(echo "$response" | tail -1)
+          body=$(echo "$response" | head -n -1)
+
+          echo "Response: $body"
+          echo "HTTP Status: $http_code"
+
+          if [ "$http_code" != "200" ]; then
+            echo "::error::Coolify deploy failed with HTTP $http_code"
+            exit 1
+          fi
+          echo "✅ Coolify deployment triggered successfully"
+
+  # ──────────────────────────────────────────────
+  # ✅ Stage 4 — Smoke Test
+  # ──────────────────────────────────────────────
+  smoke_test:
+    name: ✅ Smoke Test
+    needs: deploy
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Wait for container startup
+        run: sleep 60
+
+      - name: Health check
+        run: |
+          echo "Checking PRODUCTION server health..."
+          status=$(curl -s -o /dev/null -w "%{http_code}" \
+            "${{ vars.PROD_SERVER_URL }}/health" \
+            --max-time 20 --retry 5 --retry-delay 15)
+
+          if [ "$status" = "200" ]; then
+            echo "✅ Health check passed (HTTP $status)"
+          else
+            echo "::error::PRODUCTION health check FAILED with HTTP $status"
+            exit 1
+          fi
+
+      - name: Readiness check
+        run: |
+          echo "Checking PRODUCTION server readiness..."
+          response=$(curl -s "${{ vars.PROD_SERVER_URL }}/health/ready" \
+            --max-time 20 --retry 5 --retry-delay 15)
+
+          status=$(echo "$response" | jq -r '.status // "unknown"' 2>/dev/null || echo "unknown")
+
+          if [ "$status" = "ready" ]; then
+            echo "✅ Readiness check passed — all dependencies healthy"
+          else
+            echo "::warning::Readiness check returned status: $status"
+            echo "Response: $response"
+          fi
+
+  # ──────────────────────────────────────────────
+  # 📢 Stage 5 — Notification Summary
+  # ──────────────────────────────────────────────
+  notify:
+    name: 📢 Summary
+    needs: [quality, docker_job, deploy, smoke_test]
+    if: always()
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Generate deployment summary
+        run: |
+          echo "## 🚀 PRODUCTION Pipeline Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Branch:** \`main\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Commit:** \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Triggered by:** ${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Stage | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|---|---|" >> $GITHUB_STEP_SUMMARY
+          echo "| 🔍 Quality Gate | \`${{ needs.quality.result }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| 🐳 Build & Push | \`${{ needs.docker_job.result }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| 🚀 Coolify Deploy | \`${{ needs.deploy.result }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| ✅ Smoke Test | \`${{ needs.smoke_test.result }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Image:** \`ghcr.io/${{ github.repository_owner }}/wrext-backend:latest\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Rollback tag:** \`ghcr.io/${{ github.repository_owner }}/wrext-backend:sha-${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+
+      - name: Fail pipeline on critical failures
+        if: needs.quality.result == 'failure' || needs.docker_job.result == 'failure' || needs.deploy.result == 'failure'
+        run: |
+          echo "::error::Production pipeline had critical failures. Check the summary above."
+          exit 1

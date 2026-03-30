@@ -38,8 +38,17 @@ from src.utils.auth_utils import verify_current_user
 from src.utils.invitation_utils import is_invitation_expired, normalize_email
 from src.utils.logger import logger
 from src.utils.response_utils import created, success
-from src.utils.route_decorators import db_transaction_handler, require_permissions
+from src.utils.route_decorators import require_permissions, db_transaction_handler
+from src.api.schema.response_schemas import SuccessResponse
+from src.api.schema.response.invitation_responses import (
+    InvitationListResponse,
+    SingleInvitationResponse,
+    BulkInvitationResponse,
+    RevokeInvitationResponse,
+    ReceivedInvitationsResponse
+)
 from src.utils.workspace_utils import resolve_and_verify_workspace
+from src.api.models.user_models.invitations import InvitationStatus
 from src.utils.email_template_utils import render_workspace_email
 
 
@@ -131,6 +140,7 @@ def _serialize_invitation(
 @router.get(
     "/{workspace_id}/invitations",
     summary="List invitations for a workspace",
+    response_model=SuccessResponse[InvitationListResponse]
 )
 @db_transaction_handler("list workspace invitations", auto_commit=False)
 @require_permissions("member.invite", workspace_scoped=True)
@@ -184,6 +194,7 @@ async def list_workspace_invitations(
     "/{workspace_id}/invitations",
     status_code=status.HTTP_201_CREATED,
     summary="Create workspace invitation",
+    response_model=SuccessResponse[SingleInvitationResponse]
 )
 @db_transaction_handler("create workspace invitation", auto_commit=True)
 @require_permissions("member.invite", workspace_scoped=True)
@@ -337,6 +348,7 @@ async def create_workspace_invitation(
     "/{workspace_id}/invitations/bulk",
     status_code=status.HTTP_201_CREATED,
     summary="Create multiple workspace invitations",
+    response_model=SuccessResponse[BulkInvitationResponse]
 )
 @db_transaction_handler("create bulk workspace invitations", auto_commit=True)
 @require_permissions("member.invite", workspace_scoped=True)
@@ -494,6 +506,7 @@ async def create_bulk_workspace_invitations(
 @router.post(
     "/{workspace_id}/invitations/{invitation_id}/resend",
     summary="Resend workspace invitation",
+    response_model=SuccessResponse[SingleInvitationResponse]
 )
 @db_transaction_handler("resend workspace invitation", auto_commit=True)
 @require_permissions("member.invite", workspace_scoped=True)
@@ -614,6 +627,7 @@ async def resend_workspace_invitation(
 @router.delete(
     "/{workspace_id}/invitations/{invitation_id}",
     summary="Revoke workspace invitation",
+    response_model=SuccessResponse[RevokeInvitationResponse]
 )
 @db_transaction_handler("revoke workspace invitation", auto_commit=True)
 @require_permissions("member.invite", workspace_scoped=True)
@@ -685,8 +699,8 @@ async def revoke_workspace_invitation(
 
 
 
-@singular_router.get("/invitations/received")
-@router.get("/invitations/received") # Also keep plural for consistency
+@singular_router.get("/invitations/received", response_model=SuccessResponse[ReceivedInvitationsResponse])
+@router.get("/invitations/received", response_model=SuccessResponse[ReceivedInvitationsResponse]) # Also keep plural for consistency
 @require_permissions("member.read", workspace_scoped=False)
 @db_transaction_handler("get received invitations", auto_commit=False)
 async def get_received_invitations(

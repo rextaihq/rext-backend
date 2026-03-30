@@ -14,7 +14,13 @@ from src.api.schema.knowledge_schema import (
 )
 from src.services.knowledge_base_service import KnowledgeBaseService
 from src.utils.logger import logger
-from src.utils.response_utils import created, success
+from src.utils.response_utils import success, created
+from src.api.schema.response_schemas import SuccessResponse
+from src.api.schema.response.kb_responses import (
+    KnowledgeBaseListResponse,
+    KnowledgeBaseResponse,
+    KnowledgeBaseDeleteResponse
+)
 from src.utils.route_decorators import db_transaction_handler, require_permissions
 from src.api.dependencies.feature_gate import RequireFeature  # <-- added
 from src.utils.workspace_utils import resolve_workspace_for_route
@@ -25,7 +31,7 @@ router = APIRouter(
 )
 
 
-@router.get("")
+@router.get("", response_model=SuccessResponse[KnowledgeBaseListResponse])
 @db_transaction_handler("list knowledge bases", auto_commit=False)
 async def list_knowledge_bases(
     workspace_id: str,
@@ -66,7 +72,8 @@ async def list_knowledge_bases(
 
 @router.post(
     "",
-    dependencies=[Depends(RequireFeature("knowledge_items"))],  # <-- added
+    dependencies=[Depends(RequireFeature("knowledge_items"))],
+    response_model=SuccessResponse[KnowledgeBaseResponse]
 )
 @db_transaction_handler("create knowledge base", "Knowledge base created successfully")
 @require_permissions("knowledge.create", workspace_scoped=True)
@@ -98,7 +105,7 @@ async def create_knowledge_base(
     )
 
 
-@router.get("/{kb_id}")
+@router.get("/{kb_id}", response_model=SuccessResponse[KnowledgeBaseResponse])
 @require_permissions("knowledge.read", workspace_scoped=True)
 @db_transaction_handler("get knowledge base", auto_commit=False)
 async def get_knowledge_base(
@@ -132,7 +139,8 @@ async def get_knowledge_base(
 
 @router.put(
     "/{kb_id}",
-    dependencies=[Depends(RequireFeature("knowledge_items"))],  # <-- added
+    dependencies=[Depends(RequireFeature("knowledge_items"))],
+    response_model=SuccessResponse[KnowledgeBaseResponse]
 )
 @db_transaction_handler("update knowledge base", auto_commit=True)
 @require_permissions("knowledge.update", workspace_scoped=True)
@@ -168,7 +176,8 @@ async def update_knowledge_base(
 
 @router.delete(
     "/{kb_id}",
-    dependencies=[Depends(RequireFeature("knowledge_items"))],  # <-- added
+    dependencies=[Depends(RequireFeature("knowledge_items"))],
+    response_model=SuccessResponse[KnowledgeBaseDeleteResponse]
 )
 @db_transaction_handler("delete knowledge base", "Knowledge base deleted successfully")
 @require_permissions("knowledge.delete", workspace_scoped=True)

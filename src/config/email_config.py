@@ -30,10 +30,11 @@ class EmailConfig(BaseSettings):
     smtp_password: Optional[str] = None
     smtp_use_tls: bool = True
     
-    # Email features
-    email_retry_enabled: bool = True
-    email_retry_max_attempts: int = 3
-    email_retry_delay_seconds: int = 5
+    # Email retry features — consumed by EmailService._send_with_provider()
+    email_retry_enabled: bool = True  # When False, send attempts once with no retry or fallback
+    email_retry_max_attempts: int = 3  # Max attempts per provider (tenacity stop_after_attempt)
+    email_retry_delay_seconds: int = 5  # Min wait between retries in seconds (tenacity wait_exponential min)
+
     
     # Environment-specific settings
     email_enabled: bool = True  # Master switch to disable all email sending

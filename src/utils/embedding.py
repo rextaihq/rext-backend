@@ -37,3 +37,4 @@ def get_embedding() -> OpenAIEmbeddings:
     )
     logger.info("OpenAI embedding model initialized successfully (text-embedding-3-small)")
     return _embedding_model
+    

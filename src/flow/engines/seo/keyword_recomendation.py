@@ -5,6 +5,8 @@ from src.flow.states.rext import REXT
 from langgraph.types import interrupt, Command
 from langgraph.graph import END
 
+from src.flow.utils.intent_utils import get_consensus_intent
+
 logger = logging.getLogger(__name__)
 
 
@@ -15,11 +17,16 @@ async def keyword_recommendation(state: REXT, config, *, runtime) -> Dict[str, A
     """
 
     serp_normalized = state.get("serp_normalized")
+    competitors = state.get("competitors", [])
     seo_result = state.get("seo_result", {})
     serp_backlinks = seo_result.get("serp_backlinks", {})
 
     recommendations = serp_normalized.get("related_topics", []) if serp_normalized else []
-    search_intent = serp_backlinks.get("main_intent", "informational")
+    
+    # Use consensus intent (API + Competitors) for better accuracy
+    api_intent = serp_backlinks.get("main_intent")
+    search_intent = get_consensus_intent(api_intent, competitors)
+    
     volume = serp_backlinks.get("search_volume", 0)
     keyword_difficulty = serp_backlinks.get("keyword_difficulty", 0)
     backlinks = serp_backlinks.get("backlinks", 0)
@@ -145,6 +152,10 @@ async def keyword_recommendation(state: REXT, config, *, runtime) -> Dict[str, A
     return {
         "seo_result": {
             **seo_result,
+            "serp_backlinks": {
+                **serp_backlinks,
+                "main_intent": search_intent
+            },
             "keyword_recommendations": {
                 "original_title": original_query,
                 "selected_keyword": primary_keyword,

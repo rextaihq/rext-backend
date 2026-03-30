@@ -17,7 +17,7 @@ Features:
 import functools
 import json
 import time
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Any, Dict, List, Optional, Union, Callable, TypeVar, Generic
 from uuid import uuid4, UUID
 
@@ -26,8 +26,6 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from src.api.schema.response_schemas import (
-    SuccessResponse,
-    ErrorResponse,
     ErrorCode,
     ErrorSeverity,
     ErrorDetail,
@@ -37,11 +35,10 @@ from src.api.schema.response_schemas import (
 )
 from src.api.middleware.exceptions import (
     RextAPIException,
-    ResourceNotFoundException,
-    DuplicateResourceException,
     RextValidationException,
 )
 from src.api.middleware.request_tracker import get_request_id
+from src.utils.logger import logger
 
 
 # ============================================================================
@@ -146,17 +143,10 @@ def success(
     if request and hasattr(request.state, '_start_time'):
         processing_time_ms = int((time.time() - request.state._start_time) * 1000)
 
-    # Add message to data if provided
-    response_data = data
-    if message:
-        if isinstance(data, dict):
-            response_data = {"message": message, **data}
-        else:
-            response_data = {"message": message, "data": data}
-
     # Create response
     response = create_success_response(
-        data=response_data,
+        data=data,
+        message=message,
         request_id=request_id,
         processing_time_ms=processing_time_ms
     )

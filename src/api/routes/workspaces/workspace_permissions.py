@@ -21,6 +21,12 @@ from src.utils.response_utils import success
 from src.utils.workspace_utils import async_get_workspace_id_from_identifier
 from src.utils.logger import logger
 from src.utils.route_decorators import require_permissions
+from src.api.schema.response_schemas import SuccessResponse
+from src.api.schema.response.workspace_responses import (
+    MyWorkspacePermissionsResponse,
+    CheckWorkspacePermissionResponse,
+    MemberWorkspacePermissionsResponse,
+)
 
 router = APIRouter(
     prefix="",
@@ -28,7 +34,7 @@ router = APIRouter(
 )
 
 
-@router.get("/{workspace_id}/permissions/me")
+@router.get("/{workspace_id}/permissions/me", response_model=SuccessResponse[MyWorkspacePermissionsResponse])
 @require_permissions("member.read", workspace_scoped=True)
 async def get_my_workspace_permissions(
     workspace_id: str,
@@ -67,7 +73,7 @@ async def get_my_workspace_permissions(
     )
 
 
-@router.get("/{workspace_id}/permissions/check")
+@router.get("/{workspace_id}/permissions/check", response_model=SuccessResponse[CheckWorkspacePermissionResponse])
 @require_permissions("member.read", workspace_scoped=True)
 async def check_workspace_permission(
     workspace_id: str,
@@ -110,7 +116,7 @@ async def check_workspace_permission(
         message="Permission check completed"
     )
 
-@router.post("/{workspace_id}/permissions/refresh")
+@router.post("/{workspace_id}/permissions/refresh", response_model=SuccessResponse[MyWorkspacePermissionsResponse])
 @require_permissions("member.read", workspace_scoped=True)
 async def refresh_workspace_permissions(
     workspace_id: str,
@@ -125,7 +131,7 @@ async def refresh_workspace_permissions(
     return await get_my_workspace_permissions(workspace_id=workspace_id, user=user, db=db)
 
 
-@router.get("/{workspace_id}/members/{user_id}/permissions")
+@router.get("/{workspace_id}/members/{user_id}/permissions", response_model=SuccessResponse[MemberWorkspacePermissionsResponse])
 @require_permissions("member.read", workspace_scoped=True)
 async def get_member_workspace_permissions(
     workspace_id: str,

@@ -59,7 +59,7 @@ class OnboardingService:
                 id=uuid4(),
                 user_id=user_id,
                 completed=False,
-                current_step=OnboardingStep.CONTENT_STRATEGY.value,
+                current_step=OnboardingStep.CONTENT_PILLAR.value,
                 completed_steps=[],
                 skipped_steps=[],
             )
@@ -239,7 +239,7 @@ class OnboardingService:
         """
         onboarding = await OnboardingService.get_or_create_onboarding(db, user_id)
         onboarding.completed = False
-        onboarding.current_step = OnboardingStep.CONTENT_STRATEGY.value
+        onboarding.current_step = OnboardingStep.CONTENT_PILLAR.value
         onboarding.completed_steps = []
         onboarding.skipped_steps = []
         onboarding.completed_at = None

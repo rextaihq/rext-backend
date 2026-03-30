@@ -32,7 +32,9 @@ Usage:
 
 from datetime import datetime,timezone
 from enum import Enum
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Union, Generic, TypeVar
+
+T = TypeVar("T")
 from uuid import uuid4
 
 from pydantic import BaseModel, Field, field_validator, model_serializer
@@ -199,20 +201,24 @@ class BaseResponse(BaseModel):
         ...,
         description="Indicates whether the request was successful"
     )
+    message: Optional[str] = Field(
+        default=None,
+        description="Human-readable message describing the result"
+    )
     meta: ResponseMeta = Field(
         ...,
         description="Response metadata"
     )
 
 
-class SuccessResponse(BaseResponse):
+class SuccessResponse(BaseResponse, Generic[T]):
     """Standardized success response format"""
 
     success: bool = Field(
         default=True,
         description="Always true for success responses"
     )
-    data: Any = Field(
+    data: T = Field(
         ...,
         description="The response payload data"
     )
@@ -225,11 +231,8 @@ class SuccessResponse(BaseResponse):
         json_schema_extra = {
             "example": {
                 "success": True,
-                "data": {
-                    "users": [
-                        {"id": "1", "name": "John Doe", "email": "john@example.com"}
-                    ]
-                },
+                "message": "Operation completed successfully",
+                "data": {},
                 "error": None,
                 "meta": {
                     "request_id": "req_1234567890_abc123",
@@ -320,7 +323,7 @@ class GenericResponse(BaseModel):
 # TYPE UNIONS
 # ============================================================================
 
-StandardResponse = Union[SuccessResponse, ErrorResponse]
+StandardResponse = Union[SuccessResponse[Any], ErrorResponse]
 
 
 # ============================================================================
@@ -335,16 +338,18 @@ def generate_request_id() -> str:
 
 
 def create_success_response(
-    data: Any,
+    data: T,
+    message: Optional[str] = None,
     request_id: Optional[str] = None,
     processing_time_ms: Optional[int] = None,
     server_id: Optional[str] = None
-) -> SuccessResponse:
+) -> SuccessResponse[T]:
     """
     Create a standardized success response.
 
     Args:
         data: The response payload data
+        message: Optional human-readable message
         request_id: Optional request ID (auto-generated if not provided)
         processing_time_ms: Optional processing time in milliseconds
         server_id: Optional server instance identifier
@@ -363,6 +368,7 @@ def create_success_response(
     """
     return SuccessResponse(
         data=data,
+        message=message,
         meta=ResponseMeta(
             request_id=request_id or generate_request_id(),
             processing_time_ms=processing_time_ms,
@@ -428,6 +434,7 @@ def create_error_response(
 
     return ErrorResponse(
         error=error_data,
+        message=message,
         meta=ResponseMeta(
             request_id=request_id or generate_request_id(),
             processing_time_ms=processing_time_ms,

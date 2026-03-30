@@ -14,8 +14,9 @@ from src.api.schema.user_schema import UpdateProfileRequest, UserResponse, Profi
 from src.api.schema.notification_schema import NotificationPreferencesResponse, UpdateNotificationPreferencesRequest
 from src.api.database.async_database import get_async_db
 from src.utils.response_utils import success, error
-from src.api.schema.response_schemas import ErrorCode, ErrorSeverity
-from src.api.middleware.exceptions import ResourceNotFoundException
+from src.api.schema.response_schemas import ErrorCode, ErrorSeverity, SuccessResponse, GenericResponse
+from src.api.schema.response.user_related_responses import UpdateProfileResponse
+from src.api.middleware.exceptions import ResourceNotFoundException, RextValidationException
 from src.services.user_service import UserService
 from src.services.notification_preferences_service import NotificationPreferencesService
 from src.services.notification_helper import schedule_if_allowed
@@ -25,6 +26,8 @@ from pathlib import Path
 from sqlalchemy import select
 import time
 import imghdr
+
+from src.utils.audit_helper import create_audit_log
 
 router = APIRouter()
 
@@ -85,7 +88,8 @@ async def get_profile(
         raise
 
 
-@router.patch("/profile")
+@require_permissions("user.update")
+@router.patch("/profile", response_model=SuccessResponse[UpdateProfileResponse])
 @require_permissions("user.update", workspace_scoped=False)
 @db_transaction_handler("update profile", auto_commit=True)
 async def update_profile(
@@ -157,7 +161,7 @@ async def update_profile(
     )
 
 
-@router.post("/avatar/upload")
+@router.post("/avatar/upload", response_model=SuccessResponse[GenericResponse])
 @require_permissions("user.update", workspace_scoped=False)
 @db_transaction_handler("upload avatar", auto_commit=True)
 async def upload_avatar(
@@ -273,7 +277,7 @@ async def upload_avatar(
     )
 
 
-@router.delete("/avatar")
+@router.delete("/avatar", response_model=SuccessResponse[GenericResponse])
 @require_permissions("user.update", workspace_scoped=False)
 @db_transaction_handler("delete avatar", auto_commit=True)
 async def delete_avatar(
@@ -317,7 +321,7 @@ async def delete_avatar(
     )
 
 
-@router.get("/preferences/notifications")
+@router.get("/preferences/notifications", response_model=SuccessResponse[NotificationPreferencesResponse])
 @require_permissions("user.read", workspace_scoped=False)
 @db_transaction_handler("get notification preferences", auto_commit=True)
 async def get_notification_preferences(
@@ -342,7 +346,7 @@ async def get_notification_preferences(
     )
 
 
-@router.patch("/preferences/notifications")
+@router.patch("/preferences/notifications", response_model=SuccessResponse[NotificationPreferencesResponse])
 @require_permissions("user.update", workspace_scoped=False)
 @db_transaction_handler("update notification preferences", auto_commit=True)
 async def update_notification_preferences(
@@ -364,6 +368,23 @@ async def update_notification_preferences(
     # Update preferences dynamically from the request
     update_data = preferences_update.model_dump(exclude_unset=True)
 
+    if not update_data:
+        return success(
+            data=preferences.to_dict(),
+            request=request,
+            message="No preferences to update"
+        )
+
+    # Capture old values before applying changes
+    old_values = {}
+    new_values = {}
+
+    # Map aliased field names to model column names
+    alias_to_column = {
+        "email_enabled": "email_notifications",
+        "in_app_enabled": "in_app_notifications",
+    }
+
     # Handle simplified categories if provided
     if "categories" in update_data:
         categories = update_data.pop("categories")
@@ -377,16 +398,42 @@ async def update_notification_preferences(
                 if cat in mapping:
                     for db_field in mapping[cat]:
                         if hasattr(preferences, db_field):
-                            setattr(preferences, db_field, value)
-                            logger.debug(f"Updated category preference '{cat}' -> '{db_field}' to {value}")
+                            current_value = getattr(preferences, db_field)
+                            if current_value != value:
+                                old_values[db_field] = current_value
+                                new_values[db_field] = value
+                                setattr(preferences, db_field, value)
+                                logger.debug(f"Updated category preference '{cat}' -> '{db_field}' to {value}")
 
     # Handle all other fields directly
     for field, value in update_data.items():
-        if hasattr(preferences, field):
-            setattr(preferences, field, value)
-            logger.debug(f"Updated notification preference '{field}' for user {user_id}")
+        column_name = alias_to_column.get(field, field)
+        if hasattr(preferences, column_name):
+            current_value = getattr(preferences, column_name)
+            if current_value != value:
+                old_values[column_name] = current_value
+                new_values[column_name] = value
+                setattr(preferences, column_name, value)
+                logger.debug(f"Updated notification preference '{field}' for user {user_id}")
 
     await db.flush()
+
+    # Create audit log entry if any values actually changed
+    if old_values:
+        await create_audit_log(
+            db=db,
+            user_id=user_id,
+            action="notification_preferences.update",
+            resource_type="notification_preferences",
+            resource_id=str(preferences.id),
+            old_values=old_values,
+            new_values=new_values,
+            request=request,
+            metadata={
+                "fields_changed": list(new_values.keys()),
+                "total_changes": len(new_values),
+            },
+        )
 
     # Schedule notification
     await schedule_if_allowed(

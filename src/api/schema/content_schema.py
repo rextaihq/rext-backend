@@ -169,14 +169,22 @@ class WorkspaceIntegrationUpdate(BaseModel):
 
 
 class WorkspaceIntegrationResponse(BaseModel):
+    """Full representation of a connected site (matches to_dict() output)."""
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
     workspace_id: UUID
+    integration_type: str
+    is_active: bool
+    site_url: Optional[str] = None
+    api_endpoint: Optional[str] = None
+    username: Optional[str] = None
+    config_json: Optional[Dict[str, Any]] = None
     has_app_password: bool = False
     has_api_key: bool = False
     created_at: datetime
     updated_at: Optional[datetime] = None
+    deleted_at: Optional[datetime] = None
 
 
 class WorkspaceIntegrationListResponse(BaseModel):
@@ -211,3 +219,4 @@ class PublishToSitesResponse(BaseModel):
     failed: int
     results: List[PublishResponse]
     all_failed: bool = False
+

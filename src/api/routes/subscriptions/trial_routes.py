@@ -19,6 +19,13 @@ from src.utils.route_decorators import require_permissions
 from src.services.trial_service import TrialService
 from src.utils.response_utils import success
 from src.utils.route_decorators import db_transaction_handler
+from src.api.schema.response_schemas import SuccessResponse
+from src.api.schema.response.trial_responses import (
+    TrialEligibilityResponse,
+    TrialExtensionResponse,
+    TrialAnalyticsResponse,
+    ExpiringTrialsResponse
+)
 from src.utils.logger import logger
 
 
@@ -50,7 +57,7 @@ class TrialExtensionRequest(BaseModel):
 # TRIAL ELIGIBILITY ENDPOINT
 # ============================================================================
 
-@router.get("/eligibility", response_model=dict, status_code=status.HTTP_200_OK)
+@router.get("/eligibility", response_model=SuccessResponse[TrialEligibilityResponse], status_code=status.HTTP_200_OK)
 @db_transaction_handler("check trial eligibility", auto_commit=False)
 async def check_trial_eligibility_endpoint(
     request: Request,
@@ -86,7 +93,7 @@ async def check_trial_eligibility_endpoint(
 # ADMIN TRIAL EXTENSION ENDPOINT
 # ============================================================================
 
-@router.post("/{subscription_id}/extend", response_model=dict, status_code=status.HTTP_200_OK)
+@router.post("/extend/{subscription_id}", response_model=SuccessResponse[TrialExtensionResponse], status_code=status.HTTP_200_OK)
 @db_transaction_handler("extend trial")
 @require_permissions("subscription.manage", workspace_scoped=False)
 async def extend_trial_endpoint(
@@ -148,7 +155,7 @@ async def extend_trial_endpoint(
 # TRIAL ANALYTICS ENDPOINTS
 # ============================================================================
 
-@router.get("/analytics/conversions", response_model=dict, status_code=status.HTTP_200_OK)
+@router.get("/analytics/conversions", response_model=SuccessResponse[TrialAnalyticsResponse], status_code=status.HTTP_200_OK)
 @db_transaction_handler("get trial conversion analytics", auto_commit=False)
 @require_permissions("audit.admin", workspace_scoped=False)
 async def get_trial_conversion_analytics_endpoint(
@@ -214,7 +221,7 @@ async def get_trial_conversion_analytics_endpoint(
     )
 
 
-@router.get("/expiring", response_model=dict, status_code=status.HTTP_200_OK)
+@router.get("/expiring", response_model=SuccessResponse[ExpiringTrialsResponse], status_code=status.HTTP_200_OK)
 @db_transaction_handler("get expiring trials", auto_commit=False)
 @require_permissions("audit.admin", workspace_scoped=False)
 async def get_expiring_trials_endpoint(

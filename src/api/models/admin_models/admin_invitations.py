@@ -17,7 +17,7 @@ Related Models:
 """
 
 import uuid
-from sqlalchemy import Column, String, DateTime, ForeignKey, UniqueConstraint, Text
+from sqlalchemy import Column, String, DateTime, ForeignKey, Text, Index, text
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import relationship
 from datetime import datetime, timezone
@@ -177,7 +177,12 @@ class PlatformAdminInvitations(Base, SerializableMixin):
 
     # Constraints
     __table_args__ = (
-        UniqueConstraint('email', name='uq_admin_invitation_email'),
+        Index(
+            'uq_admin_invitation_email_pending',
+            'email',
+            unique=True,
+            postgresql_where=text("status = 'pending'")
+        ),
         {
             'comment': 'Platform admin invitations - For inviting platform-level administrators'
         }
