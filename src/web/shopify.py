@@ -6,6 +6,8 @@ Authentication uses Store URL + Shopify Admin Access Token (no OAuth).
 """
 
 import logging
+import random
+import string
 from typing import Any, Dict, Optional
 
 import httpx
@@ -226,6 +228,7 @@ class ShopifyConnector:
         body_html: str,
         tags: Optional[list] = None,
         published: bool = True,
+        handle: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Publish a new article to the Shopify store blog.
@@ -260,15 +263,27 @@ class ShopifyConnector:
                     "published": published,
                 }
             }
+            if handle:
+                payload["article"]["handle"] = handle
             if tags:
                 payload["article"]["tags"] = ", ".join(str(t) for t in tags)
 
             logger.info(
                 f"Publishing article '{title}' to Shopify store: {self.store_url} "
-                f"(blog_id={blog_id}, published={published})"
+                f"(blog_id={blog_id}, published={published}, handle={handle})"
             )
 
             response = await self._client.post(endpoint, json=payload, timeout=30.0)
+
+            # Handle handle collisions (422 Unprocessable Entity - handle taken)
+            if response.status_code == 422 and "handle" in response.text and "already been taken" in response.text:
+                import random
+                import string
+                suffix = "".join(random.choices(string.ascii_lowercase + string.digits, k=4))
+                new_handle = f"{(handle or title.lower().replace(' ', '-'))}-{suffix}"
+                logger.warning(f"Shopify handle collision for '{handle or title}'. Retrying with '{new_handle}'")
+                payload["article"]["handle"] = new_handle
+                response = await self._client.post(endpoint, json=payload, timeout=30.0)
 
             if response.status_code == 401:
                 raise RextExternalServiceException(

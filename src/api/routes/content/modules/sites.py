@@ -286,7 +286,8 @@ async def publish_to_site(
                     title=content.title,
                     body_html=body_to_use,
                     tags=(content.seo_data.content_primary_keywords if content.seo_data else []),
-                    published=is_published
+                    published=is_published,
+                    handle=content.slug
                 )
                 
             # Update content status

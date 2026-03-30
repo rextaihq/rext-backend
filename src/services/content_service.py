@@ -103,6 +103,8 @@ class ContentService:
         # Save Media links
         if data.media_items:
             for item in data.media_items:
+                if not item.media_id:
+                    continue
                 media_link = ContentMedia(
                     content_id=content.id,
                     media_id=item.media_id,
@@ -181,6 +183,8 @@ class ContentService:
             await self.db.execute(delete(ContentMedia).where(ContentMedia.content_id == content.id))
             
             for item in data.media_items:
+                if not item.media_id:
+                    continue
                 self.db.add(ContentMedia(
                     content_id=content.id, 
                     media_id=item.media_id, 
@@ -336,7 +340,8 @@ class ContentService:
                             title=content.title,
                             body_html=body_to_use,
                             tags=content.tags,
-                            published=is_published
+                            published=is_published,
+                            handle=content.slug
                         )
                     return PublishResponse(
                         site_id=site.id,
