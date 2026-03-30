@@ -11,9 +11,7 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_
 from sqlalchemy.orm import selectinload
-
 from src.api.models.subscription_models.subscriptions import UserSubscription, SubscriptionStatus
-from src.api.models.subscription_models.plans import SubscriptionPlan
 from src.api.models.workspace_models.workspace_model import WorkspaceModel
 from src.api.models.workspace_models.workspace_member import WorkspaceMembers
 from src.api.models.knowledge_models.knowledge_model import (
@@ -22,7 +20,6 @@ from src.api.models.knowledge_models.knowledge_model import (
     Website
 )
 from src.utils.logger import logger
-from src.api.config import get_settings
 
 # Default limits for free tier when no subscription plan is found
 FREE_MAX_WORKSPACES = 1

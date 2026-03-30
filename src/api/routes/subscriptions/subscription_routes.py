@@ -17,15 +17,28 @@ from src.api.schema.subscription import (
     SubscriptionUpgradeRequest,
     SubscriptionCancelRequest,
     CheckoutSessionRequest,
-    CheckoutSessionResponse,
     Invoice,
-    InvoiceListResponse
 )
 from src.api.models.user_models.users import Users
 from src.services.subscription_service import SubscriptionService
 from src.providers.payment.provider_factory import get_payment_provider_singleton
-from src.utils.response_utils import success, created, not_found, error
+from src.utils.response_utils import created, success, not_found, error
 from src.utils.route_decorators import db_transaction_handler, require_permissions
+from src.api.schema.response_schemas import SuccessResponse
+from src.api.schema.response.subscription_responses import (
+    SubscriptionDetails,
+    SubscriptionHistoryResponse,
+    SubscriptionUpgradeResponse,
+    SubscriptionCancelResponse,
+    InvoiceListResponse
+)
+from src.api.schema.response.checkout_responses import (
+    CheckoutSessionResponse,
+    PortalSessionResponse,
+    SubscriptionStatusResponse,
+    UsageMetricsResponse
+)
+from src.api.schema.response.trial_responses import TrialStatusResponse
 from src.api.middleware.rate_limiter import (
     checkout_rate_limit,
     subscription_update_rate_limit,
@@ -46,7 +59,7 @@ router = APIRouter(
 )
 
 
-@router.post("/subscribe", response_model=dict, status_code=status.HTTP_201_CREATED)
+@router.post("/subscribe", response_model=SuccessResponse[SubscriptionDetails], status_code=status.HTTP_201_CREATED)
 @require_permissions("subscription.manage", workspace_scoped=False)
 @db_transaction_handler("subscribe to plan")
 async def subscribe_to_plan(
@@ -87,11 +100,15 @@ async def subscribe_to_plan(
     response_data["plan_name"] = plan.name
     response_data["plan_display_name"] = plan.display_name
 
-    return response_data
+    return success(
+        data=response_data,
+        request=request,
+        message="Subscribed to plan successfully"
+    )
 
 
 
-@router.post("/checkout", response_model=dict, status_code=status.HTTP_200_OK)
+@router.post("/checkout", response_model=SuccessResponse[CheckoutSessionResponse], status_code=status.HTTP_200_OK)
 @require_permissions("subscription.manage", workspace_scoped=False)
 @db_transaction_handler("create checkout session")
 async def create_checkout_session(
@@ -142,8 +159,8 @@ async def create_checkout_session(
     )
 
 
-@router.get("/my-subscription", response_model=dict)
-@router.get("/current", response_model=dict)  # Alias for compatibility
+@router.get("/my-subscription", response_model=SuccessResponse[SubscriptionDetails])
+@router.get("/current", response_model=SuccessResponse[SubscriptionDetails])  # Alias for compatibility
 @require_permissions("subscription.read", workspace_scoped=False)
 @db_transaction_handler("get my subscription", "Subscription retrieved successfully", auto_commit=False)
 async def get_my_subscription(
@@ -243,7 +260,7 @@ async def get_my_subscription(
 
 # NOTE: /status endpoint is in checkout_routes.py (includes portal URL and free tier usage)
 
-@router.get("/history", response_model=dict)
+@router.get("/history", response_model=SuccessResponse[SubscriptionHistoryResponse])
 @require_permissions("subscription.read", workspace_scoped=False)
 @db_transaction_handler("get subscription history", auto_commit=False)
 async def get_subscription_history(
@@ -277,7 +294,7 @@ async def get_subscription_history(
     )
 
 
-@router.post("/upgrade", response_model=dict)
+@router.post("/upgrade", response_model=SuccessResponse[SubscriptionUpgradeResponse])
 @require_permissions("subscription.manage", workspace_scoped=False)
 @db_transaction_handler("upgrade subscription")
 async def upgrade_subscription(
@@ -354,7 +371,7 @@ async def upgrade_subscription(
 
     
 #downgrade route
-@router.post("/downgrade", response_model=dict)
+@router.post("/downgrade", response_model=SuccessResponse[SubscriptionUpgradeResponse])
 @require_permissions("subscription.manage", workspace_scoped=False)
 @db_transaction_handler("downgrade subscription")
 async def downgrade_subscription(
@@ -419,9 +436,13 @@ async def downgrade_subscription(
     response_data["plan_name"] = new_plan.name
     response_data["plan_display_name"] = new_plan.display_name
 
-    return response_data
+    return success(
+        data=response_data,
+        request=request,
+        message=f"Successfully downgraded to {new_plan.display_name}"
+    )
 
-@router.post("/cancel", response_model=dict)
+@router.post("/cancel", response_model=SuccessResponse[SubscriptionCancelResponse])
 @require_permissions("subscription.manage", workspace_scoped=False)
 @db_transaction_handler("cancel subscription")
 async def cancel_subscription(
@@ -487,7 +508,7 @@ async def cancel_subscription(
         message=message
     )
 
-@router.get("/usage", response_model=dict)
+@router.get("/usage", response_model=SuccessResponse[UsageMetricsResponse])
 @require_permissions("usage.read", workspace_scoped=False)
 @db_transaction_handler("get usage stats", "Usage statistics retrieved successfully", auto_commit=False)
 async def get_usage_stats(
@@ -515,7 +536,7 @@ async def get_usage_stats(
     )
 
 
-@router.get("/trial-status", response_model=dict)
+@router.get("/trial-status", response_model=SuccessResponse[TrialStatusResponse])
 @require_permissions("subscription.read", workspace_scoped=False)
 @db_transaction_handler("get trial status", "Trial status retrieved successfully", auto_commit=False)
 async def get_trial_status(
@@ -563,7 +584,7 @@ async def get_trial_status(
     )
 
 
-@router.get("/invoices", response_model=dict)
+@router.get("/invoices", response_model=SuccessResponse[InvoiceListResponse])
 @require_permissions("subscription.read", workspace_scoped=False)
 @db_transaction_handler("get invoices", "Invoices retrieved successfully", auto_commit=False)
 async def get_invoices(
@@ -698,7 +719,7 @@ async def create_portal_session(
         message="Portal session created successfully"
     )
 
-@router.get("/status", response_model=dict)
+@router.get("/status", response_model=SuccessResponse[SubscriptionStatusResponse])
 @require_permissions("subscription.read", workspace_scoped=False)
 @db_transaction_handler("get subscription status", auto_commit=False)
 async def get_subscription_status(

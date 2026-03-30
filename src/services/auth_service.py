@@ -880,39 +880,40 @@ class AuthService:
         )
 
         try:
-            invitation_service = InvitationService(self.db)
+            # Use a savepoint so that any DB error inside this block rolls back
+            # only the invitation changes, not the parent login transaction
+            # (last_login_at, failed_login_attempts resets, etc.).
+            async with self.db.begin_nested():
+                invitation_service = InvitationService(self.db)
 
-            # Get all pending invitations for this user's email
-            pending_invitations = await invitation_service.get_invitations_by_email(
-                email=user.email,
-                status="pending"
-            )
-
-            logger.info(
-                f"[AUTO-ACCEPT] Query completed - found {len(pending_invitations)} pending invitation(s)",
-                extra={
-                    "user_id": str(user.id),
-                    "user_email": user.email,
-                    "invitation_count": len(pending_invitations),
-                    "invitation_ids": [str(inv.id) for inv in pending_invitations]
-                }
-            )
-
-            if not pending_invitations:
-                logger.info(
-                    f"[AUTO-ACCEPT] No pending invitations found for {user.email} - skipping",
-                    extra={"user_id": str(user.id)}
+                # Get all pending invitations for this user's email
+                pending_invitations = await invitation_service.get_invitations_by_email(
+                    email=user.email,
+                    status="pending"
                 )
-                return  # No pending invitations, nothing to do
 
-            accepted_count = 0
-            skipped_count = 0
+                logger.info(
+                    f"[AUTO-ACCEPT] Query completed - found {len(pending_invitations)} pending invitation(s)",
+                    extra={
+                        "user_id": str(user.id),
+                        "user_email": user.email,
+                        "invitation_count": len(pending_invitations),
+                        "invitation_ids": [str(inv.id) for inv in pending_invitations]
+                    }
+                )
 
-            for invitation in pending_invitations:
-                # Use a savepoint per invitation so a DB failure on one invitation
-                # doesn't abort the outer transaction for subsequent iterations.
-                try:
-                    async with db.begin_nested():
+                if not pending_invitations:
+                    logger.info(
+                        f"[AUTO-ACCEPT] No pending invitations found for {user.email} - skipping",
+                        extra={"user_id": str(user.id)}
+                    )
+                    return  # No pending invitations, nothing to do
+
+                accepted_count = 0
+                skipped_count = 0
+
+                for invitation in pending_invitations:
+                    try:
                         logger.info(
                             f"[AUTO-ACCEPT] Processing invitation {str(invitation.id)}",
                             extra={
@@ -936,8 +937,7 @@ class AuthService:
                                     "expires_at": invitation.expires_at.isoformat()
                                 }
                             )
-                            return
-
+                            continue
                         #  send the notification to user
                         await schedule_if_allowed(
                             db=db,
@@ -968,35 +968,51 @@ class AuthService:
                             user_id=user.id
                         )
 
-                    accepted_count += 1
-                    logger.info(
-                        f"[AUTO-ACCEPT] ✅ Successfully auto-accepted invitation during login",
-                        extra={
-                            "user_id": str(user.id),
-                            "invitation_id": str(invitation.id),
-                            "workspace_id": str(invitation.workspace_id),
-                            "membership_id": result["membership_id"],
-                            "result": result
-                        }
-                    )
-
-                except BusinessRuleViolationException as e:
-                    # User might already be a member - this is OK, just skip
-                    if "already a member" in str(e):
-                        skipped_count += 1
+                        accepted_count += 1
                         logger.info(
-                            f"[AUTO-ACCEPT] User already member of workspace (invitation already marked accepted)",
+                            f"[AUTO-ACCEPT] ✅ Successfully auto-accepted invitation during login",
                             extra={
                                 "user_id": str(user.id),
                                 "invitation_id": str(invitation.id),
                                 "workspace_id": str(invitation.workspace_id),
-                                "error": str(e)
+                                "membership_id": result["membership_id"],
+                                "result": result
                             }
                         )
-                    else:
-                        # Other business rule violations - log and continue
+
+                    except BusinessRuleViolationException as e:
+                        # User might already be a member - this is OK, just skip
+                        if "already a member" in str(e):
+                            skipped_count += 1
+                            logger.info(
+                                f"[AUTO-ACCEPT] User already member of workspace (invitation already marked accepted)",
+                                extra={
+                                    "user_id": str(user.id),
+                                    "invitation_id": str(invitation.id),
+                                    "workspace_id": str(invitation.workspace_id),
+                                    "error": str(e)
+                                }
+                            )
+                            # Note: invitation.status already set to "accepted" by accept_invitation before raising
+                        else:
+                            # Other business rule violations - log and continue
+                            logger.error(
+                                f"[AUTO-ACCEPT] ❌ Business rule violation - failed to auto-accept invitation: {str(e)}",
+                                extra={
+                                    "user_id": str(user.id),
+                                    "invitation_id": str(invitation.id),
+                                    "workspace_id": str(invitation.workspace_id),
+                                    "error": str(e),
+                                    "error_type": type(e).__name__
+                                }
+                            )
+                            skipped_count += 1
+
+                    except Exception as e:
+                        # Unexpected error - log but don't fail login
                         logger.error(
-                            f"[AUTO-ACCEPT] ❌ Business rule violation - failed to auto-accept invitation: {str(e)}",
+                            f"[AUTO-ACCEPT] ❌ Unexpected error auto-accepting invitation: {str(e)}",
+                            exc_info=True,
                             extra={
                                 "user_id": str(user.id),
                                 "invitation_id": str(invitation.id),
@@ -1007,34 +1023,32 @@ class AuthService:
                         )
                         skipped_count += 1
 
-                except Exception as e:
-                    # Unexpected error - savepoint was rolled back; log but don't fail login
-                    logger.error(
-                        f"[AUTO-ACCEPT] ❌ Unexpected error auto-accepting invitation: {str(e)}",
-                        exc_info=True,
-                        extra={
-                            "user_id": str(user.id),
-                            "invitation_id": str(invitation.id),
-                            "workspace_id": str(invitation.workspace_id),
-                            "error": str(e),
-                            "error_type": type(e).__name__
-                        }
-                    )
-                    skipped_count += 1
+                # Flush changes to database
+                logger.info(
+                    f"[AUTO-ACCEPT] Flushing database changes",
+                    extra={
+                        "user_id": str(user.id),
+                        "accepted_count": accepted_count,
+                        "skipped_count": skipped_count
+                    }
+                )
+                await self.db.flush()
 
-            logger.info(
-                f"[AUTO-ACCEPT] ✅ Process completed - auto-accepted {accepted_count} invitation(s), skipped {skipped_count}",
-                extra={
-                    "user_id": str(user.id),
-                    "user_email": user.email,
-                    "accepted": accepted_count,
-                    "skipped": skipped_count,
-                    "total_processed": len(pending_invitations)
-                }
-            )
+                logger.info(
+                    f"[AUTO-ACCEPT] ✅ Process completed - auto-accepted {accepted_count} invitation(s), skipped {skipped_count}",
+                    extra={
+                        "user_id": str(user.id),
+                        "user_email": user.email,
+                        "accepted": accepted_count,
+                        "skipped": skipped_count,
+                        "total_processed": len(pending_invitations)
+                    }
+                )
 
         except Exception as e:
-            # Catch-all: Don't fail login if invitation processing fails
+            # Catch-all: Don't fail login if invitation processing fails.
+            # The begin_nested() savepoint above ensures the parent transaction
+            # (login state updates) is preserved even if this block fails.
             logger.error(
                 f"[AUTO-ACCEPT] ❌ Fatal error - failed to process pending invitations during login: {str(e)}",
                 exc_info=True,
