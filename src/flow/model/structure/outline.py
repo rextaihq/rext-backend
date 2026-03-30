@@ -31,11 +31,16 @@ class LinkSuggestion(BaseModel):
     )
 
 
+class Fact(BaseModel):
+    """Verifiable fact or statistic with source citation context."""
+    
+    text: str = Field(description="The factual statement or statistic.")
+
 class Section(BaseModel):
     heading: str = Field(description="Section heading text.")
     heading_level: Literal["H2", "H3"] = Field(description="Heading level.")
     description: str = Field(description="What this section will cover.")
-    key_points: conlist(str, min_length=2, max_length=4)
+    key_points: conlist(str, min_length=2, max_length=6)
     questions_to_answer: Optional[List[str]] = Field(
         description="PAA or user questions to answer in this section."
     )
@@ -46,11 +51,16 @@ class Section(BaseModel):
         default=False,
         description="Whether this heading should include the focus keyphrase or a variant."
     )
+    facts: Optional[List[Fact]] = Field(
+        default=[],
+        description="Verifiable facts, statistics, or data points with sources to include in this section."
+    )
 
 
 class Outline(BaseModel):
     title: str = Field(description="SEO-optimized article title starting with the focus keyphrase.")
     slug_suggestion: str = Field(
+        pattern=r"^[a-z0-9-]+$",
         description="Suggested URL slug containing the focus keyphrase."
     )
     brief: str = Field(description="Article goal and value proposition.")
@@ -63,7 +73,11 @@ class Outline(BaseModel):
     
     # Structure
     sections: conlist(Section, min_length=4, max_length=8)
-    faqs: Optional[List[str]] = Field(description="FAQ questions for schema.")
+    faqs: Optional[List[str]] = Field(default_factory=list,description="FAQ questions for schema.")
+    key_facts: Optional[List[Fact]] = Field(
+        default_factory=list,
+        description="Key verifiable facts or statistics with sources to be used throughout the article."
+    )
     
     # Images Planning
     image_suggestions: List[ImageSuggestion] = Field(
@@ -85,7 +99,20 @@ class Outline(BaseModel):
     
     # Content Strategy
     target_audience: List[str]
-    tone: Literal["Professional", "Conversational", "Authoritative"]
+    tone: Literal[
+    "Professional",
+    "Conversational",
+    "Authoritative",
+    "Friendly",
+    "Encouraging",
+    "Neutral",
+    "Persuasive",
+    "Analytical",
+    "Direct",
+    "Action-oriented",
+    "Trustworthy",
+    "Urgent"
+]
     target_word_count: int = Field(
         ge=800,
         le=5000,

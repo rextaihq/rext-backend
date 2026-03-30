@@ -44,6 +44,7 @@ async def generate_outline(state: REXT) -> dict:
 
     serp_normalized = state.get("serp_normalized", {})
     seo_result = state.get("seo_result", {})
+    serp_backlinks = seo_result.get("serp_backlinks", {})
     content_state = state.get("content", {})
     outline_state = content_state.get("outline", {})
 
@@ -63,13 +64,14 @@ async def generate_outline(state: REXT) -> dict:
         for c in competitors
     ]
 
-    intent_distribution = ", ".join(
-        f"{k}: {v}" for k, v in seo_result.get("intent", {}).items()
-    )
+    intent_distribution = serp_backlinks.get("main_intent", "Informational")
+    print("Intent: ",intent_distribution)
 
     # 3. Generate outline
     try:
-        outline_model = load_model(max_tokens=DEFAULT_MAX_TOKENS).with_structured_output(Outline)
+        outline_model = load_model(max_tokens=DEFAULT_MAX_TOKENS).with_structured_output(
+            Outline
+        )
         prompt_template = get_outline_prompt()
 
         messages = prompt_template.format_messages(

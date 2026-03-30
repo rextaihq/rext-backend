@@ -52,6 +52,7 @@ Iteration Feedback:
    - At least one other section
 8. Do NOT repeat competitor structure verbatim.
 9. Add unique angles, frameworks, or insights.
+10. Include verifiable facts or statistics in each section where appropriate (at least 2-3 throughout the whole article). For each fact, provide a direct source URL for verification.
 
 Return ONLY the JSON. No explanations.
 """,
