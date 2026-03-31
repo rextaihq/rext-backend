@@ -557,7 +557,7 @@ class WorkspaceService:
             "Retrieved analytics for workspace",
             extra={
                 "workspace_id": str(workspace_id),
-                "total_knowledge": analytics["knowledge_stats"]["total"],
+                "total_knowledge": analytics["knowledge_stats"]["total_count"],
             },
         )
 
