@@ -1,32 +1,9 @@
-from langchain_core.tools import tool
-from langchain_community.tools.tavily_search import TavilySearchResults
-from dotenv import load_dotenv
-from openai import OpenAI
-import json
 import os
+from openai import OpenAI
+from dotenv import load_dotenv
 
 load_dotenv()
 
-@tool
-def search_tool(query: str) -> str:
-    """Perform a web search using Tavily and return top 5 results with snippets.
-
-    Use this tool for factual questions, current events, research, or up-to-date web info.
-    Returns structured results with title, URL, and snippet for citation.
-
-    Args:
-        query: Search query (e.g., "best laptops 2024 review")
-    """
-    search = TavilySearchResults(
-        max_results=5,
-        search_depth="advanced",
-        api_key=os.getenv("TAVILY_API_KEY"),
-    )
-    results = search.run(query)
-    return json.dumps(results, indent=2)
-
-
-@tool
 def generate_image(prompt: str, model: str = "dall-e-3", size: str = "1024x1024"):
     """
     Generates an image using OpenAI's DALL-E model and returns the URL.
@@ -60,6 +37,6 @@ def generate_image(prompt: str, model: str = "dall-e-3", size: str = "1024x1024"
         print(f"Error generating image: {e}")
         return None
 
-
-def get_tools():
-    return [search_tool, generate_image]
+# # Example Usage:
+# url = generate_image("A futuristic city at sunset in cyberpunk style")
+# print(url)

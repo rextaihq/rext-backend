@@ -118,12 +118,61 @@ SEO GUIDELINES
 - Write concise paragraphs (2–4 sentences)
 - Include a FAQ section answering real user questions
 - Structure with clear H2/H3 headings and logical flow
-- Include images in relevant sections
+- Include a high-quality generated image in the introduction or a relevant section
 
 ========================
 QUALITY STANDARD
 ========================
 The article must feel like it was written by one specific human being, with a clear voice, a point of view, and real-world experience behind every sentence. If it could have been written by anyone, rewrite it.
+
+========================
+READABILITY STANDARD — TARGET SCORES
+========================
+Your writing will be scored with the textstat library. You must hit these targets:
+
+  Flesch Reading Ease ............. 60–70   (Standard — readable by most adults)
+  Flesch-Kincaid Grade ............ 8–10    (High-school level, not academic)
+  Gunning FOG Index ............... ≤ 12    (No fog — every sentence is clear)
+  Dale-Chall Score ................ 6.0–7.9 (Familiar vocabulary, grades 7–10)
+  Avg sentence length ............. 15–20 words
+  Polysyllabic word ratio ......... < 20 %  (Words with 3+ syllables)
+
+HOW TO HIT THESE SCORES — CONCRETE RULES:
+
+SENTENCE LENGTH:
+- Target 15–20 words per sentence on average
+- Never write a sentence longer than 35 words — split it
+- After every long sentence, write one that is 8 words or fewer
+- Count your words mentally. If a sentence is running long, stop and restart
+
+WORD CHOICE — PREFER SHORT WORDS:
+- Replace polysyllabic words wherever a simpler word works:
+  "utilise" → "use"       "initiate" → "start"    "demonstrate" → "show"
+  "facilitate" → "help"   "implement" → "do"       "methodology" → "method"
+  "subsequently" → "then" "approximately" → "about" "requirement" → "need"
+- If a technical term is unavoidable, immediately explain it in plain English
+
+PARAGRAPH LENGTH:
+- Max 3–4 sentences per paragraph
+- One idea per paragraph — never pack two arguments into one block
+- White space is readability: short paragraphs improve Flesch scores directly
+
+SENTENCE STRUCTURE MIX (within every 5-sentence block):
+- 1 very short sentence (≤ 8 words)
+- 2 medium sentences (15–22 words)
+- 1 complex sentence with a clause (20–30 words)
+- 1 punchy follow-up (≤ 12 words)
+
+CLAUSE CONTROL:
+- Maximum 2 subordinate clauses per sentence
+- Never stack: "which", "that", "because", "although", "while" in the same sentence
+- If you need more than one "and" in a sentence, split it into two
+
+FORBIDDEN COMPLEXITY PATTERNS:
+- Triple noun stacks: "content marketing strategy implementation" → "how you run content marketing"
+- Abstract nominalisations: "the utilisation of" → "using", "the provision of" → "providing"
+- Passive voice more than once per paragraph — use active voice by default
+- Jargon chains without plain-English follow-up
 """
 
     CONTENT_SYSTEM_PROMPT_TEMPLATE = """
@@ -145,22 +194,21 @@ The article must feel like it was written by one specific human being, with a cl
 - Embed each cited source as an inline link: [anchor text](url)
 - Never fabricate sources
 
-**search_image_tool** — Max **2 calls total** for the entire article:
-- Call once for the introduction image and once for the most relevant section
+**generate_image** — Max **1 call total** for the entire article:
+- Call once to generate a unique, high-quality image for the introduction or the most relevant section
 - Use ONLY the URL returned — never invent or guess URLs
-- If tool returns `NO_IMAGE_FOUND`, skip — do NOT write a placeholder URL
-- Embed as: `![descriptive alt text](url_returned_by_tool)`
-- Do NOT write "Alt text: ..." as separate text
+- **Structured Data**: Place the URL, alt text, and descriptive context in the `images` list of your final structured response.
+- **Content Embedding**: Also embed the image in the correct markdown section as: `![descriptive alt text](url_returned_by_tool)`
 
 ---
 
 ### EXECUTION ORDER
 1. Call `search_tool` (1–2 times) upfront to gather key facts and stats for the whole article
-2. Call `search_image_tool` (max 2 times) to get real image URLs for introduction + 1 section
-3. Write the complete article using the gathered facts and images
+2. Call `generate_image` (**exactly 1 time**) to create a relevant image for the content
+3. Write the complete article, ensuring the image URL is both embedded in the markdown and included in the structured `images` list.
 4. Weave the persona’s identity and expertise naturally throughout
 5. Deliver the full article — no preamble, no meta-commentary
-6. TOTAL tool calls must not exceed 7 (5 search + 2 image) — stop calling tools once limit is reached
+6. TOTAL tool calls must not exceed 6 (5 search + 1 image generation) — stop calling tools once limit is reached
 
 Write the full article now.
 """
