@@ -1,6 +1,6 @@
 import logging
 from src.flow.states.rext import REXT
-from src.flow.model.structure.outline import Outline
+from src.flow.model.structure.outline_schemas import get_outline_schema
 from src.flow.model.llm_manager import load_model
 from src.flow.prompts.human.outline import get_outline_prompt
 DEFAULT_MAX_TOKENS = 4096
@@ -39,9 +39,6 @@ async def generate_outline(state: REXT) -> dict:
         }
     logger.info("Generating outline for: %s (content type: %s)", topic, content_type)
 
-
-    logger.info(f"Generating outline for: {topic} (content type: {content_type})")
-
     serp_normalized = state.get("serp_normalized", {})
     seo_result = state.get("seo_result", {})
     content_state = state.get("content", {})
@@ -69,8 +66,9 @@ async def generate_outline(state: REXT) -> dict:
 
     # 3. Generate outline
     try:
-        outline_model = load_model(max_tokens=DEFAULT_MAX_TOKENS).with_structured_output(Outline)
-        prompt_template = get_outline_prompt()
+        SchemaClass = get_outline_schema(content_type)
+        outline_model = load_model(max_tokens=DEFAULT_MAX_TOKENS).with_structured_output(SchemaClass)
+        prompt_template = get_outline_prompt(content_type=content_type)
 
         messages = prompt_template.format_messages(
             content_type=content_type,
