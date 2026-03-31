@@ -14,34 +14,9 @@ Generate a structured content outline that:
 - Follows the specific format conventions for the requested content type
 
 ### CONTENT TYPE GUIDELINES
-Adapt your outline structure based on the content type:
+Adapt your outline structure based on the requested content type:
 
-**ARTICLE:**
-- Focus on evergreen, informative content
-- Structure: Introduction → Main sections → Conclusion
-- Emphasize depth and comprehensive coverage
-- Include data, statistics, and expert insights
-
-**BLOG:**
-- More conversational and personal tone
-- Structure: Hook → Main sections → Call-to-action
-- Include personal experiences and anecdotes
-- Shorter, punchier sections
-- More frequent use of lists and bullet points
-
-**REPORT:**
-- Data-driven and analytical
-- Structure: Executive Summary → Methodology → Findings → Analysis → Recommendations
-- Heavy emphasis on facts, figures, and evidence
-- Include charts/data visualization opportunities
-- More formal, professional tone
-
-**WHITEPAPER:**
-- In-depth, authoritative format
-- Structure: Abstract → Problem Statement → Solution → Implementation → Conclusion
-- Technical depth and industry expertise
-- Include case studies and research findings
-- Thought leadership and strategic insights
+{content_type_guidelines}
 
 ### CORE SEO RULES (STRICT)
 1. Search Intent First
