@@ -144,3 +144,4 @@ async def generate_content(state: REXT) -> dict:
                 "error": f"Generation failed: {str(e)}"
             }
         }
+        
