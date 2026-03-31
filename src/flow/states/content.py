@@ -132,7 +132,7 @@ class CONTENT(TypedDict, total=False):
     Main LangGraph state for AI-powered SEO content engine
     """
     # Core artifact
-    topics: list[str]
+    topics: list[dict[str, Any]]
     selected_topic: str
     outline: ContentOutline
     review: ContentReview

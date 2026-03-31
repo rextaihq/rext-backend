@@ -28,8 +28,21 @@ class TopicService:
     async def create_topic(self, workspace_id: UUID, topic_data: Dict[str, Any]) -> TopicsModel:
         topic = TopicsModel(
             workspace_id=workspace_id,
-            topic_name=topic_data.get('topic_name'),
-            description=topic_data.get('description')
+            title=topic_data.get('title', topic_data.get('topic_name')),
+            angle=topic_data.get('angle', ''),
+            description=topic_data.get('description', ''),
+            channel_fit=topic_data.get('channel_fit', []),
+            audience_fit=topic_data.get('audience_fit', []),
+            why_it_works=topic_data.get('why_it_works'),
+            scores=topic_data.get('scores', {}),
+            tags=topic_data.get('tags', []),
+            suggested_defaults=topic_data.get('suggested_defaults', {}),
+            goal_alignment=topic_data.get('goal_alignment', {}),
+            content_guidance=topic_data.get('content_guidance', {}),
+            audience_insights=topic_data.get('audience_insights', {}),
+            internal_research_config=topic_data.get('internal_research_config', {}),
+            user_settings=topic_data.get('user_settings', {}),
+            approved=topic_data.get('approved', False)
         )
         self.db.add(topic)
         await self.db.flush()
@@ -38,10 +51,13 @@ class TopicService:
     async def update_topic(self, topic_id: UUID, update_data: Dict[str, Any]) -> TopicsModel:
         topic = await self.get_topic_by_id(topic_id)
         
-        if 'topic_name' in update_data:
-            topic.topic_name = update_data['topic_name']
-        if 'description' in update_data:
-            topic.description = update_data['description']
+        # Handle the legacy topic_name field if it's passed
+        if 'topic_name' in update_data and 'title' not in update_data:
+            update_data['title'] = update_data.pop('topic_name')
+            
+        for key, value in update_data.items():
+            if hasattr(topic, key) and value is not None:
+                setattr(topic, key, value)
             
         topic.updated_at = datetime.now(timezone.utc)
         await self.db.flush()

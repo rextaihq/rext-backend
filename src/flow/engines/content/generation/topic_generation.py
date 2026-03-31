@@ -81,9 +81,9 @@ async def topic_generation(state: REXT) -> Dict[str, Any]:
     if isinstance(user_selection, int):
         # User selected by index (1-5)
         if 1 <= user_selection <= len(topics):
-            selected_topic = topics[user_selection - 1].get("topic_name", "")
+            selected_topic = topics[user_selection - 1].get("title", "")
         else:
-            selected_topic = topics[0].get("topic_name", "")  # Default to first topic
+            selected_topic = topics[0].get("title", "")  # Default to first topic
     elif isinstance(user_selection, str):
         # User typed the topic directly or selected from list
         selected_topic = user_selection.strip()
@@ -91,14 +91,14 @@ async def topic_generation(state: REXT) -> Dict[str, Any]:
         if selected_topic.isdigit():
             idx = int(selected_topic)
             if 1 <= idx <= len(topics):
-                selected_topic = topics[idx - 1].get("topic_name", "")
+                selected_topic = topics[idx - 1].get("title", "")
     elif isinstance(user_selection, dict):
         # User returned a dict with selection
-        selected_topic = user_selection.get("selected_topic", "") or user_selection.get("topic_name", "") or user_selection.get("topic", "")
+        selected_topic = user_selection.get("selected_topic", "") or user_selection.get("title", "") or user_selection.get("topic_name", "") or user_selection.get("topic", "")
     
     # Fallback to first topic if selection is empty
     if not selected_topic:
-        selected_topic = topics[0].get("topic_name", "") if topics else ""
+        selected_topic = topics[0].get("title", "") if topics else ""
     
     logger.info(f"User selected topic: {selected_topic}")
     

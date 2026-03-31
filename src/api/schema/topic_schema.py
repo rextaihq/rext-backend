@@ -20,5 +20,20 @@ class DeleteTopics(BaseModel):
 
 class UpdateTopicRequest(BaseModel):
     topic_id: str
-    topic_name: Optional[str] = None
+    title: Optional[str] = None
+    angle: Optional[str] = None
     description: Optional[str] = None
+    channel_fit: Optional[List[str]] = None
+    audience_fit: Optional[List[str]] = None
+    why_it_works: Optional[str] = None
+    tags: Optional[List[str]] = None
+    scores: Optional[dict] = None
+    
+    suggested_defaults: Optional[dict] = None
+    goal_alignment: Optional[dict] = None
+    content_guidance: Optional[dict] = None
+    audience_insights: Optional[dict] = None
+    internal_research_config: Optional[dict] = None
+    user_settings: Optional[dict] = None
+    
+    approved: Optional[bool] = None
