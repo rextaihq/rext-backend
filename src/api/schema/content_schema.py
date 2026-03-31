@@ -6,16 +6,17 @@ from uuid import UUID
 
 class ContentBase(BaseModel):
     """Base content schema with common fields"""
-    title: str = Field(..., min_length=1, max_length=500, description="Content title")
+    # title: str = Field(..., min_length=1, max_length=500, description="Content title")
+    title: str = Field(default="", description="Content title")
     content_language: Optional[str] = Field(default="English", description="Content language")
     status: Optional[str] = Field(default="draft", description="Content status")
 
-    @field_validator('title')
-    @classmethod
-    def validate_title(cls, v):
-        if not v or not v.strip():
-            raise ValueError('Title cannot be empty')
-        return v.strip()
+    # @field_validator('title')
+    # @classmethod
+    # def validate_title(cls, v):
+    #     if not v or not v.strip():
+    #         raise ValueError('Title cannot be empty')
+    #     return v.strip()
 
 
 class ContentSEODataSchema(BaseModel):
@@ -36,7 +37,8 @@ class ContentSEODataSchema(BaseModel):
 
 class ContentMediaSchema(BaseModel):
     """Media usage schema for content"""
-    media_id: UUID
+    # media_id: UUID
+    media_id: Optional[Any] = None
     usage_type: Optional[str] = "inline"
     position: Optional[int] = 0
 
@@ -206,6 +208,8 @@ class PublishResponse(BaseModel):
     success: bool
     wordpress_post_id: Optional[int] = None
     wordpress_url: Optional[str] = None
+    shopify_article_id: Optional[int] = None
+    shopify_article_url: Optional[str] = None
     error: Optional[str] = None
 
 

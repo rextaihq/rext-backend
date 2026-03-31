@@ -47,6 +47,12 @@ class Content(Base, SerializableMixin, UUIDPrimaryKeyMixin, TimestampMixin, Work
     # Topic relationship
     topic_id = Column(UUID(as_uuid=True), ForeignKey("topics.id", ondelete="SET NULL"), nullable=True, index=True)
 
+    # Shopify publishing fields
+    from sqlalchemy import BigInteger
+    shopify_article_id = Column(BigInteger, nullable=True)
+    shopify_article_url = Column(Text, nullable=True)
+    shopify_published_at = Column(DateTime(timezone=True), nullable=True)
+
     # Relationships
     workspace = relationship("WorkspaceModel", back_populates="content_items")
     created_by = relationship("Users", foreign_keys=[created_by_user_id])

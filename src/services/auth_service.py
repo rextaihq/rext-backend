@@ -902,18 +902,14 @@ class AuthService:
                     }
                 )
 
-                if not pending_invitations:
-                    logger.info(
-                        f"[AUTO-ACCEPT] No pending invitations found for {user.email} - skipping",
-                        extra={"user_id": str(user.id)}
-                    )
-                    return  # No pending invitations, nothing to do
+            accepted_count = 0
+            skipped_count = 0
 
-                accepted_count = 0
-                skipped_count = 0
-
-                for invitation in pending_invitations:
-                    try:
+            for invitation in pending_invitations:
+                # Use a savepoint per invitation so a DB failure on one invitation
+                # doesn't abort the outer transaction for subsequent iterations.
+                try:
+                    async with db.begin_nested():
                         logger.info(
                             f"[AUTO-ACCEPT] Processing invitation {str(invitation.id)}",
                             extra={
@@ -937,7 +933,8 @@ class AuthService:
                                     "expires_at": invitation.expires_at.isoformat()
                                 }
                             )
-                            continue
+                            return
+
                         #  send the notification to user
                         await schedule_if_allowed(
                             db=db,
@@ -980,70 +977,31 @@ class AuthService:
                             }
                         )
 
-                    except BusinessRuleViolationException as e:
-                        # User might already be a member - this is OK, just skip
-                        if "already a member" in str(e):
-                            skipped_count += 1
-                            logger.info(
-                                f"[AUTO-ACCEPT] User already member of workspace (invitation already marked accepted)",
-                                extra={
-                                    "user_id": str(user.id),
-                                    "invitation_id": str(invitation.id),
-                                    "workspace_id": str(invitation.workspace_id),
-                                    "error": str(e)
-                                }
-                            )
-                            # Note: invitation.status already set to "accepted" by accept_invitation before raising
-                        else:
-                            # Other business rule violations - log and continue
-                            logger.error(
-                                f"[AUTO-ACCEPT] ❌ Business rule violation - failed to auto-accept invitation: {str(e)}",
-                                extra={
-                                    "user_id": str(user.id),
-                                    "invitation_id": str(invitation.id),
-                                    "workspace_id": str(invitation.workspace_id),
-                                    "error": str(e),
-                                    "error_type": type(e).__name__
-                                }
-                            )
-                            skipped_count += 1
+                except Exception as e:
+                    # Unexpected error - savepoint was rolled back; log but don't fail login
+                    logger.error(
+                        f"[AUTO-ACCEPT] ❌ Unexpected error auto-accepting invitation: {str(e)}",
+                        exc_info=True,
+                        extra={
+                            "user_id": str(user.id),
+                            "invitation_id": str(invitation.id),
+                            "workspace_id": str(invitation.workspace_id),
+                            "error": str(e),
+                            "error_type": type(e).__name__
+                        }
+                    )
+                    skipped_count += 1
 
-                    except Exception as e:
-                        # Unexpected error - log but don't fail login
-                        logger.error(
-                            f"[AUTO-ACCEPT] ❌ Unexpected error auto-accepting invitation: {str(e)}",
-                            exc_info=True,
-                            extra={
-                                "user_id": str(user.id),
-                                "invitation_id": str(invitation.id),
-                                "workspace_id": str(invitation.workspace_id),
-                                "error": str(e),
-                                "error_type": type(e).__name__
-                            }
-                        )
-                        skipped_count += 1
-
-                # Flush changes to database
-                logger.info(
-                    f"[AUTO-ACCEPT] Flushing database changes",
-                    extra={
-                        "user_id": str(user.id),
-                        "accepted_count": accepted_count,
-                        "skipped_count": skipped_count
-                    }
-                )
-                await self.db.flush()
-
-                logger.info(
-                    f"[AUTO-ACCEPT] ✅ Process completed - auto-accepted {accepted_count} invitation(s), skipped {skipped_count}",
-                    extra={
-                        "user_id": str(user.id),
-                        "user_email": user.email,
-                        "accepted": accepted_count,
-                        "skipped": skipped_count,
-                        "total_processed": len(pending_invitations)
-                    }
-                )
+            logger.info(
+                f"[AUTO-ACCEPT] ✅ Process completed - auto-accepted {accepted_count} invitation(s), skipped {skipped_count}",
+                extra={
+                    "user_id": str(user.id),
+                    "user_email": user.email,
+                    "accepted": accepted_count,
+                    "skipped": skipped_count,
+                    "total_processed": len(pending_invitations)
+                }
+            )
 
         except Exception as e:
             # Catch-all: Don't fail login if invitation processing fails.

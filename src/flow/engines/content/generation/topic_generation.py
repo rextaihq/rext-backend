@@ -6,7 +6,7 @@ from src.flow.model.llm_manager import topic_generation_model
 from langgraph.types import interrupt
 from langchain_core.messages import SystemMessage, HumanMessage
 from datetime import datetime, timezone
-logger = logging.getLogger(__name__)
+logger = logging.getLogger(__name__) 
 
 
 async def topic_generation(state: REXT) -> Dict[str, Any]:
@@ -49,18 +49,17 @@ async def topic_generation(state: REXT) -> Dict[str, Any]:
     current_year = datetime.now(timezone.utc).year
     # Use a LIST of messages, not a SET
     messages = [
-        SystemMessage(
-            content=(
-                f"You are a SEO expert. Generate a high quality list of 5 SEO topics related to the given topic. "
-                f"Focus on topics that rank well in search engines, provide value to readers, and are relevant in {current_year}. "
-                f"Prefer trends, latest strategies, and current best practices. "
-                f"Only output pairs of topic_name and description. Do NOT output complex metadata."
-            )
-        ),
-        HumanMessage(
-            content=f"Generate 5 SEO topic name and description pairs for: {query} in {current_year}"
+    SystemMessage(
+        content=(
+            f"You are a SEO expert. Generate a high quality list of 5 topics related to the given topic. "
+            f"Focus on topics that rank well in search engines, provide value to readers, and are relevant in {current_year}. "
+            f"Prefer trends, latest strategies, and current best practices."
         )
-    ]
+    ),
+    HumanMessage(
+        content=f"Generate 5 topics for: {query} in {current_year}"
+    )
+]
     
     results: SEOTopics = await model.ainvoke(messages)
     topics = [t.model_dump() for t in results.topics]

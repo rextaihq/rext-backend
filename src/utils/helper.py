@@ -21,6 +21,7 @@ from src.utils.splitter import split_data
 from src.utils.vector_store import load_vector_store
 from crawl4ai.content_scraping_strategy import LXMLWebScrapingStrategy
 from src.api.lib.logger import auto_logger
+from src.config.crawler import CrawlerConfiguration
 
 logger = auto_logger()
 
@@ -38,8 +39,9 @@ async def web_page_scraper(urls: List[HttpUrl]) -> Tuple[List[Document], list]:
 : If any URL fails SSRF validation.
     """
     logger.info("Scraping started")
-    browser_config = GetBrowserConfig()
-    run_config = GetCrawlerRunConfig()
+    config = CrawlerConfiguration()
+    browser_config = config.get_browser_config()
+    run_config = config.get_run_config()
 
     # Validate all URLs for SSRF before scraping
     validated_urls = []

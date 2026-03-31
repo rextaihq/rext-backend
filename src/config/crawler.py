@@ -4,11 +4,11 @@ from typing import Optional, List, Union
 from crawl4ai.async_configs import BrowserConfig, CrawlerRunConfig
 from crawl4ai import CacheMode
 from crawl4ai.content_scraping_strategy import LXMLWebScrapingStrategy
-from src.flow.engines.scrape.config.markdown_generator import MarkdownGeneratorFactory
+from src.config.markdown_generator import MarkdownGeneratorFactory
 
 logger = logging.getLogger(__name__)
 
-class CrawlerConfiguration(MarkdownGeneratorFactory):
+class CrawlerConfiguration():
     """
     Handles the configuration for the Crawl4AI browser and crawler.
 
@@ -16,17 +16,6 @@ class CrawlerConfiguration(MarkdownGeneratorFactory):
     - Browser settings (headless mode, browser type, etc.)
     - Crawler run settings (content extraction, link scoring, caching, etc.)
     """
-
-    def __init__(self, query: str):
-        """
-        Initialize the configuration with a search query.
-
-        Args:
-            query (str): The search query used for link scoring and content relevance.
-        """
-        super().__init__(query=query)
-        logger.debug(f"Initialized CrawlerConfiguration for query: '{query}'")
-
     def get_browser_config(
         self,
         headless: bool = True,
@@ -71,7 +60,6 @@ class CrawlerConfiguration(MarkdownGeneratorFactory):
         logger.debug(f"Generating crawler run config with cache_mode={cache_mode}")
         return CrawlerRunConfig(
             word_count_threshold=200,
-            markdown_generator=self.get_markdown_generator(),
             remove_forms=True, # Optimization: remove forms
             prettiify=True,  # NOTE: Intentional spelling — matches crawl4ai's parameter name
             parser_type="lxml",
