@@ -87,10 +87,20 @@ class SERPBacklinks(TypedDict):
 
 
 
+# 7. Keyword Clustering State
+class KeywordCluster(TypedDict):
+    """Cluster of semantically related keywords."""
+    cluster_name: str
+    keywords: list[dict[str, Any]]
+    total_score: float
+    main_intent: Optional[str]
+
+
 class SEORESULT(TypedDict, total=False):
     """SEO analysis result - fields are optional as they may be populated by different nodes."""
     serp_backlinks: Annotated[SERPBacklinks, merge_dicts]
     keyword_recommendations: KeywordRecommendationState
+    keyword_clusters: list[KeywordCluster]
     content_gaps: ContentGapState
     serp_features: SERPFeatureImpactState
     seo_opportunity: SEOOpportunityState 
