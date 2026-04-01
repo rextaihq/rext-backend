@@ -1,7 +1,10 @@
 import logging
 
+from pydantic import ValidationError
+
 from src.flow.model.llm_manager import load_model
 from src.flow.model.structure.outline_schemas import get_outline_schema, validate_outline_quality
+from src.flow.model.structure.outlines.postprocess import post_process_outline
 from src.flow.prompts.human.outline import get_outline_prompt, normalize_content_type
 from src.flow.states.rext import REXT
 
@@ -91,7 +94,8 @@ async def generate_outline(state: REXT) -> dict:
 
         logger.info("Outline prompt formatted successfully")
 
-        generated_outline = await outline_model.ainvoke(messages)
+        generated_outline_raw = await outline_model.ainvoke(messages)
+        generated_outline = post_process_outline(content_type, generated_outline_raw)
         validate_outline_quality(content_type, generated_outline)
         outline_dict = generated_outline.model_dump()
 
@@ -111,18 +115,37 @@ async def generate_outline(state: REXT) -> dict:
             }
         }
 
-    except Exception as e:
-        logger.exception("Error generating outline")
+    except (ValueError, ValidationError) as e:
+        # Auto-reject so the workflow can loop without bothering the user.
+        logger.warning("Outline auto-rejected; regenerating (%s)", str(e))
         return {
             "content": {
                 **content_state,
-                # Auto-reject so the workflow can loop without bothering the user.
+                "error": "",
                 "outline": {
                     **outline_state,
                     "iteration_count": iteration_count + 1,
                     "status": "rejected",
                     "auto_rejected": True,
+                    "message": "Outline auto-rejected; regenerating.",
                     "rejected_reason": f"Auto-validation failed: {str(e)}",
+                },
+                "status": "planning",
+            }
+        }
+    except Exception as e:
+        # Unexpected failure (API, network, infra). Keep error for observability.
+        logger.exception("Error generating outline")
+        return {
+            "content": {
+                **content_state,
+                "outline": {
+                    **outline_state,
+                    "iteration_count": iteration_count + 1,
+                    "status": "rejected",
+                    "auto_rejected": True,
+                    "message": "Outline generation failed; regenerating.",
+                    "rejected_reason": f"Generation failed: {str(e)}",
                 },
                 "error": f"Generation failed: {str(e)}",
             }

@@ -1,13 +1,11 @@
-from __future__ import annotations
-
-
 _BASE_REQUIREMENTS = """\
 GLOBAL QUALITY RULES (STRICT)
 1. Output MUST be valid JSON and MUST match the requested schema exactly.
-2. Every heading must be specific and keyword-rich — avoid generic headings like "Introduction" or "Conclusion".
-3. Ensure a logical hierarchy; no redundancy; no repeated sections.
-4. Include competitor-gap coverage: add 1-2 sections competitors likely missed.
-5. Be publish-ready: practical, actionable, and intent-satisfying.
+2. Title MUST include `focus_keyphrase` verbatim (or a close variant) and match the intent.
+3. Every heading must be specific and keyword-rich (avoid "Introduction"/"Conclusion").
+4. Ensure a logical hierarchy; no redundancy; no repeated sections.
+5. Include competitor-gap coverage: add 1-2 sections competitors likely missed.
+6. Be publish-ready: practical, actionable, and intent-satisfying.
 """
 
 
@@ -89,4 +87,3 @@ def get_outline_requirements(content_type: str, schema_name: str) -> str:
         f"{_BASE_REQUIREMENTS}\n"
         f"{type_block}"
     )
-

@@ -74,31 +74,35 @@ def get_outline_schema(content_type: str) -> Type[BaseModel]:
 
 def validate_outline_quality(content_type: str, outline: BaseModel) -> None:
     """Extra quality gate beyond schema validation (raises ValueError on failure)."""
-    if content_type in {"how-to-guide", "tutorial", "documentation", "login-guide"}:
-        validate_how_to_outline(outline)  # type: ignore[arg-type]
-        return
-    if content_type == "checklist":
-        validate_checklist_outline(outline)  # type: ignore[arg-type]
-        return
-    if content_type == "in-depth-review":
-        validate_review_outline(outline)  # type: ignore[arg-type]
-        return
-    if content_type in {
-        "comparison",
-        "best-tools",
-        "alternatives",
-        "pros-cons",
-        "product-roundup",
-        "buying-guide",
-    }:
-        validate_comparison_outline(outline)  # type: ignore[arg-type]
-        return
-    if content_type in INTENT_TO_CONTENT_TYPES.get("navigational", []):
-        validate_navigational_outline(outline)  # type: ignore[arg-type]
-        return
-    if content_type in INTENT_TO_CONTENT_TYPES.get("transactional", []):
-        validate_transactional_outline(outline)  # type: ignore[arg-type]
-        return
+    try:
+        if content_type in {"how-to-guide", "tutorial", "documentation", "login-guide"}:
+            validate_how_to_outline(outline)  # type: ignore[arg-type]
+            return
+        if content_type == "checklist":
+            validate_checklist_outline(outline)  # type: ignore[arg-type]
+            return
+        if content_type == "in-depth-review":
+            validate_review_outline(outline)  # type: ignore[arg-type]
+            return
+        if content_type in {
+            "comparison",
+            "best-tools",
+            "alternatives",
+            "pros-cons",
+            "product-roundup",
+            "buying-guide",
+        }:
+            validate_comparison_outline(outline)  # type: ignore[arg-type]
+            return
+        if content_type in INTENT_TO_CONTENT_TYPES.get("navigational", []):
+            validate_navigational_outline(outline)  # type: ignore[arg-type]
+            return
+        if content_type in INTENT_TO_CONTENT_TYPES.get("transactional", []):
+            validate_transactional_outline(outline)  # type: ignore[arg-type]
+            return
 
-    # Default: article-like
-    validate_article_outline(outline)  # type: ignore[arg-type]
+        # Default: article-like
+        validate_article_outline(outline)  # type: ignore[arg-type]
+    except Exception as e:
+        # Normalize all validation failures to ValueError so callers can auto-reject cleanly.
+        raise ValueError(f"{content_type} outline failed validation: {str(e)}") from e

@@ -445,3 +445,29 @@ async def test_generate_outline_auto_rejects_on_quality_failure(monkeypatch):
     # Review node should not interrupt for auto-rejected outlines
     reviewed = review_outline({"content": result["content"]})
     assert reviewed["content"]["outline"]["auto_rejected"] is True
+
+
+@pytest.mark.asyncio
+async def test_generate_outline_postprocess_fixes_title_focus_keyphrase(monkeypatch):
+    from src.flow.engines.content.generation import outline as outline_node
+
+    def payload_factory(schema):
+        slug = getattr(schema, "__content_type_slug__", "blog")
+        payload = _comparison_payload()
+        payload["content_type"] = slug
+        payload["focus_keyphrase"] = "best seo tools"
+        payload["title"] = "Beginner's guide to SEO tools for 2026"  # missing "best"
+        return payload
+
+    dummy = _DummyLLM(payload_factory)
+    monkeypatch.setattr(outline_node, "load_model", lambda **kwargs: dummy)
+
+    state = _make_state(
+        topic="The Ultimate Beginner's Guide to SEO Tools: Choosing the Right Ones for 2026",
+        content_type="buying-guide",
+    )
+    result = await outline_node.generate_outline(state)
+
+    outline = result["content"]["outline"]
+    assert outline["status"] == "reviewing"
+    assert "best seo tools" in outline["title"].lower()

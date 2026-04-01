@@ -1,3 +1,4 @@
+import re
 from typing import Annotated, List, Literal, Optional
 
 from pydantic import BaseModel, Field
@@ -73,8 +74,19 @@ def _ensure_no_generic_headings(headings: List[str], label: str) -> None:
 def _ensure_focus_keyphrase_in_title(title: str, focus_keyphrase: str) -> None:
     if not focus_keyphrase:
         raise ValueError("focus_keyphrase is empty")
-    if _canonicalize_heading(focus_keyphrase) not in _canonicalize_heading(title):
-        raise ValueError("title must include the focus_keyphrase (exact or close variant)")
+    title_c = _canonicalize_heading(title)
+    focus_c = _canonicalize_heading(focus_keyphrase)
+
+    if focus_c and focus_c in title_c:
+        return
+
+    # "Close variant": if every token from the focus keyphrase exists in the title, accept.
+    title_tokens = set(re.sub(r"[^a-z0-9\\s]+", " ", title_c).split())
+    focus_tokens = [t for t in re.sub(r"[^a-z0-9\\s]+", " ", focus_c).split() if t]
+    if focus_tokens and all(t in title_tokens for t in focus_tokens):
+        return
+
+    raise ValueError("title must include the focus_keyphrase (exact or close variant)")
 
 
 def _safe_list(value: Optional[List[str]]) -> List[str]:
