@@ -6,6 +6,7 @@ You are an expert content strategist.
 Generate a structured outline.
 
 CONTENT TYPE: {content_type}
+TOPIC: {topic}
 PATTERN: {pattern}
 
 STRUCTURE:
@@ -16,6 +17,18 @@ STYLE:
 
 FORMAT RULES:
 {format_rules}
+
+SERP RELATED TOPICS:
+{related_topics}
+
+PEOPLE ALSO ASK:
+{questions}
+
+PREVIOUS REJECTION REASON:
+{rejected_reason}
+
+PREVIOUS OUTLINE SECTIONS:
+{previous_outline}
 
 STRICT RULES:
 - Follow structure exactly

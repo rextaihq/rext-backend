@@ -1,31 +1,38 @@
-# src/models/outline_schemas.py
+from typing import List, Literal, Optional
+
+from pydantic import BaseModel, Field
+
 
 class BaseSection(BaseModel):
     section_type: str
     heading: str
-    heading_level: Literal["H1", "H2", "H3"]
+    heading_level: Literal["H1", "H2", "H3"] = "H2"
     description: str
-    key_points: List[str]
-    content_format: Optional[str]
+    key_points: List[str] = Field(default_factory=list)
+    content_format: Optional[str] = None
 
 
-class InformationalOutline(BaseModel):
+class BaseOutline(BaseModel):
     title: str
+    brief: str = ""
     sections: List[BaseSection]
-    faqs: List[str]
+    target_audience: List[str] = Field(default_factory=list)
+    tone: Literal["Professional", "Conversational", "Authoritative"] = "Professional"
+    keywords_to_include: List[str] = Field(default_factory=list)
+    target_word_count: int = 1500
 
 
-class ListOutline(BaseModel):
-    title: str
-    sections: List[BaseSection]
+class InformationalOutline(BaseOutline):
+    faqs: List[str] = Field(default_factory=list)
 
 
-class ComparisonOutline(BaseModel):
-    title: str
-    sections: List[BaseSection]
+class ListOutline(BaseOutline):
+    pass
 
 
-class ConversionOutline(BaseModel):
-    title: str
-    sections: List[BaseSection]
-    primary_cta: str
+class ComparisonOutline(BaseOutline):
+    pass
+
+
+class ConversionOutline(BaseOutline):
+    primary_cta: str = ""
