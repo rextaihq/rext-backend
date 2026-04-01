@@ -21,6 +21,11 @@ def review_outline(state: REXT):
     """
     content_state = state.get("content", {})
     outline_dict = content_state.get("outline", {})
+
+    # Auto-rejected outlines (schema/quality validation) should loop without human interruption.
+    if outline_dict.get("auto_rejected") and outline_dict.get("status") == "rejected":
+        logger.info("Outline auto-rejected; skipping human review and looping")
+        return {"content": {**content_state, "outline": outline_dict}}
     
     # if not outline_dict:
     #     logger.error("No outline found in state to review")
@@ -53,6 +58,7 @@ def review_outline(state: REXT):
                 "outline":{
                     **outline_dict,
                     "rejected_reason": "",
+                    "auto_rejected": False,
                     "status": "approved"
                 },
             }
@@ -79,7 +85,9 @@ def review_outline(state: REXT):
                 **content_state,
                 "outline":{
                     **outline_dict,
+                    "iteration_count": int(outline_dict.get("iteration_count", 0) or 0) + 1,
                     "rejected_reason": reject_reason,
+                    "auto_rejected": False,
                     "status": "rejected"
                 },
             }

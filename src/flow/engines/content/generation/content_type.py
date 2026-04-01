@@ -8,6 +8,7 @@ from langchain_core.messages import SystemMessage, HumanMessage
 from src.flow.model.structure.intent_suggestion import INTENT_TO_CONTENT_TYPES
 
 from src.flow.utils.intent_utils import get_consensus_intent
+from src.flow.utils.content_type_utils import normalize_content_type_slug
 
 logger = logging.getLogger(__name__)
 
@@ -33,8 +34,9 @@ def content_type(state: REXT) -> REXT:
     logger.info(f"serp_backlinks: {serp_backlinks}")
 
     # Use consensus intent (API + Competitors) for better accuracy
-    api_intent = serp_backlinks.get("main_intent")
-    search_intent = get_consensus_intent(api_intent, competitors)
+    # api_intent = serp_backlinks.get("main_intent")
+    # search_intent = get_consensus_intent(api_intent, competitors)
+    search_intent = serp_backlinks.get("main_intent", "informational")
 
     # Check for upstream errors — skip processing if prior node failed
     if content_state.get("error"):
@@ -69,7 +71,7 @@ def content_type(state: REXT) -> REXT:
         )
     
     # Save the selected content type to the state
-    content_state["content_type"] = final_selection or "article"
+    content_state["content_type"] = normalize_content_type_slug(final_selection) or "blog"
     state["content"] = content_state
     
     logger.info(f"Content type selected: {content_state['content_type']}")

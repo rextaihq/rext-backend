@@ -49,3 +49,18 @@ INTENT_TO_CONTENT_TYPES = {
         "offer_page"
     ]
 }
+
+# Reverse lookup: content_type slug -> parent intent group
+CONTENT_TYPE_TO_INTENT: dict[str, str] = {
+    ct: intent
+    for intent, types in INTENT_TO_CONTENT_TYPES.items()
+    for ct in types
+}
+
+
+def get_intent_for_content_type(content_type: str) -> str:
+    """Return the parent intent for a content_type slug.
+
+    Falls back to ``'informational'`` for unknown types.
+    """
+    return CONTENT_TYPE_TO_INTENT.get(content_type, "informational")

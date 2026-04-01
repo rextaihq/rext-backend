@@ -1,9 +1,13 @@
 import logging
-from src.flow.states.rext import REXT
-from src.flow.model.structure.outline import Outline
+
+from pydantic import ValidationError
+
 from src.flow.model.llm_manager import load_model
-from src.flow.prompts.human.outline import get_outline_prompt
-from src.flow.prompts.system.content_types_guidelines import CONTENT_TYPE_GUIDELINES, DEFAULT_GUIDELINE
+from src.flow.model.structure.outline_schemas import get_outline_schema, validate_outline_quality
+from src.flow.model.structure.outlines.postprocess import post_process_outline
+from src.flow.prompts.human.outline import get_outline_prompt, normalize_content_type
+from src.flow.states.rext import REXT
+
 DEFAULT_MAX_TOKENS = 4096
 
 logger = logging.getLogger(__name__)
@@ -28,7 +32,7 @@ async def generate_outline(state: REXT) -> dict:
     """
     content_state = state.get("content", {})
     topic = content_state.get("selected_topic", "")
-    content_type = content_state.get("content_type", "article")
+    content_type = normalize_content_type(content_state.get("content_type", "blog")) or "blog"
 
     if not topic:
         logger.error("No topic found in state")
@@ -40,15 +44,14 @@ async def generate_outline(state: REXT) -> dict:
         }
     logger.info("Generating outline for: %s (content type: %s)", topic, content_type)
 
-
-    logger.info(f"Generating outline for: {topic} (content type: {content_type})")
-
     serp_normalized = state.get("serp_normalized", {})
     seo_result = state.get("seo_result", {})
+    serp_backlinks = seo_result.get("serp_backlinks", {})
     content_state = state.get("content", {})
     outline_state = content_state.get("outline", {})
 
     outline_rejected_reason = outline_state.get("rejected_reason", "None")
+    iteration_count = int(outline_state.get("iteration_count", 0) or 0)
 
     # 2. Normalize SERP context for LLM
     related_topics = serp_normalized.get("related_topics", [])
@@ -64,14 +67,15 @@ async def generate_outline(state: REXT) -> dict:
         for c in competitors
     ]
 
-    intent_distribution = ", ".join(
-        f"{k}: {v}" for k, v in seo_result.get("intent", {}).items()
-    )
+    intent_distribution = serp_backlinks.get("main_intent", "informational")
 
     # 3. Generate outline
     try:
-        outline_model = load_model(max_tokens=DEFAULT_MAX_TOKENS).with_structured_output(Outline)
-        prompt_template = get_outline_prompt()
+        SchemaClass = get_outline_schema(content_type)
+        outline_model = load_model(max_tokens=DEFAULT_MAX_TOKENS).with_structured_output(
+            SchemaClass
+        )
+        prompt_template = get_outline_prompt(content_type=content_type)
 
         content_type_guidelines = CONTENT_TYPE_GUIDELINES.get(content_type, DEFAULT_GUIDELINE)
 
@@ -93,15 +97,20 @@ async def generate_outline(state: REXT) -> dict:
 
         logger.info("Outline prompt formatted successfully")
 
-        generated_outline = await outline_model.ainvoke(messages)
+        generated_outline_raw = await outline_model.ainvoke(messages)
+        generated_outline = post_process_outline(content_type, generated_outline_raw)
+        validate_outline_quality(content_type, generated_outline)
         outline_dict = generated_outline.model_dump()
 
         logger.info("Outline generated successfully")
 
         return {
             "content": {
+                **content_state,
+                "error": "",
                 "outline": {
                     **outline_dict,
+                    "iteration_count": iteration_count,
                     "rejected_reason": "",
                     "status": "reviewing",
                 },
@@ -109,10 +118,38 @@ async def generate_outline(state: REXT) -> dict:
             }
         }
 
+    except (ValueError, ValidationError) as e:
+        # Auto-reject so the workflow can loop without bothering the user.
+        logger.warning("Outline auto-rejected; regenerating (%s)", str(e))
+        return {
+            "content": {
+                **content_state,
+                "error": "",
+                "outline": {
+                    **outline_state,
+                    "iteration_count": iteration_count + 1,
+                    "status": "rejected",
+                    "auto_rejected": True,
+                    "message": "Outline auto-rejected; regenerating.",
+                    "rejected_reason": f"Auto-validation failed: {str(e)}",
+                },
+                "status": "planning",
+            }
+        }
     except Exception as e:
+        # Unexpected failure (API, network, infra). Keep error for observability.
         logger.exception("Error generating outline")
         return {
             "content": {
+                **content_state,
+                "outline": {
+                    **outline_state,
+                    "iteration_count": iteration_count + 1,
+                    "status": "rejected",
+                    "auto_rejected": True,
+                    "message": "Outline generation failed; regenerating.",
+                    "rejected_reason": f"Generation failed: {str(e)}",
+                },
                 "error": f"Generation failed: {str(e)}",
             }
         }

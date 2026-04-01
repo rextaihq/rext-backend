@@ -1,7 +1,14 @@
-from pydantic import BaseModel, Field, conlist
+from typing import Annotated
+
+from pydantic import BaseModel, Field
 
 
 class SEOTopics(BaseModel):
-    topics: conlist(str, min_length=5, max_length=5) = Field(
-        description="Exactly five SEO topics related to the given topic"
-    )
+    topics: Annotated[
+        list[str],
+        Field(
+            min_length=5,
+            max_length=5,
+            description="Exactly five SEO topics related to the given topic",
+        ),
+    ]
