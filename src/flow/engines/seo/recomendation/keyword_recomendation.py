@@ -24,8 +24,8 @@ async def keyword_recommendation(state: REXT, config, *, runtime) -> Dict[str, A
     recommendations = serp_normalized.get("related_topics", []) if serp_normalized else []
     
     # Use consensus intent (API + Competitors) for better accuracy
-    api_intent = serp_backlinks.get("main_intent")
-    search_intent = get_consensus_intent(api_intent, competitors)
+    search_intent = serp_backlinks.get("main_intent")
+    # search_intent = get_consensus_intent(api_intent, competitors)
     
     volume = serp_backlinks.get("search_volume", 0)
     keyword_difficulty = serp_backlinks.get("keyword_difficulty", 0)
