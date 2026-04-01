@@ -77,8 +77,11 @@ async def generate_outline(state: REXT) -> dict:
         )
         prompt_template = get_outline_prompt(content_type=content_type)
 
+        content_type_guidelines = CONTENT_TYPE_GUIDELINES.get(content_type, DEFAULT_GUIDELINE)
+
         messages = prompt_template.format_messages(
             content_type=content_type,
+            content_type_guidelines=content_type_guidelines,
             topic=topic,
             related_topics=", ".join(related_topics),
             questions="\n".join(f"- {q}" for q in questions),
