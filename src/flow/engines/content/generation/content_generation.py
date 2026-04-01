@@ -12,7 +12,8 @@ from langchain_core.messages import HumanMessage, AIMessage
 from langgraph.config import get_stream_writer
 from src.flow.states.rext import REXT
 from src.flow.engines.agent.content_agent import create_content_agent
-from src.flow.model.structure.content import GeneratedContent
+from src.flow.model.structure.contents import get_generated_content_model
+from langchain.agents.structured_output import ToolStrategy
 
 logger = logging.getLogger(__name__)
 
@@ -140,7 +141,10 @@ async def generate_content(state: REXT) -> dict:
         user_id = serp_payload.get("user_id")
         workspace_id = serp_payload.get("workspace_id")
 
-        agent = await create_content_agent()
+        generated_model = get_generated_content_model(content_type)
+        agent = await create_content_agent(
+            response_format=ToolStrategy(generated_model)
+        )
         agent_input = {
             "messages": [HumanMessage(content=human_message_content)],
             "serp_payload": {
@@ -157,7 +161,7 @@ async def generate_content(state: REXT) -> dict:
         structured_output = None  # GeneratedContent Pydantic object if agent returns one
 
         # The schema name used by ToolStrategy for the artificial structured-output tool
-        _STRUCTURED_OUTPUT_TOOL_NAME = GeneratedContent.__name__  # "GeneratedContent"
+        _STRUCTURED_OUTPUT_TOOL_NAME = generated_model.__name__
 
         # Track the agent's root run_id from the very first on_chain_start.
         # When called from inside a LangGraph node the outer graph may inject parent_ids
@@ -215,8 +219,8 @@ async def generate_content(state: REXT) -> dict:
                     for tc in output_msg.tool_calls:
                         if tc.get("name") == _STRUCTURED_OUTPUT_TOOL_NAME:
                             try:
-                                structured_output = GeneratedContent(**tc["args"])
-                                logger.debug("Captured GeneratedContent from on_chat_model_end")
+                                structured_output = generated_model(**tc["args"])
+                                logger.debug(f"Captured {generated_model.__name__} from on_chat_model_end")
                             except Exception as e:
                                 logger.warning(
                                     "GeneratedContent parse failed: %s | arg keys: %s",
@@ -291,15 +295,15 @@ async def generate_content(state: REXT) -> dict:
             # Fallback: if on_tool_start missed it, try on_chain_end state dict
             elif kind == "on_chain_end" and structured_output is None:
                 out = event["data"].get("output", {})
-                if isinstance(out, GeneratedContent):
+                if isinstance(out, generated_model):
                     structured_output = out
                 elif isinstance(out, dict):
                     sr = out.get("structured_response")
-                    if isinstance(sr, GeneratedContent):
+                    if isinstance(sr, generated_model):
                         structured_output = sr
                     elif isinstance(sr, dict) and sr:
                         try:
-                            structured_output = GeneratedContent(**sr)
+                            structured_output = generated_model(**sr)
                         except Exception:
                             pass
                     if "messages" in out and not final_messages:

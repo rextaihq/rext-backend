@@ -1,6 +1,6 @@
 import logging
 from src.flow.states.rext import REXT
-from src.flow.model.structure.outline import Outline
+from src.flow.model.structure.outlines import get_outline_model
 from src.flow.model.llm_manager import load_model
 from src.flow.prompts.human.outline import get_outline_prompt
 DEFAULT_MAX_TOKENS = 4096
@@ -69,8 +69,11 @@ async def generate_outline(state: REXT) -> dict:
 
     # 3. Generate outline
     try:
+        # 1. Select the correct Pydantic model for this content type
+        model_schema = get_outline_model(content_type)
+        
         outline_model = load_model(max_tokens=DEFAULT_MAX_TOKENS).with_structured_output(
-            Outline
+            model_schema
         )
         prompt_template = get_outline_prompt()
 
