@@ -34,13 +34,19 @@ async def get_dataforseo_data(
     include_serp_info: bool = True
 ) -> Dict:
 
-    payload = [{
+    payload_item = {
         "location_name": location_name,
         "language_code": language_code,
-        "keyword": keyword,   # ✅ keyword suggestions uses singular 'keyword'
         "include_serp_info": include_serp_info,
-        "include_seed_keyword": True
-    }]
+    }
+
+    if "keyword_overview" in DATAFORSEO_BACKLINKS_URL:
+        payload_item["keywords"] = [keyword]
+    else:
+        payload_item["keyword"] = keyword
+        payload_item["include_seed_keyword"] = True
+        
+    payload = [payload_item]
 
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
