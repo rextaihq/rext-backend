@@ -38,8 +38,8 @@ async def web_page_scraper(urls: List[HttpUrl]) -> Tuple[List[Document], list]:
 : If any URL fails SSRF validation.
     """
     logger.info("Scraping started")
-    browser_config = GetBrowserConfig()
-    run_config = GetCrawlerRunConfig()
+    browser_config = BrowserConfig()
+    run_config = CrawlerRunConfig()
 
     # Validate all URLs for SSRF before scraping
     validated_urls = []
@@ -49,7 +49,7 @@ async def web_page_scraper(urls: List[HttpUrl]) -> Tuple[List[Document], list]:
         validated_urls.append(url_str)
 
     async with AsyncWebCrawler(config=browser_config) as crawler:
-        results = await crawler.arun(url=validated_urls[0], config=run_config)
+        results = await crawler.arun_many(urls=validated_urls, config=run_config)
     logger.info("Scraping completed")
 
     documents = []
