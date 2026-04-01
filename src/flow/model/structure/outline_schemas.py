@@ -11,11 +11,16 @@ meaningful for each search intent:
 Use ``get_outline_schema(content_type)`` to get the right class at runtime.
 """
 
-from typing import List, Optional, Literal
-from pydantic import BaseModel, Field, conlist
+from typing import Annotated, List, Literal, Optional
 
-from src.flow.model.structure.intent_suggestion import get_intent_for_content_type
+from pydantic import BaseModel, Field
 
+from src.flow.model.structure.outlines.registry import (
+    get_outline_schema as _get_outline_schema_by_type,
+)
+from src.flow.model.structure.outlines.registry import (
+    validate_outline_quality,
+)
 
 # ---------------------------------------------------------------------------
 # Shared sub-models (identical across all schemas)
@@ -41,7 +46,7 @@ class Section(BaseModel):
     heading: str = Field(description="Section heading text.")
     heading_level: Literal["H2", "H3"] = Field(description="Heading level.")
     description: str = Field(description="What this section will cover.")
-    key_points: conlist(str, min_length=2, max_length=4)
+    key_points: Annotated[list[str], Field(min_length=2, max_length=4)]
     questions_to_answer: Optional[List[str]] = Field(
         default=None,
         description="PAA or user questions answered by this section."
@@ -69,10 +74,10 @@ class InformationalOutline(BaseModel):
     slug_suggestion: str = Field(description="URL slug containing the focus keyphrase.")
     brief: str = Field(description="Content goal and value proposition.")
     focus_keyphrase: str = Field(description="Primary focus keyphrase (2-4 words).")
-    keywords_to_include: conlist(str, min_length=1)
+    keywords_to_include: Annotated[list[str], Field(min_length=1)]
 
     # Structure
-    sections: conlist(Section, min_length=4, max_length=8)
+    sections: Annotated[list[Section], Field(min_length=4, max_length=8)]
     faqs: Optional[List[str]] = Field(
         default=None,
         description="FAQ questions for FAQ schema / FAQ section."
@@ -119,10 +124,10 @@ class CommercialOutline(BaseModel):
     slug_suggestion: str = Field(description="URL slug containing the focus keyphrase.")
     brief: str = Field(description="Content goal and value proposition.")
     focus_keyphrase: str = Field(description="Primary focus keyphrase (2-4 words).")
-    keywords_to_include: conlist(str, min_length=1)
+    keywords_to_include: Annotated[list[str], Field(min_length=1)]
 
     # Structure
-    sections: conlist(Section, min_length=4, max_length=8)
+    sections: Annotated[list[Section], Field(min_length=4, max_length=8)]
     faqs: Optional[List[str]] = Field(
         default=None,
         description="FAQ questions focusing on buyer objections."
@@ -171,10 +176,10 @@ class NavigationalOutline(BaseModel):
     slug_suggestion: str = Field(description="URL slug for this page.")
     brief: str = Field(description="Page purpose and primary user action expected.")
     focus_keyphrase: str = Field(description="Primary focus keyphrase (brand or product term).")
-    keywords_to_include: conlist(str, min_length=1)
+    keywords_to_include: Annotated[list[str], Field(min_length=1)]
 
     # Structure
-    sections: conlist(Section, min_length=3, max_length=8)
+    sections: Annotated[list[Section], Field(min_length=3, max_length=8)]
     faqs: Optional[List[str]] = Field(
         default=None,
         description="Short navigational FAQ answers."
@@ -215,10 +220,10 @@ class TransactionalOutline(BaseModel):
     slug_suggestion: str = Field(description="URL slug for this page.")
     brief: str = Field(description="Offer description and single conversion goal.")
     focus_keyphrase: str = Field(description="Primary transactional keyphrase.")
-    keywords_to_include: conlist(str, min_length=1)
+    keywords_to_include: Annotated[list[str], Field(min_length=1)]
 
     # Structure
-    sections: conlist(Section, min_length=3, max_length=8)
+    sections: Annotated[list[Section], Field(min_length=3, max_length=8)]
     faqs: Optional[List[str]] = Field(
         default=None,
         description="FAQ questions addressing buyer objections."
@@ -271,8 +276,11 @@ _INTENT_TO_SCHEMA = {
 def get_outline_schema(content_type: str):
     """Return the Pydantic schema class for a given content_type slug.
 
-    Resolves the parent intent first, then returns the correct schema.
-    Falls back to ``InformationalOutline`` for unknown types.
+    Legacy note:
+    - Historically, the schema was selected by parent intent.
+    - The current system selects schemas by *content type* for tighter coupling.
     """
-    intent = get_intent_for_content_type(content_type)
-    return _INTENT_TO_SCHEMA.get(intent, InformationalOutline)
+    return _get_outline_schema_by_type(content_type)
+
+
+__all__ = ["get_outline_schema", "validate_outline_quality"]

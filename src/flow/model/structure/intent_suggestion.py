@@ -56,4 +56,4 @@ def get_intent_for_content_type(content_type: str) -> str:
 
     Falls back to ``'informational'`` for unknown types.
     """
-    return CONTENT_TYPE_TO_INTENT.get(content_type, "")
+    return CONTENT_TYPE_TO_INTENT.get(content_type, "informational")

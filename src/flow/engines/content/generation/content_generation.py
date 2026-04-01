@@ -11,6 +11,7 @@ from src.flow.states.rext import REXT
 from src.flow.model.llm_manager import load_content_model
 from src.flow.model.structure.content import GeneratedContent
 from src.flow.prompts.human.content import get_content_prompt
+from src.flow.utils.content_type_utils import normalize_content_type_slug
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +34,7 @@ async def generate_content(state: REXT) -> dict:
         payload = state.get("serp_payload", {})
         content_state = state.get("content", {})
         topic = content_state.get("selected_topic", "")
-        content_type = content_state.get("content_type", "article")
+        content_type = normalize_content_type_slug(content_state.get("content_type", "blog")) or "blog"
 
         if not topic:
             logger.error("No topic found in state")

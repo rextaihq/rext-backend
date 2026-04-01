@@ -6,6 +6,9 @@ populates the specialized fields in the corresponding Pydantic schema.
 
 from langchain_core.prompts import ChatPromptTemplate
 from src.flow.prompts.system.outline import OUTLINE_PROMPTS_BY_CONTENT_TYPE
+from src.flow.model.structure.outline_schemas import get_outline_schema
+from src.flow.prompts.human.outline_types import get_outline_requirements
+from src.flow.utils.content_type_utils import normalize_content_type_slug
 
 # ---------------------------------------------------------------------------
 # Shared human-turn base template
@@ -17,6 +20,7 @@ Generate a HIGH-QUALITY, SEO-OPTIMIZED CONTENT OUTLINE for a **{content_type}**.
 ### INPUT DATA
 
 Content Type: {content_type}
+Schema: {{schema_name}}
 Primary Topic / Query:
 {topic}
 
@@ -131,19 +135,28 @@ TYPE_TO_REQUIREMENTS = {
 }
 
 
+def normalize_content_type(raw: str | None) -> str:
+    """Normalize raw content_type to a canonical kebab-case slug."""
+    return normalize_content_type_slug(raw)
+
+
 def get_outline_prompt(content_type: str = "blog") -> ChatPromptTemplate:
     """Return a system/human prompt pair for the given content_type."""
-    
+
+    content_type = normalize_content_type(content_type) or "blog"
+    schema_name = get_outline_schema(content_type).__name__
+
     system_prompt = OUTLINE_PROMPTS_BY_CONTENT_TYPE.get(
         content_type, OUTLINE_PROMPTS_BY_CONTENT_TYPE["blog"]
     )
-    
-    requirements = TYPE_TO_REQUIREMENTS.get(
-        content_type, _INFORMATIONAL_REQUIREMENTS
+
+    requirements = get_outline_requirements(content_type=content_type, schema_name=schema_name)
+
+    # Compose the human prompt by injecting specialized requirements and schema name
+    human_msg = (
+        _HUMAN_BASE.replace("{{requirements}}", requirements)
+        .replace("{{schema_name}}", schema_name)
     )
-    
-    # Compose the human prompt by injecting specialized requirements
-    human_msg = _HUMAN_BASE.replace("{{requirements}}", requirements)
     
     return ChatPromptTemplate.from_messages(
         [

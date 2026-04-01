@@ -1,5 +1,6 @@
-from typing import List, Optional, Literal
-from pydantic import BaseModel, Field, conlist
+from typing import Annotated, List, Literal, Optional
+
+from pydantic import BaseModel, Field
 
 
 class ImageSuggestion(BaseModel):
@@ -35,7 +36,7 @@ class Section(BaseModel):
     heading: str = Field(description="Section heading text.")
     heading_level: Literal["H2", "H3"] = Field(description="Heading level.")
     description: str = Field(description="What this section will cover.")
-    key_points: conlist(str, min_length=2, max_length=4)
+    key_points: Annotated[list[str], Field(min_length=2, max_length=4)]
     questions_to_answer: Optional[List[str]] = Field(
         description="PAA or user questions to answer in this section."
     )
@@ -59,10 +60,10 @@ class Outline(BaseModel):
     focus_keyphrase: str = Field(
         description="The primary focus keyphrase for this article (2-4 words recommended)."
     )
-    keywords_to_include: conlist(str, min_length=1)
+    keywords_to_include: Annotated[list[str], Field(min_length=1)]
     
     # Structure
-    sections: conlist(Section, min_length=4, max_length=8)
+    sections: Annotated[list[Section], Field(min_length=4, max_length=8)]
     faqs: Optional[List[str]] = Field(description="FAQ questions for schema.")
     
     # Images Planning

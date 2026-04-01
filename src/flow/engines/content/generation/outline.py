@@ -1,8 +1,10 @@
 import logging
-from src.flow.states.rext import REXT
-from src.flow.model.structure.outline_schemas import get_outline_schema
+
 from src.flow.model.llm_manager import load_model
-from src.flow.prompts.human.outline import get_outline_prompt
+from src.flow.model.structure.outline_schemas import get_outline_schema, validate_outline_quality
+from src.flow.prompts.human.outline import get_outline_prompt, normalize_content_type
+from src.flow.states.rext import REXT
+
 DEFAULT_MAX_TOKENS = 4096
 
 logger = logging.getLogger(__name__)
@@ -27,7 +29,7 @@ async def generate_outline(state: REXT) -> dict:
     """
     content_state = state.get("content", {})
     topic = content_state.get("selected_topic", "")
-    content_type = content_state.get("content_type", "article")
+    content_type = normalize_content_type(content_state.get("content_type", "blog")) or "blog"
 
     if not topic:
         logger.error("No topic found in state")
@@ -46,6 +48,7 @@ async def generate_outline(state: REXT) -> dict:
     outline_state = content_state.get("outline", {})
 
     outline_rejected_reason = outline_state.get("rejected_reason", "None")
+    iteration_count = int(outline_state.get("iteration_count", 0) or 0)
 
     # 2. Normalize SERP context for LLM
     related_topics = serp_normalized.get("related_topics", [])
@@ -66,7 +69,9 @@ async def generate_outline(state: REXT) -> dict:
     # 3. Generate outline
     try:
         SchemaClass = get_outline_schema(content_type)
-        outline_model = load_model(max_tokens=DEFAULT_MAX_TOKENS).with_structured_output(SchemaClass)
+        outline_model = load_model(max_tokens=DEFAULT_MAX_TOKENS).with_structured_output(
+            SchemaClass
+        )
         prompt_template = get_outline_prompt(content_type=content_type)
 
         messages = prompt_template.format_messages(
@@ -87,14 +92,18 @@ async def generate_outline(state: REXT) -> dict:
         logger.info("Outline prompt formatted successfully")
 
         generated_outline = await outline_model.ainvoke(messages)
+        validate_outline_quality(content_type, generated_outline)
         outline_dict = generated_outline.model_dump()
 
         logger.info("Outline generated successfully")
 
         return {
             "content": {
+                **content_state,
+                "error": "",
                 "outline": {
                     **outline_dict,
+                    "iteration_count": iteration_count,
                     "rejected_reason": "",
                     "status": "reviewing",
                 },
@@ -106,6 +115,15 @@ async def generate_outline(state: REXT) -> dict:
         logger.exception("Error generating outline")
         return {
             "content": {
+                **content_state,
+                # Auto-reject so the workflow can loop without bothering the user.
+                "outline": {
+                    **outline_state,
+                    "iteration_count": iteration_count + 1,
+                    "status": "rejected",
+                    "auto_rejected": True,
+                    "rejected_reason": f"Auto-validation failed: {str(e)}",
+                },
                 "error": f"Generation failed: {str(e)}",
             }
         }
