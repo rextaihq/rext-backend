@@ -6,22 +6,48 @@ from typing_extensions import Annotated, Any, Literal, Optional, TypedDict
 IssueLevel = Literal["CRITICAL", "ERROR", "WARNING", "INFO"]
 
 
-class ContentSection(TypedDict):
+class ContentSection(TypedDict, total=False):
     heading: str
+    heading_level: str
     description: str
     key_points: list[str]
+    questions_to_answer: Optional[list[str]]
+    snippet_target: bool
+    search_intent: str
     suggested_word_count: Optional[int]
+    include_keyphrase_in_heading: bool
 
 
-class ContentOutline(TypedDict):
+class ContentOutline(TypedDict, total=False):
     title: str
+    slug_suggestion: str
     brief: str
+    focus_keyphrase: str
     sections: list[ContentSection]
+    faqs: Optional[list[str]]
     target_audience: list[str]
     tone: str
     keywords_to_include: list[str]
+    
+    # Media/Links
+    image_suggestions: list[dict[str, Any]]
+    link_suggestions: list[dict[str, Any]]
+    
+    # Intent-specific extras (merged here for state flexibility)
+    prerequisites: Optional[list[str]]
+    key_takeaways: Optional[list[str]]
+    products_covered: Optional[list[str]]
+    evaluation_criteria: Optional[list[str]]
+    verdict: Optional[str]
+    primary_cta: Optional[str]
+    trust_signals: Optional[list[str]]
+    risk_reversal: Optional[str]
+    objections_addressed: Optional[list[str]]
 
-    status: Literal["approved", "rejected"]
+    schema_type: str
+    target_word_count: int
+    
+    status: Literal["approved", "rejected", "reviewing"]
     rejected_reason: Annotated[Optional[str], operator.add]
 
 
@@ -161,10 +187,20 @@ class CONTENT(TypedDict, total=False):
         "failed",
     ]
     content_type: Literal[
-        "article",
-        "blog",
-        "report",
-        "whitepaper",
+        # Informational
+        "blog", "how-to-guide", "explainer", "pillar-content", "checklist", 
+        "tutorial", "faq", "white-paper", "case-study", "glossary", "resource-list",
+        # Commercial
+        "comparison", "best-tools", "alternatives", "in-depth-review", 
+        "pros-cons", "product-roundup", "buying-guide",
+        # Navigational
+        "brand-page", "product-homepage", "feature-overview", "documentation", 
+        "login-guide", "contact-us", "about-us", "help-center",
+        # Transactional
+        "sales-page", "pricing-page", "signup-page", "demo-page", 
+        "coupon-page", "checkout-page", "landing-page", "service-page",
+        # Legacy
+        "article", "report", "whitepaper"
     ]
 
     # Post-review action tracking
