@@ -51,15 +51,22 @@ async def get_dataforseo_data(
             if not tasks:
                 return {}
             
-            result = tasks[0].get("result")
-            if not result or not result[0]:
+            # The structure for Suggestions API can vary; we navigate safely
+            task = tasks[0]
+            result = task.get("result")
+            if not result or not isinstance(result, list) or not result[0]:
                 return {}
                 
             items = result[0].get("items", [])
             if not items:
                 return {}
 
-            item = items[0]  # ✅ single keyword → first item
+            # We search for the item that exactly matches our keyword, or take the first
+            item = items[0]
+            for i in items:
+                if i.get("keyword", "").lower() == keyword.lower():
+                    item = i
+                    break
 
             backlinks_info = item.get("avg_backlinks_info", {}) or {}
             keyword_info = item.get("keyword_info", {}) or {}
@@ -75,8 +82,8 @@ async def get_dataforseo_data(
                 "keyword": item.get("keyword", keyword),
 
                 # Core metrics
-                "search_volume": int(keyword_info.get("search_volume", 0)),
-                "keyword_difficulty": int(keyword_props.get("keyword_difficulty", 0)),
+                "search_volume": int(keyword_info.get("search_volume") or 0),
+                "keyword_difficulty": int(keyword_props.get("keyword_difficulty") or 0),
 
                 # Link metrics
                 "backlinks": int(backlinks_info.get("backlinks", 0)),
