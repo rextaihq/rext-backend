@@ -5,9 +5,6 @@
   "graphs": {
     "agent": "main:graph"
   },
-  "http": {
-    "app": "src.api.server:app"
-  },
   "env": ".env",
   "image_distro": "wolfi",
   "pip_installer": "uv",
