@@ -1,7 +1,4 @@
-from typing import Dict
-from src.flow.states.rext import REXT
-from src.flow.states.seo_state import SEORESULT
-
+from src.flow.utils.intent_utils import get_consensus_intent
 
 def seo_opportunity_node(state: REXT) -> Dict[str, SEORESULT]:
     seo = state.get("seo_result", {})
@@ -63,20 +60,10 @@ def seo_opportunity_node(state: REXT) -> Dict[str, SEORESULT]:
         opportunity_level = "low"
 
     # 3. STRATEGY DERIVATION
-    intent = (seo.get("intent") or {}).get("primary_intent", "informational")
-    
-    # Count how many competitors have the keyword intent as the top intent
-    intent_counts = {}
-    for c in competitors:
-        dist = c.get("intent_distribution", {})
-        for intent_name, value in dist.items():
-            if value > 0:
-                intent_counts[intent_name] = intent_counts.get(intent_name, 0) + 1
-
-    # Find the most common intent among competitors
-    top_intent_count = 0
-    if intent_counts:
-        top_intent_count = max(intent_counts.values())
+    # 🔍 REINFORCEMENT: Use both API intent and Competitor consensus
+    serp_backlinks = seo.get("serp_backlinks", {})
+    api_intent = serp_backlinks.get("main_intent", "informational")
+    intent = get_consensus_intent(api_intent, competitors)
 
     recommended_content_type = (
         "comparison" if intent == "commercial"
@@ -110,7 +97,7 @@ def seo_opportunity_node(state: REXT) -> Dict[str, SEORESULT]:
         "seo_result": {
             **seo,
             "seo_strategy": {
-                "target_intent": str(top_intent_count),
+                "target_intent": intent,
                 "recommended_content_type": recommended_content_type,
                 "ideal_word_count": ideal_word_count,
                 "priority_topics": missing_topics[:5],
