@@ -37,7 +37,7 @@ async def get_dataforseo_data(
     payload = [{
         "location_name": location_name,
         "language_code": language_code,
-        "keywords": [keyword],   # ✅ single keyword wrapped in list
+        "keyword": keyword  ,   # ✅ single keyword wrapped in list
         "include_serp_info": include_serp_info
     }]
 
