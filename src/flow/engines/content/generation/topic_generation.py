@@ -63,44 +63,73 @@ async def topic_generation(state: REXT) -> Dict[str, Any]:
     
     results: SEOTopics = await model.ainvoke(messages)
     topics = results.topics
-    
-    logger.info(f"Generated {len(topics)} topics")   
-    
-    # ========================================
-    # INTERRUPT FOR USER SELECTION
-    # ========================================
-    user_selection = interrupt({
-        "instruction": "Select a topic for your content",
-        "type": "topic",
-        "topics": topics,
-    })
-    
-    # Handle user selection (can be index, string, or dict)
-    selected_topic = ""
-    
-    if isinstance(user_selection, int):
-        # User selected by index (1-5)
-        if 1 <= user_selection <= len(topics):
-            selected_topic = topics[user_selection - 1]
-        else:
-            selected_topic = topics[0]  # Default to first topic
-    elif isinstance(user_selection, str):
-        # User typed the topic directly or selected from list
-        selected_topic = user_selection.strip()
-        # If they typed a number as string
-        if selected_topic.isdigit():
-            idx = int(selected_topic)
-            if 1 <= idx <= len(topics):
-                selected_topic = topics[idx - 1]
-    elif isinstance(user_selection, dict):
-        # User returned a dict with selection
-        selected_topic = user_selection.get("selected_topic", "") or user_selection.get("topic", "")
-    
-    # Fallback to first topic if selection is empty
-    if not selected_topic:
-        selected_topic = topics[0] if topics else ""
-    
-    logger.info(f"User selected topic: {selected_topic}")
+
+    logger.info(f"Generated {len(topics)} topics")
+
+    max_regenerations = 3
+    regeneration_count = 0
+
+    while True:
+        # ========================================
+        # INTERRUPT FOR USER SELECTION
+        # ========================================
+        user_selection = interrupt(
+            {
+                "instruction": "Select a topic for your content (or regenerate topics)",
+                "type": "topic",
+                "topics": topics,
+                # Optional hint for clients that support actions (backward compatible).
+                "actions": [{"action": "regenerate_topics", "label": "Regenerate Topics"}],
+            }
+        )
+
+        # If user explicitly requests regeneration, re-run generation and re-interrupt.
+        if isinstance(user_selection, dict):
+            action = (user_selection.get("action") or "").strip().lower()
+            regenerate_requested = bool(user_selection.get("regenerate_topics")) or action in {
+                "regenerate_topics",
+                "regenerate",
+                "regen",
+            }
+            if regenerate_requested and regeneration_count < max_regenerations:
+                regeneration_count += 1
+                results = await model.ainvoke(messages)
+                topics = results.topics
+                logger.info(
+                    "Regenerated topics (attempt %s/%s): %s topics",
+                    regeneration_count,
+                    max_regenerations,
+                    len(topics),
+                )
+                continue
+
+        # Handle user selection (can be index, string, or dict)
+        selected_topic = ""
+
+        if isinstance(user_selection, int):
+            # User selected by index (1-5)
+            if 1 <= user_selection <= len(topics):
+                selected_topic = topics[user_selection - 1]
+            else:
+                selected_topic = topics[0]  # Default to first topic
+        elif isinstance(user_selection, str):
+            # User typed the topic directly or selected from list
+            selected_topic = user_selection.strip()
+            # If they typed a number as string
+            if selected_topic.isdigit():
+                idx = int(selected_topic)
+                if 1 <= idx <= len(topics):
+                    selected_topic = topics[idx - 1]
+        elif isinstance(user_selection, dict):
+            # User returned a dict with selection
+            selected_topic = user_selection.get("selected_topic", "") or user_selection.get("topic", "")
+
+        # Fallback to first topic if selection is empty
+        if not selected_topic:
+            selected_topic = topics[0] if topics else ""
+
+        logger.info(f"User selected topic: {selected_topic}")
+        break
     
     return {
         "content": {
