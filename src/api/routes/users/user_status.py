@@ -205,12 +205,12 @@ async def deactivate_account(
     old_status = db_user.status
 
     # Handle subscriptions
-    from src.api.models.subscription_models.subscriptions import UserSubscription
+    from src.api.models.subscription_models.subscriptions import UserSubscription, SubscriptionStatus
     subscriptions_result = await db.execute(
         select(UserSubscription)
         .where(
             UserSubscription.user_id == user_id,
-            UserSubscription.status.in_(["active", "trialing"])
+            UserSubscription.status.in_([SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIAL])
         )
     )
     active_subs = subscriptions_result.scalars().all()
