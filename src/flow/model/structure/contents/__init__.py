@@ -90,7 +90,7 @@ CONTENT_TYPE_TO_GENERATED_MODEL = {
 
 def get_generated_content_model(content_type: str):
     """Get the appropriate Pydantic model for a given content type."""
-    return CONTENT_TYPE_TO_GENERATED_MODEL.get(content_type, BlogGeneratedContent)
+    return CONTENT_TYPE_TO_GENERATED_MODEL.get(content_type)
 
 __all__ = [
     "get_generated_content_model",

@@ -17,7 +17,7 @@ class BaseFinalContent(TypedDict):
     secondary_keywords: Optional[list[str]]
     word_count: int
     
-    status: Literal["approved", "rejected", "draft"]
+    status: Literal["approved", "rejected", "draft", "generated"]
     rejected_reason: Optional[str]
 
     # WordPress publishing fields
