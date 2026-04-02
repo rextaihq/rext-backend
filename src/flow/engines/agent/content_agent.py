@@ -8,7 +8,7 @@ from langchain.agents.middleware import AgentMiddleware
 from langgraph.graph.state import CompiledStateGraph
 
 from src.flow.engines.agent.tools.tools import get_tools
-from src.flow.model.structure.content import GeneratedContent
+from src.flow.model.structure.contents import get_generated_content_model
 from src.flow.prompts.system.content import CONTENT_SYSTEM_PROMPT
 from langchain.agents.structured_output import ToolStrategy
 from src.flow.model.llm_manager import load_content_model
@@ -25,7 +25,8 @@ async def create_content_agent(
     name: Optional[str] = "content_agent",
     cache: Optional[BaseCache] = None,
     agent_store=None,
-    response_format = ToolStrategy(GeneratedContent)
+    content_type: str = "blog",
+    response_format=None,
 ) -> CompiledStateGraph:
     """
     Create a content agent with parent/child tool routing AND dynamic integration tools.
@@ -41,6 +42,9 @@ async def create_content_agent(
 
     if model is None:
         model = load_content_model()
+
+    if response_format is None:
+        response_format = ToolStrategy(get_generated_content_model(content_type))
 
     # Middleware Stack
     middleware_stack = [
@@ -61,7 +65,7 @@ async def create_content_agent(
         cache=cache,
         store=agent_store,
         response_format=response_format,
-    ).with_config({"recursion_limit": 1000})
+    ).with_config({"recursion_limit": 50})
 
 
 if __name__ == "__main__":

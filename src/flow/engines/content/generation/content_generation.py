@@ -12,7 +12,7 @@ from langchain_core.messages import HumanMessage, AIMessage
 from langgraph.config import get_stream_writer
 from src.flow.states.rext import REXT
 from src.flow.engines.agent.content_agent import create_content_agent
-from src.flow.model.structure.content import GeneratedContent
+from src.flow.model.structure.contents import get_generated_content_model
 
 logger = logging.getLogger(__name__)
 
@@ -108,6 +108,40 @@ async def generate_content(state: REXT) -> dict:
         target_word_count = outline.get("target_word_count", 1500)
         logger.info(f"Tone: {tone}")
 
+        # Extract key_facts and image_suggestions from the outline
+        key_facts = outline.get("key_facts", []) or []
+        image_suggestions = outline.get("image_suggestions", []) or []
+
+        key_facts_str = ""
+        if key_facts:
+            facts_lines = "\n".join(
+                (
+                    f"  - {f.get('text', str(f))}" + (f" (source: {f['source_url']})" if f.get("source_url") else "")
+                    if isinstance(f, dict)
+                    else f"  - {f}"
+                )
+                for f in key_facts
+            )
+            key_facts_str = f"\nKEY FACTS TO INCLUDE IN CONTENT:\n{facts_lines}\n"
+
+        image_suggestions_str = ""
+        if image_suggestions:
+            img_lines = "\n".join(
+                (
+                    f"  - Section '{img.get('section', '?')}': {img.get('description', '')} | alt: {img.get('alt_text_template', '')}"
+                    if isinstance(img, dict)
+                    else f"  - {img}"
+                )
+                for img in image_suggestions
+            )
+            image_suggestions_str = (
+                f"\nIMAGE PLACEMENT GUIDE (populate the 'images' output field):\n{img_lines}\n"
+                f"For each image suggestion above, add an entry to the 'images' field with:\n"
+                f"  alt_text: SEO-optimized alt text based on the template\n"
+                f"  context: what the image shows\n"
+                f"  placement: which section it belongs to\n"
+            )
+
         # 6️⃣ Build the human message for the agent
         # (system prompt is already embedded in the agent)
         human_message_content = (
@@ -121,16 +155,16 @@ async def generate_content(state: REXT) -> dict:
             f"- Cover gaps they missed\n"
             f"- Offer a unique angle/perspective\n\n"
             f"Approved Outline:\n{outline_str}\n\n"
+            f"{key_facts_str}"
+            f"{image_suggestions_str}"
             f"Reference / Source Content:\n{page_content}\n\n"
             f"Meta_data:\n{meta_data}\n\n"
             f"Tone:\n{tone}\n\n"
             f"Internal_links:\n{urls_str}\n\n"
             f"Generate complete SEO-optimized content following the outline.\n"
-            f"Ensure you incorporate all facts and statistics mentioned in the outline.\n"
-            f"Populate the 'facts' field in the output JSON with objects containing "
-            f"'text' and 'source_url' for each key verifiable fact or statistic you "
-            f"included in the content. For 'source_url', use the one from the outline "
-            f"or find a direct link to the data source.\n"
+            f"Incorporate ALL key facts listed above verbatim in the relevant sections.\n"
+            f"Populate the 'facts' output field with each fact used (text + source_url).\n"
+            f"Populate the 'images' output field using the image placement guide above.\n"
             f"Ensure you outperform the competitors listed above."
         )
 
@@ -140,7 +174,8 @@ async def generate_content(state: REXT) -> dict:
         user_id = serp_payload.get("user_id")
         workspace_id = serp_payload.get("workspace_id")
 
-        agent = await create_content_agent()
+        generated_model = get_generated_content_model(content_type)
+        agent = await create_content_agent(content_type=content_type)
         agent_input = {
             "messages": [HumanMessage(content=human_message_content)],
             "serp_payload": {
@@ -154,10 +189,10 @@ async def generate_content(state: REXT) -> dict:
         # 8️⃣ Stream agent events → forward tokens & tool calls to frontend
         write = get_stream_writer()
         final_messages = []
-        structured_output = None  # GeneratedContent Pydantic object if agent returns one
+        structured_output = None  # typed Pydantic model instance (from get_generated_content_model) if agent returns one
 
         # The schema name used by ToolStrategy for the artificial structured-output tool
-        _STRUCTURED_OUTPUT_TOOL_NAME = GeneratedContent.__name__  # "GeneratedContent"
+        _STRUCTURED_OUTPUT_TOOL_NAME = generated_model.__name__
 
         # Track the agent's root run_id from the very first on_chain_start.
         # When called from inside a LangGraph node the outer graph may inject parent_ids
@@ -168,7 +203,7 @@ async def generate_content(state: REXT) -> dict:
         async for event in agent.astream_events(
             agent_input,
             version="v2",
-            config={"recursion_limit": 200},
+            config={"recursion_limit": 50},
         ):
             kind = event["event"]
             tool_name = event.get("name", "")
@@ -206,7 +241,7 @@ async def generate_content(state: REXT) -> dict:
                     if token:
                         write({"type": "token", "content": token})
 
-            # on_chat_model_end: ToolStrategy never invokes the fake GeneratedContent tool —
+            # on_chat_model_end: ToolStrategy never invokes the fake structured-output tool —
             # it parses args directly inside the model node. So on_tool_start never fires
             # for it. The structured content is in data.output.tool_calls[].args here.
             elif kind == "on_chat_model_end":
@@ -215,11 +250,11 @@ async def generate_content(state: REXT) -> dict:
                     for tc in output_msg.tool_calls:
                         if tc.get("name") == _STRUCTURED_OUTPUT_TOOL_NAME:
                             try:
-                                structured_output = GeneratedContent(**tc["args"])
-                                logger.debug("Captured GeneratedContent from on_chat_model_end")
+                                structured_output = generated_model(**tc["args"])
+                                logger.debug(f"Captured {generated_model.__name__} from on_chat_model_end")
                             except Exception as e:
                                 logger.warning(
-                                    "GeneratedContent parse failed: %s | arg keys: %s",
+                                    "Structured output parse failed: %s | arg keys: %s",
                                     e, list(tc.get("args", {}).keys())
                                 )
 
@@ -291,15 +326,15 @@ async def generate_content(state: REXT) -> dict:
             # Fallback: if on_tool_start missed it, try on_chain_end state dict
             elif kind == "on_chain_end" and structured_output is None:
                 out = event["data"].get("output", {})
-                if isinstance(out, GeneratedContent):
+                if isinstance(out, generated_model):
                     structured_output = out
                 elif isinstance(out, dict):
                     sr = out.get("structured_response")
-                    if isinstance(sr, GeneratedContent):
+                    if isinstance(sr, generated_model):
                         structured_output = sr
                     elif isinstance(sr, dict) and sr:
                         try:
-                            structured_output = GeneratedContent(**sr)
+                            structured_output = generated_model(**sr)
                         except Exception:
                             pass
                     if "messages" in out and not final_messages:

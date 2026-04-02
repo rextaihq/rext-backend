@@ -8,7 +8,7 @@ from sqlalchemy import select
 from src.api.models.knowledge_models.persona_model import Persona
 from src.api.database.async_database import AsyncSessionLocal
 from src.flow.states.rext import REXT
-from src.flow.states.content import ContentOutline
+from src.flow.states.outline import OutlineState
 
 
 class PersonaInjectionMiddleware(AgentMiddleware[REXT]):
@@ -221,7 +221,7 @@ Write the full article now.
         print(f"  user_id={user_id} workspace_id={workspace_id}")
 
         persona = await self._fetch_persona(user_id, workspace_id)
-        outline: Optional[ContentOutline] = (state.get("content") or {}).get("outline")
+        outline: Optional[OutlineState] = (state.get("content") or {}).get("outline")
 
         print(f"  persona: {persona.name if persona else 'None'}")
         print(f"  outline: {outline.get('title') if outline else 'None'}")
@@ -233,7 +233,7 @@ Write the full article now.
         print(f"✓ Injected full SEO+Persona+Outline prompt ({len(full_prompt)} chars)")
         print(f"[PersonaInjectionMiddleware] ✓ done\n")
 
-    def _build_full_content_prompt(self, persona: Optional[Persona], outline: Optional[ContentOutline]) -> str:
+    def _build_full_content_prompt(self, persona: Optional[Persona], outline: Optional[OutlineState]) -> str:
         persona_block = self._build_persona_block(persona) if persona else ""
         outline_block = self._build_outline_block(outline) if outline else ""
         return self.CONTENT_SYSTEM_PROMPT_TEMPLATE.format(
@@ -304,7 +304,7 @@ Write the full article now.
 
         return "\n".join(lines)
 
-    def _build_outline_block(self, outline: ContentOutline) -> str:
+    def _build_outline_block(self, outline: OutlineState) -> str:
         lines = ["## Approved Content Outline"]
 
         if outline.get("title"):
