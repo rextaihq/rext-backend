@@ -34,7 +34,7 @@ class Settings(BaseSettings):
     API_KEY_NAME: Optional[str] = Field(default="X-API-Key", description="API key header name")
 
     # Auth Security Settings
-    AUTH_MAX_LOGIN_ATTEMPTS: int = Field(default=3, description="Maximum failed login attempts before lockout")
+    AUTH_MAX_LOGIN_ATTEMPTS: int = Field(default=5, description="Maximum failed login attempts before lockout")
     AUTH_LOCKOUT_DURATION_HOURS: int = Field(default=1, description="Account lockout duration in hours")
 
     # ============================================================================

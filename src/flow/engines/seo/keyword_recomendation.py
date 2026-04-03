@@ -20,13 +20,14 @@ async def keyword_recommendation(state: REXT, config, *, runtime) -> Any:
     competitors = state.get("competitors", [])
     seo_result = state.get("seo_result", {})
     serp_backlinks = seo_result.get("serp_backlinks", {})
+    competitors = state.get("competitors", [])
 
     recommendations = serp_normalized.get("related_topics", []) if serp_normalized else []
     
-    # Use consensus intent (API + Competitors) for better accuracy
-    api_intent = serp_backlinks.get("main_intent") or ""
+    # 🔍 REINFORCEMENT: Use both API intent and Competitor consensus
+    api_intent = serp_backlinks.get("main_intent", "informational")
     search_intent = get_consensus_intent(api_intent, competitors)
-    
+
     volume = serp_backlinks.get("search_volume", 0)
     keyword_difficulty = serp_backlinks.get("keyword_difficulty", 0)
     backlinks = serp_backlinks.get("backlinks", 0)
