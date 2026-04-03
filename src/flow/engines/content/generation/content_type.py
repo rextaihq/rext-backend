@@ -7,8 +7,6 @@ from langgraph.types import interrupt
 from langchain_core.messages import SystemMessage, HumanMessage
 from src.flow.model.structure.intent_suggestion import INTENT_TO_CONTENT_TYPES
 
-from src.flow.utils.intent_utils import get_consensus_intent
-
 logger = logging.getLogger(__name__)
 
 
@@ -33,6 +31,10 @@ def content_type(state: REXT) -> REXT:
     logger.info(f"serp_backlinks: {serp_backlinks}")
 
     search_intent = serp_backlinks.get("main_intent", "informational")
+    if search_intent == "unknown":
+        search_intent = "informational"
+    else:
+        search_intent = search_intent
 
     # Check for upstream errors — skip processing if prior node failed
     if content_state.get("error"):

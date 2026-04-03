@@ -5,8 +5,6 @@ from src.flow.states.rext import REXT
 from langgraph.types import interrupt, Command
 from langgraph.graph import END
 
-from src.flow.utils.intent_utils import get_consensus_intent
-
 logger = logging.getLogger(__name__)
 
 
@@ -24,9 +22,17 @@ async def keyword_recommendation(state: REXT, config, *, runtime) -> Any:
 
     recommendations = serp_normalized.get("related_topics", []) if serp_normalized else []
     
+    logger.info(f"recommendations: {recommendations}")
+    logger.info(f"competitors: {competitors}")
+    logger.info(f"seo_result: {seo_result}")
+    logger.info(f"serp_backlinks: {serp_backlinks}")
+
     # 🔍 REINFORCEMENT: Use both API intent and Competitor consensus
-    api_intent = serp_backlinks.get("main_intent", "informational")
-    search_intent = get_consensus_intent(api_intent, competitors)
+    main_intent = serp_backlinks.get("main_intent", "informational")
+    if main_intent == "unknown":
+        main_intent = "informational"
+    else:
+        main_intent = main_intent
 
     volume = serp_backlinks.get("search_volume", 0)
     keyword_difficulty = serp_backlinks.get("keyword_difficulty", 0)
@@ -100,7 +106,7 @@ async def keyword_recommendation(state: REXT, config, *, runtime) -> Any:
             "top_organic_results": top_organic,
             "seo_state": {
                 "keyword_difficulty": keyword_difficulty,
-                "intent": search_intent or "informational",
+                "intent": main_intent,
                 "volume": volume,
                 "backlinks": backlinks,
                 "referring_domains": referring_domains,
@@ -133,7 +139,7 @@ async def keyword_recommendation(state: REXT, config, *, runtime) -> Any:
             "Keyword Clusters": keyword_clusters,
             "seo_state": {
                 "keyword_difficulty": keyword_difficulty,
-                "intent": search_intent or "informational",
+                "intent": main_intent,
                 "volume": volume,
                 "backlinks": backlinks,
                 "referring_domains": referring_domains,
@@ -158,7 +164,7 @@ async def keyword_recommendation(state: REXT, config, *, runtime) -> Any:
             **seo_result,
             "serp_backlinks": {
                 **serp_backlinks,
-                "main_intent": search_intent
+                "main_intent": main_intent
             },
             "keyword_recommendations": {
                 "original_title": original_query,
