@@ -312,6 +312,7 @@ async def delete_avatar(
     logger.info(f"Avatar deleted for user {user_id}")
 
     return success(
+        data={},
         request=request,
         message="Avatar deleted successfully"
     )
