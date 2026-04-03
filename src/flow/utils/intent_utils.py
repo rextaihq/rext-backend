@@ -52,10 +52,8 @@ def get_consensus_intent(
             logger.info(f"Consensus intent reached: {top_intent.upper()} ({count}/{total_samples})")
         return top_intent
         
-    # Fallback to API intent if no consensus
-    if api_intent:
-        logger.info(f"No clear competitor consensus, reinforcing with API intent: {api_intent}")
-    else:
-        logger.info(f"No intent from API or Competitors, defaulting to informational.")
+    # Final fallback to informational if everything else is missing or unknown
+    if not api_intent or api_intent.lower() == "unknown":
+        return "informational"
         
-    return api_intent or "informational"
+    return api_intent
