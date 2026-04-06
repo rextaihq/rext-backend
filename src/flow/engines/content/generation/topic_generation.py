@@ -54,6 +54,7 @@ async def topic_generation(state: REXT) -> Dict[str, Any]:
             f"You are a SEO expert. Generate a high quality list of 5 topics related to the given topic. "
             f"Focus on topics that rank well in search engines, provide value to readers, and are relevant in {current_year}. "
             f"Prefer trends, latest strategies, and current best practices."
+            f"Each topic lenghth should be maximium 50–60 characters"
         )
     ),
     HumanMessage(

@@ -13,7 +13,6 @@ from src.flow.prompts.system.content import CONTENT_SYSTEM_PROMPT
 from langchain.agents.structured_output import ToolStrategy
 from src.flow.model.llm_manager import load_content_model
 from src.flow.engines.agent.middleware.persona_middleware import PersonaInjectionMiddleware
-from src.flow.engines.agent.middleware.humanize_middleware import HumanizeMiddleware
 from src.flow.model.llm_manager import load_model
 
 async def create_content_agent(
@@ -44,12 +43,11 @@ async def create_content_agent(
         model = load_content_model()
 
     if response_format is None:
-        response_format = ToolStrategy(get_generated_content_model(content_type))
+        response_format = ToolStrategy(get_generated_content_model(content_type), handle_errors=False)
 
     # Middleware Stack
     middleware_stack = [
-      PersonaInjectionMiddleware(),
-      # HumanizeMiddleware(model=load_model()),
+        PersonaInjectionMiddleware(),
     ]
 
     if rext_middleware:

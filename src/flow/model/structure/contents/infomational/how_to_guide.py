@@ -10,7 +10,7 @@ class HowToStep(BaseModel):
 
 
 class HowToGuideGeneratedContent(BaseGeneratedContent):
-    steps: List[HowToStep] = Field(description="Instructional steps in order.")
-    total_time: Optional[str] = Field(description="Estimated time (e.g., '30 mins').")
-    difficulty: Literal["Beginner", "Intermediate", "Advanced"] = "Beginner"
+    steps: Optional[List[HowToStep]] = Field(default_factory=list, description="Instructional steps in order.")
+    total_time: Optional[str] = Field(default=None, description="Estimated time (e.g., '30 mins').")
+    difficulty: Optional[Literal["Beginner", "Intermediate", "Advanced"]] = Field(default="Beginner")
     tools_needed: List[str] = Field(default_factory=list, description="Overall tools required.")

@@ -4,7 +4,7 @@ from src.flow.model.structure.contents.base import BaseGeneratedContent
 
 
 class SignupPageGeneratedContent(BaseGeneratedContent):
-    platform_name: str = Field(description="Platform name.")
-    value_prop_reminder: str = Field(description="Reminder of signup value.")
-    social_login_options: Optional[List[str]] = Field(description="Options for social login.")
-    required_fields: List[str] = Field(description="Fields required to signup.")
+    platform_name: Optional[str] = Field(default=None, description="Platform name.")
+    value_prop_reminder: Optional[str] = Field(default=None, description="Reminder of signup value.")
+    social_login_options: Optional[List[str]] = Field(default=None, description="Options for social login.")
+    required_fields: Optional[List[str]] = Field(default_factory=list, description="Fields required to signup.")

@@ -11,7 +11,7 @@ from src.flow.states.rext import REXT
 from src.flow.states.outline import OutlineState
 
 
-class PersonaInjectionMiddleware(AgentMiddleware[REXT]):
+class PersonaInjectionMiddleware(AgentMiddleware):
     """
     Runs before the agent loop starts.
 
@@ -33,28 +33,28 @@ HUMAN WRITING — CORE TECHNIQUES
 ========================
 SENTENCE VARIETY (critical):
 - Alternate between very short sentences and longer, complex ones within every paragraph
-- Example mix: "I’ve been wrong about this before. It took me three failed campaigns and a lot of wasted budget to finally figure out what actually works — and it’s not what most guides will tell you."
+- Example mix: "I've been wrong about this before. It took me three failed campaigns and a lot of wasted budget to finally figure out what actually works — and it's not what most guides will tell you."
 - Never write 3+ sentences in a row with the same structure or similar length
 
 NATURAL IMPERFECTION:
 - Start sentences with "And", "But", "So", "Because" occasionally — real writers do this
 - Use incomplete thoughts resolved mid-paragraph
-- Add brief digressions: "(and yes, I’ve made this mistake myself)"
-- Occasionally use dashes to interrupt and redirect: "The answer is simpler than you’d expect — though it took me years to see it"
+- Add brief digressions: "(and yes, I've made this mistake myself)"
+- Occasionally use dashes to interrupt and redirect: "The answer is simpler than you'd expect — though it took me years to see it"
 
 FIRST PERSON & OPINION:
-- State opinions directly: "I think...", "In my view...", "Honestly,", "Look,", "Here’s my take:"
+- State opinions directly: "I think...", "In my view...", "Honestly,", "Look,", "Here's my take:"
 - Reference personal experiences, failures, and lessons learned
-- Disagree with common advice when the persona’s expertise warrants it
+- Disagree with common advice when the persona's expertise warrants it
 - Use "you" to speak directly to the reader
 
 NATURAL TRANSITIONS (not robotic):
-- Use: "Here’s the thing...", "What nobody tells you is...", "Let me be direct:", "This is where most people go wrong:"
+- Use: "Here's the thing...", "What nobody tells you is...", "Let me be direct:", "This is where most people go wrong:"
 - Avoid: "Furthermore,", "Moreover,", "In addition,", "It is worth noting that"
 
 CONVERSATIONAL TEXTURE:
 - Rhetorical questions mid-section: "Sound familiar?"
-- Self-corrections: "Well, mostly. There’s one exception..."
+- Self-corrections: "Well, mostly. There's one exception..."
 - Asides in parentheses: "(and this surprised me too)"
 - Em dashes for natural interruption and emphasis
 
@@ -64,10 +64,10 @@ BANNED AI PATTERNS — NEVER USE THESE
 The following phrases and patterns are dead giveaways of AI-generated content. Using even one of them fails the entire article:
 
 BANNED PHRASES:
-- "In today’s [fast-paced/digital/ever-changing] world"
+- "In today's [fast-paced/digital/ever-changing] world"
 - "It is important to note that"
-- "It’s worth noting that"
-- "In conclusion, it’s clear that"
+- "It's worth noting that"
+- "In conclusion, it's clear that"
 - "Furthermore," / "Moreover," / "Additionally," (as sentence starters)
 - "This comprehensive guide"
 - "Delve into" / "Dive into"
@@ -75,11 +75,11 @@ BANNED PHRASES:
 - "In the realm of"
 - "Certainly!" / "Absolutely!" / "Of course!"
 - "As an AI language model"
-- "I’d be happy to"
+- "I'd be happy to"
 - "As we can see" / "As mentioned above"
 - "It goes without saying"
 - "Without further ado"
-- "Let’s explore" (as an opener)
+- "Let's explore" (as an opener)
 - "X is crucial/vital/essential for Y" (as a standalone sentence opener)
 
 BANNED STRUCTURAL PATTERNS:
@@ -95,47 +95,91 @@ BANNED STRUCTURAL PATTERNS:
 PERSONA IDENTITY RULES — NON-NEGOTIABLE
 ========================
 - The article MUST be written as the author persona defined below
-- **THE AUTHOR’S FULL NAME MUST APPEAR IN THE ARTICLE** — mandatory
-- Place the author’s name naturally in the first or second paragraph
-  Example: "I’m [Name], and after [X years] working in [field]..."
-- The author’s name must appear at least once more later in the article
-- Weave the persona’s expertise, failures, opinions, and perspective throughout every section
+- **THE AUTHOR'S FULL NAME MUST APPEAR IN THE ARTICLE** — mandatory
+- Place the author's name naturally in the first or second paragraph
+  Example: "I'm [Name], and after [X years] working in [field]..."
+- The author's name must appear at least once more later in the article
+- Weave the persona's expertise, failures, opinions, and perspective throughout every section
 - The reader must feel a specific human being wrote this — not a template
 
 ========================
 FACT CITATION RULES
 ========================
-- Call `search_tool` a maximum of **5 times** — batch your queries, don’t call once per fact
+- Call `search_tool` a maximum of **5 times** — batch your queries, don't call once per fact
 - Every included fact MUST have an inline hyperlink: [anchor text](source_url)
 - Weave citations naturally into sentences — not as standalone reference lines
 - Never fabricate URLs or statistics
 
+
+<seo_guidelines>
 ========================
-SEO GUIDELINES
+CORE SEO REQUIREMENTS
 ========================
-- Include the primary keyword naturally in the title, introduction, and 2–3 headings
-- Use related keywords organically — never forced
-- Write concise paragraphs (2–4 sentences)
-- Include a FAQ section answering real user questions
-- Structure with clear H2/H3 headings and logical flow
-- Include a high-quality generated image in the introduction or a relevant section
+- Write a compelling page title (50–60 characters)
+- Include the primary keyword naturally in:
+  - Title
+  - First 100 words (introduction)
+  - At least 2–3 headings (H2/H3)
+- Use related/secondary keywords naturally (avoid keyword stuffing)
+- Maintain a natural, human-like tone
+
+========================
+CONTENT STRUCTURE
+========================
+- Start with a strong introduction (hook + context + value)
+- Use clear H2 and H3 headings for structure
+- Ensure logical flow between sections
+- Keep paragraphs short (2–4 sentences)
+- Use bullet points or lists where helpful
+- Add actionable insights, examples, or steps
+
+========================
+ENGAGEMENT & QUALITY
+========================
+- Write for humans first, then optimize for SEO
+- Avoid fluff and generic filler content
+- Provide real value and practical information
+- Maintain clarity and readability (simple language)
+
+========================
+FAQ SECTION (MANDATORY)
+========================
+- Add a FAQ section at the end
+- Include 3–5 real, relevant user questions
+- Provide concise, clear answers (2–3 sentences each)
+
+========================
+IMAGE REQUIREMENT
+========================
+- Include at least one high-quality generated image
+- Place it in the introduction or a relevant section
+- Provide an image prompt/description for generation (not the actual image)
+</seo_guidelines>
 
 ========================
 QUALITY STANDARD
 ========================
 The article must feel like it was written by one specific human being, with a clear voice, a point of view, and real-world experience behind every sentence. If it could have been written by anyone, rewrite it.
 
+<Readability Standard>
 ========================
 READABILITY STANDARD — TARGET SCORES
 ========================
-Your writing will be scored with the textstat library. You must hit these targets:
+Make the content highly readable and easy to scan:
 
-  Flesch Reading Ease ............. 60–70   (Standard — readable by most adults)
-  Flesch-Kincaid Grade ............ 8–10    (High-school level, not academic)
-  Gunning FOG Index ............... ≤ 12    (No fog — every sentence is clear)
-  Dale-Chall Score ................ 6.0–7.9 (Familiar vocabulary, grades 7–10)
-  Avg sentence length ............. 15–20 words
-  Polysyllabic word ratio ......... < 20 %  (Words with 3+ syllables)
+- Use short sentences (max 20 words)
+- Keep paragraphs 2–4 sentences only
+- Break long paragraphs into smaller ones
+- Use clear H2 and H3 headings frequently
+- Add bullet points for lists and steps
+- Use simple, everyday language (avoid jargon)
+- Use active voice
+- Add examples where helpful
+- Highlight key points using bold
+- Ensure proper spacing and clean structure
+
+The content should be easy to skim and understand within seconds.
+</Readability Standard>
 
 HOW TO HIT THESE SCORES — CONCRETE RULES:
 
@@ -198,62 +242,7 @@ FORBIDDEN COMPLEXITY PATTERNS:
 - Call once to generate a unique, high-quality image for the introduction or the most relevant section
 - Use ONLY the URL returned — never invent or guess URLs
 - **Structured Data**: Place the URL, alt text, and descriptive context in the `images` list of your final structured response.
-- **Content Embedding**: Also embed the image in the correct markdown section as: `![descriptive alt text](url_returnedThe Rise of AI in SEO: How Machine Learning is Transforming Search Strategies in 2026The SEO landscape is undergoing a transformation, largely driven by advancements in technology. I'm Mobeen Abdullah, and as a Founder & CEO with years of experience in digital solutions, I've watched how AI has reshaped our understanding of search engine optimization. In 2026, the rise of AI in SEO will be no longer just an option but an essential component of every effective strategy. From improving search accuracy to enhancing user experience, AI is changing everything. In this article, we'll delve into specific types of machine learning techniques, compare traditional and AI-driven strategies, and explore what's on the horizon.Understanding the Basics of SEO and Its Evolution
-SEO, or Search Engine Optimization, refers to the practice of improving a website's visibility on search engines like Google. It's about ensuring that content is not only discoverable but also engaging and relevant to the audience. In 2023, 61% of marketers considered enhancing their SEO to be a top priority for inbound marketing strategies. The evolution of SEO has been substantial; no longer confined to the basics of keyword placement, it now spans various types: On-page, Off-page, Technical, and Local SEO. 
-As we approach 2026, AI and machine learning are becoming integral to all facets of SEO. According to SEMrush, 70% of marketers have incorporated AI into their SEO strategies, enhancing both efficiency and effectiveness.
-Key Machine Learning Techniques Transforming SEO
-Machine learning techniques are taking SEO to new heights. By utilizing Natural Language Processing (NLP), marketers are better equipped to comprehend user intent. This is increasingly important as 15% of all search queries are entirely new, as reported by Moz. Predictive analysis allows businesses to adapt to changing search behaviors actively. 
-Moreover, Google's RankBrain, which leverages AI, is pivotal in determining the relevance of pages within search results, underscoring the need for marketers to understand these algorithms and their implications deeply.
-Comparison of Traditional SEO vs. AI-Driven SEO Strategies
-
-
-
-Strategy Criteria
-Traditional SEO
-AI-Driven SEO
-
-
-
-Execution Time
-Longer, manual
-Shorter, automated
-
-
-User Engagement Impact
-Focused on keywords
-Focused on user intent
-
-
-Cost-Efficiency
-Higher in the long run
-Lower with automation
-
-
-Traditional SEO emphasizes keyword density and manual optimization, while the new AI-driven strategies prioritize context and automated, data-driven methods for enhanced user experience. The real shift is not just in tactics but in understanding user engagement on a deeper level.
-Predicted Trends in SEO and AI Integration for 2026
-As AI continues to proliferate, we can expect greater emphasis on voice search optimization. Analysts predict that over 50% of all searches will be voice-based by 2026. Additionally, augmented reality is set to contribute nearly $100 billion to the digital advertising market by then, integrating seamlessly with SEO strategies to provide personalized user experiences and content delivery.
-FAQ Section on AI in SEO and Future Strategies
-
-What are the 4 types of SEO?  
-On-page, Off-page, Technical, and Local SEO.
-
-
-Is SEO dead or evolving in 2026?  
-SEO is evolving; adaptation to new technologies like AI is essential for success.
-
-
-What are the SEO techniques?  
-Techniques include keyword research, content optimization, and link building strategies.
-
-
-What are the 3 C's of SEO?  
-Content, Code, and Credibility are critical elements.
-
-
-
-Conclusion
-In conclusion, the incorporation of AI in SEO is not just a trend but a necessity for the future. Those willing to embrace and adapt to these changes will find themselves at a significant advantage in maintaining relevance and achieving their digital marketing goals. Continuous learning and adaptation will be imperative as we navigate this evolving landscape.
-_by_tool)`
+- **Content Embedding**: Also embed the image in the correct markdown section as: `![descriptive alt text](url_returned_by_tool)`
 
 ---
 
@@ -261,14 +250,14 @@ _by_tool)`
 1. Call `search_tool` (1–2 times) upfront to gather key facts and stats for the whole article
 2. Call `generate_image` (**exactly 1 time**) to create a relevant image for the content
 3. Write the complete article, ensuring the image URL is both embedded in the markdown and included in the structured `images` list.
-4. Weave the persona’s identity and expertise naturally throughout
+4. Weave the persona's identity and expertise naturally throughout
 5. Deliver the full article — no preamble, no meta-commentary
 6. TOTAL tool calls must not exceed 6 (5 search + 1 image generation) — stop calling tools once limit is reached
 
 Write the full article now with image and facts links included mimumn length should be: 1500 words.clearly mention the facts and stats with links.
 """
 
-    async def abefore_agent(self, state: REXT, runtime: Runtime) -> None:
+    async def abefore_agent(self, state: REXT, runtime: Runtime) -> dict[str, Any] | None:
         print(f"\n[PersonaInjectionMiddleware] ▶ abefore_agent triggered")
         serp_payload = state.get("serp_payload", {})
         user_id = serp_payload.get("user_id")
@@ -284,9 +273,18 @@ Write the full article now with image and facts links included mimumn length sho
         full_prompt = self._build_full_content_prompt(persona, outline)
 
         sys_msg = SystemMessage(content=full_prompt, id="sys-seo-persona-outline")
-        state["messages"].insert(0, sys_msg)
+        existing_messages = list(state["messages"])
+        existing_messages.insert(0, sys_msg)
+
         print(f"✓ Injected full SEO+Persona+Outline prompt ({len(full_prompt)} chars)")
         print(f"[PersonaInjectionMiddleware] ✓ done\n")
+
+        return {"messages": existing_messages}
+
+    def before_agent(self, state: REXT, runtime: Runtime) -> dict[str, Any] | None:
+        # Sync fallback — persona fetch requires async, so this is a no-op.
+        # The async hook (abefore_agent) will be used by the agent runtime.
+        return None
 
     def _build_full_content_prompt(self, persona: Optional[Persona], outline: Optional[OutlineState]) -> str:
         persona_block = self._build_persona_block(persona) if persona else ""

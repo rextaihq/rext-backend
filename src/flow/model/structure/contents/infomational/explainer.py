@@ -10,5 +10,5 @@ class ExplainerConcept(BaseModel):
 
 
 class ExplainerGeneratedContent(BaseGeneratedContent):
-    key_concepts: List[ExplainerConcept] = Field(description="Core concepts explained.")
-    visual_diagram_context: Optional[str] = Field(description="What a diagram should show to illustrate the concepts.")
+    key_concepts: Optional[List[ExplainerConcept]] = Field(default_factory=list, description="Core concepts explained.")
+    visual_diagram_context: Optional[str] = Field(default=None, description="What a diagram should show to illustrate the concepts.")

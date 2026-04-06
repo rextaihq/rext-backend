@@ -5,12 +5,12 @@ from src.flow.model.structure.contents.base import BaseGeneratedContent
 
 class CheckItem(BaseModel):
     label: str = Field(description="Checklist task or item.")
-    context: Optional[str] = Field(description="Context for this checklist item.")
-    difficulty: Literal["Easy", "Medium", "Hard"] = "Easy"
+    context: Optional[str] = Field(default=None, description="Context for this checklist item.")
+    difficulty: Optional[Literal["Easy", "Medium", "Hard"]] = Field(default="Easy")
 
 
 class ChecklistGeneratedContent(BaseGeneratedContent):
-    check_items: List[CheckItem] = Field(description="The actionable checklist items.")
-    is_printable_ready: bool = True
-    total_phases: Optional[int] = Field(description="Total phases or sections for this checklist.")
-    estimated_total_time: Optional[str] = Field(description="Total estimated time for completion.")
+    check_items: Optional[List[CheckItem]] = Field(default_factory=list, description="The actionable checklist items.")
+    is_printable_ready: Optional[bool] = Field(default=True)
+    total_phases: Optional[int] = Field(default=None, description="Total phases or sections for this checklist.")
+    estimated_total_time: Optional[str] = Field(default=None, description="Total estimated time for completion.")

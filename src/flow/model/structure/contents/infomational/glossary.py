@@ -10,6 +10,6 @@ class GlossaryDefinition(BaseModel):
 
 
 class GlossaryGeneratedContent(BaseGeneratedContent):
-    glossary_definitions: List[GlossaryDefinition] = Field(description="Definition mapping used in the content.")
-    alphabetical_sort: bool = True
-    industry_domain: Optional[str] = Field(description="The sector or knowledge field (e.g., 'Physics', 'Digital Marketing').")
+    glossary_definitions: Optional[List[GlossaryDefinition]] = Field(default_factory=list, description="Definition mapping used in the content.")
+    alphabetical_sort: Optional[bool] = Field(default=True)
+    industry_domain: Optional[str] = Field(default=None, description="The sector or knowledge field (e.g., 'Physics', 'Digital Marketing').")

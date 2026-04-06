@@ -193,10 +193,7 @@ async def generate_content(state: REXT) -> dict:
 
         # The schema name used by ToolStrategy for the artificial structured-output tool
         _STRUCTURED_OUTPUT_TOOL_NAME = generated_model.__name__
-
-        # Track the agent's root run_id from the very first on_chain_start.
-        # When called from inside a LangGraph node the outer graph may inject parent_ids
-        # into all inner events — so we cannot rely on `not event.get("parent_ids")`.
+        
         # Instead we match the root completion by run_id.
         agent_root_run_id: str | None = None
 

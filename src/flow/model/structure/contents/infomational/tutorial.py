@@ -16,7 +16,7 @@ class TutorialStep(BaseModel):
 
 
 class TutorialGeneratedContent(BaseGeneratedContent):
-    tutorial_steps: List[TutorialStep] = Field(description="Practical learning steps.")
+    tutorial_steps: Optional[List[TutorialStep]] = Field(default_factory=list, description="Practical learning steps.")
     prerequisites: Optional[List[str]] = Field(default_factory=list, description="Prerequisite knowledge or tools.")
-    tutorial_difficulty: Literal["Beginner", "Intermediate", "Advanced"] = "Beginner"
-    environment_needed: Optional[str] = Field(description="Necessary tools, software, or credentials.")
+    tutorial_difficulty: Optional[Literal["Beginner", "Intermediate", "Advanced"]] = Field(default="Beginner")
+    environment_needed: Optional[str] = Field(default=None, description="Necessary tools, software, or credentials.")
