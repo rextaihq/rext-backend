@@ -27,7 +27,7 @@ TOPIC:
 - POV: 1st person
 - Region/Examples: [optional]
 
-E-E-A-T INJECTION (Writer Personality):
+E-E-A-T INJECTION (Writer Personality & Brand):
 - Writer Name: {persona_full_name}
 - Role/Title: {persona_professional_title}
 - Years Doing This: [#]

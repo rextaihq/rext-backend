@@ -17,6 +17,7 @@ from src.flow.model.structure.content import GeneratedContent
 from src.flow.prompts.human.eeat import get_eeat_prompt
 from src.api.database.async_database import get_sync_db
 from src.api.models.knowledge_models.persona_model import Persona
+from src.api.models.knowledge_models.knowledge_model import BrandVoice
 
 logger = logging.getLogger(__name__)
 
@@ -78,21 +79,30 @@ async def inject_eeat(state: REXT) -> dict:
                 }
             }
         
-        # 3️⃣ Fetch persona from database using sync session (avoids asyncio loop mismatch in LangGraph)
-        def _fetch_persona():
+        # 3️⃣ Fetch persona and brand voice from database
+        def _fetch_context():
             db = next(get_sync_db())
             try:
-                return db.execute(
+                persona = db.execute(
                     select(Persona)
                     .where(Persona.workspace_id == UUID(str(workspace_id)))
                     .order_by(Persona.created_at.desc())
                     .limit(1)
                 ).scalar_one_or_none()
+                
+                brand = db.execute(
+                    select(BrandVoice)
+                    .where(BrandVoice.workspace_id == UUID(str(workspace_id)))
+                    .order_by(BrandVoice.created_at.desc())
+                    .limit(1)
+                ).scalar_one_or_none()
+                
+                return persona, brand
             finally:
                 db.close()
 
         loop = asyncio.get_event_loop()
-        persona_record = await loop.run_in_executor(None, _fetch_persona)
+        persona_record, brand_record = await loop.run_in_executor(None, _fetch_context)
         
         if not persona_record:
             error_msg = f"No persona found for workspace {workspace_id}. Please create a persona first."
@@ -105,14 +115,22 @@ async def inject_eeat(state: REXT) -> dict:
             }
         
         # 4️⃣ Extract persona fields
-        persona_name = persona_record.full_name or persona_record.name
-        persona_role = persona_record.professional_title or "Content Expert"
-        
+        persona_name = persona_record.full_name or persona_record.name if persona_record else "Expert"
+        persona_role = persona_record.professional_title or "Content Expert" if persona_record else "Content Expert"
+ 
         # Parse areas_of_expertise (comma-separated string)
         focus_areas = []
-        if persona_record.areas_of_expertise:
+        if persona_record and persona_record.areas_of_expertise:
             focus_areas = [area.strip() for area in persona_record.areas_of_expertise.split(",")]
-        
+ 
+        brand_context = ""
+        if brand_record:
+            about = brand_record.about or "N/A"
+            usp = brand_record.selling_position or "N/A"
+            voice = ", ".join(brand_record.brand_voice) if brand_record.brand_voice else "professional"
+            target = ", ".join(brand_record.target_audience) if brand_record.target_audience else "general audience"
+            brand_context = f"About the Brand: {about}\nTarget Audience: {target}\nOfferings & USP: {usp}\nTone of Voice: {voice}"
+ 
         logger.info(f"Using E-E-A-T persona: {persona_name} - {persona_role}")
         
         # 5️⃣ Get topic and primary keyword for context
@@ -128,8 +146,9 @@ async def inject_eeat(state: REXT) -> dict:
             "primary_keyword": primary_keyword,
             "persona_name": persona_name,
             "persona_role": persona_role,
-            "years_experience": 5,  # Default value - could be added to Persona model
+            "years_experience": 5, 
             "focus_areas": ", ".join(focus_areas) if focus_areas else "general expertise",
+            "brand_context": brand_context,
         }
         
         # 7️⃣ Load model and prepare messages
