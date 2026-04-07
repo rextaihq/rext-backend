@@ -120,6 +120,9 @@ async def generate_content(state: REXT) -> dict:
         logger.info("Invoking LLM for content generation...")
         generated_content = await content_model.ainvoke(messages)
         content_dict = generated_content.model_dump()
+        
+        # Persist the selected topic as the title
+        content_dict["title"] = topic
 
         logger.info(f"Content generated successfully. Word count: {content_dict.get('word_count', 0)}")
 

@@ -168,7 +168,7 @@ async def inject_eeat(state: REXT) -> dict:
                 **content_state,
                 "final_content": {
                     **final_content,
-                    "title": eeat_dict.get("title", title),
+                    "title": topic,
                     "body_markdown": eeat_dict.get("body_markdown", body_markdown),
                     "word_count": eeat_dict.get("word_count", final_content.get("word_count", 0)),
                     "meta_title": eeat_dict.get("meta_title", final_content.get("meta_title", "")),
