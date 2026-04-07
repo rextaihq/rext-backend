@@ -87,7 +87,7 @@ async def get_dataforseo_data(
 
                 # Core metrics
                 "search_volume": int(keyword_info.get("search_volume", 0)) if keyword_info and keyword_info.get("search_volume") else 0,
-                "keyword_difficulty": int(keyword_props.get("keyword_difficulty", 0)) if keyword_props and keyword_props.get("keyword_difficulty") else 0,
+                "keyword_difficulty": int(keyword_props.get("keyword_difficulty", 0)) if keyword_props and (keyword_props.get("keyword_difficulty") is not None) else 0,
 
                 # Link metrics
                 "backlinks": int(backlinks_info.get("backlinks", 0)) if backlinks_info and backlinks_info.get("backlinks") else 0,
@@ -100,8 +100,8 @@ async def get_dataforseo_data(
                 "discussions_and_forums": True if "discussions_and_forums" in serp_item_types else False,
 
                 # Intent
-                "main_intent": intent_info.get("main_intent", "unknown") if intent_info else "unknown",
-                "foreign_intent": ", ".join(intent_info.get("foreign_intent", [])) if intent_info and isinstance(intent_info.get("foreign_intent"), list) else (intent_info.get("foreign_intent", "unknown") if intent_info else "unknown"),
+                "main_intent": intent_info.get("main_intent", "informational") if intent_info else "informational",
+                "foreign_intent": ", ".join(intent_info.get("foreign_intent", [])) if intent_info and isinstance(intent_info.get("foreign_intent"), list) else (intent_info.get("foreign_intent", "informational") if intent_info else "informational"),
             }
     except Exception as e:
         logger.error(f"Error fetching DataForSEO data: {e}")
@@ -119,8 +119,8 @@ async def fetch_dataforseo_backlinks(state: REXT) -> Dict[str, Any]:
         "images": False,
         "videos": False,
         "discussions_and_forums": False,
-        "main_intent": "unknown",
-        "foreign_intent": "unknown",
+        "main_intent": "informational",
+        "foreign_intent": "informational",
     }
 
     # if not serp_payload:
