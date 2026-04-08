@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 from uuid import UUID
 from datetime import datetime, timezone, timedelta
 
@@ -208,6 +209,7 @@ async def deactivate_account(
     from src.api.models.subscription_models.subscriptions import UserSubscription, SubscriptionStatus
     subscriptions_result = await db.execute(
         select(UserSubscription)
+        .options(selectinload(UserSubscription.plan))
         .where(
             UserSubscription.user_id == user_id,
             UserSubscription.status.in_([SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIAL])
@@ -256,9 +258,11 @@ async def deactivate_account(
 
     return success(
         data=DeactivateAccountResponse(
+            user_id=str(user_id),
+            email=db_user.email,
             status="inactive",
             deactivated_at=db_user.deactivated_at.isoformat(),
-            scheduled_deletion=scheduled_deletion.isoformat(),
+            scheduled_deletion_at=scheduled_deletion.isoformat(),
             message="Your account has been deactivated. It will be permanently deleted after 14 days unless you log back in."
         ).model_dump(),
         request=request,
