@@ -49,7 +49,7 @@ class WorkspaceMemberResponse(BaseModel):
 class WorkspaceSchema(BaseModel):
     name: Optional[str] = Field(None, description="Optional workspace title")
     timezone: Optional[str] = Field(None, description="IANA timezone identifier (e.g., 'America/New_York', 'UTC')")
-    url: Optional[HttpUrl] = Field(None, description="Workspace URL")
+    url: HttpUrl = Field(..., description="Workspace URL")
 
     model_config = {
         "json_schema_extra": {
@@ -121,5 +121,5 @@ class WorkspaceUpdateSchema(BaseModel):
     """Schema for updating workspace metadata."""
     name: Optional[str] = Field(None, min_length=1, max_length=255, description="New workspace name")
     timezone: Optional[str] = Field(None, max_length=50, description="IANA timezone identifier (e.g., America/New_York)")
-    url: Optional[str] = Field(None, max_length=2048, description="Workspace website URL")
+    url: HttpUrl = Field(..., description="Workspace URL")
     

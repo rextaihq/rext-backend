@@ -6,6 +6,7 @@ class PersonaResponse(BaseModel):
     workspace_id: str
     name: str
     description: Optional[str]
+    avatar_url: Optional[str]
     full_name: Optional[str]
     professional_title: Optional[str]
     areas_of_expertise: List[str]

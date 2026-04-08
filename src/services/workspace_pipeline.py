@@ -450,6 +450,7 @@ class WorkspacePipeline:
                     pain_points=persona_data.get("pain_points"),
                     goals=persona_data.get("goals"),
                     behaviors=persona_data.get("behaviors"),
+                    avatar_url=persona_data.get("avatar_url"),
                 )
                 self.db.add(persona)
 
@@ -519,6 +520,7 @@ For each PERSONA extracted, provide:
 - tone_of_voice: Their unique writing or communication style.
 - bio: A professional background summary extracted from the text.
 - linkedin_url: Their social link if provided.
+- avatar_url: URL to their profile picture if found/available.
 
 If no specific real individuals are found, return an empty personas list.
 

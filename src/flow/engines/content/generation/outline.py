@@ -26,7 +26,7 @@ async def generate_outline(state: REXT) -> dict:
         set to ``"planning"``, or error state on failure.
     """
     content_state = state.get("content", {})
-    topic = content_state.get("selected_topic", "")
+    topic = content_state.get("selected_topic")
     content_type = content_state.get("content_type", "article")
 
     if not topic:

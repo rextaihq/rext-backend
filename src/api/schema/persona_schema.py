@@ -21,6 +21,11 @@ class PersonaExtract(BaseModel):
         description="Brief description of the person's role or expertise",
         example="Founder & CEO with expertise in sustainable fashion"
     )
+    avatar_url: Optional[str] = Field(
+        None,
+        description="URL to the persona's avatar image",
+        example="https://example.com/avatars/persona.jpg"
+    )
     
     # E-E-A-T professional fields (for expert/author personas)
     full_name: Optional[str] = Field(
@@ -81,6 +86,7 @@ class PersonaCreate(BaseModel):
     """Schema for creating a new persona manually."""
     name: str = Field(..., min_length=1, max_length=255, description="Persona name")
     description: Optional[str] = Field(None, description="Brief description")
+    avatar_url: Optional[str] = Field(None, description="Avatar image URL")
     
     # E-E-A-T fields
     full_name: Optional[str] = Field(None, max_length=255)
@@ -101,6 +107,7 @@ class PersonaUpdate(BaseModel):
     """Schema for updating an existing persona."""
     name: Optional[str] = Field(None, min_length=1, max_length=255)
     description: Optional[str] = Field(None)
+    avatar_url: Optional[str] = Field(None)
     
     # E-E-A-T fields
     full_name: Optional[str] = Field(None, max_length=255)
@@ -123,6 +130,7 @@ class PersonaResponse(BaseModel):
     workspace_id: UUID
     name: str
     description: Optional[str]
+    avatar_url: Optional[str]
     
     # E-E-A-T fields
     full_name: Optional[str]

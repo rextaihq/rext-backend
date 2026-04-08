@@ -32,8 +32,10 @@ from src.utils.audit_helper import create_audit_log
 router = APIRouter()
 
 # Avatar upload directory - stored in media directory for consistent static file serving
-AVATAR_UPLOAD_DIR = Path("media/avatars")
-AVATAR_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+from src.api.config import get_settings
+from src.utils.storage import storage_service
+
+settings = get_settings()
 
 @router.get("/profile", response_model=UserResponse)
 @require_permissions("user.read", workspace_scoped=False)
@@ -54,6 +56,11 @@ async def get_profile(
         user = await service.get_user_by_id(user_id)
 
         # Build profile response using schema
+        avatar_url = user.avatar_url
+        if avatar_url and not (avatar_url.startswith('http://') or avatar_url.startswith('https://')):
+            # It's a path, generate a presigned URL
+            avatar_url = storage_service.get_file_url(avatar_url)
+
         profile_data = ProfileResponse(
             id=str(user.id),
             email=user.email,
@@ -64,7 +71,7 @@ async def get_profile(
             timezone=user.timezone or "UTC",
             status=user.status,
             email_verified=user.email_verified,
-            avatar_url=user.avatar_url,
+            avatar_url=avatar_url,
             created_at=user.created_at.isoformat() if user.created_at else None,
             updated_at=user.updated_at.isoformat() if user.updated_at else None
         ).model_dump()
@@ -126,8 +133,16 @@ async def update_profile(
         updated_fields.append("timezone")
 
     if not update_kwargs:
+        user = await service.get_user_by_id(user_id)
+        avatar_url = user.avatar_url
+        if avatar_url and not (avatar_url.startswith('http://') or avatar_url.startswith('https://')):
+            avatar_url = storage_service.get_file_url(avatar_url)
+        
+        user_response = UserResponse.model_validate(user).model_dump()
+        user_response['avatar_url'] = avatar_url
+
         return success(
-            data={"profile": UserResponse.model_validate(await service.get_user_by_id(user_id)).model_dump(), "updated_fields": []},
+            data={"profile": user_response, "updated_fields": []},
             request=request,
             message="No changes to update"
         )
@@ -136,7 +151,12 @@ async def update_profile(
     user = await service.update_profile(user_id=user_id, **update_kwargs)
 
     # Build response
+    avatar_url = user.avatar_url
+    if avatar_url and not (avatar_url.startswith('http://') or avatar_url.startswith('https://')):
+        avatar_url = storage_service.get_file_url(avatar_url)
+        
     profile_response = UserResponse.model_validate(user).model_dump()
+    profile_response['avatar_url'] = avatar_url
 
     logger.info(f"Profile updated for user {user_id}. Fields: {', '.join(updated_fields)}")
 
@@ -173,7 +193,7 @@ async def upload_avatar(
 ):
     """
     Upload user avatar image.
-    Uses filetype and Pillow for secure image validation as per Task 071.
+    Uses MinIO storage for scalable file management.
     """
     user_id = current_user.get("identity")
     service = UserService(db)
@@ -213,7 +233,7 @@ async def upload_avatar(
             message=f"File too large. Max: 5MB, Yours: {file_size / (1024 * 1024):.2f}MB"
         )
 
-    # 4. Structural validation with Pillow to ensure it's a valid image
+    # 4. Structural validation
     try:
         img = Image.open(io.BytesIO(file_content))
         img.verify()
@@ -223,38 +243,47 @@ async def upload_avatar(
             message="Image file appears to be corrupted or malformed."
         )
 
-    # Create user-specific directory
-    user_avatar_dir = AVATAR_UPLOAD_DIR / str(user_id)
-    user_avatar_dir.mkdir(parents=True, exist_ok=True)
-
-    # Save file
+    # Construct object path in MinIO
     file_extension = kind.extension
     filename = f"avatar_{int(datetime.now(timezone.utc).timestamp())}.{file_extension}"
-    file_path = user_avatar_dir / filename
-    
-    with open(file_path, "wb") as f:
-        f.write(file_content)
+    object_name = f"avatars/{user_id}/{filename}"
 
-    relative_path = f"/{file_path.as_posix()}"
-
-    # Delete old avatar if exists
+    # Delete old avatar from MinIO if exists
     if user.avatar_url:
         try:
-            # Resolve the path and check if it's within the upload dir
-            old_avatar_path = Path(user.avatar_url.lstrip('/')).resolve()
-            base_dir = AVATAR_UPLOAD_DIR.resolve()
-            if str(old_avatar_path).startswith(str(base_dir)) and old_avatar_path.exists():
-                old_avatar_path.unlink()
+            old_object_key = user.avatar_url
+            if "://" in old_object_key:
+                path_segments = old_object_key.split('?')[0].split('/')
+                if settings.MINIO_BUCKET in path_segments:
+                    bucket_idx = path_segments.index(settings.MINIO_BUCKET)
+                    old_object_key = "/".join(path_segments[bucket_idx+1:])
+                else:
+                    old_object_key = "/".join(path_segments[3:])
+            
+            storage_service.delete_file(old_object_key)
         except Exception as e:
             logger.warning(f"Could not delete old avatar: {str(e)}")
+
+    # Upload to MinIO
+    uploaded_url = storage_service.upload_file(
+        file_data=file_content,
+        object_name=object_name,
+        content_type=kind.mime
+    )
+
+    if not uploaded_url:
+        raise RextValidationException(message="Failed to upload image to storage.")
 
     # Update user via service
     updated_user = await service.update_profile(
         user_id=user_id,
-        avatar_url=relative_path
+        avatar_url=object_name # Store the KEY in the DB
     )
 
-    logger.info(f"Avatar updated for user {user_id}: {relative_path}")
+    logger.info(f"Avatar updated for user {user_id}: {object_name}")
+
+    # Generate presigned URL for response
+    response_url = storage_service.get_file_url(object_name)
 
     # Schedule notification
     await schedule_if_allowed(
@@ -263,13 +292,13 @@ async def upload_avatar(
         background_tasks=background_tasks,
         pref_flag="avatar_uploaded",
         message="Your profile picture has been successfully updated.",
-        payload={"user_id": str(user_id), "avatar_url": relative_path},
+        payload={"user_id": str(user_id), "avatar_url": response_url},
         workspace_id=None
     )
 
     return success(
         data={
-            "avatar_url": relative_path,
+            "avatar_url": response_url,
             "updated_at": updated_user.updated_at.isoformat()
         },
         request=request,
@@ -299,14 +328,21 @@ async def delete_avatar(
     if not user.avatar_url:
         raise ResourceNotFoundException(message="No avatar to delete")
 
-    # Delete file
+    # Delete file from MinIO
     try:
-        avatar_path = Path(user.avatar_url.lstrip('/')).resolve()
-        base_dir = AVATAR_UPLOAD_DIR.resolve()
-        if str(avatar_path).startswith(str(base_dir)) and avatar_path.exists():
-            avatar_path.unlink()
+        old_object_key = user.avatar_url
+        if "://" in old_object_key:
+            path_segments = old_object_key.split('?')[0].split('/')
+            if settings.MINIO_BUCKET in path_segments:
+                bucket_idx = path_segments.index(settings.MINIO_BUCKET)
+                old_object_key = "/".join(path_segments[bucket_idx+1:])
+            else:
+                old_object_key = "/".join(path_segments[3:])
+        
+        storage_service.delete_file(old_object_key)
     except Exception as e:
         logger.warning(f"Could not delete avatar file: {str(e)}")
+    
     # Update user via service
     await service.update_profile(
         user_id=user_id,
@@ -316,6 +352,20 @@ async def delete_avatar(
     logger.info(f"Avatar deleted for user {user_id}")
 
     return success(
+        data={},
+        request=request,
+        message="Avatar deleted successfully"
+    )
+    # Update user via service
+    await service.update_profile(
+        user_id=user_id,
+        avatar_url=None
+    )
+
+    logger.info(f"Avatar deleted for user {user_id}")
+
+    return success(
+        data={},
         request=request,
         message="Avatar deleted successfully"
     )
