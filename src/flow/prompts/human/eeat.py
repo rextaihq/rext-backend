@@ -21,6 +21,9 @@ Persona Context:
 - Experience: {years_experience} years
 - Expertise areas: {focus_areas}
 
+Brand Context & Offerings:
+{brand_context}
+
 CURRENT CONTENT TO ENHANCE:
 
 Title: {title}
@@ -30,8 +33,10 @@ Body:
 
 ---
 
-Enhance this content by injecting E-E-A-T signals naturally throughout.
-The persona information should influence HOW you write, not WHAT you claim to be.
+Enhance this content by:
+1. Injecting natural E-E-A-T signals based on the persona.
+2. DISCRETELY injecting promotions for the person or their service/brand where it fits naturally.
+3. Ensuring the brand's unique selling position is reflected.
                 """,
             ),
         ]
