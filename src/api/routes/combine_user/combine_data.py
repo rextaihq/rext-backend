@@ -75,7 +75,7 @@ async def get_dashboard_details(
                 "draft": draft_content,
             },
             "personas": total_personas,
-            "total_knowledge_items": analytics["knowledge_stats"]["total"],
+            "total_knowledge_items": analytics["knowledge_stats"]["total_count"],
             "recent_activities": formatted_logs
         },
         request=request,
