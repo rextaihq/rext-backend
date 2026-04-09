@@ -89,24 +89,23 @@ async def topic_generation(state: REXT) -> Dict[str, Any]:
         if _is_regenerate_request(user_response):
             logger.info("User requested regeneration")
             
-         
+            # Extract feedback from the response (Single Interrupt Flow)
             feedback = ""
+            if isinstance(user_response, dict):
+                feedback = user_response.get("feedback", "").strip()
+            elif isinstance(user_response, str):
+                # Try to extract feedback from string like "regenerate. add fascinating keyword"
+                val = user_response.strip()
+                for action in _REGENERATE_ACTIONS:
+                    if val.lower().startswith(action):
+                        # Extract the part after the regenerate command
+                        feedback = val[len(action):].strip()
+                        # Clean up punctuation like "." or ":" at the start 
+                        feedback = feedback.lstrip('.: ').strip()
+                        break
 
-            feedback_response = interrupt(
-                {
-                    "type": "topic_regeneration_feedback",
-                    "instruction": "Optional: How can I improve the topics? (Type 'none' or leave empty to skip)",
-                    "allow_skip": True,
-                }
-            )
-            if isinstance(feedback_response, dict):
-                feedback = feedback_response.get("feedback", "").strip()
-            elif isinstance(feedback_response, str):
-                feedback = feedback_response.strip()
-            
-            # Check for skip keywords
-            if feedback.lower() in {"none", "skip", "no", "n/a", ""}:
-                logger.info("No feedback provided for regeneration")
+            # Check for skip keywords in string-based feedback
+            if feedback.lower() in {"none", "skip", "no", "n/a",""}:
                 feedback = ""
         
             if feedback:
