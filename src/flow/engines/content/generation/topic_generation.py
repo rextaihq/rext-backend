@@ -22,8 +22,11 @@ def _is_regenerate_request(response: Any) -> bool:
             return True
 
     if isinstance(response, str):
-        if response.strip().lower() in _REGENERATE_ACTIONS:
-            return True
+        val = response.strip().lower()
+        # BEST PRACTICE: Flexible matching (e.g. "regenerate. add keywords")
+        for action in _REGENERATE_ACTIONS:
+            if val.startswith(action):
+                return True
 
     return False
 
@@ -85,6 +88,30 @@ async def topic_generation(state: REXT) -> Dict[str, Any]:
         # ── Explicit regenerate ───────────────────────────────
         if _is_regenerate_request(user_response):
             logger.info("User requested regeneration")
+            
+         
+            feedback = ""
+
+            feedback_response = interrupt(
+                {
+                    "type": "topic_regeneration_feedback",
+                    "instruction": "Optional: How can I improve the topics? (Type 'none' or leave empty to skip)",
+                    "allow_skip": True,
+                }
+            )
+            if isinstance(feedback_response, dict):
+                feedback = feedback_response.get("feedback", "").strip()
+            elif isinstance(feedback_response, str):
+                feedback = feedback_response.strip()
+            
+            # Check for skip keywords
+            if feedback.lower() in {"none", "skip", "no", "n/a", ""}:
+                logger.info("No feedback provided for regeneration")
+                feedback = ""
+        
+            if feedback:
+                logger.info(f"Adding user feedback to model prompt: {feedback}")
+                messages.append(HumanMessage(content=f"User feedback for regeneration: {feedback}"))
 
             results = await model.ainvoke(messages)
             topics = results.topics
