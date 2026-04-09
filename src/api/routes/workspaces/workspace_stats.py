@@ -68,7 +68,7 @@ async def get_workspace_stats(
 
     # Check feature availability from user's subscription
     subscription_service = SubscriptionService(db)
-    user_subscription = awa    it subscription_service.get_subscription_by_user(UUID(user_id))
+    user_subscription = await subscription_service.get_subscription_by_user(UUID(user_id))
 
     # Default to True if no subscription (free tier) or if plan doesn't specify
     has_content_builder = True
