@@ -162,6 +162,7 @@ async def keyword_recommendation(state: REXT, config, *, runtime) -> Dict[str, A
                 "recommendations": recommendations,
                 "error": None,
                 "is_changed": is_changed,
+                "library_key": unique_key,
             },
         },
         "serp_payload": {
