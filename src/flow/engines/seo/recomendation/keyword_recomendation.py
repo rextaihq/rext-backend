@@ -149,6 +149,10 @@ async def keyword_recommendation(state: REXT, config, *, runtime) -> Dict[str, A
     # Check if keyword changed
     is_changed = primary_keyword.lower() != original_query.lower()
 
+    # Persist the consensus intent
+    if "serp_backlinks" in seo_result:
+        seo_result["serp_backlinks"]["main_intent"] = search_intent
+
     return {
         "seo_result": {
             **seo_result,
@@ -158,6 +162,7 @@ async def keyword_recommendation(state: REXT, config, *, runtime) -> Dict[str, A
                 "recommendations": recommendations,
                 "error": None,
                 "is_changed": is_changed,
+                "library_key": unique_key,
             },
         },
         "serp_payload": {

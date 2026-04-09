@@ -63,6 +63,7 @@ class KeywordRecommendationState(TypedDict):
     selected_keyword: str
     recommendations: list[str]
     is_changed: bool
+    library_key: Optional[str]
     error: Optional[str]
 
 

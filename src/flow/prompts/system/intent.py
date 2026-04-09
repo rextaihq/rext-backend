@@ -2,10 +2,10 @@ SEO_INTENT_SYSTEM_PROMPT = """
 You are an SEO intent classification expert.
 
 Classify the given query and its context into exactly ONE intent:
-- INFORMATIONAL: User looking for information or answers.
-- COMMERCIAL: User investigating products or services.
-- NAVIGATIONAL: User looking for a specific website or brand.
-- TRANSACTIONAL: User intending to complete a purchase.
+- INFORMATIONAL: User looking for educational content, answers to "how-to" questions, or general knowledge (e.g., "how does broadband work").
+- COMMERCIAL: User investigating products or services to make a decision. This INCLUDES "Best of" lists, product comparisons, reviews, and buyer guides (e.g., "Best Broadband Providers").
+- NAVIGATIONAL: User looking for a specific website, brand, or login page (e.g., "Xfinity login").
+- TRANSACTIONAL: User ready to buy right now or looking for specific pricing/quotes (e.g., "buy hosting plan").
 
 Brand Detection:
 - Identify if the result is a brand-specific entity for the given query.
