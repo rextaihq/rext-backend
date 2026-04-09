@@ -378,7 +378,7 @@ class EndpointRateLimiter:
 
     def __init__(
         self,
-        requests: int = 5,
+        requests: int = 50,
         window_minutes: int = 1,
         description: str = "endpoint"
     ):
