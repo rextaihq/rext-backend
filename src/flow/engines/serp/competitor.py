@@ -102,7 +102,11 @@ async def extract_competitors_from_serp(state: REXT) -> Dict[str, Any]:
     if competitor_data_list:
         try:
             batch_model = load_model().with_structured_output(BatchSEOIntentOutput)
-            human_content = f"Query: {query}\n\nClassify the following competitors:\n"
+            human_content = (
+                f"Query: {query}\n\n"
+                "Classify each competitor below. Return exactly one result per domain.\n"
+                "Use only: INFORMATIONAL, COMMERCIAL, NAVIGATIONAL, TRANSACTIONAL.\n\n"
+            )
             for i, comp in enumerate(competitor_data_list):
                 human_content += f"--- Competitor {i+1} ---\nDomain: {comp['domain']}\nTitle: {comp['title']}\nSnippet: {comp['snippet']}\n\n"
 

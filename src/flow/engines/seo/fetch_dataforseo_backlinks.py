@@ -1,13 +1,12 @@
-import requests
-import json
 import os
 import logging
-from dotenv import load_dotenv
-from typing import Dict, Any, List
-from src.flow.states.rext import REXT
+from typing import Any, Dict
+
 import httpx
+from dotenv import load_dotenv
+
 from src.flow.states.countries import VALID_COUNTRY_CODES
-from src.flow.states.seo_state import SERPBacklinks
+from src.flow.states.rext import REXT
 
 load_dotenv()
 
@@ -21,19 +20,16 @@ if not DATAFORSEO_BACKLINKS_URL or not AUTH_HEADER:
 
 headers = {
     "Authorization": f"Basic {AUTH_HEADER}",
-    "Content-Type": "application/json"
+    "Content-Type": "application/json",
 }
 
-# =========================
-# 🚀 MAIN FUNCTION (SINGLE KEYWORD)
-# =========================
+
 async def get_dataforseo_data(
     keyword: str,
     location_name: str = "United States",
     language_code: str = "en",
-    include_serp_info: bool = True
-) -> Dict:
-
+    include_serp_info: bool = True,
+) -> Dict[str, Any]:
     payload_item = {
         "location_name": location_name,
         "language_code": language_code,
@@ -45,28 +41,29 @@ async def get_dataforseo_data(
     else:
         payload_item["keyword"] = keyword
         payload_item["include_seed_keyword"] = True
-        
+
     payload = [payload_item]
 
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await client.post(DATAFORSEO_BACKLINKS_URL, headers=headers, json=payload)
+            response = await client.post(
+                DATAFORSEO_BACKLINKS_URL,
+                headers=headers,
+                json=payload,
+            )
             response.raise_for_status()
             data = response.json()
 
             tasks = data.get("tasks", [])
             if not tasks:
                 return {}
-            
+
             result = tasks[0].get("result")
             if not result or not result[0]:
                 return {}
-                
-            # ✅ Metrics for the actual keyword are in 'seed_keyword_data'
-            # when using keyword_suggestions with include_seed_keyword: True
+
             item = result[0].get("seed_keyword_data", {})
             if not item:
-                # Fallback to first item if seed_keyword_data is missing
                 items = result[0].get("items", [])
                 if items:
                     item = items[0]
@@ -76,36 +73,38 @@ async def get_dataforseo_data(
             backlinks_info = item.get("avg_backlinks_info", {}) or {}
             keyword_info = item.get("keyword_info", {}) or {}
             keyword_props = item.get("keyword_properties", {}) or {}
-            intent_info = item.get("search_intent_info", {}) or {}
             serp_info = item.get("serp_info", {}) or {}
 
             serp_item_types = serp_info.get("serp_item_types", []) or []
 
-            # Cast metrics to int as per SERPBacklinks TypedDict
+            # Intent is intentionally disconnected from DataForSEO.
             return {
                 "keyword": item.get("keyword", keyword),
-
-                # Core metrics
-                "search_volume": int(keyword_info.get("search_volume", 0)) if keyword_info and keyword_info.get("search_volume") else 0,
-                "keyword_difficulty": int(keyword_props.get("keyword_difficulty", 0)) if keyword_props and (keyword_props.get("keyword_difficulty") is not None) else 0,
-
-                # Link metrics
-                "backlinks": int(backlinks_info.get("backlinks", 0)) if backlinks_info and backlinks_info.get("backlinks") else 0,
-                "referring_domains": int(backlinks_info.get("referring_domains", 0)) if backlinks_info and backlinks_info.get("referring_domains") else 0,
-                "dofollow_links": int(backlinks_info.get("dofollow", 0)) if backlinks_info and backlinks_info.get("dofollow") else 0,
-
-                # SERP features (bool)
-                "images": True if "images" in serp_item_types else False,
-                "videos": True if "videos" in serp_item_types else False,
-                "discussions_and_forums": True if "discussions_and_forums" in serp_item_types else False,
-
-                # Intent
-                "main_intent": intent_info.get("main_intent", "informational") if intent_info else "informational",
-                "foreign_intent": ", ".join(intent_info.get("foreign_intent", [])) if intent_info and isinstance(intent_info.get("foreign_intent"), list) else (intent_info.get("foreign_intent", "informational") if intent_info else "informational"),
+                "search_volume": int(keyword_info.get("search_volume", 0))
+                if keyword_info and keyword_info.get("search_volume")
+                else 0,
+                "keyword_difficulty": int(keyword_props.get("keyword_difficulty", 0))
+                if keyword_props and (keyword_props.get("keyword_difficulty") is not None)
+                else 0,
+                "backlinks": int(backlinks_info.get("backlinks", 0))
+                if backlinks_info and backlinks_info.get("backlinks")
+                else 0,
+                "referring_domains": int(backlinks_info.get("referring_domains", 0))
+                if backlinks_info and backlinks_info.get("referring_domains")
+                else 0,
+                "dofollow_links": int(backlinks_info.get("dofollow", 0))
+                if backlinks_info and backlinks_info.get("dofollow")
+                else 0,
+                "images": "images" in serp_item_types,
+                "videos": "videos" in serp_item_types,
+                "discussions_and_forums": "discussions_and_forums" in serp_item_types,
+                "main_intent": "informational",
+                "foreign_intent": "informational",
             }
     except Exception as e:
-        logger.error(f"Error fetching DataForSEO data: {e}")
+        logger.error("Error fetching DataForSEO data: %s", e)
         return {}
+
 
 async def fetch_dataforseo_backlinks(state: REXT) -> Dict[str, Any]:
     serp_payload = state.get("serp_payload")
@@ -123,27 +122,25 @@ async def fetch_dataforseo_backlinks(state: REXT) -> Dict[str, Any]:
         "foreign_intent": "informational",
     }
 
-    # if not serp_payload:
-    #     logger.error("No serp_payload found in state")
-    #     return {"seo_result": {"serp_backlinks": default_backlinks}}
-
     query = serp_payload.get("query")
     country = serp_payload.get("country", "Pakistan")
-    
-    # Handle invalid country codes and global
+
     if country and country.lower() == "global":
         country = "United States"
     elif country not in VALID_COUNTRY_CODES:
-        logger.info(f"Using global fallback (United States) for query: '{query}' due to invalid country: {country}")
+        logger.info(
+            "Using global fallback (United States) for query: '%s' due to invalid country: %s",
+            query,
+            country,
+        )
         country = "United States"
 
     if not query:
         logger.error("No query provided in serp_payload")
         return {"seo_result": {"serp_backlinks": default_backlinks}}
-    
+
     default_backlinks["keyword"] = query or ""
 
-    # Check required IDs
     user_id = serp_payload.get("user_id")
     workspace_id = serp_payload.get("workspace_id")
     if not user_id or not workspace_id:
@@ -157,24 +154,12 @@ async def fetch_dataforseo_backlinks(state: REXT) -> Dict[str, Any]:
     try:
         backlinks_data = await get_dataforseo_data(query, country)
         if not backlinks_data:
-            logger.warning(f"No DataForSEO data found for query '{query}'")
-            return {
-                "seo_result":{
-                    "serp_backlinks": default_backlinks
-                }
-            }
+            logger.warning("No DataForSEO data found for query '%s'", query)
+            return {"seo_result": {"serp_backlinks": default_backlinks}}
 
-        logger.info(f"Successfully fetched SERP backlinks for query '{query}'")
-        return {
-            "seo_result":{
-                "serp_backlinks": backlinks_data
-            }
-        }
+        logger.info("Successfully fetched SERP backlinks for query '%s'", query)
+        return {"seo_result": {"serp_backlinks": backlinks_data}}
 
     except Exception as e:
-        logger.exception(f"Failed to fetch SERP results for query '{query}': {str(e)}")
-        return {
-            "seo_result":{
-                "serp_backlinks": default_backlinks
-            }
-        }
+        logger.exception("Failed to fetch SERP results for query '%s': %s", query, str(e))
+        return {"seo_result": {"serp_backlinks": default_backlinks}}

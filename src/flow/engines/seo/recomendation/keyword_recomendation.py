@@ -1,11 +1,11 @@
 import logging
 from datetime import datetime
-from typing import Dict, Any, Literal
-from src.flow.states.rext import REXT
-from langgraph.types import interrupt, Command
-from langgraph.graph import END
+from typing import Any, Dict
 
-from src.flow.utils.intent_utils import get_consensus_intent
+from langgraph.types import Command, interrupt
+
+from src.flow.states.rext import REXT
+from src.flow.utils.intent_utils import get_serp_intents_from_competitors
 
 logger = logging.getLogger(__name__)
 
@@ -22,10 +22,11 @@ async def keyword_recommendation(state: REXT, config, *, runtime) -> Dict[str, A
     competitors = state.get("competitors", [])
 
     recommendations = serp_normalized.get("related_topics", []) if serp_normalized else []
-    
-    # 🔍 REINFORCEMENT: Use both API intent and Competitor consensus
-    api_intent = serp_backlinks.get("main_intent", "informational")
-    search_intent = get_consensus_intent(api_intent, competitors)
+
+    # Intent is derived from SERP competitor distribution only.
+    serp_intent = get_serp_intents_from_competitors(competitors)
+    search_intent = serp_intent["main_intent"]
+    foreign_intent = serp_intent["foreign_intent"]
 
     volume = serp_backlinks.get("search_volume", 0)
     keyword_difficulty = serp_backlinks.get("keyword_difficulty", 0)
@@ -41,10 +42,9 @@ async def keyword_recommendation(state: REXT, config, *, runtime) -> Dict[str, A
     print(f"   workspace_id: {workspace_id}")
 
     if not user_id or not workspace_id:
-        print("❌ Missing user_id or workspace_id")
+        print("Missing user_id or workspace_id")
         return {"seo_result": seo_result}
 
-    # Structured namespace for privacy and better search via prefix
     namespace = ("library", str(user_id), str(workspace_id))
     print(f"   namespace: {namespace}")
 
@@ -53,7 +53,6 @@ async def keyword_recommendation(state: REXT, config, *, runtime) -> Dict[str, A
     print(f"   original_query: {original_query}")
     print(f"   recommendations: {recommendations}")
 
-    # Early return if no SERP data
     if not serp_normalized:
         return {
             "seo_result": {
@@ -70,17 +69,12 @@ async def keyword_recommendation(state: REXT, config, *, runtime) -> Dict[str, A
             }
         }
 
-    # ✅ CREATE UNIQUE KEY FOR EACH RUN
-    # Use timestamp + query to create unique keys
     timestamp = datetime.now().isoformat()
     unique_key = f"library_{original_query}_{timestamp}"
 
-    # Store the data
     try:
-        # Enrich data with organic results and questions for better recommendation context
         top_organic = []
         if serp_normalized and serp_normalized.get("normalize_results"):
-            # Store top 10 results with essential info
             for res in serp_normalized.get("normalize_results", [])[:10]:
                 top_organic.append(
                     {
@@ -100,27 +94,26 @@ async def keyword_recommendation(state: REXT, config, *, runtime) -> Dict[str, A
             "seo_state": {
                 "keyword_difficulty": keyword_difficulty,
                 "intent": search_intent or "informational",
+                "foreign_intent": foreign_intent or "informational",
                 "volume": volume,
                 "backlinks": backlinks,
                 "referring_domains": referring_domains,
             },
-            "timestamp": timestamp,  # Include timestamp in value
+            "timestamp": timestamp,
         }
 
-        # Store with unique key (keeps history)
         await store.aput(
             namespace=namespace,
             key=unique_key,
             value=data_to_store,
         )
-        print(f"✅ Stored with unique key: {unique_key}")
+        print(f"Stored with unique key: {unique_key}")
 
     except Exception as e:
-        logger.exception(f"Store error: {e}")
-        print(f"❌ Store error: {e}")
+        logger.exception("Store error: %s", e)
+        print(f"Store error: {e}")
         return {"seo_result": seo_result}
 
-    # Interrupt for user selection
     user_selection = interrupt(
         {
             "instruction": "Select a keyword for your content",
@@ -130,6 +123,7 @@ async def keyword_recommendation(state: REXT, config, *, runtime) -> Dict[str, A
             "seo_state": {
                 "keyword_difficulty": keyword_difficulty,
                 "intent": search_intent or "informational",
+                "foreign_intent": foreign_intent or "informational",
                 "volume": volume,
                 "backlinks": backlinks,
                 "referring_domains": referring_domains,
@@ -137,7 +131,6 @@ async def keyword_recommendation(state: REXT, config, *, runtime) -> Dict[str, A
         }
     )
 
-    # Extract primary keyword
     primary_keyword = (
         user_selection.strip()
         if isinstance(user_selection, str)
@@ -146,12 +139,11 @@ async def keyword_recommendation(state: REXT, config, *, runtime) -> Dict[str, A
         else original_query
     )
 
-    # Check if keyword changed
     is_changed = primary_keyword.lower() != original_query.lower()
 
-    # Persist the consensus intent
     if "serp_backlinks" in seo_result:
         seo_result["serp_backlinks"]["main_intent"] = search_intent
+        seo_result["serp_backlinks"]["foreign_intent"] = foreign_intent
 
     return {
         "seo_result": {
