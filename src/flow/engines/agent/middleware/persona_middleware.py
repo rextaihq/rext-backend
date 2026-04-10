@@ -217,6 +217,14 @@ FORBIDDEN COMPLEXITY PATTERNS:
 - Abstract nominalisations: "the utilisation of" → "using", "the provision of" → "providing"
 - Passive voice more than once per paragraph — use active voice by default
 - Jargon chains without plain-English follow-up
+
+CONTENT ACCEPTANCE CRITERIA
+========================
+- Content Length should be minimum 1500 words
+- Content Should be Human readable based on above format creteria
+- Must be Human Written.
+
+- If alll acceptance are pass then content should be acceptable.
 """
 
     CONTENT_SYSTEM_PROMPT_TEMPLATE = """
