@@ -123,7 +123,7 @@ async def connect_site(
     
     return success(
         data={"site": new_site.to_dict()},
-        request=request,
+        #request=request,
         message="Site connected successfully"
     )
 
@@ -198,7 +198,7 @@ async def delete_site(
     
     return success(
         data={"site_id": str(site_id)},
-        request=request,
+        #request=request,
         message="Site disconnected successfully"
     )
 

@@ -21,7 +21,7 @@ Does NOT:
 
 from typing import Tuple, Dict, Any, Optional
 from uuid import UUID
-from datetime import datetime, timezone, timedelta, timezone
+from datetime import datetime, timezone, timedelta
 from src.utils.password_utils import validate_password_strength
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -53,7 +53,8 @@ from src.api.security.token_utils import (
 )
 from fastapi import BackgroundTasks
 from src.services.notification_helper import schedule_if_allowed
-from src.utils.logger import logger
+from src.api.lib.logger import auto_logger
+logger = auto_logger()
 from src.api.middleware.exceptions import (
     DuplicateResourceException,
     RextAuthenticationException,
@@ -329,7 +330,7 @@ class AuthService:
                             "trial_end_date": subscription.trial_end_date.isoformat(),
                             "plan_id": str(subscription.plan_id)
                         },
-                        workspace_id=str(subscription.workspace_id) if subscription.workspace_id else None,
+                        workspace_id=None,
                     )
 
         # Get GLOBAL roles only (workspace_id is NULL and is_primary is True)
@@ -933,7 +934,7 @@ class AuthService:
                                     "expires_at": invitation.expires_at.isoformat()
                                 }
                             )
-                            return
+                            continue
 
                         #  send the notification to user
                         await schedule_if_allowed(
