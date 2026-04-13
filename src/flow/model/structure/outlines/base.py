@@ -93,7 +93,7 @@ class BaseOutline(BaseModel):
     )
     
     # Schema
-    schema_type: Literal["Article", "HowTo", "FAQPage", "BlogPosting", "Product", "Review"] = Field(
+    schema_type: Literal["Article", "how-to-guide", "explainer", "pillar-content", "checklist","tutorial", "faq", "white-paper", "case-study", "glossary", "resource-list","comparison", "best-tools", "alternatives", "in-depth-review","pros-cons", "product-roundup", "buying-guide","brand-page", "product-homepage", "feature-overview", "documentation","login-guide", "contact-us", "about-us", "help-center","sales-page", "pricing-page", "signup-page", "demo-page","coupon-page", "checkout-page", "landing-page", "service-page"] = Field(
         default="Article",
         description="Primary schema.org type for structured data."
     )

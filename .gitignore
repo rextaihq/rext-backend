@@ -70,3 +70,5 @@ emails/.react-email/
 media/
 
 *.txt
+
+docker-folder

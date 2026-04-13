@@ -44,6 +44,8 @@ from .transactional import (
     ServicePageOutline,
 )
 
+
+
 CONTENT_TYPE_TO_MODEL = {
     # Informational
     "blog": BlogOutline,
