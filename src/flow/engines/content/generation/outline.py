@@ -107,6 +107,9 @@ async def generate_outline(state: REXT) -> dict:
 
         generated_outline = await outline_model.ainvoke(messages)
         outline_dict = generated_outline.model_dump()
+        
+        # Persist the selected topic as the outline title
+        outline_dict["title"] = topic
 
         logger.info("Outline generated successfully")
 

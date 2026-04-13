@@ -63,8 +63,6 @@ async def extract_competitors_from_serp(state: REXT) -> Dict[str, Any]:
         if item.get("position", 999) < group["top_result"].get("position", 999):
             group["top_result"] = item
 
-        # if item.get("sitelinks"):
-        #     group["has_sitelinks"] = True
 
         # Snippet length
         snippet = item.get("snippet", "")
@@ -99,6 +97,8 @@ async def extract_competitors_from_serp(state: REXT) -> Dict[str, Any]:
             "snippet": top_item.get("snippet", "")
         })
 
+    final_intent_type = "UNKNOWN"
+
     if competitor_data_list:
         try:
             batch_model = load_model().with_structured_output(BatchSEOIntentOutput)
@@ -107,9 +107,11 @@ async def extract_competitors_from_serp(state: REXT) -> Dict[str, Any]:
                 human_content += f"--- Competitor {i+1} ---\nDomain: {comp['domain']}\nTitle: {comp['title']}\nSnippet: {comp['snippet']}\n\n"
 
             classification_results = await batch_model.ainvoke([
-                SystemMessage(content=SEO_INTENT_SYSTEM_PROMPT + "\nClassify each competitor in the list provided."),
+                SystemMessage(content=SEO_INTENT_SYSTEM_PROMPT + f"\nClassify each competitor in the list provided and also return the primary intent of the keyword. here is keyword: {query}"),
                 HumanMessage(content=human_content)
             ])
+
+            final_intent_type = classification_results.final_intent_type
 
             # Map results back to domain_groups
             results_map = {res.domain: res for res in classification_results.results}
@@ -150,5 +152,8 @@ async def extract_competitors_from_serp(state: REXT) -> Dict[str, Any]:
     logger.info(f"Extracted {len(competitors)} competitors from SERP")
     
     return {
-       "competitors": competitors
+       "competitors": competitors,
+       "seo_result":{
+        "intent_type":final_intent_type
+       }
     }

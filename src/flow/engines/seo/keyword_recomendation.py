@@ -29,8 +29,9 @@ async def keyword_recommendation(state: REXT, config, *, runtime) -> Any:
 
     # 🔍 REINFORCEMENT: Use both API intent and Competitor consensus
     main_intent = serp_backlinks.get("main_intent", "informational")
+    recomended_intent = seo_result.get("intent_type", "informational")
     if main_intent == "unknown":
-        main_intent = "informational"
+        main_intent = recomended_intent
     else:
         main_intent = main_intent
 
@@ -106,7 +107,7 @@ async def keyword_recommendation(state: REXT, config, *, runtime) -> Any:
             "top_organic_results": top_organic,
             "seo_state": {
                 "keyword_difficulty": keyword_difficulty,
-                "intent": main_intent,
+                "intent": [main_intent, recomended_intent],
                 "volume": volume,
                 "backlinks": backlinks,
                 "referring_domains": referring_domains,
@@ -139,7 +140,7 @@ async def keyword_recommendation(state: REXT, config, *, runtime) -> Any:
             "Keyword Clusters": keyword_clusters,
             "seo_state": {
                 "keyword_difficulty": keyword_difficulty,
-                "intent": main_intent,
+                "intent": [main_intent, recomended_intent],
                 "volume": volume,
                 "backlinks": backlinks,
                 "referring_domains": referring_domains,
@@ -156,15 +157,31 @@ async def keyword_recommendation(state: REXT, config, *, runtime) -> Any:
         else original_query
     )
 
+    # Extract user-selected intent from dropdown (falls back to consensus)
+    selected_intent = (
+        user_selection.get("intent", "").strip()
+        if isinstance(user_selection, dict)
+        else ""
+    )
+    if not selected_intent or selected_intent == "unknown":
+        selected_intent = main_intent
+
     # Check if keyword changed
     is_changed = primary_keyword.lower() != original_query.lower()
+
+    logger.info(f"Selected Keyword: {primary_keyword} Selected Intent: {selected_intent}")
+
+    # Persist the selected intent
+    if "serp_backlinks" in seo_result:
+        seo_result["serp_backlinks"]["main_intent"] = selected_intent
 
     return {
         "seo_result": {
             **seo_result,
+            "intent_type": selected_intent,
             "serp_backlinks": {
                 **serp_backlinks,
-                "main_intent": main_intent
+                "main_intent": selected_intent
             },
             "keyword_recommendations": {
                 "original_title": original_query,
@@ -172,6 +189,7 @@ async def keyword_recommendation(state: REXT, config, *, runtime) -> Any:
                 "recommendations": recommendations,
                 "error": None,
                 "is_changed": is_changed,
+                "library_key": unique_key,
             },
         },
         "serp_payload": {

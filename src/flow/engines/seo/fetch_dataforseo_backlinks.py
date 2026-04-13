@@ -141,8 +141,8 @@ async def fetch_dataforseo_backlinks(state: REXT) -> Dict[str, Any]:
         "images": False,
         "videos": False,
         "discussions_and_forums": False,
-        "main_intent": "unknown",
-        "foreign_intent": "unknown",
+        "main_intent": "informational",
+        "foreign_intent": "informational",
     }
 
     serp_payload = state.get("serp_payload")

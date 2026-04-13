@@ -76,6 +76,8 @@ async def topic_generation(state: REXT) -> Dict[str, Any]:
         "topics": topics,
     })
     
+    logger.info(f"Raw user_selection from interrupt: {user_selection}")
+    
     # Handle user selection (can be index, string, or dict)
     selected_topic = ""
     
@@ -83,8 +85,6 @@ async def topic_generation(state: REXT) -> Dict[str, Any]:
         # User selected by index (1-5)
         if 1 <= user_selection <= len(topics):
             selected_topic = topics[user_selection - 1]
-        else:
-            selected_topic = topics[0]  # Default to first topic
     elif isinstance(user_selection, str):
         # User typed the topic directly or selected from list
         selected_topic = user_selection.strip()
@@ -94,11 +94,14 @@ async def topic_generation(state: REXT) -> Dict[str, Any]:
             if 1 <= idx <= len(topics):
                 selected_topic = topics[idx - 1]
     elif isinstance(user_selection, dict):
-        # User returned a dict with selection
-        selected_topic = user_selection.get("selected_topic", "") or user_selection.get("topic", "")
+        selected_topic = (user_selection.get("Selected Topic") or "")
+        if isinstance(selected_topic, int):
+            if 1 <= selected_topic <= len(topics):
+                selected_topic = topics[selected_topic - 1]
     
-    # Fallback to first topic if selection is empty
+    # Fallback to first topic if selection is empty or invalid
     if not selected_topic:
+        logger.warning(f"Failed to parse a valid topic from: {user_selection}. Falling back to topic 1.")
         selected_topic = topics[0] if topics else ""
     
     logger.info(f"User selected topic: {selected_topic}")

@@ -261,7 +261,7 @@ class ContentService:
             "draft": ["generating", "ready", "archived"],
             "generating": ["ready", "failed", "draft"],
             "ready": ["published", "draft", "archived", "generating"],
-            "published": ["archived", "ready"],
+            "published": ["archived", "ready","draft"],
             "archived": ["draft"],
             "failed": ["draft", "generating", "archived"],
         }

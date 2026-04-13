@@ -352,7 +352,7 @@ class SubscriptionAnalyticsService:
         lengths = [row[0] for row in result.all() if row[0]]
         if not lengths:
             return 0.0
-        return round(sum(lengths) / len(lengths), 1)
+        return round(float(sum(lengths) / len(lengths)), 1)
 
     async def get_analytics_overview(self) -> Dict[str, Any]:
         """Return comprehensive analytics overview combining all key metrics."""

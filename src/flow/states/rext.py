@@ -112,6 +112,7 @@ class REXT(TypedDict, total=False):
 
     # Competition
     competitors: list[Competitor]
+    final_intent_type: str
 
     # Content & Scraping
     scrape_context: Annotated[ScrapeContext, merge_dicts]

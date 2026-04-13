@@ -20,15 +20,6 @@ class ContentPatternState(TypedDict):
     schema_types: list[str]
 
 
-# 4. Content Gap Analysis
-
-class ContentGapState(TypedDict):
-    missing_topics: list[str]
-    missing_questions: list[str]
-    weak_coverage_areas: list[str]
-    recommended_sections: list[str]
-
-
 # 5. Authority & Trust Signals
 class AuthorityState(TypedDict):
     avg_domain_strength: float
@@ -36,14 +27,6 @@ class AuthorityState(TypedDict):
     brand_presence: bool
     freshness_bias: bool
     authority_level: Literal["low", "medium", "high"]
-
-
-# 6. SERP Feature Impact
-class SERPFeatureImpactState(TypedDict):
-    features_present: list[str]
-    ctr_loss_estimate: float
-    blocking_features: list[str]
-    opportunity_features: list[str]
 
 
 #  Title Recommendation State
@@ -63,14 +46,8 @@ class KeywordRecommendationState(TypedDict):
     selected_keyword: str
     recommendations: list[str]
     is_changed: bool
+    library_key: Optional[str]
     error: Optional[str]
-
-
-class SEOOpportunityState(TypedDict):
-    opportunity_score: int
-    opportunity_level: Literal["low", "medium", "high"]
-    key_drivers: dict[str, Any]
-
 
 class SERPBacklinks(TypedDict):
     keyword: str
@@ -101,7 +78,5 @@ class SEORESULT(TypedDict, total=False):
     serp_backlinks: Annotated[SERPBacklinks, merge_dicts]
     keyword_recommendations: KeywordRecommendationState
     keyword_clusters: list[KeywordCluster]
-    content_gaps: ContentGapState
-    serp_features: SERPFeatureImpactState
-    seo_opportunity: SEOOpportunityState 
+    intent_type: str
     keyword_iteration_count: int

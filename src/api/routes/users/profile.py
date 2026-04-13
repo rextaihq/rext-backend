@@ -356,19 +356,6 @@ async def delete_avatar(
         request=request,
         message="Avatar deleted successfully"
     )
-    # Update user via service
-    await service.update_profile(
-        user_id=user_id,
-        avatar_url=None
-    )
-
-    logger.info(f"Avatar deleted for user {user_id}")
-
-    return success(
-        data={},
-        request=request,
-        message="Avatar deleted successfully"
-    )
 
 
 @router.get("/preferences/notifications", response_model=SuccessResponse[NotificationPreferencesResponse])
