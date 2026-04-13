@@ -1,8 +1,12 @@
 from typing import List, Optional, Literal
-from pydantic import BaseModel, Field, conlist
+
+from pydantic import Field, conlist
+
+from src.flow.model.structure.content_types import ContentType
+from src.flow.model.structure.outlines.strict import StrictModel
 
 
-class Resource(BaseModel):
+class Resource(StrictModel):
     """A specific tool, link, or resource."""
     title: str = Field(description="Name or title of the resource.")
     url: Optional[str] = Field(description="URL to the resource (if applicable).")
@@ -11,14 +15,17 @@ class Resource(BaseModel):
     pros: Optional[List[str]] = Field(default_factory=list, description="Key benefits or advantages.")
 
 
-class ResourceSection(BaseModel):
+class ResourceSection(StrictModel):
     heading: str = Field(description="Category heading (e.g., 'Monitoring Tools', 'Research Sources').")
     heading_level: Literal["H2", "H3"] = Field(description="Heading level.")
     description: str = Field(description="Brief overview of the resources in this section.")
     resources: conlist(Resource, min_length=2, max_length=15)
 
 
-class ResourceListOutline(BaseModel):
+class ResourceListOutline(StrictModel):
+    content_type: ContentType = Field(
+        description="Canonical content type slug. Must match the requested content_type."
+    )
     title: str = Field(description="SEO-optimized resource list title starting with focus keyphrase.")
     slug_suggestion: str = Field(
         pattern=r"^[a-z0-9-]+$",

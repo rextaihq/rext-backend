@@ -1,8 +1,12 @@
 from typing import List, Optional, Literal
-from pydantic import BaseModel, Field, conlist
+
+from pydantic import Field, HttpUrl, conlist
+
+from src.flow.model.structure.content_types import ContentType
+from src.flow.model.structure.outlines.strict import StrictModel
 
 
-class ImageSuggestion(BaseModel):
+class ImageSuggestion(StrictModel):
     """Suggested image or illustration for a section."""
     
     description: str = Field(
@@ -16,7 +20,7 @@ class ImageSuggestion(BaseModel):
     )
 
 
-class LinkSuggestion(BaseModel):
+class LinkSuggestion(StrictModel):
     """Suggested link with context."""
     
     anchor_text: str = Field(description="Suggested anchor text.")
@@ -31,13 +35,16 @@ class LinkSuggestion(BaseModel):
     )
 
 
-class Fact(BaseModel):
+class Fact(StrictModel):
     """Verifiable fact or statistic with source citation context."""
     
     text: str = Field(description="The factual statement or statistic.")
+    source_url: Optional[HttpUrl] = Field(
+        default=None, description="Direct source URL for verifying this fact."
+    )
 
 
-class PillarSection(BaseModel):
+class PillarSection(StrictModel):
     heading: str = Field(description="Section heading text.")
     heading_level: Literal["H2", "H3"] = Field(description="Heading level.")
     description: str = Field(description="Comprehensive coverage summary for this section.")
@@ -46,7 +53,10 @@ class PillarSection(BaseModel):
     facts: Optional[List[Fact]] = Field(default_factory=list, description="Statistics or data points to include.")
 
 
-class PillarContentOutline(BaseModel):
+class PillarContentOutline(StrictModel):
+    content_type: ContentType = Field(
+        description="Canonical content type slug. Must match the requested content_type."
+    )
     title: str = Field(description="SEO-optimized pillar article title starting with the focus keyphrase.")
     slug_suggestion: str = Field(
         pattern=r"^[a-z0-9-]+$",

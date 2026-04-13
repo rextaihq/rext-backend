@@ -1,15 +1,19 @@
 from typing import List, Optional, Literal
-from pydantic import BaseModel, Field, conlist
+
+from pydantic import Field, conlist
+
+from src.flow.model.structure.content_types import ContentType
+from src.flow.model.structure.outlines.strict import StrictModel
 
 
-class ResultMetric(BaseModel):
+class ResultMetric(StrictModel):
     """A specific metric or result achieved in the case study."""
     metric_name: str = Field(description="Name of the metric (e.g., 'Conversion Rate', 'Reduction in Cost').")
     result_value: str = Field(description="The achievement or numeric value (e.g., '+20%', '$50,000 saved').")
     context: Optional[str] = Field(description="Explanation of the significance of this result.")
 
 
-class CaseStudySection(BaseModel):
+class CaseStudySection(StrictModel):
     heading: str = Field(description="Section heading (e.g., 'The Challenge', 'Implementing X').")
     heading_level: Literal["H2", "H3"] = Field(description="Heading level.")
     description: str = Field(description="Overview of the challenges, actions, or outcomes in this stage.")
@@ -17,7 +21,10 @@ class CaseStudySection(BaseModel):
     results: Optional[List[ResultMetric]] = Field(default_factory=list, description="Specific metrics or KPIs for this stage.")
 
 
-class CaseStudyOutline(BaseModel):
+class CaseStudyOutline(StrictModel):
+    content_type: ContentType = Field(
+        description="Canonical content type slug. Must match the requested content_type."
+    )
     title: str = Field(description="SEO-optimized case study title starting with focus keyphrase.")
     slug_suggestion: str = Field(
         pattern=r"^[a-z0-9-]+$",

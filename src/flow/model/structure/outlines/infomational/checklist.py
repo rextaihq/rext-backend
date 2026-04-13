@@ -1,22 +1,29 @@
 from typing import List, Optional, Literal
-from pydantic import BaseModel, Field, conlist
+
+from pydantic import Field, conlist
+
+from src.flow.model.structure.content_types import ContentType
+from src.flow.model.structure.outlines.strict import StrictModel
 
 
-class ChecklistItem(BaseModel):
+class ChecklistItem(StrictModel):
     """An individual actionable item in the checklist."""
     label: str = Field(description="The checklist item text.")
     context: Optional[str] = Field(description="Brief explanation of why this item is necessary.")
     difficulty: Literal["Easy", "Medium", "Hard"] = "Easy"
 
 
-class ChecklistSection(BaseModel):
+class ChecklistSection(StrictModel):
     heading: str = Field(description="Section heading (e.g., 'Phase 1', 'Preparation').")
     heading_level: Literal["H2", "H3"] = Field(description="Heading level.")
     description: str = Field(description="Overview of this checklist phase.")
     items: conlist(ChecklistItem, min_length=2, max_length=15)
 
 
-class ChecklistOutline(BaseModel):
+class ChecklistOutline(StrictModel):
+    content_type: ContentType = Field(
+        description="Canonical content type slug. Must match the requested content_type."
+    )
     title: str = Field(description="SEO-optimized checklist title starting with the focus keyphrase.")
     slug_suggestion: str = Field(
         pattern=r"^[a-z0-9-]+$",

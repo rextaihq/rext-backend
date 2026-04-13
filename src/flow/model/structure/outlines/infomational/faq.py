@@ -1,22 +1,29 @@
 from typing import List, Optional, Literal
-from pydantic import BaseModel, Field, conlist
+
+from pydantic import Field, conlist
+
+from src.flow.model.structure.content_types import ContentType
+from src.flow.model.structure.outlines.strict import StrictModel
 
 
-class FAQItem(BaseModel):
+class FAQItem(StrictModel):
     """An individual question and answer pair."""
     question: str = Field(description="The question to answer.")
     answer_brief: str = Field(description="Brief, clear answer optimized for search snippets.")
     detailed_answer: Optional[str] = Field(description="Detailed explanation if needed.")
 
 
-class FAQSection(BaseModel):
+class FAQSection(StrictModel):
     heading: str = Field(description="FAQ category (e.g., 'Pricing', 'Security').")
     heading_level: Literal["H2", "H3"] = Field(description="Heading level.")
     description: str = Field(description="Overview of the questions in this category.")
     items: conlist(FAQItem, min_length=2, max_length=10)
 
 
-class FAQOutline(BaseModel):
+class FAQOutline(StrictModel):
+    content_type: ContentType = Field(
+        description="Canonical content type slug. Must match the requested content_type."
+    )
     title: str = Field(description="SEO-optimized FAQ title (e.g., '[Focus Keyphrase] FAQ').")
     slug_suggestion: str = Field(
         pattern=r"^[a-z0-9-]+$",

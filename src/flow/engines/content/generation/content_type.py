@@ -6,6 +6,7 @@ from src.flow.model.llm_manager import load_model
 from langgraph.types import interrupt
 from langchain_core.messages import SystemMessage, HumanMessage
 from src.flow.model.structure.intent_suggestion import INTENT_TO_CONTENT_TYPES
+from src.flow.model.structure.content_types import normalize_content_type
 
 logger = logging.getLogger(__name__)
 
@@ -68,8 +69,14 @@ def content_type(state: REXT) -> REXT:
             ""
         )
     
-    # Save the selected content type to the state
-    content_state["content_type"] = final_selection or "article"
+    # Save the selected content type to the state (canonical slug).
+    # Avoid silent drift like "Coupon Page" vs "coupon-page".
+    try:
+        content_state["content_type"] = normalize_content_type(final_selection or "blog")
+    except ValueError as e:
+        logger.warning("Invalid content_type selection: %s", e)
+        content_state["content_type"] = "blog"
+        content_state["error"] = str(e)
     state["content"] = content_state
     
     logger.info(f"Content type selected: {content_state['content_type']}")

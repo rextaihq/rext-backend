@@ -1,8 +1,12 @@
 from typing import List, Optional, Literal
-from pydantic import BaseModel, Field, conlist
+
+from pydantic import Field, conlist
+
+from src.flow.model.structure.content_types import ContentType
+from src.flow.model.structure.outlines.strict import StrictModel
 
 
-class ImageSuggestion(BaseModel):
+class ImageSuggestion(StrictModel):
     """Suggested image or diagram for explaining a concept."""
     
     description: str = Field(
@@ -16,7 +20,7 @@ class ImageSuggestion(BaseModel):
     )
 
 
-class LinkSuggestion(BaseModel):
+class LinkSuggestion(StrictModel):
     """Suggested link with context."""
     
     anchor_text: str = Field(description="Suggested anchor text.")
@@ -31,14 +35,14 @@ class LinkSuggestion(BaseModel):
     )
 
 
-class KeyConcept(BaseModel):
+class KeyConcept(StrictModel):
     """A core concept defined in the explainer."""
     term: str = Field(description="Term or concept being explained.")
     definition: str = Field(description="Clear and concise definition.")
     examples: Optional[List[str]] = Field(default_factory=list, description="Concrete examples of this concept.")
 
 
-class ExplainerSection(BaseModel):
+class ExplainerSection(StrictModel):
     heading: str = Field(description="Section heading text.")
     heading_level: Literal["H2", "H3"] = Field(description="Heading level.")
     description: str = Field(description="What this section will explain.")
@@ -46,7 +50,10 @@ class ExplainerSection(BaseModel):
     concepts: Optional[List[KeyConcept]] = Field(default_factory=list, description="Key concepts covered in this section.")
 
 
-class ExplainerOutline(BaseModel):
+class ExplainerOutline(StrictModel):
+    content_type: ContentType = Field(
+        description="Canonical content type slug. Must match the requested content_type."
+    )
     title: str = Field(description="SEO-optimized explainer title (e.g., 'What is [Focus Keyphrase]?').")
     slug_suggestion: str = Field(
         pattern=r"^[a-z0-9-]+$",

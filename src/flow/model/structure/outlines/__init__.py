@@ -90,7 +90,8 @@ CONTENT_TYPE_TO_MODEL = {
 
 def get_outline_model(content_type: str):
     """Get the appropriate Pydantic model for a given content type."""
-    return CONTENT_TYPE_TO_MODEL.get(content_type, BlogOutline)
+    canonical = normalize_content_type(content_type)
+    return CONTENT_TYPE_TO_MODEL[canonical]
 
 __all__ = [
     "get_outline_model",
@@ -138,3 +139,4 @@ __all__ = [
     "LandingPageOutline",
     "ServicePageOutline",
 ]
+from src.flow.model.structure.content_types import normalize_content_type

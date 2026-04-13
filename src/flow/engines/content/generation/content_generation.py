@@ -13,6 +13,7 @@ from langgraph.config import get_stream_writer
 from src.flow.states.rext import REXT
 from src.flow.engines.agent.content_agent import create_content_agent
 from src.flow.model.structure.contents import get_generated_content_model
+from src.flow.model.structure.content_types import normalize_content_type
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +36,17 @@ async def generate_content(state: REXT) -> dict:
     try:
         # 1️⃣ Get content state, topic, and content type
         topic = content_state.get("selected_topic", "")
-        content_type = content_state.get("content_type", "article")
+        try:
+            content_type = normalize_content_type(content_state.get("content_type") or "blog")
+        except ValueError as e:
+            logger.error("Invalid content_type in state: %s", e)
+            return {
+                "content": {
+                    **content_state,
+                    "error": str(e),
+                }
+            }
+        content_state["content_type"] = content_type
 
         if not topic:
             logger.error("No topic found in state")

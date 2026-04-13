@@ -1,29 +1,36 @@
 from typing import List, Optional, Literal
-from pydantic import BaseModel, Field, conlist
+
+from pydantic import Field, conlist
+
+from src.flow.model.structure.content_types import ContentType
+from src.flow.model.structure.outlines.strict import StrictModel
 
 
-class CodeSnippet(BaseModel):
+class CodeSnippet(StrictModel):
     """A suggested code block or mathematical equation/expression."""
     language: str = Field(description="Programming language or format (e.g., 'python', 'json', 'latex').")
     description: str = Field(description="Explanation of what this snippet does or teaches.")
     difficulty: Literal["Easy", "Medium", "Hard"] = "Easy"
 
 
-class TutorialStep(BaseModel):
+class TutorialStep(StrictModel):
     """A practical step within the tutorial."""
     title: str = Field(description="Tutorial step heading.")
     description: str = Field(description="Practical instructions for the user.")
     code_suggestions: Optional[List[CodeSnippet]] = Field(default_factory=list, description="Associated code snippets or technical diagrams.")
 
 
-class TutorialSection(BaseModel):
+class TutorialSection(StrictModel):
     heading: str = Field(description="Section heading.")
     heading_level: Literal["H2", "H3"] = Field(description="Heading level.")
     description: str = Field(description="Goal of this section in the learning curve.")
     steps: conlist(TutorialStep, min_length=1, max_length=10)
 
 
-class TutorialOutline(BaseModel):
+class TutorialOutline(StrictModel):
+    content_type: ContentType = Field(
+        description="Canonical content type slug. Must match the requested content_type."
+    )
     title: str = Field(description="SEO-optimized tutorial title starting with 'How to' or including focus keyphrase.")
     slug_suggestion: str = Field(
         pattern=r"^[a-z0-9-]+$",

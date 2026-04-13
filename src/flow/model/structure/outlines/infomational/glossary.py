@@ -1,8 +1,12 @@
 from typing import List, Optional, Literal
-from pydantic import BaseModel, Field, conlist
+
+from pydantic import Field, conlist
+
+from src.flow.model.structure.content_types import ContentType
+from src.flow.model.structure.outlines.strict import StrictModel
 
 
-class GlossaryEntry(BaseModel):
+class GlossaryEntry(StrictModel):
     """An individual term and its definition."""
     term: str = Field(description="The term or phrase being defined.")
     definition: str = Field(description="Clear and concise definition.")
@@ -10,14 +14,17 @@ class GlossaryEntry(BaseModel):
     related_terms: Optional[List[str]] = Field(default_factory=list, description="Terms related to this one.")
 
 
-class GlossarySection(BaseModel):
+class GlossarySection(StrictModel):
     heading: str = Field(description="Alphabetical or category heading (e.g., 'A-C', 'Tech Terms').")
     heading_level: Literal["H2", "H3"] = Field(description="Heading level.")
     description: str = Field(description="Introduction to the terms in this section.")
     entries: conlist(GlossaryEntry, min_length=2, max_length=20)
 
 
-class GlossaryOutline(BaseModel):
+class GlossaryOutline(StrictModel):
+    content_type: ContentType = Field(
+        description="Canonical content type slug. Must match the requested content_type."
+    )
     title: str = Field(description="SEO-optimized glossary title (e.g., '[Focus Keyphrase] Glossary').")
     slug_suggestion: str = Field(
         pattern=r"^[a-z0-9-]+$",

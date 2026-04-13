@@ -1,8 +1,12 @@
 from typing import List, Optional, Literal
-from pydantic import BaseModel, Field, conlist
+
+from pydantic import Field, HttpUrl, conlist
+
+from src.flow.model.structure.content_types import ContentType
+from src.flow.model.structure.outlines.strict import StrictModel
 
 
-class ImageSuggestion(BaseModel):
+class ImageSuggestion(StrictModel):
     """Suggested image for a section with SEO context."""
     
     description: str = Field(
@@ -16,7 +20,7 @@ class ImageSuggestion(BaseModel):
     )
 
 
-class LinkSuggestion(BaseModel):
+class LinkSuggestion(StrictModel):
     """Suggested link with context."""
     
     anchor_text: str = Field(description="Suggested anchor text.")
@@ -31,33 +35,39 @@ class LinkSuggestion(BaseModel):
     )
 
 
-class Fact(BaseModel):
+class Fact(StrictModel):
     """Verifiable fact or statistic with source citation context."""
     
     text: str = Field(description="The factual statement or statistic.")
+    source_url: Optional[HttpUrl] = Field(
+        default=None, description="Direct source URL for verifying this fact."
+    )
 
-class Section(BaseModel):
+class Section(StrictModel):
     heading: str = Field(description="Section heading text.")
     heading_level: Literal["H2", "H3"] = Field(description="Heading level.")
     description: str = Field(description="What this section will cover.")
     key_points: conlist(str, min_length=2, max_length=6)
     questions_to_answer: Optional[List[str]] = Field(
-        description="PAA or user questions to answer in this section."
+        default=None, description="PAA or user questions to answer in this section."
     )
-    snippet_target: Optional[bool] = False
+    snippet_target: bool = False
     search_intent: Literal["informational", "commercial"] = "informational"
     suggested_word_count: Optional[int] = 200
     include_keyphrase_in_heading: bool = Field(
         default=False,
         description="Whether this heading should include the focus keyphrase or a variant."
     )
-    facts: Optional[List[Fact]] = Field(
-        default=[],
-        description="Verifiable facts, statistics, or data points with sources to include in this section."
+    facts: List[Fact] = Field(
+        default_factory=list,
+        description="Verifiable facts, statistics, or data points with sources to include in this section.",
     )
  
 
-class BlogOutline(BaseModel):
+class BlogOutline(StrictModel):
+    content_type: ContentType = Field(
+        description="Canonical content type slug. Must match the requested content_type."
+    )
     title: str = Field(description="SEO-optimized article title starting with the focus keyphrase.")
     slug_suggestion: str = Field(
         pattern=r"^[a-z0-9-]+$",
@@ -73,8 +83,8 @@ class BlogOutline(BaseModel):
     
     # Structure
     sections: conlist(Section, min_length=4, max_length=8)
-    faqs: Optional[List[str]] = Field(default_factory=list,description="FAQ questions for schema.")
-    key_facts: Optional[List[Fact]] = Field(
+    faqs: List[str] = Field(default_factory=list, description="FAQ questions for schema.")
+    key_facts: List[Fact] = Field(
         default_factory=list,
         description="Key verifiable facts or statistics with sources to be used throughout the article."
     )

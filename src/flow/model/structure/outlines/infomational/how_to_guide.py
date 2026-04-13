@@ -1,8 +1,12 @@
 from typing import List, Optional, Literal
-from pydantic import BaseModel, Field, conlist
+
+from pydantic import Field, conlist
+
+from src.flow.model.structure.content_types import ContentType
+from src.flow.model.structure.outlines.strict import StrictModel
 
 
-class ImageSuggestion(BaseModel):
+class ImageSuggestion(StrictModel):
     """Suggested image for a section with SEO context."""
     
     description: str = Field(
@@ -16,7 +20,7 @@ class ImageSuggestion(BaseModel):
     )
 
 
-class LinkSuggestion(BaseModel):
+class LinkSuggestion(StrictModel):
     """Suggested link with context."""
     
     anchor_text: str = Field(description="Suggested anchor text.")
@@ -31,20 +35,20 @@ class LinkSuggestion(BaseModel):
     )
 
 
-class Fact(BaseModel):
+class Fact(StrictModel):
     """Verifiable fact or statistic with source citation context."""
     
     text: str = Field(description="The factual statement or statistic.")
 
 
-class Step(BaseModel):
+class Step(StrictModel):
     """A single actionable step in the guide."""
     title: str = Field(description="Title of the step.")
     description: str = Field(description="Detailed instructions for this step.")
     tools_needed: Optional[List[str]] = Field(default_factory=list, description="Specific tools or materials for this step.")
 
 
-class HowToSection(BaseModel):
+class HowToSection(StrictModel):
     heading: str = Field(description="Section heading text.")
     heading_level: Literal["H2", "H3"] = Field(description="Heading level.")
     description: str = Field(description="What this section will cover.")
@@ -52,7 +56,10 @@ class HowToSection(BaseModel):
     steps: Optional[List[Step]] = Field(default_factory=list, description="Instructional steps within this section.")
 
 
-class HowToGuideOutline(BaseModel):
+class HowToGuideOutline(StrictModel):
+    content_type: ContentType = Field(
+        description="Canonical content type slug. Must match the requested content_type."
+    )
     title: str = Field(description="SEO-optimized guide title starting with the focus keyphrase.")
     slug_suggestion: str = Field(
         pattern=r"^[a-z0-9-]+$",

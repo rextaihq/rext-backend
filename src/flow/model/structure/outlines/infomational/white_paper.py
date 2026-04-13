@@ -1,22 +1,29 @@
 from typing import List, Optional, Literal
-from pydantic import BaseModel, Field, conlist
+
+from pydantic import Field, conlist
+
+from src.flow.model.structure.content_types import ContentType
+from src.flow.model.structure.outlines.strict import StrictModel
 
 
-class ResearchFinding(BaseModel):
+class ResearchFinding(StrictModel):
     """A specific research finding or data point."""
     topic: str = Field(description="Topic or theme of the finding.")
     data_points: List[str] = Field(description="Key statistics, results, or data points.")
     implication: str = Field(description="What this means for the reader/industry.")
 
 
-class WhitePaperSection(BaseModel):
+class WhitePaperSection(StrictModel):
     heading: str = Field(description="Section heading (e.g., 'Methodology', 'Key Trends').")
     heading_level: Literal["H2", "H3"] = Field(description="Heading level.")
     description: str = Field(description="Goal of this section in the paper.")
     findings: conlist(ResearchFinding, min_length=1, max_length=5)
 
 
-class WhitePaperOutline(BaseModel):
+class WhitePaperOutline(StrictModel):
+    content_type: ContentType = Field(
+        description="Canonical content type slug. Must match the requested content_type."
+    )
     title: str = Field(description="SEO-optimized white paper title (e.g., 'State of [Focus Keyphrase]').")
     slug_suggestion: str = Field(
         pattern=r"^[a-z0-9-]+$",

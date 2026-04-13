@@ -3,6 +3,7 @@ from botocore.client import Config
 from botocore.exceptions import ClientError
 from typing import Optional, BinaryIO, Union
 import io
+import sys
 from pathlib import Path
 from src.api.config import get_settings
 from src.utils.logger import logger
@@ -12,7 +13,7 @@ settings = get_settings()
 class StorageService:
     """Service for interacting with MinIO/S3 storage."""
 
-    def __init__(self):
+    def __init__(self, ensure_bucket_exists: bool = True):
         self.bucket_name = settings.MINIO_BUCKET
         self.s3_client = boto3.client(
             's3',
@@ -22,7 +23,8 @@ class StorageService:
             config=Config(signature_version='s3v4'),
             region_name='us-east-1'  # Default for MinIO
         )
-        self._ensure_bucket_exists()
+        if ensure_bucket_exists:
+            self._ensure_bucket_exists()
 
     def _ensure_bucket_exists(self):
         """Checks if the bucket exists and creates it if not."""
@@ -145,4 +147,6 @@ class StorageService:
             return False
 
 # Singleton instance
-storage_service = StorageService()
+# Avoid network calls during pytest collection/import.
+_IN_PYTEST = "pytest" in sys.modules
+storage_service = StorageService(ensure_bucket_exists=not _IN_PYTEST)
