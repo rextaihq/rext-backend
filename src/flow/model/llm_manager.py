@@ -77,6 +77,22 @@ def load_content_model():
     )
 
 
+def load_humanize_model():
+    """
+    Returns a model configured for content humanization.
+
+    Humanization needs higher output limits because it rewrites complete
+    long-form content while preserving the original structure.
+    """
+    return init_chat_model(
+        "gpt-5.2",
+        model_provider="openai",
+        api_key=settings.OPENAI_API_KEY,
+        max_tokens=CONTENT_GENERATION_MAX_TOKENS,
+        reasoning_effort="low",
+    )
+
+
 def topic_generation_model():
     """
     Initializes a chat model with low token limits suitable for topic generation.
