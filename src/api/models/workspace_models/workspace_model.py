@@ -38,6 +38,7 @@ class WorkspaceModel(Base, SerializableMixin, UUIDPrimaryKeyMixin, TimestampMixi
     text_knowledge = relationship("TextKnowledge", back_populates="workspace", cascade="all, delete-orphan", passive_deletes=True)
     content_items = relationship("Content", back_populates="workspace", cascade="all, delete-orphan", passive_deletes=True)
     media = relationship("Media", back_populates="workspace", cascade="all, delete-orphan", passive_deletes=True)
+    topics = relationship("TopicsModel", back_populates="workspace", cascade="all, delete-orphan", passive_deletes=True)
     notifications = relationship("Notification", back_populates="workspace", cascade="all, delete-orphan", passive_deletes=True)
     integrations = relationship("WorkspaceIntegration", back_populates="workspace", cascade="all, delete-orphan", passive_deletes=True)
 

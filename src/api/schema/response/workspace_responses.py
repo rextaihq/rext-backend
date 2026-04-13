@@ -36,9 +36,11 @@ class WorkspaceDeleteResponse(BaseModel):
 
 class WorkspaceStatsResponse(BaseModel):
     workspace_exists: bool
+    topics_count: int
     content_count: int
     knowledge_items_count: int
     members_count: int
+    has_topic_builder: bool
     has_content_builder: bool
 
 class EmailTemplateDeleteResponse(BaseModel):

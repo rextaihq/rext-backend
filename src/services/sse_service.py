@@ -51,7 +51,7 @@ class _Subscription:
 
     operation_id: str
     user_id: UUID
-    queue: Queue[Optional[str]]
+    queue: Queue[Optional[Dict[str, Any]]]
     last_activity: datetime = field(default_factory=_utcnow)
 
 
@@ -60,7 +60,7 @@ class _OperationState:
     """Holds subscriber state and pending events for an operation."""
 
     subscribers: List[_Subscription] = field(default_factory=list)
-    pending_events: Deque[str] = field(default_factory=deque)  # maxlen set post-init
+    pending_events: Deque[Dict[str, Any]] = field(default_factory=deque)  # maxlen set post-init
     created_at: datetime = field(default_factory=_utcnow)
     last_event_at: datetime = field(default_factory=_utcnow)
     completed: bool = False
@@ -117,7 +117,7 @@ class EventStreamManager:
         operation_id: str,
         user_id: UUID,
         max_duration_seconds: float = 7200.0,
-    ) -> AsyncIterator[str]:
+    ) -> AsyncIterator[Dict[str, Any]]:
         """
         Subscribe to an operation's event stream.
 
@@ -130,7 +130,7 @@ class EventStreamManager:
             max_duration_seconds: Maximum connection lifetime in seconds (default: 2 hours).
         """
         validate_operation_id(operation_id)
-        queue: Queue[Optional[str]] = asyncio.Queue()
+        queue: Queue[Optional[Dict[str, Any]]] = asyncio.Queue()
         subscription = _Subscription(
             operation_id=operation_id,
             user_id=user_id,
@@ -353,7 +353,7 @@ class EventStreamManager:
             state = self._operations.get(operation_id)
             return state.completed if state else False
 
-    async def subscribe_completed(self, operation_id: str, user_id: UUID) -> AsyncIterator[str]:
+    async def subscribe_completed(self, operation_id: str, user_id: UUID) -> AsyncIterator[Dict[str, Any]]:
         """
         Subscribe to an already completed operation.
         Immediately sends a completion event and closes.
@@ -445,9 +445,9 @@ class EventStreamManager:
                     operation_id,
                 )
 
-    async def _enqueue_event(self, subscription: _Subscription, event_text: str) -> None:
+    async def _enqueue_event(self, subscription: _Subscription, event_dict: Dict[str, Any]) -> None:
         try:
-            await subscription.queue.put(event_text)
+            await subscription.queue.put(event_dict)
             subscription.last_activity = datetime.now(timezone.utc)
         except asyncio.CancelledError:
             raise
@@ -458,11 +458,13 @@ class EventStreamManager:
                 exc,
             )
 
-    def _format_event(self, event: OperationEvent) -> str:
-        """Return an SSE-compliant string with id/event/data fields."""
-        event_name = f"{event.scope}.{event.step}"
-        payload = event.model_dump_json()
-        return f"id: {event.id}\nevent: {event_name}\ndata: {payload}\n\n"
+    def _format_event(self, event: OperationEvent) -> Dict[str, Any]:
+        """Return an SSE-compliant dictionary with id/event/data fields."""
+        return {
+            "id": event.id,
+            "event": f"{event.scope}.{event.step}",
+            "data": event.model_dump_json(),
+        }
 
 
 event_stream_manager = EventStreamManager()

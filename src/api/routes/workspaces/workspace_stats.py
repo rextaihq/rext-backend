@@ -64,6 +64,7 @@ async def get_workspace_stats(
     content_count = analytics["content_count"]
     knowledge_items_count = analytics["knowledge_stats"]["total"]
     members_count = analytics["members_count"]
+    topics_count = analytics["topics_count"]
 
 
     # Check feature availability from user's subscription
@@ -72,6 +73,7 @@ async def get_workspace_stats(
 
     # Default to True if no subscription (free tier) or if plan doesn't specify
     has_content_builder = True
+    has_topic_builder = True
 
     if user_subscription and user_subscription.plan:
         plan_features = user_subscription.plan.features or {}
@@ -80,12 +82,17 @@ async def get_workspace_stats(
         # If not set, default to True (enabled)
         if 'content_builder' in plan_features:
             has_content_builder = bool(plan_features.get('content_builder'))
+        
+        if 'topic_builder' in plan_features:
+            has_topic_builder = bool(plan_features.get('topic_builder'))
 
     stats = {
         "workspace_exists": True,  # If we got here, workspace exists
+        "topics_count": topics_count,
         "content_count": content_count,
         "knowledge_items_count": knowledge_items_count,
         "members_count": members_count,
+        "has_topic_builder": has_topic_builder,
         "has_content_builder": has_content_builder,
     }
 

@@ -67,7 +67,9 @@ from src.api.models.user_models import (  # noqa: E402, F401
 from src.api.models.user_models.impersonation_session import (  # noqa: E402
     ImpersonationSession,  # noqa: F401
 )
+from src.api.models.topic_models.topic_models import TopicsModel  # noqa: E402, F401
 from src.api.models.workspace_models.email_template import EmailTemplate  # noqa: E402, F401
+
 from src.api.models.workspace_models.workspace_integration import (  # noqa: E402
     WorkspaceIntegration,  # noqa: F401
 )
@@ -89,6 +91,20 @@ target_metadata = Base.metadata
 # can be acquired:
 # my_important_option = config.get_main_option("my_important_option")
 # ... etc.
+
+def include_object(object, name, type_, reflected, compare_to):
+    """Filter objects to include in migration autogeneration."""
+    # Ignore LangGraph store tables which are NOT part of our core models
+    # but exist in the database and would otherwise be dropped by autogenerate.
+    if type_ == "table" and name in [
+        "store", 
+        "store_vectors", 
+        "store_migrations", 
+        "vector_migrations"
+    ]:
+        return False
+    return True
+
 
 
 def get_url():
@@ -120,6 +136,7 @@ def run_migrations_offline() -> None:
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
+        include_object=include_object,
     )
 
     with context.begin_transaction():
@@ -152,7 +169,11 @@ async def run_async_migrations() -> None:
 
 def do_run_migrations(connection):
     """Execute migrations with the provided connection."""
-    context.configure(connection=connection, target_metadata=target_metadata)
+    context.configure(
+        connection=connection, 
+        target_metadata=target_metadata,
+        include_object=include_object,
+    )
 
     with context.begin_transaction():
         context.run_migrations()

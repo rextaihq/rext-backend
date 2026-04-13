@@ -50,8 +50,15 @@ class Content(Base, SerializableMixin, UUIDPrimaryKeyMixin, TimestampMixin, Work
     shopify_article_url = Column(Text, nullable=True)
     shopify_published_at = Column(DateTime(timezone=True), nullable=True)
 
+    # Topics relationship
+    topic_id = Column(UUID(as_uuid=True), ForeignKey("topics.id", ondelete="SET NULL"), nullable=True, index=True)
+
     # Relationships
     workspace = relationship("WorkspaceModel", back_populates="content_items")
     created_by = relationship("Users", foreign_keys=[created_by_user_id])
+    topic = relationship("TopicsModel", back_populates="content_items")
     seo_data = relationship("ContentSEOData", back_populates="content", uselist=False, cascade="all, delete-orphan", passive_deletes=True)
     media_items = relationship("ContentMedia", back_populates="content", cascade="all, delete-orphan", passive_deletes=True)
+
+
+

@@ -38,6 +38,7 @@ from src.api.models.user_models.permissions import Permission
 from src.api.models.user_models.role_permissions import RolePermission
 from src.api.models.user_models.user_roles import UserRole
 from src.api.models.content_models.content import Content
+from src.api.models.topic_models.topic_models import TopicsModel
 from src.api.middleware.exceptions import (
     ResourceNotFoundException,
     RextValidationException,
@@ -452,6 +453,12 @@ class WorkspaceService:
             .correlate(None)
             .scalar_subquery()
         )
+        topics_count_subq = (
+            select(func.count(TopicsModel.id))
+            .where(TopicsModel.workspace_id == workspace_id)
+            .correlate(None)
+            .scalar_subquery()
+        )
 
         result = await self.db.execute(
             select(
@@ -460,6 +467,7 @@ class WorkspaceService:
                 text_count_subq.label("text_count"),
                 members_count_subq.label("members_count"),
                 content_count_subq.label("content_count"),
+                topics_count_subq.label("topics_count"),
             )
         )
         row = result.one()
@@ -468,6 +476,7 @@ class WorkspaceService:
         text_count = row.text_count or 0
         members_count = row.members_count or 0
         content_count = row.content_count or 0
+        topics_count = row.topics_count or 0
 
         analytics = {
             "knowledge_stats": {
@@ -478,6 +487,7 @@ class WorkspaceService:
             },
             "members_count": members_count,
             "content_count": content_count,
+            "topics_count": topics_count,
         }
 
         # Add word count analytics if requested
