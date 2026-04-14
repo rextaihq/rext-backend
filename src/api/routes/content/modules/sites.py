@@ -81,6 +81,7 @@ async def list_connected_sites(
 async def connect_site(
     data: WorkspaceIntegrationCreate,
     workspace_id: str,
+    request: Request,
     db: AsyncSession = Depends(get_async_db),
     user: dict = Depends(get_current_user)
 ):
@@ -133,6 +134,7 @@ async def connect_site(
 async def get_site_details(
     site_id: UUID,
     workspace_id: str,
+    request: Request,
     db: AsyncSession = Depends(get_async_db),
     user: dict = Depends(get_current_user)
 ):
@@ -155,6 +157,7 @@ async def update_site(
     site_id: UUID,
     data: WorkspaceIntegrationUpdate,
     workspace_id: str,
+    request: Request,
     db: AsyncSession = Depends(get_async_db),
     user: dict = Depends(get_current_user)
 ):
@@ -185,6 +188,7 @@ async def update_site(
 async def delete_site(
     site_id: UUID,
     workspace_id: str,
+    request: Request,
     db: AsyncSession = Depends(get_async_db),
     user: dict = Depends(get_current_user)
 ):
@@ -208,6 +212,7 @@ async def delete_site(
 async def activate_site(
     site_id: UUID,
     workspace_id: str,
+    request: Request,
     db: AsyncSession = Depends(get_async_db),
     user: dict = Depends(get_current_user)
 ):
@@ -230,6 +235,7 @@ async def activate_site(
 async def deactivate_site(
     site_id: UUID,
     workspace_id: str,
+    request: Request,
     db: AsyncSession = Depends(get_async_db),
     user: dict = Depends(get_current_user)
 ):
@@ -252,6 +258,7 @@ async def deactivate_site(
 async def publish_to_site(
     site_id: UUID,
     content_id: UUID,
+    request: Request,
     data: PublishToSiteRequest,
     workspace_id: str,
     db: AsyncSession = Depends(get_async_db),

@@ -19,13 +19,14 @@ class StorageService:
             endpoint_url=f"{'https' if settings.MINIO_USE_SSL else 'http'}://{settings.MINIO_ENDPOINT}",
             aws_access_key_id=settings.MINIO_ACCESS_KEY,
             aws_secret_access_key=settings.MINIO_SECRET_KEY,
-            config=Config(signature_version='s3v4'),
+            config=Config(signature_version='s3v4', s3={'addressing_style': 'path'}),
             region_name='us-east-1'  # Default for MinIO
         )
         self._ensure_bucket_exists()
 
     def _ensure_bucket_exists(self):
         """Checks if the bucket exists and creates it if not."""
+        import json
         try:
             self.s3_client.head_bucket(Bucket=self.bucket_name)
         except ClientError as e:
@@ -33,11 +34,29 @@ class StorageService:
             if error_code == '404':
                 logger.info(f"Bucket {self.bucket_name} does not exist. Creating...")
                 self.s3_client.create_bucket(Bucket=self.bucket_name)
-                # Set public read policy for the bucket if it's meant for media
-                # This depends on whether we want the files to be publicly accessible
-                # For simplicity, we'll keep it private and use signed URLs or a proxy
             else:
                 logger.error(f"Error checking bucket existence: {str(e)}")
+                return
+
+        # Set public-read policy so objects are accessible without presigned URLs
+        if settings.MINIO_PUBLIC_URL:
+            public_policy = json.dumps({
+                "Version": "2012-10-17",
+                "Statement": [{
+                    "Effect": "Allow",
+                    "Principal": {"AWS": ["*"]},
+                    "Action": ["s3:GetObject"],
+                    "Resource": [f"arn:aws:s3:::{self.bucket_name}/*"]
+                }]
+            })
+            try:
+                self.s3_client.put_bucket_policy(
+                    Bucket=self.bucket_name,
+                    Policy=public_policy
+                )
+                logger.info(f"Set public-read policy on bucket {self.bucket_name}")
+            except Exception as e:
+                logger.warning(f"Could not set bucket policy: {str(e)}")
 
     def upload_file(
         self, 

@@ -4,15 +4,13 @@ from langchain_openai import OpenAIEmbeddings
 
 from src.utils.logger import logger
 
-_embedding_model = None
-
-
 def get_embedding() -> OpenAIEmbeddings:
     """
-    Get or create the singleton OpenAI embedding model.
+    Get a fresh instance of the OpenAI embedding model.
 
     Uses the text-embedding-3-small model (1536 dimensions).
     Fails fast if OPENAI_API_KEY is not set.
+    Direct initialization avoids loop-mismatch issues in multi-threaded/async environments.
 
     Returns:
         OpenAIEmbeddings: Configured embedding model instance.
@@ -20,10 +18,6 @@ def get_embedding() -> OpenAIEmbeddings:
     Raises:
         ValueError: If OPENAI_API_KEY environment variable is not set.
     """
-    global _embedding_model
-    if _embedding_model is not None:
-        return _embedding_model
-
     api_key = os.getenv("OPENAI_API_KEY")
     if not api_key:
         raise ValueError(
@@ -31,10 +25,11 @@ def get_embedding() -> OpenAIEmbeddings:
             "Please set it in your .env file or environment."
         )
 
-    _embedding_model = OpenAIEmbeddings(
+    model = OpenAIEmbeddings(
         model="text-embedding-3-small",
         api_key=api_key,
     )
-    logger.info("OpenAI embedding model initialized successfully (text-embedding-3-small)")
-    return _embedding_model
+    # logger.debug("OpenAI embedding model instance created (text-embedding-3-small)")
+    return model
+
     

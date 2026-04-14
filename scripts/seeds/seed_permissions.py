@@ -284,6 +284,7 @@ ROLE_PERMISSION_ASSIGNMENTS = {
         "subscription.read", "subscription.manage",
         "usage.read",
         "billing.read",
+        "audit.read",
     ],
 }
 

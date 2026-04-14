@@ -1,5 +1,6 @@
 from langchain_core.tools import tool
 from langchain_community.tools.tavily_search import TavilySearchResults
+from langchain_community.tools.ddg_search import DuckDuckGoSearchRun
 from dotenv import load_dotenv
 from openai import OpenAI
 import json
@@ -9,7 +10,7 @@ load_dotenv()
 
 @tool
 def search_tool(query: str) -> str:
-    """Perform a web search using Tavily and return top 5 results with snippets.
+    """Perform a web search using DuckDuckGo and return top 5 results with snippets.
 
     Use this tool for factual questions, current events, research, or up-to-date web info.
     Returns structured results with title, URL, and snippet for citation.
@@ -17,10 +18,9 @@ def search_tool(query: str) -> str:
     Args:
         query: Search query (e.g., "best laptops 2024 review")
     """
-    search = TavilySearchResults(
+    search = DuckDuckGoSearchRun(
         max_results=5,
         search_depth="advanced",
-        api_key=os.getenv("TAVILY_API_KEY"),
     )
     results = search.run(query)
     return json.dumps(results, indent=2)
