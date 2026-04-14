@@ -59,6 +59,7 @@ class BrandVoiceResponse(BaseModel):
     brand_voice: List[str] = []
     competitors: List[str] = []
     content_strategy: List[str] = []
+    personas: List[Any] = []
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
 

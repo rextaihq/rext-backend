@@ -12,8 +12,6 @@ import traceback
 DB_URI = os.getenv("POSTGRES_URI_CUSTOM")
 
 # Initialize embeddings once at startup
-embeddings = cast(Embeddings, init_embeddings("openai:text-embedding-3-small"))
-
 @contextlib.asynccontextmanager
 async def generate_store():
     """Yield a BaseStore, open for the duration of the server.
@@ -22,6 +20,9 @@ async def generate_store():
     It requires a plain postgresql:// URI — NOT postgresql+asyncpg://.
     Strip any driver prefix so psycopg can parse it correctly.
     """
+    # Initialize embeddings inside the async context to ensure they use the correct event loop
+    embeddings = cast(Embeddings, init_embeddings("openai:text-embedding-3-small"))
+
     uri = DB_URI
     
     # AsyncPostgresStore.from_conn_string uses psycopg3 which does NOT accept

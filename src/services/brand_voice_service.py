@@ -22,6 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, delete
 
 from src.api.models.knowledge_models.knowledge_model import BrandVoice
+from src.api.models.workspace_models.workspace_model import WorkspaceModel
 from src.api.models.workspace_models.workspace_member import WorkspaceMembers
 from src.utils.logger import logger
 from src.api.cache.decorators import invalidate_cache_key
@@ -62,11 +63,16 @@ class BrandVoiceService:
         # Verify workspace membership
         await self._verify_workspace_membership(workspace_id, user_id)
 
-        # Get brand voice
+        from sqlalchemy.orm import joinedload
+        # Get brand voice with workspace and personas loaded
         result = await self.db.execute(
-            select(BrandVoice).where(BrandVoice.workspace_id == workspace_id)
+            select(BrandVoice)
+            .options(
+                joinedload(BrandVoice.workspace).joinedload(WorkspaceModel.personas)
+            )
+            .where(BrandVoice.workspace_id == workspace_id)
         )
-        brand_voice = result.scalar_one_or_none()
+        brand_voice = result.unique().scalar_one_or_none()
 
         return brand_voice
 
@@ -122,7 +128,17 @@ class BrandVoiceService:
             action = "created"
 
         await self.db.flush()
-        await self.db.refresh(brand_voice)
+        
+        # Eagerly load workspace and personas for serialization
+        from sqlalchemy.orm import joinedload
+        result = await self.db.execute(
+            select(BrandVoice)
+            .options(
+                joinedload(BrandVoice.workspace).joinedload(WorkspaceModel.personas)
+            )
+            .where(BrandVoice.id == brand_voice.id)
+        )
+        brand_voice = result.unique().scalar_one()
 
         logger.info(
             f"Brand voice {action} for workspace {workspace_id}",
