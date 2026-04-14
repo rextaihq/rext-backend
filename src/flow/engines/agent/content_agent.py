@@ -20,7 +20,7 @@ async def create_content_agent(
     tools: Optional[Sequence[BaseTool | Callable | dict[str, Any]]] = None,
     # system_prompt: str = CONTENT_SYSTEM_PROMPT,
     rext_middleware: Sequence[AgentMiddleware] = (),
-    debug: bool = True,
+    debug: bool = False,
     name: Optional[str] = "content_agent",
     cache: Optional[BaseCache] = None,
     content_type: str=None,
