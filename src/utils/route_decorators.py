@@ -233,7 +233,7 @@ def db_transaction_handler(
 
 def require_permissions(
     *permissions: str,
-    workspace_scoped: bool = True,
+    workspace_scoped: bool = False,
     require_all: bool = True
 ):
     """
