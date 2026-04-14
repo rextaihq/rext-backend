@@ -1,3 +1,4 @@
+import asyncio
 from uuid import UUID
 from typing import Optional, Dict, Any
 from langchain.agents.middleware import AgentMiddleware
@@ -6,7 +7,7 @@ from langgraph.runtime import Runtime
 from sqlalchemy import select
 
 from src.api.models.knowledge_models.persona_model import Persona
-from src.api.database.async_database import AsyncSessionLocal
+from src.api.database.async_database import SyncSessionLocal
 from src.flow.states.rext import REXT
 from src.flow.states.outline import OutlineState
 
@@ -306,15 +307,21 @@ Write the full article now with image and facts links included mimumn length sho
     # ------------------------------------------------------------------
     # DB fetch (UNCHANGED)
     # ------------------------------------------------------------------
-    async def _fetch_persona(self,user_id,workspace_id) -> Optional[Persona]:
-        async with AsyncSessionLocal() as db:
-            result = await db.execute(
-                select(Persona)
-                .where(Persona.workspace_id == workspace_id)
-                .order_by(Persona.created_at.desc())
-                .limit(1)
-            )
-        return result.scalar_one_or_none()
+    async def _fetch_persona(self, user_id, workspace_id) -> Optional[Persona]:
+        def _sync_fetch():
+            db = SyncSessionLocal()
+            try:
+                result = db.execute(
+                    select(Persona)
+                    .where(Persona.workspace_id == workspace_id)
+                    .order_by(Persona.created_at.desc())
+                    .limit(1)
+                )
+                return result.scalar_one_or_none()
+            finally:
+                db.close()
+
+        return await asyncio.to_thread(_sync_fetch)
 
     # ------------------------------------------------------------------
     # Message builders (UNCHANGED)
