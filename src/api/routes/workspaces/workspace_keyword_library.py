@@ -31,10 +31,10 @@ async def list_workspace_keyword_library(
     """List keyword library records for the current user and workspace."""
     namespace = ("library", str(user["identity"]), workspace_id)
 
-    from src.flow.store.rext_store import generate_store
+    from src.flow.store.rext_store import get_store
 
-    async with generate_store() as store:
-        items = await store.asearch(namespace, query=None, limit=1000, offset=0)
+    store = get_store()
+    items = await store.asearch(namespace, query=None, limit=1000, offset=0)
 
     return [item.dict() for item in items]
 
@@ -52,9 +52,9 @@ async def delete_workspace_keyword_library_item(
     """Delete a keyword library item by its stored key."""
     namespace = ("library", str(user["identity"]), workspace_id)
 
-    from src.flow.store.rext_store import generate_store
+    from src.flow.store.rext_store import get_store
 
-    async with generate_store() as store:
-        await store.adelete(namespace=namespace, key=payload.key)
+    store = get_store()
+    await store.adelete(namespace=namespace, key=payload.key)
 
     return {"deleted_key": payload.key}
