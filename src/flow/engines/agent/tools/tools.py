@@ -5,6 +5,8 @@ from dotenv import load_dotenv
 from openai import OpenAI
 import json
 import os
+import uuid
+import httpx
 
 load_dotenv()
 
@@ -49,12 +51,34 @@ def generate_image(prompt: str, model: str = "dall-e-3", size: str = "1024x1024"
             prompt=prompt,
             n=1,
             size=size,
-            quality="standard",  # or "hd"
+            quality="standard",
         )
-        
-        # Extract the URL from the response
-        image_url = response.data[0].url
-        return image_url
+
+        # OpenAI returns a temporary Azure SAS URL that expires in ~2 hours.
+        # Download and re-upload to our own storage for a permanent URL.
+        temp_url = response.data[0].url
+
+        try:
+            from src.utils.storage import storage_service
+            from src.api.config import get_settings
+            # Only persist when MINIO_PUBLIC_URL is set — otherwise get_file_url
+            # returns a presigned URL (1 h expiry) which is shorter than the
+            # original OpenAI SAS URL (~2 h) and would make the problem worse.
+            if storage_service.available and get_settings().MINIO_PUBLIC_URL:
+                image_response = httpx.get(temp_url, timeout=30)
+                image_response.raise_for_status()
+                object_name = f"generated-images/{uuid.uuid4()}.png"
+                permanent_url = storage_service.upload_file(
+                    file_data=image_response.content,
+                    object_name=object_name,
+                    content_type="image/png",
+                )
+                if permanent_url:
+                    return permanent_url
+        except Exception as upload_err:
+            print(f"Failed to persist image to storage, falling back to temp URL: {upload_err}")
+
+        return temp_url
 
     except Exception as e:
         print(f"Error generating image: {e}")

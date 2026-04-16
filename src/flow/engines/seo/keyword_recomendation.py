@@ -28,8 +28,8 @@ async def keyword_recommendation(state: REXT, config, *, runtime) -> Any:
     logger.info(f"serp_backlinks: {serp_backlinks}")
 
     # 🔍 REINFORCEMENT: Use both API intent and Competitor consensus
-    main_intent = serp_backlinks.get("main_intent", "informational")
-    recomended_intent = seo_result.get("intent_type", "informational")
+    main_intent = serp_backlinks.get("main_intent", "informational").lower()
+    recomended_intent = seo_result.get("intent_type", "informational").lower()
     if main_intent == "unknown":
         main_intent = recomended_intent
     else:
