@@ -20,6 +20,7 @@ from src.api.middleware.exceptions import ResourceNotFoundException, RextValidat
 from src.services.user_service import UserService
 from src.services.notification_preferences_service import NotificationPreferencesService
 from src.services.notification_helper import schedule_if_allowed
+from src.api.models.user_models.notification_preferences import DEFAULT_CATEGORY_PREFERENCES
 from datetime import datetime,timezone 
 
 from pathlib import Path
@@ -443,9 +444,17 @@ async def update_notification_preferences(
                                 logger.debug(f"Updated category preference '{cat}' -> '{db_field}' to {value}")
 
     # Handle all other fields directly
+    jsonb_fields = set(DEFAULT_CATEGORY_PREFERENCES.keys())
     for field, value in update_data.items():
         column_name = alias_to_column.get(field, field)
-        if hasattr(preferences, column_name):
+        if column_name in jsonb_fields:
+            old_val = preferences.get_preference(column_name)
+            if old_val != value:
+                old_values[column_name] = old_val
+                new_values[column_name] = value
+                preferences.set_preference(column_name, value)
+                logger.debug(f"Updated notification preference '{field}' for user {user_id}")
+        elif hasattr(preferences, column_name):
             current_value = getattr(preferences, column_name)
             if current_value != value:
                 old_values[column_name] = current_value
