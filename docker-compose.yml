@@ -57,7 +57,7 @@ services:
             -c max_parallel_maintenance_workers=2
             -c huge_pages=off
             -c jit=off
-            -c max_connections=200
+            -c max_connections=150
             -c statement_timeout=60000
             -c idle_in_transaction_session_timeout=300000
             -c log_min_duration_statement=1000
@@ -183,8 +183,11 @@ services:
             BG_JOB_ISOLATED_LOOPS: "true"
             N_JOBS_PER_WORKER: "50"
 
-            # Connection pooling (FIXED)
+            # Connection pooling
             REDIS_MAX_CONNECTIONS: "50"
+            # Limit LangGraph's internal Postgres connection pool
+            POSTGRES_POOL_SIZE: "5"
+            POSTGRES_MAX_OVERFLOW: "5"
 
             # TTL - CRITICAL for 8GB (auto-delete old threads)
             CHECKPOINTER_TTL_DEFAULT: 86400 # 24hr
@@ -228,9 +231,24 @@ services:
             MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:-minioadmin}
         volumes:
             - minio_data:/data
-        ports:
-            - "9000:9000"   # S3 API
-            - "9001:9001"   # Web console
+        expose:
+            - "9000"
+            - "9001"
+        labels:
+            - "traefik.enable=true"
+            - "traefik.docker.network=coolify"
+            # S3 API on /media path of the API domain
+            # e.g. https://api.rext.ai/media/... → MinIO port 9000
+            - "traefik.http.routers.minio-api.rule=Host(`${API_DOMAIN}`) && PathPrefix(`/media`)"
+            - "traefik.http.routers.minio-api.entrypoints=https"
+            - "traefik.http.routers.minio-api.tls=true"
+            - "traefik.http.routers.minio-api.tls.certresolver=letsencrypt"
+            - "traefik.http.routers.minio-api.service=minio-api-svc"
+            - "traefik.http.routers.minio-api.priority=10"
+            - "traefik.http.services.minio-api-svc.loadbalancer.server.port=9000"
+            # Strip /media prefix before forwarding to MinIO
+            - "traefik.http.middlewares.minio-strip.stripprefix.prefixes=/media"
+            - "traefik.http.routers.minio-api.middlewares=minio-strip"
         healthcheck:
             test: ["CMD-SHELL", "curl -f http://localhost:9000/minio/health/live || exit 1"]
             interval: 10s
@@ -239,6 +257,7 @@ services:
             start_period: 15s
         networks:
             - rext-network
+            - coolify
 
 networks:
     rext-network:

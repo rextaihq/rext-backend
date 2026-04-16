@@ -24,6 +24,9 @@ from src.api.schema.response.user_management_responses import (
 )
 from src.utils.response_utils import success
 from src.api.schema.user_schema import DataExportResponse
+from src.api.models.user_models.users import Users
+from src.api.models.user_models.roles import Role
+from src.api.models.user_models.user_roles import UserRole
 
 router = APIRouter()
 settings = get_settings()
