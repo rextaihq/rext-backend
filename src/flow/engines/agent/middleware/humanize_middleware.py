@@ -39,12 +39,7 @@ class HumanizeMiddleware(AgentMiddleware):
     HUMANIZED_FIELDS = {
         "title",
         "introduction",
-        "body_markdown",
-        "html_content",
-        "word_count",
-        "meta_title",
-        "meta_description",
-        "tags",
+        "body_markdown"
     }
 
     async def aafter_agent(self, state: REXT, runtime: Runtime) -> dict[str, Any] | None:
@@ -177,7 +172,6 @@ class HumanizeMiddleware(AgentMiddleware):
             "title": content_payload.get("title") or "",
             "introduction": introduction,
             "body_markdown": body_markdown,
-            "html_content": content_payload.get("html_content") or "",
             "selected_topic": (
                 content_state.get("selected_topic")
                 or content_payload.get("title")
