@@ -78,8 +78,8 @@ async def topic_generation(state: REXT) -> Dict[str, Any]:
     while True:
         user_response = interrupt(
             {
-                "type": "topic_selection",
-                "instruction": "Select a topic or type 'regenerate'",
+                "type": "topic",
+                "instruction": "Select a topic",
                 "topics": topics,
                 "allow_regenerate": True,
             }
@@ -119,7 +119,8 @@ async def topic_generation(state: REXT) -> Dict[str, Any]:
         # ── Extract topic ─────────────────────────────────────
         if isinstance(user_response, dict):
             selected_topic = (
-                user_response.get("selected_topic")
+                user_response.get("Selected Topic")
+                or user_response.get("selected_topic")
                 or user_response.get("topic")
                 or ""
             )
