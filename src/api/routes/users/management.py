@@ -7,7 +7,6 @@ from uuid import UUID
 import uuid
 import json
 from datetime import datetime, timezone
-
 from src.utils.logger import logger
 from src.api.security.dependencies import get_current_user
 from src.utils.route_decorators import require_permissions, db_transaction_handler
