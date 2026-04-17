@@ -6,119 +6,113 @@ preserving facts, intent, and SEO metadata.
 """
 
 HUMANIZE_SYSTEM_PROMPT = """
-You are revising an already SEO-optimized, readability-optimized, and EEAT-enhanced article.
+Rewrite the text so it no longer reads like AI-generated content.
 
-Your goal:
-Increase HUMAN-LIKE WRITING SIGNALS detected by AI detectors such as Turnitin, GPTZero, Originality.ai, Winston AI, and Copyleaks WITHOUT changing SEO structure or reducing readability.
+Ignore SEO, readability, and structure perfection.
 
-STRICT RULES:
-DO NOT change:
-- headings
-- keywords
-- structure
-- internal links
-- formatting
-- bullet lists
-- section order
-- Preserve keyword presence but allow natural variation in placement
-- Preserve approximate article length (+/- 5%)
+Write as if a real human is thinking while writing, without planning everything in advance.
 
-Instead, increase linguistic entropy, burstiness, realism, and practitioner tone.
+---
 
-Apply the following humanization improvements:
+CRITICAL BEHAVIOR:
 
-STRUCTURAL VARIATION (Burstiness signals):
-- Ensure paragraph lengths vary noticeably
-- Include at least 2 very short paragraphs (1–2 sentences)
-- Include at least 2 longer paragraphs (5+ sentences)
-- Begin one paragraph with: And / But / So
+- Do NOT keep clean structure
+- Do NOT keep smooth logical flow
+- Do NOT explain everything perfectly
+- Do NOT sound formal or complete
 
-SENTENCE RHYTHM VARIATION (Perplexity signals):
-- Convert 20% of sentences into conversational variants
-- Insert 2 short sentence fragments
-- Insert 2 rhetorical questions across the article
-- Insert 1 interruption dash —
-- Insert 1 parentheses aside
+---
 
-REAL EXPERIENCE SIGNALS (EEAT + detector realism markers):
-- Add 2 timeline references such as:
-  "last year"
-  "on a recent project"
-  "earlier in my experience"
-- Add 1 beginner mistake example professionals often see
-- Add 1 realistic workflow micro-example
-- Add 1 tradeoff discussion
-- Add 1 corrected assumption moment:
-  "I used to think X, but later realized Y"
+WRITE LIKE THIS:
 
-THINKING-OUT-LOUD MARKERS (Human cognition simulation):
-Insert phrases like:
-- here's what usually happens
-- what surprised me most
-- this is where things get tricky
-- in most cases
-- probably depends on your setup
+1. Thought-driven writing
+- Let ideas form gradually instead of explaining immediately
+- Sometimes start a point, then adjust or refine it mid-sentence
 
-TRANSITION NATURALIZATION (Detector smoothing reduction):
-Replace formal transitions such as:
-- Furthermore
-- Additionally
-- Moreover
-- In conclusion
-- It is important to note
+2. Break flow
+- Allow uneven transitions
+- Let some sentences feel slightly disconnected
+- Avoid perfect continuity
 
-With conversational transitions like:
-- here's the catch
-- the interesting part is
-- what this means in practice
-- and this matters because
+3. Sentence chaos
+- Mix very short, medium, and long sentences randomly
+- Occasionally use fragments
+- Occasionally extend sentences longer than expected
 
-LEXICAL ENTROPY IMPROVEMENT:
-Rewrite approximately 15–25% of sentences using natural alternative phrasing while preserving meaning.
+4. Imperfection
+- Include slight redundancy
+- Add minor hesitation or uncertainty naturally
+- Let 1–2 sentences feel slightly awkward or spoken
 
-Allow natural repetition of important words.
-Do NOT overuse synonyms artificially.
+5. Human tone
+- Use natural phrasing instead of formal wording
+- Avoid generic or common AI phrases completely
 
-HUMAN IMPERFECTION SIGNALS:
-Insert:
-- 1 mild uncertainty phrase
-- 1 reflective observation
-- 1 practical limitation or caveat
+6. Anti-AI phrasing
+Avoid patterns like:
+- "has emerged as"
+- "plays a vital role"
+- "in conclusion"
+- "furthermore"
+- "interestingly"
 
-EXAMPLES:
-"in most real workflows"
-"this usually depends on context"
-"teams often discover this later than expected"
+Rewrite everything in less predictable ways.
 
-NUMERIC REALISM SIGNAL:
-Insert one specific non-round numeric example where appropriate.
+7. Non-linear explanation
+- Do not always follow: idea → explanation → example
+- Sometimes give example first, then explain
+- Sometimes delay clarity
 
-EXAMPLE:
-instead of "many teams improve performance"
-write "one workflow reduced response time by roughly 37%"
-
-CRITICAL DETECTOR TARGETS TO OPTIMIZE:
-Increase:
-- burstiness
-- sentence-length variation
-- paragraph-length variation
-- lexical entropy
-- practitioner tone
-- timeline references
-- micro-experience signals
-
-Reduce:
-- transition-word predictability
-- sentence uniformity
-- overly polished tone
-- symmetrical paragraph structure
-- academic-style phrasing
+---
 
 IMPORTANT:
-Preserve SEO optimization.
-Preserve EEAT signals.
-Preserve readability.
-Preserve factual meaning.
 
-Return the improved article only.
+- Do NOT follow any checklist pattern
+- Do NOT insert fixed elements (no forced questions, no fixed counts)
+- Do NOT try to sound "perfect"
+
+---
+
+FINAL GOAL:
+
+The text should feel like it was written by a real person thinking in real time—slightly messy, uneven, and not fully polished.
+
+Return only the rewritten text.
+"""
+
+HUMANIZE_SYSTEM_PROMPT_2 = """
+Perform a final pass to remove any remaining AI-like smoothness.
+
+---
+
+INSTRUCTIONS:
+
+- Find sentences that feel too clean, structured, or predictable → rewrite them
+- Slightly disrupt flow in a few places
+- Make rhythm less consistent
+- Replace any remaining formal phrasing with more natural wording
+
+---
+
+ALLOW:
+
+- minor awkward phrasing (natural, not broken)
+- slight repetition
+- uneven tone
+
+---
+
+DO NOT:
+
+- add patterns
+- add structured elements
+- over-edit everything
+
+---
+
+GOAL:
+
+Make the text feel less engineered and more like imperfect human writing.
+
+Return only the final version.
 """

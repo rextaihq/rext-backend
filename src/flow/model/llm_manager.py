@@ -28,7 +28,7 @@ def get_default_model():
 
 # Default token limits per use case
 DEFAULT_MAX_TOKENS = 4096
-CONTENT_GENERATION_MAX_TOKENS = 8192
+CONTENT_GENERATION_MAX_TOKENS = 12000
 TOPIC_GENERATION_MAX_TOKENS = 1024
 
 
@@ -85,11 +85,14 @@ def load_humanize_model():
     long-form content while preserving the original structure.
     """
     return init_chat_model(
-        "gpt-5.2",
+        "gpt-4.1",
         model_provider="openai",
+        temperature=1.2,         
+        top_p=0.92,                
+        presence_penalty=0.25,      
+        frequency_penalty=0.15,     
         api_key=settings.OPENAI_API_KEY,
         max_tokens=CONTENT_GENERATION_MAX_TOKENS,
-        reasoning_effort="low",
     )
 
 def load_humanize_model2():
@@ -102,10 +105,10 @@ def load_humanize_model2():
     return init_chat_model(
         "gpt-4.1",
         model_provider="openai",
-        temperature = 0.9,
+        temperature = 0.8,
         top_p = 0.9,
-        presence_penalty = 0.6,
-        frequency_penalty = 0.3,
+        presence_penalty = 0.2,
+        frequency_penalty = 0.2,
         api_key=settings.OPENAI_API_KEY,
         max_tokens=CONTENT_GENERATION_MAX_TOKENS,
     )

@@ -9,7 +9,7 @@ from sqlalchemy import select
 from src.api.database.async_database import AsyncSessionLocal
 from src.flow.model.llm_manager import load_humanize_model,load_humanize_model2
 from src.flow.model.structure.contents.base import BaseGeneratedContent
-from src.flow.prompts.human.humanize import get_humanize_prompt
+from src.flow.prompts.human.humanize import get_humanize_prompt,get_humanize_prompt2
 from src.flow.states.rext import REXT
 
 logger = logging.getLogger(__name__)
@@ -176,7 +176,7 @@ class HumanizeMiddleware2(AgentMiddleware):
 
         schema = self._resolve_schema(structured_response)
         model = load_humanize_model2().with_structured_output(schema)
-        messages = get_humanize_prompt().format_messages(**prompt_data)
+        messages = get_humanize_prompt2().format_messages(**prompt_data)
 
         logger.info("HumanizeMiddleware: invoking dedicated humanization model.")
         try:
