@@ -13,7 +13,7 @@ from src.flow.prompts.system.content import CONTENT_SYSTEM_PROMPT
 from langchain.agents.structured_output import ToolStrategy
 from src.flow.model.llm_manager import load_content_model
 from src.flow.engines.agent.middleware.persona_middleware import PersonaInjectionMiddleware
-from src.flow.engines.agent.middleware.humanize_middleware import HumanizeMiddleware
+from src.flow.engines.agent.middleware.humanize_middleware import HumanizeMiddleware,HumanizeMiddleware2
 from src.flow.model.llm_manager import load_model
 
 async def create_content_agent(
@@ -50,6 +50,7 @@ async def create_content_agent(
     middleware_stack = [
         PersonaInjectionMiddleware(),
         HumanizeMiddleware(),
+        HumanizeMiddleware2(),
     ]
 
     if rext_middleware:
