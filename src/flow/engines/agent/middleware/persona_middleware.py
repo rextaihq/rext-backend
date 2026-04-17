@@ -7,7 +7,6 @@ from langgraph.runtime import Runtime
 from sqlalchemy import select
 
 from src.api.models.knowledge_models.persona_model import Persona
-from src.api.models.knowledge_models.knowledge_model import BrandVoice
 from src.api.database.async_database import SyncSessionLocal
 from src.flow.states.rext import REXT
 from src.flow.states.outline import OutlineState
@@ -234,8 +233,6 @@ CONTENT ACCEPTANCE CRITERIA
 
 {PERSONA_BLOCK}
 
-{BRAND_BLOCK}
-
 ---
 
 {OUTLINE_BLOCK}
@@ -262,7 +259,7 @@ CONTENT ACCEPTANCE CRITERIA
 1. Call `search_tool` (1–2 times) upfront to gather key facts and stats for the whole article
 2. Call `generate_image` (**exactly 1 time**) to create a relevant image for the content
 3. Write the complete article, ensuring the image URL is both embedded in the markdown and included in the structured `images` list.
-4. Weave the persona's identity and expertise naturally throughout; where relevant, reflect the brand's voice, values, and audience — but never force it if the topic doesn't call for it
+4. Weave the persona's identity and expertise naturally throughout
 5. Deliver the full article — no preamble, no meta-commentary
 6. TOTAL tool calls must not exceed 6 (5 search + 1 image generation) — stop calling tools once limit is reached
 
@@ -276,17 +273,13 @@ Write the full article now with image and facts links included mimumn length sho
         workspace_id = serp_payload.get("workspace_id")
         print(f"  user_id={user_id} workspace_id={workspace_id}")
 
-        persona, brand_voice = await asyncio.gather(
-            self._fetch_persona(user_id, workspace_id),
-            self._fetch_brand_voice(workspace_id),
-        )
+        persona = await self._fetch_persona(user_id, workspace_id)
         outline: Optional[OutlineState] = (state.get("content") or {}).get("outline")
 
         print(f"  persona: {persona.name if persona else 'None'}")
-        print(f"  brand_voice: {'found' if brand_voice else 'None'}")
         print(f"  outline: {outline.get('title') if outline else 'None'}")
 
-        full_prompt = self._build_full_content_prompt(persona, outline, brand_voice)
+        full_prompt = self._build_full_content_prompt(persona, outline)
 
         sys_msg = SystemMessage(content=full_prompt, id="sys-seo-persona-outline")
         existing_messages = list(state["messages"])
@@ -302,46 +295,12 @@ Write the full article now with image and facts links included mimumn length sho
         # The async hook (abefore_agent) will be used by the agent runtime.
         return None
 
-    def _build_full_content_prompt(
-        self,
-        persona: Optional[Persona],
-        outline: Optional[OutlineState],
-        brand_voice: Optional[BrandVoice] = None,
-    ) -> str:
+    def _build_full_content_prompt(self, persona: Optional[Persona], outline: Optional[OutlineState]) -> str:
         persona_block = self._build_persona_block(persona) if persona else ""
         outline_block = self._build_outline_block(outline) if outline else ""
-
-        brand_block = ""
-        if brand_voice:
-            parts = []
-            if brand_voice.about:            parts.append(f"About: {brand_voice.about}")
-            if brand_voice.selling_position: parts.append(f"Positioning: {brand_voice.selling_position}")
-            if brand_voice.brand_voice:      parts.append(f"Brand voice: {brand_voice.brand_voice}")
-            if brand_voice.target_audience:  parts.append(f"Target audience: {brand_voice.target_audience}")
-            if brand_voice.customer_profile: parts.append(f"Customer profile: {brand_voice.customer_profile}")
-            if brand_voice.content_pillar:   parts.append(f"Content pillars: {brand_voice.content_pillar}")
-            if parts:
-                brand_block = (
-                    "## BRAND CONTEXT\n"
-                    "Weave this into the article naturally where relevant — "
-                    "don't force it into every section.\n\n"
-                    + "\n".join(parts)
-                    + "\n\n"
-                    "### How to promote the brand naturally\n"
-                    "- If the article compares tools, approaches, or solutions and the brand operates in the same domain, "
-                    "mention it as one option among others — briefly, honestly, and only if it genuinely fits the context.\n"
-                    "- Frame it as a recommendation, not an ad: \"If you're looking for X, [Brand] does this well\" "
-                    "or \"we've found [Brand] useful for exactly this kind of problem.\"\n"
-                    "- One subtle mention is enough. Do not repeat the brand name multiple times or build a section around it.\n"
-                    "- Never mention the brand in sections where it adds no value — introductions, factual explanations, "
-                    "or sections covering unrelated topics.\n"
-                    "- The goal is a natural, earned mention that feels like a genuine recommendation, not placement."
-                )
-
         return self.CONTENT_SYSTEM_PROMPT_TEMPLATE.format(
             CONTENT_INSTRUCTIONS=self.CONTENT_INSTRUCTIONS,
             PERSONA_BLOCK=persona_block,
-            BRAND_BLOCK=brand_block,
             OUTLINE_BLOCK=outline_block,
         )
 
@@ -357,19 +316,6 @@ Write the full article now with image and facts links included mimumn length sho
                     .where(Persona.workspace_id == workspace_id)
                     .order_by(Persona.created_at.desc())
                     .limit(1)
-                )
-                return result.scalar_one_or_none()
-            finally:
-                db.close()
-
-        return await asyncio.to_thread(_sync_fetch)
-
-    async def _fetch_brand_voice(self, workspace_id) -> Optional[BrandVoice]:
-        def _sync_fetch():
-            db = SyncSessionLocal()
-            try:
-                result = db.execute(
-                    select(BrandVoice).where(BrandVoice.workspace_id == workspace_id)
                 )
                 return result.scalar_one_or_none()
             finally:
