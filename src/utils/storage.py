@@ -14,15 +14,25 @@ class StorageService:
 
     def __init__(self):
         self.bucket_name = settings.MINIO_BUCKET
-        self.s3_client = boto3.client(
-            's3',
-            endpoint_url=f"{'https' if settings.MINIO_USE_SSL else 'http'}://{settings.MINIO_ENDPOINT}",
-            aws_access_key_id=settings.MINIO_ACCESS_KEY,
-            aws_secret_access_key=settings.MINIO_SECRET_KEY,
-            config=Config(signature_version='s3v4', s3={'addressing_style': 'path'}),
-            region_name='us-east-1'  # Default for MinIO
-        )
-        self._ensure_bucket_exists()
+        self._available = False
+        try:
+            self.s3_client = boto3.client(
+                's3',
+                endpoint_url=f"{'https' if settings.MINIO_USE_SSL else 'http'}://{settings.MINIO_ENDPOINT}",
+                aws_access_key_id=settings.MINIO_ACCESS_KEY,
+                aws_secret_access_key=settings.MINIO_SECRET_KEY,
+                config=Config(signature_version='s3v4'),
+                region_name='us-east-1'  # Default for MinIO
+            )
+            self._ensure_bucket_exists()
+            self._available = True
+        except Exception as e:
+            logger.warning(f"MinIO unavailable at startup, storage features disabled: {str(e)}")
+            self.s3_client = None
+
+    @property
+    def is_available(self) -> bool:
+        return self._available and self.s3_client is not None
 
     def _ensure_bucket_exists(self):
         """Checks if the bucket exists and creates it if not."""
@@ -35,28 +45,7 @@ class StorageService:
                 logger.info(f"Bucket {self.bucket_name} does not exist. Creating...")
                 self.s3_client.create_bucket(Bucket=self.bucket_name)
             else:
-                logger.error(f"Error checking bucket existence: {str(e)}")
-                return
-
-        # Set public-read policy so objects are accessible without presigned URLs
-        if settings.MINIO_PUBLIC_URL:
-            public_policy = json.dumps({
-                "Version": "2012-10-17",
-                "Statement": [{
-                    "Effect": "Allow",
-                    "Principal": {"AWS": ["*"]},
-                    "Action": ["s3:GetObject"],
-                    "Resource": [f"arn:aws:s3:::{self.bucket_name}/*"]
-                }]
-            })
-            try:
-                self.s3_client.put_bucket_policy(
-                    Bucket=self.bucket_name,
-                    Policy=public_policy
-                )
-                logger.info(f"Set public-read policy on bucket {self.bucket_name}")
-            except Exception as e:
-                logger.warning(f"Could not set bucket policy: {str(e)}")
+                raise
 
     def upload_file(
         self, 
@@ -75,6 +64,9 @@ class StorageService:
         Returns:
             The public URL of the uploaded file if successful, else None.
         """
+        if not self.is_available:
+            logger.warning(f"MinIO unavailable, skipping upload of {object_name}")
+            return None
         try:
             if isinstance(file_data, bytes):
                 file_obj = io.BytesIO(file_data)
@@ -101,10 +93,12 @@ class StorageService:
 
     def get_file_url(self, object_name: str, expires_in: int = 3600) -> str:
         """
-        Generates a URL for the object. 
+        Generates a URL for the object.
         If MINIO_PUBLIC_URL is set, returns a direct link.
         Otherwise, returns a presigned URL.
         """
+        if not self.is_available:
+            return ""
         if settings.MINIO_PUBLIC_URL:
             # Direct link if configured (e.g. via Nginx or Cloudflare)
             return f"{settings.MINIO_PUBLIC_URL.rstrip('/')}/{self.bucket_name}/{object_name}"
@@ -123,6 +117,9 @@ class StorageService:
 
     def delete_file(self, object_name: str) -> bool:
         """Deletes an object from MinIO/S3."""
+        if not self.is_available:
+            logger.warning(f"MinIO unavailable, skipping delete of {object_name}")
+            return False
         try:
             # Strip bucket name if it was included in the path (defensive)
             if object_name.startswith(f"/{self.bucket_name}/"):
@@ -143,6 +140,9 @@ class StorageService:
         If local_path is provided, saves it there.
         Otherwise, returns the content bytes.
         """
+        if not self.is_available:
+            logger.warning(f"MinIO unavailable, skipping download of {object_name}")
+            return None
         try:
             if local_path:
                 self.s3_client.download_file(self.bucket_name, object_name, local_path)
@@ -156,6 +156,8 @@ class StorageService:
 
     def check_connection(self) -> bool:
         """Verifies the connection to MinIO/S3 by attempting to head the bucket."""
+        if not self.is_available:
+            return False
         try:
             self.s3_client.head_bucket(Bucket=self.bucket_name)
             return True
@@ -163,5 +165,5 @@ class StorageService:
             logger.error(f"MinIO connection check failed: {str(e)}")
             return False
 
-# Singleton instance
+# Singleton instance — boots gracefully if MinIO is unreachable
 storage_service = StorageService()
