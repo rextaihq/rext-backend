@@ -342,10 +342,36 @@ async def is_token_blacklisted(jti: str, db) -> bool:
     Returns:
         bool: True if token is blacklisted, False otherwise.
     """
+    from src.api.cache.redis_client import cache
+
+    cache_key = f"token_bl:{jti}"
+    cached = await cache.get(cache_key)
+    if cached is not None:
+        return bool(cached)
+
     from src.api.models.user_models.token_blacklist import TokenBlacklist
     from sqlalchemy import select
     result = await db.execute(
         select(TokenBlacklist).where(TokenBlacklist.jti == jti)
     )
     blacklisted = result.scalar_one_or_none()
-    return blacklisted is not None
+    is_bl = blacklisted is not None
+
+    # Cache blacklisted tokens for 1h; non-blacklisted for 60s as a DB-hit buffer.
+    # Logout/refresh writes proactively to Redis so the 60s window doesn't apply
+    # to explicit revocations — see blacklist_token_in_cache().
+    ttl = 3600 if is_bl else 60
+    await cache.set(cache_key, is_bl, ttl=ttl)
+
+    return is_bl
+
+
+async def blacklist_token_in_cache(jti: str, expires_at_ts: int) -> None:
+    """Write a revoked JTI to Redis immediately so the next request is denied
+    without a DB round-trip. TTL is capped at the token's own expiry."""
+    from src.api.cache.redis_client import cache
+    import time
+
+    remaining = max(int(expires_at_ts - time.time()), 0)
+    if remaining > 0:
+        await cache.set(f"token_bl:{jti}", True, ttl=remaining)

@@ -27,6 +27,7 @@ from src.api.models.user_models.user_sessions import UserSession
 from src.api.models.user_models.token_blacklist import TokenBlacklist
 from src.utils.logger import logger
 from src.api.middleware.exceptions import ResourceNotFoundException
+from src.api.security.token_utils import blacklist_token_in_cache
 
 
 class SessionService:
@@ -114,17 +115,19 @@ class SessionService:
                 message="Session not found or does not belong to user"
             )
 
-        # Blacklist token 
+        # Blacklist token
         if session.jti:
+            exp_dt = self._normalize_expiry(session.expires_at)
             blacklist_entry = TokenBlacklist(
                 jti=session.jti,
                 token_type="access",
                 user_id=user_id,
                 revoked_at=datetime.now(timezone.utc),
-                expires_at=self._normalize_expiry(session.expires_at),
+                expires_at=exp_dt,
                 reason="session_revoked"
             )
             self.db.add(blacklist_entry)
+            await blacklist_token_in_cache(session.jti, int(exp_dt.timestamp()))
 
         # Deactivate session
         session.is_active = False
@@ -184,15 +187,17 @@ class SessionService:
         for session in sessions:
             # Blacklist token
             if session.jti:
+                exp_dt = self._normalize_expiry(session.expires_at)
                 blacklist_entry = TokenBlacklist(
                     jti=session.jti,
                     token_type="access",
                     user_id=user_id,
                     revoked_at=now,
-                    expires_at=self._normalize_expiry(session.expires_at),
+                    expires_at=exp_dt,
                     reason="all_sessions_revoked"
                 )
                 self.db.add(blacklist_entry)
+                await blacklist_token_in_cache(session.jti, int(exp_dt.timestamp()))
 
             # Deactivate session
             session.is_active = False
