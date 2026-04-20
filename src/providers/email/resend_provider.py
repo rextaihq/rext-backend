@@ -6,6 +6,7 @@ Implements the IEmailProvider interface for provider abstraction.
 """
 import resend
 import asyncio
+import os
 from typing import Dict, Any, Optional
 from src.providers.email.base import IEmailProvider, EmailMessage, EmailResult, EmailRecipient
 from src.config.email_config import email_config
@@ -65,6 +66,7 @@ class ResendEmailProvider(IEmailProvider):
             - Errors are caught and returned as EmailResult with success=False
             - All operations are logged for debugging and monitoring
         """
+        params: Dict[str, Any] = {}
         try:
             # Build Resend API parameters
             params = self._build_params(message)
@@ -103,6 +105,40 @@ class ResendEmailProvider(IEmailProvider):
             )
 
         except Exception as e:
+            # Local/dev convenience: if custom domain is not verified yet,
+            # retry once with Resend's shared verified sender.
+            if self._should_retry_with_dev_sender(e):
+                fallback_from = self._format_from_address(
+                    message.from_name,
+                    os.getenv("RESEND_DEV_FROM_EMAIL", "onboarding@resend.dev").strip(),
+                )
+                retry_params = dict(params)
+                retry_params["from"] = fallback_from
+
+                logger.warning(
+                    "Resend domain not verified. Retrying with development sender.",
+                    extra={
+                        "original_from": params.get("from"),
+                        "fallback_from": fallback_from,
+                        "to": [r.email for r in message.to],
+                        "subject": message.subject,
+                    },
+                )
+
+                try:
+                    response = await asyncio.to_thread(resend.Emails.send, retry_params)
+                    message_id = response.get("id") if isinstance(response, dict) else None
+                    return EmailResult(
+                        success=True,
+                        message_id=message_id,
+                        provider_response={
+                            "fallback_sender_used": True,
+                            "response": response if isinstance(response, dict) else {"raw": str(response)},
+                        },
+                    )
+                except Exception as fallback_error:
+                    e = fallback_error
+
             # Unexpected errors
             error_msg = f"Unexpected error sending email: {str(e)}"
             logger.error(
@@ -119,6 +155,22 @@ class ResendEmailProvider(IEmailProvider):
                 error=error_msg,
                 provider_response={"error_type": type(e).__name__, "error": str(e)}
             )
+
+    def _format_from_address(self, from_name: Optional[str], from_email: str) -> str:
+        """Build a Resend-compatible from address."""
+        if from_name:
+            return f"{from_name} <{from_email}>"
+        return from_email
+
+    def _should_retry_with_dev_sender(self, error: Exception) -> bool:
+        """
+        Allow automatic sender fallback only for non-production domain-verification errors.
+        """
+        env = os.getenv("ENVIRONMENT", "development").strip().lower()
+        is_non_prod = env not in {"production", "prod"}
+        message = str(error).lower()
+        is_domain_error = "domain is not verified" in message
+        return is_non_prod and is_domain_error
 
     def _build_params(self, message: EmailMessage) -> Dict[str, Any]:
         """
@@ -139,11 +191,7 @@ class ResendEmailProvider(IEmailProvider):
             - tags (optional): List of tag objects [{"name": "key", "value": "val"}]
         """
         # Build 'from' field with name if provided
-        from_address = (
-            f"{message.from_name} <{message.from_email}>"
-            if message.from_name
-            else message.from_email
-        )
+        from_address = self._format_from_address(message.from_name, message.from_email)
 
         # Required parameters
         params: Dict[str, Any] = {
