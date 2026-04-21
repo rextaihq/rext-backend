@@ -112,6 +112,12 @@ async def generate_outline(state: REXT) -> dict:
         outline_dict["title"] = topic
         outline_dict["schema_type"] = get_outline_display_name(content_type) or "blog"
 
+        # Set target_word_count to the sum of all section suggested_word_counts
+        sections = outline_dict.get("sections", [])
+        outline_dict["target_word_count"] = sum(
+            s.get("suggested_word_count") or 200 for s in sections
+        )
+
         logger.info("Outline generated successfully")
 
         return {

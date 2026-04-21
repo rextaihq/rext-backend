@@ -131,12 +131,27 @@ async def keyword_recommendation(state: REXT, config, *, runtime) -> Any:
     # Interrupt for user selection
     keyword_clusters = seo_result.get("keyword_clusters", [])
 
+    # Fallback: if no recommendations, derive them from top keyword clusters
+    display_recommendations = recommendations
+    if not display_recommendations and keyword_clusters:
+        seen = set()
+        for cluster in keyword_clusters:
+            for kw in cluster.get("keywords", []):
+                word = kw.get("keyword", "").strip()
+                if word and word.lower() != original_query.lower() and word not in seen:
+                    display_recommendations.append(word)
+                    seen.add(word)
+                    if len(display_recommendations) >= 10:
+                        break
+            if len(display_recommendations) >= 10:
+                break
+
     user_selection = interrupt(
         {
             "instruction": "Select a keyword for your content",
             "type": "keyword Selection",
             "Primary Keyword": original_query,
-            "Recommendations": recommendations,
+            "Recommendations": display_recommendations,
             "Keyword Clusters": keyword_clusters,
             "seo_state": {
                 "keyword_difficulty": keyword_difficulty,
@@ -186,7 +201,7 @@ async def keyword_recommendation(state: REXT, config, *, runtime) -> Any:
             "keyword_recommendations": {
                 "original_title": original_query,
                 "selected_keyword": primary_keyword,
-                "recommendations": recommendations,
+                "recommendations": display_recommendations,
                 "error": None,
                 "is_changed": is_changed,
                 "library_key": unique_key,
