@@ -1,6 +1,6 @@
 import logging
 from src.flow.states.rext import REXT
-from src.flow.model.structure.outlines import get_outline_model
+from src.flow.model.structure.outlines import get_outline_model, get_outline_display_name
 from src.flow.model.llm_manager import load_model
 from src.flow.prompts.human.outline import get_outline_prompt
 DEFAULT_MAX_TOKENS = 4096
@@ -110,6 +110,7 @@ async def generate_outline(state: REXT) -> dict:
         
         # Persist the selected topic as the outline title
         outline_dict["title"] = topic
+        outline_dict["schema_type"] = get_outline_display_name(content_type) or "blog"
 
         logger.info("Outline generated successfully")
 

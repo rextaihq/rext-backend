@@ -92,6 +92,14 @@ def get_outline_model(content_type: str):
     """Get the appropriate Pydantic model for a given content type."""
     return CONTENT_TYPE_TO_MODEL.get(content_type, BlogOutline)
 
+
+def get_outline_display_name(content_type: str) -> str:
+    """Convert a content type key to a human-readable display name.
+
+    e.g. 'brand-page' -> 'Brand Page', 'how-to-guide' -> 'How To Guide'
+    """
+    return content_type.replace("-", " ").title()
+
 __all__ = [
     "get_outline_model",
     "CONTENT_TYPE_TO_MODEL",
