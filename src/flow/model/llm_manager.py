@@ -103,12 +103,8 @@ def load_humanize_model2():
     long-form content while preserving the original structure.
     """
     return init_chat_model(
-        "gpt-4.1",
+        "gpt-5.2",
         model_provider="openai",
-        temperature = 0.8,
-        top_p = 0.9,
-        presence_penalty = 0.2,
-        frequency_penalty = 0.2,
         api_key=settings.OPENAI_API_KEY,
         max_tokens=CONTENT_GENERATION_MAX_TOKENS,
     )

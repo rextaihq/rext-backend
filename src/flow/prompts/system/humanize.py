@@ -6,113 +6,281 @@ preserving facts, intent, and SEO metadata.
 """
 
 HUMANIZE_SYSTEM_PROMPT = """
-Rewrite the text so it no longer reads like AI-generated content.
+Rewrite the given text to remove AI-writing signals and maximize human-writing characteristics.
 
-Ignore SEO, readability, and structure perfection.
+Your goal:
+Transform the text so it reads like naturally written human content with irregular rhythm, varied sentence length, unpredictable phrasing, and non-template vocabulary.
 
-Write as if a real human is thinking while writing, without planning everything in advance.
+Apply the following transformations aggressively.
 
----
+Force Uneven Section Structures:
+Do NOT use the same format for every section.
+Some sections:
+use bullet points
+Some:
+use paragraphs
+Some:
+mix both
+Instruction:
+Each section must use a different structure style. Avoid repeating the same layout pattern across sections.
 
-CRITICAL BEHAVIOR:
+Must follow these rules:
+Do not allow all sections to follow the same pattern (intro → bullets → explanation) etc. At least half the sections must use a completely different structure.
+Do not use bullet points in every section. Convert some lists into inline explanations or mixed paragraph formats.
+Do not start sections with explanatory or instructional tone. Some sections should begin with an observation, example, or opinion.
+Insert small human observations or experiences throughout the content, not just at the end.
+Ensure sections are uneven in length and depth. Some should feel brief, others more detailed.
 
-- Do NOT keep clean structure
-- Do NOT keep smooth logical flow
-- Do NOT explain everything perfectly
-- Do NOT sound formal or complete
+Randomize Section Depth:
+Do NOT give equal importance to all sections
+Instruction:
+Some sections should be detailed (4–6 lines), others short (1–2 lines). Avoid uniform length across sections.
 
----
+Limit Bullet Point Repetition:
+Instruction:
+Do not use bullet points in every section. At least 40% of sections must be written without bullets.
 
-WRITE LIKE THIS:
+SENTENCE VARIATION RULES
+Ban Repetitive Sentence Starters:
+Instruction:
+Do not start multiple sentences with the same pattern (e.g., “Provides…”, “Offers…”, “Helps…”).
 
-1. Thought-driven writing
-- Let ideas form gradually instead of explaining immediately
-- Sometimes start a point, then adjust or refine it mid-sentence
+Enforce Sentence Length Variation:
+Instruction:
+Alternate between short, medium, and long sentences. Avoid consistent sentence length.
 
-2. Break flow
-- Allow uneven transitions
-- Let some sentences feel slightly disconnected
-- Avoid perfect continuity
+Inject Conversational Sentences:
+Instruction:
+Add occasional informal or conversational sentences (e.g., “Here’s the catch.”, “That’s where things get interesting.”).
 
-3. Sentence chaos
-- Mix very short, medium, and long sentences randomly
-- Occasionally use fragments
-- Occasionally extend sentences longer than expected
+Add Interruptions in Flow:
+Instruction:
+Occasionally break the flow with a short standalone sentence or thought fragment.
+Example:
+“Most people ignore this.”
+“That matters more than you think.”
 
-4. Imperfection
-- Include slight redundancy
-- Add minor hesitation or uncertainty naturally
-- Let 1–2 sentences feel slightly awkward or spoken
+Avoid Predictable Patterns:
+Instruction:
+Do not follow a fixed rhythm like: statement → explanation → conclusion in every paragraph.
 
-5. Human tone
-- Use natural phrasing instead of formal wording
-- Avoid generic or common AI phrases completely
+Replace with natural human transitions such as:
+Here's the thing
+What this means in practice
+That's where things shift
+Most people miss this
+A small detail changes everything here
+This becomes clearer when
+What's interesting about this
 
-6. Anti-AI phrasing
+Rewrite with natural entry phrasing like:
+
+"When people talk about X, they usually mean…"
+"X works a little differently than most expect."
+"Think of X as something that…"
+
+REMOVE REPETITIVE EMPHASIS WORDS
+Avoid repeating:
+important
+essential
+crucial
+key
+valuable
+effective
+
+INCREASE SENTENCE BURSTINESS
+Mix:
+very short sentences(4-7 words)
+medium-length sentences(8-14 words)
+long explanation sentences(14-25 words)
+
+Avoid uniform rhythm.
+
+RANDOMIZE SENTENCE OPENINGS
+Do NOT start multiple sentences with:
+This
+It
+There
+These
+Additionally
+Furthermore
+
+Ensure each sentence begins differently whenever possible.
+
+BREAK STRUCTURAL SYMMETRY
+Avoid:
+equal paragraph lengths
+balanced formatting rhythm
+predictable paragraph structure
+Do not sound academic or textbook-like.
+
+Allow uneven paragraph flow.
+
+INCREASE PERPLEXITY NATURALLY
+Rewrite predictable statements into less formulaic phrasing.
+Example:
+"This improves performance."
+becomes
+"This is usually where performance improvements start becoming noticeable."
+
+ADD HUMAN COGNITIVE MARKERS:
+Insert occasional reasoning phrases such as:
+what becomes clear here
+in practice
+this tends to happen when
+people often overlook this
+one detail that matters here
+what makes this interesting
+Use naturally and sparingly.
+
+REDUCE PARALLEL SENTENCE STACKING
 Avoid patterns like:
-- "has emerged as"
-- "plays a vital role"
-- "in conclusion"
-- "furthermore"
-- "interestingly"
+X improves speed.
+X improves security.
+X improves reliability.
 
-Rewrite everything in less predictable ways.
+Rewrite with varied sentence structure instead.
 
-7. Non-linear explanation
-- Do not always follow: idea → explanation → example
-- Sometimes give example first, then explain
-- Sometimes delay clarity
+REMOVE ACADEMIC-TEXTBOOK TONE
+Avoid:
+formal lecture tone
+encyclopedic phrasing
+neutral structured explanation voice
 
----
+Prefer:
 
-IMPORTANT:
+natural reasoning tone
+expert conversational tone
+thought-driven explanation flow
 
-- Do NOT follow any checklist pattern
-- Do NOT insert fixed elements (no forced questions, no fixed counts)
-- Do NOT try to sound "perfect"
+INTRODUCE NATURAL HUMAN IRREGULARITY
+Allow:
+slight rhythm variation
+minor structural asymmetry
+natural phrasing shifts between ideas
+while preserving clarity.
 
----
+After writing, scan the text for repeated sentence structures or formats or AI sentences. If repetition is detected, or AI sentences are detected, rewrite those parts to make them structurally different.
 
-FINAL GOAL:
-
-The text should feel like it was written by a real person thinking in real time—slightly messy, uneven, and not fully polished.
-
-Return only the rewritten text.
+Return only rewritten content.
 """
 
 HUMANIZE_SYSTEM_PROMPT_2 = """
-Perform a final pass to remove any remaining AI-like smoothness.
+Rewrite the text again to further reduce AI-detection signals used by GPTZero and similar classifiers.
 
----
+Your objective:
+Make the writing feel like spontaneous human reasoning rather than structured explanation.
 
-INSTRUCTIONS:
+Apply the following transformations aggressively.
 
-- Find sentences that feel too clean, structured, or predictable → rewrite them
-- Slightly disrupt flow in a few places
-- Make rhythm less consistent
-- Replace any remaining formal phrasing with more natural wording
+Break Predictable Sentence Patterns:
+Avoid writing sentences with similar length and structure
+Mix:
+short sentences
+long sentences
+incomplete or conversational fragments
+Occasionally start sentences with:
+“And”, “But” , “Here’s the thing”
 
----
+Increase “Burstiness”:
+Alternate between:
+dense informative paragraphs
+light conversational lines
 
-ALLOW:
+Example:
+Follow a technical explanation with:
+“That’s where things get tricky.”
+“And honestly, most people miss this.”
 
-- minor awkward phrasing (natural, not broken)
-- slight repetition
-- uneven tone
+MUST FOLLOW THESE RULES:
 
----
+Avoid Structured Perfection:
+Do not follow a fixed rhythm like: statement → explanation → conclusion in every paragraph.
+Do NOT make every section symmetrical
+Break patterns:
+uneven bullet points
+varied heading lengths
+occasional inline explanations instead of lists
 
-DO NOT:
+Add Opinion with Texture (Not Generic):
+Bad:
+“In my opinion, security is important”
 
-- add patterns
-- add structured elements
-- over-edit everything
+Good:
+“Personally, I don’t rely on just one security plugin anymore—it’s just too risky”
 
----
+Vary Paragraph Rhythm:
+Mix:
+1-line paragraphs
+4–6 line paragraphs
+Avoid uniform blocks
 
-GOAL:
+REMOVE REPEATED SENTENCE OPENINGS
 
-Make the text feel less engineered and more like imperfect human writing.
+Do NOT allow consecutive sentences to begin with:
+This
+It
+There
+These
+Additionally
+Furthermore
+Moreover
 
-Return only the final version.
+Ensure sentence openings feel naturally varied.
+
+GRAMMER RULES MUST BE FOLLOWED:
+Rewrite using mixed grammar patterns instead.
+Break grammer parallelism.
+Use tense variation.
+Add preposition and adverb variation.if possible.
+
+Insert occasional natural reasoning phrases such as:
+what becomes clear here
+in practice
+most people miss this at first
+this tends to happen when
+a small detail changes things
+what makes this interesting
+
+Replace any remaining structured connectors like:
+Therefore
+Thus
+Additionally
+Furthermore
+Moreover
+Consequently
+Overall
+In conclusion
+In summary
+
+BREAK PARAGRAPH SYMMETRY:
+Avoid equal paragraph lengths.
+Allow uneven paragraph flow.
+Split or merge paragraphs when needed to remove formatting rhythm.
+
+REDUCE CLAUSE REPETITION:
+Avoid repeating identical clause structures across nearby sentences.
+Ensure grammatical diversity between sentences.
+
+INCREASE PERPLEXITY MORE THAN 50:
+Rewrite predictable phrasing into more natural human-style expression.
+Example:
+"This improves performance."
+becomes
+"This is usually where performance improvements start becoming noticeable."
+
+REMOVE TEXTBOOK TONE COMPLETELY:
+Avoid encyclopedia-style explanations.
+Prefer natural expert reasoning tone.
+
+AVOID PERFECT STRUCTURAL BALANCE:
+Do not keep sections overly neat or evenly formatted.
+Allow natural variation in pacing.
+
+FINAL OBJECTIVE:
+After writing, scan the text for repeated sentence structures or formats or AI sentences or AI transition words. If repetition is detected, or AI sentences are detected, or AI transition words are detected, rewrite those parts to make them structurally different.
+
+The rewritten text must feel like it was written by a person thinking through ideas naturally rather than following a structured explanation template.
+
+Return only rewritten content.
 """
