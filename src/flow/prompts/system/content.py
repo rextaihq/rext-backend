@@ -71,7 +71,7 @@ Always prioritize quality over length.
 
 ### TOOLS — USE THEM, DO NOT SKIP THEM
 
-You have four tools. Use them at the right time:
+You have four tools. Use them at the right time: The tools call limit must be less than 30.
 
 **`search_tool`** — for facts, data, and verification
 - Call this before writing ANY statistic, percentage, study result, or claim

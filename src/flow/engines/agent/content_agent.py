@@ -16,6 +16,17 @@ from src.flow.engines.agent.middleware.persona_middleware import PersonaInjectio
 from src.flow.engines.agent.middleware.humanize_middleware import HumanizeMiddleware,HumanizeMiddleware2
 from src.flow.model.llm_manager import load_model
 
+from langchain.agents.middleware import ToolCallLimitMiddleware
+
+limit_group_2 = ToolCallLimitMiddleware(
+    tool_name=("detect_ai_vocab", "AI_SIGNAL_STRENGth"),
+    run_limit=5,
+    thread_limit=50,
+    exit_behavior="continue"   # IMPORTANT
+)
+
+
+
 async def create_content_agent(
     model: Optional[Any] = None,
     tools: Optional[Sequence[BaseTool | Callable | dict[str, Any]]] = None,
@@ -48,6 +59,7 @@ async def create_content_agent(
 
     # Middleware Stack
     middleware_stack = [
+        limit_group_2,
         PersonaInjectionMiddleware(),
         HumanizeMiddleware(),
         HumanizeMiddleware2(),
