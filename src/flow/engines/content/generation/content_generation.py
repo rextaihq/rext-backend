@@ -144,12 +144,10 @@ async def generate_content(state: REXT) -> dict:
             )
 
         # 6️⃣ Build the human message for the agent
-        # (system prompt is already embedded in the agent)
-        outline_schema = json.dumps(get_outline_model(content_type).model_json_schema(), indent=2)
+        # (system prompt is already embedded in the agent
         human_message_content = (
             f"Content Type: {content_type}\n"
             f"Topic: {topic}\n\n"
-            f"Outline Schema & Requirements for this content type:\n{outline_schema}\n\n"
             f"Primary Keyword: {primary_keyword}\n"
             f"Target Word Count: {target_word_count} words (minimum)\n\n"
             f"COMPETITIVE LANDSCAPE:\n"
