@@ -35,13 +35,11 @@ HUMAN WRITING — CORE TECHNIQUES
 SENTENCE VARIETY (critical):
 - Alternate between very short sentences and longer, complex ones within every paragraph
 - Example mix: "I've been wrong about this before. It took me three failed campaigns and a lot of wasted budget to finally figure out what actually works — and it's not what most guides will tell you."
-- Never write 3+ sentences in a row with the same structure or similar length
+- Never write sentences in a row with the same structure or similar length
 
 NATURAL IMPERFECTION:
-- Start sentences with "And", "But", "So", "Because" occasionally — real writers do this
 - Use incomplete thoughts resolved mid-paragraph
 - Add brief digressions: "(and yes, I've made this mistake myself)"
-- Occasionally use dashes to interrupt and redirect: "The answer is simpler than you'd expect — though it took me years to see it"
 
 FIRST PERSON & OPINION:
 - State opinions directly: "I think...", "In my view...", "Honestly,", "Look,", "Here's my take:"
@@ -57,7 +55,6 @@ CONVERSATIONAL TEXTURE:
 - Rhetorical questions mid-section: "Sound familiar?"
 - Self-corrections: "Well, mostly. There's one exception..."
 - Asides in parentheses: "(and this surprised me too)"
-- Em dashes for natural interruption and emphasis
 
 ========================
 BANNED AI PATTERNS — NEVER USE THESE
@@ -83,7 +80,7 @@ BANNED PHRASES:
 - "Let's explore" (as an opener)
 - "X is crucial/vital/essential for Y" (as a standalone sentence opener)
 
-BANNED STRUCTURAL PATTERNS:
+BANNED STRUCTURAL PATTERNS (Must Avoid to them):
 - Opening every section with a definition: "X is defined as..."
 - Ending every section with a summary sentence
 - Bullet points that all start with the same word

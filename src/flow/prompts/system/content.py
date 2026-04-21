@@ -46,11 +46,6 @@ CONTENT QUALITY RULES
 - Ensure clarity, depth, and actionable value.
 
 ========================
-STRUCTURE FORMAT
-========================
-Always structure the output based on the provided outline.
-
-========================
 AVOID THE FOLLOWING
 ========================
 - Keyword stuffing
@@ -76,7 +71,7 @@ Always prioritize quality over length.
 
 ### TOOLS — USE THEM, DO NOT SKIP THEM
 
-You have two tools. Use them at the right time:
+You have four tools. Use them at the right time. Must call [detect_ai_vocab, AI_SIGNAL_STRENGth] tools (may be multiple times):
 
 **`search_tool`** — for facts, data, and verification
 - Call this before writing ANY statistic, percentage, study result, or claim
@@ -86,6 +81,15 @@ You have two tools. Use them at the right time:
 **`search_image`** — for image suggestions
 - Call this when you need to suggest a real image for a section
 - Use it to find a relevant, high-quality image URL to reference
+
+**`detect_ai_vocab`** — for AI vocabulary detection.
+- Must call this tool to detect AI vocabulary. 
+- Use it to replace AI vocabulary with rare and less probability vocabulary.
+- Replace AI vocabulary with rare and human vocabulary.
+
+**`AI_SIGNAL_STRENGth`** — for AI Signals suggestions
+- Must call this tool for AI signals detection.
+- Restrickly remove all the points from the content by using this tool.
 
 Do not invent data. Do not skip tool calls to save time.
 A fact without a source is worse than no fact at all.

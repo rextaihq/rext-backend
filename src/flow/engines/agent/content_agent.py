@@ -59,7 +59,7 @@ async def create_content_agent(
     return create_agent(
         model=model,
         tools=tools,
-        # system_prompt=system_prompt,
+        system_prompt=CONTENT_SYSTEM_PROMPT,
         middleware=middleware_stack,
         debug=debug,
         name=name,

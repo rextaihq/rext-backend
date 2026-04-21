@@ -35,7 +35,6 @@ router = APIRouter(
 
 
 @router.get("/{workspace_id}/permissions/me", response_model=SuccessResponse[MyWorkspacePermissionsResponse])
-@require_permissions("member.read", workspace_scoped=True)
 async def get_my_workspace_permissions(
     workspace_id: str,
     user: dict = Depends(get_current_user),
@@ -74,7 +73,6 @@ async def get_my_workspace_permissions(
 
 
 @router.get("/{workspace_id}/permissions/check", response_model=SuccessResponse[CheckWorkspacePermissionResponse])
-@require_permissions("member.read", workspace_scoped=True)
 async def check_workspace_permission(
     workspace_id: str,
     permission: str,
@@ -117,7 +115,6 @@ async def check_workspace_permission(
     )
 
 @router.post("/{workspace_id}/permissions/refresh", response_model=SuccessResponse[MyWorkspacePermissionsResponse])
-@require_permissions("member.read", workspace_scoped=True)
 async def refresh_workspace_permissions(
     workspace_id: str,
     user: dict = Depends(get_current_user),
