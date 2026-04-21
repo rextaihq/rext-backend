@@ -66,7 +66,7 @@ async def create_content_agent(
         cache=cache,
         store=agent_store,
         response_format=response_format,
-    ).with_config({"recursion_limit": 50})
+    ).with_config({"recursion_limit": 100})
 
 
 if __name__ == "__main__":
