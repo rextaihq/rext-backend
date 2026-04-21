@@ -76,7 +76,7 @@ services:
 
     # Backend API Service
     rext-api:
-        image: ghcr.io/revnix/rext-backend:${IMAGE_TAG:-latest}
+        image: ghcr.io/rextaihq/rext-backend:${IMAGE_TAG:-latest}
         restart: unless-stopped
         labels:
             - "traefik.enable=true"
