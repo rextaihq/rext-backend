@@ -76,7 +76,7 @@ services:
 
     # Backend API Service
     rext-api:
-        image: ghcr.io/revnix/rext-backend:${IMAGE_TAG:-latest}
+        image: ghcr.io/rextaihq/rext-backend:${IMAGE_TAG:-latest}
         restart: unless-stopped
         labels:
             - "traefik.enable=true"
@@ -206,7 +206,7 @@ services:
             LEMONSQUEEZY_API_KEY: ${LEMONSQUEEZY_API_KEY}
             LEMONSQUEEZY_SANDBOX_MODE: ${LEMONSQUEEZY_SANDBOX_MODE}
             LEMONSQUEEZY_STORE_ID: ${LEMONSQUEEZY_STORE_ID}
-            
+
             # Encription
             FIELD_ENCRYPTION_KEY: ${FIELD_ENCRYPTION_KEY}
 
