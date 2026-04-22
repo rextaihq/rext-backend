@@ -15,7 +15,6 @@ services:
     # Redis for LangGraph
     langgraph-redis:
         image: redis:7-alpine
-        command: redis-server --maxmemory 256mb --maxmemory-policy noeviction
         healthcheck:
             test: [ "CMD", "redis-cli", "ping" ]
             interval: 5s
@@ -38,6 +37,8 @@ services:
             POSTGRES_DB: ${POSTGRES_DB}
         volumes:
             - langgraph-data:/var/lib/postgresql/data
+        ports:
+            - "5433:5432"
         command: >
             postgres
             -c shared_buffers=2GB
@@ -217,6 +218,13 @@ services:
             MINIO_BUCKET: ${MINIO_BUCKET:-rext-media}
             MINIO_USE_SSL: ${MINIO_USE_SSL:-false}
             MINIO_PUBLIC_URL: ${MINIO_PUBLIC_URL}
+
+            # Shopify App Bridge
+            SHOPIFY_APP_SLUG: ${SHOPIFY_APP_SLUG:-rext-publisher-1}
+            SHOPIFY_APP_ENTRY_PATH: ${SHOPIFY_APP_ENTRY_PATH:-/app/blogpost}
+            SHOPIFY_BRIDGE_BASE_URL: ${SHOPIFY_BRIDGE_BASE_URL}
+            SHOPIFY_BRIDGE_PUBLISH_ENDPOINT: ${SHOPIFY_BRIDGE_PUBLISH_ENDPOINT:-/app/api/rext/publish}
+            SHOPIFY_BRIDGE_SHARED_SECRET: ${SHOPIFY_BRIDGE_SHARED_SECRET}
 
     # MinIO Storage Service
     minio:

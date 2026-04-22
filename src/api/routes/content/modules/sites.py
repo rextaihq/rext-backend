@@ -26,6 +26,13 @@ from src.api.models import WorkspaceIntegration, Content
 from src.web.wordpress import WordPressPublisher
 from src.utils.workspace_utils import resolve_and_verify_workspace
 from src.utils.response_utils import success
+from src.api.config import settings
+from src.web.shopify_bridge import (
+    ShopifyAppBridge,
+    build_admin_app_launch_url,
+    extract_store_handle,
+    normalize_store_url,
+)
 
 router = APIRouter()
 
@@ -89,12 +96,36 @@ async def connect_site(
     user_id = user.get("identity")
     workspace, _ = await resolve_and_verify_workspace(db, workspace_id, UUID(user_id))
     
-    # Validate connection if API Key is provided
-    if data.api_key:
+    config_json = dict(data.config_json or {})
+    site_url = data.site_url
+
+    if data.integration_type.lower() == "shopify":
+        if not site_url:
+            raise RextValidationException(message="Shopify store URL is required.")
+
+        site_url = normalize_store_url(site_url)
+        store_handle = extract_store_handle(site_url)
+        app_slug = (config_json.get("app_slug") or settings.SHOPIFY_APP_SLUG).strip()
+        app_entry_path = config_json.get("app_entry_path") or settings.SHOPIFY_APP_ENTRY_PATH
+        app_launch_url = build_admin_app_launch_url(
+            store_handle=store_handle,
+            app_slug=app_slug,
+            entry_path=app_entry_path,
+        )
+        config_json.update(
+            {
+                "connection_mode": "app_bridge",
+                "app_slug": app_slug,
+                "app_launch_url": app_launch_url,
+            }
+        )
+
+    # Validate WordPress plugin connection if API Key is provided
+    if data.integration_type.lower() != "shopify" and data.api_key:
         try:
-            logger.info(f"Validating site connection for {data.site_url} using Rext-AI plugin")
+            logger.info(f"Validating site connection for {site_url} using Rext-AI plugin")
             async with WordPressPublisher(
-                site_url=data.site_url,
+                site_url=site_url,
                 api_endpoint=data.api_endpoint,
                 api_key=data.api_key
             ) as wp_publisher:
@@ -111,19 +142,23 @@ async def connect_site(
         workspace_id=workspace.id,
         integration_type=data.integration_type,
         is_active=data.is_active,
-        site_url=data.site_url,
+        site_url=site_url,
         api_endpoint=data.api_endpoint,
         username=data.username,
         app_password=data.app_password,
         api_key=data.api_key,
-        config_json=data.config_json
+        config_json=config_json or data.config_json
     )
     
     db.add(new_site)
     await db.flush()
+
+    response_data = {"site": new_site.to_dict()}
+    if data.integration_type.lower() == "shopify":
+        response_data["app_launch_url"] = (new_site.config_json or {}).get("app_launch_url")
     
     return success(
-        data={"site": new_site.to_dict()},
+        data=response_data,
         request=request,
         message="Site connected successfully"
     )
@@ -169,12 +204,34 @@ async def update_site(
     
     if data.integration_type is not None: site.integration_type = data.integration_type
     if data.is_active is not None: site.is_active = data.is_active
-    if data.site_url is not None: site.site_url = data.site_url
+    if data.site_url is not None:
+        if (data.integration_type or site.integration_type).lower() == "shopify":
+            site.site_url = normalize_store_url(data.site_url)
+        else:
+            site.site_url = data.site_url
     if data.api_endpoint is not None: site.api_endpoint = data.api_endpoint
     if data.username is not None: site.username = data.username
     if data.app_password is not None: site.app_password = data.app_password
     if data.api_key is not None: site.api_key = data.api_key
     if data.config_json is not None: site.config_json = data.config_json
+
+    if site.integration_type.lower() == "shopify":
+        config_json = dict(site.config_json or {})
+        app_slug = (config_json.get("app_slug") or settings.SHOPIFY_APP_SLUG).strip()
+        app_entry_path = config_json.get("app_entry_path") or settings.SHOPIFY_APP_ENTRY_PATH
+        store_handle = extract_store_handle(site.site_url)
+        config_json.update(
+            {
+                "connection_mode": "app_bridge",
+                "app_slug": app_slug,
+                "app_launch_url": build_admin_app_launch_url(
+                    store_handle=store_handle,
+                    app_slug=app_slug,
+                    entry_path=app_entry_path,
+                ),
+            }
+        )
+        site.config_json = config_json
     
     return success(
         data={"site": site.to_dict()},
@@ -327,21 +384,47 @@ async def publish_to_site(
             
     elif site.integration_type.lower() == "shopify":
         try:
-            from src.web.shopify import ShopifyConnector
-            async with ShopifyConnector(
-                store_url=site.site_url,
-                access_token=site.api_key
-            ) as shopify:
-                is_published = data.status == "publish"
-                body_to_use = content.body_html or content.body_markdown or ""
-                
-                shop_resp = await shopify.publish_blog_post(
-                    title=content.title,
-                    body_html=body_to_use,
-                    tags=(content.seo_data.content_primary_keywords if content.seo_data else []),
-                    published=is_published,
-                    handle=content.slug
+            config_json = site.config_json or {}
+            connection_mode = str(config_json.get("connection_mode") or "").lower()
+            use_bridge = connection_mode == "app_bridge" or not site.api_key
+
+            is_published = data.status == "publish"
+            body_to_use = content.body_html or content.body_markdown or ""
+            tags = content.tags or (content.seo_data.content_primary_keywords if content.seo_data else [])
+
+            if use_bridge:
+                bridge = ShopifyAppBridge(
+                    shared_secret=settings.SHOPIFY_BRIDGE_SHARED_SECRET,
+                    base_url=settings.SHOPIFY_BRIDGE_BASE_URL,
+                    publish_endpoint=settings.SHOPIFY_BRIDGE_PUBLISH_ENDPOINT,
+                    fallback_secret_seed=settings.SECRET_KEY,
                 )
+                shop_resp = await bridge.publish_blog_post(
+                    store_url=site.site_url,
+                    title=content.title,
+                    body=body_to_use,
+                    tags=tags,
+                    published=is_published,
+                    handle=content.slug,
+                    feature_image_url=None,
+                    content_id=str(content.id),
+                    workspace_id=str(workspace.id),
+                    config_json=config_json,
+                )
+            else:
+                from src.web.shopify import ShopifyConnector
+
+                async with ShopifyConnector(
+                    store_url=site.site_url,
+                    access_token=site.api_key
+                ) as shopify:
+                    shop_resp = await shopify.publish_blog_post(
+                        title=content.title,
+                        body_html=body_to_use,
+                        tags=tags,
+                        published=is_published,
+                        handle=content.slug
+                    )
                 
             # Update content status
             content.status = "published"
@@ -349,10 +432,14 @@ async def publish_to_site(
             content.shopify_article_url = shop_resp.get("article_url")
             content.shopify_published_at = datetime.now(timezone.utc)
             
-            return {
-                "shopify_result": shop_resp,
-                "content_id": str(content.id)
-            }
+            return success(
+                data={
+                    "shopify_result": shop_resp,
+                    "content_id": str(content.id)
+                },
+                request=request,
+                message="Content published successfully"
+            )
         except Exception as e:
             logger.error(f"Failed to publish to Shopify: {e}")
             raise RextValidationException(message=f"Shopify publishing failed: {str(e)}")

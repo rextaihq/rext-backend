@@ -120,6 +120,38 @@ REDIS_URI = redis://langgraph-redis:6379
 
 ```
 
+### Shopify App Bridge Integration
+
+Rext now connects Shopify in app-bridge mode by default. Users only provide a
+store URL (`monitod`, `monitod.myshopify.com`, or full `https://...`). The
+backend normalizes this to `https://{handle}.myshopify.com` and returns an app
+launch URL in this format:
+
+`https://admin.shopify.com/store/{store_handle}/apps/{app_slug}/app/blogpost`
+
+The saved integration config includes:
+- `connection_mode: app_bridge`
+- `app_slug`
+- `app_launch_url`
+- optional `bridge_publish_url` override
+
+Bridge publish contract (Rext -> Shopify app endpoint):
+- Method: `POST`
+- Default endpoint: `/app/api/rext/publish`
+- JSON fields: `storeUrl`, `storeHandle`, `title`, `body`, `published`,
+    `tags`, `handle`, `featureImageUrl`, `contentId`, `workspaceId`
+- HMAC headers:
+    - `X-Rext-Timestamp`
+    - `X-Rext-Signature` where signature is hex HMAC-SHA256 over
+        `timestamp.payload`
+
+Required/important env vars:
+- `SHOPIFY_APP_SLUG` (default: `rext-publisher-1`)
+- `SHOPIFY_APP_ENTRY_PATH` (default: `/app/blogpost`)
+- `SHOPIFY_BRIDGE_BASE_URL` (recommended for server-to-server publish)
+- `SHOPIFY_BRIDGE_PUBLISH_ENDPOINT` (default: `/app/api/rext/publish`)
+- `SHOPIFY_BRIDGE_SHARED_SECRET` (required for signed bridge requests)
+
 3. Update configuration in `config/config.yaml`
 
 ## Usage
