@@ -106,8 +106,10 @@ async def generate_content(state: REXT) -> dict:
 
         # 5️⃣ Extract Tone & Metadata
         tone = outline.get("tone", "Professional")
+        target_audience = outline.get("target_audience", [])
+        target_audience_str = ", ".join(target_audience) if target_audience else "General audience"
         target_word_count = outline.get("target_word_count", 1500)
-        logger.info(f"Tone: {tone}")
+        logger.info(f"Tone: {tone}, Target Audience: {target_audience_str}")
 
         # Extract key_facts and image_suggestions from the outline
         key_facts = outline.get("key_facts", []) or []
@@ -161,6 +163,7 @@ async def generate_content(state: REXT) -> dict:
             f"Reference / Source Content:\n{page_content}\n\n"
             f"Meta_data:\n{meta_data}\n\n"
             f"Tone:\n{tone}\n\n"
+            f"Target Audience:\n{target_audience_str}\n\n"
             f"Internal_links:\n{urls_str}\n\n"
             f"Generate complete SEO-optimized content following the outline.\n"
             f"Incorporate ALL key facts listed above verbatim in the relevant sections.\n"

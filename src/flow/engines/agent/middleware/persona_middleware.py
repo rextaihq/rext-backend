@@ -229,6 +229,8 @@ CONTENT ACCEPTANCE CRITERIA
 """
 
     CONTENT_SYSTEM_PROMPT_TEMPLATE = """
+{WRITING_DIRECTIVES_BLOCK}
+
 {CONTENT_INSTRUCTIONS}
 
 {PERSONA_BLOCK}
@@ -278,8 +280,16 @@ Write the full article now with image and facts links included mimumn length sho
 
         print(f"  persona: {persona.name if persona else 'None'}")
         print(f"  outline: {outline.get('title') if outline else 'None'}")
+        print(f"  tone: {outline.get('tone') if outline else 'None'}")
+        print(f"  target_audience: {outline.get('target_audience') if outline else 'None'}")
 
-        full_prompt = self._build_full_content_prompt(persona, outline)
+        audience_research: dict[str, str] = {}
+        if outline and outline.get("target_audience"):
+            print(f"  [audience research] searching for: {outline['target_audience']}")
+            audience_research = await self._research_audience(outline["target_audience"])
+            print(f"  [audience research] done — {len(audience_research)} audiences enriched")
+
+        full_prompt = self._build_full_content_prompt(persona, outline, audience_research)
 
         sys_msg = SystemMessage(content=full_prompt, id="sys-seo-persona-outline")
         existing_messages = list(state["messages"])
@@ -295,17 +305,51 @@ Write the full article now with image and facts links included mimumn length sho
         # The async hook (abefore_agent) will be used by the agent runtime.
         return None
 
-    def _build_full_content_prompt(self, persona: Optional[Persona], outline: Optional[OutlineState]) -> str:
+    def _build_full_content_prompt(self, persona: Optional[Persona], outline: Optional[OutlineState], audience_research: dict[str, str] | None = None) -> str:
         persona_block = self._build_persona_block(persona) if persona else ""
         outline_block = self._build_outline_block(outline) if outline else ""
+        writing_directives_block = self._build_writing_directives_block(outline, audience_research)
         return self.CONTENT_SYSTEM_PROMPT_TEMPLATE.format(
+            WRITING_DIRECTIVES_BLOCK=writing_directives_block,
             CONTENT_INSTRUCTIONS=self.CONTENT_INSTRUCTIONS,
             PERSONA_BLOCK=persona_block,
             OUTLINE_BLOCK=outline_block,
         )
 
+    def _build_writing_directives_block(self, outline: Optional[OutlineState], audience_research: dict[str, str] | None = None) -> str:
+        if not outline:
+            return ""
+        tone = outline.get("tone", "")
+        target_audience = outline.get("target_audience", [])
+        if not tone and not target_audience:
+            return ""
+        lines = ["## ⚠️ WRITING DIRECTIVES — READ FIRST"]
+        if tone:
+            lines += [
+                "",
+                f"**TONE: {tone}**",
+                f"Every sentence must reflect a {tone} tone. This overrides any default style guidance below.",
+            ]
+        if target_audience:
+            audiences = ", ".join(target_audience)
+            lines += [
+                "",
+                f"**TARGET AUDIENCE: {audiences}**",
+                f"You are writing exclusively for: {audiences}.",
+                "- Use vocabulary, analogies, and examples that resonate directly with this audience.",
+                "- Reference their world, tools, platforms, and challenges by name throughout the content.",
+                "- Do NOT write for a general audience. Every section should feel written for this specific reader.",
+            ]
+            if audience_research:
+                lines += ["", "**AUDIENCE INTELLIGENCE — apply this to every section:**"]
+                for audience, context in audience_research.items():
+                    if context:
+                        lines += [f"\n*{audience}:*", context.strip()]
+        lines += ["", "---"]
+        return "\n".join(lines)
+
     # ------------------------------------------------------------------
-    # DB fetch (UNCHANGED)
+    # DB fetch
     # ------------------------------------------------------------------
     async def _fetch_persona(self, user_id, workspace_id) -> Optional[Persona]:
         def _sync_fetch():
@@ -323,8 +367,22 @@ Write the full article now with image and facts links included mimumn length sho
 
         return await asyncio.to_thread(_sync_fetch)
 
+    async def _research_audience(self, audiences: list[str]) -> dict[str, str]:
+        from src.flow.engines.agent.tools.tools import search_tool
+
+        results: dict[str, str] = {}
+        for audience in audiences[:2]:  # cap at 2 to avoid latency/rate limits
+            query = f"{audience} professionals pain points tools vocabulary daily challenges"
+            try:
+                raw = await asyncio.to_thread(search_tool.invoke, query)
+                results[audience] = str(raw)[:800]
+            except Exception as e:
+                print(f"  [audience research] search failed for '{audience}': {e}")
+                results[audience] = ""
+        return results
+
     # ------------------------------------------------------------------
-    # Message builders (UNCHANGED)
+    # Message builders
     # ------------------------------------------------------------------
     def _build_persona_block(self, persona: Persona) -> str:
         name = persona.full_name or persona.name
@@ -382,11 +440,11 @@ Write the full article now with image and facts links included mimumn length sho
             lines.append(f"\nBrief:\n{outline['brief']}")
 
         if outline.get("tone"):
-            lines.append(f"\nTone: {outline['tone']}")
+            lines.append(f"\n**TONE — MANDATORY: Write every sentence in a {outline['tone']} tone. Do not default to professional or neutral.**")
 
         if outline.get("target_audience"):
             audiences = ", ".join(outline["target_audience"])
-            lines.append(f"Target audience: {audiences}")
+            lines.append(f"**TARGET AUDIENCE — MANDATORY: This content is written exclusively for: {audiences}. Calibrate every word choice, analogy, and depth of explanation for this reader. Assume their knowledge level and adjust accordingly. Do not write for a general audience.**")
 
         if outline.get("keywords_to_include"):
             keywords = ", ".join(outline["keywords_to_include"])
