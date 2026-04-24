@@ -89,7 +89,7 @@ def load_humanize_model():
         model_provider="openai",
         api_key=settings.OPENAI_API_KEY,
         max_tokens=CONTENT_GENERATION_MAX_TOKENS,
-        reasoning_effort="low",
+        reasoning_effort="high",
     )
 
 
