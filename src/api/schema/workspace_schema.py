@@ -121,5 +121,5 @@ class WorkspaceUpdateSchema(BaseModel):
     """Schema for updating workspace metadata."""
     name: Optional[str] = Field(None, min_length=1, max_length=255, description="New workspace name")
     timezone: Optional[str] = Field(None, max_length=50, description="IANA timezone identifier (e.g., America/New_York)")
-    url: HttpUrl = Field(..., description="Workspace URL")
+    url: Optional[HttpUrl] = Field(None, description="Workspace URL")
     

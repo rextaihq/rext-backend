@@ -1,5 +1,7 @@
 from typing import List, Optional, Literal
-from pydantic import BaseModel, Field, conlist
+from pydantic import BaseModel, Field, conlist, field_validator
+
+
 
 
 class ImageSuggestion(BaseModel):
@@ -48,6 +50,12 @@ class Section(BaseModel):
     snippet_target: Optional[bool] = False
     search_intent: Literal["informational", "commercial", "navigational", "transactional"] = "informational"
     suggested_word_count: Optional[int] = 200
+
+    @field_validator("suggested_word_count", mode="before")
+    @classmethod
+    def _coerce_word_count(cls, v):
+        return v if v is not None else 200
+
     include_keyphrase_in_heading: bool = Field(
         default=False,
         description="Whether this heading should include the focus keyphrase or a variant."
