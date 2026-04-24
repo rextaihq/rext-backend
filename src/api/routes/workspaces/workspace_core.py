@@ -338,7 +338,7 @@ async def update_workspace(
         user_id=UUID(user_id),
         name=name,
         timezone=data.timezone,
-        url=data.url,
+        url=str(data.url) if data.url else None,
     )
 
     logger.info(

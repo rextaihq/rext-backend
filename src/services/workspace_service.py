@@ -317,6 +317,7 @@ class WorkspaceService:
             tz=timezone,
             url=url,
         )
+        await self.db.flush()
         await self.db.refresh(updated)
         return self._serialize_workspace(updated)
 
