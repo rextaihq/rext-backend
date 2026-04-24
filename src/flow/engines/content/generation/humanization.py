@@ -3,7 +3,7 @@ import json
 from langchain_core.messages import SystemMessage, HumanMessage
 from src.flow.states.rext import REXT
 from src.flow.prompts.system.humanize import HUMANIZE_SYSTEM_PROMPT
-from src.flow.model.llm_manager import load_content_model
+from src.flow.model.llm_manager import load_humanize_model
 
 logger = logging.getLogger(__name__)
 
@@ -45,7 +45,7 @@ async def humanize_content(state: REXT) -> dict:
             }
 
         logger.info("Humanizing AI-generated content...")
-        model = load_content_model()
+        model = load_humanize_model()
 
         async def humanize_text(text: str, part_name: str) -> str:
             if not text or len(text.strip()) < 50:  # Skip very short snippets
@@ -57,13 +57,13 @@ async def humanize_content(state: REXT) -> dict:
                 "1. DO NOT remove, alter, or hallucinate facts, statistics, or specific data points.\n"
                 "2. DO NOT remove or alter any URLs or Markdown links (e.g., [text](url)).\n"
                 "3. DO NOT remove or alter any Markdown images (e.g., ![alt](url)).\n"
-                "4. Maintain the Markdown structure (headings, lists, bold/italic) while humanizing the prose."
+                # "4. Maintain the Markdown structure (headings, lists, bold/italic) while humanizing the prose."
             )
 
             messages = [
                 SystemMessage(content=HUMANIZE_SYSTEM_PROMPT + preservation_instruction),
                 HumanMessage(
-                    content=f"Humanize the following {part_name} of the article. Follow the output format (Draft, Analysis, Final rewrite):\n\n{text}"
+                    content=f"Humanize the following {part_name} of the content. Rewrite this content:\n\n{text}"
                 ),
             ]
 
