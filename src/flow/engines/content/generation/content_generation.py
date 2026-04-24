@@ -360,6 +360,9 @@ async def generate_content(state: REXT) -> dict:
         if not content_dict:
             raise ValueError("Content agent returned no structured output")
 
+        # Persist the outline title (= selected topic) into generated content
+        content_dict["title"] = outline.get("title") or topic
+
         logger.info(f"Content generated successfully: {content_dict.get('title', '')}")
 
         # Return structured content

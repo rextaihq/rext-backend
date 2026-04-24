@@ -1,5 +1,6 @@
 from typing import List, Optional
 from pydantic import BaseModel, Field
+from pydantic.json_schema import SkipJsonSchema
 from src.flow.model.structure.content import ImageAltText, Link, SchemaMarkup
 from typing import Any
 from pydantic import model_validator
@@ -8,9 +9,9 @@ from src.flow.model.structure.outline import Fact
 
 class BaseGeneratedContent(BaseModel):
     """Base model for all generated content types."""
-    title: str = Field(description="Final SEO-optimized article title starting with the keyphrase.")
+    title: SkipJsonSchema[str] = ""  # set programmatically from outline, not by LLM
     slug: Optional[str] = Field(default=None, description="URL-friendly slug containing the keyphrase.")
-    meta_title: Optional[str] = Field(default=None, description="Meta title (50-60 chars).")
+    meta_title: Optional[str] = Field(default=None, description="Meta title — use the exact outline title, do not truncate.")
     meta_description: Optional[str] = Field(default=None, description="Meta description (150-160 chars).")
     tags: List[str] = Field(default_factory=list, description="List of tags.")
     focus_keyphrase: Optional[str] = Field(default=None, description="Primary focus keyphrase.")

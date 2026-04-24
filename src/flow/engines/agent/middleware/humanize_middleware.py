@@ -27,7 +27,6 @@ class HumanizeMiddleware(AgentMiddleware):
     state_schema = REXT
 
     HUMANIZED_FIELDS = {
-        "title",
         "introduction",
         "body_markdown",
     }
@@ -47,7 +46,7 @@ class HumanizeMiddleware(AgentMiddleware):
         if not body_markdown:
             logger.info("HumanizeMiddleware: body_markdown missing; skipping.")
             return None
-        
+
         prompt_data = self._build_prompt_data(
             content_payload=original_payload,
         )

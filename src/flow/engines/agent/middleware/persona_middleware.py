@@ -116,7 +116,7 @@ FACT CITATION RULES
 ========================
 CORE SEO REQUIREMENTS
 ========================
-- Write a compelling page title (50–60 characters)
+- Write a compelling page title (use the exact title from the outline — do not shorten or modify it)
 - Include the primary keyword naturally in:
   - Title
   - First 100 words (introduction)
