@@ -303,6 +303,15 @@ async def generate_content(state: REXT) -> dict:
                 elif isinstance(raw_output, dict):
                     results = [raw_output]
 
+                # Detect hard-cap block: single dict with "error" key containing "cap"
+                if (
+                    len(results) == 1
+                    and isinstance(results[0], dict)
+                    and "cap" in results[0].get("error", "").lower()
+                ):
+                    write({"type": "tool_end", "id": event_run_id, "blocked": True})
+                    continue
+
                 count = len(results)
                 lines = []
                 for item in results[:3]:
