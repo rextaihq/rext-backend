@@ -505,9 +505,6 @@ IMPORTANT INSTRUCTIONS FOR BRAND INFORMATION:
 
 IMPORTANT INSTRUCTIONS FOR PERSONAS:
 - Priority 1: Extract REAL INDIVIDUALS mentioned on the website (Authors, Founders, Team Members).
-- Priority 2: If no real individuals are found, suggest 1-2 REALISTIC 'Target Customer Personas' based on the product. 
-- Give them realistic representative names (e.g., "Founder Sarah", "Marketing Manager Mark").
-- DO NOT use placeholder names like "User 1".
 
 For each PERSONA extracted, provide:
 - name: The person's name or a representative title.

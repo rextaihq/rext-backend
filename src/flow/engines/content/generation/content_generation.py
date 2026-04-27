@@ -13,6 +13,7 @@ from langgraph.config import get_stream_writer
 from src.flow.states.rext import REXT
 from src.flow.engines.agent.content_agent import create_content_agent
 from src.flow.model.structure.contents import get_generated_content_model
+from src.flow.model.structure.outlines import get_outline_model
 
 logger = logging.getLogger(__name__)
 
@@ -143,7 +144,7 @@ async def generate_content(state: REXT) -> dict:
             )
 
         # 6️⃣ Build the human message for the agent
-        # (system prompt is already embedded in the agent)
+        # (system prompt is already embedded in the agent
         human_message_content = (
             f"Content Type: {content_type}\n"
             f"Topic: {topic}\n\n"
@@ -183,7 +184,11 @@ async def generate_content(state: REXT) -> dict:
                 "user_id": user_id,
                 "workspace_id": workspace_id,
             },
-            "content": {"outline": outline},
+            "content": {
+                "outline": outline,
+                "selected_topic": topic,
+                "content_type": content_type,
+            },
         }
 
         # 8️⃣ Stream agent events → forward tokens & tool calls to frontend
@@ -319,9 +324,9 @@ async def generate_content(state: REXT) -> dict:
                     "output": snippet,
                 })
 
-            # Graph completion — check every on_chain_end for the structured_response key.
-            # Fallback: if on_tool_start missed it, try on_chain_end state dict
-            elif kind == "on_chain_end" and structured_output is None:
+            # Always prefer the final chain-end state because HumanizeMiddleware
+            # can replace structured_response after raw model output is parsed.
+            elif kind == "on_chain_end":
                 out = event["data"].get("output", {})
                 if isinstance(out, generated_model):
                     structured_output = out

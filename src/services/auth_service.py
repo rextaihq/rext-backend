@@ -49,7 +49,8 @@ from src.api.security.token_utils import (
     create_verification_token,
     decode_and_verify_token,
     verify_refresh_token,
-    is_token_blacklisted
+    is_token_blacklisted,
+    blacklist_token_in_cache,
 )
 from fastapi import BackgroundTasks
 from src.services.notification_helper import schedule_if_allowed
@@ -614,6 +615,7 @@ class AuthService:
         )
         self.db.add(blacklist_entry)
         await self.db.flush()
+        await blacklist_token_in_cache(jti, payload.get("exp", 0))
 
         logger.info(
             f"Token refreshed for user: {user_id}",
@@ -663,6 +665,7 @@ class AuthService:
             reason="logout"
         )
         self.db.add(blacklist_entry)
+        await blacklist_token_in_cache(jti, exp)
 
         # Deactivate session
         result = await self.db.execute(

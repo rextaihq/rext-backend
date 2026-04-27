@@ -92,11 +92,8 @@ class BaseOutline(BaseModel):
         description="Suggested internal and outbound links (minimum 2 required)."
     )
     
-    # Schema
-    schema_type: Literal["Article", "HowTo", "FAQPage", "BlogPosting", "Product", "Review"] = Field(
-        default="Article",
-        description="Primary schema.org type for structured data."
-    )
+    # Schema — set programmatically from content_type, not by the LLM
+    schema_type: str = Field(default="blog", description="Content type display name.")
     
     # Content Strategy
     target_audience: List[str]

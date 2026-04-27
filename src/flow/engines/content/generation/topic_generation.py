@@ -54,6 +54,10 @@ async def topic_generation(state: REXT) -> Dict[str, Any]:
         logger.warning("No query found")
         return {"content": {"topics": [], "selected_topic": ""}}
 
+    # ── Resolve intent selected by user in the first interrupt ───────
+    serp_backlinks = state.get("seo_result", {}).get("serp_backlinks", {})
+    selected_intent = serp_backlinks.get("main_intent", "informational")
+
     # ── Build model ───────────────────────────────────────────────
     model = topic_generation_model().with_structured_output(SEOTopics)
     current_year = datetime.now(timezone.utc).year
@@ -62,10 +66,14 @@ async def topic_generation(state: REXT) -> Dict[str, Any]:
         SystemMessage(
             content=(
                 f"You are a SEO expert. Generate 5 high-quality topics for {current_year}. "
-                f"Focus on trends, ranking potential, and user value."
+                f"Focus on trends, ranking potential, and user value. "
+                f"Align every topic with the user's selected search intent."
             )
         ),
-        HumanMessage(content=f"Generate 5 topics for: {query} in {current_year}"),
+        HumanMessage(content=(
+            f"Generate 5 topics for: {query} in {current_year}\n"
+            f"Search intent: {selected_intent}"
+        )),
     ]
 
     # ── Initial generation ────────────────────────────────────────
