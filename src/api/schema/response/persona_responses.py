@@ -7,9 +7,10 @@ class PersonaResponse(BaseModel):
     id: UUID
     workspace_id: UUID
     name: str
-    description: Optional[str] = None
-    full_name: Optional[str] = None
-    professional_title: Optional[str] = None
+    description: Optional[str]
+    avatar_url: Optional[str]
+    full_name: Optional[str]
+    professional_title: Optional[str]
     areas_of_expertise: List[str]
     tone_of_voice: Optional[str] = None
     bio: Optional[str] = None

@@ -6,6 +6,6 @@ class TopicPair(BaseModel):
     description: str = Field(description="A brief description of what the topic covers")
 
 class SEOTopics(BaseModel):
-    topics: conlist(TopicPair, min_length=5, max_length=5) = Field(
-        description="Exactly five SEO topics related to the given topic"
+    topics: conlist(str, min_length=5, max_length=5) = Field(
+        description="Exactly five topics related to the given topic"
     )

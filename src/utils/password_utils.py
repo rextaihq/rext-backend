@@ -43,7 +43,11 @@ def validate_password_strength(password: str) -> None:
         errors.append("Password must contain at least one number")
 
     if errors:
+        # Use only the first (highest priority) error as the main message
+        detailed_message = f"{errors[0]}"
+        
         raise RextValidationException(
-            message="Password does not meet strength requirements",
+            message=detailed_message,
             field_errors={"password": errors}
         )
+

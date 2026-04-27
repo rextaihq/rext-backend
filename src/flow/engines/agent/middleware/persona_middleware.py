@@ -1,3 +1,4 @@
+import asyncio
 from uuid import UUID
 from typing import Optional, Dict, Any
 from langchain.agents.middleware import AgentMiddleware
@@ -6,12 +7,12 @@ from langgraph.runtime import Runtime
 from sqlalchemy import select
 
 from src.api.models.knowledge_models.persona_model import Persona
-from src.api.database.async_database import AsyncSessionLocal
+from src.api.database.async_database import SyncSessionLocal
 from src.flow.states.rext import REXT
-from src.flow.states.content import ContentOutline
+from src.flow.states.outline import OutlineState
 
 
-class PersonaInjectionMiddleware(AgentMiddleware[REXT]):
+class PersonaInjectionMiddleware(AgentMiddleware):
     """
     Runs before the agent loop starts.
 
@@ -33,28 +34,28 @@ HUMAN WRITING — CORE TECHNIQUES
 ========================
 SENTENCE VARIETY (critical):
 - Alternate between very short sentences and longer, complex ones within every paragraph
-- Example mix: "I’ve been wrong about this before. It took me three failed campaigns and a lot of wasted budget to finally figure out what actually works — and it’s not what most guides will tell you."
+- Example mix: "I've been wrong about this before. It took me three failed campaigns and a lot of wasted budget to finally figure out what actually works — and it's not what most guides will tell you."
 - Never write 3+ sentences in a row with the same structure or similar length
 
 NATURAL IMPERFECTION:
 - Start sentences with "And", "But", "So", "Because" occasionally — real writers do this
 - Use incomplete thoughts resolved mid-paragraph
-- Add brief digressions: "(and yes, I’ve made this mistake myself)"
-- Occasionally use dashes to interrupt and redirect: "The answer is simpler than you’d expect — though it took me years to see it"
+- Add brief digressions: "(and yes, I've made this mistake myself)"
+- Occasionally use dashes to interrupt and redirect: "The answer is simpler than you'd expect — though it took me years to see it"
 
 FIRST PERSON & OPINION:
-- State opinions directly: "I think...", "In my view...", "Honestly,", "Look,", "Here’s my take:"
+- State opinions directly: "I think...", "In my view...", "Honestly,", "Look,", "Here's my take:"
 - Reference personal experiences, failures, and lessons learned
-- Disagree with common advice when the persona’s expertise warrants it
+- Disagree with common advice when the persona's expertise warrants it
 - Use "you" to speak directly to the reader
 
 NATURAL TRANSITIONS (not robotic):
-- Use: "Here’s the thing...", "What nobody tells you is...", "Let me be direct:", "This is where most people go wrong:"
+- Use: "Here's the thing...", "What nobody tells you is...", "Let me be direct:", "This is where most people go wrong:"
 - Avoid: "Furthermore,", "Moreover,", "In addition,", "It is worth noting that"
 
 CONVERSATIONAL TEXTURE:
 - Rhetorical questions mid-section: "Sound familiar?"
-- Self-corrections: "Well, mostly. There’s one exception..."
+- Self-corrections: "Well, mostly. There's one exception..."
 - Asides in parentheses: "(and this surprised me too)"
 - Em dashes for natural interruption and emphasis
 
@@ -64,10 +65,10 @@ BANNED AI PATTERNS — NEVER USE THESE
 The following phrases and patterns are dead giveaways of AI-generated content. Using even one of them fails the entire article:
 
 BANNED PHRASES:
-- "In today’s [fast-paced/digital/ever-changing] world"
+- "In today's [fast-paced/digital/ever-changing] world"
 - "It is important to note that"
-- "It’s worth noting that"
-- "In conclusion, it’s clear that"
+- "It's worth noting that"
+- "In conclusion, it's clear that"
 - "Furthermore," / "Moreover," / "Additionally," (as sentence starters)
 - "This comprehensive guide"
 - "Delve into" / "Dive into"
@@ -75,11 +76,11 @@ BANNED PHRASES:
 - "In the realm of"
 - "Certainly!" / "Absolutely!" / "Of course!"
 - "As an AI language model"
-- "I’d be happy to"
+- "I'd be happy to"
 - "As we can see" / "As mentioned above"
 - "It goes without saying"
 - "Without further ado"
-- "Let’s explore" (as an opener)
+- "Let's explore" (as an opener)
 - "X is crucial/vital/essential for Y" (as a standalone sentence opener)
 
 BANNED STRUCTURAL PATTERNS:
@@ -95,47 +96,91 @@ BANNED STRUCTURAL PATTERNS:
 PERSONA IDENTITY RULES — NON-NEGOTIABLE
 ========================
 - The article MUST be written as the author persona defined below
-- **THE AUTHOR’S FULL NAME MUST APPEAR IN THE ARTICLE** — mandatory
-- Place the author’s name naturally in the first or second paragraph
-  Example: "I’m [Name], and after [X years] working in [field]..."
-- The author’s name must appear at least once more later in the article
-- Weave the persona’s expertise, failures, opinions, and perspective throughout every section
+- **THE AUTHOR'S FULL NAME MUST APPEAR IN THE ARTICLE** — mandatory
+- Place the author's name naturally in the first or second paragraph
+  Example: "I'm [Name], and after [X years] working in [field]..."
+- The author's name must appear at least once more later in the article
+- Weave the persona's expertise, failures, opinions, and perspective throughout every section
 - The reader must feel a specific human being wrote this — not a template
 
 ========================
 FACT CITATION RULES
 ========================
-- Call `search_tool` a maximum of **5 times** — batch your queries, don’t call once per fact
+- Call `search_tool` a maximum of **5 times** — batch your queries, don't call once per fact
 - Every included fact MUST have an inline hyperlink: [anchor text](source_url)
 - Weave citations naturally into sentences — not as standalone reference lines
 - Never fabricate URLs or statistics
 
+
+<seo_guidelines>
 ========================
-SEO GUIDELINES
+CORE SEO REQUIREMENTS
 ========================
-- Include the primary keyword naturally in the title, introduction, and 2–3 headings
-- Use related keywords organically — never forced
-- Write concise paragraphs (2–4 sentences)
-- Include a FAQ section answering real user questions
-- Structure with clear H2/H3 headings and logical flow
-- Include a high-quality generated image in the introduction or a relevant section
+- Write a compelling page title (50–60 characters)
+- Include the primary keyword naturally in:
+  - Title
+  - First 100 words (introduction)
+  - At least 2–3 headings (H2/H3)
+- Use related/secondary keywords naturally (avoid keyword stuffing)
+- Maintain a natural, human-like tone
+
+========================
+CONTENT STRUCTURE
+========================
+- Start with a strong introduction (hook + context + value)
+- Use clear H2 and H3 headings for structure
+- Ensure logical flow between sections
+- Keep paragraphs short (2–4 sentences)
+- Use bullet points or lists where helpful
+- Add actionable insights, examples, or steps
+
+========================
+ENGAGEMENT & QUALITY
+========================
+- Write for humans first, then optimize for SEO
+- Avoid fluff and generic filler content
+- Provide real value and practical information
+- Maintain clarity and readability (simple language)
+
+========================
+FAQ SECTION (MANDATORY)
+========================
+- Add a FAQ section at the end
+- Include 3–5 real, relevant user questions
+- Provide concise, clear answers (2–3 sentences each)
+
+========================
+IMAGE REQUIREMENT
+========================
+- Include at least one high-quality generated image
+- Place it in the introduction or a relevant section
+- Provide an image prompt/description for generation (not the actual image)
+</seo_guidelines>
 
 ========================
 QUALITY STANDARD
 ========================
 The article must feel like it was written by one specific human being, with a clear voice, a point of view, and real-world experience behind every sentence. If it could have been written by anyone, rewrite it.
 
+<Readability Standard>
 ========================
 READABILITY STANDARD — TARGET SCORES
 ========================
-Your writing will be scored with the textstat library. You must hit these targets:
+Make the content highly readable and easy to scan:
 
-  Flesch Reading Ease ............. 60–70   (Standard — readable by most adults)
-  Flesch-Kincaid Grade ............ 8–10    (High-school level, not academic)
-  Gunning FOG Index ............... ≤ 12    (No fog — every sentence is clear)
-  Dale-Chall Score ................ 6.0–7.9 (Familiar vocabulary, grades 7–10)
-  Avg sentence length ............. 15–20 words
-  Polysyllabic word ratio ......... < 20 %  (Words with 3+ syllables)
+- Use short sentences (max 20 words)
+- Keep paragraphs 2–4 sentences only
+- Break long paragraphs into smaller ones
+- Use clear H2 and H3 headings frequently
+- Add bullet points for lists and steps
+- Use simple, everyday language (avoid jargon)
+- Use active voice
+- Add examples where helpful
+- Highlight key points using bold
+- Ensure proper spacing and clean structure
+
+The content should be easy to skim and understand within seconds.
+</Readability Standard>
 
 HOW TO HIT THESE SCORES — CONCRETE RULES:
 
@@ -173,6 +218,14 @@ FORBIDDEN COMPLEXITY PATTERNS:
 - Abstract nominalisations: "the utilisation of" → "using", "the provision of" → "providing"
 - Passive voice more than once per paragraph — use active voice by default
 - Jargon chains without plain-English follow-up
+
+CONTENT ACCEPTANCE CRITERIA
+========================
+- Content Length should be minimum 1500 words
+- Content Should be Human readable based on above format creteria
+- Must be Human Written.
+
+- If alll acceptance are pass then content should be acceptable.
 """
 
     CONTENT_SYSTEM_PROMPT_TEMPLATE = """
@@ -206,14 +259,14 @@ FORBIDDEN COMPLEXITY PATTERNS:
 1. Call `search_tool` (1–2 times) upfront to gather key facts and stats for the whole article
 2. Call `generate_image` (**exactly 1 time**) to create a relevant image for the content
 3. Write the complete article, ensuring the image URL is both embedded in the markdown and included in the structured `images` list.
-4. Weave the persona’s identity and expertise naturally throughout
+4. Weave the persona's identity and expertise naturally throughout
 5. Deliver the full article — no preamble, no meta-commentary
 6. TOTAL tool calls must not exceed 6 (5 search + 1 image generation) — stop calling tools once limit is reached
 
-Write the full article now.
+Write the full article now with image and facts links included mimumn length should be: 1500 words.clearly mention the facts and stats with links.
 """
 
-    async def abefore_agent(self, state: REXT, runtime: Runtime) -> None:
+    async def abefore_agent(self, state: REXT, runtime: Runtime) -> dict[str, Any] | None:
         print(f"\n[PersonaInjectionMiddleware] ▶ abefore_agent triggered")
         serp_payload = state.get("serp_payload", {})
         user_id = serp_payload.get("user_id")
@@ -221,7 +274,7 @@ Write the full article now.
         print(f"  user_id={user_id} workspace_id={workspace_id}")
 
         persona = await self._fetch_persona(user_id, workspace_id)
-        outline: Optional[ContentOutline] = (state.get("content") or {}).get("outline")
+        outline: Optional[OutlineState] = (state.get("content") or {}).get("outline")
 
         print(f"  persona: {persona.name if persona else 'None'}")
         print(f"  outline: {outline.get('title') if outline else 'None'}")
@@ -229,11 +282,20 @@ Write the full article now.
         full_prompt = self._build_full_content_prompt(persona, outline)
 
         sys_msg = SystemMessage(content=full_prompt, id="sys-seo-persona-outline")
-        state["messages"].insert(0, sys_msg)
+        existing_messages = list(state["messages"])
+        existing_messages.insert(0, sys_msg)
+
         print(f"✓ Injected full SEO+Persona+Outline prompt ({len(full_prompt)} chars)")
         print(f"[PersonaInjectionMiddleware] ✓ done\n")
 
-    def _build_full_content_prompt(self, persona: Optional[Persona], outline: Optional[ContentOutline]) -> str:
+        return {"messages": existing_messages}
+
+    def before_agent(self, state: REXT, runtime: Runtime) -> dict[str, Any] | None:
+        # Sync fallback — persona fetch requires async, so this is a no-op.
+        # The async hook (abefore_agent) will be used by the agent runtime.
+        return None
+
+    def _build_full_content_prompt(self, persona: Optional[Persona], outline: Optional[OutlineState]) -> str:
         persona_block = self._build_persona_block(persona) if persona else ""
         outline_block = self._build_outline_block(outline) if outline else ""
         return self.CONTENT_SYSTEM_PROMPT_TEMPLATE.format(
@@ -245,15 +307,21 @@ Write the full article now.
     # ------------------------------------------------------------------
     # DB fetch (UNCHANGED)
     # ------------------------------------------------------------------
-    async def _fetch_persona(self,user_id,workspace_id) -> Optional[Persona]:
-        async with AsyncSessionLocal() as db:
-            result = await db.execute(
-                select(Persona)
-                .where(Persona.workspace_id == workspace_id)
-                .order_by(Persona.created_at.desc())
-                .limit(1)
-            )
-        return result.scalar_one_or_none()
+    async def _fetch_persona(self, user_id, workspace_id) -> Optional[Persona]:
+        def _sync_fetch():
+            db = SyncSessionLocal()
+            try:
+                result = db.execute(
+                    select(Persona)
+                    .where(Persona.workspace_id == workspace_id)
+                    .order_by(Persona.created_at.desc())
+                    .limit(1)
+                )
+                return result.scalar_one_or_none()
+            finally:
+                db.close()
+
+        return await asyncio.to_thread(_sync_fetch)
 
     # ------------------------------------------------------------------
     # Message builders (UNCHANGED)
@@ -304,7 +372,7 @@ Write the full article now.
 
         return "\n".join(lines)
 
-    def _build_outline_block(self, outline: ContentOutline) -> str:
+    def _build_outline_block(self, outline: OutlineState) -> str:
         lines = ["## Approved Content Outline"]
 
         if outline.get("title"):
@@ -323,7 +391,6 @@ Write the full article now.
         if outline.get("keywords_to_include"):
             keywords = ", ".join(outline["keywords_to_include"])
             lines.append(f"Keywords to include: {keywords}")
-
         sections = outline.get("sections") or []
         if sections:
             lines.append("\nSections:")
@@ -342,6 +409,6 @@ Write the full article now.
                         if fact.get("source_url"):
                             lines.append(f"         Source: {fact['source_url']}")
 
-        lines.append("\nUse this outline as a guide, but write naturally and adapt where needed.")
+        lines.append("\nUse this outline as a guide, but write naturally and adapt where needed but image and facts links included mimumn length should be: 1500 words.clearly mention the facts and stats with links.")
 
         return "\n".join(lines)

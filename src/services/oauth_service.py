@@ -244,6 +244,29 @@ class OAuthService:
                     extra={"provider": provider, "email": provider_email}
                 )
 
+        # Ensure user has the default 'user' role with is_primary=True
+        # (may be missing for users created via OAuth linking or edge cases)
+        existing_primary = await self.db.execute(
+            select(UserRole).where(
+                UserRole.user_id == user.id,
+                UserRole.workspace_id == None,
+                UserRole.is_primary.is_(True)
+            )
+        )
+        if not existing_primary.scalar_one_or_none():
+            default_role = await self._get_or_create_default_role()
+            user_role = UserRole(
+                user_id=user.id,
+                role_id=default_role.id,
+                workspace_id=None,
+                is_primary=True,
+                assigned_at=datetime.now(timezone.utc),
+                assigned_by_user_id=user.id
+            )
+            self.db.add(user_role)
+            await self.db.flush()
+            logger.info(f"Assigned default 'user' role to OAuth user: {user.id}")
+
         # Generate JWT tokens
         # Explicitly query user roles to avoid lazy loading in async context
         user_roles_result = await self.db.execute(

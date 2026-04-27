@@ -1,6 +1,3 @@
-volumes:
-    langgraph-data:
-        driver: local
 services:
     # Redis for application cache
     redis:
@@ -35,6 +32,7 @@ services:
     # Postgres Databases and also add some other secrets
     postgres:
         image: pgvector/pgvector:pg17
+        restart: unless-stopped
         environment:
             POSTGRES_USER: ${POSTGRES_USER}
             POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
@@ -78,7 +76,8 @@ services:
 
     # Backend API Service
     rext-api:
-        image: ghcr.io/revnix/rext-backend:${IMAGE_TAG:-latest}
+        image: ghcr.io/rextaihq/rext-backend:${IMAGE_TAG:-latest}
+        restart: unless-stopped
         labels:
             - "traefik.enable=true"
             - "traefik.docker.network=coolify"
@@ -93,6 +92,10 @@ services:
                     memory: 1.5G
         expose:
             - ${PORT:-2024}
+        ulimits:
+            nofile:
+                soft: 65536
+                hard: 65536
 
         # Traefik labels are managed by Coolify — do not uncomment these manually
         # See Coolify dashboard > Applications > rext-backend for routing config
@@ -114,9 +117,6 @@ services:
             LANGSMITH_TRACING: ${LANGSMITH_TRACING:-true}
 
             # Database (Connect to host PostgreSQL)
-            # POSTGRES_URI_CUSTOM: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable
-            # DATABASE_URI: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable
-
             POSTGRES_URI_CUSTOM: ${POSTGRES_URI_CUSTOM}
             DATABASE_URI: ${DATABASE_URI}
             REDIS_URI: ${REDIS_URI:-redis://langgraph-redis:6379}
@@ -191,6 +191,8 @@ services:
 
             # Connection pooling (FIXED)
             REDIS_MAX_CONNECTIONS: "50"
+            POSTGRES_POOL_SIZE: "5"
+            POSTGRES_MAX_OVERFLOW: "5"
 
             # TTL - CRITICAL for 8GB (auto-delete old threads)
             CHECKPOINTER_TTL_DEFAULT: 86400 # 24hr
@@ -213,8 +215,60 @@ services:
             DATAFORSEO_SERP_URL: ${DATAFORSEO_SERP_URL}
             DATAFORSEO_BACKLINKS_URL: ${DATAFORSEO_BACKLINKS_URL}
 
+            # Tavily Search
+            TAVILY_API_KEY: ${TAVILY_API_KEY}
+
+            # MinIO Storage
+            MINIO_ENDPOINT: ${MINIO_ENDPOINT:-minio:9000}
+            MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-minioadmin}
+            MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-minioadmin}
+            MINIO_BUCKET: ${MINIO_BUCKET:-rext-media}
+            MINIO_USE_SSL: ${MINIO_USE_SSL:-false}
+            MINIO_PUBLIC_URL: ${MINIO_PUBLIC_URL}
+
+    # MinIO Storage Service
+    minio:
+        image: quay.io/minio/minio:latest
+        restart: unless-stopped
+        command: server /data --console-address ":9001"
+        environment:
+            MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:-minioadmin}
+            MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:-minioadmin}
+        volumes:
+            - minio_data:/data
+        expose:
+            - "9000"   # S3 API (internal only, exposed via Traefik /media path)
+            - "9001"   # Web console (internal only)
+        labels:
+            - "traefik.enable=true"
+            - "traefik.docker.network=coolify"
+            # Route /media/* on the API domain to MinIO S3 port 9000
+            - "traefik.http.routers.minio-s3.rule=PathPrefix(`/media`)"
+            - "traefik.http.routers.minio-s3.entrypoints=https"
+            - "traefik.http.routers.minio-s3.tls=true"
+            - "traefik.http.routers.minio-s3.service=minio-s3-svc"
+            - "traefik.http.services.minio-s3-svc.loadbalancer.server.port=9000"
+            # Strip /media prefix before forwarding to MinIO
+            - "traefik.http.middlewares.minio-strip.stripprefix.prefixes=/media"
+            - "traefik.http.routers.minio-s3.middlewares=minio-strip"
+        healthcheck:
+            test: ["CMD-SHELL", "curl -f http://localhost:9000/minio/health/live || exit 1"]
+            interval: 10s
+            timeout: 5s
+            retries: 5
+            start_period: 15s
+        networks:
+            - rext-network
+            - coolify
+
 networks:
     rext-network:
         driver: bridge
     coolify:
         external: true
+
+volumes:
+    langgraph-data:
+        driver: local
+    minio_data:
+        driver: local

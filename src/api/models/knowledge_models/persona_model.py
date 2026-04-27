@@ -27,6 +27,7 @@ class Persona(Base, SerializableMixin, UUIDPrimaryKeyMixin, TimestampMixin, Work
     pain_points = Column(Text, nullable=True)
     goals = Column(Text, nullable=True)
     behaviors = Column(Text, nullable=True)
+    avatar_url = Column(String(500), nullable=True)
     custom_metadata = Column(JSONB, nullable=True)
 
     # Relationships

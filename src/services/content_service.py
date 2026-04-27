@@ -10,6 +10,7 @@ from uuid import UUID
 from uuid import uuid4
 from datetime import datetime, timezone
 import re
+import markdown
 
 from sqlalchemy import select, func, delete
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -260,7 +261,7 @@ class ContentService:
             "draft": ["generating", "ready", "archived"],
             "generating": ["ready", "failed", "draft"],
             "ready": ["published", "draft", "archived", "generating"],
-            "published": ["archived", "ready"],
+            "published": ["archived", "ready","draft"],
             "archived": ["draft"],
             "failed": ["draft", "generating", "archived"],
         }
@@ -334,8 +335,13 @@ class ContentService:
                         # Convert status to shopify concept of 'published'
                         is_published = publish_status == "publish"
                         # We use html for universal support
-                        body_to_use = content.body_html or content.body_markdown or ""
-                        
+                        # If body_html is missing or empty, convert markdown to HTML for Shopify
+                        body_to_use = content.body_html
+                        if not body_to_use and content.body_markdown:
+                            body_to_use = markdown.markdown(content.body_markdown)
+                        elif not body_to_use:
+                            body_to_use = ""
+
                         shop_resp = await shopify.publish_blog_post(
                             title=content.title,
                             body_html=body_to_use,

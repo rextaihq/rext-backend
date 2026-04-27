@@ -1,51 +1,47 @@
 INTENT_TO_CONTENT_TYPES = {
     "informational": [
-        "how_to_guide",
-        "tutorial",
-        "explanatory_article",
-        "definition_article",
-        "faq_page",
-        "troubleshooting_guide",
+        "blog",
+        "how-to-guide",
+        "explainer",
+        "pillar-content",
         "checklist",
-        "best_practices",
-        "case_study"
+        "tutorial",
+        "faq",
+        "white-paper",
+        "case-study",
+        "glossary",
+        "resource-list"
     ],
     
     "commercial": [
-        "product_comparison",
-        "vs_article",
-        "best_of_list",
-        "product_review",
-        "alternatives_article",
-        "pros_cons_article",
-        "tool_roundup",
-        "buying_guide",
-        "pricing_comparison"
+        "comparison",
+        "best-tools",
+        "alternatives",
+        "in-depth-review",
+        "pros-cons",
+        "product-roundup",
+        "buying-guide"
     ],
     
     "navigational": [
-        "homepage",
-        "brand_page",
-        "product_page",
-        "feature_page",
-        "documentation_page",
-        "support_page",
-        "contact_page",
-        "about_page",
-        "login_page",
-        "signup_page"
+        "brand-page",
+        "product-homepage",
+        "feature-overview",
+        "documentation",
+        "login-guide",
+        "contact-us",
+        "about-us",
+        "help-center"
     ],
     
     "transactional": [
-        "sales_page",
-        "landing_page",
-        "pricing_page",
-        "checkout_page",
-        "order_page",
-        "subscription_page",
-        "demo_booking_page",
-        "quote_request_page",
-        "download_page",
-        "offer_page"
+        "sales-page",
+        "pricing-page",
+        "signup-page",
+        "demo-page",
+        "coupon-page",
+        "checkout-page",
+        "landing-page",
+        "service-page"
     ]
 }

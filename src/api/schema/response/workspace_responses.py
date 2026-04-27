@@ -64,10 +64,9 @@ class BrandVoiceResponse(BaseModel):
     competitors: List[str] = []
     content_pillar: List[str] = []
     content_strategy: List[str] = []
-    created_at: Optional[datetime] = None
-    updated_at: Optional[datetime] = None
-    # Extended fields matching backend extraction logic
-    personas: List[PersonaResponse] = []
+    personas: List[Any] = []
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
 
 class BrandVoiceWrapperResponse(BaseModel):
     brand_voice: Optional[BrandVoiceResponse] = None

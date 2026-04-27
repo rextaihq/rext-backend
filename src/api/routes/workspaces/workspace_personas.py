@@ -120,6 +120,7 @@ async def create_persona(
         pain_points=persona_data.pain_points,
         goals=persona_data.goals,
         behaviors=persona_data.behaviors,
+        avatar_url=persona_data.avatar_url,
     )
     
     db.add(persona)
@@ -231,7 +232,7 @@ async def delete_persona(
         },
     )
     
-    return success(request=request, message="Persona deleted successfully")
+    return success(data={},request=request, message="Persona deleted successfully")
 
 
 __all__ = ["router"]

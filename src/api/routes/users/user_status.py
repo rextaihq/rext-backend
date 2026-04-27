@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 from uuid import UUID
 from datetime import datetime, timezone, timedelta
 
@@ -185,6 +186,42 @@ async def deactivate_self(
     await db.flush()
 
     # Create audit log
+    old_status = db_user.status
+
+    # Handle subscriptions
+    from src.api.models.subscription_models.subscriptions import UserSubscription, SubscriptionStatus
+    subscriptions_result = await db.execute(
+        select(UserSubscription)
+        .options(selectinload(UserSubscription.plan))
+        .where(
+            UserSubscription.user_id == user_id,
+            UserSubscription.status.in_([SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIAL])
+        )
+    )
+    active_subs = subscriptions_result.scalars().all()
+
+    if active_subs and not deactivation_data.cancel_subscriptions:
+        return error(
+            message="You have active subscriptions. Please cancel them first or enable automatic cancellation.",
+            code=ErrorCode.VALIDATION_FAILED,
+            status_code=400,
+            severity=ErrorSeverity.MEDIUM,
+            request=request
+        )
+
+    if active_subs and deactivation_data.cancel_subscriptions:
+        sub_service = SubscriptionService(db)
+        for sub in active_subs:
+            try:
+                await sub_service.cancel(user_id=user_id, reason="Account deactivation")
+            except Exception as e:
+                logger.error(f"Failed to cancel subscription {sub.id}: {e}")
+
+    # Deactivate
+    db_user = await service.deactivate_account(user_id)
+    scheduled_deletion = db_user.deactivated_at + timedelta(days=14)
+
+    # Audit log
     await create_audit_log_async(
         db=db,
         user_id=str(user_id),
@@ -205,7 +242,14 @@ async def deactivate_self(
     }
 
     return success(
-        data=response_data,
+        data=DeactivateAccountResponse(
+            user_id=str(user_id),
+            email=db_user.email,
+            status="inactive",
+            deactivated_at=db_user.deactivated_at.isoformat(),
+            scheduled_deletion_at=scheduled_deletion.isoformat(),
+            message="Your account has been deactivated. It will be permanently deleted after 14 days unless you log back in."
+        ).model_dump(),
         request=request,
         message="Account deactivated successfully"
     )

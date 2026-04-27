@@ -277,13 +277,20 @@ class ShopifyConnector:
 
             # Handle handle collisions (422 Unprocessable Entity - handle taken)
             if response.status_code == 422 and "handle" in response.text and "already been taken" in response.text:
-                import random
-                import string
-                suffix = "".join(random.choices(string.ascii_lowercase + string.digits, k=4))
-                new_handle = f"{(handle or title.lower().replace(' ', '-'))}-{suffix}"
-                logger.warning(f"Shopify handle collision for '{handle or title}'. Retrying with '{new_handle}'")
-                payload["article"]["handle"] = new_handle
-                response = await self._client.post(endpoint, json=payload, timeout=30.0)
+                base_slug = handle or title.lower().replace(' ', '-')
+                # Try v2, v3, up to v11
+                for v in range(2, 12):
+                    new_handle = f"{base_slug}-v{v}"
+                    logger.warning(f"Shopify handle collision for '{handle or title}'. Retrying with '{new_handle}'")
+                    payload["article"]["handle"] = new_handle
+                    response = await self._client.post(endpoint, json=payload, timeout=30.0)
+                    
+                    # Success
+                    if response.status_code in (200, 201):
+                        break
+                    # If it's not a handle collision anymore (e.g. some other error), stop retrying versions
+                    if not (response.status_code == 422 and "handle" in response.text and "already been taken" in response.text):
+                        break
 
             if response.status_code == 401:
                 raise RextExternalServiceException(

@@ -34,7 +34,7 @@ class Settings(BaseSettings):
     API_KEY_NAME: Optional[str] = Field(default="X-API-Key", description="API key header name")
 
     # Auth Security Settings
-    AUTH_MAX_LOGIN_ATTEMPTS: int = Field(default=3, description="Maximum failed login attempts before lockout")
+    AUTH_MAX_LOGIN_ATTEMPTS: int = Field(default=5, description="Maximum failed login attempts before lockout")
     AUTH_LOCKOUT_DURATION_HOURS: int = Field(default=1, description="Account lockout duration in hours")
 
     # ============================================================================
@@ -205,6 +205,26 @@ class Settings(BaseSettings):
     TIER_FREE_MAX_STORAGE_MB: int = Field(default=100, description="Free tier: max total storage in MB", ge=1)
     TIER_PRO_MAX_STORAGE_MB: int = Field(default=1024, description="Pro tier: max total storage in MB (1GB)", ge=1)
     TIER_ENTERPRISE_MAX_STORAGE_MB: int = Field(default=10240, description="Enterprise tier: max total storage in MB (10GB)", ge=1)
+
+    # ============================================================================
+    # MINIO / S3 STORAGE
+    # ============================================================================
+    MINIO_ENDPOINT: str = Field(default="localhost:9000", description="MinIO/S3 endpoint")
+    MINIO_ACCESS_KEY: str = Field(default="minioadmin", description="MinIO/S3 access key")
+    MINIO_SECRET_KEY: str = Field(default="minioadmin", description="MinIO/S3 secret key")
+    MINIO_BUCKET: str = Field(default="rext-media", description="MinIO/S3 bucket name")
+    MINIO_USE_SSL: bool = Field(default=False, description="Use SSL for MinIO/S3 connection")
+    MINIO_PUBLIC_URL: Optional[str] = Field(default=None, description="Public URL for accessing MinIO files (e.g. via CDN or reverse proxy)")
+
+    @field_validator('MINIO_USE_SSL', mode='before')
+    @classmethod
+    def parse_minio_ssl(cls, v) -> bool:
+        """Parse boolean field from string to boolean."""
+        if isinstance(v, bool):
+            return v
+        if isinstance(v, str):
+            return v.lower() in ('true', '1', 'yes', 'on')
+        return False
 
     @field_validator("ALLOWED_ORIGINS")
     @classmethod

@@ -25,3 +25,9 @@ class SEOIntentResult(SEOIntentOutput):
 
 class BatchSEOIntentOutput(BaseModel):
     results: List[SEOIntentResult] = Field(description="List of SEO intent classifications for competitors")
+    final_intent_type: Literal[
+        "INFORMATIONAL",
+        "COMMERCIAL",
+        "NAVIGATIONAL",
+        "TRANSACTIONAL"
+    ] = Field(description="Final SEO intent type")

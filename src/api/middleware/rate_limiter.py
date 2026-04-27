@@ -46,9 +46,9 @@ class EndpointLimitProfile:
     description: str
 
 
-LOGIN_LIMIT = EndpointLimitProfile(5, 1, "login")
-PASSWORD_RESET_LIMIT = EndpointLimitProfile(3, 5, "password reset")
-REGISTRATION_LIMIT = EndpointLimitProfile(3, 60, "registration")
+LOGIN_LIMIT = EndpointLimitProfile(15, 1, "login")
+PASSWORD_RESET_LIMIT = EndpointLimitProfile(10, 5, "password reset")
+REGISTRATION_LIMIT = EndpointLimitProfile(10, 60, "registration")
 OAUTH_LIMIT = EndpointLimitProfile(10, 5, "OAuth")
 EMAIL_VERIFICATION_LIMIT = EndpointLimitProfile(5, 10, "email verification")
 NOTIFICATION_READ_LIMIT = EndpointLimitProfile(60, 1, "notification read")
@@ -378,7 +378,7 @@ class EndpointRateLimiter:
 
     def __init__(
         self,
-        requests: int = 5,
+        requests: int = 50,
         window_minutes: int = 1,
         description: str = "endpoint"
     ):
@@ -410,7 +410,32 @@ class EndpointRateLimiter:
         # Get client identifier
         user_id = getattr(request.state, "user_id", None)
         client_ip = request.client.host if request.client else "unknown"
-        client_key = f"user:{user_id}" if user_id else f"ip:{client_ip}"
+        
+        # Base key is IP-based
+        client_key = f"ip:{client_ip}"
+        
+        # If authenticated, use user identity
+        if user_id:
+            client_key = f"user:{user_id}"
+        # For unauthenticated sensitive requests, try to include email in the key 
+        # to prevent one user's failed attempts from blocking everyone on the same IP.
+        elif request.method == "POST":
+            try:
+                # Fast check to see if it's likely a JSON auth request
+                content_type = request.headers.get("content-type", "").lower()
+                path = request.url.path.lower()
+                
+                if "application/json" in content_type and any(p in path for p in ["login", "register", "verify", "password"]):
+                    # FastAPI caches the body, so this is safe and won't consume the stream
+                    body = await request.json()
+                    email = body.get("email") or body.get("email_address")
+                    if email:
+                        # Use a truncated hash to keep keys manageable and protect privacy
+                        email_h = hashlib.sha256(email.lower().strip().encode()).hexdigest()[:12]
+                        client_key = f"email:{email_h}:ip:{client_ip}"
+            except Exception:
+                # Fallback to IP-only if body parsing fails
+                pass
 
         # Try Redis sliding window
         redis_checked = False

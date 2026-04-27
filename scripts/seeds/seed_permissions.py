@@ -256,7 +256,7 @@ ROLE_PERMISSION_ASSIGNMENTS = {
         "role.read", "role.update", "role.manage_permissions",
         "permission.read", "permission.create", "permission.update",
         "role.create", "workspace.transfer",
-        "audit.read", "audit.write", "audit.export",
+        "audit.read", "audit.write", "audit.export", "audit.admin",
         "email.resend",
         "support.view_workspace", "support.view_billing",
     ],
@@ -281,6 +281,10 @@ ROLE_PERMISSION_ASSIGNMENTS = {
         "media.view",
         "member.read",
         "license.view", "license.read",
+        "subscription.read", "subscription.manage",
+        "usage.read",
+        "billing.read",
+        "audit.read",
     ],
 }
 

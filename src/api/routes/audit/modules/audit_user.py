@@ -27,7 +27,7 @@ async def get_my_audit_logs(
     resource_type: Optional[str] = Query(None, description="Filter by resource type"),
     date_from: Optional[str] = Query(None, description="Start date (ISO 8601)"),
     date_to: Optional[str] = Query(None, description="End date (ISO 8601)"),
-    limit: int = Query(50, ge=1, le=500, description="Results per page"),
+    limit: int = Query(50, ge=1, le=1000, description="Results per page"),
     offset: int = Query(0, ge=0, description="Pagination offset"),
     db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user)
@@ -42,7 +42,7 @@ async def get_my_audit_logs(
     - resource_type: Filter by resource type
     - date_from: Start date (ISO 8601)
     - date_to: End date (ISO 8601)
-    - limit: Results per page (max 500)
+    - limit: Results per page (max 1000)
     - offset: Pagination offset
 
     Returns:

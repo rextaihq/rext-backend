@@ -15,6 +15,7 @@ def create_content_engine():
     from src.flow.engines.content.generation.content_type import content_type
     from src.flow.engines.content.generation.outline import generate_outline
     from src.flow.engines.content.generation.content_generation import generate_content
+    from src.flow.engines.content.generation.humanization import humanize_content
     from src.flow.engines.content.review.outline import review_outline
     from src.flow.engines.content.review.content.content_review import review_content
     from src.flow.engines.router.outline import outline_router

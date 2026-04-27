@@ -47,14 +47,28 @@ def review_outline(state: REXT):
     # 
     if action == "approve":
         logger.info("Outline approved by human")
+        
+        # Extract updated tone and audience if provided
+        updated_tone = review_data.get("tone")
+        updated_audience = review_data.get("target_audience")
+        
+        outline_update = {
+            **outline_dict,
+            "rejected_reason": "",
+            "status": "approved"
+        }
+        
+        if updated_tone:
+            outline_update["tone"] = updated_tone
+        if updated_audience:
+            outline_update["target_audience"] = updated_audience
+
+        logger.info(f"Tone: {updated_tone}, Audience: {updated_audience} approved by human")
+
         return {
             "content":{
                 **content_state,
-                "outline":{
-                    **outline_dict,
-                    "rejected_reason": "",
-                    "status": "approved"
-                },
+                "outline": outline_update,
             }
         }
     

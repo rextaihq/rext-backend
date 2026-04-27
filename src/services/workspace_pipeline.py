@@ -450,6 +450,7 @@ class WorkspacePipeline:
                     pain_points=persona_data.get("pain_points"),
                     goals=persona_data.get("goals"),
                     behaviors=persona_data.get("behaviors"),
+                    avatar_url=persona_data.get("avatar_url"),
                 )
                 self.db.add(persona)
 
@@ -494,39 +495,32 @@ class WorkspacePipeline:
             system_prompt = """You are an expert at analyzing website content and extracting brand information and personas.
 
 IMPORTANT INSTRUCTIONS FOR BRAND INFORMATION:
-- Extract 'about': A brief summary of what the brand/business does.
-- Extract 'customer_profile': Who their ideal customers are.
+- Extract 'about': A brief summary of what the brand/business does (1-2 sentences).
+- Extract 'customer_profile': Who their ideal customers are and their characteristics.
 - Extract 'selling_position': Their unique value proposition (what makes them different).
 - Extract 'target_audience': Specific segments or demographics they target.
-- Extract 'brand_voice': The characteristics of their communication style (Friendly, Professional, etc.).
-- Extract 'competitors': Other businesses mentioned or implied as competitors.
-- Extract 'content_pillar': The main themes or categories they create content about (e.g., sustainability, tech tips, lifestyle).
+- Extract 'brand_voice': The characteristics of their communication style (e.g., Authoritative, Friendly, Professional, etc.).
+- Extract 'competitors': List of competitors. Look for direct mentions OR infer the top 3-5 competitors based on the business category and industry (e.g., if the site is a SaaS CRM, list Salesforce, HubSpot, and Pipedrive as inferred competitors).
+- Extract 'content_pillar': The main themes or categories they create content about.
 
 IMPORTANT INSTRUCTIONS FOR PERSONAS:
-- ONLY extract REAL INDIVIDUALS mentioned on the website (Authors, Founders, Team Members, or Experts).
-- DO NOT generate hypothetical or dummy "User" or "Customer" personas.
-- DO NOT create audience segments as personas.
-
-Look for:
-- People with names (e.g., founders, leadership team, blog authors).
-- Professionals with specific roles or credentials described on the site.
+- Priority 1: Extract REAL INDIVIDUALS mentioned on the website (Authors, Founders, Team Members).
 
 For each PERSONA extracted, provide:
-- name: The person's actual name (e.g., "Mobheen Abdullah").
-- full_name: Their complete professional name.
-- professional_title: Job title or credentials found on the site.
+- name: The person's name or a representative title.
+- full_name: Their complete professional name if available.
+- professional_title: Job title (e.g., "Senior Content Strategist").
 - areas_of_expertise: What they specialize in based on the content.
-- tone_of_voice: Their unique writing or communication style.
-- bio: A professional background summary extracted from the text.
-- linkedin_url: Their social link if provided.
-
-If no specific real individuals are found, return an empty personas list.
-
-Now analyze the following website content and extract brand information and real professional personas (NO DUMMY PERSONAS):"""
+- tone_of_voice: Their unique writing style.
+- bio: A professional background for experts OR a brief summary for target personas.
+- demographics: For target personas, include age/location info.
+- pain_points: For target personas, include their main challenges.
+- goals: What they want to achieve.
+"""
             
             messages = [
                 SystemMessage(content=system_prompt),
-                HumanMessage(content=content)
+                HumanMessage(content=f"Analyze the following website content and extract brand information and professional/customer personas:\n\n{content}")
             ]
             
             return await structured.ainvoke(messages)

@@ -26,9 +26,9 @@ from src.api.config import settings
 from src.utils.response_utils import success
 from src.api.database.base import Base
 from src.utils.logger import logger
-from src.api.tool.routes import router as tool_router
 # Structured logging
 from src.api.lib.logging_config import configure_logging, RequestIDMiddleware
+from src.utils.storage import storage_service
 
 # Sentry error monitoring
 from src.api.lib.sentry_config import init_sentry
@@ -95,10 +95,16 @@ async def lifespan(app):
         logger.warning(
             "Failed to start scheduled tasks",
             exc_info=True,
-            extra={
-                "error": str(e),
-            }
         )
+
+    # --- Verify MinIO Storage connection ---
+    try:
+        if storage_service.check_connection():
+            logger.info("✅ MinIO storage connected")
+        else:
+            logger.error("❌ Failed to connect to MinIO storage")
+    except Exception as e:
+        logger.error(f"❌ MinIO initialization error: {e}")
 
     # --- Application is now ready ---
     logger.info("✅ Application startup complete. Ready to serve requests.")
@@ -277,6 +283,17 @@ async def health_check(request: Request):
         status["checks"]["database"] = f"unhealthy: {str(e)}"
         status["status"] = "degraded"
 
+    # MinIO Storage check
+    try:
+        if storage_service.check_connection():
+            status["checks"]["storage"] = "healthy"
+        else:
+            status["checks"]["storage"] = "unhealthy"
+            status["status"] = "degraded"
+    except Exception as e:
+        status["checks"]["storage"] = f"error: {str(e)}"
+        status["status"] = "degraded"
+
     # Redis check (optional - graceful degradation)
     try:
         from src.api.cache.redis_client import cache
@@ -354,6 +371,17 @@ async def readiness_check(request: Request):
             status["checks"]["database"] = "ready"
     except Exception as e:
         status["checks"]["database"] = f"not_ready: {str(e)}"
+        status["status"] = "not_ready"
+
+    # MinIO Storage check (critical for readiness)
+    try:
+        if storage_service.check_connection():
+            status["checks"]["storage"] = "ready"
+        else:
+            status["checks"]["storage"] = "not_ready"
+            status["status"] = "not_ready"
+    except Exception as e:
+        status["checks"]["storage"] = f"not_ready: {str(e)}"
         status["status"] = "not_ready"
 
     # Redis check (optional - not required for readiness)

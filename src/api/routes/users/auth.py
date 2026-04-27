@@ -139,6 +139,15 @@ async def create_user(
     """
     Endpoint to create a new user.
     """
+    from src.utils.password_utils import validate_password_strength
+    
+    # 1. Validate password before rate limiting so weak password mistakes do not consume limits
+    validate_password_strength(user.password)
+
+    # 2. Enforce registration rate limits explicitly
+    limiter = registration_rate_limit()
+    await limiter(request)
+
     # Use auth service
     auth_service = AuthService(db)
     new_user, verification_token = await auth_service.register_user(
@@ -439,6 +448,14 @@ async def register_with_invitation(
     """
     Create or use account via workspace invitation.
     """
+    from src.utils.password_utils import validate_password_strength
+    
+    # 1. Validate password before rate limiting so weak password mistakes do not consume limits
+    validate_password_strength(user_data.password)
+
+    # 2. Enforce registration rate limits explicitly
+    limiter = registration_rate_limit()
+    await limiter(request)
     invitation_service = InvitationService(db)
     invitation = await invitation_service.get_invitation_by_token(user_data.invitation_token)
 
