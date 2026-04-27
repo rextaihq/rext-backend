@@ -1,5 +1,4 @@
 from sqlalchemy import Column, String, func, DateTime, Boolean, ForeignKey
-from src.api.models.content_models import Content
 from sqlalchemy.dialects.postgresql import UUID, ARRAY, JSONB
 from sqlalchemy.orm import relationship
 from src.api.database.base import Base
@@ -34,8 +33,6 @@ class TopicsModel(Base, SerializableMixin):
     updated_at = Column(DateTime(timezone=True), server_default=func.now(),nullable=True)
 
     # Relationships
-    workspace = relationship("WorkspaceModel", back_populates="topics")
-    content_items = relationship("Content", back_populates="topic")
     generated_by = relationship("Users", foreign_keys=[generated_by_user_id], backref="topics_generated")
 
     def to_dict(self) -> dict:

@@ -21,9 +21,6 @@ from src.api.models.content_models.content import Content
 from src.api.models.content_models.content_seo_data import ContentSEOData
 from src.api.models.knowledge_models.persona_model import Persona
 
-# Topics models
-from src.api.models.topic_models.topic_models import TopicsModel
-
 # Admin models
 from src.api.models.admin_models.admin_invitations import PlatformAdminInvitations
 
@@ -58,5 +55,4 @@ __all__ = [
     "Media",
     "Notification",
     "PlatformAdminInvitations",
-    "TopicsModel",
 ]

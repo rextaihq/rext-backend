@@ -44,9 +44,6 @@ class Content(Base, SerializableMixin, UUIDPrimaryKeyMixin, TimestampMixin, Work
     wordpress_url = Column(Text, nullable=True)
     wordpress_published_at = Column(DateTime(timezone=True), nullable=True)
 
-    # Topic relationship
-    topic_id = Column(UUID(as_uuid=True), ForeignKey("topics.id", ondelete="SET NULL"), nullable=True, index=True)
-
     # Shopify publishing fields
     from sqlalchemy import BigInteger
     shopify_article_id = Column(BigInteger, nullable=True)
@@ -58,4 +55,3 @@ class Content(Base, SerializableMixin, UUIDPrimaryKeyMixin, TimestampMixin, Work
     created_by = relationship("Users", foreign_keys=[created_by_user_id])
     seo_data = relationship("ContentSEOData", back_populates="content", uselist=False, cascade="all, delete-orphan", passive_deletes=True)
     media_items = relationship("ContentMedia", back_populates="content", cascade="all, delete-orphan", passive_deletes=True)
-    topic = relationship("TopicsModel", back_populates="content_items")
