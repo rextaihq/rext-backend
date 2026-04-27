@@ -10,22 +10,7 @@ import httpx
 
 load_dotenv()
 
-@tool
-def search_tool(query: str) -> str:
-    """Perform a web search using DuckDuckGo and return top 5 results with snippets.
-
-    Use this tool for factual questions, current events, research, or up-to-date web info.
-    Returns structured results with title, URL, and snippet for citation.
-
-    Args:
-        query: Search query (e.g., "best laptops 2024 review")
-    """
-    search = DuckDuckGoSearchRun(
-        max_results=5,
-        search_depth="advanced",
-    )
-    results = search.run(query)
-    return json.dumps(results, indent=2)
+SEARCH_HARD_CAP = 6
 
 
 @tool
@@ -86,4 +71,28 @@ def generate_image(prompt: str, model: str = "dall-e-3", size: str = "1024x1024"
 
 
 def get_tools():
+    import threading
+    call_count = [0]
+    lock = threading.Lock()
+
+    @tool
+    def search_tool(query: str) -> str:
+        """Perform a web search using DuckDuckGo and return top 5 results with snippets.
+
+        Use this tool for factual questions, current events, research, or up-to-date web info.
+        Returns structured results with title, URL, and snippet for citation.
+
+        Args:
+            query: Search query (e.g., "best laptops 2024 review")
+        """
+        with lock:
+            if call_count[0] >= SEARCH_HARD_CAP:
+                print(f"[search_tool] Hard cap {SEARCH_HARD_CAP} reached — blocking call for query: {query!r}")
+                return json.dumps({"error": f"Search cap of {SEARCH_HARD_CAP} reached. Stop searching and write the article now."})
+            call_count[0] += 1
+            current = call_count[0]
+        print(f"[search_tool] call {current}/{SEARCH_HARD_CAP} — query: {query!r}")
+        results = DuckDuckGoSearchRun(max_results=5, search_depth="advanced").run(query)
+        return json.dumps(results, indent=2)
+
     return [search_tool, generate_image]
