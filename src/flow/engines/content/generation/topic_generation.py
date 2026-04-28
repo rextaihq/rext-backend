@@ -1,31 +1,42 @@
 import logging
-from typing import Dict, Any
+from typing import Dict, Any, List
 from src.flow.states.rext import REXT
 from src.flow.model.structure.topics import SEOTopics
 from src.flow.model.llm_manager import topic_generation_model
 from langgraph.types import interrupt
 from langchain_core.messages import SystemMessage, HumanMessage
 from datetime import datetime, timezone
-logger = logging.getLogger(__name__) 
+
+logger = logging.getLogger(__name__)
+
+_REGENERATE_ACTIONS = {"regenerate_topics", "regenerate", "regen"}
+
+
+def _is_regenerate_request(response: Any) -> bool:
+    """Check if user explicitly asked to regenerate."""
+    if isinstance(response, dict):
+        action = (response.get("action") or "").strip().lower()
+        if action in _REGENERATE_ACTIONS:
+            return True
+        if response.get("regenerate_topics"):
+            return True
+
+    if isinstance(response, str):
+        val = response.strip().lower()
+        # BEST PRACTICE: Flexible matching (e.g. "regenerate. add keywords")
+        for action in _REGENERATE_ACTIONS:
+            if val.startswith(action):
+                return True
+
+    return False
 
 
 async def topic_generation(state: REXT) -> Dict[str, Any]:
-    """
-    Generate SEO topics based on the user's query.
-    
-    Flow:
-    1. Generate 5 SEO topics using LLM
-    2. Interrupt to show topics to user for selection
-    3. Save selected topic to state
-    
-    Uses the LLM to generate 5 relevant SEO topics for content creation.
-    """
     logger.info("Starting topic generation")
 
-    # Get the normalized query from SERP results or fallback to input payload
+    # ── Resolve query ─────────────────────────────────────────────
     normalized_result = state.get("serp_normalized", {})
-    
-    # Check for upstream errors — skip processing if prior node failed
+
     if normalized_result and normalized_result.get("error"):
         logger.warning(
             "Skipping topic generation due to upstream error: %s",
@@ -34,81 +45,113 @@ async def topic_generation(state: REXT) -> Dict[str, Any]:
         return {"content": {"topics": [], "selected_topic": ""}}
 
     query = normalized_result.get("query")
-    
+
     if not query:
         serp_payload = state.get("serp_payload", {})
         query = serp_payload.get("query", "")
 
-    
     if not query:
-        logger.warning("No query found in serp_normalized")
+        logger.warning("No query found")
         return {"content": {"topics": [], "selected_topic": ""}}
 
-    # Load the model with structured output
+    # ── Resolve intent selected by user in the first interrupt ───────
+    serp_backlinks = state.get("seo_result", {}).get("serp_backlinks", {})
+    selected_intent = serp_backlinks.get("main_intent", "informational")
+
+    # ── Build model ───────────────────────────────────────────────
     model = topic_generation_model().with_structured_output(SEOTopics)
     current_year = datetime.now(timezone.utc).year
-    # Use a LIST of messages, not a SET
+
     messages = [
-    SystemMessage(
-        content=(
-            f"You are a SEO expert. Generate a high quality list of 5 topics related to the given topic. "
-            f"Focus on topics that rank well in search engines, provide value to readers, and are relevant in {current_year}. "
-            f"Prefer trends, latest strategies, and current best practices."
-            f"Each topic lenghth should be maximium 50–60 characters"
-        )
-    ),
-    HumanMessage(
-        content=f"Generate 5 topics for: {query} in {current_year}"
-    )
-]
-    
+        SystemMessage(
+            content=(
+                f"You are a SEO expert. Generate 5 high-quality topics for {current_year}. "
+                f"Focus on trends, ranking potential, and user value. "
+                f"Align every topic with the user's selected search intent."
+            )
+        ),
+        HumanMessage(content=(
+            f"Generate 5 topics for: {query} in {current_year}\n"
+            f"Search intent: {selected_intent}"
+        )),
+    ]
+
+    # ── Initial generation ────────────────────────────────────────
     results: SEOTopics = await model.ainvoke(messages)
-    topics = results.topics
-    
-    logger.info(f"Generated {len(topics)} topics")   
-    
-    # ========================================
-    # INTERRUPT FOR USER SELECTION
-    # ========================================
-    user_selection = interrupt({
-        "instruction": "Select a topic for your content",
-        "type": "topic",
-        "topics": topics,
-    })
-    
-    logger.info(f"Raw user_selection from interrupt: {user_selection}")
-    
-    # Handle user selection (can be index, string, or dict)
-    selected_topic = ""
-    
-    if isinstance(user_selection, int):
-        # User selected by index (1-5)
-        if 1 <= user_selection <= len(topics):
-            selected_topic = topics[user_selection - 1]
-    elif isinstance(user_selection, str):
-        # User typed the topic directly or selected from list
-        selected_topic = user_selection.strip()
-        # If they typed a number as string
-        if selected_topic.isdigit():
-            idx = int(selected_topic)
-            if 1 <= idx <= len(topics):
-                selected_topic = topics[idx - 1]
-    elif isinstance(user_selection, dict):
-        selected_topic = (user_selection.get("Selected Topic") or "")
-        if isinstance(selected_topic, int):
-            if 1 <= selected_topic <= len(topics):
-                selected_topic = topics[selected_topic - 1]
-    
-    # Fallback to first topic if selection is empty or invalid
-    if not selected_topic:
-        logger.warning(f"Failed to parse a valid topic from: {user_selection}. Falling back to topic 1.")
-        selected_topic = topics[0] if topics else ""
-    
-    logger.info(f"User selected topic: {selected_topic}")
-    
+    topics: List[str] = results.topics
+
+    logger.info("Generated %d topics", len(topics))
+
+    # ── Infinite loop until valid selection ───────────────────────
+    while True:
+        user_response = interrupt(
+            {
+                "type": "topic",
+                "instruction": "Select a topic",
+                "topics": topics,
+                "allow_regenerate": True,
+            }
+        )
+
+        # ── Explicit regenerate ───────────────────────────────
+        if _is_regenerate_request(user_response):
+            logger.info("User requested regeneration")
+            
+            # Extract feedback from the response (Single Interrupt Flow)
+            feedback = ""
+            if isinstance(user_response, dict):
+                feedback = user_response.get("feedback", "").strip()
+            elif isinstance(user_response, str):
+                # Try to extract feedback from string like "regenerate. add fascinating keyword"
+                val = user_response.strip()
+                for action in _REGENERATE_ACTIONS:
+                    if val.lower().startswith(action):
+                        # Extract the part after the regenerate command
+                        feedback = val[len(action):].strip()
+                        # Clean up punctuation like "." or ":" at the start 
+                        feedback = feedback.lstrip('.: ').strip()
+                        break
+
+            # Check for skip keywords in string-based feedback
+            if feedback.lower() in {"none", "skip", "no", "n/a",""}:
+                feedback = ""
+        
+            if feedback:
+                logger.info(f"Adding user feedback to model prompt: {feedback}")
+                messages.append(HumanMessage(content=f"User feedback for regeneration: {feedback}"))
+
+            results = await model.ainvoke(messages)
+            topics = results.topics
+            continue
+
+        # ── Extract topic ─────────────────────────────────────
+        if isinstance(user_response, dict):
+            selected_topic = (
+                user_response.get("Selected Topic")
+                or user_response.get("selected_topic")
+                or user_response.get("topic")
+                or ""
+            )
+        else:
+            selected_topic = str(user_response)
+
+        selected_topic = selected_topic.strip()
+
+        # ── Auto regenerate if empty ──────────────────────────
+        if not selected_topic:
+            logger.warning("Empty input → regenerating topics")
+
+            results = await model.ainvoke(messages)
+            topics = results.topics
+            continue
+
+        # ✅ Valid topic → exit loop
+        logger.info("User selected topic: %s", selected_topic)
+        break
+
     return {
         "content": {
             "topics": topics,
-            "selected_topic": selected_topic
+            "selected_topic": selected_topic,
         }
     }

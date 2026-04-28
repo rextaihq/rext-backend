@@ -1,20 +1,23 @@
 from pydantic import BaseModel
 from typing import List, Optional, Any, Dict
+from uuid import UUID
+from datetime import datetime
 from src.api.schema.workspace_schema import WorkspaceResponseSchema
+from src.api.schema.response.persona_responses import PersonaResponse
 
 class WorkspaceStatusResponse(BaseModel):
     status: str
     service: str
 
 class WorkspaceListResponse(BaseModel):
-    workspaces: List[Dict[str, Any]]
+    workspaces: List[WorkspaceResponseSchema]
     total_count: int
 
 class SingleWorkspaceResponse(BaseModel):
-    workspace: Dict[str, Any]
+    workspace: WorkspaceResponseSchema
 
 class RoleData(BaseModel):
-    id: str
+    id: UUID
     name: str
     display_name: str
     description: Optional[str]
@@ -39,6 +42,7 @@ class WorkspaceStatsResponse(BaseModel):
     content_count: int
     knowledge_items_count: int
     members_count: int
+    topics_count: int = 0
     has_content_builder: bool
 
 class EmailTemplateDeleteResponse(BaseModel):
@@ -50,14 +54,15 @@ class DefaultEmailTemplateResponse(BaseModel):
     body: str
 
 class BrandVoiceResponse(BaseModel):
-    id: Optional[str] = None
-    workspace_id: str
+    id: Optional[UUID] = None
+    workspace_id: UUID
     about: Optional[str] = None
     customer_profile: Optional[str] = None
     selling_position: Optional[str] = None
     target_audience: List[str] = []
     brand_voice: List[str] = []
     competitors: List[str] = []
+    content_pillar: List[str] = []
     content_strategy: List[str] = []
     personas: List[Any] = []
     created_at: Optional[str] = None
@@ -73,7 +78,7 @@ class BrandVoiceRefreshResponse(BaseModel):
     operation_id: str
 
 class MyWorkspacePermissionsResponse(BaseModel):
-    workspace_id: str
+    workspace_id: UUID
     workspace_slug: str
     user_role: str
     permissions: List[str]
@@ -81,17 +86,17 @@ class MyWorkspacePermissionsResponse(BaseModel):
 class CheckWorkspacePermissionResponse(BaseModel):
     has_permission: bool
     permission: str
-    workspace_id: str
+    workspace_id: UUID
 
 class WorkspaceRoleResponse(BaseModel):
     name: str
     display_name: str
     workspace_scoped: bool
-    workspace_id: Optional[str] = None
+    workspace_id: Optional[UUID] = None
 
 class MemberWorkspacePermissionsResponse(BaseModel):
-    user_id: str
-    workspace_id: str
+    user_id: UUID
+    workspace_id: UUID
     roles: List[WorkspaceRoleResponse]
     permissions: List[str]
 

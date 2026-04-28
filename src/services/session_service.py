@@ -27,6 +27,7 @@ from src.api.models.user_models.user_sessions import UserSession
 from src.api.models.user_models.token_blacklist import TokenBlacklist
 from src.utils.logger import logger
 from src.api.middleware.exceptions import ResourceNotFoundException
+from src.api.security.token_utils import blacklist_token_in_cache
 
 
 class SessionService:
@@ -67,8 +68,11 @@ class SessionService:
                 "device_type": session.device_type,
                 "ip_address": str(session.ip_address) if session.ip_address else None,
                 "user_agent": session.user_agent,
+                "city": session.city,
+                "country": session.country,
                 "created_at": session.created_at.isoformat() if session.created_at else None,
                 "last_activity_at": session.last_activity_at.isoformat() if session.last_activity_at else None,
+                "expires_at": session.expires_at.isoformat() if session.expires_at else None,
                 "is_current": False,  # Will be determined by route based on current token
                 "token_id": session.jti,
             })
@@ -114,17 +118,19 @@ class SessionService:
                 message="Session not found or does not belong to user"
             )
 
-        # Blacklist token 
+        # Blacklist token
         if session.jti:
+            exp_dt = self._normalize_expiry(session.expires_at)
             blacklist_entry = TokenBlacklist(
                 jti=session.jti,
                 token_type="access",
                 user_id=user_id,
                 revoked_at=datetime.now(timezone.utc),
-                expires_at=self._normalize_expiry(session.expires_at),
+                expires_at=exp_dt,
                 reason="session_revoked"
             )
             self.db.add(blacklist_entry)
+            await blacklist_token_in_cache(session.jti, int(exp_dt.timestamp()))
 
         # Deactivate session
         session.is_active = False
@@ -184,15 +190,17 @@ class SessionService:
         for session in sessions:
             # Blacklist token
             if session.jti:
+                exp_dt = self._normalize_expiry(session.expires_at)
                 blacklist_entry = TokenBlacklist(
                     jti=session.jti,
                     token_type="access",
                     user_id=user_id,
                     revoked_at=now,
-                    expires_at=self._normalize_expiry(session.expires_at),
+                    expires_at=exp_dt,
                     reason="all_sessions_revoked"
                 )
                 self.db.add(blacklist_entry)
+                await blacklist_token_in_cache(session.jti, int(exp_dt.timestamp()))
 
             # Deactivate session
             session.is_active = False

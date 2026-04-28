@@ -5,25 +5,12 @@ from dotenv import load_dotenv
 from openai import OpenAI
 import json
 import os
+import uuid
+import httpx
 
 load_dotenv()
 
-@tool
-def search_tool(query: str) -> str:
-    """Perform a web search using DuckDuckGo and return top 5 results with snippets.
-
-    Use this tool for factual questions, current events, research, or up-to-date web info.
-    Returns structured results with title, URL, and snippet for citation.
-
-    Args:
-        query: Search query (e.g., "best laptops 2024 review")
-    """
-    search = DuckDuckGoSearchRun(
-        max_results=5,
-        search_depth="advanced",
-    )
-    results = search.run(query)
-    return json.dumps(results, indent=2)
+SEARCH_HARD_CAP = 6
 
 
 @tool
@@ -49,12 +36,34 @@ def generate_image(prompt: str, model: str = "dall-e-3", size: str = "1024x1024"
             prompt=prompt,
             n=1,
             size=size,
-            quality="standard",  # or "hd"
+            quality="standard",
         )
-        
-        # Extract the URL from the response
-        image_url = response.data[0].url
-        return image_url
+
+        # OpenAI returns a temporary Azure SAS URL that expires in ~2 hours.
+        # Download and re-upload to our own storage for a permanent URL.
+        temp_url = response.data[0].url
+
+        try:
+            from src.utils.storage import storage_service
+            from src.api.config import get_settings
+            # Only persist when MINIO_PUBLIC_URL is set — otherwise get_file_url
+            # returns a presigned URL (1 h expiry) which is shorter than the
+            # original OpenAI SAS URL (~2 h) and would make the problem worse.
+            if storage_service.available and get_settings().MINIO_PUBLIC_URL:
+                image_response = httpx.get(temp_url, timeout=30)
+                image_response.raise_for_status()
+                object_name = f"generated-images/{uuid.uuid4()}.png"
+                permanent_url = storage_service.upload_file(
+                    file_data=image_response.content,
+                    object_name=object_name,
+                    content_type="image/png",
+                )
+                if permanent_url:
+                    return permanent_url
+        except Exception as upload_err:
+            print(f"Failed to persist image to storage, falling back to temp URL: {upload_err}")
+
+        return temp_url
 
     except Exception as e:
         print(f"Error generating image: {e}")
@@ -62,4 +71,28 @@ def generate_image(prompt: str, model: str = "dall-e-3", size: str = "1024x1024"
 
 
 def get_tools():
+    import threading
+    call_count = [0]
+    lock = threading.Lock()
+
+    @tool
+    def search_tool(query: str) -> str:
+        """Perform a web search using DuckDuckGo and return top 5 results with snippets.
+
+        Use this tool for factual questions, current events, research, or up-to-date web info.
+        Returns structured results with title, URL, and snippet for citation.
+
+        Args:
+            query: Search query (e.g., "best laptops 2024 review")
+        """
+        with lock:
+            if call_count[0] >= SEARCH_HARD_CAP:
+                print(f"[search_tool] Hard cap {SEARCH_HARD_CAP} reached — blocking call for query: {query!r}")
+                return json.dumps({"error": f"Search cap of {SEARCH_HARD_CAP} reached. Stop searching and write the article now."})
+            call_count[0] += 1
+            current = call_count[0]
+        print(f"[search_tool] call {current}/{SEARCH_HARD_CAP} — query: {query!r}")
+        results = DuckDuckGoSearchRun(max_results=5, search_depth="advanced").run(query)
+        return json.dumps(results, indent=2)
+
     return [search_tool, generate_image]

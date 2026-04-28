@@ -82,8 +82,39 @@ class Users(Base, SerializableMixin, SoftDeleteMixin):
         passive_deletes=True
     )
 
+    @property
+    def initials(self) -> str:
+        """Calculate user initials from full name"""
+        if not self.full_name:
+            return "?"
+        parts = self.full_name.split()
+        if len(parts) >= 2:
+            return f"{parts[0][0]}{parts[-1][0]}".upper()
+        return parts[0][0].upper()
+
+    @property
+    def display_role(self) -> str:
+        """Return the display name of the user's primary or highest role"""
+        if not self.user_roles:
+            return "User"
+        # Try to find primary role first
+        primary_role = next((ur for ur in self.user_roles if ur.is_primary), None)
+        if primary_role and primary_role.role:
+            return primary_role.role.display_name
+        
+        # Fallback to role with highest hierarchy level
+        roles = [ur.role for ur in self.user_roles if ur.role]
+        if roles:
+            highest_role = max(roles, key=lambda r: r.hierarchy_level or 0)
+            return highest_role.display_name
+        
+        return "User"
+
     def to_dict(self, **kwargs):
         """Exclude sensitive fields from serialization"""
         if 'exclude' not in kwargs:
             kwargs['exclude'] = ['password_hash', 'reset_token']
-        return super().to_dict(**kwargs)
+        data = super().to_dict(**kwargs)
+        data['initials'] = self.initials
+        data['display_role'] = self.display_role
+        return data

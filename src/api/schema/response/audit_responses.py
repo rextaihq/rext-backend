@@ -1,21 +1,23 @@
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
+from datetime import datetime
+from uuid import UUID
 
 class AuditLogItem(BaseModel):
     """Schema for a formatted audit log entry."""
-    id: str
-    user_id: Optional[str] = None
+    id: UUID
+    user_id: Optional[UUID] = None
     full_name: Optional[str] = None
     user_email: Optional[str] = None
     action: str
     resource_type: Optional[str] = None
-    resource_id: Optional[str] = None
-    workspace_id: Optional[str] = None
+    resource_id: Optional[UUID] = None
+    workspace_id: Optional[UUID] = None
     ip_address: Optional[str] = None
     user_agent: Optional[str] = None
     request_id: Optional[str] = None
     status: str
-    created_at: Optional[str] = None
+    created_at: Optional[datetime] = None
 
 class AuditLogDetailItem(AuditLogItem):
     """Schema for audit log entry with full details."""
@@ -66,7 +68,7 @@ class StatusCount(BaseModel):
     count: int
 
 class MostActiveUser(BaseModel):
-    user_id: str
+    user_id: UUID
     full_name: Optional[str] = None
     action_count: int
 

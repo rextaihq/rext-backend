@@ -31,6 +31,7 @@ services:
     # Postgres Databases and also add some other secrets
     postgres:
         image: pgvector/pgvector:pg17
+        restart: unless-stopped
         environment:
             POSTGRES_USER: ${POSTGRES_USER}
             POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
@@ -76,7 +77,8 @@ services:
 
     # Backend API Service
     rext-api:
-        image: ghcr.io/revnix/rext-backend:${IMAGE_TAG:-latest}
+        image: ghcr.io/rextaihq/rext-backend:${IMAGE_TAG:-latest}
+        restart: unless-stopped
         labels:
             - "traefik.enable=true"
             - "traefik.docker.network=coolify"
@@ -91,6 +93,10 @@ services:
                     memory: 1.5G
         expose:
             - ${PORT:-2024}
+        ulimits:
+            nofile:
+                soft: 65536
+                hard: 65536
 
         # Traefik labels are managed by Coolify — do not uncomment these manually
         # See Coolify dashboard > Applications > rext-backend for routing config
@@ -186,6 +192,8 @@ services:
 
             # Connection pooling (FIXED)
             REDIS_MAX_CONNECTIONS: "50"
+            POSTGRES_POOL_SIZE: "5"
+            POSTGRES_MAX_OVERFLOW: "5"
 
             # TTL - CRITICAL for 8GB (auto-delete old threads)
             CHECKPOINTER_TTL_DEFAULT: 86400 # 24hr
@@ -236,9 +244,21 @@ services:
             MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:-minioadmin}
         volumes:
             - minio_data:/data
-        ports:
-            - "9000:9000"   # S3 API
-            - "9001:9001"   # Web console
+        expose:
+            - "9000"   # S3 API (internal only, exposed via Traefik /media path)
+            - "9001"   # Web console (internal only)
+        labels:
+            - "traefik.enable=true"
+            - "traefik.docker.network=coolify"
+            # Route /media/* on the API domain to MinIO S3 port 9000
+            - "traefik.http.routers.minio-s3.rule=PathPrefix(`/media`)"
+            - "traefik.http.routers.minio-s3.entrypoints=https"
+            - "traefik.http.routers.minio-s3.tls=true"
+            - "traefik.http.routers.minio-s3.service=minio-s3-svc"
+            - "traefik.http.services.minio-s3-svc.loadbalancer.server.port=9000"
+            # Strip /media prefix before forwarding to MinIO
+            - "traefik.http.middlewares.minio-strip.stripprefix.prefixes=/media"
+            - "traefik.http.routers.minio-s3.middlewares=minio-strip"
         healthcheck:
             test: ["CMD-SHELL", "curl -f http://localhost:9000/minio/health/live || exit 1"]
             interval: 10s
@@ -247,6 +267,7 @@ services:
             start_period: 15s
         networks:
             - rext-network
+            - coolify
 
 networks:
     rext-network:

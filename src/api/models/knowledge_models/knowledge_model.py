@@ -92,6 +92,19 @@ class BrandVoice(Base, SerializableMixin):
 
     workspace = relationship("WorkspaceModel", back_populates="brand_voices")
 
+    def to_dict(self, **kwargs) -> dict:
+        """Custom serialization handling list fields"""
+        data = super().to_dict(**kwargs)
+        # Ensure list fields are always lists (even if stored as empty JSONB)
+        list_fields = ['target_audience', 'brand_voice', 'competitors', 'content_strategy', 'secondary_pillars']
+        for field in list_fields:
+            if field in data:
+                if data[field] is None:
+                    data[field] = []
+            else:
+                data[field] = []
+        return data
+
 # Web Knowledge
 class Website(Base, SerializableMixin):
     __tablename__ = "website"
