@@ -92,6 +92,13 @@ async def generate_meta_desc(request_meta: MetaDescriptionRequest, request: Requ
         raise HTTPException(status_code=500, detail=f"Failed to generate meta description: {str(e)}")
 
 # Title Tag Generator Endpoint
+@router.post("/title-tags", response_model=SuccessResponse[TitleResponse])
+async def generate_title_tags_route(request_title: TitleRequest, request: Request):
+    """
+    API endpoint to generate title tags.
+    URL: POST /tools/title-tags
+    """
+    try:
         titles = await generate_title_tags(
             keyword=request_title.keyword,
             topic=request_title.topic,

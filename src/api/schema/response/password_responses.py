@@ -1,12 +1,13 @@
 from pydantic import BaseModel
 from datetime import datetime
+from uuid import UUID
 
 class ResetPasswordResponse(BaseModel):
-    user_id: str
+    user_id: UUID
     sessions_revoked: bool
 
 class ChangePasswordResponse(BaseModel):
-    user_id: str
+    user_id: UUID
     password_changed_at: datetime
     sessions_revoked: bool
 

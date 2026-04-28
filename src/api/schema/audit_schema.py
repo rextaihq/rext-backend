@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field, field_validator
 from typing import Optional, Dict, Any, List
 from datetime import datetime, timezone
 from enum import Enum
+from uuid import UUID
 
 
 class AuditActionFilter(str, Enum):
@@ -81,22 +82,22 @@ class AuditStatus(str, Enum):
 
 class AuditLogResponse(BaseModel):
     """Schema for audit log entry response."""
-    id: str = Field(..., description="Audit log UUID")
-    user_id: Optional[str] = Field(None, description="User who performed the action")
+    id: UUID = Field(..., description="Audit log UUID")
+    user_id: Optional[UUID] = Field(None, description="User who performed the action")
     full_name: Optional[str] = Field(None, description="Full name (denormalized)")
     user_email: Optional[str] = Field(None, description="User email (denormalized)")
     action: str = Field(..., description="Action performed")
     resource_type: str = Field(..., description="Type of resource")
-    resource_id: Optional[str] = Field(None, description="ID of affected resource")
-    workspace_id: Optional[str] = Field(None, description="Workspace context")
+    resource_id: Optional[UUID] = Field(None, description="ID of affected resource")
+    workspace_id: Optional[UUID] = Field(None, description="Workspace context")
     ip_address: Optional[str] = Field(None, description="IP address of request")
     user_agent: Optional[str] = Field(None, description="User agent string")
     request_id: Optional[str] = Field(None, description="Request ID for correlation")
     status: str = Field(..., description="Action status (success/failed/partial)")
-    created_at: str = Field(..., description="Timestamp of action")
+    created_at: datetime = Field(..., description="Timestamp of action")
 
-    class Config:
-        json_schema_extra = {
+    model_config = {
+        "json_schema_extra": {
             "example": {
                 "id": "123e4567-e89b-12d3-a456-426614174000",
                 "user_id": "123e4567-e89b-12d3-a456-426614174001",
@@ -113,18 +114,19 @@ class AuditLogResponse(BaseModel):
                 "created_at": "2025-10-02T18:30:00Z"
             }
         }
+    }
 
 
 class AuditLogDetailResponse(BaseModel):
     """Schema for detailed audit log entry with change tracking."""
-    id: str = Field(..., description="Audit log UUID")
-    user_id: Optional[str] = Field(None, description="User who performed the action")
+    id: UUID = Field(..., description="Audit log UUID")
+    user_id: Optional[UUID] = Field(None, description="User who performed the action")
     full_name: Optional[str] = Field(None, description="Full name (denormalized)")
     user_email: Optional[str] = Field(None, description="User email (denormalized)")
     action: str = Field(..., description="Action performed")
     resource_type: str = Field(..., description="Type of resource")
-    resource_id: Optional[str] = Field(None, description="ID of affected resource")
-    workspace_id: Optional[str] = Field(None, description="Workspace context")
+    resource_id: Optional[UUID] = Field(None, description="ID of affected resource")
+    workspace_id: Optional[UUID] = Field(None, description="Workspace context")
     ip_address: Optional[str] = Field(None, description="IP address of request")
     user_agent: Optional[str] = Field(None, description="User agent string")
     request_id: Optional[str] = Field(None, description="Request ID for correlation")
@@ -133,10 +135,10 @@ class AuditLogDetailResponse(BaseModel):
     metadata: Optional[Dict[str, Any]] = Field(None, description="Additional context")
     status: str = Field(..., description="Action status (success/failed/partial)")
     error_message: Optional[str] = Field(None, description="Error message if failed")
-    created_at: str = Field(..., description="Timestamp of action")
+    created_at: datetime = Field(..., description="Timestamp of action")
 
-    class Config:
-        json_schema_extra = {
+    model_config = {
+        "json_schema_extra": {
             "example": {
                 "id": "123e4567-e89b-12d3-a456-426614174000",
                 "user_id": "123e4567-e89b-12d3-a456-426614174001",
@@ -157,6 +159,7 @@ class AuditLogDetailResponse(BaseModel):
                 "created_at": "2025-10-02T18:30:00Z"
             }
         }
+    }
 
 
 class AuditLogListResponse(BaseModel):
@@ -167,30 +170,17 @@ class AuditLogListResponse(BaseModel):
     offset: int = Field(..., description="Current offset")
     has_more: bool = Field(..., description="Whether more results exist")
 
-    class Config:
-        json_schema_extra = {
+    model_config = {
+        "json_schema_extra": {
             "example": {
-                "logs": [
-                    {
-                        "id": "123e4567-e89b-12d3-a456-426614174000",
-                        "user_id": "123e4567-e89b-12d3-a456-426614174001",
-                        "full_name": "John Doe",
-                        "user_email": "john@example.com",
-                        "action": "user.suspend",
-                        "resource_type": "user",
-                        "resource_id": "123e4567-e89b-12d3-a456-426614174002",
-                        "workspace_id": None,
-                        "ip_address": "192.168.1.100",
-                        "status": "success",
-                        "created_at": "2025-10-02T18:30:00Z"
-                    }
-                ],
+                "logs": [],
                 "total": 250,
                 "limit": 50,
                 "offset": 0,
                 "has_more": True
             }
         }
+    }
 
 
 # ============================================================================
@@ -199,21 +189,21 @@ class AuditLogListResponse(BaseModel):
 
 class AuditLogFilterParams(BaseModel):
     """Query parameters for filtering audit logs."""
-    user_id: Optional[str] = Field(None, description="Filter by user ID")
+    user_id: Optional[UUID] = Field(None, description="Filter by user ID")
     full_name: Optional[str] = Field(None, description="Filter by full name (partial match)")
     user_email: Optional[str] = Field(None, description="Filter by user email (partial match)")
     action: Optional[str] = Field(None, description="Filter by action (exact match or prefix)")
     resource_type: Optional[str] = Field(None, description="Filter by resource type")
-    resource_id: Optional[str] = Field(None, description="Filter by resource ID")
-    workspace_id: Optional[str] = Field(None, description="Filter by workspace ID")
+    resource_id: Optional[UUID] = Field(None, description="Filter by resource ID")
+    workspace_id: Optional[UUID] = Field(None, description="Filter by workspace ID")
     status: Optional[AuditStatus] = Field(None, description="Filter by status")
-    date_from: Optional[str] = Field(None, description="Start date (ISO 8601)")
-    date_to: Optional[str] = Field(None, description="End date (ISO 8601)")
+    date_from: Optional[datetime] = Field(None, description="Start date")
+    date_to: Optional[datetime] = Field(None, description="End date")
     limit: int = Field(50, ge=1, le=1000, description="Results per page")
     offset: int = Field(0, ge=0, description="Pagination offset")
 
-    class Config:
-        json_schema_extra = {
+    model_config = {
+        "json_schema_extra": {
             "example": {
                 "user_id": "123e4567-e89b-12d3-a456-426614174001",
                 "action": "user.suspend",
@@ -225,6 +215,7 @@ class AuditLogFilterParams(BaseModel):
                 "offset": 0
             }
         }
+    }
 
 
 # ============================================================================
@@ -248,8 +239,8 @@ class AuditLogExportRequest(BaseModel):
         description="Optional filters to apply to export"
     )
 
-    class Config:
-        json_schema_extra = {
+    model_config = {
+        "json_schema_extra": {
             "example": {
                 "format": "csv",
                 "filters": {
@@ -259,6 +250,7 @@ class AuditLogExportRequest(BaseModel):
                 }
             }
         }
+    }
 
 
 # ============================================================================
@@ -274,32 +266,15 @@ class AuditLogStatsResponse(BaseModel):
     most_active_users: List[Dict[str, Any]] = Field(..., description="Top 10 active users")
     recent_failures: int = Field(..., description="Failed actions in last 24 hours")
 
-    class Config:
-        json_schema_extra = {
+    model_config = {
+        "json_schema_extra": {
             "example": {
                 "total_logs": 5420,
-                "logs_by_action": {
-                    "user.login": 2150,
-                    "user.update": 890,
-                    "user.suspend": 45
-                },
-                "logs_by_resource": {
-                    "user": 3500,
-                    "workspace": 1200,
-                    "role": 720
-                },
-                "logs_by_status": {
-                    "success": 5350,
-                    "failed": 65,
-                    "partial": 5
-                },
-                "most_active_users": [
-                    {
-                        "user_id": "123e4567-e89b-12d3-a456-426614174001",
-                        "full_name": "Admin User",
-                        "action_count": 450
-                    }
-                ],
+                "logs_by_action": {"user.login": 2150},
+                "logs_by_resource": {"user": 3500},
+                "logs_by_status": {"success": 5350, "failed": 65},
+                "most_active_users": [{"user_id": "123e4567...", "action_count": 450}],
                 "recent_failures": 12
             }
         }
+    }

@@ -152,16 +152,11 @@ async def get_workspace_by_slug(
     # Merge analytics into workspace data
     workspace_data["knowledge_stats"] = analytics["knowledge_stats"]
     workspace_data["analytics"] = {
-        "knowledge_counts": {
-            "web_knowledge": analytics["knowledge_stats"]["web_knowledge"],
-            "files": analytics["knowledge_stats"]["files"],
-            "text_knowledge": analytics["knowledge_stats"]["text_knowledge"],
-            "total_knowledge_items": analytics["knowledge_stats"]["total"]
-        },
+        "knowledge_stats": analytics["knowledge_stats"],
         "content_metrics": analytics.get("content_metrics", {}),
-        "team_metrics": {
-            "total_members": analytics["members_count"]
-        }
+        "members_count": analytics["members_count"],
+        "content_count": analytics["content_count"],
+        "topics_count": analytics["topics_count"],
     }
 
     return success(
@@ -194,16 +189,11 @@ async def get_workspace_by_id(
     # Merge analytics into workspace data
     workspace_data["knowledge_stats"] = analytics["knowledge_stats"]
     workspace_data["analytics"] = {
-        "knowledge_counts": {
-            "web_knowledge": analytics["knowledge_stats"]["web_knowledge"],
-            "files": analytics["knowledge_stats"]["files"],
-            "text_knowledge": analytics["knowledge_stats"]["text_knowledge"],
-            "total_knowledge_items": analytics["knowledge_stats"]["total"]
-        },
+        "knowledge_stats": analytics["knowledge_stats"],
         "content_metrics": analytics.get("content_metrics", {}),
-        "team_metrics": {
-            "total_members": analytics["members_count"]
-        }
+        "members_count": analytics["members_count"],
+        "content_count": analytics["content_count"],
+        "topics_count": analytics["topics_count"],
     }
 
     return success(
@@ -262,7 +252,7 @@ async def get_available_roles(
 # -------------------------
 # Get workspace by ID or slug (RESTful)
 # -------------------------
-@router.get("/{workspace_id}", response_model=SuccessResponse[WorkspaceResponseSchema])
+@router.get("/{workspace_id}", response_model=SuccessResponse[SingleWorkspaceResponse])
 @require_permissions("workspace.read")
 @db_transaction_handler("get workspace", success_message="Workspace retrieved successfully")
 async def get_workspace_detail(
@@ -270,7 +260,7 @@ async def get_workspace_detail(
     request: Request,
     db: AsyncSession = Depends(get_async_db),
     user: dict = Depends(get_current_user)
-) -> SuccessResponse[WorkspaceResponseSchema]:
+) -> SuccessResponse[SingleWorkspaceResponse]:
     """
     Fetch comprehensive workspace details by ID or slug.
     
@@ -288,19 +278,14 @@ async def get_workspace_detail(
     # Merge analytics into workspace data
     workspace_data["knowledge_stats"] = analytics["knowledge_stats"]
     workspace_data["analytics"] = {
-        "knowledge_counts": {
-            "web_knowledge": analytics["knowledge_stats"]["web_knowledge"],
-            "files": analytics["knowledge_stats"]["files"],
-            "text_knowledge": analytics["knowledge_stats"]["text_knowledge"],
-            "total_knowledge_items": analytics["knowledge_stats"]["total"]
-        },
+        "knowledge_stats": analytics["knowledge_stats"],
         "content_metrics": analytics.get("content_metrics", {}),
-        "team_metrics": {
-            "total_members": analytics["members_count"]
-        }
+        "members_count": analytics["members_count"],
+        "content_count": analytics["content_count"],
+        "topics_count": analytics["topics_count"],
     }
 
-    return success(data=workspace_data, request=request)
+    return success(data={"workspace": workspace_data}, request=request)
 
 
 # -------------------------

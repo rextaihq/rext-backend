@@ -31,7 +31,7 @@ class ContentListResponse(BaseModel):
     """
     content: List[ContentResponse]
     total_count: int
-    workspace_id: str
+    workspace_id: UUID
     limit: int
     offset: int
 
@@ -67,7 +67,7 @@ class RetryContentResponse(BaseModel):
     status, and retry_type. The `successful` field is only present on the
     publish-retry path; it is Optional here to cover both branches.
     """
-    content_id: str
+    content_id: UUID
     status: str
     retry_type: str
     successful: Optional[bool] = None
@@ -79,7 +79,7 @@ class DeletedContentResponse(BaseModel):
 
     Matches: {"deleted_id": "..."}
     """
-    deleted_id: str
+    deleted_id: UUID
 
 
 # ---------------------------------------------------------------------------
@@ -126,7 +126,7 @@ class SiteListResponse(BaseModel):
     """
     sites: List[SiteItemResponse]
     total_count: int
-    workspace_id: str
+    workspace_id: UUID
 
 
 class SiteDeletedResponse(BaseModel):
@@ -135,7 +135,7 @@ class SiteDeletedResponse(BaseModel):
 
     Matches: {"site_id": "..."}
     """
-    site_id: str
+    site_id: UUID
 
 
 class WordPressPublishResult(BaseModel):
@@ -145,4 +145,4 @@ class WordPressPublishResult(BaseModel):
     Matches: {"wordpress_result": {...}, "content_id": "..."}
     """
     wordpress_result: Dict[str, Any]
-    content_id: str
+    content_id: UUID

@@ -15,7 +15,7 @@ from src.api.schema.notification_schema import NotificationPreferencesResponse, 
 from src.api.database.async_database import get_async_db
 from src.utils.response_utils import success, error
 from src.api.schema.response_schemas import ErrorCode, ErrorSeverity, SuccessResponse, GenericResponse
-from src.api.schema.response.user_related_responses import UpdateProfileResponse
+from src.api.schema.response.user_related_responses import UpdateProfileResponse, ProfileResponseDetailed
 from src.api.middleware.exceptions import ResourceNotFoundException, RextValidationException
 from src.services.user_service import UserService
 from src.services.notification_preferences_service import NotificationPreferencesService
@@ -38,7 +38,7 @@ from src.utils.storage import storage_service
 
 settings = get_settings()
 
-@router.get("/profile", response_model=UserResponse)
+@router.get("/profile", response_model=SuccessResponse[ProfileResponseDetailed])
 @require_permissions("user.read", workspace_scoped=False)
 @db_transaction_handler("get profile", auto_commit=False)
 async def get_profile(

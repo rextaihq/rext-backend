@@ -62,7 +62,7 @@ async def get_workspace_stats(
     analytics = await workspace_service.get_workspace_analytics(workspace_uuid)
 
     content_count = analytics["content_count"]
-    knowledge_items_count = analytics["knowledge_stats"]["total"]
+    knowledge_items_count = analytics["knowledge_stats"]["total_count"]
     members_count = analytics["members_count"]
 
 
@@ -86,6 +86,7 @@ async def get_workspace_stats(
         "content_count": content_count,
         "knowledge_items_count": knowledge_items_count,
         "members_count": members_count,
+        "topics_count": analytics.get("topics_count", 0),
         "has_content_builder": has_content_builder,
     }
 

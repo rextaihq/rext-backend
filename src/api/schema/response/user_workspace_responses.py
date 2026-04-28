@@ -1,22 +1,25 @@
 from pydantic import BaseModel
-from typing import List, Optional, Dict, Any
+from typing import List, Optional
+from datetime import datetime
+from uuid import UUID
+from src.api.schema.workspace_schema import WorkspaceOwnerSummary
 
 class UserWorkspaceRole(BaseModel):
-    id: str
+    id: UUID
     name: str
     display_name: str
 
 class UserWorkspaceBrief(BaseModel):
-    id: str
+    id: UUID
     name: str
     slug: str
     url: Optional[str] = None
     timezone: str
-    created_at: str
-    updated_at: str
-    owner: Optional[Dict[str, Any]] = None
+    created_at: datetime
+    updated_at: datetime
+    owner: Optional[WorkspaceOwnerSummary] = None
     user_role: Optional[UserWorkspaceRole] = None
-    knowledge_stats: Optional[Dict[str, int]] = None
+    knowledge_stats: Optional[dict] = None
     members_count: int
     is_owner: bool
     status: str

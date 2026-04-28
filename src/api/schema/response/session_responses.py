@@ -1,24 +1,31 @@
 from pydantic import BaseModel
-from typing import List, Optional, Any, Dict
+from typing import List, Optional
+from datetime import datetime
+from uuid import UUID
 
 class SessionItem(BaseModel):
-    id: str
-    user_id: str
-    token_id: Optional[str] = None # Should be popped in route but included for schema safety if needed
+    id: UUID
+    user_id: UUID
+    token_id: Optional[str] = None
     is_current: bool
-    created_at: str
-    expires_at: str
+    created_at: datetime
+    last_activity_at: datetime
+    expires_at: datetime
     user_agent: Optional[str] = None
     ip_address: Optional[str] = None
+    device_name: Optional[str] = None
+    device_type: Optional[str] = None
+    city: Optional[str] = None
+    country: Optional[str] = None
 
 class SessionListResponse(BaseModel):
-    sessions: List[Dict[str, Any]]
+    sessions: List[SessionItem]
     total_count: int
     active_count: int
 
 class SessionRevokeResponse(BaseModel):
     success: bool
-    session_id: str
+    session_id: UUID
     message: str
 
 class BulkSessionRevokeResponse(BaseModel):

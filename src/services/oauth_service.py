@@ -436,6 +436,21 @@ class OAuthService:
             extra={"provider": provider, "user_id": str(user_id)}
         )
 
+    async def get_user_oauth_accounts(self, user_id: UUID) -> List[OAuthAccount]:
+        """
+        Get all OAuth accounts linked to a user.
+
+        Args:
+            user_id: User UUID
+
+        Returns:
+            List of OAuthAccount objects
+        """
+        result = await self.db.execute(
+            select(OAuthAccount).where(OAuthAccount.user_id == user_id)
+        )
+        return result.scalars().all()
+
     # ========================================================================
     # Private Helper Methods
     # ========================================================================

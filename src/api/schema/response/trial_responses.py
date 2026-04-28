@@ -19,12 +19,12 @@ class TrialEligibilityResponse(BaseModel):
 
 class TrialExtensionResponse(BaseModel):
     """Response schema for admin trial extensions."""
-    id: str
-    user_id: str
+    id: UUID
+    user_id: UUID
     status: str
-    trial_end_date: Optional[str] = None
+    trial_end_date: Optional[datetime] = None
     extension_days: int
-    extended_by: str
+    extended_by: UUID
     extension_reason: Optional[str] = None
     trial_extensions: List[Dict[str, Any]] = Field(default_factory=list)
 
@@ -41,12 +41,12 @@ class TrialAnalyticsResponse(BaseModel):
 
 class ExpiringTrial(BaseModel):
     """Schema for a single expiring trial item."""
-    id: str
-    user_id: str
-    plan_id: str
+    id: UUID
+    user_id: UUID
+    plan_id: UUID
     status: str
-    trial_end_date: Optional[str] = None
-    created_at: str
+    trial_end_date: Optional[datetime] = None
+    created_at: datetime
 
 
 class ExpiringTrialsResponse(BaseModel):
@@ -59,6 +59,6 @@ class ExpiringTrialsResponse(BaseModel):
 class TrialStatusResponse(BaseModel):
     """Response schema for user-facing trial status."""
     is_trial: bool
-    trial_end_date: Optional[str] = None
+    trial_end_date: Optional[datetime] = None
     days_remaining: Optional[int] = None
     trial_expired: bool

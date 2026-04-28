@@ -1,12 +1,13 @@
 from pydantic import BaseModel
 from typing import List, Optional, Any, Dict
 from datetime import datetime
+from uuid import UUID
 
 class NotificationItem(BaseModel):
     """Schema for a single notification."""
-    id: str
-    user_id: str
-    workspace_id: Optional[str] = None
+    id: UUID
+    user_id: UUID
+    workspace_id: Optional[UUID] = None
     title: str
     message: str
     type: str
@@ -40,13 +41,13 @@ class NotificationMarkReadResponse(BaseModel):
     """Schema for marking notifications as read response."""
     marked_count: int
     marked_all: bool = False
-    notification_ids: Optional[List[str]] = None
+    notification_ids: Optional[List[UUID]] = None
 
 class NotificationClearResponse(BaseModel):
     """Schema for clearing notifications response."""
     cleared_count: int
     cleared_all_read: bool = False
-    notification_ids: Optional[List[str]] = None
+    notification_ids: Optional[List[UUID]] = None
 
 class NotificationUnreadCountResponse(BaseModel):
     """Schema for unread count response."""
