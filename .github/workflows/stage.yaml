@@ -55,11 +55,18 @@ jobs:
       - name: Install LangGraph CLI
         run: pip install langgraph-cli
 
-      - name: Build Docker image with LangGraph
-        run: langgraph build -t ghcr.io/${{ github.repository_owner }}/rext-backend:stage
+      - name: Generate Dockerfile from LangGraph config
+        run: langgraph dockerfile Dockerfile.langgraph
 
-      - name: Push Docker image to GHCR
-        run: docker push ghcr.io/${{ github.repository_owner }}/rext-backend:stage
+      - name: Build & push backend image (with GHA cache)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.langgraph
+          push: true
+          tags: ghcr.io/${{ github.repository_owner }}/rext-backend:stage
+          cache-from: type=gha,scope=backend-stage
+          cache-to: type=gha,mode=max,scope=backend-stage
 
       - name: Cleanup Docker (Post-build)
         if: always()
@@ -100,8 +107,8 @@ jobs:
           tags: |
             ghcr.io/${{ github.repository_owner }}/rext-shopify-app:stage
             ghcr.io/${{ github.repository_owner }}/rext-shopify-app:sha-${{ github.sha }}
-          cache-from: type=registry,ref=ghcr.io/${{ github.repository_owner }}/rext-shopify-app:stage
-          cache-to: type=inline
+          cache-from: type=gha,scope=shopify-stage
+          cache-to: type=gha,mode=max,scope=shopify-stage
 
   # ──────────────────────────────────────────────
   # 🚀 Stage 3 — Deploy via Coolify
