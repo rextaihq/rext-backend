@@ -27,9 +27,9 @@ class ShopifyConnectRequest(BaseModel):
             "(e.g. 'my-store')."
         ),
     )
-    access_token: str = Field(
-        ...,
-        description="Shopify Admin API access token (private/custom app).",
+    access_token: Optional[str] = Field(
+        default=None,
+        description="Optional Shopify Admin API access token (legacy token flow).",
     )
     is_active: bool = Field(
         default=True,
@@ -50,10 +50,12 @@ class ShopifyConnectRequest(BaseModel):
 
     @field_validator("access_token")
     @classmethod
-    def validate_access_token(cls, v: str) -> str:
+    def validate_access_token(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return None
         v = v.strip()
         if not v:
-            raise ValueError("access_token must not be empty.")
+            raise ValueError("access_token must not be empty if provided.")
         return v
 
     model_config = {

@@ -341,7 +341,7 @@ class RextExternalServiceException(RextAPIException):
         service_error: str = None,
         **kwargs
     ):
-        context = kwargs.get('context', {})
+        context = kwargs.pop('context', {})
         context.update({
             "service_name": service_name,
             "service_error": service_error

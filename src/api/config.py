@@ -95,6 +95,30 @@ class Settings(BaseSettings):
     EMAIL_PASSWORD: Optional[str] = Field(default=None, description="Email sender password")
 
     # ============================================================================
+    # SHOPIFY APP BRIDGE
+    # ============================================================================
+    SHOPIFY_APP_SLUG: str = Field(
+        default="rext-publisher-1",
+        description="Shopify app slug used in admin launch URLs"
+    )
+    SHOPIFY_APP_ENTRY_PATH: str = Field(
+        default="/app/blogpost",
+        description="Shopify app entry path in admin"
+    )
+    SHOPIFY_BRIDGE_BASE_URL: Optional[str] = Field(
+        default=None,
+        description="Base URL for server-to-server calls to the Shopify app backend"
+    )
+    SHOPIFY_BRIDGE_PUBLISH_ENDPOINT: str = Field(
+        default="/app/api/rext/publish",
+        description="Relative endpoint used for app-bridge blog publish requests"
+    )
+    SHOPIFY_BRIDGE_SHARED_SECRET: Optional[str] = Field(
+        default=None,
+        description="Shared secret used to sign Rext -> Shopify app bridge requests"
+    )
+
+    # ============================================================================
     # MONITORING & OBSERVABILITY
     # ============================================================================
     SENTRY_DSN: Optional[str] = Field(

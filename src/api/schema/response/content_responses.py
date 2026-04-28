@@ -116,6 +116,7 @@ class SiteResponse(BaseModel):
              POST /{id}/activate, POST /{id}/deactivate.
     """
     site: SiteItemResponse
+    app_launch_url: Optional[str] = None
 
 
 class SiteListResponse(BaseModel):
@@ -144,5 +145,6 @@ class WordPressPublishResult(BaseModel):
 
     Matches: {"wordpress_result": {...}, "content_id": "..."}
     """
-    wordpress_result: Dict[str, Any]
-    content_id: UUID
+    wordpress_result: Optional[Dict[str, Any]] = None
+    shopify_result: Optional[Dict[str, Any]] = None
+    content_id: str

@@ -9,9 +9,10 @@ from src.utils.logger import logger
 from src.utils.route_decorators import db_transaction_handler, require_permissions
 from src.api.database.async_database import get_async_db
 from src.api.security.dependencies import get_current_user
+from src.api.middleware.exceptions import RextExternalServiceException
 from src.api.schema.content_schema import (
-    ContentCreate, 
-    ContentUpdate, 
+    ContentCreate,
+    ContentUpdate,
     ContentResponse,
     PublishToSiteRequest
 )
@@ -104,9 +105,17 @@ async def save_and_publish(
         site_id=site_id,
         publish_status=publish_status
     )
-    
+
     successful_results = [r for r in results if r.success]
-    
+    all_failed = len(successful_results) == 0
+
+    if all_failed:
+        errors = "; ".join(r.error for r in results if r.error)
+        raise RextExternalServiceException(
+            message=f"Publishing failed for all connected sites. {errors}",
+            service_name="Publishing",
+        )
+
     return success(
         data={
             "content": content.to_dict(),
@@ -116,7 +125,7 @@ async def save_and_publish(
                 "successful": len(successful_results),
                 "failed": len(results) - len(successful_results),
                 "results": [r.model_dump() for r in results],
-                "all_failed": len(successful_results) == 0
+                "all_failed": False,
             }
         },
         request=request,
@@ -164,9 +173,17 @@ async def publish_existing_content(
         site_id=site_id,
         publish_status=status
     )
-    
+
     successful_results = [r for r in results if r.success]
-    
+    all_failed = len(successful_results) == 0
+
+    if all_failed:
+        errors = "; ".join(r.error for r in results if r.error)
+        raise RextExternalServiceException(
+            message=f"Publishing failed for all connected sites. {errors}",
+            service_name="Publishing",
+        )
+
     return success(
         data={
             "content": content.to_dict(),
@@ -176,7 +193,7 @@ async def publish_existing_content(
                 "successful": len(successful_results),
                 "failed": len(results) - len(successful_results),
                 "results": [r.model_dump() for r in results],
-                "all_failed": len(successful_results) == 0
+                "all_failed": False,
             }
         },
         request=request,
