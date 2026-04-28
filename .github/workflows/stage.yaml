@@ -68,20 +68,55 @@ jobs:
           df -h
 
   # ──────────────────────────────────────────────
+  # 🐳 Stage 2b — Build & Push Shopify App Image to GHCR
+  # ──────────────────────────────────────────────
+  docker_shopify:
+    name: 🐳 Build & Push Shopify App
+    needs: quality
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log into GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build & push Shopify app image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./rext
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/rext-shopify-app:stage
+            ghcr.io/${{ github.repository_owner }}/rext-shopify-app:sha-${{ github.sha }}
+          cache-from: type=registry,ref=ghcr.io/${{ github.repository_owner }}/rext-shopify-app:stage
+          cache-to: type=inline
+
+  # ──────────────────────────────────────────────
   # 🚀 Stage 3 — Deploy via Coolify
   # ──────────────────────────────────────────────
   deploy:
     name: 🚀 Coolify Deploy
-    needs: docker_job
+    needs: [docker_job, docker_shopify]
     runs-on: ubuntu-latest
 
     steps:
-      - name: Trigger Coolify Deployment
+      - name: Trigger Coolify Deployment — Backend
         run: |
-          # Clean the API URL: remove trailing slashes and redundant /api/v1
           CLEAN_URL=$(echo "${{ secrets.COOLIFY_API_URL }}" | sed 's#/*$##; s#/api/v1$##')
-          
-          echo "Triggering Coolify deployment for STAGE..."
+
+          echo "Triggering Coolify deployment for rext-backend (stage)..."
           response=$(curl -s -w "\n%{http_code}" --get \
             "$CLEAN_URL/api/v1/deploy" \
             --data-urlencode "uuid=${{ secrets.COOLIFY_UUID_STAGE }}" \
@@ -90,15 +125,36 @@ jobs:
 
           http_code=$(echo "$response" | tail -1)
           body=$(echo "$response" | head -n -1)
-
           echo "Response: $body"
           echo "HTTP Status: $http_code"
 
           if [ "$http_code" != "200" ]; then
-            echo "::error::Coolify deploy failed with HTTP $http_code"
+            echo "::error::Backend Coolify deploy failed with HTTP $http_code"
             exit 1
           fi
-          echo "✅ Coolify deployment triggered successfully"
+          echo "✅ Backend deployment triggered"
+
+      - name: Trigger Coolify Deployment — Shopify App
+        run: |
+          CLEAN_URL=$(echo "${{ secrets.COOLIFY_API_URL }}" | sed 's#/*$##; s#/api/v1$##')
+
+          echo "Triggering Coolify deployment for rext-shopify-app (stage)..."
+          response=$(curl -s -w "\n%{http_code}" --get \
+            "$CLEAN_URL/api/v1/deploy" \
+            --data-urlencode "uuid=${{ secrets.COOLIFY_UUID_SHOPIFY_STAGE }}" \
+            --data-urlencode "force=true" \
+            -H "Authorization: Bearer ${{ secrets.COOLIFY_TOKEN }}")
+
+          http_code=$(echo "$response" | tail -1)
+          body=$(echo "$response" | head -n -1)
+          echo "Response: $body"
+          echo "HTTP Status: $http_code"
+
+          if [ "$http_code" != "200" ]; then
+            echo "::error::Shopify app Coolify deploy failed with HTTP $http_code"
+            exit 1
+          fi
+          echo "✅ Shopify app deployment triggered"
 
   # ──────────────────────────────────────────────
   # ✅ Stage 4 — Smoke Test
@@ -143,7 +199,7 @@ jobs:
   # ──────────────────────────────────────────────
   notify:
     name: 📢 Summary
-    needs: [quality, docker_job, deploy]
+    needs: [quality, docker_job, docker_shopify, deploy]
     if: always()
     runs-on: ubuntu-latest
 
@@ -159,7 +215,8 @@ jobs:
           echo "| Stage | Status |" >> $GITHUB_STEP_SUMMARY
           echo "|---|---|" >> $GITHUB_STEP_SUMMARY
           echo "| 🔍 Quality Gate | \`${{ needs.quality.result }}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| 🐳 Build & Push | \`${{ needs.docker_job.result }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| 🐳 Build Backend | \`${{ needs.docker_job.result }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| 🐳 Build Shopify App | \`${{ needs.docker_shopify.result }}\` |" >> $GITHUB_STEP_SUMMARY
           echo "| 🚀 Coolify Deploy | \`${{ needs.deploy.result }}\` |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Image:** \`ghcr.io/${{ github.repository_owner }}/wrext-backend:stage\`" >> $GITHUB_STEP_SUMMARY
