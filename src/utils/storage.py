@@ -1,3 +1,4 @@
+import os
 import boto3
 from botocore.client import Config
 from botocore.exceptions import ClientError
@@ -22,7 +23,11 @@ class StorageService:
             config=Config(signature_version='s3v4', s3={'addressing_style': 'path'}),
             region_name='us-east-1'  # Default for MinIO
         )
-        self._ensure_bucket_exists()
+
+        # Avoid network calls during import-time in test environments or when explicitly disabled.
+        # This keeps app import cheap and prevents failures when MinIO isn't running.
+        if os.getenv("REXT_STORAGE_SKIP_BUCKET_CHECK", "").strip() not in {"1", "true", "yes"}:
+            self._ensure_bucket_exists()
 
     def _ensure_bucket_exists(self):
         """Checks if the bucket exists and creates it if not."""

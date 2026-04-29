@@ -1,6 +1,10 @@
 import logging
 from src.flow.states.rext import REXT
-from src.flow.model.structure.outlines import get_outline_model, get_outline_display_name
+from src.flow.model.structure.outlines import (
+    get_outline_model,
+    get_outline_display_name,
+    normalize_content_type,
+)
 from src.flow.model.llm_manager import load_model
 from src.flow.prompts.human.outline import get_outline_prompt
 
@@ -26,7 +30,8 @@ async def generate_outline(state: REXT) -> dict:
     """
     content_state = state.get("content", {})
     topic = content_state.get("selected_topic")
-    content_type = content_state.get("content_type", "article")
+    content_type_raw = content_state.get("content_type", "article")
+    content_type = normalize_content_type(content_type_raw) or "blog"
 
     if not topic:
         logger.error("No topic found in state")
@@ -36,10 +41,13 @@ async def generate_outline(state: REXT) -> dict:
                 "error": "No topic found in state",
             }
         }
-    logger.info("Generating outline for: %s (content type: %s)", topic, content_type)
 
-
-    logger.info(f"Generating outline for: {topic} (content type: {content_type})")
+    logger.info(
+        "Generating outline for: %s (content type: %s -> %s)",
+        topic,
+        content_type_raw,
+        content_type,
+    )
 
     serp_normalized = state.get("serp_normalized", {})
     seo_result = state.get("seo_result", {})
@@ -109,7 +117,7 @@ async def generate_outline(state: REXT) -> dict:
         
         # Persist the selected topic as the outline title
         outline_dict["title"] = topic
-        outline_dict["schema_type"] = get_outline_display_name(content_type) or "blog"
+        outline_dict["schema_type"] = get_outline_display_name(content_type) or "Blog"
 
         # Set target_word_count to the sum of all section suggested_word_counts
         sections = outline_dict.get("sections", [])
