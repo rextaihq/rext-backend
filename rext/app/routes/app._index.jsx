@@ -1,238 +1,134 @@
-import { useEffect } from "react";
-import { useFetcher } from "react-router";
-import { useAppBridge } from "@shopify/app-bridge-react";
+import { useLoaderData } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
 
 export const loader = async ({ request }) => {
-  await authenticate.admin(request);
+  const { admin, session } = await authenticate.admin(request);
 
-  return null;
-};
-
-export const action = async ({ request }) => {
-  const { admin } = await authenticate.admin(request);
-  const color = ["Red", "Orange", "Yellow", "Green"][
-    Math.floor(Math.random() * 4)
-  ];
-  const response = await admin.graphql(
-    `#graphql
-      mutation populateProduct($product: ProductCreateInput!) {
-        productCreate(product: $product) {
-          product {
+  const response = await admin.graphql(`
+    query {
+      articles(first: 250) {
+        edges {
+          node {
             id
             title
             handle
-            status
-            variants(first: 10) {
-              edges {
-                node {
-                  id
-                  price
-                  barcode
-                  createdAt
-                }
-              }
+            publishedAt
+            blog {
+              title
+              handle
             }
           }
         }
-      }`,
-    {
-      variables: {
-        product: {
-          title: `${color} Snowboard`,
-        },
-      },
-    },
-  );
-  const responseJson = await response.json();
-  const product = responseJson.data.productCreate.product;
-  const variantId = product.variants.edges[0].node.id;
-  const variantResponse = await admin.graphql(
-    `#graphql
-    mutation shopifyReactRouterTemplateUpdateVariant($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {
-      productVariantsBulkUpdate(productId: $productId, variants: $variants) {
-        productVariants {
-          id
-          price
-          barcode
-          createdAt
-        }
       }
-    }`,
-    {
-      variables: {
-        productId: product.id,
-        variants: [{ id: variantId, price: "100.00" }],
-      },
-    },
-  );
-  const variantResponseJson = await variantResponse.json();
+    }
+  `);
 
-  return {
-    product: responseJson.data.productCreate.product,
-    variant: variantResponseJson.data.productVariantsBulkUpdate.productVariants,
-  };
+  const data = await response.json();
+  const articles = data?.data?.articles?.edges?.map((e) => e.node) || [];
+  const shop = session.shop;
+
+  const published = articles.filter((a) => a.publishedAt !== null).length;
+  const draft = articles.length - published;
+
+  const recent = articles.slice(0, 5).map((a) => ({
+    ...a,
+    storeUrl: `https://${shop}/blogs/${a.blog?.handle}/${a.handle}`,
+  }));
+
+  return { total: articles.length, published, draft, recent };
 };
 
-export default function Index() {
-  const fetcher = useFetcher();
-  const shopify = useAppBridge();
-  const isLoading =
-    ["loading", "submitting"].includes(fetcher.state) &&
-    fetcher.formMethod === "POST";
+export default function Dashboard() {
+  const { total, published, draft, recent } = useLoaderData();
 
-  useEffect(() => {
-    if (fetcher.data?.product?.id) {
-      shopify.toast.show("Product created");
-    }
-  }, [fetcher.data?.product?.id, shopify]);
-  const generateProduct = () => fetcher.submit({}, { method: "POST" });
+  const cardStyle = {
+    background: "white",
+    border: "1px solid #e1e3e5",
+    borderRadius: 8,
+    padding: "20px 24px",
+    minWidth: 140,
+    flex: 1,
+  };
+
+  const labelStyle = { margin: 0, fontSize: 13, color: "#6d7175", fontWeight: 500 };
+  const valueStyle = { margin: "8px 0 0", fontSize: 32, fontWeight: 700, color: "#202223" };
 
   return (
-    <s-page heading="Shopify app template">
-      <s-button slot="primary-action" onClick={generateProduct}>
-        Generate a product
-      </s-button>
+    <s-page heading="Dashboard">
+      <s-section heading="Blog Post Overview">
+        <div style={{ display: "flex", gap: 16, flexWrap: "wrap", marginBottom: 24 }}>
+          <div style={cardStyle}>
+            <p style={labelStyle}>Total Posts</p>
+            <p style={valueStyle}>{total}</p>
+          </div>
+          <div style={cardStyle}>
+            <p style={labelStyle}>Published</p>
+            <p style={{ ...valueStyle, color: "#008060" }}>{published}</p>
+          </div>
+          <div style={cardStyle}>
+            <p style={labelStyle}>Draft</p>
+            <p style={{ ...valueStyle, color: "#b98900" }}>{draft}</p>
+          </div>
+        </div>
 
-      <s-section heading="Congrats on creating a new Shopify app 🎉">
-        <s-paragraph>
-          This embedded app template uses{" "}
-          <s-link
-            href="https://shopify.dev/docs/apps/tools/app-bridge"
-            target="_blank"
-          >
-            App Bridge
-          </s-link>{" "}
-          interface examples like an{" "}
-          <s-link href="/app/additional">additional page in the app nav</s-link>
-          , as well as an{" "}
-          <s-link
-            href="https://shopify.dev/docs/api/admin-graphql"
-            target="_blank"
-          >
-            Admin GraphQL
-          </s-link>{" "}
-          mutation demo, to provide a starting point for app development.
-        </s-paragraph>
-      </s-section>
-      <s-section heading="Get started with products">
-        <s-paragraph>
-          Generate a product with GraphQL and get the JSON output for that
-          product. Learn more about the{" "}
-          <s-link
-            href="https://shopify.dev/docs/api/admin-graphql/latest/mutations/productCreate"
-            target="_blank"
-          >
-            productCreate
-          </s-link>{" "}
-          mutation in our API references.
-        </s-paragraph>
-        <s-stack direction="inline" gap="base">
-          <s-button
-            onClick={generateProduct}
-            {...(isLoading ? { loading: true } : {})}
-          >
-            Generate a product
-          </s-button>
-          {fetcher.data?.product && (
-            <s-button
-              onClick={() => {
-                shopify.intents.invoke?.("edit:shopify/Product", {
-                  value: fetcher.data?.product?.id,
-                });
-              }}
-              target="_blank"
-              variant="tertiary"
-            >
-              Edit product
-            </s-button>
-          )}
-        </s-stack>
-        {fetcher.data?.product && (
-          <s-section heading="productCreate mutation">
-            <s-stack direction="block" gap="base">
-              <s-box
-                padding="base"
-                borderWidth="base"
-                borderRadius="base"
-                background="subdued"
-              >
-                <pre style={{ margin: 0 }}>
-                  <code>{JSON.stringify(fetcher.data.product, null, 2)}</code>
-                </pre>
-              </s-box>
+        <h3 style={{ fontSize: 14, fontWeight: 600, margin: "0 0 12px", color: "#202223" }}>
+          Recent Posts
+        </h3>
 
-              <s-heading>productVariantsBulkUpdate mutation</s-heading>
-              <s-box
-                padding="base"
-                borderWidth="base"
-                borderRadius="base"
-                background="subdued"
-              >
-                <pre style={{ margin: 0 }}>
-                  <code>{JSON.stringify(fetcher.data.variant, null, 2)}</code>
-                </pre>
-              </s-box>
-            </s-stack>
-          </s-section>
+        {recent.length === 0 ? (
+          <p style={{ color: "#6d7175", fontSize: 14 }}>No blog posts yet. Create your first one!</p>
+        ) : (
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
+            <thead>
+              <tr style={{ borderBottom: "1px solid #e1e3e5", textAlign: "left" }}>
+                <th style={{ padding: "8px 12px", color: "#6d7175", fontWeight: 500 }}>Title</th>
+                <th style={{ padding: "8px 12px", color: "#6d7175", fontWeight: 500 }}>Blog</th>
+                <th style={{ padding: "8px 12px", color: "#6d7175", fontWeight: 500 }}>Status</th>
+                <th style={{ padding: "8px 12px", color: "#6d7175", fontWeight: 500 }}>Published At</th>
+                <th style={{ padding: "8px 12px", color: "#6d7175", fontWeight: 500 }}>Link</th>
+              </tr>
+            </thead>
+            <tbody>
+              {recent.map((article) => (
+                <tr key={article.id} style={{ borderBottom: "1px solid #f1f2f3" }}>
+                  <td style={{ padding: "10px 12px", color: "#202223" }}>{article.title}</td>
+                  <td style={{ padding: "10px 12px", color: "#6d7175" }}>{article.blog?.title || "—"}</td>
+                  <td style={{ padding: "10px 12px" }}>
+                    <span style={{
+                      display: "inline-block",
+                      padding: "2px 10px",
+                      borderRadius: 12,
+                      fontSize: 12,
+                      fontWeight: 600,
+                      background: article.publishedAt ? "#e3f1ec" : "#fff3cd",
+                      color: article.publishedAt ? "#008060" : "#b98900",
+                    }}>
+                      {article.publishedAt ? "Published" : "Draft"}
+                    </span>
+                  </td>
+                  <td style={{ padding: "10px 12px", color: "#6d7175" }}>
+                    {article.publishedAt
+                      ? new Date(article.publishedAt).toLocaleDateString()
+                      : "—"}
+                  </td>
+                  <td style={{ padding: "10px 12px" }}>
+                    {article.publishedAt ? (
+                      <a
+                        href={article.storeUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        style={{ color: "#008060", fontSize: 13, textDecoration: "none", fontWeight: 500 }}
+                      >
+                        View →
+                      </a>
+                    ) : "—"}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         )}
-      </s-section>
-
-      <s-section slot="aside" heading="App template specs">
-        <s-paragraph>
-          <s-text>Framework: </s-text>
-          <s-link href="https://reactrouter.com/" target="_blank">
-            React Router
-          </s-link>
-        </s-paragraph>
-        <s-paragraph>
-          <s-text>Interface: </s-text>
-          <s-link
-            href="https://shopify.dev/docs/api/app-home/using-polaris-components"
-            target="_blank"
-          >
-            Polaris web components
-          </s-link>
-        </s-paragraph>
-        <s-paragraph>
-          <s-text>API: </s-text>
-          <s-link
-            href="https://shopify.dev/docs/api/admin-graphql"
-            target="_blank"
-          >
-            GraphQL
-          </s-link>
-        </s-paragraph>
-        <s-paragraph>
-          <s-text>Database: </s-text>
-          <s-link href="https://www.prisma.io/" target="_blank">
-            Prisma
-          </s-link>
-        </s-paragraph>
-      </s-section>
-
-      <s-section slot="aside" heading="Next steps">
-        <s-unordered-list>
-          <s-list-item>
-            Build an{" "}
-            <s-link
-              href="https://shopify.dev/docs/apps/getting-started/build-app-example"
-              target="_blank"
-            >
-              example app
-            </s-link>
-          </s-list-item>
-          <s-list-item>
-            Explore Shopify&apos;s API with{" "}
-            <s-link
-              href="https://shopify.dev/docs/apps/tools/graphiql-admin-api"
-              target="_blank"
-            >
-              GraphiQL
-            </s-link>
-          </s-list-item>
-        </s-unordered-list>
       </s-section>
     </s-page>
   );
