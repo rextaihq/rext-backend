@@ -170,7 +170,7 @@ class CTASection(BaseModel):
 # FINAL HELP CENTER SCHEMA
 # -------------------------
 
-class HelpCenterPageOutline(BaseModel):
+class HelpCenterOutline(BaseModel):
     # Core metadata
     title: str
     slug_suggestion: str = Field(pattern=r"^[a-z0-9-]+$")

@@ -17,7 +17,7 @@ class Persona(Base, SerializableMixin, UUIDPrimaryKeyMixin, TimestampMixin, Work
     # E-E-A-T professional fields for expert personas
     full_name = Column(String(255), nullable=True)
     professional_title = Column(String(255), nullable=True)
-    areas_of_expertise = Column(Text, nullable=True) 
+    areas_of_expertise = Column(JSONB , nullable=True)
     tone_of_voice = Column(String(255), nullable=True)
     bio = Column(Text, nullable=True)
     linkedin_url = Column(String(500), nullable=True)

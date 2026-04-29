@@ -176,7 +176,7 @@ class CTASection(BaseModel):
 # FINAL DOCUMENTATION PAGE SCHEMA
 # -------------------------
 
-class DocumentationPageOutline(BaseModel):
+class DocumentationOutline(BaseModel):
     # Core metadata
     title: str
     slug_suggestion: str = Field(pattern=r"^[a-z0-9-]+$")
