@@ -1,6 +1,6 @@
 # from typing import Literal
 # from pydantic import Field
-# from src.flow.model.structure.outlines.base import BaseOutline, Section, Fact  # noqa: F401
+from src.flow.model.structure.outlines.base import BaseOutline, Section, Fact  # noqa: F401
 
 
 # class BlogOutline(BaseOutline):

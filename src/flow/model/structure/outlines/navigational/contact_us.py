@@ -141,7 +141,7 @@ class CTASection(BaseModel):
 # FINAL CONTACT US PAGE SCHEMA
 # -------------------------
 
-class ContactUsPageOutline(BaseModel):
+class ContactUsOutline(BaseModel):
     # Core metadata
     title: str
     slug_suggestion: str = Field(pattern=r"^[a-z0-9-]+$")
