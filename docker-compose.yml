@@ -75,6 +75,23 @@ services:
         networks:
             - rext-network
 
+    # SearxNG — self-hosted metasearch engine
+    searxng:
+        image: searxng/searxng:latest
+        restart: unless-stopped
+        volumes:
+            - ./searxng:/etc/searxng:rw
+        ports:
+            - "8888:8080"
+        networks:
+            - rext-network
+        healthcheck:
+            test: ["CMD-SHELL", "wget -qO- http://localhost:8080/healthz || exit 1"]
+            interval: 10s
+            timeout: 5s
+            retries: 5
+            start_period: 20s
+
     # Backend API Service
     rext-api:
         image: ghcr.io/rextaihq/rext-backend:${IMAGE_TAG:-latest}
@@ -107,6 +124,8 @@ services:
             postgres:
                 condition: service_healthy
             langgraph-redis:
+                condition: service_healthy
+            searxng:
                 condition: service_healthy
         env_file:
             - .env
@@ -226,6 +245,9 @@ services:
             MINIO_BUCKET: ${MINIO_BUCKET:-rext-media}
             MINIO_USE_SSL: ${MINIO_USE_SSL:-false}
             MINIO_PUBLIC_URL: ${MINIO_PUBLIC_URL}
+
+            # Search
+            SEARXNG_HOST: ${SEARXNG_HOST:-http://searxng:8080}
 
             # Shopify App Bridge
             SHOPIFY_APP_SLUG: ${SHOPIFY_APP_SLUG:-rext-publisher-1}

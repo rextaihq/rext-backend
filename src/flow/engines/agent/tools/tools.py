@@ -1,6 +1,5 @@
 from langchain_core.tools import tool
 from langchain_community.tools.tavily_search import TavilySearchResults
-from langchain_community.tools.ddg_search import DuckDuckGoSearchRun
 from dotenv import load_dotenv
 from openai import OpenAI
 import json
@@ -77,7 +76,7 @@ def get_tools():
 
     @tool
     def search_tool(query: str) -> str:
-        """Perform a web search using DuckDuckGo and return top 5 results with snippets.
+        """Perform a web search and return top results with snippets.
 
         Use this tool for factual questions, current events, research, or up-to-date web info.
         Returns structured results with title, URL, and snippet for citation.
@@ -91,8 +90,18 @@ def get_tools():
                 return json.dumps({"error": f"Search cap of {SEARCH_HARD_CAP} reached. Stop searching and write the article now."})
             call_count[0] += 1
             current = call_count[0]
-        print(f"[search_tool] call {current}/{SEARCH_HARD_CAP} — query: {query!r}")
-        results = DuckDuckGoSearchRun(max_results=5, search_depth="advanced").run(query)
+        searxng_host = os.getenv("SEARXNG_HOST")
+        backend = f"searxng({searxng_host})" if searxng_host else "duckduckgo"
+        print(f"[search_tool] call {current}/{SEARCH_HARD_CAP} backend={backend} — query: {query!r}")
+        if searxng_host:
+            from langchain_community.utilities import SearxSearchWrapper
+            raw = SearxSearchWrapper(searx_host=searxng_host).results(query, num_results=5)
+            results = [
+                {"title": r.get("title", ""), "url": r.get("link", ""), "snippet": r.get("snippet", "")}
+                for r in raw
+            ]
+        else:
+            return json.dumps({"error": "No SEARXNG_HOST configured. Search unavailable."})
         return json.dumps(results, indent=2)
 
     return [search_tool, generate_image]
