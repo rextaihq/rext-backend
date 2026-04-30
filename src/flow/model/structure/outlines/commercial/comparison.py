@@ -273,8 +273,8 @@ class ComparisonOutline(BaseModel):
     )
 
     target_word_count: int = Field(
-        default=1400,
-        ge=700,
-        le=4500,
+        default=2000,
+        ge=1500,
+        le=3000,
         description="Comparison pages are structured decision engines"
     )

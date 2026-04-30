@@ -112,4 +112,4 @@ class LandingPageOutline(BaseModel):
     )
 
     # Length Control
-    target_word_count: int = Field(ge=300, le=2000)
+    target_word_count: int = Field(default=700, ge=400, le=1200)

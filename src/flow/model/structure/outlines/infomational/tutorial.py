@@ -353,8 +353,8 @@ class TutorialOutline(BaseModel):
     )
 
     target_word_count: int = Field(
-        default=1800,
-        ge=800,
-        le=8000,
+        default=2000,
+        ge=1500,
+        le=3000,
         description="Tutorials are deep learning content"
     )

@@ -361,8 +361,8 @@ class HowToGuideOutline(BaseModel):
     )
 
     target_word_count: int = Field(
-        default=1200,
-        ge=500,
-        le=4000,
+        default=2000,
+        ge=1500,
+        le=3000,
         description="Depends on complexity of task"
     )

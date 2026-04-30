@@ -270,7 +270,7 @@ class BlogOutline(BaseModel):
 
     target_word_count: int = Field(
         default=1200,
-        ge=600,
-        le=5000,
+        ge=800,
+        le=2000,
         description="Blog depth depends on topic complexity"
     )

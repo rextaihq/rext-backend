@@ -341,7 +341,7 @@ class PillarContentOutline(BaseModel):
 
     target_word_count: int = Field(
         default=3000,
-        ge=1200,
-        le=12000,
+        ge=4500,
+        le=6000,
         description="Pillar content is long-form authority content"
     )

@@ -72,7 +72,7 @@ def normalize_content_type(content_type: str | None) -> str:
         return "blog"
 
     return normalized
-
+ 
 CONTENT_TYPE_TO_MODEL = {
     # Informational
     "blog": BlogOutline,

@@ -320,8 +320,8 @@ class CaseStudyOutline(BaseModel):
     )
 
     target_word_count: int = Field(
-        default=1800,
+        default=1200,
         ge=800,
-        le=5000,
+        le=1500,
         description="Case studies require depth but stay focused"
     )
