@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable, Dict, List, Optional, Sequence, Tuple
 from uuid import UUID
@@ -425,6 +426,15 @@ class WorkspacePipeline:
         # Use a savepoint to make the delete-then-insert atomic.
         # If insertion fails, the savepoint rollback also undoes the deletion,
         # preserving the original personas.
+        def _normalize_text(value: Any) -> Optional[str]:
+            if value is None:
+                return None
+            if isinstance(value, (list, tuple, set)):
+                return ", ".join(str(item).strip() for item in value if item is not None)
+            if isinstance(value, dict):
+                return json.dumps(value, ensure_ascii=False)
+            return str(value)
+
         async with self.db.begin_nested():
             # Delete existing personas for this workspace
             await self.db.execute(
@@ -436,21 +446,21 @@ class WorkspacePipeline:
                 persona = Persona(
                     workspace_id=self.workspace_id,
                     # Basic fields
-                    name=persona_data.get("name"),
-                    description=persona_data.get("description"),
+                    name=_normalize_text(persona_data.get("name")) or "",
+                    description=_normalize_text(persona_data.get("description")),
                     # E-E-A-T Professional fields
-                    full_name=persona_data.get("full_name"),
-                    professional_title=persona_data.get("professional_title"),
+                    full_name=_normalize_text(persona_data.get("full_name")),
+                    professional_title=_normalize_text(persona_data.get("professional_title")),
                     areas_of_expertise=persona_data.get("areas_of_expertise"),
-                    tone_of_voice=persona_data.get("tone_of_voice"),
-                    bio=persona_data.get("bio"),
-                    linkedin_url=persona_data.get("linkedin_url"),
+                    tone_of_voice=_normalize_text(persona_data.get("tone_of_voice")),
+                    bio=_normalize_text(persona_data.get("bio")),
+                    linkedin_url=_normalize_text(persona_data.get("linkedin_url")),
                     # User persona fields
-                    demographics=persona_data.get("demographics"),
-                    pain_points=persona_data.get("pain_points"),
-                    goals=persona_data.get("goals"),
-                    behaviors=persona_data.get("behaviors"),
-                    avatar_url=persona_data.get("avatar_url"),
+                    demographics=_normalize_text(persona_data.get("demographics")),
+                    pain_points=_normalize_text(persona_data.get("pain_points")),
+                    goals=_normalize_text(persona_data.get("goals")),
+                    behaviors=_normalize_text(persona_data.get("behaviors")),
+                    avatar_url=_normalize_text(persona_data.get("avatar_url")),
                 )
                 self.db.add(persona)
 

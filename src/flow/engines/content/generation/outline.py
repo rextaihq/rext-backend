@@ -92,6 +92,7 @@ async def generate_outline(state: REXT) -> dict:
         outline_model = load_model(max_tokens=8192).with_structured_output(
             model_schema
         )
+        print(f"outline_model: {outline_model}\n\n\n\n $$$$$$$$")
         prompt_template = get_outline_prompt()
 
         messages = prompt_template.format_messages(
@@ -114,6 +115,8 @@ async def generate_outline(state: REXT) -> dict:
 
         generated_outline = await outline_model.ainvoke(messages)
         outline_dict = generated_outline.model_dump()
+        print(f"outline_dict: {outline_dict}\n\n\n\n $$$$$$$$")
+
         
         # Persist the selected topic as the outline title
         outline_dict["title"] = topic
