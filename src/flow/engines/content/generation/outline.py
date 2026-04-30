@@ -28,18 +28,7 @@ async def generate_outline(state: REXT) -> dict:
     topic = content_state.get("selected_topic")
     content_type = content_state.get("content_type", "article")
 
-    if not topic:
-        logger.error("No topic found in state")
-        return {
-            "content": {
-                **content_state,
-                "error": "No topic found in state",
-            }
-        }
     logger.info("Generating outline for: %s (content type: %s)", topic, content_type)
-
-
-    logger.info(f"Generating outline for: {topic} (content type: {content_type})")
 
     serp_normalized = state.get("serp_normalized", {})
     seo_result = state.get("seo_result", {})
