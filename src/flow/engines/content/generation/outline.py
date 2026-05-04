@@ -122,12 +122,17 @@ async def generate_outline(state: REXT) -> dict:
         outline_dict["title"] = topic
         outline_dict["schema_type"] = get_outline_display_name(content_type) or "Blog"
 
-        # Set target_word_count to the sum of all section suggested_word_counts
+        # Set target_word_count — sum sections if present, else use model default
         sections = outline_dict.get("sections", [])
-        outline_dict["target_word_count"] = sum(
-            s.get("suggested_word_count") or 200 for s in sections
-        )
-        print()
+        if sections:
+            outline_dict["target_word_count"] = sum(
+                s.get("suggested_word_count") or 200 for s in sections
+            )
+        # else: model already set target_word_count (FAQ, HowTo, etc. define their own)
+
+        # Attach generic render shape so frontend can display any outline type uniformly
+        from src.flow.model.structure.outlines.render import normalize_outline
+        outline_dict["_render"] = normalize_outline(outline_dict, content_type)
 
         logger.info("Outline generated successfully")
 
