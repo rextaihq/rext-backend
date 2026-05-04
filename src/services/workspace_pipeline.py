@@ -38,6 +38,38 @@ class _ScrapeResult:
     metadata: Dict[str, Any]
 
 
+_ARCHETYPE_KEYWORDS = {
+    "owner", "manager", "user", "customer", "client", "buyer", "blogger",
+    "professional", "entrepreneur", "startup", "business", "store", "shop",
+    "target", "audience", "segment", "persona", "marketer", "executive",
+    "director", "officer", "employee", "worker", "freelancer", "consultant",
+}
+
+
+def _filter_valid_personas(personas: list[dict]) -> list[dict]:
+    """Return only personas that appear to be real named individuals.
+
+    Rejects entries whose name is a role/archetype (e.g. "Online Store Owner")
+    rather than an actual human name (e.g. "John Smith").
+    """
+    valid = []
+    for p in personas:
+        name: str = (p.get("name") or "").strip()
+        if not name:
+            continue
+        words = name.lower().split()
+        # Reject if any word in the name is a known archetype keyword
+        if any(w in _ARCHETYPE_KEYWORDS for w in words):
+            continue
+        # Require at least two words (first + last name) or a title prefix
+        title_prefixes = {"dr.", "dr", "mr.", "mr", "ms.", "ms", "mrs.", "prof.", "prof"}
+        has_title = words[0] in title_prefixes
+        if len(words) < 2 and not has_title:
+            continue
+        valid.append(p)
+    return valid
+
+
 class WorkspacePipeline:
     """Background pipeline responsible for workspace onboarding tasks."""
 
@@ -337,8 +369,9 @@ class WorkspacePipeline:
         data = brand_voice_schema.model_dump()
         
         # Extract personas before processing brand voice
-        personas_data = data.pop("personas", [])
-        
+        raw_personas = data.pop("personas", [])
+        personas_data = _filter_valid_personas(raw_personas)
+
         try:
             result = await self.db.execute(
                 select(BrandVoice).where(BrandVoice.workspace_id == self.workspace_id)
@@ -502,7 +535,7 @@ class WorkspacePipeline:
             model = load_model()
             structured = model.with_structured_output(BrandSchema)
             
-            system_prompt = """You are an expert at analyzing website content and extracting brand information and personas.
+            system_prompt = """You are an expert at analyzing website content and extracting brand information and real people.
 
 IMPORTANT INSTRUCTIONS FOR BRAND INFORMATION:
 - Extract 'about': A brief summary of what the brand/business does (1-2 sentences).
@@ -514,23 +547,23 @@ IMPORTANT INSTRUCTIONS FOR BRAND INFORMATION:
 - Extract 'content_pillar': The main themes or categories they create content about.
 
 IMPORTANT INSTRUCTIONS FOR PERSONAS:
-- Priority 1: Extract REAL INDIVIDUALS mentioned on the website (Authors, Founders, Team Members).
+- ONLY extract REAL NAMED INDIVIDUALS explicitly mentioned on the website: founders, authors, team members, experts, or named testimonial contributors.
+- A valid persona MUST have a real human name (e.g., "John Smith", "Dr. Sarah Mitchell"). Do NOT use job titles, roles, or audience segments as names.
+- STRICTLY FORBIDDEN: Do NOT create personas for customer archetypes, target audience segments, or fictional representatives (e.g., "Online Store Owner", "Busy Blogger", "Small Business Owner", "Marketing Manager"). These belong in 'target_audience', not personas.
+- If NO real named individuals are found on the website, return an EMPTY personas list []. Do not invent or fabricate personas.
 
-For each PERSONA extracted, provide:
-- name: The person's name or a representative title.
+For each valid PERSONA extracted, provide:
+- name: The person's actual name as it appears on the site (e.g., "Mobheen Abdullah").
 - full_name: Their complete professional name if available.
-- professional_title: Job title (e.g., "Senior Content Strategist").
-- areas_of_expertise: What they specialize in based on the content.
-- tone_of_voice: Their unique writing style.
-- bio: A professional background for experts OR a brief summary for target personas.
-- demographics: For target personas, include age/location info.
-- pain_points: For target personas, include their main challenges.
-- goals: What they want to achieve.
+- professional_title: Their stated job title (e.g., "Founder & CEO").
+- areas_of_expertise: What they specialize in based on their stated role and content.
+- tone_of_voice: Their writing or communication style if discernible.
+- bio: A brief professional background based only on what the site says about them.
 """
-            
+
             messages = [
                 SystemMessage(content=system_prompt),
-                HumanMessage(content=f"Analyze the following website content and extract brand information and professional/customer personas:\n\n{content}")
+                HumanMessage(content=f"Analyze the following website content and extract brand information and any real named individuals:\n\n{content}")
             ]
             
             return await structured.ainvoke(messages)

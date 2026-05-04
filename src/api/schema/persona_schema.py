@@ -65,20 +65,20 @@ class PersonaExtract(BaseModel):
         description="Demographic information (age, location, income, etc.)",
         example="25-40 years old, urban areas, middle to high income"
     )
-    pain_points: List[str] = Field(
-        default_factory=list,
-        description="Key challenges and pain points this persona faces",
-        example=["Time constraints", "Information overload"]
+    pain_points: Optional[str] = Field(
+        None,
+        description="Key challenges and pain points this persona faces, comma-separated",
+        example="Time constraints, Information overload"
     )
-    goals: List[str] = Field(
-        default_factory=list,
-        description="Primary goals and objectives",
-        example=["Stay competitive", "Optimize workflow"]
+    goals: Optional[str] = Field(
+        None,
+        description="Primary goals and objectives, comma-separated",
+        example="Stay competitive, Optimize workflow"
     )
-    behaviors: List[str] = Field(
-        default_factory=list,
-        description="Behavioral patterns and characteristics",
-        example=["Research-driven", "Data-oriented"]
+    behaviors: Optional[str] = Field(
+        None,
+        description="Behavioral patterns and characteristics, comma-separated",
+        example="Research-driven, Data-oriented"
     )
 
 
