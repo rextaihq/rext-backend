@@ -108,8 +108,16 @@ def humanize(req: HumanizeRequest) -> HumanizeResponse:
     """
     text = req.text or ""
     if not text.strip():
-        return " No text provided to humanize. Please provide non-empty input."
-        # raise HTTPException(status_code=400, detail="`text` must be a non-empty string")
+        # Keep response shape consistent for callers that expect a dict-like object.
+        return {
+            "humanized_text": "",
+            "orig_word_count": 0,
+            "orig_sentence_count": 0,
+            "new_word_count": 0,
+            "new_sentence_count": 0,
+            "words_added": 0,
+            "sentences_added": 0,
+        }
 
     # Original stats
     orig_wc = count_words(text)

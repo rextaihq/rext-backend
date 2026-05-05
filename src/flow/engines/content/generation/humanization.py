@@ -1,12 +1,14 @@
 import logging
-import json
-from langchain_core.messages import SystemMessage, HumanMessage
-from src.flow.states.rext import REXT
-from src.flow.prompts.system.humanize import HUMANIZE_SYSTEM_PROMPT
-from src.flow.model.llm_manager import load_content_model
-from src.flow.engines.content.generation.humanize_api import humanize
+from typing import TYPE_CHECKING, Any, Dict
+from src.flow.engines.content.generation.humanize_api import HumanizeRequest, humanize
 
 logger = logging.getLogger(__name__)
+
+if TYPE_CHECKING:
+    from src.flow.states.rext import REXT
+else:
+    # Avoid hard import dependency on optional graph/runtime libs at import time.
+    REXT = Dict[str, Any]  # type: ignore[misc,assignment]
 
 
 async def humanize_content(state: REXT) -> dict:
@@ -46,9 +48,25 @@ async def humanize_content(state: REXT) -> dict:
             }
 
         logger.info("Humanizing AI-generated content...")
-        # model = load_content_model()
 
-        body_markdown_data = humanize(body_markdown)
+        # Humanize introduction and body separately (if present) so we don't
+        # accidentally overwrite a non-empty intro-only article with an empty body result.
+        humanized_intro: str = introduction
+        humanized_body: str = body_markdown
+
+        if introduction and len(introduction.strip()) >= 1:
+            intro_result = humanize(HumanizeRequest(text=introduction))
+            if isinstance(intro_result, dict):
+                humanized_intro = str(intro_result.get("humanized_text", introduction))
+            else:
+                humanized_intro = introduction
+
+        if body_markdown and len(body_markdown.strip()) >= 1:
+            body_result = humanize(HumanizeRequest(text=body_markdown))
+            if isinstance(body_result, dict):
+                humanized_body = str(body_result.get("humanized_text", body_markdown))
+            else:
+                humanized_body = body_markdown
 
         # async def humanize_text(text: str, part_name: str) -> str:
         #     if not text or len(text.strip()) < 50:  # Skip very short snippets
@@ -97,8 +115,8 @@ async def humanize_content(state: REXT) -> dict:
                 **content_state,
                 "final_content": {
                     **final_content,
-                    # "introduction": humanized_intro,
-                    "body_markdown": body_markdown_data.get("humanized_text", "None"),
+                    "introduction": humanized_intro,
+                    "body_markdown": humanized_body,
                 },
                 "humanization_progress": 100,
                 "humanizing": False,
