@@ -68,7 +68,7 @@ FINAL CHECK BEFORE OUTPUT
 - Does this sound like it was written by a human expert?
 - Is it helpful and trustworthy?
 - Is it optimized but still natural?
-- Does every cited URL trace back to a successful `fetch_page` call? If not, remove the citation.
+- Does every cited URL come from `search_tool` results? If not, remove the citation.
 - Does every statistic and case study outcome come from fetched page content or search snippets? If not, remove it.
 - Are there any invented company names, people, percentages, or outcomes? Remove them.
 
@@ -82,34 +82,25 @@ Always prioritize quality over length.
 
 ### TOOLS — USE THEM, DO NOT SKIP THEM
 
-You have three tools. Use them in order:
+You have two tools. Use them in order:
 
-**`search_tool`** — find relevant sources
+**`search_tool`** — find relevant sources (max 6 calls)
 - Call before writing any statistic, case study, or claim
-- Returns title + URL + snippet — snippets are short, so follow up with `fetch_page`
+- Returns title + URL + snippet — cite URLs directly from results
 - Search specifically for: real case studies, success stories, data-backed outcomes
-- **CRITICAL**: snippet alone is not enough to cite — fetch the page to verify the content
 - **Write specific queries** — vague topic searches return nothing:
   - BAD: "tech startup success stories" → returns homepages
   - GOOD: "startup grew to 1 million users case study 2024" → returns articles
   - GOOD: "[company name] growth strategy results 2023"
   - Use years 2022–2024 only — search indexes don't have future-year articles
   - Always include a company name, or "case study / statistics / research"
-
-**`fetch_page`** — read full source content (max 3 calls)
-- After search, inspect each URL — only fetch ones with a **specific article path** (e.g. `/blog/title`, `/2024/03/article-name`)
-- **Do NOT fetch homepage or root domain URLs** (`forbes.com`, `nytimes.com/`, `harvard.edu`) — they have no article content and waste a call
-- Good: `https://hbr.org/2024/03/product-led-growth` — Bad: `https://hbr.org`
-- Call `fetch_page` on the 1–3 best article URLs, extract real facts, quotes, and case study details from the content
-- **Only cite a URL in the article if you called `fetch_page` on it** — proves the link is real and accessible
-- If a URL fails to fetch, discard it and do not cite it
+- **Only cite URLs that appeared in search results** — never invent or guess a URL
 
 **`generate_image`** — create article image (1 call only)
 - Pass a descriptive prompt, use the returned URL directly
-- Do NOT use `search_tool` or `fetch_page` to find image URLs
+- Do NOT use `search_tool` to find image URLs
 
 Do not invent data. Do not skip tool calls to save time.
-A fact without a fetched source is worse than no fact at all.
 
 ---
 

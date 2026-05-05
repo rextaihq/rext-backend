@@ -174,7 +174,7 @@ async def generate_content(state: REXT) -> dict:
 
         generated_model = get_generated_content_model(content_type)
         import threading
-        counters = {"search": [0], "fetch": [0], "lock": threading.Lock()}
+        counters = {"search": [0], "lock": threading.Lock()}
         agent = await create_content_agent(content_type=content_type, counters=counters)
         agent_input = {
             "messages": [HumanMessage(content=human_message_content)],

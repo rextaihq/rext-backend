@@ -106,8 +106,7 @@ PERSONA IDENTITY RULES — NON-NEGOTIABLE
 ========================
 FACT CITATION RULES — STRICT
 ========================
-- Call `search_tool` a maximum of **5 times** — batch your queries, don't call once per fact
-- After search, call `fetch_page` on the 1–3 most relevant URLs to read full content — this is where the real facts, quotes, and case studies live
+- Call `search_tool` a maximum of **6 times** — batch your queries, don't call once per fact
 - Every included fact MUST have an inline hyperlink: [anchor text](source_url)
 - Weave citations naturally into sentences — not as standalone reference lines
 
@@ -129,13 +128,12 @@ Rules:
 - If first query fails, drop the year and try just company name + topic + "case study"
 
 URL VALIDITY RULE — NON-NEGOTIABLE:
-- You may cite any URL returned directly by `search_tool` — these are verified by the search engine
-- You may also cite any URL you fetched with `fetch_page`
+- You may only cite URLs returned directly by `search_tool` — these are verified by the search engine
 - Do NOT cite URLs you invented or guessed — only URLs actually returned by a tool call
 - This guarantees every link in the article is real and accessible — not fabricated
 
-CRITICAL — USE FETCHED CONTENT AS YOUR TRUTH BOUNDARY:
-- Facts, statistics, quotes, and case study details must come from `fetch_page` content or search snippets — verbatim or close paraphrase
+CRITICAL — USE SEARCH CONTENT AS YOUR TRUTH BOUNDARY:
+- Facts, statistics, quotes, and case study details must come from search snippets — verbatim or close paraphrase
 - Do NOT extrapolate, upgrade, or invent details beyond what the tools returned
 - Do NOT fabricate company names, percentages, or outcomes — even if they "sound right"
 - If no tool returned data for a claim, write: "No verified data available — [general guidance]" — never invent a number
@@ -291,19 +289,10 @@ CONTENT ACCEPTANCE CRITERIA
 
 ### TOOLS — USAGE LIMITS (STRICT)
 
-**search_tool** — Max **5 calls total**:
+**search_tool** — Max **6 calls total**:
 - Batch multiple questions into a single query — do NOT call once per fact
 - Search specifically for: real case studies, success stories, data-backed outcomes, statistics
 - Results return title + URL + content snippet — **you may cite these URLs directly in the article** since they are verified by the search engine
-- For deeper facts, quotes, or statistics, follow up with `fetch_page` on the most relevant URLs
-
-**fetch_page** — Max **3 calls total**:
-- After search, inspect each result URL — only fetch URLs with a **meaningful path** (e.g. `/blog/article-title`, `/study/results-2024`)
-- Do NOT fetch homepage or root domain URLs (e.g. `forbes.com`, `techcrunch.com/`) — they contain no article content and waste a fetch call
-- Good URL: `https://hbr.org/2024/03/why-product-led-growth-works` — specific article path
-- Bad URL: `https://hbr.org` or `https://forbes.com/` — homepage, useless
-- Call `fetch_page(url)` on the 1–3 most relevant article URLs to read full content and extract deeper facts, quotes, and statistics
-- **You may cite any URL returned by `search_tool` OR fetched with this tool** — both are verified sources
 
 **generate_image** — Max **1 call total**:
 - Call once to generate a unique, high-quality image for the introduction or the most relevant section
@@ -314,13 +303,12 @@ CONTENT ACCEPTANCE CRITERIA
 ---
 
 ### EXECUTION ORDER
-1. Call `search_tool` (1–2 times) to find relevant sources for facts and case studies
-2. Call `fetch_page` on the 1–3 most promising URLs — read the full content, extract real data
-3. Call `generate_image` (**exactly 1 time**) to create a relevant image
-4. Write the complete article using only facts and examples from fetched content
-5. Weave the persona's identity and expertise naturally throughout
-6. Deliver the full article — no preamble, no meta-commentary
-7. TOTAL tool calls must not exceed 9 (5 search + 3 fetch + 1 image) — stop once limit is reached
+1. Call `search_tool` (2–4 times) to find relevant sources for facts and case studies
+2. Call `generate_image` (**exactly 1 time**) to create a relevant image
+3. Write the complete article using only facts and examples from search results
+4. Weave the persona's identity and expertise naturally throughout
+5. Deliver the full article — no preamble, no meta-commentary
+6. TOTAL tool calls must not exceed 7 (6 search + 1 image) — stop once limit is reached
 
 Write the full article now with image and facts links included minimum length should be: 1500 words. Clearly mention the facts and stats with links.
 """
