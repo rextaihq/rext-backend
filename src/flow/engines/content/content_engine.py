@@ -26,6 +26,7 @@ def create_content_engine():
     graph.add_node("topic_generation", topic_generation)
     graph.add_node("content_type", content_type)
     graph.add_node("generate_outline", generate_outline)
+    graph.add_node("humanize_content", humanize_content)
     graph.add_node("review_outline", review_outline)
     graph.add_node("generate_content", generate_content)
     graph.add_node("review_content", review_content())
@@ -34,7 +35,8 @@ def create_content_engine():
     graph.add_edge(START, "content_type")
     graph.add_edge("content_type", "topic_generation")
     graph.add_edge("topic_generation", "generate_outline")
-    graph.add_edge("generate_outline", "review_outline")
+    graph.add_edge("generate_outline", "humanize_content")
+    graph.add_edge("humanize_content", "review_outline")
 
     # Conditional: loop back if outline needs revision
     graph.add_conditional_edges(
