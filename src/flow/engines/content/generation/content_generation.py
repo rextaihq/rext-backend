@@ -83,13 +83,10 @@ async def generate_content(state: REXT) -> dict:
         related_topics = serp_normalized.get("related_topics", [])
         # Format Competitor & SEO Insights
         competitor_list = []
-        urls = []
         for res in top_results:
             competitor_list.append(
                 f"- {res['title']} (Position {res['position']}): {res['snippet']}"
             )
-            urls.append(res['url'])
-        urls_str = "\n".join(urls)
         serp_insights = "\n".join(competitor_list)
         seo_signals = (
             f"SEO SIGNALS:\n"
@@ -161,7 +158,7 @@ async def generate_content(state: REXT) -> dict:
             f"Reference / Source Content:\n{page_content}\n\n"
             f"Meta_data:\n{meta_data}\n\n"
             f"Tone:\n{tone}\n\n"
-            f"Internal_links:\n{urls_str}\n\n"
+
             f"Generate complete SEO-optimized content following the outline.\n"
             f"Incorporate ALL key facts listed above verbatim in the relevant sections.\n"
             f"Populate the 'facts' output field with each fact used (text + source_url).\n"
@@ -176,7 +173,9 @@ async def generate_content(state: REXT) -> dict:
         workspace_id = serp_payload.get("workspace_id")
 
         generated_model = get_generated_content_model(content_type)
-        agent = await create_content_agent(content_type=content_type)
+        import threading
+        counters = {"search": [0], "lock": threading.Lock()}
+        agent = await create_content_agent(content_type=content_type, counters=counters)
         agent_input = {
             "messages": [HumanMessage(content=human_message_content)],
             "serp_payload": {
