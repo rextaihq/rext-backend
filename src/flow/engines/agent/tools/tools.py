@@ -68,11 +68,13 @@ def generate_image(prompt: str, model: str = "dall-e-3", size: str = "1024x1024"
         return None
 
 
-def get_tools():
+def get_tools(counters=None):
     import threading
-    search_count = [0]
-    fetch_count = [0]
-    lock = threading.Lock()
+    if counters is None:
+        counters = {"search": [0], "fetch": [0], "lock": threading.Lock()}
+    search_count = counters["search"]
+    fetch_count = counters["fetch"]
+    lock = counters["lock"]
 
     @tool
     def search_tool(query: str) -> str:
@@ -91,22 +93,15 @@ def get_tools():
                 return json.dumps({"error": f"Search cap of {SEARCH_HARD_CAP} reached. Stop searching and write the article now."})
             search_count[0] += 1
             current = search_count[0]
-        searxng_host = os.getenv("SEARXNG_HOST")
-        backend = f"searxng({searxng_host})" if searxng_host else "duckduckgo"
-        print(f"[search_tool] call {current}/{SEARCH_HARD_CAP} backend={backend} — query: {query!r}")
-        if searxng_host:
-            from langchain_community.utilities import SearxSearchWrapper
-
-            wrapper = SearxSearchWrapper(searx_host=searxng_host)
-            raw = wrapper.results(query, num_results=10)
-            results = [
-                {"title": r.get("title", ""), "url": r.get("link", ""), "snippet": r.get("snippet", "")}
-                for r in raw if r.get("link", "")
-            ][:5]
-            if not results:
-                return json.dumps({"error": "No results found. Do NOT invent URLs. Write from your own expertise instead."})
-        else:
-            return json.dumps({"error": "No SEARXNG_HOST configured. Search unavailable."})
+        print(f"[search_tool] call {current}/{SEARCH_HARD_CAP} backend=tavily — query: {query!r}")
+        search = TavilySearchResults(k=5)
+        raw = search.invoke(query)
+        results = [
+            {"title": r.get("title", ""), "url": r.get("url", ""), "snippet": r.get("content", "")}
+            for r in raw if r.get("url", "")
+        ][:5]
+        if not results:
+            return json.dumps({"error": "No results found. Do NOT invent URLs. Write from your own expertise instead."})
         return json.dumps(results, indent=2)
 
     @tool
@@ -141,10 +136,7 @@ def get_tools():
                     "url": url,
                 })
 
-            fetch_count[0] += 1
-            current = fetch_count[0]
-
-        print(f"[fetch_page] call {current}/{FETCH_HARD_CAP} — url: {url!r}")
+        print(f"[fetch_page] attempting — url: {url!r}")
 
         try:
             headers = {
@@ -152,6 +144,12 @@ def get_tools():
             }
             response = httpx.get(url, headers=headers, timeout=15, follow_redirects=True)
             response.raise_for_status()
+
+            # Only charge against the cap for successful fetches
+            with lock:
+                fetch_count[0] += 1
+                current = fetch_count[0]
+            print(f"[fetch_page] call {current}/{FETCH_HARD_CAP} — url: {url!r}")
 
             from bs4 import BeautifulSoup
             soup = BeautifulSoup(response.text, "html.parser")
@@ -187,8 +185,10 @@ def get_tools():
             }, indent=2)
 
         except httpx.HTTPStatusError as e:
-            return json.dumps({"error": f"HTTP {e.response.status_code}", "url": url})
+            print(f"[fetch_page] HTTP {e.response.status_code} (not counted) — url: {url!r}")
+            return json.dumps({"error": f"HTTP {e.response.status_code} — skip this URL and try another.", "url": url})
         except Exception as e:
+            print(f"[fetch_page] error (not counted) — url: {url!r}: {e}")
             return json.dumps({"error": str(e), "url": url})
 
     return [search_tool, fetch_page, generate_image]

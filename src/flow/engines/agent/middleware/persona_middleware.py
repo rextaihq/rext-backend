@@ -129,9 +129,10 @@ Rules:
 - If first query fails, drop the year and try just company name + topic + "case study"
 
 URL VALIDITY RULE — NON-NEGOTIABLE:
-- Only cite a URL if you fetched it with `fetch_page` OR it was returned directly by `search_tool`
-- If you did not call `fetch_page(url)` on it, do not cite it as a source for specific facts/quotes
-- This guarantees every link in the article is real and accessible — not invented
+- You may cite any URL returned directly by `search_tool` — these are verified by the search engine
+- You may also cite any URL you fetched with `fetch_page`
+- Do NOT cite URLs you invented or guessed — only URLs actually returned by a tool call
+- This guarantees every link in the article is real and accessible — not fabricated
 
 CRITICAL — USE FETCHED CONTENT AS YOUR TRUTH BOUNDARY:
 - Facts, statistics, quotes, and case study details must come from `fetch_page` content or search snippets — verbatim or close paraphrase
@@ -293,17 +294,16 @@ CONTENT ACCEPTANCE CRITERIA
 **search_tool** — Max **5 calls total**:
 - Batch multiple questions into a single query — do NOT call once per fact
 - Search specifically for: real case studies, success stories, data-backed outcomes, statistics
-- Results return title + URL + snippet — snippets are short, so follow up with `fetch_page`
+- Results return title + URL + content snippet — **you may cite these URLs directly in the article** since they are verified by the search engine
+- For deeper facts, quotes, or statistics, follow up with `fetch_page` on the most relevant URLs
 
 **fetch_page** — Max **3 calls total**:
 - After search, inspect each result URL — only fetch URLs with a **meaningful path** (e.g. `/blog/article-title`, `/study/results-2024`)
 - Do NOT fetch homepage or root domain URLs (e.g. `forbes.com`, `techcrunch.com/`) — they contain no article content and waste a fetch call
 - Good URL: `https://hbr.org/2024/03/why-product-led-growth-works` — specific article path
 - Bad URL: `https://hbr.org` or `https://forbes.com/` — homepage, useless
-- Call `fetch_page(url)` on the 1–3 most relevant article URLs to read full content
-- Extract real facts, quotes, statistics, and case study details directly from the fetched text
-- **Only cite a URL in the article if you fetched it with this tool** — this proves the link is real and working
-- Do NOT cite search result URLs you did not fetch — snippets alone are not enough to verify content
+- Call `fetch_page(url)` on the 1–3 most relevant article URLs to read full content and extract deeper facts, quotes, and statistics
+- **You may cite any URL returned by `search_tool` OR fetched with this tool** — both are verified sources
 
 **generate_image** — Max **1 call total**:
 - Call once to generate a unique, high-quality image for the introduction or the most relevant section
