@@ -2,9 +2,8 @@
 from pydantic import BaseModel, Field
 from typing import Optional
 import re
-
 # Import processing helpers from the existing Streamlit page
-from humanize_text import (
+from src.flow.engines.content.generation.humanize_text import (
     extract_citations,
     restore_citations,
     minimal_rewriting,

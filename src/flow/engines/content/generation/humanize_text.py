@@ -256,7 +256,7 @@ def minimal_humanize_line(line, p_syn=0.2, p_trans=0.2):
     return line
 
 
-def minimal_rewriting(text, p_syn=0.2, p_trans=0.2):
+def minimal_rewriting(text, p_syn=0.6, p_trans=0.0):
     lines = sent_tokenize(text)
     out_lines = [
         minimal_humanize_line(ln, p_syn=p_syn, p_trans=p_trans) for ln in lines
@@ -264,7 +264,7 @@ def minimal_rewriting(text, p_syn=0.2, p_trans=0.2):
     return " ".join(out_lines)
 
 
-def preserve_linebreaks_rewrite(text, p_syn=0.2, p_trans=0.2):
+def preserve_linebreaks_rewrite(text, p_syn=0.6, p_trans=0.0):
     """Rewrite text while preserving original line breaks.
 
     Splits the input on newline characters and rewrites each non-empty line
