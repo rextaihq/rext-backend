@@ -521,17 +521,19 @@ class AuthService:
 
         return user, verification_token
 
-    async def refresh_token(self, refresh_token: str) -> Dict[str, str]:
+    async def refresh_token(self, refresh_token: str) -> Tuple[Dict[str, str], str, int]:
         """
         Generate new access token using refresh token.
 
-        Implements token rotation - old refresh token is blacklisted.
+        Implements token rotation - old refresh token is blacklisted in DB here;
+        the caller must write to Redis cache AFTER committing the DB transaction
+        to avoid a poisoned cache on rollback.
 
         Args:
             refresh_token: Refresh token
 
         Returns:
-            Dict with new access_token, refresh_token, token_type
+            Tuple of (tokens dict, old_jti, old_exp) — caller writes Redis after commit
 
         Raises:
             RextAuthenticationException: If token invalid, blacklisted, or user not active
@@ -604,33 +606,72 @@ class AuthService:
         new_access_token = create_access_token(data=token_data)
         new_refresh_token = create_refresh_token(data=token_data)
 
-        # Blacklist old refresh token
+        # Blacklist old refresh token in DB — Redis write happens in the route
+        # handler after db.commit() to prevent a poisoned cache on rollback.
+        old_exp = payload.get("exp", 0)
         blacklist_entry = TokenBlacklist(
             jti=jti,
             token_type="refresh",
             user_id=db_user.id,
             revoked_at=datetime.now(timezone.utc),
-            expires_at=datetime.fromtimestamp(payload.get("exp"), tz=timezone.utc),
+            expires_at=datetime.fromtimestamp(old_exp, tz=timezone.utc),
             reason="refresh"
         )
         self.db.add(blacklist_entry)
+
+        # Update session to track new access token JTI and extend expiry.
+        new_access_payload = decode_and_verify_token(new_access_token)
+        new_jti = new_access_payload.get("jti")
+        new_exp_ts = new_access_payload.get("exp")
+        new_expires_at = (
+            datetime.fromtimestamp(new_exp_ts, tz=timezone.utc)
+            if new_exp_ts
+            else datetime.now(timezone.utc) + timedelta(hours=24)
+        )
+
+        existing_session_result = await self.db.execute(
+            select(UserSession).where(
+                UserSession.jti == jti,
+                UserSession.is_active.is_(True)
+            )
+        )
+        existing_session = existing_session_result.scalar_one_or_none()
+        if existing_session:
+            existing_session.jti = new_jti
+            existing_session.expires_at = new_expires_at
+            existing_session.last_activity_at = datetime.now(timezone.utc)
+        else:
+            new_session = UserSession(
+                user_id=db_user.id,
+                jti=new_jti,
+                device_name="Unknown",
+                device_type="desktop",
+                user_agent="Unknown",
+                ip_address="Unknown",
+                is_active=True,
+                created_at=datetime.now(timezone.utc),
+                last_activity_at=datetime.now(timezone.utc),
+                expires_at=new_expires_at,
+            )
+            self.db.add(new_session)
+
         await self.db.flush()
-        await blacklist_token_in_cache(jti, payload.get("exp", 0))
 
         logger.info(
             f"Token refreshed for user: {user_id}",
-            extra={"old_jti": jti}
+            extra={"old_jti": jti, "new_jti": new_jti}
         )
 
         from src.api.config import get_settings
         settings = get_settings()
 
-        return {
+        tokens = {
             "access_token": new_access_token,
             "refresh_token": new_refresh_token,
             "token_type": "bearer",
             "expires_in": settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60
         }
+        return tokens, jti, old_exp
 
     async def logout_user(self, user_id: UUID, jti: str, exp: int) -> None:
         """
@@ -944,7 +985,7 @@ class AuthService:
                                     "expires_at": invitation.expires_at.isoformat()
                                 }
                             )
-                            return
+                            continue
 
                         #  send the notification to user
                         await schedule_if_allowed(
