@@ -269,13 +269,7 @@ FORBIDDEN COMPLEXITY PATTERNS:
 
 CONTENT ACCEPTANCE CRITERIA
 ========================
-WORD COUNT — NON-NEGOTIABLE:
-- `introduction` field: minimum 200 words
-- `body_markdown` field: minimum 2800 words
-- Combined total: minimum 3000 words
-- Every H2 section: minimum 350 words
-- Every H3 subsection: minimum 150 words
-- DO NOT submit until you have counted and confirmed these minimums are met
+{LENGTH_ACCEPTANCE_BLOCK}
 
 - Content Should be Human readable based on above format criteria
 - Must be Human Written.
@@ -317,23 +311,7 @@ WORD COUNT — NON-NEGOTIABLE:
 5. Deliver the full article — no preamble, no meta-commentary
 6. TOTAL tool calls must not exceed 7 (6 search + 1 image) — stop once limit is reached
 
-### MANDATORY LENGTH ENFORCEMENT
-Your output MUST meet ALL of the following before submitting:
-- `introduction`: at least 200 words — write 3–4 full paragraphs, not a single paragraph
-- `body_markdown`: at least 2800 words — each H2 section must have 350+ words, each H3 must have 150+ words
-- Total combined length: 3000+ words minimum
-
-EXPANSION RULES — apply whenever `check_word_count` returns CRITICAL or WARNING:
-- Add a deeper technical explanation (how it works, why it matters)
-- Add a concrete real-world example or case study with numbers
-- Add a personal anecdote from the persona (failure, pivot, lesson learned)
-- Add a step-by-step breakdown if the concept has stages
-- Add a "common mistakes" or "what NOT to do" block
-- Add a comparison (before vs after, method A vs method B)
-
-Do NOT summarize, do NOT repeat the heading as prose, do NOT pad with filler. Expand with substance.
-
-Write the full article now with image and fact links included. Minimum length: 3000 words total.
+{LENGTH_ENFORCEMENT_BLOCK}
 """
 
     async def abefore_agent(self, state: REXT, runtime: Runtime) -> dict[str, Any] | None:
@@ -345,11 +323,13 @@ Write the full article now with image and fact links included. Minimum length: 3
 
         persona = await self._fetch_persona(user_id, workspace_id)
         outline: Optional[OutlineState] = (state.get("content") or {}).get("outline")
+        target_word_count = (outline or {}).get("target_word_count", 3000)
 
         print(f"  persona: {persona.name if persona else 'None'}")
         print(f"  outline: {outline.get('title') if outline else 'None'}")
+        print(f"  target_word_count: {target_word_count}")
 
-        full_prompt = self._build_full_content_prompt(persona, outline)
+        full_prompt = self._build_full_content_prompt(persona, outline, target_word_count)
 
         sys_msg = SystemMessage(content=full_prompt, id="sys-seo-persona-outline")
         existing_messages = list(state["messages"])
@@ -365,13 +345,51 @@ Write the full article now with image and fact links included. Minimum length: 3
         # The async hook (abefore_agent) will be used by the agent runtime.
         return None
 
-    def _build_full_content_prompt(self, persona: Optional[Persona], outline: Optional[OutlineState]) -> str:
+    def _build_full_content_prompt(self, persona: Optional[Persona], outline: Optional[OutlineState], target_word_count: int = 3000) -> str:
         persona_block = self._build_persona_block(persona) if persona else ""
         outline_block = self._build_outline_block(outline) if outline else ""
+
+        body_min = target_word_count
+        total_min = target_word_count + 200
+        section_min = max(300, int(target_word_count * 0.12))
+        subsection_min = max(120, int(target_word_count * 0.05))
+
+        length_acceptance_block = (
+            f"WORD COUNT — NON-NEGOTIABLE:\n"
+            f"- `introduction` field: minimum 200 words\n"
+            f"- `body_markdown` field: minimum {body_min} words\n"
+            f"- Combined total: minimum {total_min} words\n"
+            f"- Every H2 section: minimum {section_min} words\n"
+            f"- Every H3 subsection: minimum {subsection_min} words\n"
+            f"- DO NOT submit until you have counted and confirmed these minimums are met"
+        )
+
+        length_enforcement_block = (
+            f"### MANDATORY LENGTH ENFORCEMENT\n"
+            f"Your output MUST meet ALL of the following before submitting:\n"
+            f"- `introduction`: at least 200 words — write 3–4 full paragraphs, not a single paragraph\n"
+            f"- `body_markdown`: at least {body_min} words — each H2 section must have {section_min}+ words, each H3 must have {subsection_min}+ words\n"
+            f"- Total combined length: {total_min}+ words minimum\n\n"
+            f"EXPANSION RULES — apply to every section that runs short:\n"
+            f"- Add a deeper technical explanation (how it works, why it matters)\n"
+            f"- Add a concrete real-world example or case study with numbers\n"
+            f"- Add a personal anecdote from the persona (failure, pivot, lesson learned)\n"
+            f"- Add a step-by-step breakdown if the concept has stages\n"
+            f"- Add a \"common mistakes\" or \"what NOT to do\" block\n"
+            f"- Add a comparison (before vs after, method A vs method B)\n\n"
+            f"Do NOT summarize, do NOT repeat the heading as prose, do NOT pad with filler. Expand with substance.\n\n"
+            f"Write the full article now with image and fact links included. Minimum length: {total_min} words total."
+        )
+
+        content_instructions = self.CONTENT_INSTRUCTIONS.format(
+            LENGTH_ACCEPTANCE_BLOCK=length_acceptance_block,
+        )
+
         return self.CONTENT_SYSTEM_PROMPT_TEMPLATE.format(
-            CONTENT_INSTRUCTIONS=self.CONTENT_INSTRUCTIONS,
+            CONTENT_INSTRUCTIONS=content_instructions,
             PERSONA_BLOCK=persona_block,
             OUTLINE_BLOCK=outline_block,
+            LENGTH_ENFORCEMENT_BLOCK=length_enforcement_block,
         )
 
     # ------------------------------------------------------------------
