@@ -36,6 +36,10 @@ _SKIP_LABEL_FIELDS = {
     "intent_type", "answer_format", "optional", "required",
 }
 
+# Nested answer sub-object keys to surface as prose alongside a question label
+_ANSWER_PROSE_FIELDS = ("short_answer", "brief", "content", "text")
+_ANSWER_WRAPPER_KEYS = ("answer", "description", "explanation", "summary")
+
 # Per content-type: ordered list of top-level keys that hold
 # the primary structural content (what the article is actually made of).
 _STRUCTURAL_KEYS: dict[str, list[str]] = {
@@ -95,6 +99,26 @@ _META_KEYS = {
 
 # ── item extraction ─────────────────────────────────────────────────────────
 
+def _prose_from_item(d: dict) -> str:
+    """Extract a short answer/description string from a dict item.
+
+    Handles both direct fields (short_answer, brief, …) and one level of
+    nesting such as FAQItem.answer.short_answer.
+    """
+    for key in _ANSWER_PROSE_FIELDS:
+        val = d.get(key)
+        if isinstance(val, str) and val.strip() and len(val) < 500:
+            return val.strip()
+    for wrapper in _ANSWER_WRAPPER_KEYS:
+        val = d.get(wrapper)
+        if isinstance(val, dict):
+            for key in _ANSWER_PROSE_FIELDS:
+                inner = val.get(key)
+                if isinstance(inner, str) and inner.strip() and len(inner) < 500:
+                    return inner.strip()
+    return ""
+
+
 def _primary_label(d: dict) -> str:
     for key in _LABEL_FIELDS:
         if key in d:
@@ -118,8 +142,13 @@ def _primary_points(d: dict) -> list[str]:
                         result.append(item.strip())
                     elif isinstance(item, dict):
                         lbl = _primary_label(item)
-                        if lbl:
+                        prose = _prose_from_item(item)
+                        if lbl and prose:
+                            result.append(f"{lbl} — {prose}")
+                        elif lbl:
                             result.append(lbl)
+                        elif prose:
+                            result.append(prose)
                 return result
     # fallback: short string fields that aren't label/skip fields
     result = []
