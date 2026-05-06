@@ -22,6 +22,7 @@ from datetime import datetime, timezone
 import bcrypt
 
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 from src.utils.password_utils import validate_password_strength
 
@@ -403,7 +404,10 @@ class UserService:
         from src.api.models.workspace_models.workspace_member import WorkspaceMembers
         from sqlalchemy import func
 
-        base_query = select(Users)
+        from src.api.models.user_models.user_roles import UserRole
+        base_query = select(Users).options(
+            selectinload(Users.user_roles).selectinload(UserRole.role)
+        )
 
         if workspace_id:
             base_query = base_query.join(WorkspaceMembers).where(

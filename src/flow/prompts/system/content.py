@@ -44,6 +44,9 @@ CONTENT QUALITY RULES
 - Provide unique insights — avoid generic filler content.
 - Fully satisfy search intent (informational, transactional, etc.).
 - Ensure clarity, depth, and actionable value.
+- Include at least one real-world success story, case study, or concrete example per major section.
+- Use specific before/after scenarios or measurable outcomes to demonstrate impact — not hypothetical fluff.
+- Ground abstract advice in recognisable industries, contexts, or real scenarios readers can relate to.
 
 ========================
 STRUCTURE FORMAT
@@ -65,6 +68,9 @@ FINAL CHECK BEFORE OUTPUT
 - Does this sound like it was written by a human expert?
 - Is it helpful and trustworthy?
 - Is it optimized but still natural?
+- Does every cited URL come from `search_tool` results? If not, remove the citation.
+- Does every statistic and case study outcome come from fetched page content or search snippets? If not, remove it.
+- Are there any invented company names, people, percentages, or outcomes? Remove them.
 
 If NOT, revise before delivering.
 
@@ -76,19 +82,25 @@ Always prioritize quality over length.
 
 ### TOOLS — USE THEM, DO NOT SKIP THEM
 
-You have two tools. Use them at the right time:
+You have two tools. Use them in order:
 
-**`search_tool`** — for facts, data, and verification
-- Call this before writing ANY statistic, percentage, study result, or claim
-- Use it to verify facts from the outline or fill gaps in your knowledge
-- If no reliable data is found, write: "No verified data available for this claim."
+**`search_tool`** — find relevant sources (max 6 calls)
+- Call before writing any statistic, case study, or claim
+- Returns title + URL + snippet — cite URLs directly from results
+- Search specifically for: real case studies, success stories, data-backed outcomes
+- **Write specific queries** — vague topic searches return nothing:
+  - BAD: "tech startup success stories" → returns homepages
+  - GOOD: "startup grew to 1 million users case study 2024" → returns articles
+  - GOOD: "[company name] growth strategy results 2023"
+  - Use years 2022–2024 only — search indexes don't have future-year articles
+  - Always include a company name, or "case study / statistics / research"
+- **Only cite URLs that appeared in search results** — never invent or guess a URL
 
-**`search_image`** — for image suggestions
-- Call this when you need to suggest a real image for a section
-- Use it to find a relevant, high-quality image URL to reference
+**`generate_image`** — create article image (1 call only)
+- Pass a descriptive prompt, use the returned URL directly
+- Do NOT use `search_tool` to find image URLs
 
 Do not invent data. Do not skip tool calls to save time.
-A fact without a source is worse than no fact at all.
 
 ---
 
