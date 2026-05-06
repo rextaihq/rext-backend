@@ -44,6 +44,35 @@ from .transactional import (
     ServicePageOutline,
 )
 
+def normalize_content_type(content_type: str | None) -> str:
+    """Normalize user/UI/legacy content-type values to canonical keys.
+
+    Canonical keys are lower-kebab-case values used by the outline model maps,
+    e.g. "landing-page", "how-to-guide".
+
+    Examples:
+      - "Landing Page" -> "landing-page"
+      - "landing_page" -> "landing-page"
+      - "ARTICLE" -> "blog" (alias)
+    """
+    if not content_type:
+        return ""
+
+    normalized = str(content_type).strip().lower()
+    if not normalized:
+        return ""
+
+    normalized = normalized.replace("_", "-").replace(" ", "-")
+    while "--" in normalized:
+        normalized = normalized.replace("--", "-")
+    normalized = normalized.strip("-")
+
+    # Aliases used in the flow / legacy state
+    if normalized in {"article", "post", "blog-post", "blogpost", "listicle"}:
+        return "blog"
+
+    return normalized
+ 
 CONTENT_TYPE_TO_MODEL = {
     # Informational
     "blog": BlogOutline,
@@ -90,7 +119,8 @@ CONTENT_TYPE_TO_MODEL = {
 
 def get_outline_model(content_type: str):
     """Get the appropriate Pydantic model for a given content type."""
-    return CONTENT_TYPE_TO_MODEL.get(content_type, BlogOutline)
+    normalized = normalize_content_type(content_type)
+    return CONTENT_TYPE_TO_MODEL.get(normalized, BlogOutline)
 
 
 def get_outline_display_name(content_type: str) -> str:
@@ -98,10 +128,12 @@ def get_outline_display_name(content_type: str) -> str:
 
     e.g. 'brand-page' -> 'Brand Page', 'how-to-guide' -> 'How To Guide'
     """
-    return content_type.replace("-", " ").title()
+    normalized = normalize_content_type(content_type) or (content_type or "")
+    return str(normalized).replace("-", " ").title()
 
 __all__ = [
     "get_outline_model",
+    "normalize_content_type",
     "CONTENT_TYPE_TO_MODEL",
     
     # Informational
