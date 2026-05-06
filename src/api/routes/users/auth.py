@@ -253,7 +253,7 @@ async def login_user(
 
 
 @router.post("/refresh", response_model=SuccessResponse[AuthTokenResponse])
-@db_transaction_handler("token refresh", auto_commit=True)
+@db_transaction_handler("token refresh", auto_commit=False)
 async def refresh_access_token(
     request: Request,
     token_data: RefreshTokenRequest,
@@ -262,9 +262,15 @@ async def refresh_access_token(
     """
     Refresh access token using refresh token.
     """
-    # Use auth service
+    from src.api.security.token_utils import blacklist_token_in_cache
+
     auth_service = AuthService(db)
-    tokens = await auth_service.refresh_token(token_data.refresh_token)
+    tokens, old_jti, old_exp = await auth_service.refresh_token(token_data.refresh_token)
+
+    # Commit DB first — Redis write must come after so a failed commit
+    # doesn't leave the token permanently blacklisted in cache.
+    await db.commit()
+    await blacklist_token_in_cache(old_jti, old_exp)
 
     return success(
         data=tokens,
