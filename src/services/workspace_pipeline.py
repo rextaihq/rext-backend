@@ -53,20 +53,31 @@ def _filter_valid_personas(personas: list[dict]) -> list[dict]:
     rather than an actual human name (e.g. "John Smith").
     """
     valid = []
+    rejected = []
     for p in personas:
         name: str = (p.get("name") or "").strip()
         if not name:
+            rejected.append({"name": "(empty)", "reason": "missing name"})
             continue
         words = name.lower().split()
-        # Reject if any word in the name is a known archetype keyword
         if any(w in _ARCHETYPE_KEYWORDS for w in words):
+            rejected.append({"name": name, "reason": "archetype keyword"})
             continue
-        # Require at least two words (first + last name) or a title prefix
         title_prefixes = {"dr.", "dr", "mr.", "mr", "ms.", "ms", "mrs.", "prof.", "prof"}
         has_title = words[0] in title_prefixes
         if len(words) < 2 and not has_title:
+            rejected.append({"name": name, "reason": "single word / no title"})
             continue
         valid.append(p)
+
+    if rejected:
+        logger.info(
+            "Filtered out invalid personas",
+            extra={"rejected": rejected, "valid_count": len(valid)},
+        )
+    if not valid:
+        logger.info("No valid personas found — no real named individuals identified on site")
+
     return valid
 
 
@@ -546,19 +557,35 @@ IMPORTANT INSTRUCTIONS FOR BRAND INFORMATION:
 - Extract 'competitors': List of competitors. Look for direct mentions OR infer the top 3-5 competitors based on the business category and industry (e.g., if the site is a SaaS CRM, list Salesforce, HubSpot, and Pipedrive as inferred competitors).
 - Extract 'content_pillar': The main themes or categories they create content about.
 
-IMPORTANT INSTRUCTIONS FOR PERSONAS:
-- ONLY extract REAL NAMED INDIVIDUALS explicitly mentioned on the website: founders, authors, team members, experts, or named testimonial contributors.
-- A valid persona MUST have a real human name (e.g., "John Smith", "Dr. Sarah Mitchell"). Do NOT use job titles, roles, or audience segments as names.
-- STRICTLY FORBIDDEN: Do NOT create personas for customer archetypes, target audience segments, or fictional representatives (e.g., "Online Store Owner", "Busy Blogger", "Small Business Owner", "Marketing Manager"). These belong in 'target_audience', not personas.
-- If NO real named individuals are found on the website, return an EMPTY personas list []. Do not invent or fabricate personas.
+STRICT RULES FOR PERSONAS — READ CAREFULLY:
+
+RULE 1 — REAL PEOPLE ONLY:
+The personas list MUST contain ONLY real, named human individuals explicitly mentioned by name on the website.
+Valid sources: founders, co-founders, authors, blog writers, team members, executives, named experts, or named testimonial contributors.
+
+RULE 2 — NAME REQUIREMENT:
+A valid persona MUST have a real human name consisting of at least a first and last name (e.g., "John Smith", "Dr. Sarah Mitchell", "Mobheen Abdullah").
+Single words, job titles, roles, or descriptions are NOT valid names.
+
+RULE 3 — STRICTLY FORBIDDEN PERSONAS (these are NEVER valid):
+Do NOT create personas for any of the following — they belong in 'target_audience', NOT personas:
+  - Customer archetypes (e.g., "Online Store Owner", "Busy Blogger", "Small Business Owner")
+  - Target audience segments (e.g., "Marketing Manager", "Entrepreneur", "Startup Founder")
+  - Fictional or representative users (e.g., "The Modern Professional", "Tech-Savvy User")
+  - Generic roles without a real name attached
+
+RULE 4 — EMPTY LIST WHEN NO REAL PEOPLE FOUND:
+If the website content does NOT explicitly mention any real named individuals, you MUST return an EMPTY list: personas = []
+Do NOT invent, fabricate, or infer personas. Do NOT populate this field with guesses.
+Returning an empty list IS the correct answer when no real people are named on the site.
 
 For each valid PERSONA extracted, provide:
-- name: The person's actual name as it appears on the site (e.g., "Mobheen Abdullah").
+- name: The person's actual name exactly as it appears on the site (e.g., "Mobheen Abdullah").
 - full_name: Their complete professional name if available.
 - professional_title: Their stated job title (e.g., "Founder & CEO").
 - areas_of_expertise: What they specialize in based on their stated role and content.
 - tone_of_voice: Their writing or communication style if discernible.
-- bio: A brief professional background based only on what the site says about them.
+- bio: A brief professional background based ONLY on what the site explicitly states about them.
 """
 
             messages = [
