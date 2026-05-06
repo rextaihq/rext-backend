@@ -2,6 +2,7 @@
 Pytest configuration and shared fixtures for all tests.
 """
 
+import os
 import asyncio
 import pytest
 import pytest_asyncio
@@ -9,6 +10,9 @@ from typing import AsyncGenerator, Generator
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 from sqlalchemy.pool import NullPool
 from httpx import ASGITransport, AsyncClient
+
+# Prevent MinIO/S3 bucket checks at import time during tests.
+os.environ.setdefault("REXT_STORAGE_SKIP_BUCKET_CHECK", "1")
 
 from src.api.database.base import Base
 from src.api.server import app
