@@ -103,7 +103,7 @@ async def generate_content(state: REXT) -> dict:
 
         # 5️⃣ Extract Tone & Metadata
         tone = outline.get("tone", "Professional")
-        target_word_count = outline.get("target_word_count", 1500)
+        target_word_count = outline.get("target_word_count", 3000)
         logger.info(f"Tone: {tone}")
 
         # Extract key_facts and image_suggestions from the outline

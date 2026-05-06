@@ -269,11 +269,18 @@ FORBIDDEN COMPLEXITY PATTERNS:
 
 CONTENT ACCEPTANCE CRITERIA
 ========================
-- Content Length should be minimum 1500 words
-- Content Should be Human readable based on above format creteria
+WORD COUNT — NON-NEGOTIABLE:
+- `introduction` field: minimum 200 words
+- `body_markdown` field: minimum 2800 words
+- Combined total: minimum 3000 words
+- Every H2 section: minimum 350 words
+- Every H3 subsection: minimum 150 words
+- DO NOT submit until you have counted and confirmed these minimums are met
+
+- Content Should be Human readable based on above format criteria
 - Must be Human Written.
 
-- If alll acceptance are pass then content should be acceptable.
+- If all acceptance criteria pass then content should be acceptable.
 """
 
     CONTENT_SYSTEM_PROMPT_TEMPLATE = """
@@ -310,7 +317,23 @@ CONTENT ACCEPTANCE CRITERIA
 5. Deliver the full article — no preamble, no meta-commentary
 6. TOTAL tool calls must not exceed 7 (6 search + 1 image) — stop once limit is reached
 
-Write the full article now with image and facts links included minimum length should be: 1500 words. Clearly mention the facts and stats with links.
+### MANDATORY LENGTH ENFORCEMENT
+Your output MUST meet ALL of the following before submitting:
+- `introduction`: at least 200 words — write 3–4 full paragraphs, not a single paragraph
+- `body_markdown`: at least 2800 words — each H2 section must have 350+ words, each H3 must have 150+ words
+- Total combined length: 3000+ words minimum
+
+EXPANSION RULES — apply whenever `check_word_count` returns CRITICAL or WARNING:
+- Add a deeper technical explanation (how it works, why it matters)
+- Add a concrete real-world example or case study with numbers
+- Add a personal anecdote from the persona (failure, pivot, lesson learned)
+- Add a step-by-step breakdown if the concept has stages
+- Add a "common mistakes" or "what NOT to do" block
+- Add a comparison (before vs after, method A vs method B)
+
+Do NOT summarize, do NOT repeat the heading as prose, do NOT pad with filler. Expand with substance.
+
+Write the full article now with image and fact links included. Minimum length: 3000 words total.
 """
 
     async def abefore_agent(self, state: REXT, runtime: Runtime) -> dict[str, Any] | None:
@@ -456,6 +479,6 @@ Write the full article now with image and facts links included minimum length sh
                         if fact.get("source_url"):
                             lines.append(f"         Source: {fact['source_url']}")
 
-        lines.append("\nUse this outline as a guide, but write naturally and adapt where needed but image and facts links included mimumn length should be: 1500 words.clearly mention the facts and stats with links.")
+        lines.append("\nUse this outline as a guide, but write naturally and adapt where needed but image and facts links included minimum length should be: 3000 words total. Clearly mention the facts and stats with links.")
 
         return "\n".join(lines)

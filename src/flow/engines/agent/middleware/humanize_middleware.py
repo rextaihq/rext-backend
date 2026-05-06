@@ -1,19 +1,24 @@
 import logging
+import re
 from typing import Any, Optional
 
 from langchain.agents.middleware import AgentMiddleware
+from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.runtime import Runtime
 from pydantic import BaseModel
 from sqlalchemy import select
 
 from src.api.database.async_database import AsyncSessionLocal
 from src.api.models.knowledge_models.persona_model import Persona
-from src.flow.model.llm_manager import load_humanize_model
+from src.flow.model.llm_manager import load_content_model, load_humanize_model
 from src.flow.model.structure.contents.base import BaseGeneratedContent
 from src.flow.prompts.human.humanize import get_humanize_prompt
 from src.flow.states.rext import REXT
 
 logger = logging.getLogger(__name__)
+
+WORD_TARGET = 3000
+SECTION_MIN_WORDS = 350
 
 
 class HumanizeMiddleware(AgentMiddleware):
@@ -47,12 +52,15 @@ class HumanizeMiddleware(AgentMiddleware):
         if not body_markdown:
             logger.info("HumanizeMiddleware: body_markdown missing; skipping.")
             return None
-        
+
+        schema = self._resolve_schema(structured_response)
+
+        # Expand content if under word target before humanizing
+        original_payload = await self._expand_if_short(original_payload, schema)
+
         prompt_data = self._build_prompt_data(
             content_payload=original_payload,
         )
-
-        schema = self._resolve_schema(structured_response)
         model = load_humanize_model().with_structured_output(schema)
         messages = get_humanize_prompt().format_messages(**prompt_data)
 
@@ -91,6 +99,76 @@ class HumanizeMiddleware(AgentMiddleware):
 
         logger.info("HumanizeMiddleware: content humanization applied successfully.")
         return {"structured_response": updated_structured_response}
+
+    async def _expand_if_short(self, payload: dict[str, Any], schema: type[BaseModel]) -> dict[str, Any]:
+        intro = (payload.get("introduction") or "").strip()
+        body = (payload.get("body_markdown") or "").strip()
+        total_words = len((intro + " " + body).split())
+
+        logger.info("HumanizeMiddleware: word count before expansion: %d / %d", total_words, WORD_TARGET)
+
+        for pass_num in range(1, 3):
+            if total_words >= WORD_TARGET:
+                break
+
+            deficit = WORD_TARGET - total_words
+
+            # Identify short H2 sections
+            sections = re.split(r'(?=^## )', body, flags=re.MULTILINE)
+            short_headings = [
+                re.match(r'^## (.+)', s.strip()).group(1)
+                for s in sections
+                if s.strip() and len(s.split()) < SECTION_MIN_WORDS and re.match(r'^## (.+)', s.strip())
+            ]
+
+            if short_headings:
+                target_note = (
+                    f"These sections are under {SECTION_MIN_WORDS} words and must be expanded: "
+                    f"{', '.join(short_headings)}. "
+                    f"Expand each with: a real example, step-by-step breakdown, common mistakes, or a persona anecdote."
+                )
+            else:
+                target_note = (
+                    f"The article needs {deficit} more words overall. "
+                    "Add depth to any section: more examples, comparisons, or persona anecdotes."
+                )
+
+            logger.info("HumanizeMiddleware expansion pass %d: deficit=%d, short_sections=%s", pass_num, deficit, short_headings)
+
+            messages = [
+                SystemMessage(content=(
+                    "You are expanding an existing article to meet a minimum word count. "
+                    "Return the COMPLETE expanded article — preserve all existing content, facts, links, headings, and the persona voice. "
+                    "Do not truncate any section. Do not add filler — expand with substance."
+                )),
+                HumanMessage(content=(
+                    f"The article currently has {total_words} words. Target: {WORD_TARGET} words (deficit: {deficit}).\n"
+                    f"{target_note}\n\n"
+                    f"CURRENT ARTICLE:\n\n"
+                    f"Title: {payload.get('title', '')}\n\n"
+                    f"Introduction:\n{intro}\n\n"
+                    f"Body:\n{body}"
+                )),
+            ]
+
+            try:
+                model = load_content_model().with_structured_output(schema)
+                expanded = await model.ainvoke(messages)
+                expanded_dict = self._to_dict(expanded)
+                if expanded_dict:
+                    for field in ("introduction", "body_markdown"):
+                        val = expanded_dict.get(field)
+                        if val and str(val).strip():
+                            payload[field] = val
+                    intro = (payload.get("introduction") or "").strip()
+                    body = (payload.get("body_markdown") or "").strip()
+                    total_words = len((intro + " " + body).split())
+                    logger.info("HumanizeMiddleware expansion pass %d done: %d words", pass_num, total_words)
+            except Exception:
+                logger.exception("HumanizeMiddleware expansion pass %d failed — keeping current content", pass_num)
+                break
+
+        return payload
 
     def _build_prompt_data(
         self,
