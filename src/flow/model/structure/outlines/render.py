@@ -228,6 +228,38 @@ def _extract_items(raw: Any) -> list[dict]:
     return []
 
 
+# ── metadata helpers ────────────────────────────────────────────────────────
+
+def _resolve_focus_keyphrase(outline_dict: dict) -> str:
+    """Get focus_keyphrase regardless of nesting (direct or under seo/seo_plan)."""
+    direct = outline_dict.get("focus_keyphrase")
+    if isinstance(direct, str) and direct.strip():
+        return direct.strip()
+    for wrapper in ("seo", "seo_plan"):
+        obj = outline_dict.get(wrapper)
+        if isinstance(obj, dict):
+            nested = obj.get("focus_keyphrase")
+            if isinstance(nested, str) and nested.strip():
+                return nested.strip()
+    return ""
+
+
+def _resolve_keywords(outline_dict: dict) -> list[str]:
+    """Surface the primary keyword list regardless of per-type field name."""
+    for key in ("keywords_to_include", "secondary_keywords", "focus_keywords", "semantic_keywords", "keywords"):
+        val = outline_dict.get(key)
+        if isinstance(val, list) and val:
+            return [str(k).strip() for k in val if k]
+    for wrapper in ("seo", "seo_plan"):
+        obj = outline_dict.get(wrapper)
+        if isinstance(obj, dict):
+            for key in ("secondary_keywords", "keywords_to_include", "search_variants"):
+                val = obj.get(key)
+                if isinstance(val, list) and val:
+                    return [str(k).strip() for k in val if k]
+    return []
+
+
 # ── public API ───────────────────────────────────────────────────────────────
 
 def normalize_outline(outline_dict: dict, content_type: str) -> dict:
@@ -239,7 +271,8 @@ def normalize_outline(outline_dict: dict, content_type: str) -> dict:
             "title": str,
             "schema_type": str,
             "slug_suggestion": str,
-            "focus_keyphrase": str,
+            "focus_keyphrase": str,   # resolved from top-level or seo.focus_keyphrase
+            "keywords_to_include": [str],  # unified keyword list across all model variants
             "target_word_count": int,
             "rejected_reason": str,
             "status": str,
@@ -287,7 +320,8 @@ def normalize_outline(outline_dict: dict, content_type: str) -> dict:
         "title": outline_dict.get("title", ""),
         "schema_type": outline_dict.get("schema_type", ""),
         "slug_suggestion": outline_dict.get("slug_suggestion", ""),
-        "focus_keyphrase": outline_dict.get("focus_keyphrase", ""),
+        "focus_keyphrase": _resolve_focus_keyphrase(outline_dict),
+        "keywords_to_include": _resolve_keywords(outline_dict),
         "target_word_count": outline_dict.get("target_word_count", 0),
         "rejected_reason": outline_dict.get("rejected_reason", ""),
         "status": outline_dict.get("status", ""),
