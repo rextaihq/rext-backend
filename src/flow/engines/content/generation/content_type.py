@@ -15,11 +15,13 @@ def content_type(state: REXT) -> REXT:
     serp_backlinks = seo_result.get("serp_backlinks", {})
     logger.info(f"serp_backlinks: {serp_backlinks}")
 
-    search_intent = serp_backlinks.get("main_intent", "informational")
+    search_intent = (
+        serp_backlinks.get("main_intent")
+        or state.get("final_intent_type")
+        or "informational"
+    )
     if search_intent == "unknown":
-        search_intent = "informational"
-    else:
-        search_intent = search_intent
+        search_intent = state.get("final_intent_type") or "informational"
 
     # show the intent and ask the user to select the content type
     selected_content_type = interrupt({
@@ -42,8 +44,7 @@ def content_type(state: REXT) -> REXT:
     
     # Save the selected content type to the state
     content_state["content_type"] = final_selection or "article"
-    state["content"] = content_state
-    
+
     logger.info(f"Content type selected: {content_state['content_type']}")
-    
-    return state
+
+    return {"content": content_state}
