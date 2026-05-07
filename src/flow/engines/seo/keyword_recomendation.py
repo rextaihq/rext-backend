@@ -1,5 +1,5 @@
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, Any, Literal
 from src.flow.states.rext import REXT
 from langgraph.types import interrupt, Command
@@ -80,7 +80,7 @@ async def keyword_recommendation(state: REXT, config, *, runtime) -> Any:
 
     # ✅ CREATE UNIQUE KEY FOR EACH RUN
     # Use timestamp + query to create unique keys
-    timestamp = datetime.now().isoformat()
+    timestamp = datetime.now(timezone.utc).isoformat()
     unique_key = f"library_{original_query}_{timestamp}"
 
     # Store the data
