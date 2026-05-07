@@ -9,7 +9,7 @@ import httpx
 
 load_dotenv()
 
-SEARCH_HARD_CAP = 6
+SEARCH_HARD_CAP = 8
 
 
 @tool
@@ -87,18 +87,36 @@ def get_tools(counters=None):
         with lock:
             if search_count[0] >= SEARCH_HARD_CAP:
                 print(f"[search_tool] Hard cap {SEARCH_HARD_CAP} reached — blocking call for query: {query!r}")
-                return json.dumps({"error": f"Search cap of {SEARCH_HARD_CAP} reached. Stop searching and write the article now."})
+                return json.dumps({"error": (
+                    f"Search cap of {SEARCH_HARD_CAP} reached. "
+                    "You now have all the evidence you need. "
+                    "Review the facts, statistics, and URLs collected from your previous searches. "
+                    "Write the article using ONLY those facts and ONLY those exact URLs as inline links. "
+                    "Do NOT invent any URL, name, statistic, or outcome not present in your prior search results. "
+                    "For any section with no search evidence, write a first-person persona observation instead."
+                )})
             search_count[0] += 1
             current = search_count[0]
         print(f"[search_tool] call {current}/{SEARCH_HARD_CAP} backend=tavily — query: {query!r}")
-        search = TavilySearchResults(k=5)
+        search = TavilySearchResults(k=5, include_raw_content=True)
         raw = search.invoke(query)
-        results = [
-            {"title": r.get("title", ""), "url": r.get("url", ""), "snippet": r.get("content", "")}
-            for r in raw if r.get("url", "")
-        ][:5]
-        if not results:
-            return json.dumps({"error": "No results found. Do NOT invent URLs. Write from your own expertise instead."})
-        return json.dumps(results, indent=2)
+        if not raw:
+            return "NO RESULTS FOUND. Do NOT invent URLs or statistics. Write from persona experience only."
+
+        lines = ["SEARCH RESULTS — ONLY CITE THESE EXACT URLs, NO OTHERS:\n"]
+        for i, r in enumerate(raw[:5], 1):
+            url = r.get("url", "")
+            if not url:
+                continue
+            title = r.get("title", "")
+            # Prefer raw_content (full article text) over short snippet
+            body = r.get("raw_content") or r.get("content", "")
+            body = (body or "").strip()[:2000]
+            lines.append(f"[{i}] URL: {url}")
+            lines.append(f"    TITLE: {title}")
+            lines.append(f"    CONTENT:\n{body}")
+            lines.append("")
+        lines.append("USE ONLY THE URLs LISTED ABOVE AS INLINE HYPERLINKS. DO NOT INVENT OR GUESS ANY URL.")
+        return "\n".join(lines)
 
     return [search_tool, generate_image]
