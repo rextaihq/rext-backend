@@ -225,7 +225,7 @@ async def login_user(
             background_tasks=background_tasks,
             db=db
         )
-        
+
         # PERSIST: We must commit here to save login sessions/logins counts
         await db.commit()
         
