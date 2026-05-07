@@ -370,35 +370,6 @@ class AuthService:
             # global_permissions = [p for p in global_permissions if p in default_permissions]
 
 
-        # Invalidate all previous active sessions for this user
-        import time as _time
-        active_sessions_result = await self.db.execute(
-            select(UserSession).where(
-                UserSession.user_id == db_user.id,
-                UserSession.is_active.is_(True)
-            )
-        )
-        active_sessions = active_sessions_result.scalars().all()
-
-        now = datetime.now(timezone.utc)
-        for session in active_sessions:
-            exp_ts = int(session.expires_at.timestamp()) if session.expires_at else int((_time.time() + 86400))
-            blacklist_entry = TokenBlacklist(
-                jti=session.jti,
-                token_type="access",
-                user_id=db_user.id,
-                revoked_at=now,
-                expires_at=session.expires_at or (now + timedelta(hours=24)),
-                reason="new_login"
-            )
-            self.db.add(blacklist_entry)
-            await blacklist_token_in_cache(session.jti, exp_ts)
-            session.is_active = False
-            session.revoked_at = now
-
-        if active_sessions:
-            await self.db.flush()
-
         # Prepare token data with ONLY global/platform permissions
         # Workspace permissions will be loaded separately via /workspaces/{id}/permissions endpoint
         token_data = {
