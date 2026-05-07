@@ -241,7 +241,7 @@ services:
         labels:
             - "traefik.enable=true"
             - "traefik.docker.network=coolify"
-            - "traefik.http.routers.rext-shopify.rule=Host(`${SHOPIFY_DOMAIN:-shopifyapp.rext.ai}`)"
+            - "traefik.http.routers.rext-shopify.rule=Host(`shopifyapp.rext.ai`)"
             - "traefik.http.routers.rext-shopify.entrypoints=http"
             - "traefik.http.routers.rext-shopify.service=rext-shopify-svc"
             - "traefik.http.services.rext-shopify-svc.loadbalancer.server.port=3000"
@@ -284,7 +284,7 @@ services:
         labels:
             - "traefik.enable=true"
             - "traefik.docker.network=coolify"
-            - "traefik.http.routers.minio-s3.rule=Host(`${MINIO_S3_DOMAIN:-media.rext.ai}`)"
+            - "traefik.http.routers.minio-s3.rule=Host(`media.rext.ai`)"
             - "traefik.http.routers.minio-s3.entrypoints=http"
             - "traefik.http.routers.minio-s3.service=minio-s3-svc"
             - "traefik.http.services.minio-s3-svc.loadbalancer.server.port=9000"
