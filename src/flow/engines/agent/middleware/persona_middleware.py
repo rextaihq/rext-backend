@@ -104,25 +104,35 @@ PERSONA IDENTITY RULES — NON-NEGOTIABLE
 - The reader must feel a specific human being wrote this — not a template
 
 ========================
-CITATIONS — ONE RULE, NON-NEGOTIABLE
+CITATIONS — EXACT FORMAT, NON-NEGOTIABLE
 ========================
 `search_tool` returns a numbered list like:
   [1] URL: https://example.com/article
-      TITLE: ...
+      TITLE: Some Article Title
       CONTENT: ...
 
-**YOU MAY ONLY HYPERLINK THE EXACT URLs FROM THAT NUMBERED LIST.**
-No other URLs. Not harvard.edu. Not any domain from your training data. Not root domains. Only the exact URLs the tool returned.
+**INLINE CITATION FORMAT — use this exact markdown syntax inside body_markdown:**
+  [anchor text describing the source](https://exact-url-from-search-result)
 
-If a fact has no matching URL from search results — do NOT attach any URL to it. Write it as a first-person persona observation instead, or omit it.
+Example of correct inline citation in body_markdown:
+  "According to a 2024 benchmark, the RTX 3050 delivers 2.3x faster inference than GTX 1650 for PyTorch workloads ([TechRadar benchmark](https://www.techradar.com/exact/article-path))."
+
+**YOU MAY ONLY USE URLs THAT `search_tool` RETURNED.** Not root domains. Not training data. Not guessed paths. Only the exact URL string from the numbered list.
+
+If a fact has no matching URL — write it as a first-person persona observation or omit it entirely.
+
+**FACTS OUTPUT FIELD — populate for every cited fact:**
+For every stat, outcome, or case study you cite inline, also add it to the `facts` output field:
+  - text: exact claim as written in the article
+  - source_url: exact URL used for the inline citation
 
 QUERY WRITING — get real articles, not homepages:
-  BAD: "boxing training tips" — returns homepages, useless
-  GOOD: "boxer HIIT training case study results 2023" — returns articles
-  GOOD: "[athlete or gym name] training program success story"
-  GOOD: "[topic] statistics research 2022 OR 2023 OR 2024"
+  BAD: "[topic] tips" — returns homepages, useless
+  GOOD: "[company or person name] [topic] case study results 2024"
+  GOOD: "[subtopic] success story before after measurable outcome"
+  GOOD: "[topic] statistics research data 2023 OR 2024"
   Always include: company/person name OR "case study" OR "statistics" OR "research"
-  Never use years beyond 2024 — those articles don't exist yet
+  Never use years beyond 2024
 
 FACTS RULE:
 - Only state numbers, percentages, or outcomes that appear in search result CONTENT snippets
@@ -274,6 +284,10 @@ CONTENT ACCEPTANCE CRITERIA
 
 ---
 
+{AUDIENCE_BLOCK}
+
+---
+
 {OUTLINE_BLOCK}
 
 ---
@@ -336,12 +350,15 @@ Rules for this block:
 
 **Step 4 — Write the article**
 - Use ONLY the facts listed in your EVIDENCE block above
-- Hyperlink ONLY the SOURCE URLs listed in your EVIDENCE block
+- For every fact from your EVIDENCE block, embed an inline markdown link in body_markdown:
+  Format: [descriptive anchor text](exact_source_url)
+  Example: "...inference throughput nearly doubled [(Tom's Hardware)](https://www.tomshardware.com/exact/path)."
 - Do NOT introduce any stat, percentage, name, or company that isn't in your EVIDENCE block
-- For any section with no evidence — write a first-person persona observation or anecdote instead
+- For any section with no evidence — write a first-person persona observation or anecdote instead (no citation needed)
+- Every cited fact must also appear in the `facts` output field with its source_url
 - Total tool calls: max 7 (6 search + 1 image) — stop once limit is reached
 
-Write the full article now. Every cited stat must appear in your EVIDENCE block.
+Write the full article now. Every third-party claim must have an inline [text](url) citation in body_markdown.
 
 {LENGTH_ENFORCEMENT_BLOCK}
 """
@@ -380,6 +397,8 @@ Write the full article now. Every cited stat must appear in your EVIDENCE block.
     def _build_full_content_prompt(self, persona: Optional[Persona], outline: Optional[OutlineState], target_word_count: int = 3000) -> str:
         persona_block = self._build_persona_block(persona) if persona else ""
         outline_block = self._build_outline_block(outline) if outline else ""
+        audiences = (outline or {}).get("target_audience") or []
+        audience_block = self._build_audience_block(audiences)
 
         body_min = target_word_count
         total_min = target_word_count + 200
@@ -421,6 +440,7 @@ Write the full article now. Every cited stat must appear in your EVIDENCE block.
             CONTENT_INSTRUCTIONS=content_instructions,
             PERSONA_BLOCK=persona_block,
             OUTLINE_BLOCK=outline_block,
+            AUDIENCE_BLOCK=audience_block,
             LENGTH_ENFORCEMENT_BLOCK=length_enforcement_block,
         )
 
@@ -532,3 +552,41 @@ Write the full article now. Every cited stat must appear in your EVIDENCE block.
         lines.append("\nUse this outline as a guide, but write naturally and adapt where needed but image and facts links included minimum length should be: 3000 words total. Clearly mention the facts and stats with links.")
 
         return "\n".join(lines)
+
+    def _build_audience_block(self, audiences: list) -> str:
+        if not audiences:
+            return ""
+
+        audience_list = "\n".join(f"- {a}" for a in audiences)
+
+        return f"""========================
+TARGET AUDIENCE — READ THIS BEFORE THE OUTLINE. IT OVERRIDES HOW YOU INTERPRET EVERY SECTION.
+========================
+This article is written exclusively for:
+
+{audience_list}
+
+This audience definition is NON-NEGOTIABLE. Everything — the framing, the examples, the search queries, the vocabulary — must be filtered through their lens. The outline below is a structural guide only. You must reinterpret every section heading and key point for THIS specific audience.
+
+REFRAME THE OUTLINE FOR THIS AUDIENCE:
+- If a section could be read with a gaming, consumer, or general-public angle — rewrite it for this audience's actual use case
+- Example: "GTX 1650 vs RTX 3050 performance" for AI Engineers means CUDA cores, VRAM for model training/inference, PyTorch/TensorFlow benchmarks — NOT Cyberpunk or gaming FPS
+- Every concrete example, benchmark, or case study must be one THIS audience would encounter in their actual work
+
+SEARCH QUERIES — AUDIENCE-FIRST:
+- Always include the audience type in your search queries
+- BAD: "[product] performance benchmarks" — returns consumer/gaming results
+- GOOD: "[product] [audience role] use case results 2023 OR 2024" — returns relevant results
+- GOOD: "[product] [audience-specific metric] performance" — e.g. "GTX 1650 machine learning inference benchmark" for ML Engineers
+
+FOR THIS AUDIENCE, SPECIFICALLY:
+- Use their exact vocabulary and domain-specific terminology
+- Reference tools, frameworks, workflows, and metrics they use daily in their role
+- Name their real pain points — the specific bottlenecks and frustrations of their work context
+- Ground every how-to step in their actual environment — not a generic "business owner" or consumer
+- Connect outcomes to metrics they care about — not vanity metrics, but the KPIs their role is measured on
+
+DO NOT write generic content and tag the audience name onto it. If a reader from this audience read the article and felt it was written for someone else — it has failed.
+
+If multiple audiences are listed and their needs diverge significantly for a section, call it out: "For [Audience A]... For [Audience B]..."
+========================"""
