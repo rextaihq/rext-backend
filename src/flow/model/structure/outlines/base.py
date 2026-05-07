@@ -35,8 +35,12 @@ class LinkSuggestion(BaseModel):
 
 class Fact(BaseModel):
     """Verifiable fact or statistic with source citation context."""
-    
+
     text: str = Field(description="The factual statement or statistic.")
+    source_url: Optional[str] = Field(
+        default=None,
+        description="Exact URL returned by search_tool that proves this fact. Only populate with URLs from search results — never invent."
+    )
 
 
 class Section(BaseModel):

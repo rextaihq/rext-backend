@@ -370,6 +370,15 @@ async def generate_content(state: REXT) -> dict:
 
         logger.info(f"Content generated successfully: {content_dict.get('title', '')}")
 
+        # Soft enforcement: warn when agent produced no sourced facts (evidence block was skipped)
+        facts = content_dict.get("facts") or []
+        sourced = [f for f in facts if (f.get("source_url") if isinstance(f, dict) else False)]
+        if not sourced:
+            logger.warning(
+                "Content agent returned 0 sourced facts -- agent may have skipped EVIDENCE block. "
+                "All third-party claims in this article are unverified. Topic: %s", topic
+            )
+
         # Return structured content
         return {
             "content": {

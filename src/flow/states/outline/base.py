@@ -12,8 +12,9 @@ class LinkSuggestionState(TypedDict):
     context: str
     section: str
 
-class FactState(TypedDict):
+class FactState(TypedDict, total=False):
     text: str
+    source_url: Optional[str]
 
 class SectionState(TypedDict, total=False):
     heading: str
