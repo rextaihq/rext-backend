@@ -241,10 +241,6 @@ services:
         labels:
             - "traefik.enable=true"
             - "traefik.docker.network=coolify"
-            - "traefik.http.routers.rext-shopify.rule=Host(`shopifyapp.rext.ai`)"
-            - "traefik.http.routers.rext-shopify.entrypoints=http"
-            - "traefik.http.routers.rext-shopify.service=rext-shopify-svc"
-            - "traefik.http.services.rext-shopify-svc.loadbalancer.server.port=3000"
         expose:
             - "3000"
         environment:
@@ -284,10 +280,6 @@ services:
         labels:
             - "traefik.enable=true"
             - "traefik.docker.network=coolify"
-            - "traefik.http.routers.minio-s3.rule=Host(`media.rext.ai`)"
-            - "traefik.http.routers.minio-s3.entrypoints=http"
-            - "traefik.http.routers.minio-s3.service=minio-s3-svc"
-            - "traefik.http.services.minio-s3-svc.loadbalancer.server.port=9000"
         healthcheck:
             test: ["CMD-SHELL", "curl -f http://localhost:9000/minio/health/live || exit 1"]
             interval: 10s
