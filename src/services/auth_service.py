@@ -21,11 +21,12 @@ Does NOT:
 
 from typing import Tuple, Dict, Any, Optional
 from uuid import UUID
-from datetime import datetime, timezone, timedelta, timezone
+from datetime import datetime, timezone, timedelta
 from src.utils.password_utils import validate_password_strength
 
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, or_
+from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 
 from src.api.models.user_models.users import Users
 from src.api.models.user_models.roles import Role
@@ -51,7 +52,6 @@ from src.api.security.token_utils import (
     decode_and_verify_token,
     verify_refresh_token,
     is_token_blacklisted,
-    blacklist_token_in_cache,
 )
 from fastapi import BackgroundTasks
 from src.services.notification_helper import schedule_if_allowed
@@ -60,7 +60,6 @@ from src.api.middleware.exceptions import (
     DuplicateResourceException,
     RextAuthenticationException,
     ResourceNotFoundException,
-    BusinessRuleViolationException
 )
 class AuthService:
     """Service for authentication business logic"""
@@ -198,7 +197,6 @@ class AuthService:
         password: str,
         device_info: Dict[str, str],
         background_tasks: Optional[BackgroundTasks] = None,
-        db: Optional[AsyncSession] = None,
     ) -> Tuple[Users, Dict[str, Any]]:
         """
         Authenticate user and create session.
@@ -280,13 +278,12 @@ class AuthService:
                 context={"login_attempt": email}
             )
 
-        # Enforce email verification (skipped when DEBUG=True)
-        # from src.api.config import get_settings
-        # if not get_settings().DEBUG and not db_user.email_verified:
-        #     raise RextAuthenticationException(
-        #         message="Please verify your email address before logging in. Check your inbox for the verification link.",
-        #         context={"email": email}
-        #     )
+        from src.api.config import get_settings
+        if get_settings().REQUIRE_EMAIL_VERIFICATION and not db_user.email_verified:
+            raise RextAuthenticationException(
+                message="Please verify your email address before logging in. Check your inbox for the verification link.",
+                context={"email": email}
+            )
 
         # Successful login - reset failed attempts
         db_user.failed_login_attempts = 0
@@ -366,9 +363,6 @@ class AuthService:
             .distinct()
         )
         global_permissions = list(result.scalars().all())
-
-            # global_permissions = [p for p in global_permissions if p in default_permissions]
-
 
         # Prepare token data with ONLY global/platform permissions
         # Workspace permissions will be loaded separately via /workspaces/{id}/permissions endpoint
@@ -556,6 +550,25 @@ class AuthService:
                 context={"reason": "Token blacklisted"}
             )
 
+        # Atomically claim this JTI in Redis before touching the DB.
+        # Prevents concurrent requests with the same refresh token from
+        # racing to the flush and hitting unique-constraint errors or
+        # session-row deadlocks. Only the winner proceeds; others get 401.
+        from src.api.cache.redis_client import cache
+        claim_key = f"refresh_claim:{jti}"
+        if cache.redis is not None and cache._enabled:
+            try:
+                claimed = await cache.redis.set(claim_key, "1", nx=True, ex=30)
+                if not claimed:
+                    raise RextAuthenticationException(
+                        message="Refresh token already used",
+                        context={"reason": "Concurrent refresh detected — use the new tokens"}
+                    )
+            except RextAuthenticationException:
+                raise
+            except Exception:
+                pass  # Redis unavailable — DB IntegrityError is the concurrency guard
+
         # Get user (eagerly load relationships to avoid lazy loading)
         user_id = payload.get("id")
         from sqlalchemy.orm import selectinload
@@ -630,11 +643,17 @@ class AuthService:
             else datetime.now(timezone.utc) + timedelta(hours=24)
         )
 
+        # Sessions store the ACCESS token JTI, not the refresh token JTI.
+        # Until a refresh_jti column is added, find the most-recently-active
+        # session for this user (ordered by last_activity_at desc).
         existing_session_result = await self.db.execute(
-            select(UserSession).where(
-                UserSession.jti == jti,
+            select(UserSession)
+            .where(
+                UserSession.user_id == db_user.id,
                 UserSession.is_active.is_(True)
             )
+            .order_by(UserSession.last_activity_at.desc())
+            .limit(1)
         )
         existing_session = existing_session_result.scalar_one_or_none()
         if existing_session:
@@ -656,7 +675,14 @@ class AuthService:
             )
             self.db.add(new_session)
 
-        await self.db.flush()
+        try:
+            await self.db.flush()
+        except IntegrityError as exc:
+            # Unique constraint on TokenBlacklist.jti — concurrent refresh used same token
+            raise RextAuthenticationException(
+                message="Refresh token already used",
+                context={"reason": "Concurrent refresh detected — use the new tokens"}
+            ) from exc
 
         logger.info(
             f"Token refreshed for user: {user_id}",
@@ -674,14 +700,29 @@ class AuthService:
         }
         return tokens, jti, old_exp
 
-    async def logout_user(self, user_id: UUID, jti: str, exp: int) -> None:
+    async def logout_user(
+        self,
+        user_id: UUID,
+        jti: str,
+        exp: int,
+        refresh_jti: Optional[str] = None,
+        refresh_exp: Optional[int] = None,
+    ) -> bool:
         """
-        Logout user by blacklisting token and deactivating session.
+        Logout user by blacklisting access token (and optionally refresh token).
+
+        Redis writes intentionally omitted — caller must call
+        blacklist_token_in_cache() AFTER db.commit().
 
         Args:
             user_id: User UUID
-            jti: Token JTI
-            exp: Token expiration timestamp
+            jti: Access token JTI
+            exp: Access token expiration timestamp
+            refresh_jti: Refresh token JTI (optional — blacklists refresh on logout)
+            refresh_exp: Refresh token expiration timestamp (required if refresh_jti given)
+
+        Returns:
+            True if token was blacklisted, False if already blacklisted (no-op)
 
         Raises:
             RextAuthenticationException: If token missing JTI
@@ -695,21 +736,32 @@ class AuthService:
         # Check if already blacklisted
         if await is_token_blacklisted(jti, self.db):
             logger.info(f"Token already blacklisted for user {user_id}")
-            return
+            return False
 
-        # Blacklist access token
-        blacklist_entry = TokenBlacklist(
+        now = datetime.now(timezone.utc)
+
+        # Blacklist access token in DB — Redis write done by caller after commit
+        self.db.add(TokenBlacklist(
             jti=jti,
             token_type="access",
             user_id=user_id,
-            revoked_at=datetime.now(timezone.utc),
+            revoked_at=now,
             expires_at=datetime.fromtimestamp(exp, tz=timezone.utc),
             reason="logout"
-        )
-        self.db.add(blacklist_entry)
-        await blacklist_token_in_cache(jti, exp)
+        ))
 
-        # Deactivate session
+        # Also blacklist refresh token if provided
+        if refresh_jti and refresh_exp:
+            self.db.add(TokenBlacklist(
+                jti=refresh_jti,
+                token_type="refresh",
+                user_id=user_id,
+                revoked_at=now,
+                expires_at=datetime.fromtimestamp(refresh_exp, tz=timezone.utc),
+                reason="logout"
+            ))
+
+        # Deactivate session (session stores access JTI, so this lookup is correct)
         result = await self.db.execute(
             select(UserSession).where(
                 UserSession.jti == jti,
@@ -720,14 +772,15 @@ class AuthService:
 
         if session:
             session.is_active = False
-            session.revoked_at = datetime.now(timezone.utc)
+            session.revoked_at = now
 
         await self.db.flush()
 
         logger.info(
             f"User logged out: {user_id}",
-            extra={"jti": jti}
+            extra={"jti": jti, "refresh_jti": refresh_jti}
         )
+        return True
 
     async def initiate_password_reset(self, email: str) -> Tuple[Users, str]:
         """

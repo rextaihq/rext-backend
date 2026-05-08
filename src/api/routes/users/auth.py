@@ -1,36 +1,32 @@
-from fastapi import APIRouter, Depends, Request, BackgroundTasks, Header
+from fastapi import APIRouter, Depends, Request, BackgroundTasks, Header, Body
+from typing import Optional
 from src.utils.logger import logger
 from src.api.security.dependencies import get_current_user
 from src.api.schema.user_schema import (
-    LoginUser, 
-    RegisterUser, 
-    RegisterWithInvitation, 
+    LoginUser,
+    RegisterUser,
+    RegisterWithInvitation,
     RefreshTokenRequest,
+    LogoutRequest,
     ResendVerificationRequest,
     OAuthLoginRequest,
     OAuthLinkRequest,
     UserResponse,
-    LoginResponse
 )
-from src.api.security.token_utils import decode_and_verify_token
+from src.api.security.token_utils import decode_and_verify_token, verify_refresh_token
 from src.api.config import get_settings
 from sqlalchemy.ext.asyncio import AsyncSession
-from src.services.email_service import EmailService
 from src.api.database.async_database import get_async_db
 from src.utils.route_decorators import db_transaction_handler, require_permissions
-from src.utils.response_utils import success, error
+from src.utils.response_utils import success
 from src.api.middleware.exceptions import (
-    DuplicateResourceException,
     RextAuthenticationException,
-    ResourceNotFoundException,
     BusinessRuleViolationException,
-    RextValidationException
 )
 from datetime import datetime, timezone
 from src.services.notification_helper import schedule_if_allowed
 from src.services.notification_preferences_service import NotificationPreferencesService
 from user_agents import parse as parse_user_agent
-from src.api.models.user_models.notification_preferences import NotificationPreferences
 from src.api.middleware.rate_limiter import (
     login_rate_limit,
     registration_rate_limit,
@@ -144,10 +140,6 @@ async def create_user(
     # 1. Validate password before rate limiting so weak password mistakes do not consume limits
     validate_password_strength(user.password)
 
-    # 2. Enforce registration rate limits explicitly
-    limiter = registration_rate_limit()
-    await limiter(request)
-
     # Use auth service
     auth_service = AuthService(db)
     new_user, verification_token = await auth_service.register_user(
@@ -223,7 +215,6 @@ async def login_user(
             password=user.password,
             device_info=device_info,
             background_tasks=background_tasks,
-            db=db
         )
 
         # PERSIST: We must commit here to save login sessions/logins counts
@@ -281,28 +272,49 @@ async def refresh_access_token(
 
 @router.post("/logout", response_model=SuccessResponse[GenericResponse])
 @require_permissions("user.read", workspace_scoped=False)
-@db_transaction_handler("user logout", auto_commit=True)
+@db_transaction_handler("user logout", auto_commit=False)
 async def logout_user(
     request: Request,
+    body: Optional[LogoutRequest] = Body(None),
     current_user: dict = Depends(get_current_user),
     authorization: str = Header(...),
     db: AsyncSession = Depends(get_async_db)
 ):
     """
-    Logout user by blacklisting their access token.
+    Logout user by blacklisting their access token (and optionally their refresh token).
+    Pass refresh_token in the request body to also invalidate the refresh token.
     """
-    # Extract token from authorization header
-    scheme, token = authorization.split()
+    from src.api.security.token_utils import blacklist_token_in_cache
 
-    # Decode token to get JTI and expiration
+    parts = authorization.split(maxsplit=1)
+    if len(parts) != 2:
+        raise RextAuthenticationException(message="Invalid Authorization header format")
+    scheme, token = parts
     payload = decode_and_verify_token(token, expected_type="access")
     jti = payload.get("jti")
     exp = payload.get("exp")
     user_id = current_user.get("identity")
 
-    # Use auth service
+    # Decode refresh token if provided
+    refresh_jti = None
+    refresh_exp = None
+    if body and body.refresh_token:
+        try:
+            refresh_payload = verify_refresh_token(body.refresh_token)
+            refresh_jti = refresh_payload.get("jti")
+            refresh_exp = refresh_payload.get("exp")
+        except Exception:
+            # Invalid refresh token — still proceed with access token logout
+            pass
+
     auth_service = AuthService(db)
-    await auth_service.logout_user(user_id, jti, exp)
+    was_active = await auth_service.logout_user(user_id, jti, exp, refresh_jti, refresh_exp)
+
+    await db.commit()
+    if was_active:
+        await blacklist_token_in_cache(jti, exp)
+        if refresh_jti and refresh_exp:
+            await blacklist_token_in_cache(refresh_jti, refresh_exp)
 
     return success(
         data={"message": "Logged out successfully"},
@@ -459,9 +471,6 @@ async def register_with_invitation(
     # 1. Validate password before rate limiting so weak password mistakes do not consume limits
     validate_password_strength(user_data.password)
 
-    # 2. Enforce registration rate limits explicitly
-    limiter = registration_rate_limit()
-    await limiter(request)
     invitation_service = InvitationService(db)
     invitation = await invitation_service.get_invitation_by_token(user_data.invitation_token)
 
@@ -497,7 +506,7 @@ async def register_with_invitation(
         )
 
     # Accept invitation
-    acceptance_result = await invitation_service.accept_invitation(
+    await invitation_service.accept_invitation(
         invitation_id=invitation.id,
         user_id=existing_user.id
     )
