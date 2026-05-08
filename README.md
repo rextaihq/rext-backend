@@ -6,6 +6,7 @@ Welcome to the **Full Blog Automation System**, a powerful notebook that automat
 
 ---
 
+
 ## 🌟 What This Project Does
 
 ✅ Scrapes and selects trending blog topics from multiple sources (WordPress + local articles)  
