@@ -256,7 +256,7 @@ async def create_workspace_invitation(
 
     # Safely access inviter attributes
     if inviter:
-        inviter_display_name = inviter.display_name
+        inviter_display_name = inviter.display_name or inviter.full_name or inviter.email or "A teammate"
         inviter_full_name = inviter.full_name
         inviter_email = inviter.email
     else:
@@ -377,7 +377,7 @@ async def create_bulk_workspace_invitations(
     workspace_name_value = workspace.name
     role_id_value = role.id
     role_display_name = role.display_name or role.name
-    inviter_display_name = inviter.display_name if inviter else "A teammate"
+    inviter_display_name = (inviter.display_name or inviter.full_name or inviter.email or "A teammate") if inviter else "A teammate"
     inviter_full_name = inviter.full_name if inviter else None
     inviter_email = inviter.email if inviter else None
 
@@ -539,7 +539,7 @@ async def resend_workspace_invitation(
     invitation_id_value = invitation.id
     invitation_email = invitation.email
     invitation_token = invitation.invitation_token
-    inviter_display_name = inviter.display_name if inviter else "A teammate"
+    inviter_display_name = (inviter.display_name or inviter.full_name or inviter.email or "A teammate") if inviter else "A teammate"
     inviter_full_name = inviter.full_name if inviter else None
     inviter_email = inviter.email if inviter else None
 
