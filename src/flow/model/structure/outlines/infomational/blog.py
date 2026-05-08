@@ -182,6 +182,10 @@ class EngagementPlan(BaseModel):
 
 class SEOPlan(BaseModel):
     focus_keyphrase: str
+    keywords_to_include: List[str] = Field(
+        default_factory=list,
+        description="Secondary and long-tail keywords to naturally incorporate throughout the page."
+    )
     secondary_keywords: List[str]
     search_variants: List[str]
     title_variations: Optional[List[str]]
