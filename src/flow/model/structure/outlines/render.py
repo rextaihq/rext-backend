@@ -253,7 +253,7 @@ def _resolve_keywords(outline_dict: dict) -> list[str]:
     for wrapper in ("seo", "seo_plan"):
         obj = outline_dict.get(wrapper)
         if isinstance(obj, dict):
-            for key in ("secondary_keywords", "keywords_to_include", "search_variants"):
+            for key in ("secondary_keywords", "keywords_to_include", "focus_keywords", "semantic_keywords", "search_variants"):
                 val = obj.get(key)
                 if isinstance(val, list) and val:
                     return [str(k).strip() for k in val if k]

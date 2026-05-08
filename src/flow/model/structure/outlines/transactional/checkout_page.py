@@ -145,6 +145,11 @@ class CheckoutPageOutline(BaseModel):
     # Core Metadata
     title: str
     slug_suggestion: str = Field(pattern=r"^[a-z0-9-]+$")
+    focus_keyphrase: str
+    keywords_to_include: List[str] = Field(
+        default_factory=list,
+        description="Secondary and long-tail keywords to naturally incorporate throughout the page."
+    )
     conversion_goal: Literal[
         "complete_purchase", "start_subscription", "confirm_order"
     ]
