@@ -49,7 +49,7 @@ from src.api.schema.response.invitation_responses import (
 )
 from src.utils.workspace_utils import resolve_and_verify_workspace
 from src.api.models.user_models.invitations import InvitationStatus
-from src.utils.email_template_utils import render_workspace_email
+from emails.templates.workspace.invitation import create_workspace_invitation_email
 
 
 router = APIRouter(tags=["workspace-invitations"])
@@ -264,29 +264,20 @@ async def create_workspace_invitation(
         inviter_full_name = None
         inviter_email = None
 
-    invitation_link = f"{frontend_url}/invitations/accept?token={invitation_token}"
-
-    email_content = await render_workspace_email(
-        db=db,
-        workspace_id=workspace_id,
-        template_type="workspace_invitation",
-        variables={
-            "workspace_name": workspace_name,
-            "inviter_name": inviter_display_name,
-            "invitee_name": invitation_email.split('@')[0],  # Use email username as name
-            "invitee_email": invitation_email,
-            "recipient_email": invitation_email,  # Keep for backward compatibility
-            "role_name": role_display_name,
-            "invitation_url": invitation_link,
-            "expiry_days": str(payload.expiry_days or 7),
-        },
+    invitation_html = create_workspace_invitation_email(
+        workspace_name=workspace_name,
+        inviter_name=inviter_display_name,
+        invitation_token=invitation_token,
+        role_name=role_display_name,
+        expiry_days=payload.expiry_days or 7,
+        frontend_url=frontend_url,
     )
 
     background_tasks.add_task(
         send_workspace_invitation_email_task,
         email=invitation_email,
-        subject=email_content["subject"],
-        body=email_content["body"],
+        subject=f"You're invited to join {workspace_name}",
+        body=invitation_html,
         workspace_id=str(workspace_id),
         invitation_id=str(invitation_id)
     )
@@ -415,29 +406,20 @@ async def create_bulk_workspace_invitations(
                 "id": str(invitation_id),
             })
 
-            invitation_url = f"{frontend_url}/invitations/accept?token={invitation_token}"
-
-            email_content = await render_workspace_email(
-                db=db,
-                workspace_id=workspace_id_value,
-                template_type="workspace_invitation",
-                variables={
-                    "workspace_name": workspace_name_value,
-                    "inviter_name": inviter_display_name,
-                    "invitee_name": email.split('@')[0],
-                    "invitee_email": email,
-                    "recipient_email": email,
-                    "role_name": role_display_name,
-                    "invitation_url": invitation_url,
-                    "expiry_days": str(payload.expiry_days or 7),
-                },
+            invitation_html = create_workspace_invitation_email(
+                workspace_name=workspace_name_value,
+                inviter_name=inviter_display_name,
+                invitation_token=invitation_token,
+                role_name=role_display_name,
+                expiry_days=payload.expiry_days or 7,
+                frontend_url=frontend_url,
             )
 
             background_tasks.add_task(
                 send_workspace_invitation_email_task,
                 email=email,
-                subject=email_content["subject"],
-                body=email_content["body"],
+                subject=f"You're invited to join {workspace_name_value}",
+                body=invitation_html,
                 workspace_id=str(workspace_id_value),
                 invitation_id=str(invitation_id)
             )
@@ -561,30 +543,20 @@ async def resend_workspace_invitation(
     inviter_full_name = inviter.full_name if inviter else None
     inviter_email = inviter.email if inviter else None
 
-    invitation_link = f"{frontend_url}/invitations/accept?token={invitation_token}"
-
-    # Prepare and send email
-    email_content = await render_workspace_email(
-        db=db,
-        workspace_id=workspace_id_value,
-        template_type="workspace_invitation",
-        variables={
-            "workspace_name": workspace_name_value,
-            "inviter_name": inviter_display_name,
-            "invitee_name": invitation_email.split('@')[0],
-            "invitee_email": invitation_email,
-            "recipient_email": invitation_email,
-            "role_name": role_display_name,
-            "invitation_url": invitation_link,
-            "expiry_days": "7",
-        },
+    invitation_html = create_workspace_invitation_email(
+        workspace_name=workspace_name_value,
+        inviter_name=inviter_display_name,
+        invitation_token=invitation_token,
+        role_name=role_display_name,
+        expiry_days=7,
+        frontend_url=frontend_url,
     )
 
     background_tasks.add_task(
         send_workspace_invitation_email_task,
         email=invitation_email,
-        subject=email_content["subject"],
-        body=email_content["body"],
+        subject=f"You're invited to join {workspace_name_value}",
+        body=invitation_html,
         workspace_id=str(workspace_id_value),
         invitation_id=str(invitation_id_value)
     )

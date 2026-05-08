@@ -4,75 +4,32 @@ Workspace Invitation Template
 Sent when a user is invited to join a workspace.
 """
 from typing import Optional
-from emails.components import simple_header, primary_button, simple_footer
+from emails.components import simple_footer
+from emails.components.button import button, ButtonProps
 from emails.utils.renderer import compose_email
 
+_FONT = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif"
 
-def get_role_permissions_html(role_name: str) -> str:
-    """
-    Get HTML describing permissions for a given role.
 
-    Args:
-        role_name: Name of the role (e.g., "Admin", "Editor", "Viewer")
-
-    Returns:
-        HTML string with role permissions
-    """
-    role_lower = role_name.lower()
-
-    # Define permissions for common roles
-    permissions_map = {
-        "owner": [
-            "Full workspace access",
-            "Manage workspace settings",
-            "Invite and remove members",
-            "Delete workspace"
-        ],
-        "admin": [
-            "Manage workspace content",
-            "Invite and manage members",
-            "Configure workspace settings",
-            "View analytics and reports"
-        ],
-        "editor": [
-            "Create and edit content",
-            "Manage topics and knowledge",
-            "Collaborate with team members",
-            "Submit content for review"
-        ],
-        "member": [
-            "View workspace content",
-            "Create content",
-            "Collaborate with team",
-            "Access knowledge base"
-        ],
-        "viewer": [
-            "View workspace content",
-            "Browse knowledge base",
-            "Read-only access",
-            "No editing permissions"
-        ]
-    }
-
-    # Get permissions for this role or default
-    permissions = permissions_map.get(role_lower, [
-        f"Access as {role_name}",
-        "Collaborate with team members"
-    ])
-
-    permissions_html = "".join([
-        f'<li style="color: #166534; font-size: 14px; line-height: 24px; margin: 4px 0;">{perm}</li>'
-        for perm in permissions
-    ])
-
+def _branded_header() -> str:
     return f"""
-    <div style="margin: 24px 0; padding: 20px; background-color: #f0fdf4; border-radius: 6px; border: 1px solid #86efac;">
-        <p style="color: #166534; font-size: 14px; line-height: 20px; margin: 0 0 12px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
-            <strong>✨ As {role_name}, you can:</strong>
-        </p>
-        <ul style="margin: 0; padding-left: 20px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
-            {permissions_html}
-        </ul>
+    <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
+        <tr>
+            <td style="padding-bottom: 32px; border-bottom: 2px solid #3641f5;">
+                <span style="font-size:22px; font-weight:700; color:#3641f5;
+                             font-family:{_FONT}; letter-spacing:-0.02em;">REXT</span>
+            </td>
+        </tr>
+    </table>
+    """
+
+
+def _role_badge(role_name: str) -> str:
+    return f"""
+    <div style="display:inline-block; background-color:#eef0fe; color:#3641f5;
+                font-size:13px; font-weight:600; padding:4px 12px; border-radius:9999px;
+                font-family:{_FONT}; letter-spacing:0.01em;">
+        {role_name}
     </div>
     """
 
@@ -84,113 +41,68 @@ def render_workspace_invitation_email(
     role_name: str = "Member",
     expiry_days: int = 7,
     workspace_description: Optional[str] = None,
-    frontend_url: str = "https://app.rext.com"
+    frontend_url: str = "https://staging.rext.ai"
 ) -> str:
-    """
-    Render workspace invitation email template.
-
-    Args:
-        workspace_name: Name of the workspace
-        inviter_name: Name of person sending invitation
-        invitation_url: Complete URL with invitation token
-        role_name: Role being assigned (e.g., "Admin", "Editor", "Viewer")
-        expiry_days: Days until invitation expires (default 7)
-        workspace_description: Optional workspace description
-        frontend_url: Base frontend URL for branding
-
-    Returns:
-        Complete HTML email string
-
-    Example:
-        >>> html = render_workspace_invitation_email(
-        ...     workspace_name="Acme Inc",
-        ...     inviter_name="John Doe",
-        ...     invitation_url="https://app.rext.com/invitations/accept?token=abc123",
-        ...     role_name="Editor"
-        ... )
-    """
     description_html = ""
     if workspace_description:
         description_html = f"""
-        <div style="margin: 24px 0; padding: 16px; background-color: #f9fafb; border-radius: 6px; border-left: 4px solid #3b82f6;">
-            <p style="color: #374151; font-size: 14px; line-height: 20px; margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
-                <strong>About this workspace:</strong><br>
-                {workspace_description}
+        <div style="margin:24px 0; padding:16px 20px; background-color:#f8f9ff;
+                    border-radius:8px; border-left:3px solid #3641f5;">
+            <p style="color:#344054; font-size:14px; line-height:22px; margin:0;
+                      font-family:{_FONT};">
+                <strong>About this workspace:</strong><br>{workspace_description}
             </p>
         </div>
         """
 
-    email_html = compose_email([
-        simple_header(workspace_name),
+    return compose_email([
+        _branded_header(),
         f"""
-        <h1 style="color: #111827; font-size: 28px; font-weight: 700; margin: 0 0 16px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
-            You've been invited to join {workspace_name}
+        <h1 style="color:#101828; font-size:26px; font-weight:700; margin:32px 0 12px 0;
+                   font-family:{_FONT}; letter-spacing:-0.02em; line-height:1.3;">
+            You've been invited to join<br><span style="color:#3641f5;">{workspace_name}</span>
         </h1>
         """,
         f"""
-        <p style="color: #374151; font-size: 16px; line-height: 24px; margin: 0 0 16px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
-            <strong>{inviter_name}</strong> has invited you to collaborate on <strong>{workspace_name}</strong>.
+        <p style="color:#475467; font-size:16px; line-height:26px; margin:0 0 24px 0;
+                  font-family:{_FONT};">
+            <strong style="color:#101828;">{inviter_name}</strong> has invited you to
+            collaborate on <strong style="color:#101828;">{workspace_name}</strong>.
+            You'll be joining as:
         </p>
         """,
-        f"""
-        <div style="margin: 24px 0; padding: 20px; background-color: #eff6ff; border-radius: 6px; border: 1px solid #bfdbfe;">
-            <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
-                <tr>
-                    <td style="padding: 8px 0;">
-                        <p style="color: #1e40af; font-size: 14px; margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
-                            <strong>Your Role:</strong> {role_name}
-                        </p>
-                    </td>
-                </tr>
-                <tr>
-                    <td style="padding: 8px 0;">
-                        <p style="color: #1e40af; font-size: 14px; margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
-                            <strong>Workspace:</strong> {workspace_name}
-                        </p>
-                    </td>
-                </tr>
-            </table>
-        </div>
-        """,
+        _role_badge(role_name),
         description_html,
-        get_role_permissions_html(role_name),
-        """
-        <p style="color: #374151; font-size: 16px; line-height: 24px; margin: 0 0 24px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
-            Click the button below to accept this invitation and start collaborating:
+        f"""
+        <p style="color:#475467; font-size:15px; line-height:24px; margin:28px 0 8px 0;
+                  font-family:{_FONT};">
+            Accept the invitation to get started:
         </p>
         """,
-        primary_button("Accept Invitation", invitation_url),
+        button(ButtonProps(text="Accept Invitation", url=invitation_url, background_color="#3641f5")),
         f"""
-        <div style="margin-top: 32px; padding: 16px; background-color: #fef3c7; border-radius: 6px; border-left: 4px solid #f59e0b;">
-            <p style="color: #92400e; font-size: 14px; line-height: 20px; margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
-                <strong>⏱️ This invitation will expire in {expiry_days} days.</strong> Make sure to accept it before it expires.
-            </p>
-        </div>
+        <p style="color:#98a2b3; font-size:13px; line-height:20px; margin:24px 0 0 0;
+                  font-family:{_FONT};">
+            This invitation expires in <strong style="color:#475467;">{expiry_days} days</strong>.
+            If the button above doesn't work, copy and paste this link into your browser:
+        </p>
+        <p style="color:#3641f5; font-size:12px; line-height:20px; margin:6px 0 0 0;
+                  font-family:'Courier New', monospace; word-break:break-all;">
+            {invitation_url}
+        </p>
         """,
-        """
-        <div style="margin-top: 24px; padding: 16px; background-color: #f3f4f6; border-radius: 6px;">
-            <p style="color: #6b7280; font-size: 14px; line-height: 20px; margin: 0 0 12px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
-                <strong>If the button doesn't work, copy and paste this link into your browser:</strong>
-            </p>
-            <p style="color: #3b82f6; font-size: 13px; line-height: 20px; margin: 0; font-family: 'Courier New', monospace; word-break: break-all;">
-                {invitation_url}
-            </p>
-        </div>
-        """.format(invitation_url=invitation_url),
         f"""
-        <div style="margin-top: 32px; border-top: 1px solid #e5e7eb; padding-top: 24px;">
-            <p style="color: #6b7280; font-size: 14px; line-height: 20px; margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
-                If you don't know {inviter_name} or weren't expecting this invitation, you can safely ignore this email.
+        <div style="margin-top:32px; padding-top:24px; border-top:1px solid #e4e7ec;">
+            <p style="color:#98a2b3; font-size:13px; line-height:20px; margin:0;
+                      font-family:{_FONT};">
+                If you don't know {inviter_name} or weren't expecting this, you can safely ignore this email.
             </p>
         </div>
         """,
         simple_footer()
-    ], preview_text=f"You've been invited to join {workspace_name} on REXT")
-
-    return email_html
+    ], preview_text=f"{inviter_name} invited you to join {workspace_name} on REXT")
 
 
-# Convenience function for use with EmailService
 def create_workspace_invitation_email(
     workspace_name: str,
     inviter_name: str,
@@ -198,119 +110,79 @@ def create_workspace_invitation_email(
     role_name: str = "Member",
     expiry_days: int = 7,
     workspace_description: Optional[str] = None,
-    frontend_url: str = "https://app.rext.com",
+    frontend_url: str = "https://staging.rext.ai",
     unsubscribe_token: Optional[str] = None
 ) -> str:
-    """
-    Create workspace invitation email with token.
-
-    Builds the invitation URL from token and renders the email.
-
-    Args:
-        workspace_name: Name of the workspace
-        inviter_name: Name of person sending invitation
-        invitation_token: Invitation token
-        role_name: Role being assigned
-        expiry_days: Days until expiration
-        workspace_description: Optional workspace description
-        frontend_url: Base frontend URL
-        unsubscribe_token: Optional unsubscribe token (only for existing users)
-
-    Returns:
-        Complete HTML email string
-    """
     invitation_url = f"{frontend_url}/invitations/accept?token={invitation_token}"
 
-    description_html = ""
-    if workspace_description:
-        description_html = f"""
-        <div style="margin: 24px 0; padding: 16px; background-color: #f9fafb; border-radius: 6px; border-left: 4px solid #3b82f6;">
-            <p style="color: #374151; font-size: 14px; line-height: 20px; margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
-                <strong>About this workspace:</strong><br>
-                {workspace_description}
-            </p>
-        </div>
-        """
-
-    # Build unsubscribe footer (only for existing users with preferences)
     unsubscribe_html = ""
     if unsubscribe_token:
         unsubscribe_url = f"{frontend_url}/unsubscribe?token={unsubscribe_token}"
         unsubscribe_html = f"""
-        <div style="margin-top: 32px; padding: 20px; text-align: center; background-color: #f9fafb; border-radius: 6px;">
-            <p style="margin: 0; font-size: 12px; color: #6b7280; line-height: 18px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
-                Don't want to receive workspace invitation emails?
-                <a href="{unsubscribe_url}" style="color: #6b7280; text-decoration: underline;">Unsubscribe</a>
+        <div style="margin-top:24px; text-align:center;">
+            <p style="margin:0; font-size:12px; color:#98a2b3; font-family:{_FONT};">
+                Don't want these emails?
+                <a href="{unsubscribe_url}" style="color:#98a2b3; text-decoration:underline;">Unsubscribe</a>
             </p>
         </div>
         """
 
-    email_html = compose_email([
-        simple_header(workspace_name),
+    description_html = ""
+    if workspace_description:
+        description_html = f"""
+        <div style="margin:24px 0; padding:16px 20px; background-color:#f8f9ff;
+                    border-radius:8px; border-left:3px solid #3641f5;">
+            <p style="color:#344054; font-size:14px; line-height:22px; margin:0;
+                      font-family:{_FONT};">
+                <strong>About this workspace:</strong><br>{workspace_description}
+            </p>
+        </div>
+        """
+
+    return compose_email([
+        _branded_header(),
         f"""
-        <h1 style="color: #111827; font-size: 28px; font-weight: 700; margin: 0 0 16px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
-            You've been invited to join {workspace_name}
+        <h1 style="color:#101828; font-size:26px; font-weight:700; margin:32px 0 12px 0;
+                   font-family:{_FONT}; letter-spacing:-0.02em; line-height:1.3;">
+            You've been invited to join<br><span style="color:#3641f5;">{workspace_name}</span>
         </h1>
         """,
         f"""
-        <p style="color: #374151; font-size: 16px; line-height: 24px; margin: 0 0 16px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
-            <strong>{inviter_name}</strong> has invited you to collaborate on <strong>{workspace_name}</strong>.
+        <p style="color:#475467; font-size:16px; line-height:26px; margin:0 0 24px 0;
+                  font-family:{_FONT};">
+            <strong style="color:#101828;">{inviter_name}</strong> has invited you to
+            collaborate on <strong style="color:#101828;">{workspace_name}</strong>.
+            You'll be joining as:
         </p>
         """,
-        f"""
-        <div style="margin: 24px 0; padding: 20px; background-color: #eff6ff; border-radius: 6px; border: 1px solid #bfdbfe;">
-            <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
-                <tr>
-                    <td style="padding: 8px 0;">
-                        <p style="color: #1e40af; font-size: 14px; margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
-                            <strong>Your Role:</strong> {role_name}
-                        </p>
-                    </td>
-                </tr>
-                <tr>
-                    <td style="padding: 8px 0;">
-                        <p style="color: #1e40af; font-size: 14px; margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
-                            <strong>Workspace:</strong> {workspace_name}
-                        </p>
-                    </td>
-                </tr>
-            </table>
-        </div>
-        """,
+        _role_badge(role_name),
         description_html,
-        get_role_permissions_html(role_name),
-        """
-        <p style="color: #374151; font-size: 16px; line-height: 24px; margin: 0 0 24px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
-            Click the button below to accept this invitation and start collaborating:
+        f"""
+        <p style="color:#475467; font-size:15px; line-height:24px; margin:28px 0 8px 0;
+                  font-family:{_FONT};">
+            Accept the invitation to get started:
         </p>
         """,
-        primary_button("Accept Invitation", invitation_url),
+        button(ButtonProps(text="Accept Invitation", url=invitation_url, background_color="#3641f5")),
         f"""
-        <div style="margin-top: 32px; padding: 16px; background-color: #fef3c7; border-radius: 6px; border-left: 4px solid #f59e0b;">
-            <p style="color: #92400e; font-size: 14px; line-height: 20px; margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
-                <strong>⏱️ This invitation will expire in {expiry_days} days.</strong> Make sure to accept it before it expires.
-            </p>
-        </div>
+        <p style="color:#98a2b3; font-size:13px; line-height:20px; margin:24px 0 0 0;
+                  font-family:{_FONT};">
+            This invitation expires in <strong style="color:#475467;">{expiry_days} days</strong>.
+            If the button above doesn't work, copy and paste this link into your browser:
+        </p>
+        <p style="color:#3641f5; font-size:12px; line-height:20px; margin:6px 0 0 0;
+                  font-family:'Courier New', monospace; word-break:break-all;">
+            {invitation_url}
+        </p>
         """,
         f"""
-        <div style="margin-top: 24px; padding: 16px; background-color: #f3f4f6; border-radius: 6px;">
-            <p style="color: #6b7280; font-size: 14px; line-height: 20px; margin: 0 0 12px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
-                <strong>If the button doesn't work, copy and paste this link into your browser:</strong>
-            </p>
-            <p style="color: #3b82f6; font-size: 13px; line-height: 20px; margin: 0; font-family: 'Courier New', monospace; word-break: break-all;">
-                {invitation_url}
-            </p>
-        </div>
-        """,
-        f"""
-        <div style="margin-top: 32px; border-top: 1px solid #e5e7eb; padding-top: 24px;">
-            <p style="color: #6b7280; font-size: 14px; line-height: 20px; margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
-                If you don't know {inviter_name} or weren't expecting this invitation, you can safely ignore this email.
+        <div style="margin-top:32px; padding-top:24px; border-top:1px solid #e4e7ec;">
+            <p style="color:#98a2b3; font-size:13px; line-height:20px; margin:0;
+                      font-family:{_FONT};">
+                If you don't know {inviter_name} or weren't expecting this, you can safely ignore this email.
             </p>
         </div>
         """,
         unsubscribe_html,
         simple_footer()
-    ], preview_text=f"You've been invited to join {workspace_name} on REXT")
-
-    return email_html
+    ], preview_text=f"{inviter_name} invited you to join {workspace_name} on REXT")
