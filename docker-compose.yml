@@ -234,6 +234,9 @@ services:
             SHOPIFY_BRIDGE_PUBLISH_ENDPOINT: ${SHOPIFY_BRIDGE_PUBLISH_ENDPOINT:-/app/api/rext/publish}
             SHOPIFY_BRIDGE_SHARED_SECRET: ${SHOPIFY_BRIDGE_SHARED_SECRET}
 
+            # Public backend base URL (used to generate absolute OAuth callback URLs)
+            BACKEND_URL: ${BACKEND_URL}
+
     # Shopify App (React Router / Node.js)
     rext-shopify-app:
         image: ghcr.io/rextaihq/rext-shopify-app:${IMAGE_TAG:-latest}
@@ -252,6 +255,7 @@ services:
             SCOPES: ${SHOPIFY_SCOPES:-write_products,write_metaobjects,write_metaobject_definitions,write_content}
             DATABASE_URL: ${SHOPIFY_DATABASE_URL}
             REXT_BRIDGE_SHARED_SECRET: ${SHOPIFY_BRIDGE_SHARED_SECRET}
+            REXT_BACKEND_URL: ${BACKEND_URL}
         depends_on:
             postgres:
                 condition: service_healthy

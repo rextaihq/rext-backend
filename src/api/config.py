@@ -54,6 +54,7 @@ class Settings(BaseSettings):
     # FRONTEND & CORS
     # ============================================================================
     FRONTEND_URL: str = Field(default="http://localhost:3000", description="Frontend application URL")
+    BACKEND_URL: Optional[str] = Field(default=None, description="Public backend base URL, used to generate absolute callback URLs")
     ALLOWED_ORIGINS: str = Field(
         default="http://localhost:3000,http://127.0.0.1:3000",
         description="Comma-separated CORS allowed origins"
