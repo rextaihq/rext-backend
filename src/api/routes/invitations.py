@@ -253,6 +253,7 @@ async def accept_invitation(
         membership = await member_service.add_member(
             workspace_id=invitation.workspace_id,
             user_id=user_id,
+            role_id=invitation.role_id,
             invitation_id=invitation.id,
             status="active"
         )

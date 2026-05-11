@@ -198,7 +198,7 @@ async def send_workspace_email(
                 db=db
             )
             subject = email_data["subject"]
-            html = email_data["html"]
+            html = email_data["body"]
         except Exception as template_error:
             logger.warning(f"DB template render failed, using Python fallback: {str(template_error)}")
 

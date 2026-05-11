@@ -150,6 +150,11 @@ class RefreshTokenRequest(BaseModel):
     refresh_token: str = Field(..., description="Refresh token to exchange for new access token")
 
 
+class LogoutRequest(BaseModel):
+    """Schema for logout request — refresh token is optional but recommended"""
+    refresh_token: Optional[str] = Field(None, description="Refresh token to also blacklist on logout")
+
+
 class ResendVerificationRequest(BaseModel):
     """Schema for resending verification email"""
     email: EmailStr = Field(..., description="Email address to resend verification to")
