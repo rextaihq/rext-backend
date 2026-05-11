@@ -14,15 +14,20 @@ class StorageService:
 
     def __init__(self):
         self.bucket_name = settings.MINIO_BUCKET
-        self.s3_client = boto3.client(
-            's3',
-            endpoint_url=f"{'https' if settings.MINIO_USE_SSL else 'http'}://{settings.MINIO_ENDPOINT}",
-            aws_access_key_id=settings.MINIO_ACCESS_KEY,
-            aws_secret_access_key=settings.MINIO_SECRET_KEY,
-            config=Config(signature_version='s3v4', s3={'addressing_style': 'path'}),
-            region_name='us-east-1'  # Default for MinIO
-        )
-        self._ensure_bucket_exists()
+        self.available = False
+        try:
+            self.s3_client = boto3.client(
+                's3',
+                endpoint_url=f"{'https' if settings.MINIO_USE_SSL else 'http'}://{settings.MINIO_ENDPOINT}",
+                aws_access_key_id=settings.MINIO_ACCESS_KEY,
+                aws_secret_access_key=settings.MINIO_SECRET_KEY,
+                config=Config(signature_version='s3v4', s3={'addressing_style': 'path'}),
+                region_name='us-east-1'
+            )
+            self._ensure_bucket_exists()
+            self.available = True
+        except Exception as e:
+            logger.warning(f"MinIO unavailable at startup: {e}. Storage operations will fail gracefully.")
 
     def _ensure_bucket_exists(self):
         """Checks if the bucket exists and creates it if not."""

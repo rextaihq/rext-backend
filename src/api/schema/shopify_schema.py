@@ -69,6 +69,37 @@ class ShopifyConnectRequest(BaseModel):
     }
 
 
+class ShopifyInstallStartRequest(BaseModel):
+    """Request body for starting the Shopify app installation flow."""
+
+    store_url: str = Field(
+        ...,
+        description="Shopify store URL or bare store handle.",
+    )
+    return_path: Optional[str] = Field(
+        default=None,
+        description="Optional frontend path to return to after installation.",
+    )
+
+    @field_validator("store_url")
+    @classmethod
+    def validate_install_store_url(cls, v: str) -> str:
+        v = v.strip().rstrip("/")
+        if not v:
+            raise ValueError("store_url must not be empty.")
+        return v
+
+    @field_validator("return_path")
+    @classmethod
+    def validate_return_path(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return None
+        v = v.strip()
+        if not v:
+            return None
+        return v
+
+
 class ShopifyUpdateRequest(BaseModel):
     """Request body for updating an existing Shopify connection."""
 
