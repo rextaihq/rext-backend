@@ -96,7 +96,8 @@ def create_workspace_deleted_email(
     recovery_deadline: str,
     remaining_workspaces: int,
     frontend_url: str = os.getenv("FRONTEND_URL"),
-    unsubscribe_token: Optional[str] = None
+    unsubscribe_token: Optional[str] = None,
+    **kwargs
 ) -> str:
     """Convenience function for use with EmailService."""
     return render_workspace_deleted_email(

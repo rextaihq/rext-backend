@@ -119,7 +119,8 @@ def create_invitation_accepted_email(
     role_name: str = "Member",
     workspace_id: Optional[str] = None,
     frontend_url: str = "https://app.rext.com",
-    unsubscribe_token: Optional[str] = None
+    unsubscribe_token: Optional[str] = None,
+    **kwargs
 ) -> str:
     """
     Create invitation accepted notification email.
