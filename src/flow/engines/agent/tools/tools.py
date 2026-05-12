@@ -9,7 +9,7 @@ import httpx
 
 load_dotenv()
 
-SEARCH_HARD_CAP = 8
+SEARCH_HARD_CAP = 6
 
 
 @tool
