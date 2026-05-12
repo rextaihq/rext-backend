@@ -54,6 +54,7 @@ class Settings(BaseSettings):
     # FRONTEND & CORS
     # ============================================================================
     FRONTEND_URL: str = Field(default="http://localhost:3000", description="Frontend application URL")
+    BACKEND_URL: Optional[str] = Field(default=None, description="Public backend base URL, used to generate absolute callback URLs")
     ALLOWED_ORIGINS: str = Field(
         default="http://localhost:3000,http://127.0.0.1:3000",
         description="Comma-separated CORS allowed origins"
@@ -101,6 +102,26 @@ class Settings(BaseSettings):
     SHOPIFY_APP_SLUG: str = Field(
         default="rext-publisher-1",
         description="Shopify app slug used in admin launch URLs"
+    )
+    SHOPIFY_API_KEY: Optional[str] = Field(
+        default=None,
+        description="Shopify app client ID / API key used for OAuth installation"
+    )
+    SHOPIFY_API_SECRET: Optional[str] = Field(
+        default=None,
+        description="Shopify app client secret used for OAuth installation"
+    )
+    SHOPIFY_APP_SCOPES: str = Field(
+        default="read_products,write_content",
+        description="Comma-separated Shopify OAuth scopes requested during installation"
+    )
+    SHOPIFY_INSTALL_CALLBACK_PATH: str = Field(
+        default="/api/routes/integrations/shopify/install/callback",
+        description="Backend callback path registered in the Shopify app setup"
+    )
+    SHOPIFY_INTEGRATION_RETURN_PATH: str = Field(
+        default="/integrations",
+        description="Frontend path to redirect to after Shopify installation completes"
     )
     SHOPIFY_APP_ENTRY_PATH: str = Field(
         default="/app/blogpost",

@@ -9,6 +9,7 @@ from src.api.models.workspace_models.workspace_model import WorkspaceModel
 from src.api.models.workspace_models.workspace_integration import WorkspaceIntegration
 from src.api.models.workspace_models.email_template import EmailTemplate
 from src.api.models.user_models.users import Users
+from src.api.models.integrations.integrations import ShopifyAppInstall
 
 # Knowledge base models
 from src.api.models.knowledge_models.knowledge_model import (
@@ -40,6 +41,7 @@ __all__ = [
     "Base",
     "WorkspaceModel",
     "WorkspaceIntegration",
+    "ShopifyAppInstall",
     "EmailTemplate",
     "Users",
     "BrandVoice",
