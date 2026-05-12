@@ -111,7 +111,8 @@ def create_workspace_invitation_email(
     expiry_days: int = 7,
     workspace_description: Optional[str] = None,
     frontend_url: str = "https://staging.rext.ai",
-    unsubscribe_token: Optional[str] = None
+    unsubscribe_token: Optional[str] = None,
+    **kwargs
 ) -> str:
     invitation_url = f"{frontend_url}/invitations/accept?token={invitation_token}"
 
