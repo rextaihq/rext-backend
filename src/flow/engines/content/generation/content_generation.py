@@ -197,9 +197,14 @@ async def generate_content(state: REXT) -> dict:
 
         # The schema name used by ToolStrategy for the artificial structured-output tool
         _STRUCTURED_OUTPUT_TOOL_NAME = generated_model.__name__
-        
+        # Internal sub-tools that should not appear as separate UI events
+        _INTERNAL_TOOL_NAMES = {"tavily_search_results_json"}
+
         # Instead we match the root completion by run_id.
         agent_root_run_id: str | None = None
+
+        # Track query from tool_start keyed by run_id; emitted once on tool_end
+        _pending_tool_queries: dict[str, str] = {}
 
         async for event in agent.astream_events(
             agent_input,
@@ -259,18 +264,18 @@ async def generate_content(state: REXT) -> dict:
                                     e, list(tc.get("args", {}).keys())
                                 )
 
-            # Real tool call started — stream to frontend (skip the fake structured-output tool)
-            elif kind == "on_tool_start" and tool_name != _STRUCTURED_OUTPUT_TOOL_NAME:
+            # Real tool call started — emit immediately for live UI, store query for tool_end
+            elif kind == "on_tool_start" and tool_name != _STRUCTURED_OUTPUT_TOOL_NAME and tool_name not in _INTERNAL_TOOL_NAMES:
                 tool_input = event["data"].get("input")
                 logger.info("on_tool_start: name=%s input_type=%s input=%r", tool_name, type(tool_input).__name__, tool_input)
                 if isinstance(tool_input, str):
                     query = tool_input
                 elif isinstance(tool_input, dict):
-                    # Walk all string values; pick the longest one (most likely the actual query)
                     str_vals = [str(v) for v in tool_input.values() if v and str(v).strip()]
                     query = max(str_vals, key=len) if str_vals else ""
                 else:
                     query = str(tool_input) if tool_input else ""
+                _pending_tool_queries[event_run_id] = query
                 write({
                     "type": "tool_start",
                     "id": event_run_id,
@@ -278,10 +283,11 @@ async def generate_content(state: REXT) -> dict:
                     "query": query,
                 })
 
-            # Real tool call finished — stream results to frontend
-            elif kind == "on_tool_end" and tool_name != _STRUCTURED_OUTPUT_TOOL_NAME:
+            # Real tool call finished — emit single event with query + results
+            elif kind == "on_tool_end" and tool_name != _STRUCTURED_OUTPUT_TOOL_NAME and tool_name not in _INTERNAL_TOOL_NAMES:
                 raw_output = event["data"].get("output", "")
                 logger.info("on_tool_end: name=%s output_type=%s", tool_name, type(raw_output).__name__)
+                query = _pending_tool_queries.pop(event_run_id, "")
 
                 # Normalise to a list of result dicts regardless of output format
                 results = []
@@ -308,7 +314,7 @@ async def generate_content(state: REXT) -> dict:
                     and isinstance(results[0], dict)
                     and "cap" in results[0].get("error", "").lower()
                 ):
-                    write({"type": "tool_end", "id": event_run_id, "blocked": True})
+                    write({"type": "tool_end", "id": event_run_id, "name": tool_name, "query": query, "blocked": True})
                     continue
 
                 count = len(results)
@@ -328,6 +334,8 @@ async def generate_content(state: REXT) -> dict:
                 write({
                     "type": "tool_end",
                     "id": event_run_id,
+                    "name": tool_name,
+                    "query": query,
                     "count": count,
                     "output": snippet,
                 })
