@@ -237,6 +237,11 @@ services:
             # Public backend base URL (used to generate absolute OAuth callback URLs)
             BACKEND_URL: ${BACKEND_URL}
 
+            # Shopify OAuth
+            SHOPIFY_API_KEY: ${SHOPIFY_API_KEY}
+            SHOPIFY_API_SECRET: ${SHOPIFY_API_SECRET}
+            SHOPIFY_INTEGRATION_RETURN_PATH: ${SHOPIFY_INTEGRATION_RETURN_PATH:-/integrations}
+
     # Shopify App (React Router / Node.js)
     rext-shopify-app:
         image: ghcr.io/rextaihq/rext-shopify-app:${IMAGE_TAG:-latest}

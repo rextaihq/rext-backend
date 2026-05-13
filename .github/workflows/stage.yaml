@@ -4,27 +4,70 @@ on:
   push:
     branches:
       - stage
+    paths:
+      # Backend
+      - 'src/**'
+      - 'langgraph.json'
+      - 'pyproject.toml'
+      - 'requirements*.txt'
+      - 'Dockerfile'
+      # Shopify app
+      - 'rext/**'
+      # Shared config / workflows
+      - 'docker-compose.yml'
+      - '.github/workflows/stage.yaml'
+      - '.github/workflows/ci-quality.yaml'
   workflow_dispatch:
 
 concurrency:
   group: stage-${{ github.ref }}
   cancel-in-progress: true
 
+# ──────────────────────────────────────────────
+# Detect which parts of the repo changed
+# ──────────────────────────────────────────────
 jobs:
+  changes:
+    name: 🔎 Detect Changes
+    runs-on: ubuntu-latest
+    outputs:
+      backend: ${{ steps.filter.outputs.backend }}
+      shopify: ${{ steps.filter.outputs.shopify }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            backend:
+              - 'src/**'
+              - 'langgraph.json'
+              - 'pyproject.toml'
+              - 'requirements*.txt'
+              - 'Dockerfile'
+              - 'docker-compose.yml'
+            shopify:
+              - 'rext/**'
+
   # ──────────────────────────────────────────────
   # 🔍 Stage 1 — Quality Gate (lint + security + tests)
+  # Only runs when backend code changed
   # ──────────────────────────────────────────────
   quality:
+    name: 🔍 Quality Gate
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
     uses: ./.github/workflows/ci-quality.yaml
     with:
       run_integration: false
 
   # ──────────────────────────────────────────────
-  # 🐳 Stage 2 — Build & Push Docker Image to GHCR
+  # 🐳 Stage 2 — Build & Push Backend Docker Image
   # ──────────────────────────────────────────────
   docker_job:
-    name: 🐳 Build & Push
-    needs: quality
+    name: 🐳 Build & Push Backend
+    needs: [changes, quality]
+    if: needs.changes.outputs.backend == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -68,11 +111,12 @@ jobs:
           df -h
 
   # ──────────────────────────────────────────────
-  # 🐳 Stage 2b — Build & Push Shopify App Image to GHCR
+  # 🐳 Stage 2b — Build & Push Shopify App Image
   # ──────────────────────────────────────────────
   docker_shopify:
     name: 🐳 Build & Push Shopify App
-    needs: quality
+    needs: changes
+    if: needs.changes.outputs.shopify == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -105,14 +149,19 @@ jobs:
 
   # ──────────────────────────────────────────────
   # 🚀 Stage 3 — Deploy via Coolify
+  # Runs if either backend or shopify image was built
   # ──────────────────────────────────────────────
   deploy:
     name: 🚀 Coolify Deploy
-    needs: [docker_job, docker_shopify]
+    needs: [changes, docker_job, docker_shopify]
+    if: |
+      always() &&
+      (needs.docker_job.result == 'success' || needs.docker_shopify.result == 'success')
     runs-on: ubuntu-latest
 
     steps:
       - name: Trigger Coolify Deployment — Backend
+        if: needs.changes.outputs.backend == 'true'
         run: |
           CLEAN_URL=$(echo "${{ secrets.COOLIFY_API_URL }}" | sed 's#/*$##; s#/api/v1$##')
 
@@ -135,6 +184,7 @@ jobs:
           echo "✅ Backend deployment triggered"
 
       - name: Trigger Coolify Deployment — Shopify App
+        if: needs.changes.outputs.shopify == 'true'
         run: |
           CLEAN_URL=$(echo "${{ secrets.COOLIFY_API_URL }}" | sed 's#/*$##; s#/api/v1$##')
 
@@ -157,49 +207,11 @@ jobs:
           echo "✅ Shopify app deployment triggered"
 
   # ──────────────────────────────────────────────
-  # ✅ Stage 4 — Smoke Test
-  # ──────────────────────────────────────────────
-  # smoke_test:
-  #   name: ✅ Smoke Test
-  #   needs: deploy
-  #   runs-on: ubuntu-latest
-
-  #   steps:
-  #     - name: Wait for container startup
-  #       run: sleep 45
-
-  #     - name: Health check
-  #       run: |
-  #         echo "Checking STAGE server health..."
-  #         status=$(curl -s -o /dev/null -w "%{http_code}" \
-  #           "${{ vars.STAGE_SERVER_URL }}/health" \
-  #           --max-time 15 --retry 3 --retry-delay 10)
-
-  #         if [ "$status" = "200" ]; then
-  #           echo "✅ Health check passed (HTTP $status)"
-  #         else
-  #           echo "::warning::Health check returned HTTP $status"
-  #         fi
-
-  #     - name: Readiness check
-  #       run: |
-  #         echo "Checking STAGE server readiness..."
-  #         status=$(curl -s -o /dev/null -w "%{http_code}" \
-  #           "${{ vars.STAGE_SERVER_URL }}/health/ready" \
-  #           --max-time 15 --retry 3 --retry-delay 10)
-
-  #         if [ "$status" = "200" ]; then
-  #           echo "✅ Readiness check passed (HTTP $status)"
-  #         else
-  #           echo "::warning::Readiness check returned HTTP $status (database may be unavailable)"
-  #         fi
-
-  # ──────────────────────────────────────────────
-  # 📢 Stage 5 — Notification Summary
+  # 📢 Stage 4 — Notification Summary
   # ──────────────────────────────────────────────
   notify:
     name: 📢 Summary
-    needs: [quality, docker_job, docker_shopify, deploy]
+    needs: [changes, quality, docker_job, docker_shopify, deploy]
     if: always()
     runs-on: ubuntu-latest
 
@@ -214,9 +226,12 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "| Stage | Status |" >> $GITHUB_STEP_SUMMARY
           echo "|---|---|" >> $GITHUB_STEP_SUMMARY
+          echo "| 🔎 Changed — Backend | \`${{ needs.changes.outputs.backend }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| 🔎 Changed — Shopify App | \`${{ needs.changes.outputs.shopify }}\` |" >> $GITHUB_STEP_SUMMARY
           echo "| 🔍 Quality Gate | \`${{ needs.quality.result }}\` |" >> $GITHUB_STEP_SUMMARY
           echo "| 🐳 Build Backend | \`${{ needs.docker_job.result }}\` |" >> $GITHUB_STEP_SUMMARY
           echo "| 🐳 Build Shopify App | \`${{ needs.docker_shopify.result }}\` |" >> $GITHUB_STEP_SUMMARY
           echo "| 🚀 Coolify Deploy | \`${{ needs.deploy.result }}\` |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Image:** \`ghcr.io/${{ github.repository_owner }}/wrext-backend:stage\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Backend Image:** \`ghcr.io/${{ github.repository_owner }}/rext-backend:stage\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Shopify Image:** \`ghcr.io/${{ github.repository_owner }}/rext-shopify-app:stage\`" >> $GITHUB_STEP_SUMMARY

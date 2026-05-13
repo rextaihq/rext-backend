@@ -28,5 +28,10 @@ redirect_urls = [
   "https://shopifyapp.rext.ai/auth/callback",
   "https://shopifyapp.rext.ai/auth/shopify/callback",
   "https://shopifyapp.rext.ai/exitiframe",
-  "https://staging-api.rext.ai/api/v1/integrations/shopify/install/callback"
+  "https://staging-api.rext.ai/api/v1/integrations/shopify/install/callback",
+
+  "https://terrace-neighbor-holding-virtue.trycloudflare.com/auth/callback",
+  "https://terrace-neighbor-holding-virtue.trycloudflare.com/auth/shopify/callback",
+  "https://terrace-neighbor-holding-virtue.trycloudflare.com/exitiframe",
+  "https://terrace-neighbor-holding-virtue.trycloudflare.com/api/v1/integrations/shopify/install/callback",
 ]
