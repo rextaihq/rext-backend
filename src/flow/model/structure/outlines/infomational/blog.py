@@ -221,6 +221,12 @@ class BlogOutline(BaseModel):
         "Analytical"
     ]
 
+    focus_keyphrase: str
+    keywords_to_include: List[str] = Field(
+        default_factory=list,
+        description="Secondary and long-tail keywords to naturally incorporate throughout the page."
+    )
+
     # Core SEO + intent system
     seo: SEOPlan
     search_intent: SearchIntent

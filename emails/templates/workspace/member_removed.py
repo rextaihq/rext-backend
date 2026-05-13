@@ -131,7 +131,8 @@ def create_member_removed_email(
     removed_by_name: str,
     reason: Optional[str] = None,
     frontend_url: str = "https://app.rext.com",
-    unsubscribe_token: Optional[str] = None
+    unsubscribe_token: Optional[str] = None,
+    **kwargs
 ) -> str:
     """
     Create member removed notification email.
