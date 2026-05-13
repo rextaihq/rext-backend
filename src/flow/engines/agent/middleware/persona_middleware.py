@@ -301,8 +301,10 @@ CONTENT ACCEPTANCE CRITERIA
 
 **generate_image** — Max **1 call total**:
 - Call once to generate a unique image for the introduction or most relevant section
-- **Structured Data**: Place URL, alt text, and context in the `images` list of your final structured response
-- **Content Embedding**: Embed in markdown as: `![descriptive alt text](url_returned_by_tool)`
+- Tool returns JSON: `{{"url": "<permanent_url>", "revised_prompt": "..."}}` — you MUST extract the `url` field
+- **Content Embedding (MANDATORY)**: After the tool returns, embed the image in the introduction of body_markdown using the exact URL from the JSON response: `![descriptive alt text](<url_from_json>)`
+- **Structured Data**: Also add an entry to the `images` output field: `{{"url": "<url_from_json>", "alt_text": "...", "context": "...", "placement": "introduction"}}`
+- An article without an embedded image in body_markdown will be REJECTED
 
 ---
 
@@ -346,9 +348,15 @@ Rules for this block:
 - Do NOT begin writing the article until this block is fully written
 
 **Step 3 — Generate image (1 call)**
-- Call `generate_image` with a topic-relevant prompt
+- Call `generate_image` with a descriptive, topic-relevant prompt
+- Wait for the tool result — it is a JSON string like: `{{"url": "https://...", "revised_prompt": "..."}}`
+- Parse the JSON and note the URL: `IMAGE_URL = <the url field value>`
+- If `IMAGE_URL` is "SKIPPED" or an error — do NOT embed any image and proceed directly to Step 4
+- If a valid URL is returned — it is permanent and must be embedded in the article
 
 **Step 4 — Write the article**
+- **IMAGE PLACEMENT**: If you have a valid `IMAGE_URL`, the FIRST LINE of body_markdown MUST be: `![descriptive alt text](IMAGE_URL from Step 3)`
+- If `IMAGE_URL` was skipped/failed — start the article directly with text
 - Use ONLY the facts listed in your EVIDENCE block above
 - For every fact from your EVIDENCE block, embed an inline markdown link in body_markdown:
   Format: [descriptive anchor text](exact_source_url)
