@@ -98,6 +98,7 @@ Run ALL of these before writing the article:
 **STEP 2 — Generate image (1 call only)**
 - Call `generate_image` with a descriptive, topic-relevant prompt
 - Use the returned URL directly — never invent image URLs
+- Generate the image after you have all your search results, so you can base the prompt on real data and examples you've found. Must not use search tool or any other tool after generate_image tool.
 
 **STEP 3 — Write the article**
 - Use ONLY facts, outcomes, and URLs from Steps 1–2
