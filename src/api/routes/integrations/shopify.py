@@ -41,7 +41,8 @@ async def start_shopify_install(
     if not user_id:
         raise RextValidationException(message="Authenticated user identity is missing.")
 
-    callback_url = str(request.url_for("shopify_install_callback"))
+    base = (settings.BACKEND_URL or str(request.base_url)).rstrip("/")
+    callback_url = f"{base}/api/v1/integrations/shopify/install/callback"
     install_url = await service.build_shopify_install_url(
         workspace_id=workspace_id,
         user_id=user_id,

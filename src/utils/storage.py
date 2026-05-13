@@ -27,7 +27,8 @@ class StorageService:
             self._ensure_bucket_exists()
             self.available = True
         except Exception as e:
-            logger.warning(f"MinIO unavailable at startup: {e}. Storage operations will fail gracefully.")
+            logger.warning(f"MinIO unavailable: {e}. Storage operations will be skipped.")
+            self.available = False
 
     def _ensure_bucket_exists(self):
         """Checks if the bucket exists and creates it if not."""
@@ -80,6 +81,8 @@ class StorageService:
         Returns:
             The public URL of the uploaded file if successful, else None.
         """
+        if not self.available:
+            return None
         try:
             if isinstance(file_data, bytes):
                 file_obj = io.BytesIO(file_data)
@@ -110,6 +113,8 @@ class StorageService:
         If MINIO_PUBLIC_URL is set, returns a direct link.
         Otherwise, returns a presigned URL.
         """
+        if not self.available:
+            return ""
         if settings.MINIO_PUBLIC_URL:
             # Direct link if configured (e.g. via Nginx or Cloudflare)
             return f"{settings.MINIO_PUBLIC_URL.rstrip('/')}/{self.bucket_name}/{object_name}"
@@ -128,6 +133,8 @@ class StorageService:
 
     def delete_file(self, object_name: str) -> bool:
         """Deletes an object from MinIO/S3."""
+        if not self.available:
+            return False
         try:
             # Strip bucket name if it was included in the path (defensive)
             if object_name.startswith(f"/{self.bucket_name}/"):
@@ -148,6 +155,8 @@ class StorageService:
         If local_path is provided, saves it there.
         Otherwise, returns the content bytes.
         """
+        if not self.available:
+            return None
         try:
             if local_path:
                 self.s3_client.download_file(self.bucket_name, object_name, local_path)
@@ -161,6 +170,8 @@ class StorageService:
 
     def check_connection(self) -> bool:
         """Verifies the connection to MinIO/S3 by attempting to head the bucket."""
+        if not self.available:
+            return False
         try:
             self.s3_client.head_bucket(Bucket=self.bucket_name)
             return True
