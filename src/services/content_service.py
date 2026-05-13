@@ -25,7 +25,7 @@ from src.api.middleware.exceptions import (
     ResourceNotFoundException,
     DuplicateResourceException
 )
-from src.api.models.workspace_models.workspace_integration import WorkspaceIntegration
+from src.api.models.integrations.workspace_integration import WorkspaceIntegration
 from src.api.config import settings
 from src.web.wordpress import WordPressPublisher
 from src.web.shopify_bridge import ShopifyAppBridge

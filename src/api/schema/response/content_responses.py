@@ -130,6 +130,17 @@ class SiteListResponse(BaseModel):
     workspace_id: UUID
 
 
+class IntegrationListResponse(BaseModel):
+    """
+    Response for GET /integrations/.
+
+    Matches: {"integrations": [...], "total_count": N, "workspace_id": "..."}
+    """
+    integrations: List[SiteItemResponse]
+    total_count: int
+    workspace_id: UUID
+
+
 class SiteDeletedResponse(BaseModel):
     """
     Response for DELETE /sites/{id}.

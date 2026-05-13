@@ -20,7 +20,7 @@ from src.api.middleware.exceptions import (
     ResourceNotFoundException,
     RextValidationException,
 )
-from src.api.models.workspace_models.workspace_integration import WorkspaceIntegration
+from src.api.models.integrations.workspace_integration import WorkspaceIntegration
 from src.api.schema.shopify_schema import (
     ShopifyConnectRequest,
     ShopifyConnectionResponse,

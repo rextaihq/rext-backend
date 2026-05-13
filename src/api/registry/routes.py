@@ -71,7 +71,11 @@ def register_routes(app: FastAPI) -> None:
 
     # ---- Shopify ----
     from src.api.routes.shopify import router as shopify_router
+    from src.api.routes.integrations.shared import router as integrations_router
     from src.api.routes.integrations.shopify import router as shopify_integration_router
+    from src.api.routes.integrations.wordpress import (
+        router as wordpress_integration_router,
+    )
 
     # ============================================================================
     # ROUTER REGISTRATION
@@ -134,5 +138,10 @@ def register_routes(app: FastAPI) -> None:
 
     # ---- Shopify integration ----
     app.include_router(shopify_router, prefix="/api/v1/shopify", tags=["Shopify"])
+    app.include_router(integrations_router, prefix="/api/v1/integrations", tags=["Integrations"])
     app.include_router(shopify_integration_router, prefix="/api/v1/integrations", tags=["Shopify Integration"])
-
+    app.include_router(
+        wordpress_integration_router,
+        prefix="/api/v1/integrations",
+        tags=["WordPress Integration"],
+    )

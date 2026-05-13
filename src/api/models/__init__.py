@@ -6,10 +6,10 @@ from src.api.database.base import Base
 
 # Core models
 from src.api.models.workspace_models.workspace_model import WorkspaceModel
-from src.api.models.workspace_models.workspace_integration import WorkspaceIntegration
 from src.api.models.workspace_models.email_template import EmailTemplate
 from src.api.models.user_models.users import Users
-from src.api.models.integrations.integrations import ShopifyAppInstall
+from src.api.models.integrations.workspace_integration import WorkspaceIntegration
+from src.api.models.integrations.shopify_app_install import ShopifyAppInstall
 
 # Knowledge base models
 from src.api.models.knowledge_models.knowledge_model import (

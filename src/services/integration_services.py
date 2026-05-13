@@ -25,8 +25,8 @@ from src.api.middleware.exceptions import (
     ResourceNotFoundException,
     RextValidationException,
 )
-from src.api.models.integrations.integrations import ShopifyAppInstall
-from src.api.models.workspace_models.workspace_integration import WorkspaceIntegration
+from src.api.models.integrations.shopify_app_install import ShopifyAppInstall
+from src.api.models.integrations.workspace_integration import WorkspaceIntegration
 from src.utils.logger import logger
 from src.web.shopify import ShopifyConnector, SHOPIFY_API_VERSION
 from src.web.shopify_bridge import normalize_store_url
@@ -512,4 +512,31 @@ class IntegrationService:
                 WorkspaceIntegration.deleted_at.is_(None),
             )
         )
+        return [self._hydrate_legacy_fields(item) for item in result.scalars().all()]
+
+    async def get_integrations(
+        self,
+        workspace_id: uuid.UUID,
+        *,
+        provider: Optional[str] = None,
+        active_only: bool = False,
+    ) -> List[WorkspaceIntegration]:
+        """Get workspace integrations with optional provider and active filters."""
+        query = select(WorkspaceIntegration).where(
+            WorkspaceIntegration.workspace_id == workspace_id,
+            WorkspaceIntegration.deleted_at.is_(None),
+        )
+
+        if provider:
+            query = query.where(WorkspaceIntegration.integration_type == provider)
+
+        if active_only:
+            query = query.where(WorkspaceIntegration.is_active.is_(True))
+
+        query = query.order_by(
+            WorkspaceIntegration.updated_at.desc(),
+            WorkspaceIntegration.created_at.desc(),
+        )
+
+        result = await self.db.execute(query)
         return [self._hydrate_legacy_fields(item) for item in result.scalars().all()]
